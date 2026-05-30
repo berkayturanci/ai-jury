@@ -183,8 +183,12 @@ def parse_verdicts(text: str, verifier: str = "") -> tuple[list["Verdict"], list
         return [], [f"{label}: verdicts block is not a JSON array"]
 
     verdicts: list[Verdict] = []
-    for obj in data:
+    warnings: list[str] = []
+    for i, obj in enumerate(data):
         if not isinstance(obj, dict):
+            warnings.append(
+                f"{label}: verdict item {i} is {type(obj).__name__}, expected object"
+            )
             continue
         verdicts.append(
             Verdict(
@@ -195,9 +199,4 @@ def parse_verdicts(text: str, verifier: str = "") -> tuple[list["Verdict"], list
                 reasoning=str(obj.get("reasoning", "")).strip(),
             )
         )
-    return verdicts, warnings_for(verdicts)
-
-
-def warnings_for(verdicts: list["Verdict"]) -> list[str]:
-    # Currently no per-verdict warnings; placeholder for symmetry/extension.
-    return []
+    return verdicts, warnings
