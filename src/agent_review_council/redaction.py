@@ -21,7 +21,7 @@ _PATTERNS: list[tuple[str, "re.Pattern"]] = [
     ("openai_key", re.compile(r"sk-[A-Za-z0-9]{20,}")),
     ("bearer_token", re.compile(r"Bearer\s+[A-Za-z0-9._\-]+")),
     ("secret_assignment", re.compile(
-        r"(api[_-]?key|secret|token)(\s*[=:]\s*)[\"']?[A-Za-z0-9_\-]{16,}[\"']?",
+        r"(api[_-]?key|secret|token)(\s*[=:]\s*)[\"']?[A-Za-z0-9_\-+/=]{16,}[\"']?",
         re.IGNORECASE,
     )),
 ]
