@@ -224,7 +224,12 @@ def _apply_verdicts(groups: list[FindingGroup], verdicts: list[Verdict]) -> None
     verified -> status recorded, bucket unchanged.
     """
     for verdict in verdicts:
+        # Apply to every matching group: when reviewers phrase the same issue
+        # slightly differently it can land in more than one group, and all of
+        # them should carry the verifier's judgement.
         for group in groups:
+            if group.status:
+                continue
             if _verdict_matches_group(verdict, group):
                 group.status = verdict.status
                 group.status_reasoning = verdict.reasoning
@@ -232,7 +237,6 @@ def _apply_verdicts(groups: list[FindingGroup], verdicts: list[Verdict]) -> None
                     group.bucket = "rejected"
                 elif verdict.status == "needs_human_decision":
                     group.bucket = "disputed"
-                break
 
 
 def _synthesize(config, usable, reviews, debate, diff, log, verdicts=None) -> AgentResult | None:
