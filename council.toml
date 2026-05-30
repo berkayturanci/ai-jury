@@ -19,6 +19,13 @@ parallel = true
 # reduce false positives. Disable with --no-verify.
 verify = true
 
+# CI gate: when `council --ci` is used, exit non-zero if any finding has a
+# severity in `fail_on`. When `ignore_unverified` is true, only findings the
+# verifier marked "verified" can fail the build (unverified ones never fail).
+[council.ci]
+fail_on = ["critical", "major"]
+ignore_unverified = true
+
 [[agent]]
 name = "claude"
 vendor = "anthropic"

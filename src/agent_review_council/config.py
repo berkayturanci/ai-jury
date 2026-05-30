@@ -16,6 +16,7 @@ DEFAULT_CONFIG: dict = {
         "timeout": 600,
         "parallel": True,
         "verify": True,
+        "ci": {"fail_on": ["critical", "major"], "ignore_unverified": True},
     },
     "agent": [
         {
@@ -52,6 +53,12 @@ class AgentSpec:
 
 
 @dataclass
+class CiConfig:
+    fail_on: list[str] = field(default_factory=lambda: ["critical", "major"])
+    ignore_unverified: bool = True
+
+
+@dataclass
 class CouncilConfig:
     rounds: int = 2
     chair: str = "claude"
@@ -59,10 +66,22 @@ class CouncilConfig:
     parallel: bool = True
     verify: bool = True
     agents: list[AgentSpec] = field(default_factory=list)
+    ci: CiConfig = field(default_factory=CiConfig)
 
     @property
     def enabled_agents(self) -> list[AgentSpec]:
         return [a for a in self.agents if a.enabled]
+
+
+def _ci_from_dict(data: dict) -> CiConfig:
+    fail_on = data.get("fail_on", ["critical", "major"])
+    if not isinstance(fail_on, list):
+        fail_on = [fail_on]
+    fail_on = [str(s).strip().lower() for s in fail_on if str(s).strip()]
+    return CiConfig(
+        fail_on=fail_on,
+        ignore_unverified=bool(data.get("ignore_unverified", True)),
+    )
 
 
 def _from_dict(data: dict) -> CouncilConfig:
@@ -88,6 +107,7 @@ def _from_dict(data: dict) -> CouncilConfig:
         parallel=bool(council.get("parallel", True)),
         verify=bool(council.get("verify", True)),
         agents=agents,
+        ci=_ci_from_dict(council.get("ci", {})),
     )
 
 
