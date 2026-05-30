@@ -25,6 +25,30 @@ Rules:
 Output a markdown list, one finding per line:
 - **[blocker|major|minor]** `path:line` — concise description and why it matters
 
+After the markdown list, ALSO append a single fenced ```json code block holding a
+JSON array of structured finding objects (one per finding above). Use exactly
+this schema and these enum values:
+- "severity": one of "critical", "major", "minor", "nit", "info"
+- "file": repo-relative path (string)
+- "line": line number (integer) or null when unavailable
+- "claim": concise description of the issue
+- "evidence": why the diff/code supports the claim
+- "suggested_fix": an actionable fix, or "" when none
+- "confidence": one of "high", "medium", "low"
+- "reviewer": your agent name
+
+Example:
+```json
+[
+  {{"severity": "major", "file": "src/foo.py", "line": 42, "claim": "unchecked return value",
+    "evidence": "the diff ignores the result of write()", "suggested_fix": "raise on failure",
+    "confidence": "high", "reviewer": "{name}"}}
+]
+```
+If you found nothing blocking, emit an empty array: ```json
+[]
+```
+
 === PR CONTEXT ===
 {context}
 

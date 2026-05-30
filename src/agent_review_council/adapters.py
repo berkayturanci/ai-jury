@@ -15,7 +15,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .config import AgentSpec
 
@@ -28,6 +28,8 @@ class AgentResult:
     output: str
     duration_s: float
     error: str | None = None
+    findings: list = field(default_factory=list)
+    warnings: list = field(default_factory=list)
 
 
 class Adapter:
@@ -123,7 +125,21 @@ class MockAdapter(Adapter):
             body = (
                 f"- **[major]** `src/example.py:42` — {n}: unchecked return value "
                 f"may swallow an error.\n"
-                f"- **[minor]** `src/example.py:7` — {n}: missing docstring."
+                f"- **[minor]** `src/example.py:7` — {n}: missing docstring.\n\n"
+                "```json\n"
+                "[\n"
+                '  {"severity": "major", "file": "src/example.py", "line": 42, '
+                f'"claim": "{n}: unchecked return value may swallow an error", '
+                '"evidence": "the added code ignores the return value of int(x)", '
+                '"suggested_fix": "check the result and raise on failure", '
+                f'"confidence": "high", "reviewer": "{n}"}},\n'
+                '  {"severity": "minor", "file": "src/example.py", "line": 7, '
+                f'"claim": "{n}: missing docstring", '
+                '"evidence": "the new function parse() has no docstring", '
+                '"suggested_fix": "add a one-line docstring", '
+                f'"confidence": "medium", "reviewer": "{n}"}}\n'
+                "]\n"
+                "```"
             )
         elif phase == "debate":
             body = (

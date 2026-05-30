@@ -75,7 +75,12 @@ def main(argv: list[str] | None = None) -> int:
         config, diff, context=context, mock=args.mock, strict=args.strict, log=log
     )
     report = render(
-        outcome.reviews, outcome.debate, outcome.synthesis, chair=outcome.chair
+        outcome.reviews,
+        outcome.debate,
+        outcome.synthesis,
+        chair=outcome.chair,
+        findings=outcome.findings,
+        warnings=outcome.warnings,
     )
 
     if args.output:

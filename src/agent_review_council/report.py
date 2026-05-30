@@ -2,10 +2,18 @@
 from __future__ import annotations
 
 from .adapters import AgentResult
+from .findings import SEVERITY_ORDER, Finding
 
 
 def _block(title: str, body: str) -> str:
     return f"### {title}\n\n{body.strip() or '_(no output)_'}\n"
+
+
+def _finding_line(f: Finding) -> str:
+    loc = f.file or "?"
+    if f.line is not None:
+        loc = f"{loc}:{f.line}"
+    return f"- [{f.severity}] {loc} — {f.claim} ({f.confidence}, by {f.reviewer})"
 
 
 def render(
@@ -14,7 +22,11 @@ def render(
     synthesis: AgentResult | None,
     *,
     chair: str,
+    findings: list[Finding] | None = None,
+    warnings: list[str] | None = None,
 ) -> str:
+    findings = findings or []
+    warnings = warnings or []
     lines: list[str] = []
     lines.append("# 🏛️ Agent Review Council\n")
 
@@ -30,6 +42,23 @@ def render(
         lines.append(f"_Synthesis failed: {synthesis.error}_\n")
 
     lines.append("---\n")
+    lines.append("## Structured findings\n")
+    if findings:
+        ranked = sorted(
+            findings, key=lambda f: (SEVERITY_ORDER.get(f.severity, 99), f.file, f.line or 0)
+        )
+        for f in ranked:
+            lines.append(_finding_line(f))
+        lines.append("")
+    else:
+        lines.append("_(no structured findings parsed)_\n")
+
+    if warnings:
+        lines.append("> ⚠️ agent output warnings\n")
+        for w in warnings:
+            lines.append(f"- {w}")
+        lines.append("")
+
     lines.append("## Round 1 — independent reviews\n")
     for r in reviews:
         status = f"{r.duration_s:.0f}s" if r.ok else f"⚠️ {r.error}"
