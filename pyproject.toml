@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-review-council"
+version = "0.1.0"
+description = "Cross-vendor multi-agent PR review council — orchestrate native coding-agent CLIs (Claude Code, Codex, Antigravity) to mutually review and debate the same pull request."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [{ name = "Berkay Turancı" }]
+keywords = ["code-review", "llm", "multi-agent", "claude-code", "codex", "antigravity", "orchestration"]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/berkayturanci/agent-review-council"
+
+[project.scripts]
+council = "agent_review_council.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

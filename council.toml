@@ -1,0 +1,45 @@
+# agent-review-council configuration
+#
+# Each [[agent]] wraps a native coding-agent CLI invoked in headless mode.
+# `command` must be resolvable on PATH (verified with shutil.which). Disabled or
+# unavailable agents are skipped with a warning unless --strict is passed.
+
+[council]
+# Number of rounds: 1 = independent review only, 2 = review + debate/rebuttal.
+rounds = 2
+# Agent that synthesizes the final verdict. Must match an [[agent]] name below.
+# If the named chair is unavailable, the first available agent is used.
+chair = "claude"
+# Per-agent wall-clock timeout in seconds (can be overridden per agent). A hung
+# CLI is killed at this bound and recorded as a failed review; the run continues.
+timeout = 300
+# Run agents concurrently within a round.
+parallel = true
+
+[[agent]]
+name = "claude"
+vendor = "anthropic"
+command = "claude"
+# model = "claude-opus-4-8"   # optional; omit to use the CLI default
+# Read-only review: --disallowed-tools removes mutating tools entirely, while
+# --dangerously-skip-permissions stops `-p` from blocking on a permission prompt
+# in non-interactive mode (the two combine: no mutations AND no hangs).
+extra_args = [
+    "--output-format", "text",
+    "--disallowed-tools", "Edit,Write,NotebookEdit,Bash",
+    "--dangerously-skip-permissions",
+]
+
+[[agent]]
+name = "codex"
+vendor = "openai"
+command = "codex"
+# model = "gpt-5-codex"
+extra_args = []
+
+[[agent]]
+name = "agy"
+vendor = "google"
+command = "agy"
+# Antigravity CLI; alias on interactive shells, real binary on PATH.
+extra_args = ["--dangerously-skip-permissions"]

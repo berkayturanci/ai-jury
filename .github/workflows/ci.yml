@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Run offline (mock) test suite
+        run: python -m unittest discover -s tests -v
+      - name: Smoke-test the CLI in mock mode
+        run: |
+          python -m agent_review_council --mock --diff-file examples/sample.diff -q \
+            | tee /tmp/report.md
+          grep -q "Agent Review Council" /tmp/report.md
+          grep -q "Chair verdict" /tmp/report.md
+        env:
+          PYTHONPATH: src
