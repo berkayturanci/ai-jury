@@ -107,6 +107,9 @@ verify/audit pass that re-reads code to kill false positives, JSON structurizer 
 tiered consensus (consensus / majority / individual), anonymized rebuttal to curb
 position bias, and severity-gated CI exit codes. See [`docs/architecture.md`](docs/architecture.md).
 
+The phased plan and how to pick up a session's worth of work is in [`ROADMAP.md`](ROADMAP.md);
+issues are tracked under [milestones](https://github.com/berkayturanci/agent-review-council/milestones).
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
