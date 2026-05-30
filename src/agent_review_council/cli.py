@@ -16,7 +16,7 @@ from pathlib import Path
 from . import __version__
 from .ci import evaluate_ci
 from .config import load_config
-from .github import post_pr_comment, pr_context, pr_diff
+from .github import post_inline_comments, post_pr_comment, pr_context, pr_diff
 from .orchestrator import run_council
 from .report import render
 
@@ -57,7 +57,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="skip the verification round",
     )
     p.add_argument("-o", "--output", help="write the report to a file instead of stdout")
-    p.add_argument("--post", action="store_true", help="post the report as a comment on --pr")
+    p.add_argument(
+        "--post-summary", "--post", dest="post_summary", action="store_true",
+        help="post the report as a single summary comment on --pr",
+    )
+    p.add_argument(
+        "--post-inline", dest="post_inline", action="store_true",
+        help="post inline review comments for located findings on --pr",
+    )
     p.add_argument(
         "--ci", action="store_true",
         help="CI mode: exit non-zero when blocking findings remain",
@@ -121,11 +128,17 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print(report)
 
-    if args.post:
+    if args.post_summary:
         if not args.pr:
-            raise SystemExit("error: --post requires --pr")
+            raise SystemExit("error: --post-summary requires --pr")
         post_pr_comment(args.pr, report, args.repo)
         log(f"posted verdict to PR #{args.pr}")
+
+    if args.post_inline:
+        if not args.pr:
+            raise SystemExit("error: --post-inline requires --pr")
+        post_inline_comments(args.pr, outcome.findings, repo=args.repo)
+        log(f"posted inline comments to PR #{args.pr}")
 
     return ci_exit
 
