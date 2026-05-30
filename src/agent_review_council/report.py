@@ -20,8 +20,16 @@ _BUCKET_LABELS = {
     "consensus": "Consensus (all reviewers)",
     "majority": "Majority",
     "single_reviewer": "Single reviewer",
+    "disputed": "Disputed (needs human decision)",
+    "rejected": "Rejected (unsupported by verifier)",
 }
-_BUCKET_ORDER = ["consensus", "majority", "single_reviewer"]
+_BUCKET_ORDER = ["consensus", "majority", "single_reviewer", "disputed", "rejected"]
+
+_STATUS_LABELS = {
+    "verified": "verified",
+    "unsupported": "unsupported",
+    "needs_human_decision": "needs human decision",
+}
 
 
 def _group_line(g) -> str:
@@ -31,6 +39,11 @@ def _group_line(g) -> str:
         loc = f"{loc}:{f.line}"
     reviewers = ", ".join(g.reviewers) if g.reviewers else "(unknown)"
     out = f"- [{g.severity}] {loc} — {f.claim} (reviewers: {reviewers})"
+    status = getattr(g, "status", "")
+    if status:
+        out += f"\n  - _verification:_ {_STATUS_LABELS.get(status, status)}"
+        if getattr(g, "status_reasoning", ""):
+            out += f" — {g.status_reasoning}"
     if f.suggested_fix:
         out += f"\n  - _fix:_ {f.suggested_fix}"
     return out
@@ -61,6 +74,7 @@ def render(
     findings: list[Finding] | None = None,
     warnings: list[str] | None = None,
     groups: list | None = None,
+    verify: AgentResult | None = None,
 ) -> str:
     findings = findings or []
     warnings = warnings or []
@@ -73,6 +87,15 @@ def render(
 
     if groups:
         lines.extend(_consensus_block(groups))
+        lines.append("---\n")
+
+    if verify is not None:
+        lines.append("## Verification\n")
+        lines.append(f"> Verified by `{chair}`\n")
+        if verify.ok:
+            lines.append(verify.output.strip() + "\n")
+        else:
+            lines.append(f"_Verification failed: {verify.error}_\n")
         lines.append("---\n")
 
     if synthesis and synthesis.ok:

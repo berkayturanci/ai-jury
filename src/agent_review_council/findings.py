@@ -14,6 +14,9 @@ from dataclasses import dataclass
 SEVERITIES: tuple[str, ...] = ("critical", "major", "minor", "nit", "info")
 CONFIDENCES: tuple[str, ...] = ("high", "medium", "low")
 
+# Verification verdict statuses (issue #3).
+VERDICT_STATUSES: tuple[str, ...] = ("verified", "unsupported", "needs_human_decision")
+
 # Lower number = more severe; useful for ranking/sorting.
 SEVERITY_ORDER: dict[str, int] = {sev: i for i, sev in enumerate(SEVERITIES)}
 
@@ -123,3 +126,78 @@ def parse_findings(text: str, reviewer: str) -> tuple[list[Finding], list[str]]:
             continue
         findings.append(Finding.from_obj(obj, reviewer))
     return findings, warnings
+
+
+def _coerce_line(value: object) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _normalize_status(value: object) -> str:
+    if isinstance(value, str):
+        v = value.strip().lower().replace("-", "_").replace(" ", "_")
+        if v in VERDICT_STATUSES:
+            return v
+    return "needs_human_decision"
+
+
+@dataclass
+class Verdict:
+    """A verifier's judgement on a candidate finding."""
+
+    file: str | None = None
+    line: int | None = None
+    claim: str = ""
+    status: str = "needs_human_decision"
+    reasoning: str = ""
+
+
+def parse_verdicts(text: str, verifier: str = "") -> tuple[list["Verdict"], list[str]]:
+    """Extract verification verdicts from a verifier's raw output.
+
+    The verifier is asked to emit a fenced ```json block holding a JSON array of
+    verdict objects. We locate the *last* such block and decode it. Never raises;
+    on malformed input returns ``([], [warning])``.
+    """
+    label = verifier or "verifier"
+    if not text:
+        return [], [f"{label}: no verdicts (empty output)"]
+
+    blocks = _JSON_BLOCK_RE.findall(text)
+    if not blocks:
+        return [], [f"{label}: no JSON verdicts block found"]
+
+    raw = blocks[-1].strip()
+    try:
+        data = json.loads(raw)
+    except (ValueError, TypeError) as exc:
+        return [], [f"{label}: malformed verdicts JSON ({exc})"]
+
+    if isinstance(data, dict):
+        data = data.get("verdicts", data.get("findings", []))
+    if not isinstance(data, list):
+        return [], [f"{label}: verdicts block is not a JSON array"]
+
+    verdicts: list[Verdict] = []
+    for obj in data:
+        if not isinstance(obj, dict):
+            continue
+        verdicts.append(
+            Verdict(
+                file=(obj.get("file") or None),
+                line=_coerce_line(obj.get("line")),
+                claim=str(obj.get("claim", "")).strip(),
+                status=_normalize_status(obj.get("status")),
+                reasoning=str(obj.get("reasoning", "")).strip(),
+            )
+        )
+    return verdicts, warnings_for(verdicts)
+
+
+def warnings_for(verdicts: list["Verdict"]) -> list[str]:
+    # Currently no per-verdict warnings; placeholder for symmetry/extension.
+    return []

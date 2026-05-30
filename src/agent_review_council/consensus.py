@@ -16,6 +16,9 @@ from .findings import Finding, SEVERITY_ORDER
 BUCKET_CONSENSUS = "consensus"
 BUCKET_MAJORITY = "majority"
 BUCKET_SINGLE = "single_reviewer"
+# Verification-derived buckets (issue #3).
+BUCKET_REJECTED = "rejected"
+BUCKET_DISPUTED = "disputed"
 
 # Line proximity threshold: findings within this many lines are treated as the
 # same location (when both have a line).
@@ -31,6 +34,9 @@ class FindingGroup:
     severity: str = "info"
     members: list[Finding] = field(default_factory=list)
     bucket: str = BUCKET_SINGLE
+    # Verification status (issue #3); empty until a verdict is attached.
+    status: str = ""
+    status_reasoning: str = ""
 
 
 def _normalize_path(path) -> str:

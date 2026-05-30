@@ -148,6 +148,24 @@ class MockAdapter(Adapter):
                 f"## DISPUTE\n- {n}: the missing-docstring finding is a nit, not blocking.\n"
                 f"## MISSED\n- {n}: no test covers the error branch."
             )
+        elif phase == "verify":
+            body = (
+                "Verification: confirming the unchecked-return finding at "
+                "`src/example.py:42`; the missing-docstring claim at `:7` is a nit "
+                "not supported as blocking.\n\n"
+                "```json\n"
+                "[\n"
+                '  {"file": "src/example.py", "line": 42, '
+                '"claim": "unchecked return value may swallow an error", '
+                '"status": "verified", '
+                '"reasoning": "the added code ignores the return value of int(x)"},\n'
+                '  {"file": "src/example.py", "line": 7, '
+                '"claim": "missing docstring", '
+                '"status": "unsupported", '
+                '"reasoning": "a missing docstring is not a defect the diff introduces"}\n'
+                "]\n"
+                "```"
+            )
         else:  # synthesis
             body = (
                 "## Verdict\nREQUEST CHANGES — one confirmed major issue.\n\n"

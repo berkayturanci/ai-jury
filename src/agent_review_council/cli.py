@@ -47,6 +47,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--chair", help="override the synthesizing chair agent")
     p.add_argument("--mock", action="store_true", help="offline demo: use deterministic mock agents")
     p.add_argument("--strict", action="store_true", help="fail if any configured agent CLI is missing")
+    p.add_argument(
+        "--verify", dest="verify", action="store_true", default=None,
+        help="run the verification round (default: from config)",
+    )
+    p.add_argument(
+        "--no-verify", dest="verify", action="store_false",
+        help="skip the verification round",
+    )
     p.add_argument("-o", "--output", help="write the report to a file instead of stdout")
     p.add_argument("--post", action="store_true", help="post the report as a comment on --pr")
     p.add_argument("-q", "--quiet", action="store_true", help="suppress progress logs on stderr")
@@ -62,6 +70,8 @@ def main(argv: list[str] | None = None) -> int:
         config.rounds = args.rounds
     if args.chair:
         config.chair = args.chair
+    if args.verify is not None:
+        config.verify = args.verify
 
     def log(msg: str) -> None:
         if not args.quiet:
@@ -82,6 +92,7 @@ def main(argv: list[str] | None = None) -> int:
         findings=outcome.findings,
         warnings=outcome.warnings,
         groups=outcome.groups,
+        verify=outcome.verify,
     )
 
     if args.output:
