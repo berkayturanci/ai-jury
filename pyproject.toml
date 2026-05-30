@@ -8,16 +8,46 @@ version = "0.1.0"
 description = "Cross-vendor multi-agent PR review council — orchestrate native coding-agent CLIs (Claude Code, Codex, Antigravity) to mutually review and debate the same pull request."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { file = "LICENSE" }
+license = "MIT"
 authors = [{ name = "Berkay Turancı" }]
 keywords = ["code-review", "llm", "multi-agent", "claude-code", "codex", "antigravity", "orchestration"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Software Development :: Version Control :: Git",
+    "Topic :: Utilities",
+]
 dependencies = []
 
 [project.urls]
 Homepage = "https://github.com/berkayturanci/agent-review-council"
+Issues = "https://github.com/berkayturanci/agent-review-council/issues"
+Changelog = "https://github.com/berkayturanci/agent-review-council/blob/main/CHANGELOG.md"
 
 [project.scripts]
 council = "agent_review_council.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "A", "C4", "RET", "SIM", "ARG", "PTH"]
+ignore = ["E501"]
+exclude = [
+    ".git",
+    "build",
+    "dist",
+    "venv",
+    "__pycache__",
+]

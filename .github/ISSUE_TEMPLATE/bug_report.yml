@@ -1,0 +1,51 @@
+name: Bug Report
+description: Report a reproducible bug in agent-review-council
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened?
+      placeholder: Describe the bug.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Provide the exact command and minimal inputs needed to reproduce the issue.
+      placeholder: |
+        1. Run `council ...`
+        2. See error `...`
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: |
+        - OS:
+        - Python version:
+        - agent-review-council version:
+        - Installed agent CLIs:
+        - Does `--mock` reproduce it?
+    validations:
+      required: true
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues first.
+          required: true
+        - label: I removed secrets, tokens, and private repository data from logs.
+          required: true

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
 from . import __version__
 from .config import load_config
@@ -26,7 +27,7 @@ def _read_diff(args) -> tuple[str, str]:
     if args.diff_file:
         if args.diff_file == "-":
             return sys.stdin.read(), ""
-        with open(args.diff_file, encoding="utf-8") as fh:
+        with Path(args.diff_file).open(encoding="utf-8") as fh:
             return fh.read(), ""
     raise SystemExit("error: provide one of --pr, --diff-file (or --diff-file - for stdin)")
 
@@ -78,7 +79,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     if args.output:
-        with open(args.output, "w", encoding="utf-8") as fh:
+        with Path(args.output).open("w", encoding="utf-8") as fh:
             fh.write(report + "\n")
         log(f"report written to {args.output}")
     else:

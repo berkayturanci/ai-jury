@@ -5,11 +5,11 @@ No third-party dependencies, no live CLIs, no network.
 """
 from __future__ import annotations
 
-import os
 import sys
 import unittest
+from pathlib import Path
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from agent_review_council.config import DEFAULT_CONFIG, CouncilConfig, _from_dict  # noqa: E402
 from agent_review_council.orchestrator import run_council  # noqa: E402

@@ -47,6 +47,7 @@ class Adapter:
         raise NotImplementedError
 
     def run(self, prompt: str, phase: str = "review") -> AgentResult:
+        del phase
         if not self.available():
             return AgentResult(
                 self.name, self.spec.vendor, False, "",
@@ -116,6 +117,7 @@ class MockAdapter(Adapter):
         return True
 
     def run(self, prompt: str, phase: str = "review") -> AgentResult:
+        del prompt
         n = self.name
         if phase == "review":
             body = (
