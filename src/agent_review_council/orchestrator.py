@@ -7,11 +7,12 @@ independent, IO-bound subprocess.
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from . import prompts
 from .adapters import Adapter, AgentResult, make_adapter
 from .config import CouncilConfig
+from .findings import Finding, parse_findings
 
 
 @dataclass
@@ -20,6 +21,8 @@ class CouncilOutcome:
     debate: list[AgentResult]
     synthesis: AgentResult | None
     chair: str
+    findings: list[Finding] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
 
 def _run_phase(
@@ -78,6 +81,18 @@ def run_council(
     }
     reviews = _run_phase(usable, review_prompt, "review", config.parallel)
 
+    # Parse structured findings from each successful review and aggregate them.
+    all_findings: list[Finding] = []
+    all_warnings: list[str] = []
+    for r in reviews:
+        if not r.ok:
+            continue
+        found, warns = parse_findings(r.output, r.agent)
+        r.findings = found
+        r.warnings = warns
+        all_findings.extend(found)
+        all_warnings.extend(warns)
+
     # Round 2: debate (only agents whose round-1 succeeded participate).
     debate: list[AgentResult] = []
     if config.rounds >= 2:
@@ -101,7 +116,14 @@ def run_council(
     # Synthesis: the chair consolidates.
     synthesis = _synthesize(config, usable, reviews, debate, diff, log)
 
-    return CouncilOutcome(reviews=reviews, debate=debate, synthesis=synthesis, chair=_chair_name(config, usable))
+    return CouncilOutcome(
+        reviews=reviews,
+        debate=debate,
+        synthesis=synthesis,
+        chair=_chair_name(config, usable),
+        findings=all_findings,
+        warnings=all_warnings,
+    )
 
 
 def _chair_name(config: CouncilConfig, usable: list[Adapter]) -> str:

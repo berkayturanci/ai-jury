@@ -68,6 +68,34 @@ class CouncilPipelineTest(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             run_council(cfg, SAMPLE_DIFF, mock=True)
 
+    def test_mock_pipeline_produces_structured_findings(self):
+        outcome = run_council(_config(), SAMPLE_DIFF, mock=True)
+        # Aggregated on the outcome: 2 findings per reviewer x 3 reviewers.
+        self.assertGreaterEqual(len(outcome.findings), 1)
+        self.assertEqual(len(outcome.findings), 6)
+        self.assertEqual(outcome.warnings, [])
+        # Findings attached to each review, reviewer preserved.
+        for r in outcome.reviews:
+            self.assertTrue(r.findings)
+            for f in r.findings:
+                self.assertEqual(f.reviewer, r.agent)
+        severities = {f.severity for f in outcome.findings}
+        self.assertIn("major", severities)
+
+    def test_report_contains_structured_findings_section(self):
+        outcome = run_council(_config(), SAMPLE_DIFF, mock=True)
+        report = render(
+            outcome.reviews,
+            outcome.debate,
+            outcome.synthesis,
+            chair=outcome.chair,
+            findings=outcome.findings,
+            warnings=outcome.warnings,
+        )
+        self.assertIn("Structured findings", report)
+        self.assertIn("[major]", report)
+        self.assertIn("src/example.py:42", report)
+
 
 if __name__ == "__main__":
     unittest.main()
