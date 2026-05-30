@@ -78,6 +78,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="post inline review comments for located findings on --pr",
     )
     p.add_argument(
+        "--dry-run", dest="dry_run", action="store_true",
+        help="with --post-inline, print what would be posted without calling GitHub",
+    )
+    p.add_argument(
         "--ci", action="store_true",
         help="CI mode: exit non-zero when blocking findings remain",
     )
@@ -156,7 +160,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.post_inline:
         if not args.pr:
             raise SystemExit("error: --post-inline requires --pr")
-        post_inline_comments(args.pr, outcome.findings, repo=args.repo)
+        post_inline_comments(args.pr, outcome.findings, repo=args.repo, dry_run=args.dry_run)
         log(f"posted inline comments to PR #{args.pr}")
 
     return ci_exit
