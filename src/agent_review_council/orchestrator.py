@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from . import prompts
 from .adapters import Adapter, AgentResult, make_adapter
 from .config import CouncilConfig
+from .consensus import FindingGroup, group_findings
 from .findings import Finding, parse_findings
 
 
@@ -23,6 +24,7 @@ class CouncilOutcome:
     chair: str
     findings: list[Finding] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    groups: list[FindingGroup] = field(default_factory=list)
 
 
 def _run_phase(
@@ -93,6 +95,9 @@ def run_council(
         all_findings.extend(found)
         all_warnings.extend(warns)
 
+    # Deterministic consensus grouping across reviewers.
+    groups = group_findings(all_findings, len(reviews))
+
     # Round 2: debate (only agents whose round-1 succeeded participate).
     debate: list[AgentResult] = []
     if config.rounds >= 2:
@@ -123,6 +128,7 @@ def run_council(
         chair=_chair_name(config, usable),
         findings=all_findings,
         warnings=all_warnings,
+        groups=groups,
     )
 
 

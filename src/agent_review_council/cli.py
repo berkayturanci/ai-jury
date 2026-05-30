@@ -81,6 +81,7 @@ def main(argv: list[str] | None = None) -> int:
         chair=outcome.chair,
         findings=outcome.findings,
         warnings=outcome.warnings,
+        groups=outcome.groups,
     )
 
     if args.output:
