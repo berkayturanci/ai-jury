@@ -17,6 +17,7 @@ DEFAULT_CONFIG: dict = {
         "parallel": True,
         "verify": True,
         "ci": {"fail_on": ["critical", "major"], "ignore_unverified": True},
+        "context": {"mode": "diff-only", "redact_secrets": True},
     },
     "agent": [
         {
@@ -59,6 +60,12 @@ class CiConfig:
 
 
 @dataclass
+class ContextConfig:
+    mode: str = "diff-only"  # "diff-only" or "expanded"
+    redact_secrets: bool = True
+
+
+@dataclass
 class CouncilConfig:
     rounds: int = 2
     chair: str = "claude"
@@ -67,6 +74,7 @@ class CouncilConfig:
     verify: bool = True
     agents: list[AgentSpec] = field(default_factory=list)
     ci: CiConfig = field(default_factory=CiConfig)
+    context: ContextConfig = field(default_factory=ContextConfig)
 
     @property
     def enabled_agents(self) -> list[AgentSpec]:
@@ -82,6 +90,13 @@ def _ci_from_dict(data: dict) -> CiConfig:
         fail_on=fail_on,
         ignore_unverified=bool(data.get("ignore_unverified", True)),
     )
+
+
+def _context_from_dict(data: dict) -> ContextConfig:
+    mode = str(data.get("mode", "diff-only")).strip().lower()
+    if mode not in ("diff-only", "expanded"):
+        mode = "diff-only"
+    return ContextConfig(mode=mode, redact_secrets=bool(data.get("redact_secrets", True)))
 
 
 def _from_dict(data: dict) -> CouncilConfig:
@@ -108,6 +123,7 @@ def _from_dict(data: dict) -> CouncilConfig:
         verify=bool(council.get("verify", True)),
         agents=agents,
         ci=_ci_from_dict(council.get("ci", {})),
+        context=_context_from_dict(council.get("context", {})),
     )
 
 
