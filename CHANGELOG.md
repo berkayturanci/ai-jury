@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Public CLI compatibility contract: `tests/test_cli_contract.py` locks the
+  CLI's flags, `--help` text (width/color-pinned golden under `tests/golden/`),
+  error messages, exit codes, and report headings, with a documented stability
+  policy in the README. **Breaking changes to these surfaces require a
+  CHANGELOG entry.**
+
 - Multi-version, multi-OS CI test matrix (Python 3.11–3.13 on Linux; 3.13 on
   macOS and Windows) covering unit tests and the mock CLI smoke test.
 - OpenSSF Scorecard, CodeQL (Python), and Dependabot automation for supply-chain

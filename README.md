@@ -213,6 +213,44 @@ The Codex adapter pipes the prompt on **stdin** (`codex exec` with no positional
 
 Want tighter sandboxing? Override `extra_args` for the `codex` agent in `council.toml` (e.g. a narrower `-s` mode). See [docs/security.md](docs/security.md) for details.
 
+## CLI compatibility contract
+
+The `council` command is this project's public API. The surfaces below are
+**stable** and are locked by `tests/test_cli_contract.py` (including a
+width/color-pinned snapshot of `council --help` under `tests/golden/`) so
+accidental changes are caught in review.
+
+**Stable flags** (names, short aliases, and semantics):
+`--pr`, `--repo`, `--diff-file`, `--config`,
+`--context-mode {diff-only,expanded}`, `--redact` / `--no-redact`, `--rounds`,
+`--chair`, `--mock`, `--strict`, `--verify` / `--no-verify`, `-o` / `--output`,
+`--post-summary` / `--post`, `--post-inline`, `--dry-run`, `--ci`, `--fail-on`,
+`-q` / `--quiet`, `--version`, `-h` / `--help`.
+
+**Stable error messages and exit codes:**
+
+| Condition | Behavior |
+| --- | --- |
+| No input source given | exits non-zero with `error: provide one of --pr, --diff-file (or --diff-file - for stdin)` |
+| Empty diff | exits non-zero with `error: empty diff — nothing to review` |
+| `--post-summary` without `--pr` | exits non-zero with `error: --post-summary requires --pr` |
+| `--post-inline` without `--pr` | exits non-zero with `error: --post-inline requires --pr` |
+| Unknown flag / bad arguments | argparse exits with code `2` |
+| `--version` | prints `council <version>` and exits `0` |
+| Successful review (no `--ci`) | exits `0` |
+| `--ci` with blocking findings remaining | exits non-zero (see `ci.evaluate_ci`) |
+
+**Stable report headings** (substrings other tooling may parse):
+`Agent Review Council`, `Chair verdict`, `Round 1` (and subsequent `Round N`).
+
+**Policy:** Any breaking change to the surfaces above — renaming or removing a
+flag, changing an error message or exit code, or altering a report heading —
+**requires a `CHANGELOG.md` entry** describing the break. When the change is
+intentional, regenerate the help snapshot with
+`UPDATE_GOLDEN=1 PYTHONPATH=src python3 -m unittest tests.test_cli_contract`.
+The help-snapshot exact match is pinned to Python 3.13 argparse formatting; the
+flag-presence checks run on all supported versions (3.11–3.13).
+
 ## Documentation
 
 - [Positioning](docs/positioning.md) — mission, what makes it different, principles, and non-goals.

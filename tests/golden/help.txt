@@ -1,0 +1,43 @@
+usage: council [-h] [--pr PR] [--repo REPO] [--diff-file DIFF_FILE]
+               [--config CONFIG] [--context-mode {diff-only,expanded}]
+               [--redact] [--no-redact] [--rounds ROUNDS] [--chair CHAIR]
+               [--mock] [--strict] [--verify] [--no-verify] [-o OUTPUT]
+               [--post-summary] [--post-inline] [--dry-run] [--ci]
+               [--fail-on FAIL_ON] [-q] [--version]
+
+Cross-vendor multi-agent PR review council.
+
+options:
+  -h, --help            show this help message and exit
+  --config CONFIG       path to council.toml (default: ./council.toml or
+                        built-in)
+  --context-mode {diff-only,expanded}
+                        context policy: diff-only sends only the diff;
+                        expanded includes PR context
+  --redact              redact secrets from prompt text before sending
+                        (default: from config)
+  --no-redact           do not redact secrets before sending
+  --rounds ROUNDS       override number of rounds (1=review, 2=+debate)
+  --chair CHAIR         override the synthesizing chair agent
+  --mock                offline demo: use deterministic mock agents
+  --strict              fail if any configured agent CLI is missing
+  --verify              run the verification round (default: from config)
+  --no-verify           skip the verification round
+  -o, --output OUTPUT   write the report to a file instead of stdout
+  --post-summary, --post
+                        post the report as a single summary comment on --pr
+  --post-inline         post inline review comments for located findings on
+                        --pr
+  --dry-run             with --post-inline, print what would be posted without
+                        calling GitHub
+  --ci                  CI mode: exit non-zero when blocking findings remain
+  --fail-on FAIL_ON     comma-separated severities that fail CI (overrides
+                        config)
+  -q, --quiet           suppress progress logs on stderr
+  --version             show program's version number and exit
+
+input:
+  --pr PR               GitHub PR number/URL to review (uses `gh`)
+  --repo REPO           owner/name for --pr (defaults to current repo)
+  --diff-file DIFF_FILE
+                        path to a diff file, or '-' for stdin
