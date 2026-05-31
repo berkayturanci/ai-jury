@@ -9,6 +9,12 @@ def _block(title: str, body: str) -> str:
     return f"### {title}\n\n{body.strip() or '_(no output)_'}\n"
 
 
+def _fail_status(r: AgentResult) -> str:
+    """Failed-agent status line with a concise typed-error-code prefix."""
+    prefix = f"[{r.error_code}] " if getattr(r, "error_code", None) else ""
+    return f"⚠️ {prefix}{r.error}"
+
+
 def _finding_line(f: Finding) -> str:
     loc = f.file or "?"
     if f.line is not None:
@@ -139,13 +145,13 @@ def render(
 
     lines.append("## Round 1 — independent reviews\n")
     for r in reviews:
-        status = f"{r.duration_s:.0f}s" if r.ok else f"⚠️ {r.error}"
+        status = f"{r.duration_s:.0f}s" if r.ok else _fail_status(r)
         lines.append(_block(f"`{r.agent}` ({r.vendor}) — {status}", r.output if r.ok else ""))
 
     if debate:
         lines.append("## Round 2 — cross-examination\n")
         for r in debate:
-            status = f"{r.duration_s:.0f}s" if r.ok else f"⚠️ {r.error}"
+            status = f"{r.duration_s:.0f}s" if r.ok else _fail_status(r)
             lines.append(_block(f"`{r.agent}` — {status}", r.output if r.ok else ""))
 
     lines.append("---")

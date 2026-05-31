@@ -19,6 +19,49 @@ from dataclasses import dataclass, field
 
 from .config import AgentSpec
 
+# Stable, typed error taxonomy for failed agent executions. These codes let
+# reports and CI/policy distinguish retryable from non-retryable failures
+# instead of pattern-matching free-text error strings.
+ERR_MISSING_CLI = "missing_cli"
+ERR_AUTH_REQUIRED = "auth_required"
+ERR_PERMISSION_PROMPT = "permission_prompt"
+ERR_TIMEOUT = "timeout"
+ERR_NONZERO_EXIT = "nonzero_exit"
+ERR_EMPTY_OUTPUT = "empty_output"
+ERR_SPAWN_FAILED = "spawn_failed"
+ERR_RATE_LIMITED = "rate_limited"
+ERR_UNKNOWN = "unknown"
+
+ERROR_CODES = frozenset({
+    ERR_MISSING_CLI,
+    ERR_AUTH_REQUIRED,
+    ERR_PERMISSION_PROMPT,
+    ERR_TIMEOUT,
+    ERR_NONZERO_EXIT,
+    ERR_EMPTY_OUTPUT,
+    ERR_SPAWN_FAILED,
+    ERR_RATE_LIMITED,
+    ERR_UNKNOWN,
+})
+
+
+def classify_stderr(returncode: int, stderr: str) -> str:
+    """Classify a nonzero-exit failure into a typed error code from its stderr.
+
+    Heuristic substring matching against the lowercased stderr; ordering matters
+    (auth and rate-limit signals are checked before the generic permission and
+    nonzero-exit fallbacks). Returns one of the ``ERR_*`` codes.
+    """
+    text = (stderr or "").lower()
+    if any(s in text for s in ("not authenticated", "unauthorized", "api key", "auth", "login")):
+        return ERR_AUTH_REQUIRED
+    if any(s in text for s in ("rate limit", "429", "quota")):
+        return ERR_RATE_LIMITED
+    if any(s in text for s in ("permission", "approve", "confirm")):
+        return ERR_PERMISSION_PROMPT
+    del returncode
+    return ERR_NONZERO_EXIT
+
 
 @dataclass
 class AgentResult:
@@ -30,6 +73,7 @@ class AgentResult:
     error: str | None = None
     findings: list = field(default_factory=list)
     warnings: list = field(default_factory=list)
+    error_code: str | None = None
 
 
 class Adapter:
@@ -59,6 +103,7 @@ class Adapter:
             return AgentResult(
                 self.name, self.spec.vendor, False, "",
                 0.0, f"command not found on PATH: {self.spec.command}",
+                error_code=ERR_MISSING_CLI,
             )
         argv = self.build_argv(prompt)
         stdin = self._stdin_for(prompt)
@@ -75,18 +120,29 @@ class Adapter:
             return AgentResult(
                 self.name, self.spec.vendor, False, "",
                 time.monotonic() - start, f"timed out after {self.spec.timeout}s",
+                error_code=ERR_TIMEOUT,
             )
         except Exception as exc:  # noqa: BLE001 - surface any spawn failure
             return AgentResult(
                 self.name, self.spec.vendor, False, "",
                 time.monotonic() - start, f"spawn failed: {exc}",
+                error_code=ERR_SPAWN_FAILED,
             )
         dur = time.monotonic() - start
         out = (proc.stdout or "").strip()
         if proc.returncode != 0 and not out:
+            stderr = (proc.stderr or "").strip()
             return AgentResult(
                 self.name, self.spec.vendor, False, "",
-                dur, f"exit {proc.returncode}: {(proc.stderr or '').strip()[:500]}",
+                dur, f"exit {proc.returncode}: {stderr[:500]}",
+                error_code=classify_stderr(proc.returncode, stderr),
+            )
+        if not out:
+            # Exit 0 but nothing on stdout: the agent produced no usable review.
+            return AgentResult(
+                self.name, self.spec.vendor, False, "",
+                dur, f"exit {proc.returncode}: empty output",
+                error_code=ERR_EMPTY_OUTPUT,
             )
         return AgentResult(self.name, self.spec.vendor, True, out, dur)
 
