@@ -73,7 +73,14 @@ class CouncilPipelineTest(unittest.TestCase):
         # Aggregated on the outcome: 2 findings per reviewer x 3 reviewers.
         self.assertGreaterEqual(len(outcome.findings), 1)
         self.assertEqual(len(outcome.findings), 6)
-        self.assertEqual(outcome.warnings, [])
+        # No finding-parser warnings on clean mock output. (Least-privilege
+        # advisories about the default codex/agy config may be present and are
+        # asserted separately in LeastPrivilegeAuditTest.)
+        parser_warnings = [
+            w for w in outcome.warnings
+            if "structured findings" in w or "verdicts" in w
+        ]
+        self.assertEqual(parser_warnings, [])
         # Findings attached to each review, reviewer preserved.
         for r in outcome.reviews:
             self.assertTrue(r.findings)
