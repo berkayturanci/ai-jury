@@ -4,7 +4,8 @@ The ``--doctor`` command reports local readiness and common configuration
 problems. Its output is intentionally SAFE to share:
 
 - It includes tool/Python/OS versions, a redacted config summary, agent
-  availability (which agent CLIs are on PATH), and detected config warnings.
+  availability (which agent CLIs are on PATH), each agent's detected CLI
+  version and capability summary, and detected config warnings.
 - It NEVER includes the raw diff under review or any agent output.
 - Secret-like values in the config summary are redacted via
   :func:`agent_review_council.redaction.redact`.
@@ -22,6 +23,7 @@ import tomllib
 from pathlib import Path
 
 from . import __version__
+from .adapters import make_adapter
 from .config import load_config
 from .redaction import redact
 
@@ -37,12 +39,42 @@ def _redact_value(value):
     return value
 
 
+def _detect_capabilities(spec):
+    """Best-effort capability/version probe for one agent spec.
+
+    Uses the real adapter (NOT the mock) so doctor reports actual installed
+    versions, but guards against any failure: an unavailable CLI just reports
+    ``status="unavailable"`` and a crashing probe degrades to ``unknown_version``.
+    This must stay fast (short subprocess timeout) and never crash doctor.
+    """
+    try:
+        adapter = make_adapter(spec)
+        return adapter.detect_capabilities()
+    except Exception as exc:  # noqa: BLE001 - diagnostics must never crash
+        return {
+            "version": None,
+            "supports_headless": None,
+            "supports_model_selection": None,
+            "raw_version_output": "",
+            "status": "unknown_version",
+            "warnings": [f"capability probe raised: {exc}"],
+        }
+
+
 def _agent_entry(spec):
+    caps = _detect_capabilities(spec)
     return {
         "name": _redact_value(spec.name),
         "command": _redact_value(spec.command),
         "vendor": _redact_value(spec.vendor),
         "available": shutil.which(spec.command) is not None,
+        "version": _redact_value(caps.get("version")),
+        "capabilities": {
+            "supports_headless": caps.get("supports_headless"),
+            "supports_model_selection": caps.get("supports_model_selection"),
+            "status": caps.get("status"),
+        },
+        "capability_warnings": [_redact_value(w) for w in caps.get("warnings", [])],
     }
 
 
@@ -102,6 +134,17 @@ def build_diagnostics(config_path=None):
         config_summary = _config_summary(cfg)
         agents = [_agent_entry(spec) for spec in cfg.agents]
         config_warnings = _detect_warnings(cfg)
+        # Fold capability/version probe warnings (e.g. an available CLI whose
+        # version could not be detected) into the user-facing warnings list.
+        # Probes already ran while building the agent entries above.
+        enabled_names = {a.name for a in cfg.enabled_agents}
+        for spec, entry in zip(cfg.agents, agents, strict=False):
+            if spec.name not in enabled_names:
+                continue
+            for warning in entry.get("capability_warnings", []):
+                config_warnings.append(
+                    f"agent '{entry['name']}': {warning}"
+                )
 
     return {
         "tool_version": __version__,
@@ -142,6 +185,19 @@ def render_report(diagnostics) -> str:
             lines.append(
                 f"  [{status:>9}] {agent['name']} "
                 f"(vendor={agent['vendor']}, command={agent['command']})"
+            )
+            version = agent.get("version") or "unknown"
+            caps = agent.get("capabilities") or {}
+            cap_bits = []
+            if caps.get("supports_headless"):
+                cap_bits.append("headless")
+            if caps.get("supports_model_selection"):
+                cap_bits.append("model-selection")
+            cap_summary = ", ".join(cap_bits) or "none"
+            cap_status = caps.get("status") or "unknown"
+            lines.append(
+                f"              version={version}, capabilities=[{cap_summary}] "
+                f"(probe: {cap_status})"
             )
     lines.append("")
 

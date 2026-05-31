@@ -196,5 +196,126 @@ class RenderReportTests(unittest.TestCase):
         self.assertIn("no telemetry", report.lower())
 
 
+class CapabilityDiagnosticsTests(unittest.TestCase):
+    """Version + capability detection surfaced through doctor.
+
+    Detection is exercised with FAKE CLIs by stubbing ``doctor.make_adapter`` so
+    no real ``claude``/``codex``/``agy`` binary is ever invoked.
+    """
+
+    def _stub_make_adapter(self, caps_by_name):
+        """Patch doctor.make_adapter to return a fake adapter per spec."""
+        orig = doctor.make_adapter
+
+        class _FakeAdapter:
+            def __init__(self, spec, caps):
+                self.spec = spec
+                self._caps = caps
+
+            def detect_capabilities(self):
+                return self._caps
+
+        def _factory(spec, mock=False):
+            caps = caps_by_name.get(
+                spec.name,
+                {
+                    "version": "1.0.0",
+                    "supports_headless": True,
+                    "supports_model_selection": True,
+                    "raw_version_output": "1.0.0",
+                    "status": "ok",
+                    "warnings": [],
+                },
+            )
+            return _FakeAdapter(spec, caps)
+
+        doctor.make_adapter = _factory
+        self.addCleanup(lambda: setattr(doctor, "make_adapter", orig))
+
+    def test_diagnostics_include_version_and_capabilities(self):
+        self._stub_make_adapter(
+            {
+                "claude": {
+                    "version": "1.2.3",
+                    "supports_headless": True,
+                    "supports_model_selection": True,
+                    "raw_version_output": "claude 1.2.3",
+                    "status": "ok",
+                    "warnings": [],
+                }
+            }
+        )
+        path = _write_config(VALID_CONFIG)
+        self.addCleanup(os.unlink, path)
+        diag = doctor.build_diagnostics(path)
+
+        by_name = {a["name"]: a for a in diag["agents"]}
+        self.assertEqual(by_name["claude"]["version"], "1.2.3")
+        self.assertIn("capabilities", by_name["claude"])
+        caps = by_name["claude"]["capabilities"]
+        self.assertTrue(caps["supports_headless"])
+        self.assertTrue(caps["supports_model_selection"])
+        self.assertEqual(caps["status"], "ok")
+
+    def test_undetectable_version_warns_but_still_renders(self):
+        self._stub_make_adapter(
+            {
+                "claude": {
+                    "version": None,
+                    "supports_headless": True,
+                    "supports_model_selection": True,
+                    "raw_version_output": "",
+                    "status": "unknown_version",
+                    "warnings": ["could not determine version of 'claude'"],
+                }
+            }
+        )
+        path = _write_config(VALID_CONFIG)
+        self.addCleanup(os.unlink, path)
+        diag = doctor.build_diagnostics(path)
+
+        # A capability warning is folded into config_warnings for the enabled agent.
+        self.assertTrue(
+            any("could not determine version" in w for w in diag["config_warnings"]),
+            diag["config_warnings"],
+        )
+        # Doctor still renders without raising.
+        report = doctor.render_report(diag)
+        self.assertIn("council doctor", report)
+        self.assertIn("version=unknown", report)
+
+    def test_disabled_agent_capability_warnings_not_surfaced(self):
+        # The codex agent is disabled in VALID_CONFIG; its warnings should not
+        # clutter the top-level warnings list.
+        self._stub_make_adapter(
+            {
+                "codex": {
+                    "version": None,
+                    "supports_headless": True,
+                    "supports_model_selection": True,
+                    "raw_version_output": "",
+                    "status": "unknown_version",
+                    "warnings": ["could not determine version of 'codex'"],
+                }
+            }
+        )
+        path = _write_config(VALID_CONFIG)
+        self.addCleanup(os.unlink, path)
+        diag = doctor.build_diagnostics(path)
+        self.assertFalse(
+            any("could not determine version of 'codex'" in w for w in diag["config_warnings"]),
+            diag["config_warnings"],
+        )
+
+    def test_render_shows_capability_summary(self):
+        self._stub_make_adapter({})
+        path = _write_config(VALID_CONFIG)
+        self.addCleanup(os.unlink, path)
+        diag = doctor.build_diagnostics(path)
+        report = doctor.render_report(diag)
+        self.assertIn("capabilities=[", report)
+        self.assertIn("headless", report)
+
+
 if __name__ == "__main__":
     unittest.main()
