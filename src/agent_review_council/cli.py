@@ -14,6 +14,7 @@ import sys
 from pathlib import Path
 
 from . import __version__
+from .ci import evaluate_ci
 from .config import load_config
 from .github import post_pr_comment, pr_context, pr_diff
 from .orchestrator import run_council
@@ -57,6 +58,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("-o", "--output", help="write the report to a file instead of stdout")
     p.add_argument("--post", action="store_true", help="post the report as a comment on --pr")
+    p.add_argument(
+        "--ci", action="store_true",
+        help="CI mode: exit non-zero when blocking findings remain",
+    )
+    p.add_argument(
+        "--fail-on",
+        help="comma-separated severities that fail CI (overrides config)",
+    )
     p.add_argument("-q", "--quiet", action="store_true", help="suppress progress logs on stderr")
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return p
@@ -95,6 +104,16 @@ def main(argv: list[str] | None = None) -> int:
         verify=outcome.verify,
     )
 
+    ci_exit = 0
+    if args.ci:
+        fail_on = config.ci.fail_on
+        if args.fail_on:
+            fail_on = [s.strip().lower() for s in args.fail_on.split(",") if s.strip()]
+        ci_exit, ci_reason = evaluate_ci(
+            outcome.groups, fail_on, config.ci.ignore_unverified
+        )
+        report += f"\n\n## CI gate\n\n{ci_reason}\n"
+
     if args.output:
         with Path(args.output).open("w", encoding="utf-8") as fh:
             fh.write(report + "\n")
@@ -108,7 +127,7 @@ def main(argv: list[str] | None = None) -> int:
         post_pr_comment(args.pr, report, args.repo)
         log(f"posted verdict to PR #{args.pr}")
 
-    return 0
+    return ci_exit
 
 
 if __name__ == "__main__":
