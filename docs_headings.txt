@@ -1,6 +1,0 @@
-8:## Components
-26:## Round structure
-41:## Adapters
-58:## Design decisions
-69:## Supported platforms
-90:## Roadmap
