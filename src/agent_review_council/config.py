@@ -51,6 +51,173 @@ DEFAULT_CONFIG: dict = {
 }
 
 
+KNOWN_VENDORS = ("anthropic", "openai", "google")
+
+KNOWN_TOP_LEVEL_KEYS = ("council", "agent")
+KNOWN_COUNCIL_KEYS = (
+    "rounds",
+    "chair",
+    "timeout",
+    "parallel",
+    "verify",
+    "ci",
+    "context",
+)
+KNOWN_AGENT_KEYS = (
+    "name",
+    "vendor",
+    "command",
+    "model",
+    "timeout",
+    "enabled",
+    "extra_args",
+)
+
+
+class ConfigError(Exception):
+    """Raised when a council configuration is invalid."""
+
+
+def validate_config(data: dict, strict: bool = False) -> list:
+    """Validate a raw config dict.
+
+    Raises ``ConfigError`` with an actionable message on hard-invalid input
+    (rounds < 1, timeout <= 0, duplicate agent names, empty/missing command,
+    no agents at all). Returns a list of warning strings for soft issues
+    (unknown vendor, chair not an enabled agent, unknown keys).
+
+    When ``strict`` is True, soft issues raise ``ConfigError`` instead of
+    being returned as warnings.
+    """
+    warnings: list = []
+    errors: list = []
+
+    if not isinstance(data, dict):
+        raise ConfigError("config root must be a table/dict.")
+
+    # Unknown top-level keys (soft).
+    for key in data:
+        if key not in KNOWN_TOP_LEVEL_KEYS:
+            warnings.append(
+                f"unknown top-level key '{key}' (expected one of "
+                f"{', '.join(KNOWN_TOP_LEVEL_KEYS)})."
+            )
+
+    council = data.get("council", {})
+    if not isinstance(council, dict):
+        raise ConfigError("[council] must be a table.")
+
+    for key in council:
+        if key not in KNOWN_COUNCIL_KEYS:
+            warnings.append(
+                f"unknown key 'council.{key}' (expected one of "
+                f"{', '.join(KNOWN_COUNCIL_KEYS)})."
+            )
+
+    # rounds >= 1 (hard).
+    rounds = council.get("rounds", 1)
+    if not isinstance(rounds, int) or isinstance(rounds, bool) or rounds < 1:
+        errors.append(
+            f"council.rounds must be an integer >= 1 (got {rounds!r})."
+        )
+
+    # timeout > 0 (hard).
+    timeout = council.get("timeout", 600)
+    if (
+        not isinstance(timeout, int)
+        or isinstance(timeout, bool)
+        or timeout <= 0
+    ):
+        errors.append(
+            f"council.timeout must be a positive integer (got {timeout!r})."
+        )
+
+    agents_data = data.get("agent", [])
+    if not isinstance(agents_data, list):
+        raise ConfigError("[[agent]] must be an array of tables.")
+
+    # At least one agent (hard).
+    if not agents_data:
+        errors.append(
+            "no agents configured; define at least one [[agent]] entry."
+        )
+
+    seen_names: set = set()
+    enabled_names: set = set()
+    for idx, agent in enumerate(agents_data):
+        if not isinstance(agent, dict):
+            errors.append(f"agent[{idx}] must be a table.")
+            continue
+
+        for key in agent:
+            if key not in KNOWN_AGENT_KEYS:
+                warnings.append(
+                    f"unknown key 'agent[{idx}].{key}' (expected one of "
+                    f"{', '.join(KNOWN_AGENT_KEYS)})."
+                )
+
+        name = agent.get("name", "")
+        label = name or f"agent[{idx}]"
+
+        # Unique, non-empty name (hard for duplicates).
+        if not name:
+            errors.append(f"agent[{idx}] is missing a non-empty 'name'.")
+        elif name in seen_names:
+            errors.append(f"duplicate agent name '{name}'.")
+        else:
+            seen_names.add(name)
+
+        # Non-empty command (hard).
+        command = agent.get("command", "")
+        if not command:
+            errors.append(f"agent '{label}' is missing a non-empty 'command'.")
+
+        # Per-agent timeout (hard if present and invalid).
+        a_timeout = agent.get("timeout", 600)
+        if (
+            not isinstance(a_timeout, int)
+            or isinstance(a_timeout, bool)
+            or a_timeout <= 0
+        ):
+            errors.append(
+                f"agent '{label}' timeout must be a positive integer "
+                f"(got {a_timeout!r})."
+            )
+
+        # Known vendor (soft).
+        vendor = agent.get("vendor", "")
+        if vendor not in KNOWN_VENDORS:
+            warnings.append(
+                f"agent '{label}' has unknown vendor '{vendor}' (expected one "
+                f"of {', '.join(KNOWN_VENDORS)}); using generic fallback."
+            )
+
+        if name and agent.get("enabled", True):
+            enabled_names.add(name)
+
+    # Chair must reference an enabled agent (soft).
+    chair = council.get("chair", "claude")
+    if enabled_names and chair not in enabled_names:
+        warnings.append(
+            f"council.chair '{chair}' is not an enabled agent (enabled: "
+            f"{', '.join(sorted(enabled_names)) or 'none'}); the first "
+            "enabled agent will be used as fallback."
+        )
+
+    if errors:
+        raise ConfigError(
+            "invalid configuration:\n  - " + "\n  - ".join(errors)
+        )
+
+    if strict and warnings:
+        raise ConfigError(
+            "configuration warnings treated as errors (strict mode):\n  - "
+            + "\n  - ".join(warnings)
+        )
+
+    return warnings
+
+
 @dataclass
 class AgentSpec:
     name: str
@@ -136,19 +303,40 @@ def _from_dict(data: dict) -> CouncilConfig:
     )
 
 
-def load_config(path: str | Path | None = None) -> CouncilConfig:
-    """Load council config from *path*, or fall back to the built-in default.
+def load_raw_config(path: str | Path | None = None) -> dict:
+    """Return the raw config dict for *path*, or the built-in default.
 
-    If *path* is None, look for ``council.toml`` in the current directory.
+    If *path* is None, look for ``council.toml`` in the current directory and
+    fall back to :data:`DEFAULT_CONFIG` when it is absent. An explicit *path*
+    that does not exist raises ``FileNotFoundError``.
     """
     if path is None:
         candidate = Path("council.toml")
         if not candidate.exists():
-            return _from_dict(DEFAULT_CONFIG)
+            return DEFAULT_CONFIG
         path = candidate
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(f"Config not found: {path}")
     with path.open("rb") as fh:
-        data = tomllib.load(fh)
+        return tomllib.load(fh)
+
+
+def load_config(
+    path: str | Path | None = None,
+    validate: bool = False,
+    strict: bool = False,
+) -> CouncilConfig:
+    """Load council config from *path*, or fall back to the built-in default.
+
+    If *path* is None, look for ``council.toml`` in the current directory.
+
+    When *validate* is True, the resolved config dict is checked with
+    :func:`validate_config` before being materialized; a ``ConfigError`` is
+    raised on hard-invalid input (and on warnings when *strict* is True).
+    Validation is opt-in so existing callers stay unaffected.
+    """
+    data = load_raw_config(path)
+    if validate:
+        validate_config(data, strict=strict)
     return _from_dict(data)

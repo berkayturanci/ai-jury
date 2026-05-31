@@ -15,7 +15,7 @@ from pathlib import Path
 
 from . import __version__
 from .ci import evaluate_ci
-from .config import load_config
+from .config import ConfigError, load_config, load_raw_config, validate_config
 from .github import post_inline_comments, post_pr_comment, pr_context, pr_diff
 from .orchestrator import run_council
 from .report import render
@@ -90,6 +90,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="comma-separated severities that fail CI (overrides config)",
     )
     p.add_argument("-q", "--quiet", action="store_true", help="suppress progress logs on stderr")
+    p.add_argument(
+        "--config-validate", action="store_true",
+        help="validate the resolved config and exit (0 valid, 2 invalid)",
+    )
+    p.add_argument(
+        "--strict-config", action="store_true",
+        help="treat configuration warnings as errors",
+    )
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return p
 
@@ -97,7 +105,29 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
-    config = load_config(args.config)
+    if args.config_validate:
+        source = args.config or "council.toml (or built-in defaults)"
+        try:
+            data = load_raw_config(args.config)
+            warnings = validate_config(data, strict=args.strict_config)
+        except (ConfigError, FileNotFoundError) as exc:
+            print(f"Config invalid ({source}): {exc}", file=sys.stderr)
+            return 2
+        if warnings:
+            print(f"Config valid with warnings ({source}):")
+            for w in warnings:
+                print(f"  - {w}")
+        else:
+            print(f"Config valid ({source}).")
+        return 0
+
+    try:
+        config = load_config(
+            args.config, validate=True, strict=args.strict_config
+        )
+    except ConfigError as exc:
+        print(f"Config invalid: {exc}", file=sys.stderr)
+        return 2
     if args.rounds is not None:
         config.rounds = args.rounds
     if args.chair:
