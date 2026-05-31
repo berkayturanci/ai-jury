@@ -42,6 +42,52 @@ pipx install agent-review-council         # or: pip install -e .
 Requires Python 3.11+. Install at least one agent CLI (`claude`, `codex`, `agy`);
 missing ones are skipped automatically. `gh` is needed for `--pr` / `--post`.
 
+For development, install the dev extras (linting, build, and coverage tooling):
+
+```bash
+pip install -e ".[dev]"   # or: make install
+```
+
+## Coverage
+
+Test coverage is measured with [`coverage.py`](https://coverage.readthedocs.io/)
+— a **dev-only** dependency. The runtime stays standard-library-only.
+
+Measure it locally with one command:
+
+```bash
+make coverage          # run the suite under coverage, print the report, write htmlcov/
+# or, without make:
+./scripts/coverage.sh
+```
+
+Either entry point runs:
+
+```bash
+python3 -m coverage run -m unittest discover -s tests
+python3 -m coverage report
+```
+
+**Threshold.** The minimum total coverage is **80%**, configured once in
+`pyproject.toml` under `[tool.coverage.report] fail_under` and enforced by a
+dedicated `coverage` job in CI (`.github/workflows/ci.yml`, Ubuntu / Python
+3.13). CI fails if total coverage drops below that floor. The gate runs in a
+single job rather than across the whole test matrix to keep CI cheap and free of
+cross-OS path noise.
+
+**Measurement method.** Branch coverage is enabled (`branch = true`) and the
+package is measured by import name (`source = ["agent_review_council"]`).
+
+**Exclusions.** Intentionally-untested paths are excluded so the number stays
+honest:
+
+- `src/agent_review_council/__main__.py` is omitted (a thin `python -m` entry shim).
+- Lines matching these patterns are excluded from the count: `pragma: no cover`,
+  `if __name__ == "__main__":`, `raise NotImplementedError`, `if TYPE_CHECKING:`,
+  and abstract-method decorators.
+
+Add `# pragma: no cover` to any new line that is genuinely not worth testing.
+
 ## Usage
 
 ```bash
