@@ -60,6 +60,8 @@ DOCUMENTED_FLAGS = [
     "--strict",
     "--verify",
     "--no-verify",
+    "--doctor",
+    "--write",
     "--output",
     "--metadata-json",
     "--format",
@@ -127,7 +129,47 @@ class HelpSnapshotTests(unittest.TestCase):
             self.assertIn(flag, help_text, f"{flag} missing from --help")
         self.assertIn("council", help_text)
 
+    def test_documented_flags_match_parser_exactly(self):
+        # Version-INDEPENDENT guarantee that the public flag surface is locked.
+        # The exact ``--help`` snapshot below only runs on Python 3.13, so this
+        # bidirectional check is what keeps the contract honest on every
+        # supported version: it proves no documented flag silently disappeared
+        # from the parser AND that DOCUMENTED_FLAGS never drifts out of sync
+        # with the actual parser definition (a new flag added without being
+        # documented here fails the test, forcing a deliberate update).
+        parser = build_parser()
+        parser_flags = {
+            opt
+            for action in parser._actions
+            for opt in action.option_strings
+            if opt.startswith("--")
+        }
+        documented = set(DOCUMENTED_FLAGS)
+        # ``--help`` is auto-added by argparse rather than declared in
+        # build_parser; it is part of the public surface and is asserted
+        # explicitly here so the comparison can be exact (nothing excluded).
+        self.assertIn("--help", parser_flags)
+        self.assertIn("--help", documented)
+
+        missing_from_docs = parser_flags - documented
+        self.assertFalse(
+            missing_from_docs,
+            f"parser exposes flags not in DOCUMENTED_FLAGS: "
+            f"{sorted(missing_from_docs)}",
+        )
+        stale_in_docs = documented - parser_flags
+        self.assertFalse(
+            stale_in_docs,
+            f"DOCUMENTED_FLAGS lists flags the parser no longer defines: "
+            f"{sorted(stale_in_docs)}",
+        )
+        self.assertEqual(documented, parser_flags)
+
     def test_help_matches_golden(self):
+        # NOTE: this exact snapshot is pinned to Python 3.13 argparse
+        # formatting and self-skips elsewhere. The version-independent
+        # guarantee that the public flag surface stays complete and in sync
+        # lives in ``test_documented_flags_match_parser_exactly`` above.
         rendered = _render_help()
         if os.environ.get("UPDATE_GOLDEN") == "1":
             GOLDEN_DIR.mkdir(exist_ok=True)
