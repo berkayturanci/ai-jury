@@ -5,6 +5,8 @@
 > chair synthesizes one verdict.
 
 [![CI](https://github.com/berkayturanci/agent-review-council/actions/workflows/ci.yml/badge.svg)](https://github.com/berkayturanci/agent-review-council/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/berkayturanci/agent-review-council/actions/workflows/codeql.yml/badge.svg)](https://github.com/berkayturanci/agent-review-council/actions/workflows/codeql.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/berkayturanci/agent-review-council/badge)](https://scorecard.dev/viewer/?uri=github.com/berkayturanci/agent-review-council)
 [![GitHub release](https://img.shields.io/github/v/release/berkayturanci/agent-review-council)](https://github.com/berkayturanci/agent-review-council/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
