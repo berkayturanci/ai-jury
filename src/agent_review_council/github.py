@@ -5,7 +5,9 @@ Kept dependency-free; if `gh` is unavailable these raise a clear error.
 """
 from __future__ import annotations
 
+import hashlib
 import json
+import re
 import shutil
 import subprocess
 
@@ -47,6 +49,22 @@ def post_pr_comment(pr: str, body: str, repo: str | None = None) -> None:
 
 # Marker prefix identifying comments authored by the council (enables dedup).
 INLINE_MARKER = "<!-- arc-inline -->"
+# Per-finding signature marker embedded in the body. Lets dedup distinguish two
+# different findings that happen to land on the same (path, line).
+_SIG_RE = re.compile(r"<!-- arc-inline-sig:([0-9a-f]{12}) -->")
+
+
+def _finding_signature(finding) -> str:
+    """Stable 12-hex signature of a finding (severity + normalized claim)."""
+    sev = (getattr(finding, "severity", "") or "").strip().lower()
+    claim = " ".join((getattr(finding, "claim", "") or "").split()).lower()
+    return hashlib.sha256(f"{sev}|{claim}".encode("utf-8")).hexdigest()[:12]
+
+
+def _body_signature(body: str) -> str | None:
+    """Extract the per-finding signature from a comment body, if present."""
+    m = _SIG_RE.search(body or "")
+    return m.group(1) if m else None
 
 
 def _comment_body(finding) -> str:
@@ -56,7 +74,8 @@ def _comment_body(finding) -> str:
     text = f"[{sev}] {claim}"
     if fix:
         text += f" — {fix}"
-    return f"{INLINE_MARKER}\n{text}"
+    sig = _finding_signature(finding)
+    return f"{INLINE_MARKER}\n<!-- arc-inline-sig:{sig} -->\n{text}"
 
 
 def build_inline_payload(findings) -> list[dict]:
@@ -93,7 +112,11 @@ def _resolve_repo(repo: str | None) -> str:
 
 
 def _existing_inline_keys(pr: str, repo: str) -> set:
-    """Return (path, line) keys for existing council inline comments (best-effort)."""
+    """Return (path, line, signature) keys for existing council inline comments.
+
+    Best-effort. The line falls back to ``original_line`` when GitHub reports
+    ``line`` as null (e.g. comments that became outdated after a force-push).
+    """
     keys: set = set()
     try:
         out = _gh("api", f"repos/{repo}/pulls/{pr}/comments", "--paginate")
@@ -105,9 +128,13 @@ def _existing_inline_keys(pr: str, repo: str) -> set:
     for c in data:
         if not isinstance(c, dict):
             continue
-        if INLINE_MARKER not in (c.get("body", "") or ""):
+        body = c.get("body", "") or ""
+        if INLINE_MARKER not in body:
             continue
-        keys.add((c.get("path"), c.get("line", c.get("original_line"))))
+        line = c.get("line")
+        if line is None:
+            line = c.get("original_line")
+        keys.add((c.get("path"), line, _body_signature(body)))
     return keys
 
 
@@ -128,9 +155,11 @@ def post_inline_comments(
 ) -> dict:
     """Post inline review comments as a single PR review.
 
-    Best-effort dedup: skips comments whose (path, line) already has a council
-    inline comment. When ``dry_run`` is True the payload is printed and returned
-    without any network call. Returns the review payload (would-be) posted.
+    Best-effort dedup: skips comments whose (path, line, finding-signature)
+    already has a council inline comment, so re-runs don't repost the same
+    finding while still allowing distinct findings to share a line. When
+    ``dry_run`` is True the payload is printed and returned without any network
+    call. Returns the review payload (would-be) posted.
     """
     comments = build_inline_payload(findings)
 
@@ -141,7 +170,10 @@ def post_inline_comments(
 
     resolved = _resolve_repo(repo)
     existing = _existing_inline_keys(pr, resolved) if resolved else set()
-    deduped = [c for c in comments if (c["path"], c["line"]) not in existing]
+    deduped = [
+        c for c in comments
+        if (c["path"], c["line"], _body_signature(c["body"])) not in existing
+    ]
 
     payload = {"event": "COMMENT", "comments": deduped}
     if not deduped:
