@@ -168,6 +168,14 @@ position bias, and severity-gated CI exit codes. See [`docs/architecture.md`](do
 The phased plan and how to pick up a session's worth of work is in [`ROADMAP.md`](ROADMAP.md);
 issues are tracked under [milestones](https://github.com/berkayturanci/agent-review-council/milestones).
 
+## Security & the Codex sandbox
+
+The council performs **read-only review orchestration** — it sends a diff to each agent CLI and collects their feedback; it does not apply edits.
+
+The Codex adapter pipes the prompt on **stdin** (`codex exec` with no positional prompt) so non-interactive runs never hang waiting for input, and defaults `extra_args` to `["-s", "danger-full-access"]`. Codex's standard sandbox can block the outbound network / `gh` access that PR review needs, which would surface as failures instead of findings; full access keeps runs reliable without changing what the tool itself does. (Avoid `--full-auto`, which implies a stricter workspace sandbox.)
+
+Want tighter sandboxing? Override `extra_args` for the `codex` agent in `council.toml` (e.g. a narrower `-s` mode). See [docs/security.md](docs/security.md) for details.
+
 ## Documentation
 
 - [Architecture](docs/architecture.md) — components, round structure, adapters, supported platforms.
