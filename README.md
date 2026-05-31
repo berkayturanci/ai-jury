@@ -114,9 +114,18 @@ full data-flow and redaction reference.
 ## Use it from another project (skill)
 
 A Claude Code skill ships in [`skill/review-council/`](skill/review-council/SKILL.md).
-Drop it into a project's `.claude/skills/` and the agent can convene the council on
-demand. It composes with existing review workflows: run the council for a cross-vendor
-pass, then act on the consensus findings.
+Install it as a **plugin** from this repo (it doubles as a single-plugin marketplace):
+
+```text
+/plugin marketplace add berkayturanci/agent-review-council
+/plugin install review-council@agent-review-council
+```
+
+Or drop [`skill/review-council/`](skill/review-council/SKILL.md) into a project's
+`.claude/skills/` manually. Either way the agent can convene the council on demand, and
+it composes with existing review workflows: run the council for a cross-vendor pass,
+then act on the consensus findings. For other platforms (Codex, Antigravity, CI) and
+their support status, see the [platform support matrix](docs/platforms.md).
 
 ## How it works
 
@@ -160,6 +169,7 @@ issues are tracked under [milestones](https://github.com/berkayturanci/agent-rev
 - [Architecture](docs/architecture.md) — components, round structure, adapters, supported platforms.
 - [Ecosystem comparison](docs/comparison.md) — capability matrix vs hosted / API-level / native-CLI tools.
 - [Feasibility & prior art](docs/feasibility.md) — research grounding and verified CLI invocations.
+- [Platform support matrix](docs/platforms.md) — where you can install/run the council and how.
 - [Release readiness checklist](docs/release-checklist.md) — the bar before a public release.
 - [SECURITY.md](SECURITY.md) — data-flow and secret-redaction reference.
 - Agent-readable: [`llms.txt`](llms.txt) (concise) and [`llms-full.txt`](llms-full.txt) (full reference).
