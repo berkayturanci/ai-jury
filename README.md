@@ -178,6 +178,7 @@ Want tighter sandboxing? Override `extra_args` for the `codex` agent in `council
 
 ## Documentation
 
+- [Workflow cookbook](docs/cookbook.md) — copy-paste recipes: local-branch review, PR review & report saving, advisory PR comments, soft/CI review stage, mock smoke tests, one/two-agent setups.
 - [Architecture](docs/architecture.md) — components, round structure, adapters, supported platforms.
 - [Ecosystem comparison](docs/comparison.md) — capability matrix vs hosted / API-level / native-CLI tools.
 - [Feasibility & prior art](docs/feasibility.md) — research grounding and verified CLI invocations.
