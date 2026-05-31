@@ -215,7 +215,7 @@ jobs:
           council --diff-file pr.diff --format sarif -o council.sarif
 
       - name: Upload to code scanning
-        uses: github/codeql-action/upload-sarif@4dd16135b69a43b6c8efb853346f8437d92d3c93 # v3.26.6
+        uses: github/codeql-action/upload-sarif@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4.36.0
         with:
           sarif_file: council.sarif
 ```
