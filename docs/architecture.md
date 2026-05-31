@@ -66,6 +66,49 @@ Adapters fail soft: a missing CLI, non-zero exit, or timeout becomes a non-fatal
 - **Orchestrator owns prompts.** Keeps the round structure auditable in one file and
   makes adapters trivially swappable.
 
+## Repository review policy
+
+The runtime configuration in `council.toml` describes *how the agent runs* (which
+agents/vendors make up the council, rounds, chair). A repository under review may
+additionally ship an **optional, separate review policy** that describes *what
+reviewers should care about* for that project. The two are kept deliberately
+distinct: a different file and a different loader (`policy.py`).
+
+A policy file is plain TOML, discovered (when `--policy` is not given) from the
+current working directory in this order:
+
+1. `.council/policy.toml`
+2. `council-policy.toml`
+
+A missing policy is allowed and is a no-op (the loader returns `None`). A policy
+file that exists but is malformed raises a clear `PolicyError`. An explicit
+`--policy PATH` that does not exist is treated as a user error and also raises.
+
+### Schema
+
+All fields are optional:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `high_risk_paths` | list of strings | Paths to review with extra care. |
+| `focus_areas` | list of strings | Required review focus areas. |
+| `forbidden_output` | list of strings | Output behaviours reviewers must avoid. |
+| `checklist` | string | Free-form project review checklist text. |
+| `doc_links` | list of strings | Docs reviewers should consider. |
+| `severity_overrides` | list of `{ glob, severity }` tables | Severity overrides for matching path patterns. |
+
+### Trusted injection
+
+Unlike the diff and free-form context (which are untrusted and wrapped in the
+`<<<UNTRUSTED_DIFF` / `<<<UNTRUSTED_CONTEXT` sentinel fences), the policy is
+authored by the repository maintainers and is therefore treated as **trusted**.
+It is injected into the REVIEW prompt in a clearly labelled section
+("`=== REPOSITORY REVIEW POLICY (maintainer-provided, TRUSTED) ===`") that sits
+*outside* the untrusted fences, so it can refine review priorities without being
+subject to the prompt-injection defences applied to the change under review. The
+policy support is fully project-agnostic and hardcodes no project names; see
+`examples/policy.toml` for a generic example.
+
 ## Supported platforms
 
 CI proves the package on a deliberately small matrix (see

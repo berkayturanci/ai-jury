@@ -51,6 +51,7 @@ DOCUMENTED_FLAGS = [
     "--repo",
     "--diff-file",
     "--config",
+    "--policy",
     "--context-mode",
     "--redact",
     "--no-redact",

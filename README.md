@@ -254,6 +254,28 @@ Override per run with `--rounds`, `--chair`, `--config`.
 
 The config is validated on every run. Check it without running a review with `council --config-validate` (exit `0` valid, `2` invalid); add `--strict-config` to turn warnings into errors. See [docs/configuration.md](docs/configuration.md) for the full schema — every field, allowed values, defaults, and which problems are hard errors vs. warnings.
 
+## Repository review policy (optional)
+
+A repository under review may ship an optional, separate **review policy** that
+tells the council what to care about for that project (high-risk paths, focus
+areas, forbidden output, severity overrides, a checklist, and doc links). This is
+distinct from the runtime `council.toml`: it configures *what reviewers should
+care about*, not *how the agent runs*.
+
+It is auto-discovered from `.council/policy.toml` or `council-policy.toml`, or
+pointed at explicitly:
+
+```bash
+council --mock --diff-file examples/sample.diff --policy .council/policy.toml
+```
+
+The policy is maintainer-authored, so it is injected into the review prompts as a
+clearly separated, **trusted** section (distinct from the untrusted diff/context
+fences). Missing policy files are allowed (no-op); a malformed one is a clear
+error. See [`examples/policy.toml`](examples/policy.toml) for a generic example
+and the [architecture docs](docs/architecture.md#repository-review-policy) for the
+schema.
+
 ## Data flow / privacy
 
 What gets sent to each agent is governed by `[council.context]` in
@@ -399,7 +421,7 @@ width/color-pinned snapshot of `council --help` under `tests/golden/`) so
 accidental changes are caught in review.
 
 **Stable flags** (names, short aliases, and semantics):
-`--pr`, `--repo`, `--diff-file`, `--config`,
+`--pr`, `--repo`, `--diff-file`, `--config`, `--policy`,
 `--context-mode {diff-only,expanded}`, `--redact` / `--no-redact`, `--rounds`,
 `--chair`, `--mock`, `--strict`, `--verify` / `--no-verify`, `--doctor`,
 `--write`, `-o` / `--output`, `--metadata-json`,

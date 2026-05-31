@@ -1,0 +1,50 @@
+# Example repository review policy.
+#
+# This file is OPTIONAL and entirely project-agnostic. Drop it at
+# `.council/policy.toml` (or `council-policy.toml`) in the repository you are
+# reviewing, or pass it explicitly with `--policy PATH`. It expresses review
+# expectations that get injected, as TRUSTED content, into the review prompt.
+#
+# Every field below is optional; delete what you do not need.
+
+# Paths where regressions are most costly; reviewers should look harder here.
+high_risk_paths = [
+    "src/**/auth/**",
+    "**/migrations/**",
+    "infra/**",
+]
+
+# Concerns the council should always weigh, beyond generic correctness.
+focus_areas = [
+    "Backward compatibility of public interfaces",
+    "Input validation at trust boundaries",
+    "Test coverage for new branches",
+]
+
+# Output behaviours reviewers must avoid in their findings.
+forbidden_output = [
+    "Do not include secrets, tokens, or credentials in the review output.",
+    "Do not suggest disabling security checks to make tests pass.",
+]
+
+# Free-form checklist text rendered verbatim into the prompt.
+checklist = """
+- Are error paths handled, not just the happy path?
+- Is new public API documented?
+- Are there migration or rollout steps a maintainer must take?
+"""
+
+# Docs reviewers should consider (URLs or repo-relative paths).
+doc_links = [
+    "docs/architecture.md",
+    "CONTRIBUTING.md",
+]
+
+# Raise (or lower) severity for findings touching matching path patterns.
+[[severity_overrides]]
+glob = "**/auth/**"
+severity = "blocker"
+
+[[severity_overrides]]
+glob = "docs/**"
+severity = "nit"

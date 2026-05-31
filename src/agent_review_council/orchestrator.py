@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from . import injection, prompts
 from .adapters import Adapter, AgentResult, make_adapter
 from .config import CouncilConfig
+from .policy import ReviewPolicy, render_policy_section
 from .consensus import FindingGroup, group_findings
 from .findings import Finding, Verdict, parse_findings, parse_verdicts
 from .privilege import audit_privilege
@@ -134,8 +135,15 @@ def run_council(
     mock: bool = False,
     strict: bool = False,
     seed: int | None = None,
+    policy: ReviewPolicy | None = None,
     log=lambda _msg: None,
 ) -> CouncilOutcome:
+    # Repository review policy (optional, #8): maintainer-authored, TRUSTED
+    # content rendered into each REVIEW prompt in a clearly separated section.
+    # When ``policy`` is None a sentinel placeholder is used, so the prompt is
+    # unchanged except for that section. The policy is distinct from the
+    # agent-runtime ``config`` and never enters the untrusted diff/context fences.
+    policy_section = render_policy_section(policy)
     # Run reproducibility: a single shared RNG seeds every randomized
     # orchestration decision (future: anonymized-rebuttal order, rotating
     # chair, tie-breaks). The seed comes from the explicit ``seed`` argument if
@@ -212,6 +220,7 @@ def run_council(
             name=a.name,
             context=context or "_(none)_",
             diff=diff,
+            policy=policy_section,
             notice=prompts._UNTRUSTED_NOTICE,
         )
         for a in usable
