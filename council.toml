@@ -52,7 +52,13 @@ name = "codex"
 vendor = "openai"
 command = "codex"
 # model = "gpt-5-codex"
-extra_args = []
+# `codex exec` receives the prompt on stdin (no positional prompt, so it never
+# hangs waiting for input non-interactively). `-s danger-full-access` is the
+# default because Codex's standard sandbox can block the outbound network /
+# `gh` access used during PR review; this tool only orchestrates read-only
+# reviews, so it stays safe. Want stricter sandboxing? Override extra_args
+# (e.g. drop the flag, or set a narrower `-s` mode for your environment).
+extra_args = ["-s", "danger-full-access"]
 
 [[agent]]
 name = "agy"

@@ -31,7 +31,16 @@ DEFAULT_CONFIG: dict = {
                 "--dangerously-skip-permissions",
             ],
         },
-        {"name": "codex", "vendor": "openai", "command": "codex", "extra_args": []},
+        {
+            "name": "codex",
+            "vendor": "openai",
+            "command": "codex",
+            # `codex exec` reads the prompt from stdin (see CodexAdapter). The
+            # default sandbox can block `gh`/network used during PR review, so
+            # `-s danger-full-access` keeps non-interactive runs from failing.
+            # Override extra_args for stricter sandboxing.
+            "extra_args": ["-s", "danger-full-access"],
+        },
         {
             "name": "agy",
             "vendor": "google",

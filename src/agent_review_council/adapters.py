@@ -7,7 +7,7 @@ CLI*.
 
 Headless invocations (verified against installed CLIs, early 2026):
   - Claude Code : ``claude -p "<prompt>" --output-format text``
-  - Codex CLI   : ``codex exec "<prompt>"``  (also: ``codex exec review``)
+  - Codex CLI   : ``codex exec <args> < <prompt>``  (prompt piped via stdin)
   - Antigravity : ``agy --print "<prompt>"``
 """
 from __future__ import annotations
@@ -48,6 +48,11 @@ class Adapter:
     def build_argv(self, prompt: str) -> list[str]:  # pragma: no cover - overridden
         raise NotImplementedError
 
+    def _stdin_for(self, prompt: str) -> str | None:
+        """Prompt to feed on stdin, or None to pass it in argv (the default)."""
+        del prompt
+        return None
+
     def run(self, prompt: str, phase: str = "review") -> AgentResult:
         del phase
         if not self.available():
@@ -56,10 +61,12 @@ class Adapter:
                 0.0, f"command not found on PATH: {self.spec.command}",
             )
         argv = self.build_argv(prompt)
+        stdin = self._stdin_for(prompt)
         start = time.monotonic()
         try:
             proc = subprocess.run(
                 argv,
+                input=stdin,
                 capture_output=True,
                 text=True,
                 timeout=self.spec.timeout,
@@ -93,11 +100,18 @@ class ClaudeAdapter(Adapter):
 
 
 class CodexAdapter(Adapter):
+    # Pipe the prompt on stdin (not positionally) so ``codex exec`` never blocks
+    # waiting for input in non-interactive runs. Sandbox flags live in extra_args
+    # (default ``-s danger-full-access`` so the sandbox doesn't block ``gh``).
     def build_argv(self, prompt: str) -> list[str]:
+        del prompt
         argv = [self.spec.command, "exec"]
         if self.spec.model:
             argv += ["-m", self.spec.model]
-        return argv + self.spec.extra_args + [prompt]
+        return argv + self.spec.extra_args
+
+    def _stdin_for(self, prompt: str) -> str | None:
+        return prompt
 
 
 class AgyAdapter(Adapter):
