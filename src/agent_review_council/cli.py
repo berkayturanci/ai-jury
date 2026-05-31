@@ -20,7 +20,14 @@ from . import __version__
 from . import doctor as doctor_module
 from .ci import evaluate_ci
 from .config import ConfigError, load_config, load_raw_config, validate_config
-from .github import post_inline_comments, post_pr_comment, pr_context, pr_diff
+from .classification import classify, label_strings
+from .github import (
+    apply_labels,
+    post_inline_comments,
+    post_pr_comment,
+    pr_context,
+    pr_diff,
+)
 from .metadata import build_run_metadata
 from .orchestrator import run_council
 from .policy import PolicyError, load_policy
@@ -115,6 +122,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--dry-run", dest="dry_run", action="store_true",
         help="with --post-inline, print what would be posted without calling GitHub",
+    )
+    p.add_argument(
+        "--label", dest="label", action="store_true",
+        help="apply classification labels (review effort / risk / security) to "
+             "--pr (off by default; never applied automatically)",
     )
     p.add_argument(
         "--ci", action="store_true",
@@ -266,6 +278,15 @@ def main(argv: list[str] | None = None) -> int:
             raise SystemExit("error: --post-inline requires --pr")
         post_inline_comments(args.pr, outcome.findings, repo=args.repo, dry_run=args.dry_run)
         log(f"posted inline comments to PR #{args.pr}")
+
+    # Optional GitHub labels (issue #7): OFF by default. Only applied when
+    # --label is passed AND a --pr target exists; never automatic.
+    if args.label:
+        if not args.pr:
+            raise SystemExit("error: --label requires --pr")
+        labels = label_strings(classify(outcome))
+        apply_labels(args.pr, labels, args.repo)
+        log(f"applied labels to PR #{args.pr}: {', '.join(labels)}")
 
     return ci_exit
 

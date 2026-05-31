@@ -1,0 +1,11 @@
+Ran 31 tests in 0.010s
+
+=== classification line ===
+## Classification
+
+review effort: 4/5 · risk: high · security-sensitive: no · needs human attention: yes
+=== json classification ===
+json.classification = {'review_effort': 4, 'risk_level': 'high', 'security_sensitive': False, 'needs_human_attention': True}
+metadata.classification = {'review_effort': 4, 'risk_level': 'high', 'security_sensitive': False, 'needs_human_attention': True}
+DONE_CLS
+

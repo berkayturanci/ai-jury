@@ -55,6 +55,7 @@ class MetadataShapeTest(unittest.TestCase):
             "redaction_count",
             "seed",
             "config_hash",
+            "classification",
             "total_wall_clock_s",
             "cost_signal",
             "generated_at",
