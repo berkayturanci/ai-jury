@@ -7,6 +7,7 @@ independent, IO-bound subprocess.
 from __future__ import annotations
 
 import random
+import string
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
@@ -68,12 +69,61 @@ def _run_phase(
 
 
 def _others(reviews: list[AgentResult], me: str) -> str:
+    """Identity-labeled peer reviews (legacy path; ``anonymize_debate = false``).
+
+    Renders each *other* reviewer's round-1 output with its real agent/vendor
+    identity in the stable enabled-agent order. This is the pre-#37 behaviour and
+    leaks both identity and position; the anonymizing path below is the default.
+    """
     chunks = [
         f"### {r.agent} ({r.vendor})\n{r.output}"
         for r in reviews
         if r.agent != me and r.ok and r.output
     ]
     return "\n\n".join(chunks) if chunks else "_(no other reviews available)_"
+
+
+def _anon_label(i: int) -> str:
+    """Stable anonymous reviewer label: 0->'A', 1->'B', ... 26->'AA'."""
+    letters = string.ascii_uppercase
+    label = ""
+    i += 1
+    while i > 0:
+        i, rem = divmod(i - 1, 26)
+        label = letters[rem] + label
+    return label
+
+
+def _anonymize_peers(
+    reviews: list[AgentResult], me: str, rng: random.Random
+) -> tuple[str, dict[str, str]]:
+    """Chatham House peer view for a debater (#37).
+
+    Returns ``(prompt_text, label_to_agent)`` where the prompt text renders each
+    *other* successful reviewer's round-1 output under an anonymous
+    ``### Reviewer A`` / ``### Reviewer B`` heading — NO vendor or agent name.
+    The debater's OWN review is excluded (it is passed separately as
+    ``own_review``). Presentation order is shuffled DETERMINISTICALLY using the
+    shared run RNG so neither identity nor position is a stable signal; the same
+    seed yields the same order, different seeds may differ.
+
+    ``label_to_agent`` keeps the anonymous-label -> real-agent mapping internal so
+    callers can still recover authorship (the report attributes by real name).
+    """
+    peers = [r for r in reviews if r.agent != me and r.ok and r.output]
+    if not peers:
+        return "_(no other reviews available)_", {}
+    # Deterministic per-debater shuffle from the shared run RNG. We shuffle a
+    # copy so the caller's review list (used elsewhere) is untouched.
+    order = list(peers)
+    rng.shuffle(order)
+    chunks: list[str] = []
+    label_to_agent: dict[str, str] = {}
+    for i, r in enumerate(order):
+        label = f"Reviewer {_anon_label(i)}"
+        label_to_agent[label] = r.agent
+        chunks.append(f"### {label}\n{r.output}")
+    return "\n\n".join(chunks), label_to_agent
 
 
 def run_council(
@@ -98,7 +148,7 @@ def run_council(
     # orchestration around it. ``run_rng`` is the shared run RNG: pass it to
     # any feature that needs reproducible randomness instead of using ``random``.
     run_seed = seed if seed is not None else config.seed
-    run_rng = random.Random(run_seed)  # noqa: F841 - shared run RNG (see docstring)
+    run_rng = random.Random(run_seed)  # shared run RNG (see docstring)
 
     # Context policy: diff-only sends only the diff; expanded includes context.
     ctx_cfg = getattr(config, "context", None)
@@ -153,6 +203,8 @@ def run_council(
     if not usable:
         raise RuntimeError("no usable agents — install at least one agent CLI or use --mock")
 
+    usable_names = [a.name for a in usable]
+
     # Round 1: independent reviews.
     log(f"round 1: {len(usable)} agents reviewing")
     review_prompt = {
@@ -189,6 +241,16 @@ def run_council(
     # Deterministic consensus grouping across reviewers.
     groups = group_findings(all_findings, len(reviews))
 
+    # Names of agents whose round-1 review succeeded — the chair resolver uses
+    # this to (optionally) prefer a non-reviewer chair (#38).
+    reviewer_names = [r.agent for r in reviews if r.ok]
+
+    # Resolve the chair ONCE for the whole run so verify and synthesis use the
+    # SAME chair. ``chair = "rotate"`` and prefer-non-reviewer both consume the
+    # shared run RNG / reviewer info, so resolving once (rather than recomputing
+    # per phase) is what keeps a rotating chair stable within a run (#38).
+    chair_name = resolve_chair(config, usable_names, reviewer_names, run_rng)
+
     # Round 2: debate (only agents whose round-1 succeeded participate).
     debate: list[AgentResult] = []
     if config.rounds >= 2:
@@ -196,16 +258,23 @@ def run_council(
         if len(debaters) >= 2:
             log(f"round 2: {len(debaters)} agents cross-examining")
             own = {r.agent: r.output for r in reviews if r.ok}
-            debate_prompt = {
-                a.name: prompts.DEBATE.format(
+            debate_prompt = {}
+            for a in debaters:
+                if config.anonymize_debate:
+                    # Per-debater deterministic shuffle: derive a child RNG from
+                    # the shared run RNG so each debater gets an independent but
+                    # reproducible peer ordering (same seed -> same order).
+                    peer_rng = random.Random(run_rng.random())
+                    other_reviews, _label_map = _anonymize_peers(reviews, a.name, peer_rng)
+                else:
+                    other_reviews = _others(reviews, a.name)
+                debate_prompt[a.name] = prompts.DEBATE.format(
                     name=a.name,
                     diff=diff,
                     own_review=own.get(a.name, "_(your review was unavailable)_"),
-                    other_reviews=_others(reviews, a.name),
+                    other_reviews=other_reviews,
                     notice=prompts._UNTRUSTED_NOTICE,
                 )
-                for a in debaters
-            }
             debate = _run_phase(debaters, debate_prompt, "debate", config.parallel)
             # Same stable-ordering guarantee as round 1: independent of
             # thread-pool completion order.
@@ -218,19 +287,35 @@ def run_council(
     verdicts: list[Verdict] = []
     if config.verify:
         verify_result, verdicts, verify_warnings = _verify(
-            config, usable, all_findings, diff, context, log
+            chair_name, usable, all_findings, diff, context, log
         )
         all_warnings.extend(verify_warnings)
         _apply_verdicts(groups, verdicts)
 
-    # Synthesis: the chair consolidates.
-    synthesis = _synthesize(config, usable, reviews, debate, diff, log, verdicts=verdicts)
+    # Synthesis: the chair consolidates. When the resolved chair is ALSO a
+    # round-1 reviewer, feed it an anonymized view of the reviews (#38 guardrail)
+    # so it cannot preferentially weight its own findings; the report still
+    # attributes by real name because it renders the real outcome data, not this
+    # synthesis prompt.
+    chair_is_reviewer = chair_name in reviewer_names
+    anonymize_synthesis = config.anonymize_debate and chair_is_reviewer
+    synthesis = _synthesize(
+        chair_name,
+        usable,
+        reviews,
+        debate,
+        diff,
+        log,
+        verdicts=verdicts,
+        anonymize_reviews=anonymize_synthesis,
+        rng=run_rng,
+    )
 
     return CouncilOutcome(
         reviews=reviews,
         debate=debate,
         synthesis=synthesis,
-        chair=_chair_name(config, usable),
+        chair=chair_name,
         findings=all_findings,
         warnings=all_warnings,
         groups=groups,
@@ -243,11 +328,53 @@ def run_council(
     )
 
 
-def _chair_name(config: CouncilConfig, usable: list[Adapter]) -> str:
-    names = {a.name for a in usable}
+def resolve_chair(
+    config: CouncilConfig,
+    usable: list[str],
+    reviewers: list[str],
+    rng: random.Random,
+) -> str:
+    """Resolve the chair for a run as a PURE function of its inputs (#38).
+
+    Precedence:
+      1. ``chair = "rotate"`` — pick deterministically from the usable agents
+         using the shared run ``rng``. Same seed -> same chair; different seeds
+         may differ. Falls back to the first usable agent when none are usable.
+      2. An explicit ``config.chair`` that names a usable agent — honoured as-is
+         (an operator-chosen chair always wins).
+      3. ``prefer_non_reviewer_chair`` — when set and a usable agent that was NOT
+         a successful round-1 reviewer exists, prefer the first such agent
+         (neutral chair). This only applies when the configured chair is not
+         itself a usable agent.
+      4. Fallback to the first usable agent (legacy behaviour).
+
+    Keeping this pure (no Adapter objects, no I/O) makes it directly
+    unit-testable and guarantees ``_verify`` and ``_synthesize`` agree because
+    the caller resolves it ONCE and threads the result through both.
+    """
+    if not usable:
+        return config.chair
+    names = set(usable)
+
+    if config.chair == "rotate":
+        # Deterministic rotation: sort for a stable candidate order independent
+        # of dict/thread ordering, then index with the shared run RNG. Sorting
+        # the candidate list (not iterating the set) makes the pick a pure
+        # function of (seed, usable-name set): same seed + same agents -> same
+        # chair, regardless of RNG-consumption order elsewhere.
+        candidates = sorted(names)
+        return candidates[rng.randrange(len(candidates))]
+
     if config.chair in names:
         return config.chair
-    return usable[0].name if usable else config.chair
+
+    if config.prefer_non_reviewer_chair:
+        reviewer_set = set(reviewers)
+        non_reviewers = [n for n in usable if n not in reviewer_set]
+        if non_reviewers:
+            return non_reviewers[0]
+
+    return usable[0]
 
 
 def _format_findings_for_verify(findings: list[Finding]) -> str:
@@ -275,9 +402,8 @@ def _format_verdicts(verdicts: list[Verdict]) -> str:
 
 
 def _verify(
-    config, usable, findings, diff, context, log
+    chair_name, usable, findings, diff, context, log
 ) -> tuple[AgentResult | None, list[Verdict], list[str]]:
-    chair_name = _chair_name(config, usable)
     chair = next((a for a in usable if a.name == chair_name), None)
     if chair is None:
         return None, [], []
@@ -337,15 +463,33 @@ def _apply_verdicts(groups: list[FindingGroup], verdicts: list[Verdict]) -> None
                     group.bucket = "disputed"
 
 
-def _synthesize(config, usable, reviews, debate, diff, log, verdicts=None) -> AgentResult | None:
-    chair_name = _chair_name(config, usable)
+def _synthesize(
+    chair_name,
+    usable,
+    reviews,
+    debate,
+    diff,
+    log,
+    verdicts=None,
+    anonymize_reviews=False,
+    rng=None,
+) -> AgentResult | None:
     chair = next((a for a in usable if a.name == chair_name), None)
     if chair is None:
         return None
     log(f"synthesis: chair '{chair_name}' consolidating verdict")
-    reviews_txt = "\n\n".join(
-        f"### {r.agent} ({r.vendor})\n{r.output}" for r in reviews if r.ok and r.output
-    ) or "_(no reviews)_"
+    if anonymize_reviews:
+        # Chair self-preference guardrail (#38): present round-1 reviews to the
+        # chair under anonymous labels (no agent/vendor identity, no stable
+        # order) so it cannot tell which review is "its own". Uses the shared run
+        # RNG for deterministic-but-unstable ordering. ``me=None`` keeps ALL
+        # reviews (we are not excluding a debater here, only stripping identity).
+        peer_rng = random.Random(rng.random()) if rng is not None else random.Random()
+        reviews_txt, _label_map = _anonymize_peers(reviews, None, peer_rng)
+    else:
+        reviews_txt = "\n\n".join(
+            f"### {r.agent} ({r.vendor})\n{r.output}" for r in reviews if r.ok and r.output
+        ) or "_(no reviews)_"
     debate_txt = "\n\n".join(
         f"### {r.agent}\n{r.output}" for r in debate if r.ok and r.output
     ) or "_(no debate round)_"

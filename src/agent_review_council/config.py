@@ -63,6 +63,8 @@ KNOWN_COUNCIL_KEYS = (
     "ci",
     "context",
     "seed",
+    "anonymize_debate",
+    "prefer_non_reviewer_chair",
 )
 KNOWN_AGENT_KEYS = (
     "name",
@@ -196,9 +198,10 @@ def validate_config(data: dict, strict: bool = False) -> list:
         if name and agent.get("enabled", True):
             enabled_names.add(name)
 
-    # Chair must reference an enabled agent (soft).
+    # Chair must reference an enabled agent (soft). The literal "rotate" is a
+    # valid special value (deterministic per-run rotation) and never warns.
     chair = council.get("chair", "claude")
-    if enabled_names and chair not in enabled_names:
+    if enabled_names and chair != "rotate" and chair not in enabled_names:
         warnings.append(
             f"council.chair '{chair}' is not an enabled agent (enabled: "
             f"{', '.join(sorted(enabled_names)) or 'none'}); the first "
@@ -256,6 +259,18 @@ class CouncilConfig:
     # orchestration features (see orchestrator.run_council). LLM output itself
     # is never made deterministic by this; only the orchestration around it.
     seed: int | None = None
+    # Anonymize peer reviews shown in the round-2 debate (Chatham House rule,
+    # issue #37): strip vendor/agent identity, relabel as "Reviewer A/B/...",
+    # and randomize per-debater presentation order via the shared run RNG so
+    # neither identity nor position is a stable signal. The rendered report
+    # still attributes findings by real name. Set False for the old
+    # identity-labeled debate path.
+    anonymize_debate: bool = True
+    # Prefer a chair that was NOT a round-1 reviewer when a usable non-reviewer
+    # is available (issue #38), mitigating chair self-preference bias. Has no
+    # effect when chair == "rotate" (rotation already picks among usable agents)
+    # or when an explicit usable chair name is configured.
+    prefer_non_reviewer_chair: bool = False
 
     @property
     def enabled_agents(self) -> list[AgentSpec]:
@@ -322,6 +337,8 @@ def _from_dict(data: dict) -> CouncilConfig:
         ci=_ci_from_dict(council.get("ci", {})),
         context=_context_from_dict(council.get("context", {})),
         seed=_seed_from_dict(council),
+        anonymize_debate=bool(council.get("anonymize_debate", True)),
+        prefer_non_reviewer_chair=bool(council.get("prefer_non_reviewer_chair", False)),
     )
 
 
