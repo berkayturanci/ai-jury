@@ -9,11 +9,12 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
-from . import prompts
+from . import injection, prompts
 from .adapters import Adapter, AgentResult, make_adapter
 from .config import CouncilConfig
 from .consensus import FindingGroup, group_findings
 from .findings import Finding, Verdict, parse_findings, parse_verdicts
+from .privilege import audit_privilege
 from .redaction import redact
 
 
@@ -31,6 +32,7 @@ class CouncilOutcome:
     context_mode: str = "diff-only"
     redact_secrets: bool = True
     redaction_count: int = 0
+    injection_hits: list = field(default_factory=list)
 
 
 def _run_phase(
@@ -80,6 +82,30 @@ def run_council(
         if redaction_count:
             log(f"redacted {redaction_count} secret(s) before sending to agents")
 
+    # Prompt-injection heuristic (OWASP LLM01): scan untrusted diff/context for
+    # patterns that try to override instructions, then SURFACE them as a synthetic
+    # finding/warning. We never act on them; the CI gate is derived from
+    # structured consensus (see ci.evaluate_ci), so an injected "APPROVE"
+    # cannot flip the verdict.
+    injection_hits = injection.scan_inputs(diff, context)
+    injection_findings: list[Finding] = []
+    if injection_hits:
+        log(f"prompt-injection heuristic: {len(injection_hits)} suspicious pattern(s) flagged")
+        syn = injection.hits_to_finding(injection_hits)
+        if syn is not None:
+            injection_findings.append(syn)
+
+    # Least-privilege audit: warn when a configured agent could perform
+    # write/tool actions while reviewing attacker-controlled content.
+    privilege_warnings = audit_privilege(config.enabled_agents)
+    for w in privilege_warnings:
+        log(f"least-privilege warning: {w}")
+    if strict and privilege_warnings:
+        raise RuntimeError(
+            "least-privilege check failed (--strict): "
+            + "; ".join(privilege_warnings)
+        )
+
     specs = config.enabled_agents
     adapters = [make_adapter(s, mock=mock) for s in specs]
 
@@ -98,14 +124,22 @@ def run_council(
     # Round 1: independent reviews.
     log(f"round 1: {len(usable)} agents reviewing")
     review_prompt = {
-        a.name: prompts.REVIEW.format(name=a.name, context=context or "_(none)_", diff=diff)
+        a.name: prompts.REVIEW.format(
+            name=a.name,
+            context=context or "_(none)_",
+            diff=diff,
+            notice=prompts._UNTRUSTED_NOTICE,
+        )
         for a in usable
     }
     reviews = _run_phase(usable, review_prompt, "review", config.parallel)
 
     # Parse structured findings from each successful review and aggregate them.
-    all_findings: list[Finding] = []
-    all_warnings: list[str] = []
+    # Seed with the synthetic injection finding/warnings so they surface in the
+    # report and outcome.warnings without ever influencing agent behaviour.
+    all_findings: list[Finding] = list(injection_findings)
+    all_warnings: list[str] = injection.hits_to_warnings(injection_hits)
+    all_warnings.extend(privilege_warnings)
     for r in reviews:
         if not r.ok:
             continue
@@ -131,6 +165,7 @@ def run_council(
                     diff=diff,
                     own_review=own.get(a.name, "_(your review was unavailable)_"),
                     other_reviews=_others(reviews, a.name),
+                    notice=prompts._UNTRUSTED_NOTICE,
                 )
                 for a in debaters
             }
@@ -164,6 +199,7 @@ def run_council(
         context_mode=context_mode,
         redact_secrets=redact_on,
         redaction_count=redaction_count,
+        injection_hits=injection_hits,
     )
 
 
@@ -210,6 +246,7 @@ def _verify(
         diff=diff,
         findings=_format_findings_for_verify(findings),
         context=context or "_(none)_",
+        notice=prompts._UNTRUSTED_NOTICE,
     )
     result = chair.run(prompt, phase="verify")
     if not result.ok:
@@ -272,7 +309,12 @@ def _synthesize(config, usable, reviews, debate, diff, log, verdicts=None) -> Ag
     debate_txt = "\n\n".join(
         f"### {r.agent}\n{r.output}" for r in debate if r.ok and r.output
     ) or "_(no debate round)_"
-    prompt = prompts.SYNTHESIS.format(diff=diff, reviews=reviews_txt, debate=debate_txt)
+    prompt = prompts.SYNTHESIS.format(
+        diff=diff,
+        reviews=reviews_txt,
+        debate=debate_txt,
+        notice=prompts._UNTRUSTED_NOTICE,
+    )
     if verdicts:
         prompt += f"\n\n=== VERIFICATION VERDICTS ===\n{_format_verdicts(verdicts)}\n"
     return chair.run(prompt, phase="synthesis")
