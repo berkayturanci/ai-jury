@@ -47,5 +47,111 @@ class PostInlineDryRunTests(unittest.TestCase):
         self.assertEqual(printed["comments"][0]["side"], "RIGHT")
 
 
+class FindingSignatureTests(unittest.TestCase):
+    def test_signature_stable_across_calls(self):
+        f = Finding(severity="major", file="a.py", line=10, claim="c1")
+        self.assertEqual(github._finding_signature(f), github._finding_signature(f))
+
+    def test_signature_normalizes_case_and_whitespace(self):
+        a = Finding(severity="MAJOR", claim="  SQL Injection ", file="a.py", line=1)
+        b = Finding(severity="major", claim="sql injection", file="a.py", line=1)
+        self.assertEqual(github._finding_signature(a), github._finding_signature(b))
+
+    def test_signature_differs_by_claim(self):
+        a = Finding(severity="major", claim="claim one", file="a.py", line=1)
+        b = Finding(severity="major", claim="claim two", file="a.py", line=1)
+        self.assertNotEqual(github._finding_signature(a), github._finding_signature(b))
+
+    def test_signature_differs_by_severity(self):
+        a = Finding(severity="major", claim="same claim", file="a.py", line=1)
+        b = Finding(severity="minor", claim="same claim", file="a.py", line=1)
+        self.assertNotEqual(github._finding_signature(a), github._finding_signature(b))
+
+    def test_signature_embedded_in_body_and_roundtrips(self):
+        f = Finding(severity="major", file="a.py", line=10, claim="c1")
+        body = github._comment_body(f)
+        self.assertIn(github.INLINE_MARKER, body)
+        self.assertEqual(github._sig_from_body(body), github._finding_signature(f))
+
+    def test_sig_from_body_absent(self):
+        self.assertEqual(github._sig_from_body(""), "")
+        self.assertEqual(github._sig_from_body(None), "")
+        self.assertEqual(github._sig_from_body("plain text, no marker"), "")
+
+
+class SameLineDistinctFindingsTests(unittest.TestCase):
+    def test_two_distinct_findings_same_line_not_collapsed(self):
+        findings = [
+            Finding(severity="major", file="a.py", line=10, claim="sql injection"),
+            Finding(severity="major", file="a.py", line=10, claim="missing auth"),
+        ]
+        payload = build_inline_payload(findings)
+        self.assertEqual(len(payload), 2)
+        self.assertEqual(payload[0]["path"], payload[1]["path"])
+        self.assertEqual(payload[0]["line"], payload[1]["line"])
+        sigs = {github._sig_from_body(c["body"]) for c in payload}
+        self.assertEqual(len(sigs), 2)
+
+
+class InlineDedupTests(unittest.TestCase):
+    def _patch_no_network(self, posted):
+        # Avoid any real `gh` call: capture the JSON body that would be sent.
+        self._orig_resolve = github._resolve_repo
+        self._orig_with_input = github._gh_with_input
+        github._resolve_repo = lambda repo: "o/r"
+
+        def fake_with_input(args, stdin_data):
+            posted.append(json.loads(stdin_data))
+            return ""
+
+        github._gh_with_input = fake_with_input
+
+    def tearDown(self):
+        if hasattr(self, "_orig_resolve"):
+            github._resolve_repo = self._orig_resolve
+        if hasattr(self, "_orig_with_input"):
+            github._gh_with_input = self._orig_with_input
+        if hasattr(self, "_orig_existing"):
+            github._existing_inline_keys = self._orig_existing
+
+    def test_existing_signature_skips_only_that_finding(self):
+        f1 = Finding(severity="major", file="a.py", line=10, claim="sql injection")
+        f2 = Finding(severity="major", file="a.py", line=10, claim="missing auth")
+        sig1 = github._finding_signature(f1)
+
+        self._orig_existing = github._existing_inline_keys
+        github._existing_inline_keys = lambda pr, repo: {("a.py", 10, sig1)}
+
+        posted = []
+        self._patch_no_network(posted)
+        payload = github.post_inline_comments("1", [f1, f2], repo="o/r")
+
+        # f1 already present -> skipped; the distinct same-line f2 -> kept.
+        self.assertEqual(len(payload["comments"]), 1)
+        kept = payload["comments"][0]
+        self.assertEqual(github._sig_from_body(kept["body"]), github._finding_signature(f2))
+        self.assertIn("missing auth", kept["body"])
+        self.assertNotIn("sql injection", kept["body"])
+        self.assertEqual(len(posted), 1)
+
+    def test_null_line_falls_back_to_original_line(self):
+        f = Finding(severity="major", file="a.py", line=10, claim="c1")
+        body = github._comment_body(f)
+        sig = github._finding_signature(f)
+
+        # Existing comment with line=null but original_line set.
+        comments_json = json.dumps(
+            [{"path": "a.py", "line": None, "original_line": 10, "body": body}]
+        )
+        self._orig_gh = github._gh
+        github._gh = lambda *args: comments_json
+        try:
+            keys = github._existing_inline_keys("1", "o/r")
+        finally:
+            github._gh = self._orig_gh
+
+        self.assertIn(("a.py", 10, sig), keys)
+
+
 if __name__ == "__main__":
     unittest.main()
