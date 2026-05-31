@@ -353,9 +353,16 @@ accidental changes are caught in review.
 **Stable flags** (names, short aliases, and semantics):
 `--pr`, `--repo`, `--diff-file`, `--config`,
 `--context-mode {diff-only,expanded}`, `--redact` / `--no-redact`, `--rounds`,
-`--chair`, `--mock`, `--strict`, `--verify` / `--no-verify`, `-o` / `--output`,
-`--post-summary` / `--post`, `--post-inline`, `--dry-run`, `--ci`, `--fail-on`,
-`-q` / `--quiet`, `--version`, `-h` / `--help`.
+`--chair`, `--mock`, `--strict`, `--verify` / `--no-verify`, `--doctor`,
+`--write`, `-o` / `--output`, `--metadata-json`,
+`--format {markdown,json,sarif}`, `--post-summary` / `--post`, `--post-inline`,
+`--dry-run`, `--ci`, `--fail-on`, `-q` / `--quiet`, `--config-validate`,
+`--strict-config`, `--version`, `-h` / `--help`.
+
+A version-independent test (`test_documented_flags_match_parser_exactly`)
+asserts the documented flag set and the parser's actual long options stay
+exactly in sync in both directions, so a new flag can't be added without being
+documented and a documented flag can't silently disappear.
 
 **Stable error messages and exit codes:**
 
