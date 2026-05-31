@@ -134,6 +134,57 @@ council --doctor --write diagnostics.json # ...and write a safe JSON report
 
 A sample report is in [`docs/example-run.md`](docs/example-run.md).
 
+## Output formats
+
+Use `--format {markdown,json,sarif}` (default `markdown`) to control what is
+written to stdout or `--output`. `--metadata-json` is independent and always
+writes the metadata block to its own file, and the `--ci` exit code is computed
+the same way regardless of format.
+
+```bash
+council --diff-file changes.diff --format json  -o report.json
+council --diff-file changes.diff --format sarif -o report.sarif
+```
+
+### JSON
+
+A structured report with these top-level keys:
+
+| Key | Description |
+| --- | --- |
+| `schema_version` | Version of this JSON schema (currently `1.0`). |
+| `metadata` | Run metadata (agents, rounds, context mode, redaction stats, wall-clock proxy). |
+| `findings` | All raw findings; each carries `severity`, `file`, `line`, `claim`, `evidence`, `suggested_fix`, `confidence`, `reviewer`. |
+| `consensus` | Per consensus group: `representative` finding, `agreement` count, `reviewers`, `bucket`, `verification_status`. |
+| `verdicts` | Verification verdicts (`file`, `line`, `claim`, `status`, `reasoning`). |
+| `verdict` | The chair synthesis text, if any. |
+
+The output is deterministic for a deterministic run (e.g. `--mock`) and contains
+only legitimate finding fields — never raw diff or prompt text.
+
+### SARIF
+
+Valid [SARIF 2.1.0](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html)
+suitable for GitHub code scanning. Results are drawn from consensus group
+representatives (falling back to raw findings). Each result maps to a
+`physicalLocation` (`artifactLocation.uri` = file, `region.startLine` = line when
+known), `message.text` = the claim, and a stable `ruleId` of `council/<severity>`.
+Severity maps to the SARIF `level` as:
+
+| Severity | SARIF level |
+| --- | --- |
+| `critical`, `major` | `error` |
+| `minor` | `warning` |
+| `nit`, `info` | `note` |
+
+Upload to GitHub code scanning:
+
+```bash
+gh api -X POST repos/OWNER/REPO/code-scanning/sarifs \
+  -f commit_sha="$SHA" -f ref="$REF" \
+  -f sarif="$(gzip -c report.sarif | base64 -w0)"
+```
+
 ## Configuration — `council.toml`
 
 ```toml

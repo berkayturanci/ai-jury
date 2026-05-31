@@ -3,9 +3,9 @@ usage: council [-h] [--pr PR] [--repo REPO] [--diff-file DIFF_FILE]
                [--redact] [--no-redact] [--rounds ROUNDS] [--chair CHAIR]
                [--mock] [--strict] [--verify] [--no-verify] [--doctor]
                [--write WRITE] [-o OUTPUT] [--metadata-json PATH]
-               [--post-summary] [--post-inline] [--dry-run] [--ci]
-               [--fail-on FAIL_ON] [-q] [--config-validate] [--strict-config]
-               [--version]
+               [--format {markdown,json,sarif}] [--post-summary]
+               [--post-inline] [--dry-run] [--ci] [--fail-on FAIL_ON] [-q]
+               [--config-validate] [--strict-config] [--version]
 
 Cross-vendor multi-agent PR review council.
 
@@ -32,6 +32,8 @@ options:
   -o, --output OUTPUT   write the report to a file instead of stdout
   --metadata-json PATH  write machine-readable run metadata (durations,
                         status, rounds) as JSON
+  --format {markdown,json,sarif}
+                        output format for stdout/--output (default: markdown)
   --post-summary, --post
                         post the report as a single summary comment on --pr
   --post-inline         post inline review comments for located findings on

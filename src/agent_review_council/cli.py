@@ -87,6 +87,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="write machine-readable run metadata (durations, status, rounds) as JSON",
     )
     p.add_argument(
+        "--format", choices=["markdown", "json", "sarif"], default="markdown",
+        help="output format for stdout/--output (default: markdown)",
+    )
+    p.add_argument(
         "--post-summary", "--post", dest="post_summary", action="store_true",
         help="post the report as a single summary comment on --pr",
     )
@@ -181,20 +185,27 @@ def main(argv: list[str] | None = None) -> int:
     )
     metadata = build_run_metadata(outcome, config)
 
-    report = render(
-        outcome.reviews,
-        outcome.debate,
-        outcome.synthesis,
-        chair=outcome.chair,
-        findings=outcome.findings,
-        warnings=outcome.warnings,
-        groups=outcome.groups,
-        verify=outcome.verify,
-        context_mode=outcome.context_mode,
-        redact_secrets=outcome.redact_secrets,
-        redaction_count=outcome.redaction_count,
-        metadata=metadata,
-    )
+    if args.format == "json":
+        from .formats import to_json
+        report = to_json(outcome, config)
+    elif args.format == "sarif":
+        from .formats import to_sarif
+        report = to_sarif(outcome, config)
+    else:
+        report = render(
+            outcome.reviews,
+            outcome.debate,
+            outcome.synthesis,
+            chair=outcome.chair,
+            findings=outcome.findings,
+            warnings=outcome.warnings,
+            groups=outcome.groups,
+            verify=outcome.verify,
+            context_mode=outcome.context_mode,
+            redact_secrets=outcome.redact_secrets,
+            redaction_count=outcome.redaction_count,
+            metadata=metadata,
+        )
 
     if args.metadata_json:
         with Path(args.metadata_json).open("w", encoding="utf-8") as fh:
@@ -209,7 +220,10 @@ def main(argv: list[str] | None = None) -> int:
         ci_exit, ci_reason = evaluate_ci(
             outcome.groups, fail_on, config.ci.ignore_unverified
         )
-        report += f"\n\n## CI gate\n\n{ci_reason}\n"
+        # Only the markdown report carries the human-readable CI gate section;
+        # json/sarif documents stay machine-clean. The exit code is unchanged.
+        if args.format == "markdown":
+            report += f"\n\n## CI gate\n\n{ci_reason}\n"
 
     if args.output:
         with Path(args.output).open("w", encoding="utf-8") as fh:
