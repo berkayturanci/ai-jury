@@ -26,6 +26,9 @@ classifiers = [
 ]
 dependencies = []
 
+[project.optional-dependencies]
+dev = ["ruff>=0.6", "build>=1.2", "coverage>=7.5"]
+
 [project.urls]
 Homepage = "https://github.com/berkayturanci/agent-review-council"
 Issues = "https://github.com/berkayturanci/agent-review-council/issues"
@@ -51,3 +54,28 @@ exclude = [
     "venv",
     "__pycache__",
 ]
+
+[tool.coverage.run]
+# Measure the installed package by import name so coverage works whether the
+# package is run from ``src/`` (PYTHONPATH) or an editable install.
+source = ["agent_review_council"]
+branch = true
+omit = [
+    # Thin ``python -m agent_review_council`` shim; only an entrypoint guard.
+    "*/agent_review_council/__main__.py",
+]
+
+[tool.coverage.report]
+# Lines that are intentionally not exercised by the test suite.
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "@(abc\\.)?abstractmethod",
+]
+show_missing = true
+skip_covered = false
+# Minimum total coverage. Keep at or just below the measured baseline so the
+# gate reflects reality today; raise it deliberately as coverage improves.
+fail_under = 80
