@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>agent-review-council — cross-vendor multi-agent code review</title>
+  <meta name="description" content="Install once. Run a cross-vendor review council anywhere. A stdlib-only Python CLI that orchestrates native coding-agent CLIs (Claude Code, Codex, Antigravity) to review the same diff, debate, and synthesize one verdict." />
+  <meta property="og:title" content="agent-review-council" />
+  <meta property="og:description" content="Install once. Run a cross-vendor review council anywhere." />
+  <meta property="og:image" content="assets/hero.png" />
+  <meta property="og:type" content="website" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="hero">
+    <nav>
+      <span class="brand">🏛️ agent-review-council</span>
+      <a class="nav-link" href="https://github.com/berkayturanci/agent-review-council">GitHub</a>
+    </nav>
+
+    <div class="hero-inner">
+      <h1>Install once. Run a cross-vendor review council anywhere.</h1>
+      <p class="lede">
+        A small, <strong>stdlib-only</strong> Python CLI that drives each vendor's
+        <strong>native coding-agent CLI</strong> — Claude Code, OpenAI Codex, Google
+        Antigravity — to review the <em>same</em> diff or PR, cross-examine each other,
+        and synthesize <strong>one chair verdict</strong>. Local-first. Not API calls.
+      </p>
+      <div class="cta">
+        <a class="btn primary" href="https://github.com/berkayturanci/agent-review-council">View on GitHub</a>
+        <a class="btn" href="https://github.com/berkayturanci/agent-review-council/releases">Releases</a>
+      </div>
+      <img class="hero-img" src="assets/hero.png" width="1200" height="520"
+           alt="A diff or PR enters; three native vendor agents — Claude Code, Codex, and Antigravity — review it independently and debate each other's findings; a chair agent verifies and synthesizes one verdict (APPROVE / COMMENT / REQUEST CHANGES) plus a markdown report." />
+    </div>
+  </header>
+
+  <main>
+    <section>
+      <h2>Why a native-CLI council</h2>
+      <p>
+        Different models miss different things. Running them as an adversarial panel —
+        each seeing the others' findings and arguing — surfaces more real issues and
+        filters more false positives than any single reviewer. The research-backed lever
+        is <strong>vendor heterogeneity</strong>, not more rounds. Each reviewer runs in
+        its own native CLI with its own tooling and context, rather than as a raw model
+        API call.
+      </p>
+    </section>
+
+    <section>
+      <h2>Quickstart</h2>
+      <pre><code>pipx install agent-review-council
+
+council --pr 123                                  # review a GitHub PR
+git diff origin/HEAD... | council --diff-file -   # review the current branch
+council --ci --fail-on high,critical              # gate CI on blocking findings
+council --mock --diff-file examples/sample.diff   # offline demo, no live CLIs</code></pre>
+      <p class="muted">
+        Requires Python 3.11+ and at least one agent CLI (<code>claude</code>,
+        <code>codex</code>, <code>agy</code>); missing ones are skipped. <code>gh</code>
+        is needed for <code>--pr</code>.
+      </p>
+    </section>
+
+    <section>
+      <h2>How it works</h2>
+      <ol>
+        <li><strong>Round 1 — independent review.</strong> Every available agent reviews the diff concurrently with the same rubric.</li>
+        <li><strong>Round 2 — debate.</strong> Each agent sees the others' reviews and emits agree / dispute / missed.</li>
+        <li><strong>Verification.</strong> A tool-equipped agent re-reads the code per finding to drop false positives.</li>
+        <li><strong>Synthesis.</strong> The chair consolidates into one verdict plus consensus, disputed, and single-reviewer findings.</li>
+      </ol>
+    </section>
+
+    <section class="grid">
+      <div>
+        <h3>Local-first &amp; private</h3>
+        <p><code>diff-only</code> context by default; secret redaction on by default. No source files outside the diff, no repo history, no env vars are sent. <a href="https://github.com/berkayturanci/agent-review-council/blob/main/SECURITY.md">Security &amp; data-flow →</a></p>
+      </div>
+      <div>
+        <h3>Where it fits</h3>
+        <p>Smaller in scope than hosted PR reviewers and different from API-level tools. <a href="https://github.com/berkayturanci/agent-review-council/blob/main/docs/comparison.md">Ecosystem comparison →</a></p>
+      </div>
+      <div>
+        <h3>Drop-in skill</h3>
+        <p>Install as a Claude Code plugin or copy the skill into <code>.claude/skills/</code>. <a href="https://github.com/berkayturanci/agent-review-council/blob/main/docs/platforms.md">Platform support →</a></p>
+      </div>
+      <div>
+        <h3>Roadmap</h3>
+        <p>Verification quality, tiered consensus, anonymized rebuttal, public launch. <a href="https://github.com/berkayturanci/agent-review-council/milestones">Milestones →</a></p>
+      </div>
+    </section>
+
+    <section class="notice">
+      <p><strong>Not a hosted SaaS.</strong> This is a local-first CLI + skill, not a hosted review service or a general multi-agent framework. It reviews and reports; it does not rewrite your code.</p>
+    </section>
+  </main>
+
+  <footer>
+    <p>
+      <a href="https://github.com/berkayturanci/agent-review-council">GitHub</a> ·
+      <a href="https://github.com/berkayturanci/agent-review-council/blob/main/docs/architecture.md">Architecture</a> ·
+      <a href="https://github.com/berkayturanci/agent-review-council/blob/main/docs/feasibility.md">Feasibility</a> ·
+      MIT License
+    </p>
+  </footer>
+</body>
+</html>
