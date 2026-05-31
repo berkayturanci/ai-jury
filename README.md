@@ -142,6 +142,19 @@ their support status, see the [platform support matrix](docs/platforms.md).
 | `report.py` | Render the run as one markdown report |
 | `github.py` | `gh`-based PR diff in / comment out |
 
+### Report format contract
+
+The markdown report is the tool's user-facing output and a contract for
+downstream skill/workflow consumers, so it changes only deliberately.
+`tests/test_report_golden.py` renders the report for several scenarios (full
+council run, single-round, verified-finding, failed-agent, missing-agent) and
+compares each against a committed snapshot in `tests/golden/*.md`. Unintended
+formatting drift fails CI; an intentional change shows up as a reviewable
+fixture diff. Durations (the only non-deterministic token) are normalized to
+`0s` before comparison. Regenerate fixtures after an intentional change with
+`UPDATE_GOLDEN=1 PYTHONPATH=src python3 -m unittest tests.test_report_golden`.
+See [`docs/report-format.md`](docs/report-format.md) for details.
+
 ## Prior art & how this differs
 
 This is a known pattern, not a new invention. The closest project is
@@ -183,6 +196,7 @@ Want tighter sandboxing? Override `extra_args` for the `codex` agent in `council
 - [Feasibility & prior art](docs/feasibility.md) — research grounding and verified CLI invocations.
 - [Platform support matrix](docs/platforms.md) — where you can install/run the council and how.
 - [Release readiness checklist](docs/release-checklist.md) — the bar before a public release.
+- [Report format contract](docs/report-format.md) — the golden-file snapshot tests and how to regenerate them.
 - [SECURITY.md](SECURITY.md) — data-flow and secret-redaction reference.
 - Agent-readable: [`llms.txt`](llms.txt) (concise) and [`llms-full.txt`](llms-full.txt) (full reference).
 
