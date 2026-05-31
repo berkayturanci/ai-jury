@@ -256,6 +256,7 @@ flag-presence checks run on all supported versions (3.11–3.13).
 ## Documentation
 
 - [Positioning](docs/positioning.md) — mission, what makes it different, principles, and non-goals.
+- [Cookbook](docs/cookbook.md) — copy-paste recipes for local, PR, advisory-comment, CI, mock, and assistant workflows.
 - [Architecture](docs/architecture.md) — components, round structure, adapters, supported platforms.
 - [Ecosystem comparison](docs/comparison.md) — capability matrix vs hosted / API-level / native-CLI tools.
 - [Feasibility & prior art](docs/feasibility.md) — research grounding and verified CLI invocations.
