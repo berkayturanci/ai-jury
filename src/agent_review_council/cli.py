@@ -6,14 +6,17 @@ Examples:
   council --diff-file changes.diff        # review a local diff file
   council --diff-file -                   # read a diff from stdin
   council --mock                          # offline pipeline demo (no live CLIs)
+  council --doctor                        # local readiness diagnostics
 """
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
 from . import __version__
+from . import doctor as doctor_module
 from .ci import evaluate_ci
 from .config import load_config
 from .github import post_inline_comments, post_pr_comment, pr_context, pr_diff
@@ -68,6 +71,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-verify", dest="verify", action="store_false",
         help="skip the verification round",
     )
+    p.add_argument(
+        "--doctor", action="store_true",
+        help="print a local readiness diagnostics report and exit (no telemetry is collected or sent)",
+    )
+    p.add_argument(
+        "--write",
+        help="with --doctor, also write the diagnostics as JSON to this path (secrets redacted)",
+    )
     p.add_argument("-o", "--output", help="write the report to a file instead of stdout")
     p.add_argument(
         "--post-summary", "--post", dest="post_summary", action="store_true",
@@ -96,6 +107,20 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+
+    if args.doctor:
+        diagnostics = doctor_module.build_diagnostics(args.config)
+        print(doctor_module.render_report(diagnostics))
+        if args.write:
+            try:
+                Path(args.write).write_text(
+                    json.dumps(diagnostics, indent=2) + "\n", encoding="utf-8"
+                )
+            except OSError as exc:
+                print(f"error: {exc}", file=sys.stderr)
+                return 2
+            print(f"\nWrote diagnostics to {args.write}")
+        return 0
 
     config = load_config(args.config)
     if args.rounds is not None:
