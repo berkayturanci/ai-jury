@@ -1,15 +1,16 @@
-.PHONY: help install test smoke lint format coverage build clean
+.PHONY: help install test live-smoke smoke lint format coverage build clean
 
 help:
 	@echo "Available commands:"
-	@echo "  make install  - Install the package in editable mode with development tools"
-	@echo "  make test     - Run the offline unit test suite"
-	@echo "  make smoke    - Run the mock CLI smoke test"
-	@echo "  make lint     - Run Ruff checks"
-	@echo "  make format   - Format Python code with Ruff"
-	@echo "  make coverage - Measure test coverage and enforce the minimum gate"
-	@echo "  make build    - Build sdist and wheel packages"
-	@echo "  make clean    - Remove build artifacts and Python caches"
+	@echo "  make install    - Install the package in editable mode with development tools"
+	@echo "  make test       - Run the offline unit test suite"
+	@echo "  make live-smoke - Run opt-in live native-CLI smoke tests (COUNCIL_LIVE=1)"
+	@echo "  make smoke      - Run the mock CLI smoke test"
+	@echo "  make lint       - Run Ruff checks"
+	@echo "  make format     - Format Python code with Ruff"
+	@echo "  make coverage   - Measure test coverage and enforce the minimum gate"
+	@echo "  make build      - Build sdist and wheel packages"
+	@echo "  make clean      - Remove build artifacts and Python caches"
 
 install:
 	python3 -m pip install --upgrade pip
@@ -17,6 +18,12 @@ install:
 
 test:
 	python3 -m unittest discover -s tests -v
+
+# Opt-in live smoke tests: exercise the real native agent CLIs (claude, codex,
+# agy) end to end. Skipped entirely unless COUNCIL_LIVE=1; each agent whose CLI
+# is not on PATH is skipped individually. Intentionally excluded from CI.
+live-smoke:
+	COUNCIL_LIVE=1 PYTHONPATH=src python3 -m unittest discover -s tests -v
 
 smoke:
 	PYTHONPATH=src python3 -m agent_review_council --mock --diff-file examples/sample.diff -q

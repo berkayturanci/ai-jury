@@ -88,6 +88,37 @@ honest:
 
 Add `# pragma: no cover` to any new line that is genuinely not worth testing.
 
+## Live smoke tests
+
+The default test suite uses **mock adapters only**, so the real native CLIs
+are never invoked — a breakage in argv format, stdin handling, or output
+capture in the concrete adapters would go unnoticed until a live run. The
+optional **live smoke tests** close that gap: they run a tiny, cheap review
+prompt (a two-line diff) through each *installed* real adapter and assert the
+run succeeds (`ok`, non-empty output, `error_code is None`).
+
+They are **opt-in** and skipped entirely unless `COUNCIL_LIVE=1` is set, so
+they never run in `make test` or in CI.
+
+**Requirements** for a meaningful live run:
+
+- The agent CLIs you want to exercise must be installed and on your `PATH`
+  (`claude`, `codex`, `agy`) **and authenticated** for non-interactive use.
+- Any agent whose CLI is not installed is **skipped individually**, so a
+  machine with only `claude` still exercises that one adapter.
+
+**Run them:**
+
+```bash
+make live-smoke
+# equivalent to:
+COUNCIL_LIVE=1 PYTHONPATH=src python3 -m unittest discover -s tests -v
+```
+
+They are **intentionally excluded from the CI matrix** (no CLIs, auth, or
+secrets are available there) and are meant to be run locally before a release
+or when touching the adapter layer.
+
 ## Usage
 
 ```bash
