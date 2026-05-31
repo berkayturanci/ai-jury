@@ -66,4 +66,6 @@ footprint at zero. Updates are proposed automatically and reviewed by hand:
 
 ## Release Notes
 
-User-visible changes should update [CHANGELOG.md](CHANGELOG.md).
+User-visible changes should update [CHANGELOG.md](CHANGELOG.md). Before a public
+release, work through the [release readiness checklist](docs/release-checklist.md),
+which covers packaging, CI, docs, security, versioning, and rollback steps.

@@ -1,0 +1,150 @@
+# agent-review-council — full reference
+
+> Install once. Run a cross-vendor review council anywhere.
+
+A small, stdlib-only Python CLI that orchestrates native coding-agent CLIs from
+different vendors to review the same diff/PR, debate, verify, and synthesize one
+verdict. This file is a fuller agent-readable reference; it links to canonical docs
+rather than duplicating them.
+
+## What it is / is not
+
+- **Is:** a local-first orchestrator that shells out to each vendor's native agent CLI
+  (`claude`, `codex`, `agy`) as headless subprocesses, runs an adversarial review +
+  debate + verification pipeline, and renders one markdown report.
+- **Is not:** a hosted review SaaS, a dashboard product, a general multi-agent
+  framework, or an auto-fix/patch tool. Scope stays on review orchestration.
+
+## Install & requirements
+
+- Python ≥3.11. Zero runtime dependencies (stdlib: `subprocess`, `tomllib`,
+  `concurrent.futures`, `argparse`).
+- `pipx install agent-review-council` → `council` entry point. (`pip install -e .` for dev.)
+- Install at least one agent CLI: `claude` (Claude Code), `codex` (OpenAI Codex CLI),
+  `agy` (Google Antigravity). Missing ones are skipped unless `--strict`.
+- `gh` (GitHub CLI) is required for `--pr` input and `--post-summary`/`--post-inline`.
+- Supported platforms: see [docs/architecture.md](docs/architecture.md#supported-platforms)
+  (Linux primary; macOS/Windows tested on the latest Python; live CLIs depend on each
+  vendor's own OS support).
+
+## Pipeline
+
+1. **Round 1 — independent review.** Each available agent reviews the diff with the same
+   rubric (correctness → security → regressions → tests), concurrently.
+2. **Round 2 — cross-examination (optional, `rounds = 2`).** Each agent sees the diff,
+   its own review, and the others' reviews; emits AGREE / DISPUTE / MISSED. Needs ≥2 agents.
+3. **Verification pass (optional).** A tool-equipped agent re-reads the actual code per
+   finding to drop false positives and recalibrate severity.
+4. **Synthesis.** The `chair` agent consolidates into one verdict (APPROVE / COMMENT /
+   REQUEST CHANGES) with consensus, disputed, and single-reviewer findings.
+
+Full detail: [docs/architecture.md](docs/architecture.md).
+
+## CLI flags
+
+Input (choose one): `--pr <num/url>` (+ optional `--repo owner/name`), `--diff-file <path|->`.
+
+- `--config <path>` — path to `council.toml` (default: `./council.toml` or built-in).
+- `--rounds <n>` — 1 = review only, 2 = + debate.
+- `--chair <name>` — agent that synthesizes.
+- `--mock` — deterministic offline agents (no live CLIs, no spend).
+- `--strict` — fail if any configured CLI is missing.
+- `--verify` / `--no-verify` — toggle the verification round (default from config).
+- `--context-mode diff-only|expanded` — what context leaves your machine.
+- `--redact` / `--no-redact` — secret redaction (default from config; on by default).
+- `-o, --output <path>` — write report to a file instead of stdout.
+- `--post-summary` (alias `--post`) — post the report as one summary comment on `--pr`.
+- `--post-inline` — post inline review comments for located findings on `--pr`.
+- `--dry-run` — with `--post-inline`, print what would be posted without calling GitHub.
+- `--ci` — exit non-zero when blocking findings remain.
+- `--fail-on <sev,...>` — comma-separated severities that fail CI (overrides config).
+- `-q, --quiet` — suppress progress logs on stderr.
+- `--version`.
+
+## Configuration schema — `council.toml`
+
+```toml
+[council]
+rounds = 2          # 1 = review only, 2 = review + debate
+chair  = "claude"   # which agent synthesizes the verdict
+timeout = 300       # per-agent wall-clock seconds (hung CLI killed at this bound)
+parallel = true
+
+[council.context]
+mode = "diff-only"      # "diff-only" (default) or "expanded"
+redact_secrets = true   # scrub recognized secrets before sending (default on)
+
+[[agent]]
+name = "claude"
+vendor = "anthropic"    # anthropic | openai | google
+command = "claude"
+# model = "claude-opus-4-8"
+extra_args = ["--output-format", "text", "--disallowed-tools", "Edit,Write,NotebookEdit,Bash", "--dangerously-skip-permissions"]
+```
+
+## Adapter contract
+
+Each adapter (in `src/agent_review_council/adapters.py`) knows only how to invoke one
+CLI headlessly; the orchestrator owns prompt content. Adding a vendor is a ~20-line
+addition. Adapters fail soft — a missing CLI, non-zero exit, or timeout becomes a
+non-fatal `AgentResult(ok=False, error=…)`; the run continues unless `--strict`.
+Read-only safety is enforced per vendor via `extra_args`.
+
+Verified headless invocations (early 2026):
+
+- Anthropic `ClaudeAdapter`: `claude -p "<prompt>" --output-format text`
+- OpenAI `CodexAdapter`: `codex exec "<prompt>"`
+- Google `AgyAdapter`: `agy --print "<prompt>"`
+- `MockAdapter`: deterministic, phase-aware output; no subprocess (tests/CI).
+
+## Output formats
+
+- Markdown report to stdout or `-o <file>` (see a sample in [docs/example-run.md](docs/example-run.md)).
+- Structured findings keyed by `{severity, file, line, category}` feed consensus tiers.
+- GitHub: one summary comment (`--post-summary`) and/or inline review comments
+  (`--post-inline`) via `gh`.
+- CI: exit code is non-zero when blocking findings remain (`--ci`, `--fail-on`).
+
+## Security / data-flow model
+
+- **Context modes:** `diff-only` (default) sends only the diff; `expanded` adds PR
+  title/body. No source files outside the diff, no repo history, no env vars are read or sent.
+- **Secret redaction (on by default):** the diff and context pass through
+  `redaction.py`, masking PEM keys, AWS keys, GitHub/OpenAI tokens, `Bearer` tokens, and
+  generic `api_key`/`secret`/`token` assignments → `[REDACTED:<kind>]`.
+- **Posting** sends the rendered report/comments to the GitHub API; `--dry-run` previews
+  the inline payload with no network call.
+- Repository security posture: CodeQL + OpenSSF Scorecard + SHA-pinned Actions.
+- Canonical reference: [SECURITY.md](SECURITY.md).
+
+## Skill / distribution
+
+A Claude Code skill ships in [skill/review-council/](skill/review-council/SKILL.md);
+drop it into a project's `.claude/skills/` to convene the council on demand. Platform
+support matrix and plugin manifests are roadmap
+([#45](https://github.com/berkayturanci/agent-review-council/issues/45)).
+
+## Roadmap
+
+Phased plan in [ROADMAP.md](ROADMAP.md); issues under
+[milestones](https://github.com/berkayturanci/agent-review-council/milestones). Near-term
+themes: verification quality, tiered consensus, anonymized rebuttal, public launch
+(docs site, comparison, distribution).
+
+## Troubleshooting
+
+- **An agent is skipped:** its CLI isn't installed/on PATH. Install it or run `--mock`.
+  Use `--strict` to fail instead of skipping.
+- **Hang:** a CLI exceeding `timeout` is killed and recorded as a failed agent.
+- **`--pr` errors:** ensure `gh` is installed and authenticated for the repo.
+- **No debate:** debate needs ≥2 agents whose round-1 call succeeded; otherwise it falls
+  back to review + synthesis.
+- **Codex structured output ignored:** disable MCP servers for review runs (see
+  [docs/feasibility.md](docs/feasibility.md)).
+
+## Links
+
+- Repo: https://github.com/berkayturanci/agent-review-council
+- Issues: https://github.com/berkayturanci/agent-review-council/issues
+- README: [README.md](README.md) · Architecture: [docs/architecture.md](docs/architecture.md)
+- Comparison: [docs/comparison.md](docs/comparison.md) · Concise index: [llms.txt](llms.txt)

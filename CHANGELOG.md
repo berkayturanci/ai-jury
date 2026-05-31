@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   macOS and Windows) covering unit tests and the mock CLI smoke test.
 - OpenSSF Scorecard, CodeQL (Python), and Dependabot automation for supply-chain
   and repository-security signals, plus a documented dependency-update policy.
+- Ecosystem comparison & capability matrix (`docs/comparison.md`) positioning the
+  project against hosted, API-level, and other native-CLI review tools.
+- Agent-readable docs: `llms.txt` (concise) and `llms-full.txt` (full reference).
+- Public release readiness checklist (`docs/release-checklist.md`).
 
 ## [0.1.0] - 2026-05-30
 

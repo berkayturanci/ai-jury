@@ -1,0 +1,46 @@
+# agent-review-council
+
+> Install once. Run a cross-vendor review council anywhere. A small, stdlib-only Python
+> CLI that orchestrates native coding-agent CLIs from different vendors (Claude Code,
+> OpenAI Codex, Google Antigravity) to review the *same* diff/PR, debate each other's
+> findings, verify them against the code, and synthesize one chair verdict.
+
+Key facts:
+
+- Language/runtime: Python ≥3.11, **zero runtime dependencies** (standard library only).
+- Install: `pipx install agent-review-council` (entry point: `council`).
+- Differentiator: drives each vendor's **native CLI agent** as a headless subprocess,
+  not API-level model calls. The research-backed lever is **vendor heterogeneity**.
+- Pipeline: round 1 independent review → round 2 cross-examination/debate → optional
+  verification pass → chair synthesis → one markdown report.
+- Output: markdown report; optional GitHub summary comment and inline review comments;
+  structured findings (severity/file/line); CI gating via exit code.
+- Privacy: `diff-only` context by default; secret redaction on by default; local-first.
+
+## Quickstart
+
+- `council --pr 123` — review a GitHub PR (needs `gh`).
+- `git diff origin/HEAD... | council --diff-file -` — review the current branch.
+- `council --diff-file examples/sample.diff` — review a diff file.
+- `council --mock --diff-file examples/sample.diff` — offline demo, no live CLIs.
+- `council --ci --fail-on high,critical` — gate CI on blocking findings.
+
+## Docs
+
+- [README](README.md): overview, install, usage, configuration, data-flow/privacy.
+- [Architecture](docs/architecture.md): components, round structure, adapters, supported-platform matrix.
+- [Feasibility & prior art](docs/feasibility.md): research grounding and verified CLI invocations.
+- [Ecosystem comparison](docs/comparison.md): capability matrix vs hosted/API-level/native-CLI peers.
+- [Release readiness checklist](docs/release-checklist.md): public-release bar.
+- [Full reference](llms-full.txt): config schema, adapter contract, CLI flags, output, security.
+
+## Configuration
+
+- File: `council.toml` (`[council]`, `[[agent]]`, `[council.context]`); per-run overrides via CLI flags.
+- Key settings: `rounds` (1=review, 2=+debate), `chair`, `timeout`, per-agent `vendor`/`command`/`extra_args`.
+
+## Non-goals
+
+- Not a hosted review SaaS and not a dashboard product.
+- Not a general multi-agent framework — scope is cross-vendor review orchestration only.
+- Does not rewrite code or post auto-fix patches; it reviews and reports.
