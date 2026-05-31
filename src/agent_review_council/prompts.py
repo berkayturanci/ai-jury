@@ -79,6 +79,39 @@ Output exactly these three markdown sections: ## AGREE, ## DISPUTE, ## MISSED.
 {other_reviews}
 """
 
+VERIFY = """You are the VERIFIER (chair) of a multi-agent code-review council. Your job is
+to reduce false positives: for each candidate finding below, decide whether the
+diff actually supports the claim.
+
+=== PR CONTEXT ===
+{context}
+
+=== DIFF ===
+{diff}
+
+=== CANDIDATE FINDINGS (from reviewers and debate) ===
+{findings}
+
+Output a single fenced ```json code block holding a JSON array of verdicts, one
+per candidate finding. Use exactly this schema:
+- "file": repo-relative path (string) or null
+- "line": line number (integer) or null
+- "claim": the finding claim you are judging
+- "status": one of "verified", "unsupported", "needs_human_decision"
+- "reasoning": a brief justification
+
+Use "verified" only when the diff clearly supports the claim, "unsupported" when
+the claim is wrong or not evidenced by the diff, and "needs_human_decision" when
+the call is genuinely ambiguous.
+
+```json
+[
+  {{"file": "src/foo.py", "line": 42, "claim": "unchecked return value",
+    "status": "verified", "reasoning": "the diff ignores write()'s result"}}
+]
+```
+"""
+
 SYNTHESIS = """You are the CHAIR of a multi-agent code-review council. Synthesize the panel's
 work into a single decisive verdict for the PR author. Inputs: the diff, all
 round-1 reviews, and (if present) the round-2 debate.

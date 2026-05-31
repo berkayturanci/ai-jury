@@ -12,7 +12,8 @@ from dataclasses import dataclass, field
 from . import prompts
 from .adapters import Adapter, AgentResult, make_adapter
 from .config import CouncilConfig
-from .findings import Finding, parse_findings
+from .consensus import FindingGroup, group_findings
+from .findings import Finding, Verdict, parse_findings, parse_verdicts
 
 
 @dataclass
@@ -23,6 +24,9 @@ class CouncilOutcome:
     chair: str
     findings: list[Finding] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    groups: list[FindingGroup] = field(default_factory=list)
+    verify: AgentResult | None = None
+    verdicts: list[Verdict] = field(default_factory=list)
 
 
 def _run_phase(
@@ -93,6 +97,9 @@ def run_council(
         all_findings.extend(found)
         all_warnings.extend(warns)
 
+    # Deterministic consensus grouping across reviewers.
+    groups = group_findings(all_findings, len(reviews))
+
     # Round 2: debate (only agents whose round-1 succeeded participate).
     debate: list[AgentResult] = []
     if config.rounds >= 2:
@@ -113,8 +120,18 @@ def run_council(
         else:
             log("round 2 skipped: need >=2 successful reviews to debate")
 
+    # Verification: the chair judges candidate findings to reduce false positives.
+    verify_result: AgentResult | None = None
+    verdicts: list[Verdict] = []
+    if config.verify:
+        verify_result, verdicts, verify_warnings = _verify(
+            config, usable, all_findings, diff, context, log
+        )
+        all_warnings.extend(verify_warnings)
+        _apply_verdicts(groups, verdicts)
+
     # Synthesis: the chair consolidates.
-    synthesis = _synthesize(config, usable, reviews, debate, diff, log)
+    synthesis = _synthesize(config, usable, reviews, debate, diff, log, verdicts=verdicts)
 
     return CouncilOutcome(
         reviews=reviews,
@@ -123,6 +140,9 @@ def run_council(
         chair=_chair_name(config, usable),
         findings=all_findings,
         warnings=all_warnings,
+        groups=groups,
+        verify=verify_result,
+        verdicts=verdicts,
     )
 
 
@@ -133,7 +153,93 @@ def _chair_name(config: CouncilConfig, usable: list[Adapter]) -> str:
     return usable[0].name if usable else config.chair
 
 
-def _synthesize(config, usable, reviews, debate, diff, log) -> AgentResult | None:
+def _format_findings_for_verify(findings: list[Finding]) -> str:
+    if not findings:
+        return "_(no candidate findings)_"
+    lines = []
+    for f in findings:
+        loc = f.file or "?"
+        if f.line is not None:
+            loc = f"{loc}:{f.line}"
+        lines.append(f"- [{f.severity}] {loc} — {f.claim} (by {f.reviewer})")
+    return "\n".join(lines)
+
+
+def _format_verdicts(verdicts: list[Verdict]) -> str:
+    if not verdicts:
+        return "_(no verification verdicts)_"
+    lines = []
+    for v in verdicts:
+        loc = v.file or "?"
+        if v.line is not None:
+            loc = f"{loc}:{v.line}"
+        lines.append(f"- [{v.status}] {loc} — {v.claim}: {v.reasoning}")
+    return "\n".join(lines)
+
+
+def _verify(
+    config, usable, findings, diff, context, log
+) -> tuple[AgentResult | None, list[Verdict], list[str]]:
+    chair_name = _chair_name(config, usable)
+    chair = next((a for a in usable if a.name == chair_name), None)
+    if chair is None:
+        return None, [], []
+    log(f"verification: chair '{chair_name}' judging {len(findings)} candidate findings")
+    prompt = prompts.VERIFY.format(
+        diff=diff,
+        findings=_format_findings_for_verify(findings),
+        context=context or "_(none)_",
+    )
+    result = chair.run(prompt, phase="verify")
+    if not result.ok:
+        return result, [], [f"verification failed: {result.error}"]
+    verdicts, warnings = parse_verdicts(result.output, chair_name)
+    return result, verdicts, warnings
+
+
+def _verdict_matches_group(verdict: Verdict, group: FindingGroup) -> bool:
+    from .consensus import _normalize_claim, _normalize_path
+
+    rep = group.representative
+    if _normalize_path(verdict.file) != _normalize_path(rep.file):
+        return False
+    if verdict.line is not None and rep.line is not None and abs(verdict.line - rep.line) > 3:
+        return False
+    v_claim = _normalize_claim(verdict.claim)
+    r_claim = _normalize_claim(rep.claim)
+    if not v_claim or v_claim == r_claim:
+        return True
+    v_tokens, r_tokens = set(v_claim.split()), set(r_claim.split())
+    if not v_tokens or not r_tokens:
+        return False
+    inter = len(v_tokens & r_tokens)
+    union = len(v_tokens | r_tokens)
+    return (inter / union if union else 0.0) >= 0.5
+
+
+def _apply_verdicts(groups: list[FindingGroup], verdicts: list[Verdict]) -> None:
+    """Attach verification statuses to consensus groups.
+
+    unsupported -> bucket 'rejected'; needs_human_decision -> bucket 'disputed';
+    verified -> status recorded, bucket unchanged.
+    """
+    for verdict in verdicts:
+        # Apply to every matching group: when reviewers phrase the same issue
+        # slightly differently it can land in more than one group, and all of
+        # them should carry the verifier's judgement.
+        for group in groups:
+            if group.status:
+                continue
+            if _verdict_matches_group(verdict, group):
+                group.status = verdict.status
+                group.status_reasoning = verdict.reasoning
+                if verdict.status == "unsupported":
+                    group.bucket = "rejected"
+                elif verdict.status == "needs_human_decision":
+                    group.bucket = "disputed"
+
+
+def _synthesize(config, usable, reviews, debate, diff, log, verdicts=None) -> AgentResult | None:
     chair_name = _chair_name(config, usable)
     chair = next((a for a in usable if a.name == chair_name), None)
     if chair is None:
@@ -146,4 +252,6 @@ def _synthesize(config, usable, reviews, debate, diff, log) -> AgentResult | Non
         f"### {r.agent}\n{r.output}" for r in debate if r.ok and r.output
     ) or "_(no debate round)_"
     prompt = prompts.SYNTHESIS.format(diff=diff, reviews=reviews_txt, debate=debate_txt)
+    if verdicts:
+        prompt += f"\n\n=== VERIFICATION VERDICTS ===\n{_format_verdicts(verdicts)}\n"
     return chair.run(prompt, phase="synthesis")

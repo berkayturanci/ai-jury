@@ -15,6 +15,9 @@ chair = "claude"
 timeout = 300
 # Run agents concurrently within a round.
 parallel = true
+# Run a verification round (chair judges candidate findings) before synthesis to
+# reduce false positives. Disable with --no-verify.
+verify = true
 
 [[agent]]
 name = "claude"

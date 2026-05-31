@@ -15,6 +15,7 @@ DEFAULT_CONFIG: dict = {
         "chair": "claude",
         "timeout": 600,
         "parallel": True,
+        "verify": True,
     },
     "agent": [
         {
@@ -56,6 +57,7 @@ class CouncilConfig:
     chair: str = "claude"
     timeout: int = 600
     parallel: bool = True
+    verify: bool = True
     agents: list[AgentSpec] = field(default_factory=list)
 
     @property
@@ -84,6 +86,7 @@ def _from_dict(data: dict) -> CouncilConfig:
         chair=council.get("chair", agents[0].name if agents else "claude"),
         timeout=default_timeout,
         parallel=bool(council.get("parallel", True)),
+        verify=bool(council.get("verify", True)),
         agents=agents,
     )
 
