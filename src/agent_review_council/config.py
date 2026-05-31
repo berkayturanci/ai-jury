@@ -62,6 +62,7 @@ KNOWN_COUNCIL_KEYS = (
     "verify",
     "ci",
     "context",
+    "seed",
 )
 KNOWN_AGENT_KEYS = (
     "name",
@@ -251,6 +252,10 @@ class CouncilConfig:
     agents: list[AgentSpec] = field(default_factory=list)
     ci: CiConfig = field(default_factory=CiConfig)
     context: ContextConfig = field(default_factory=ContextConfig)
+    # Optional run seed. Controls the shared run RNG used by randomized
+    # orchestration features (see orchestrator.run_council). LLM output itself
+    # is never made deterministic by this; only the orchestration around it.
+    seed: int | None = None
 
     @property
     def enabled_agents(self) -> list[AgentSpec]:
@@ -273,6 +278,22 @@ def _context_from_dict(data: dict) -> ContextConfig:
     if mode not in ("diff-only", "expanded"):
         mode = "diff-only"
     return ContextConfig(mode=mode, redact_secrets=bool(data.get("redact_secrets", True)))
+
+
+def _seed_from_dict(council: dict) -> int | None:
+    """Parse ``[council] seed`` into an int, or None when absent/invalid.
+
+    A non-integer or boolean seed is treated as "no seed" rather than an error:
+    the seed only governs orchestration randomness, so a malformed value should
+    degrade gracefully to the unseeded (still deterministic-orchestration) path.
+    """
+    raw = council.get("seed")
+    if raw is None or isinstance(raw, bool):
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
 
 
 def _from_dict(data: dict) -> CouncilConfig:
@@ -300,7 +321,55 @@ def _from_dict(data: dict) -> CouncilConfig:
         agents=agents,
         ci=_ci_from_dict(council.get("ci", {})),
         context=_context_from_dict(council.get("context", {})),
+        seed=_seed_from_dict(council),
     )
+
+
+def config_hash(config: CouncilConfig) -> str:
+    """Return a stable SHA-256 hash of the EFFECTIVE council configuration.
+
+    The hash is a function of the resolved configuration only (no timestamps,
+    no diff text), so the same config always produces the same digest and a
+    changed config produces a different one. This anchors reproducibility
+    metadata: two runs with an identical config hash were orchestrated under
+    identical settings.
+
+    The seed is intentionally excluded so the hash describes the *configuration*
+    independent of which run seed was chosen; the seed is recorded separately in
+    run metadata.
+    """
+    import hashlib
+    import json
+
+    canonical = {
+        "rounds": config.rounds,
+        "chair": config.chair,
+        "timeout": config.timeout,
+        "parallel": config.parallel,
+        "verify": config.verify,
+        "ci": {
+            "fail_on": list(config.ci.fail_on),
+            "ignore_unverified": config.ci.ignore_unverified,
+        },
+        "context": {
+            "mode": config.context.mode,
+            "redact_secrets": config.context.redact_secrets,
+        },
+        "agents": [
+            {
+                "name": a.name,
+                "vendor": a.vendor,
+                "command": a.command,
+                "model": a.model,
+                "timeout": a.timeout,
+                "enabled": a.enabled,
+                "extra_args": list(a.extra_args),
+            }
+            for a in config.agents
+        ],
+    }
+    payload = json.dumps(canonical, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def load_raw_config(path: str | Path | None = None) -> dict:

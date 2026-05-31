@@ -53,6 +53,8 @@ class MetadataShapeTest(unittest.TestCase):
             "context_mode",
             "redact_secrets",
             "redaction_count",
+            "seed",
+            "config_hash",
             "total_wall_clock_s",
             "cost_signal",
             "generated_at",
@@ -66,6 +68,11 @@ class MetadataShapeTest(unittest.TestCase):
         self.assertIsInstance(meta["context_mode"], str)
         self.assertIsInstance(meta["redact_secrets"], bool)
         self.assertIsInstance(meta["redaction_count"], int)
+        # seed is None when unseeded, an int when set; config_hash is a
+        # 64-char hex SHA-256 digest.
+        self.assertIsNone(meta["seed"])
+        self.assertIsInstance(meta["config_hash"], str)
+        self.assertEqual(len(meta["config_hash"]), 64)
         self.assertIsInstance(meta["total_wall_clock_s"], float)
         self.assertEqual(meta["cost_signal"], "wall-clock-proxy")
         # generated_at must be a valid ISO timestamp.
