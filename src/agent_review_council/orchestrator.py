@@ -14,6 +14,7 @@ from .adapters import Adapter, AgentResult, make_adapter
 from .config import CouncilConfig
 from .consensus import FindingGroup, group_findings
 from .findings import Finding, Verdict, parse_findings, parse_verdicts
+from .redaction import redact
 
 
 @dataclass
@@ -27,6 +28,9 @@ class CouncilOutcome:
     groups: list[FindingGroup] = field(default_factory=list)
     verify: AgentResult | None = None
     verdicts: list[Verdict] = field(default_factory=list)
+    context_mode: str = "diff-only"
+    redact_secrets: bool = True
+    redaction_count: int = 0
 
 
 def _run_phase(
@@ -62,6 +66,20 @@ def run_council(
     strict: bool = False,
     log=lambda _msg: None,
 ) -> CouncilOutcome:
+    # Context policy: diff-only sends only the diff; expanded includes context.
+    ctx_cfg = getattr(config, "context", None)
+    context_mode = getattr(ctx_cfg, "mode", "diff-only") if ctx_cfg else "diff-only"
+    redact_on = getattr(ctx_cfg, "redact_secrets", True) if ctx_cfg else True
+    if context_mode == "diff-only":
+        context = ""
+    redaction_count = 0
+    if redact_on:
+        diff, _n1 = redact(diff)
+        context, _n2 = redact(context)
+        redaction_count = _n1 + _n2
+        if redaction_count:
+            log(f"redacted {redaction_count} secret(s) before sending to agents")
+
     specs = config.enabled_agents
     adapters = [make_adapter(s, mock=mock) for s in specs]
 
@@ -143,6 +161,9 @@ def run_council(
         groups=groups,
         verify=verify_result,
         verdicts=verdicts,
+        context_mode=context_mode,
+        redact_secrets=redact_on,
+        redaction_count=redaction_count,
     )
 
 

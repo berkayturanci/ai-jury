@@ -44,6 +44,18 @@ def build_parser() -> argparse.ArgumentParser:
     src.add_argument("--diff-file", help="path to a diff file, or '-' for stdin")
 
     p.add_argument("--config", help="path to council.toml (default: ./council.toml or built-in)")
+    p.add_argument(
+        "--context-mode", choices=["diff-only", "expanded"], default=None,
+        help="context policy: diff-only sends only the diff; expanded includes PR context",
+    )
+    p.add_argument(
+        "--redact", dest="redact", action="store_true", default=None,
+        help="redact secrets from prompt text before sending (default: from config)",
+    )
+    p.add_argument(
+        "--no-redact", dest="redact", action="store_false",
+        help="do not redact secrets before sending",
+    )
     p.add_argument("--rounds", type=int, help="override number of rounds (1=review, 2=+debate)")
     p.add_argument("--chair", help="override the synthesizing chair agent")
     p.add_argument("--mock", action="store_true", help="offline demo: use deterministic mock agents")
@@ -92,6 +104,10 @@ def main(argv: list[str] | None = None) -> int:
         config.chair = args.chair
     if args.verify is not None:
         config.verify = args.verify
+    if args.context_mode is not None:
+        config.context.mode = args.context_mode
+    if args.redact is not None:
+        config.context.redact_secrets = args.redact
 
     def log(msg: str) -> None:
         if not args.quiet:
@@ -113,6 +129,9 @@ def main(argv: list[str] | None = None) -> int:
         warnings=outcome.warnings,
         groups=outcome.groups,
         verify=outcome.verify,
+        context_mode=outcome.context_mode,
+        redact_secrets=outcome.redact_secrets,
+        redaction_count=outcome.redaction_count,
     )
 
     ci_exit = 0

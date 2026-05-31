@@ -68,6 +68,47 @@ extra_args = ["--output-format", "text", "--disallowed-tools", "Edit,Write,Noteb
 
 Override per run with `--rounds`, `--chair`, `--config`.
 
+## Data flow / privacy
+
+What gets sent to each agent is governed by `[council.context]` in
+`council.toml` (and overridable per run on the CLI):
+
+```toml
+[council.context]
+mode = "diff-only"      # "diff-only" (default) or "expanded"
+redact_secrets = true   # scrub recognized secrets before sending (default on)
+```
+
+**Context modes** — what leaves your machine for each reviewer:
+
+- `diff-only` (**default**): agents receive **only the diff**. Any surrounding PR
+  context (title/body) is dropped. This is the smallest data surface.
+- `expanded`: agents additionally receive the PR title/body context (when
+  reviewing with `--pr`) to improve review quality. Use this only when you trust
+  the configured agent endpoints.
+
+Either way, no source files outside the diff, no repository history, and no
+environment variables are read or sent.
+
+**Secret redaction** — before anything is sent to an agent, the diff (and any
+context) is passed through a redactor (`src/agent_review_council/redaction.py`)
+that masks recognized secrets: PEM private keys, AWS access keys, GitHub/OpenAI
+tokens, `Bearer` tokens, and generic `api_key`/`secret`/`token` assignments
+(including base64-style values). Each hit becomes `[REDACTED:<kind>]`. Redaction
+is **on by default**.
+
+**Controls:**
+
+- `council.toml`: `[council.context] mode = "diff-only"|"expanded"` and
+  `redact_secrets = true|false`.
+- CLI (override config for a single run): `--context-mode diff-only|expanded`,
+  and `--redact` / `--no-redact`.
+
+Posting to GitHub (`--post-summary`, `--post-inline`) sends the rendered report
+/ comments to the GitHub API; use `--dry-run` with `--post-inline` to preview the
+inline payload without any network call. See [SECURITY.md](SECURITY.md) for the
+full data-flow and redaction reference.
+
 ## Use it from another project (skill)
 
 A Claude Code skill ships in [`skill/review-council/`](skill/review-council/SKILL.md).

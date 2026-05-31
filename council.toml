@@ -26,6 +26,13 @@ verify = true
 fail_on = ["critical", "major"]
 ignore_unverified = true
 
+# Context policy: what gets sent to each agent, and whether secrets are redacted.
+# mode = "diff-only" sends only the diff; "expanded" also sends PR context.
+# redact_secrets scrubs recognized secrets from the diff + context before sending.
+[council.context]
+mode = "diff-only"
+redact_secrets = true
+
 [[agent]]
 name = "claude"
 vendor = "anthropic"

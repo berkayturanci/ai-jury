@@ -75,6 +75,9 @@ def render(
     warnings: list[str] | None = None,
     groups: list | None = None,
     verify: AgentResult | None = None,
+    context_mode: str | None = None,
+    redact_secrets: bool | None = None,
+    redaction_count: int = 0,
 ) -> str:
     findings = findings or []
     warnings = warnings or []
@@ -84,6 +87,16 @@ def render(
 
     panel = ", ".join(f"`{r.agent}` ({r.vendor})" for r in reviews)
     lines.append(f"**Panel:** {panel}\n")
+
+    if context_mode is not None or redact_secrets is not None:
+        lines.append("## Context policy\n")
+        if context_mode is not None:
+            lines.append(f"- context mode: {context_mode}")
+        if redact_secrets is not None:
+            state = "on" if redact_secrets else "off"
+            extra = f" ({redaction_count} redacted)" if redact_secrets else ""
+            lines.append(f"- secret redaction: {state}{extra}")
+        lines.append("")
 
     if groups:
         lines.extend(_consensus_block(groups))
