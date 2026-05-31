@@ -68,6 +68,8 @@ DOCUMENTED_FLAGS = [
     "--ci",
     "--fail-on",
     "--quiet",
+    "--config-validate",
+    "--strict-config",
     "--version",
     "--help",
 ]
