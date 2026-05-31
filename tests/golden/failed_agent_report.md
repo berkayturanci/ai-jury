@@ -2,6 +2,10 @@
 
 **Panel:** `claude` (anthropic), `codex` (openai), `agy` (google)
 
+## Classification
+
+review effort: 1/5 · risk: low · security-sensitive: no · needs human attention: no
+
 ## Chair verdict
 
 > Synthesized by `claude`

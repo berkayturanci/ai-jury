@@ -2,6 +2,10 @@
 
 **Panel:** `claude` (anthropic), `codex` (openai), `agy` (google)
 
+## Classification
+
+review effort: 4/5 · risk: high · security-sensitive: no · needs human attention: yes
+
 ## Context policy
 
 - context mode: diff-only
