@@ -2,9 +2,10 @@ usage: council [-h] [--pr PR] [--repo REPO] [--diff-file DIFF_FILE]
                [--config CONFIG] [--context-mode {diff-only,expanded}]
                [--redact] [--no-redact] [--rounds ROUNDS] [--chair CHAIR]
                [--mock] [--strict] [--verify] [--no-verify] [--doctor]
-               [--write WRITE] [-o OUTPUT] [--post-summary] [--post-inline]
-               [--dry-run] [--ci] [--fail-on FAIL_ON] [-q] [--config-validate]
-               [--strict-config] [--version]
+               [--write WRITE] [-o OUTPUT] [--metadata-json PATH]
+               [--post-summary] [--post-inline] [--dry-run] [--ci]
+               [--fail-on FAIL_ON] [-q] [--config-validate] [--strict-config]
+               [--version]
 
 Cross-vendor multi-agent PR review council.
 
@@ -29,6 +30,8 @@ options:
   --write WRITE         with --doctor, also write the diagnostics as JSON to
                         this path (secrets redacted)
   -o, --output OUTPUT   write the report to a file instead of stdout
+  --metadata-json PATH  write machine-readable run metadata (durations,
+                        status, rounds) as JSON
   --post-summary, --post
                         post the report as a single summary comment on --pr
   --post-inline         post inline review comments for located findings on
