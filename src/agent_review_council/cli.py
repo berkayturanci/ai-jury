@@ -21,6 +21,7 @@ from . import doctor as doctor_module
 from .ci import evaluate_ci
 from .config import ConfigError, load_config, load_raw_config, validate_config
 from .github import post_inline_comments, post_pr_comment, pr_context, pr_diff
+from .metadata import build_run_metadata
 from .orchestrator import run_council
 from .report import render
 
@@ -81,6 +82,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="with --doctor, also write the diagnostics as JSON to this path (secrets redacted)",
     )
     p.add_argument("-o", "--output", help="write the report to a file instead of stdout")
+    p.add_argument(
+        "--metadata-json", metavar="PATH",
+        help="write machine-readable run metadata (durations, status, rounds) as JSON",
+    )
     p.add_argument(
         "--post-summary", "--post", dest="post_summary", action="store_true",
         help="post the report as a single summary comment on --pr",
@@ -174,6 +179,8 @@ def main(argv: list[str] | None = None) -> int:
     outcome = run_council(
         config, diff, context=context, mock=args.mock, strict=args.strict, log=log
     )
+    metadata = build_run_metadata(outcome, config)
+
     report = render(
         outcome.reviews,
         outcome.debate,
@@ -186,7 +193,13 @@ def main(argv: list[str] | None = None) -> int:
         context_mode=outcome.context_mode,
         redact_secrets=outcome.redact_secrets,
         redaction_count=outcome.redaction_count,
+        metadata=metadata,
     )
+
+    if args.metadata_json:
+        with Path(args.metadata_json).open("w", encoding="utf-8") as fh:
+            fh.write(json.dumps(metadata, indent=2) + "\n")
+        log(f"metadata written to {args.metadata_json}")
 
     ci_exit = 0
     if args.ci:

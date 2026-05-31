@@ -44,6 +44,7 @@ from agent_review_council.config import (  # noqa: E402
     CouncilConfig,
     _from_dict,
 )
+from agent_review_council.metadata import build_run_metadata  # noqa: E402
 from agent_review_council.orchestrator import run_council  # noqa: E402
 from agent_review_council.report import render  # noqa: E402
 
@@ -99,7 +100,8 @@ class ReportGoldenTest(unittest.TestCase):
 
     def test_full_report(self):
         """Standard full council report: 3 agents, two rounds, structured findings."""
-        outcome = run_council(_config(), SAMPLE_DIFF, mock=True)
+        cfg = _config()
+        outcome = run_council(cfg, SAMPLE_DIFF, mock=True)
         report = render(
             outcome.reviews,
             outcome.debate,
@@ -111,6 +113,7 @@ class ReportGoldenTest(unittest.TestCase):
             context_mode=outcome.context_mode,
             redact_secrets=outcome.redact_secrets,
             redaction_count=outcome.redaction_count,
+            metadata=build_run_metadata(outcome, cfg),
         )
         self._check("full_report", report)
 
@@ -152,6 +155,7 @@ class ReportGoldenTest(unittest.TestCase):
             context_mode=outcome.context_mode,
             redact_secrets=outcome.redact_secrets,
             redaction_count=outcome.redaction_count,
+            metadata=build_run_metadata(outcome, cfg),
         )
         self._check("verified_finding_report", report)
 

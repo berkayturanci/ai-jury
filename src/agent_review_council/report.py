@@ -55,6 +55,37 @@ def _group_line(g) -> str:
     return out
 
 
+def _metadata_block(metadata: dict) -> list[str]:
+    """Render the deterministic run-metadata section.
+
+    Intentionally omits non-deterministic fields (e.g. ``generated_at``) so the
+    Markdown report stays stable for snapshot tests. Per-agent durations are
+    deterministic under mock (0s) and scrubbed by the golden test's duration
+    normalizer otherwise. Wall-clock is labelled a cost proxy, not a dollar cost.
+    """
+    lines = ["## Run metadata\n"]
+    lines.append(f"- rounds executed: {metadata['rounds_executed']}")
+    lines.append(f"- verify: {'on' if metadata['verify_enabled'] else 'off'}")
+    lines.append(f"- context mode: {metadata['context_mode']}")
+    total = metadata["total_wall_clock_s"]
+    lines.append(f"- total wall-clock (cost proxy, not $): {total:.0f}s")
+    lines.append("")
+    lines.append("| agent | vendor | status | duration |")
+    lines.append("| --- | --- | --- | --- |")
+    for a in metadata["agents"]:
+        code = a.get("error_code")
+        status = a["status"] if not code else f"{a['status']} ({code})"
+        lines.append(
+            f"| {a['name']} | {a['vendor']} | {status} | {a['duration_s']:.0f}s |"
+        )
+    lines.append("")
+    lines.append(
+        "_Wall-clock seconds are an approximate cost proxy (no token counts are "
+        "available from the CLIs), not a dollar cost._\n"
+    )
+    return lines
+
+
 def _consensus_block(groups) -> list[str]:
     lines = ["## Consensus\n"]
     by_bucket: dict[str, list] = {b: [] for b in _BUCKET_ORDER}
@@ -84,6 +115,7 @@ def render(
     context_mode: str | None = None,
     redact_secrets: bool | None = None,
     redaction_count: int = 0,
+    metadata: dict | None = None,
 ) -> str:
     findings = findings or []
     warnings = warnings or []
@@ -153,6 +185,10 @@ def render(
         for r in debate:
             status = f"{r.duration_s:.0f}s" if r.ok else _fail_status(r)
             lines.append(_block(f"`{r.agent}` — {status}", r.output if r.ok else ""))
+
+    if metadata is not None:
+        lines.append("---\n")
+        lines.extend(_metadata_block(metadata))
 
     lines.append("---")
     lines.append(

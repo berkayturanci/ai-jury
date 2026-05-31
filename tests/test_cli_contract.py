@@ -61,6 +61,7 @@ DOCUMENTED_FLAGS = [
     "--verify",
     "--no-verify",
     "--output",
+    "--metadata-json",
     "--post-summary",
     "--post",
     "--post-inline",
