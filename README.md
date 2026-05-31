@@ -140,7 +140,9 @@ showing debate lifts bug detection to ~80%); see also
 [Star Chamber](https://blog.mozilla.ai/the-star-chamber-multi-llm-consensus-for-code-quality/).
 `agent-review-council` aims to be the **smallest drop-in** version: stdlib-only Python, a
 single `council.toml`, and a Claude Code skill that snaps into an existing repo's review
-workflow. Full comparison and supporting research in [`docs/feasibility.md`](docs/feasibility.md).
+workflow. See the [ecosystem comparison & capability matrix](docs/comparison.md) for how
+it differs from hosted, API-level, and other native-CLI tools, and
+[`docs/feasibility.md`](docs/feasibility.md) for the supporting research.
 
 ## Status
 
@@ -152,6 +154,15 @@ position bias, and severity-gated CI exit codes. See [`docs/architecture.md`](do
 
 The phased plan and how to pick up a session's worth of work is in [`ROADMAP.md`](ROADMAP.md);
 issues are tracked under [milestones](https://github.com/berkayturanci/agent-review-council/milestones).
+
+## Documentation
+
+- [Architecture](docs/architecture.md) — components, round structure, adapters, supported platforms.
+- [Ecosystem comparison](docs/comparison.md) — capability matrix vs hosted / API-level / native-CLI tools.
+- [Feasibility & prior art](docs/feasibility.md) — research grounding and verified CLI invocations.
+- [Release readiness checklist](docs/release-checklist.md) — the bar before a public release.
+- [SECURITY.md](SECURITY.md) — data-flow and secret-redaction reference.
+- Agent-readable: [`llms.txt`](llms.txt) (concise) and [`llms-full.txt`](llms-full.txt) (full reference).
 
 ## License
 
