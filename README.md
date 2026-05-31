@@ -10,6 +10,10 @@
 [![GitHub release](https://img.shields.io/github/v/release/berkayturanci/agent-review-council)](https://github.com/berkayturanci/agent-review-council/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+![A diff or PR enters; three native vendor agents — Claude Code, Codex, and Antigravity — review it independently and debate each other's findings; a chair agent verifies and synthesizes one verdict (APPROVE / COMMENT / REQUEST CHANGES) plus a markdown report.](docs/assets/hero.png)
+
+> **Install once. Run a cross-vendor review council anywhere.**
+
 Most "multi-model review" tools call models at the **API level**. This one drives each
 vendor's **native CLI agent** — `claude` (Claude Code), `codex` (OpenAI Codex CLI), and
 `agy` (Google Antigravity) — so every reviewer runs in its own native environment with

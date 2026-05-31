@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   marketplace, reusing the existing `skill/` without moving it.
 - Platform support matrix (`docs/platforms.md`) with honest per-platform statuses
   (supported / manual / planned / out of scope) and install snippets.
+- Polished README hero visual (`docs/assets/hero.svg` + rendered `hero.png`) with
+  meaningful alt text and the project tagline.
+- Static landing site under `website/` (HTML/CSS, no build step) reusing the hero asset,
+  plus a GitHub Pages deploy workflow and local-preview/custom-domain instructions.
 
 ## [0.1.0] - 2026-05-30
 
