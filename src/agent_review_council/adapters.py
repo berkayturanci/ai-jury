@@ -58,19 +58,47 @@ ERROR_CODES = frozenset({
 })
 
 
+# Ordered keyword groups for classify_stderr. Each keyword is matched on word
+# boundaries (\b...\b) so incidental substrings do NOT trigger a false
+# classification: bare "auth" matches "auth error" but not "author identity",
+# and "login" matches "login required" but not "login_attempts" ("_" is a word
+# char, so there is no boundary inside "login_attempts"). Multi-word phrases
+# tolerate a space OR "_" between tokens (e.g. "rate limit"/"rate_limit").
+def _keyword_pattern(*keywords: str) -> "re.Pattern[str]":
+    parts = [
+        r"[ _]+".join(re.escape(tok) for tok in kw.split())
+        for kw in keywords
+    ]
+    return re.compile(r"\b(?:" + "|".join(parts) + r")\b")
+
+
+# Order matters: auth and rate-limit signals are checked before the generic
+# permission and nonzero-exit fallbacks.
+_AUTH_RE = _keyword_pattern(
+    "not authenticated", "unauthenticated", "authentication", "unauthorized",
+    "api key", "auth", "log in", "login", "credential", "credentials",
+)
+_RATE_LIMIT_RE = _keyword_pattern("rate limit", "429", "quota", "too many requests")
+_PERMISSION_RE = _keyword_pattern(
+    "permission", "permissions", "approve", "approval", "confirm", "confirmation",
+)
+
+
 def classify_stderr(returncode: int, stderr: str) -> str:
     """Classify a nonzero-exit failure into a typed error code from its stderr.
 
-    Heuristic substring matching against the lowercased stderr; ordering matters
-    (auth and rate-limit signals are checked before the generic permission and
+    Token-aware matching against the lowercased stderr: each keyword group is a
+    word-boundary regex, so incidental substrings (e.g. "author" containing
+    "auth") never cause a misclassification. Ordering matters (auth and
+    rate-limit signals are checked before the generic permission and
     nonzero-exit fallbacks). Returns one of the ``ERR_*`` codes.
     """
     text = (stderr or "").lower()
-    if any(s in text for s in ("not authenticated", "unauthorized", "api key", "auth", "login")):
+    if _AUTH_RE.search(text):
         return ERR_AUTH_REQUIRED
-    if any(s in text for s in ("rate limit", "429", "quota")):
+    if _RATE_LIMIT_RE.search(text):
         return ERR_RATE_LIMITED
-    if any(s in text for s in ("permission", "approve", "confirm")):
+    if _PERMISSION_RE.search(text):
         return ERR_PERMISSION_PROMPT
     del returncode
     return ERR_NONZERO_EXIT
