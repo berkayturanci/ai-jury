@@ -17,7 +17,7 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from agent_review_council.ci import evaluate_ci
-from agent_review_council.config import AgentSpec, CIConfig, Config
+from agent_review_council.config import DEFAULT_CONFIG, _from_dict
 from agent_review_council.orchestrator import run_council
 
 
@@ -39,11 +39,10 @@ INJECTED_DIFF = CLEAN_DIFF + (
 
 
 def _mock_config():
-    agents = [
-        AgentSpec(name="claude", vendor="anthropic", command="claude", extra_args=[]),
-        AgentSpec(name="codex", vendor="openai", command="codex", extra_args=[]),
-    ]
-    return Config(agents=agents, ci=CIConfig())
+    # The shipped default mock config: 3 agents, verify on, fail_on
+    # critical/major. The deterministic mock pipeline yields one confirmed
+    # major finding -> REQUEST CHANGES (CI exit 1).
+    return _from_dict(DEFAULT_CONFIG)
 
 
 def _gate(cfg, outcome):
