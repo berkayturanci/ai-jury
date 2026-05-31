@@ -7,9 +7,25 @@
 [council]
 # Number of rounds: 1 = independent review only, 2 = review + debate/rebuttal.
 rounds = 2
-# Agent that synthesizes the final verdict. Must match an [[agent]] name below.
-# If the named chair is unavailable, the first available agent is used.
+# Agent that synthesizes the final verdict. Must match an [[agent]] name below,
+# or the literal "rotate" to pick a chair deterministically per run from the
+# usable agents using the run seed (mitigates chair self-preference bias, #38).
+# If a named chair is unavailable, the first available agent is used.
 chair = "claude"
+# When the configured chair is not a usable agent, prefer a usable agent that
+# was NOT a round-1 reviewer (a neutral chair) before falling back to the first
+# usable agent (#38). No effect when chair = "rotate" or names a usable agent.
+prefer_non_reviewer_chair = false
+# Round-2 debate: show each debater the OTHER reviewers' round-1 findings with
+# identity stripped ("Reviewer A/B/...") in a per-debater, seed-deterministic
+# order (Chatham House rule, #37) to remove identity + position bias. The
+# rendered report still attributes every finding by real agent name. Set false
+# for the legacy identity-labeled debate. When the resolved chair is also a
+# reviewer, this same anonymization is applied to the synthesis input so the
+# chair cannot preferentially weight its own findings; the CI gate is structured
+# (ci.evaluate_ci over votes) and never derived from chair prose, so anonymizing
+# the prose cannot change the gate.
+anonymize_debate = true
 # Per-agent wall-clock timeout in seconds (can be overridden per agent). A hung
 # CLI is killed at this bound and recorded as a failed review; the run continues.
 timeout = 300
