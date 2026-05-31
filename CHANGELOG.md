@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   project against hosted, API-level, and other native-CLI review tools.
 - Agent-readable docs: `llms.txt` (concise) and `llms-full.txt` (full reference).
 - Public release readiness checklist (`docs/release-checklist.md`).
+- Claude Code plugin distribution: `.claude-plugin/plugin.json` and
+  `.claude-plugin/marketplace.json` make the repo installable as a single-plugin
+  marketplace, reusing the existing `skill/` without moving it.
+- Platform support matrix (`docs/platforms.md`) with honest per-platform statuses
+  (supported / manual / planned / out of scope) and install snippets.
 
 ## [0.1.0] - 2026-05-30
 
