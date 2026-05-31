@@ -51,6 +51,8 @@ git diff origin/HEAD... | council --diff-file -   # review the current branch
 council --diff-file examples/sample.diff  # review a diff file
 council --rounds 1                        # independent review only (no debate)
 council --mock --diff-file examples/sample.diff   # offline demo, no live CLIs
+council --doctor                          # local readiness check (versions, agents, config)
+council --doctor --write diagnostics.json # ...and write a safe JSON report
 ```
 
 A sample report is in [`docs/example-run.md`](docs/example-run.md).
@@ -114,6 +116,28 @@ Posting to GitHub (`--post-summary`, `--post-inline`) sends the rendered report
 / comments to the GitHub API; use `--dry-run` with `--post-inline` to preview the
 inline payload without any network call. See [SECURITY.md](SECURITY.md) for the
 full data-flow and redaction reference.
+
+**No telemetry (by default and always)** — this project collects and sends **no
+telemetry** and **no analytics**, not now and not behind any opt-in flag. The
+tool never phones home. The only network activity is performed by the agent CLIs
+you explicitly configure (and `gh` for `--pr` / `--post*`).
+
+### Diagnostics — `council --doctor`
+
+Run a local readiness check that surfaces common configuration problems:
+
+```bash
+council --doctor                          # print a readable report
+council --doctor --write diagnostics.json # also write the report as JSON
+```
+
+The report covers the tool version, Python version, OS, a config summary
+(rounds, chair, context mode, enabled agents), which agent CLIs are available on
+your `PATH`, and any detected config warnings. The output is **safe to share**:
+secret-like config values are redacted via the same redactor used for prompts,
+and the report **never** includes the diff under review or any agent output.
+Diagnostics are built locally and only written to disk when you pass
+`--write PATH`.
 
 ## Use it from another project (skill)
 
