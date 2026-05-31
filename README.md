@@ -182,6 +182,7 @@ Want tighter sandboxing? Override `extra_args` for the `codex` agent in `council
 - [Ecosystem comparison](docs/comparison.md) — capability matrix vs hosted / API-level / native-CLI tools.
 - [Feasibility & prior art](docs/feasibility.md) — research grounding and verified CLI invocations.
 - [Platform support matrix](docs/platforms.md) — where you can install/run the council and how.
+- [Skill packaging & install](docs/skill.md) — install/version the review council as a reusable skill artifact.
 - [Release readiness checklist](docs/release-checklist.md) — the bar before a public release.
 - [SECURITY.md](SECURITY.md) — data-flow and secret-redaction reference.
 - Agent-readable: [`llms.txt`](llms.txt) (concise) and [`llms-full.txt`](llms-full.txt) (full reference).

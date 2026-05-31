@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   marketplace, reusing the existing `skill/` without moving it.
 - Platform support matrix (`docs/platforms.md`) with honest per-platform statuses
   (supported / manual / planned / out of scope) and install snippets.
+- Reusable-skill packaging guide (`docs/skill.md`): directory layout, install into
+  Codex/Claude-compatible skill folders, required external tools, skill-to-CLI
+  versioning policy, examples, and a smoke-test checklist. Skill behavior changes are
+  noted in these release notes alongside the CLI change that motivates them.
 - Polished README hero visual (`docs/assets/hero.svg` + rendered `hero.png`) with
   meaningful alt text and the project tagline.
 - Static landing site under `website/` (HTML/CSS, no build step) reusing the hero asset,
