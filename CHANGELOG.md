@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Multi-version, multi-OS CI test matrix (Python 3.11–3.13 on Linux; 3.13 on
+  macOS and Windows) covering unit tests and the mock CLI smoke test.
+- OpenSSF Scorecard, CodeQL (Python), and Dependabot automation for supply-chain
+  and repository-security signals, plus a documented dependency-update policy.
+
 ## [0.1.0] - 2026-05-30
 
 ### Added

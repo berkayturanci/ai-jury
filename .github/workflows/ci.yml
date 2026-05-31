@@ -6,22 +6,42 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   test:
-    name: Run Python Unit Tests
-    runs-on: ubuntu-latest
+    name: Tests (py${{ matrix.python-version }} · ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Full Python-version coverage on Linux; the latest supported Python on
+        # macOS and Windows to prove cross-OS CLI/subprocess behavior while keeping
+        # the matrix small and cheap. See docs/architecture.md for OS notes.
+        os: [ubuntu-latest]
+        python-version: ["3.11", "3.12", "3.13"]
+        include:
+          - os: macos-latest
+            python-version: "3.13"
+          - os: windows-latest
+            python-version: "3.13"
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2 (pinned 2026-05-30)
       - uses: actions/setup-python@39cd14951b08e74b54015e9e001cdefcf80e669f  # v5.1.1 (pinned 2026-05-30)
         with:
-          python-version: "3.13"
-      - name: Run offline (mock) test suite
+          python-version: ${{ matrix.python-version }}
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+      - name: Run offline (mock) unit tests
         run: python -m unittest discover -s tests -v
       - name: Smoke-test the CLI in mock mode
+        # bash is available on all three runners (git-bash on Windows), keeping the
+        # smoke assertions identical across operating systems.
+        shell: bash
         run: |
-          python -m agent_review_council --mock --diff-file examples/sample.diff -q \
-            | tee /tmp/report.md
-          grep -q "Agent Review Council" /tmp/report.md
-          grep -q "Chair verdict" /tmp/report.md
-        env:
-          PYTHONPATH: src
+          python -m agent_review_council --mock --diff-file examples/sample.diff -q | tee report.md
+          grep -q "Agent Review Council" report.md
+          grep -q "Chair verdict" report.md

@@ -1,0 +1,35 @@
+name: Local CI (self-hosted)
+
+# Fast, free verification on a maintainer-run self-hosted macOS runner. This runs the
+# stdlib-only unit tests and the mock CLI smoke test without consuming GitHub-hosted
+# minutes. It complements (does not replace) the cross-OS matrix in ci.yml, which
+# provides the full Python 3.11-3.13 × Linux/macOS/Windows coverage on GitHub-hosted
+# runners. Requires the self-hosted runner (labels: self-hosted, macos, arm64) to be
+# online; if it is offline, these jobs queue until it returns.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tests & smoke (self-hosted macOS)
+    runs-on: [self-hosted, macos, arm64]
+    env:
+      PYTHONPATH: src
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2 (pinned 2026-05-30)
+      - name: Show Python
+        run: python3 --version
+      - name: Run offline (mock) unit tests
+        run: python3 -m unittest discover -s tests -v
+      - name: Smoke-test the CLI in mock mode
+        run: |
+          python3 -m agent_review_council --mock --diff-file examples/sample.diff -q | tee report.md
+          grep -q "Agent Review Council" report.md
+          grep -q "Chair verdict" report.md

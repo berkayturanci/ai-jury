@@ -44,6 +44,26 @@ implemented as a project-specific wrapper outside this package.
    private workflow, or organization-specific process unless it is clearly framed as
    an external example.
 
+## Dependency and tooling updates
+
+This project pins GitHub Actions to commit SHAs and keeps its runtime dependency
+footprint at zero. Updates are proposed automatically and reviewed by hand:
+
+- **Automation.** [Dependabot](.github/dependabot.yml) opens grouped weekly PRs for
+  GitHub Actions (the `github-actions` ecosystem) and for Python tooling declared in
+  `pyproject.toml` (the `pip` ecosystem).
+- **Review policy.**
+  1. Action bumps must keep the `uses:` reference pinned to a full commit SHA with a
+     trailing `# vX.Y.Z (pinned <date>)` comment — never a floating tag.
+  2. CI (test matrix, CodeQL) must be green before merge.
+  3. Major-version action or tooling bumps get a changelog/behavior check, not just a
+     version-number merge.
+  4. Grouped PRs are preferred; an unrelated bump is split out when it needs scrutiny.
+- **Security posture.** [CodeQL](.github/workflows/codeql.yml) scans Python on every
+  push/PR and weekly, and [OpenSSF Scorecard](.github/workflows/scorecard.yml)
+  publishes a repository-health result from `main`. Treat new high-severity findings
+  from either as release blockers (see [SECURITY.md](SECURITY.md)).
+
 ## Release Notes
 
 User-visible changes should update [CHANGELOG.md](CHANGELOG.md).

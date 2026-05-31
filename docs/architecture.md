@@ -66,6 +66,27 @@ Adapters fail soft: a missing CLI, non-zero exit, or timeout becomes a non-fatal
 - **Orchestrator owns prompts.** Keeps the round structure auditable in one file and
   makes adapters trivially swappable.
 
+## Supported platforms
+
+CI proves the package on a deliberately small matrix (see
+[`.github/workflows/ci.yml`](../.github/workflows/ci.yml)):
+
+| OS | Python | Notes |
+|:--|:--|:--|
+| Ubuntu (latest) | 3.11, 3.12, 3.13 | Full version coverage; primary CI target. |
+| macOS (latest) | 3.13 | Latest Python only, to keep the matrix cheap. |
+| Windows (latest) | 3.13 | Unit tests + mock smoke test run here. The mock path is fully cross-platform. |
+
+OS-specific notes:
+
+- The **mock path** (`--mock`) is pure-Python and behaves identically on all three OSes.
+- **Live agent CLIs** (`claude`, `codex`, `agy`) and `gh` are spawned as subprocesses.
+  Their availability and behavior on Windows depend on each vendor's own Windows
+  support; the orchestrator itself is OS-agnostic and fails soft when a CLI is missing.
+- Only the latest supported Python is exercised on macOS/Windows; the full
+  3.11–3.13 sweep runs on Linux. The supported range is declared once in
+  `pyproject.toml` (`requires-python`) and mirrored by this matrix and the README.
+
 ## Roadmap
 
 Prioritized from the prior-art research (see [`feasibility.md`](feasibility.md)):
