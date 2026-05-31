@@ -42,7 +42,7 @@ git diff main... > /tmp/branch.diff
 council --diff-file /tmp/branch.diff
 ```
 
-**Outcome:** a markdown report on stdout headed `# 🏛️ Review Council Verdict`
+**Outcome:** a markdown report on stdout headed `# 🏛️ Agent Review Council`
 with a recommendation, a Findings section, and the per-agent review rounds. Act
 on the findings before you open the PR. (If the diff is empty, the CLI exits with
 `error: empty diff — nothing to review`.)
@@ -201,7 +201,7 @@ You can exercise the CI gate offline too:
 council --mock --ci --fail-on critical,major --diff-file examples/sample.diff
 ```
 
-**Outcome:** a complete markdown report (headed `# 🏛️ Review Council Verdict`)
+**Outcome:** a complete markdown report (headed `# 🏛️ Agent Review Council`)
 is produced without contacting any agent or GitHub. This is the fastest way to
 confirm your install, config, and command shapes are correct before wiring in
 real agents — and it's safe to run anywhere.
