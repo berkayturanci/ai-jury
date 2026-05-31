@@ -12,12 +12,25 @@ Headless invocations (verified against installed CLIs, early 2026):
 """
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import time
 from dataclasses import dataclass, field
 
 from .config import AgentSpec
+
+# Short timeout for capability/version probes. Detection is best-effort and must
+# never slow down or block a normal run, so probes are deliberately snappy.
+_VERSION_PROBE_TIMEOUT = 10
+
+# Matches a version-looking token, e.g. "1.2", "1.2.3", "v0.45.1".
+_VERSION_RE = re.compile(r"\d+\.\d+(?:\.\d+)?")
+
+# Capability/version probe statuses.
+CAP_OK = "ok"
+CAP_UNKNOWN_VERSION = "unknown_version"
+CAP_UNAVAILABLE = "unavailable"
 
 # Stable, typed error taxonomy for failed agent executions. These codes let
 # reports and CI/policy distinguish retryable from non-retryable failures
@@ -79,6 +92,16 @@ class AgentResult:
 class Adapter:
     """Base adapter. Subclasses build the argv for their CLI."""
 
+    # Declarative capability metadata. Real coding-agent CLIs support a headless
+    # (non-interactive) invocation and model selection; subclasses override where
+    # this differs. ``MockAdapter`` reports synthetic capabilities.
+    SUPPORTS_HEADLESS = True
+    SUPPORTS_MODEL_SELECTION = True
+
+    # Args passed to the CLI to print its version. Subclasses override if the CLI
+    # uses a different verb/flag (e.g. ``codex --version``).
+    _VERSION_ARGS = ("--version",)
+
     def __init__(self, spec: AgentSpec):
         self.spec = spec
 
@@ -96,6 +119,77 @@ class Adapter:
         """Prompt to feed on stdin, or None to pass it in argv (the default)."""
         del prompt
         return None
+
+    def _version_argv(self) -> list[str]:
+        """Argv used to probe the CLI's version."""
+        return [self.spec.command, *self._VERSION_ARGS]
+
+    def detect_capabilities(self) -> dict:
+        """Best-effort probe of this agent's version and capabilities.
+
+        Returns a dict shaped like::
+
+            {
+                "version": "<str|None>",
+                "supports_headless": bool,
+                "supports_model_selection": bool,
+                "raw_version_output": "<short str>",
+                "status": "ok|unknown_version|unavailable",
+                "warnings": [...],
+            }
+
+        This is intentionally fast and forgiving: it runs ``<command> --version``
+        with a SHORT timeout and swallows ALL errors (missing CLI, timeout,
+        nonzero exit, garbage output). It NEVER raises, so it is safe to call
+        from diagnostics without blocking or crashing a run.
+        """
+        caps = {
+            "version": None,
+            "supports_headless": self.SUPPORTS_HEADLESS,
+            "supports_model_selection": self.SUPPORTS_MODEL_SELECTION,
+            "raw_version_output": "",
+            "status": CAP_UNAVAILABLE,
+            "warnings": [],
+        }
+
+        # Not on PATH: report unavailable without spawning a subprocess.
+        if not self.available():
+            return caps
+
+        try:
+            proc = subprocess.run(
+                self._version_argv(),
+                capture_output=True,
+                text=True,
+                timeout=_VERSION_PROBE_TIMEOUT,
+            )
+        except subprocess.TimeoutExpired:
+            caps["status"] = CAP_UNKNOWN_VERSION
+            caps["warnings"].append(
+                f"version probe for '{self.spec.command}' timed out after "
+                f"{_VERSION_PROBE_TIMEOUT}s"
+            )
+            return caps
+        except Exception as exc:  # noqa: BLE001 - swallow any spawn failure
+            caps["status"] = CAP_UNKNOWN_VERSION
+            caps["warnings"].append(
+                f"version probe for '{self.spec.command}' failed: {exc}"
+            )
+            return caps
+
+        raw = ((proc.stdout or "") + (proc.stderr or "")).strip()
+        caps["raw_version_output"] = raw[:200]
+        match = _VERSION_RE.search(raw)
+        if proc.returncode == 0 and match:
+            caps["version"] = match.group(0)
+            caps["status"] = CAP_OK
+        else:
+            caps["status"] = CAP_UNKNOWN_VERSION
+            caps["warnings"].append(
+                f"could not determine version of '{self.spec.command}' "
+                f"(exit {proc.returncode}); capabilities assumed from vendor defaults"
+            )
+        return caps
 
     def run(self, prompt: str, phase: str = "review") -> AgentResult:
         del phase
@@ -185,8 +279,23 @@ class MockAdapter(Adapter):
     can run end-to-end without live CLIs, auth, or token spend.
     """
 
+    # Synthetic capabilities: the mock is offline and runs no real CLI.
+    SUPPORTS_HEADLESS = True
+    SUPPORTS_MODEL_SELECTION = False
+
     def available(self) -> bool:
         return True
+
+    def detect_capabilities(self) -> dict:
+        """Deterministic fake capabilities so doctor/tests stay stable offline."""
+        return {
+            "version": "mock-1.0",
+            "supports_headless": self.SUPPORTS_HEADLESS,
+            "supports_model_selection": self.SUPPORTS_MODEL_SELECTION,
+            "raw_version_output": "mock-1.0",
+            "status": CAP_OK,
+            "warnings": [],
+        }
 
     def run(self, prompt: str, phase: str = "review") -> AgentResult:
         del prompt
