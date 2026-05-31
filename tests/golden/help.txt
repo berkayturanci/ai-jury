@@ -3,7 +3,8 @@ usage: council [-h] [--pr PR] [--repo REPO] [--diff-file DIFF_FILE]
                [--redact] [--no-redact] [--rounds ROUNDS] [--chair CHAIR]
                [--mock] [--strict] [--verify] [--no-verify] [--doctor]
                [--write WRITE] [-o OUTPUT] [--post-summary] [--post-inline]
-               [--dry-run] [--ci] [--fail-on FAIL_ON] [-q] [--version]
+               [--dry-run] [--ci] [--fail-on FAIL_ON] [-q] [--config-validate]
+               [--strict-config] [--version]
 
 Cross-vendor multi-agent PR review council.
 
@@ -38,6 +39,9 @@ options:
   --fail-on FAIL_ON     comma-separated severities that fail CI (overrides
                         config)
   -q, --quiet           suppress progress logs on stderr
+  --config-validate     validate the resolved config and exit (0 valid, 2
+                        invalid)
+  --strict-config       treat configuration warnings as errors
   --version             show program's version number and exit
 
 input:
