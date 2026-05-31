@@ -53,3 +53,10 @@ Drop this skill into a project's `.claude/skills/` (Claude Code) and/or expose t
 `council` CLI in CI. It composes with existing review workflows: run the council first
 for a cross-vendor pass, then let the project's own reviewers act on the consensus
 findings.
+
+## Scope / non-goals
+
+This skill is the reusable, project-agnostic layer: convene the council and report the
+verdict. Project-specific workflow behavior — ship gates, branch policies, custom
+reporting, or wiring into a particular repo's review process — belongs in a downstream
+wrapper, **not** in this package. Keep this skill portable across projects.

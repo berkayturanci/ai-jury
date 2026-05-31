@@ -258,6 +258,7 @@ flag-presence checks run on all supported versions (3.11–3.13).
 - [Ecosystem comparison](docs/comparison.md) — capability matrix vs hosted / API-level / native-CLI tools.
 - [Feasibility & prior art](docs/feasibility.md) — research grounding and verified CLI invocations.
 - [Platform support matrix](docs/platforms.md) — where you can install/run the council and how.
+- [Skill packaging & install](docs/skill.md) — install/version the review council as a reusable skill artifact.
 - [Release readiness checklist](docs/release-checklist.md) — the bar before a public release.
 - [Report format contract](docs/report-format.md) — the golden-file snapshot tests and how to regenerate them.
 - [SECURITY.md](SECURITY.md) — data-flow and secret-redaction reference.
