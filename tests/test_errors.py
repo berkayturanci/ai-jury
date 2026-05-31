@@ -79,6 +79,27 @@ class ClassifyStderrTest(unittest.TestCase):
         for s in ("Traceback: KeyError", "segmentation fault", ""):
             self.assertEqual(classify_stderr(2, s), ERR_NONZERO_EXIT, s)
 
+    def test_incidental_substrings_not_auth(self):
+        # Words that merely CONTAIN "auth"/"login" must not be read as auth
+        # signals; they fall through to the generic nonzero-exit code.
+        for s in (
+            "fatal: author identity unknown",
+            "the authoritative source is unreachable",
+            "login_attempts table is locked",
+        ):
+            self.assertEqual(classify_stderr(2, s), ERR_NONZERO_EXIT, s)
+
+    def test_incidental_substrings_other_groups(self):
+        # "quotation" contains "quota"; "iterate" contains "rate";
+        # "approved by"/"disconfirming" contain "approve"/"confirm".
+        for s in (
+            "missing quotation mark in template",
+            "failed to iterate over results",
+            "change approved by reviewer bot",
+            "disconfirming heuristic disabled",
+        ):
+            self.assertEqual(classify_stderr(2, s), ERR_NONZERO_EXIT, s)
+
     def test_all_codes_registered(self):
         for code in (
             ERR_AUTH_REQUIRED,
