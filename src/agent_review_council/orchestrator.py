@@ -6,6 +6,7 @@ independent, IO-bound subprocess.
 """
 from __future__ import annotations
 
+import random
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
@@ -16,6 +17,22 @@ from .consensus import FindingGroup, group_findings
 from .findings import Finding, Verdict, parse_findings, parse_verdicts
 from .privilege import audit_privilege
 from .redaction import redact
+
+
+def _order_by_agents(results: list[AgentResult], order: list[str]) -> list[AgentResult]:
+    """Reorder phase results into the configured/enabled agent order.
+
+    Round phases run agents concurrently (ThreadPoolExecutor.map), so the order
+    in which results arrive is not guaranteed across runs. The report and all
+    downstream consumers must NOT depend on thread-completion order, so we sort
+    every phase's results by each agent's index in ``order`` (the stable
+    enabled-agent list). Agents not present in ``order`` (should not happen)
+    sort to the end, preserving their relative arrival order as a stable
+    tiebreak so the sort is total and deterministic.
+    """
+    index = {name: i for i, name in enumerate(order)}
+    fallback = len(order)
+    return sorted(results, key=lambda r: index.get(r.agent, fallback))
 
 
 @dataclass
@@ -66,8 +83,23 @@ def run_council(
     context: str = "",
     mock: bool = False,
     strict: bool = False,
+    seed: int | None = None,
     log=lambda _msg: None,
 ) -> CouncilOutcome:
+    # Run reproducibility: a single shared RNG seeds every randomized
+    # orchestration decision (future: anonymized-rebuttal order, rotating
+    # chair, tie-breaks). The seed comes from the explicit ``seed`` argument if
+    # given, else from ``config.seed``. We construct a dedicated
+    # ``random.Random`` instance rather than touching the global ``random``
+    # module so seeding a council run never perturbs unrelated global state.
+    # When the seed is None the RNG is unseeded (still deterministic
+    # orchestration; randomness, if any, is just not reproducible run-to-run).
+    # LLM output itself is never made deterministic by this — only the
+    # orchestration around it. ``run_rng`` is the shared run RNG: pass it to
+    # any feature that needs reproducible randomness instead of using ``random``.
+    run_seed = seed if seed is not None else config.seed
+    run_rng = random.Random(run_seed)  # noqa: F841 - shared run RNG (see docstring)
+
     # Context policy: diff-only sends only the diff; expanded includes context.
     ctx_cfg = getattr(config, "context", None)
     context_mode = getattr(ctx_cfg, "mode", "diff-only") if ctx_cfg else "diff-only"
@@ -133,6 +165,11 @@ def run_council(
         for a in usable
     }
     reviews = _run_phase(usable, review_prompt, "review", config.parallel)
+    # Stable ordering: the thread pool can return results in any completion
+    # order. Reorder to the enabled-agent order so the report (and every
+    # downstream consumer) is independent of which thread finished first.
+    agent_order = [a.name for a in usable]
+    reviews = _order_by_agents(reviews, agent_order)
 
     # Parse structured findings from each successful review and aggregate them.
     # Seed with the synthetic injection finding/warnings so they surface in the
@@ -170,6 +207,9 @@ def run_council(
                 for a in debaters
             }
             debate = _run_phase(debaters, debate_prompt, "debate", config.parallel)
+            # Same stable-ordering guarantee as round 1: independent of
+            # thread-pool completion order.
+            debate = _order_by_agents(debate, agent_order)
         else:
             log("round 2 skipped: need >=2 successful reviews to debate")
 

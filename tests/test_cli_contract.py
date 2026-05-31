@@ -55,6 +55,7 @@ DOCUMENTED_FLAGS = [
     "--redact",
     "--no-redact",
     "--rounds",
+    "--seed",
     "--chair",
     "--mock",
     "--strict",

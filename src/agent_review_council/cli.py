@@ -62,6 +62,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="do not redact secrets before sending",
     )
     p.add_argument("--rounds", type=int, help="override number of rounds (1=review, 2=+debate)")
+    p.add_argument(
+        "--seed", type=int,
+        help="run seed for reproducible orchestration; mock runs with the same seed "
+             "produce byte-identical reports (overrides [council] seed)",
+    )
     p.add_argument("--chair", help="override the synthesizing chair agent")
     p.add_argument("--mock", action="store_true", help="offline demo: use deterministic mock agents")
     p.add_argument("--strict", action="store_true", help="fail if any configured agent CLI is missing")
@@ -163,6 +168,8 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     if args.rounds is not None:
         config.rounds = args.rounds
+    if args.seed is not None:
+        config.seed = args.seed
     if args.chair:
         config.chair = args.chair
     if args.verify is not None:

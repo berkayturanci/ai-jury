@@ -67,6 +67,12 @@ def build_run_metadata(outcome: "CouncilOutcome", config: "CouncilConfig") -> di
         all_results.append(outcome.verify)
     total_wall_clock_s = round(sum(float(r.duration_s) for r in all_results), 3)
 
+    # Reproducibility signals (issue #41): the run seed and a stable hash of the
+    # effective config let a run be reproduced/explained. The seed is whatever
+    # the run was configured with (may be None when unseeded). The config hash
+    # is a pure function of config, so it is stable across runs and over time.
+    from .config import config_hash
+
     return {
         "schema_version": SCHEMA_VERSION,
         "agents": agents,
@@ -75,6 +81,8 @@ def build_run_metadata(outcome: "CouncilOutcome", config: "CouncilConfig") -> di
         "context_mode": outcome.context_mode,
         "redact_secrets": bool(outcome.redact_secrets),
         "redaction_count": outcome.redaction_count,
+        "seed": config.seed,
+        "config_hash": config_hash(config),
         # Wall-clock is an approximate COST PROXY, not a dollar cost. No token
         # counts are available from the underlying CLIs.
         "total_wall_clock_s": total_wall_clock_s,
