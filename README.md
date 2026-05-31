@@ -76,6 +76,8 @@ extra_args = ["--output-format", "text", "--disallowed-tools", "Edit,Write,Noteb
 
 Override per run with `--rounds`, `--chair`, `--config`.
 
+The config is validated on every run. Check it without running a review with `council --config-validate` (exit `0` valid, `2` invalid); add `--strict-config` to turn warnings into errors. See [docs/configuration.md](docs/configuration.md) for the full schema — every field, allowed values, defaults, and which problems are hard errors vs. warnings.
+
 ## Data flow / privacy
 
 What gets sent to each agent is governed by `[council.context]` in
