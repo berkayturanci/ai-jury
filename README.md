@@ -179,6 +179,54 @@ Severity maps to the SARIF `level` as:
 
 Upload to GitHub code scanning:
 
+The standard way is the `github/codeql-action/upload-sarif` GitHub Action.
+Results then show up in the PR's **Code scanning** view and the repo's
+**Security** tab. The job needs `security-events: write` (to upload) and
+`contents: read`:
+
+```yaml
+name: Council code scanning
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  security-events: write   # required by upload-sarif
+
+jobs:
+  council:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # need the base commit to diff against
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install council
+        run: pip install agent-review-council   # or: pip install .
+
+      - name: Produce SARIF from the PR diff
+        run: |
+          git diff "origin/${{ github.base_ref }}...HEAD" > pr.diff
+          council --diff-file pr.diff --format sarif -o council.sarif
+
+      - name: Upload to code scanning
+        uses: github/codeql-action/upload-sarif@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4.36.0
+        with:
+          sarif_file: council.sarif
+```
+
+This uses a diff file so no agent CLIs or `gh` token are required to *generate*
+the SARIF. To review the PR via `--pr` instead (which shells out to `gh`), set
+`GH_TOKEN: ${{ github.token }}` on that step and ensure the agent CLIs are
+installed and authenticated on the runner.
+
+As a manual alternative, upload an existing SARIF file with `gh`:
+
 ```bash
 gh api -X POST repos/OWNER/REPO/code-scanning/sarifs \
   -f commit_sha="$SHA" -f ref="$REF" \
