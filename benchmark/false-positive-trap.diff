@@ -1,0 +1,18 @@
+--- a/src/checksum.py
++++ b/src/checksum.py
+@@ -1,5 +1,16 @@
+ import hmac
++import hashlib
+
+
++def verify_token(secret, message, provided):
++    # Looks suspicious (manual byte work, bit twiddling), but is correct:
++    # hmac.compare_digest is a constant-time comparison that resists timing
++    # attacks. The expected digest is computed over the message with the secret.
++    expected = hmac.new(secret, message, hashlib.sha256).digest()
++    # Equality via constant-time compare; NOT a plain `==` on secrets.
++    return hmac.compare_digest(expected, provided)
++
++
+ def legacy_noop():
+     return None

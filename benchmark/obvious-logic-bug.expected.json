@@ -1,0 +1,16 @@
+{
+  "id": "obvious-logic-bug",
+  "description": "Off-by-one in loop bound: range(n + 1) reads one past the window and goes out of bounds.",
+  "expect": {
+    "min_findings": 1,
+    "must_match": [
+      {
+        "file": "src/foo.py",
+        "line": 8,
+        "severity": "major",
+        "keywords": ["off-by-one", "index", "out of bounds", "range"]
+      }
+    ],
+    "must_not_flag": []
+  }
+}

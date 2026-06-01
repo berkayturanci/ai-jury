@@ -1,0 +1,14 @@
+--- a/src/foo.py
++++ b/src/foo.py
+@@ -1,8 +1,12 @@
+ def sum_first_n(values, n):
+-    total = 0
+-    for i in range(n):
+-        total += values[i]
+-    return total
++    total = 0
++    # Off-by-one: range(n + 1) reads values[n], one past the intended window
++    # and out of bounds when n == len(values).
++    for i in range(n + 1):
++        total += values[i]
++    return total

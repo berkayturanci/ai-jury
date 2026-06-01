@@ -1,0 +1,21 @@
+[
+  {
+    "severity": "major",
+    "file": "src/foo.py",
+    "line": 8,
+    "claim": "Off-by-one error: range(n + 1) iterates one element past the intended window.",
+    "evidence": "values[i] is read for i == n, which is out of bounds when n == len(values).",
+    "suggested_fix": "Use range(n) so the loop reads values[0..n-1].",
+    "confidence": "high",
+    "reviewer": "claude"
+  },
+  {
+    "severity": "info",
+    "file": "src/foo.py",
+    "line": 1,
+    "claim": "Consider using sum(values[:n]) for clarity.",
+    "evidence": "The explicit accumulation loop can be expressed with a slice.",
+    "confidence": "low",
+    "reviewer": "codex"
+  }
+]

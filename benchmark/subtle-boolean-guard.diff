@@ -1,0 +1,13 @@
+--- a/src/auth.py
++++ b/src/auth.py
+@@ -1,9 +1,11 @@
+ def can_access(user, resource):
+-    # Only owners or admins may access.
+-    if user.is_owner(resource) or user.is_admin:
+-        return True
+-    return False
++    # Subtle guard bug: `and` should be `or`. With `and`, a plain owner who is
++    # not also an admin is denied, and the precedence makes the intent unclear.
++    if user.is_owner(resource) and user.is_admin:
++        return True
++    return False

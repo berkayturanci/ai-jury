@@ -1,0 +1,16 @@
+{
+  "id": "subtle-boolean-guard",
+  "description": "Boolean-guard bug: `or` changed to `and`, denying legitimate owners who are not admins.",
+  "expect": {
+    "min_findings": 1,
+    "must_match": [
+      {
+        "file": "src/auth.py",
+        "line": 8,
+        "severity": "major",
+        "keywords": ["and", "or", "boolean", "guard", "condition", "access"]
+      }
+    ],
+    "must_not_flag": []
+  }
+}

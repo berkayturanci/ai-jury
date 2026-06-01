@@ -1,0 +1,14 @@
+--- a/src/loader.py
++++ b/src/loader.py
+@@ -1,6 +1,10 @@
+ import json
+
+
+ def load_config(path):
+-    with open(path) as fh:
+-        return json.load(fh)
++    # Missing error handling: a missing file (FileNotFoundError) or malformed
++    # JSON (json.JSONDecodeError) propagates as an unhandled exception with no
++    # context, crashing the caller instead of degrading gracefully.
++    with open(path) as fh:
++        return json.load(fh)
