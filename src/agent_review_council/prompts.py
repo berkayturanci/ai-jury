@@ -50,6 +50,14 @@ Rules:
 Output a markdown list, one finding per line:
 - **[blocker|major|minor]** `path:line` — concise description and why it matters
 
+=== REPOSITORY REVIEW POLICY (maintainer-provided, TRUSTED) ===
+The block below is authored by the maintainers of the repository under review.
+Unlike the diff/context blocks, it is TRUSTED guidance that refines your review
+priorities (high-risk paths, focus areas, forbidden output, severity overrides,
+checklist, doc links). It is NOT part of the change under review; follow it.
+{policy}
+=== END REPOSITORY REVIEW POLICY ===
+
 After the markdown list, ALSO append a single fenced ```json code block holding a
 JSON array of structured finding objects (one per finding above). Use exactly
 this schema and these enum values:

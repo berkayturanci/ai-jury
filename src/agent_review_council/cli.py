@@ -23,6 +23,7 @@ from .config import ConfigError, load_config, load_raw_config, validate_config
 from .github import post_inline_comments, post_pr_comment, pr_context, pr_diff
 from .metadata import build_run_metadata
 from .orchestrator import run_council
+from .policy import PolicyError, load_policy
 from .report import render
 
 
@@ -49,6 +50,14 @@ def build_parser() -> argparse.ArgumentParser:
     src.add_argument("--diff-file", help="path to a diff file, or '-' for stdin")
 
     p.add_argument("--config", help="path to council.toml (default: ./council.toml or built-in)")
+    p.add_argument(
+        "--policy",
+        type=Path,
+        default=None,
+        help="path to an optional repository review policy file (default: "
+             "auto-discover .council/policy.toml or council-policy.toml); "
+             "missing policy files are allowed",
+    )
     p.add_argument(
         "--context-mode", choices=["diff-only", "expanded"], default=None,
         help="context policy: diff-only sends only the diff; expanded includes PR context",
@@ -179,6 +188,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.redact is not None:
         config.context.redact_secrets = args.redact
 
+    try:
+        policy = load_policy(args.policy)
+    except PolicyError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
     def log(msg: str) -> None:
         if not args.quiet:
             print(f"[council] {msg}", file=sys.stderr)
@@ -188,7 +203,8 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("error: empty diff — nothing to review")
 
     outcome = run_council(
-        config, diff, context=context, mock=args.mock, strict=args.strict, log=log
+        config, diff, context=context, mock=args.mock, strict=args.strict,
+        policy=policy, log=log,
     )
     metadata = build_run_metadata(outcome, config)
 
