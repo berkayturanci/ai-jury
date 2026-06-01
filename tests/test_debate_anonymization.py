@@ -122,10 +122,10 @@ class DebatePromptNoLeakTest(unittest.TestCase):
         captured: dict[str, str] = {}
         real_run_phase = orchestrator._run_phase
 
-        def capturing_run_phase(adapters, prompt_for, phase, parallel):
+        def capturing_run_phase(adapters, prompt_for, phase, parallel, **kwargs):
             if phase == "debate":
                 captured.update(prompt_for)
-            return real_run_phase(adapters, prompt_for, phase, parallel)
+            return real_run_phase(adapters, prompt_for, phase, parallel, **kwargs)
 
         orchestrator._run_phase = capturing_run_phase
         try:

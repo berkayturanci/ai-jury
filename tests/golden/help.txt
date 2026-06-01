@@ -1,13 +1,18 @@
 usage: council [-h] [--pr PR] [--repo REPO] [--diff-file DIFF_FILE]
                [--config CONFIG] [--policy POLICY]
                [--context-mode {diff-only,expanded}] [--redact] [--no-redact]
-               [--rounds ROUNDS] [--seed SEED] [--chair CHAIR] [--mock]
-               [--strict] [--verify] [--no-verify] [--doctor] [--write WRITE]
-               [-o OUTPUT] [--metadata-json PATH]
+               [--rounds ROUNDS] [--max-rounds MAX_ROUNDS] [--early-stop]
+               [--no-early-stop] [--total-timeout TOTAL_TIMEOUT]
+               [--phase-timeout PHASE_TIMEOUT] [--retries RETRIES]
+               [--max-diff-bytes MAX_DIFF_BYTES] [--chunk] [--no-chunk]
+               [--exclude GLOB] [--include GLOB] [--seed SEED] [--chair CHAIR]
+               [--mock] [--strict] [--verify] [--no-verify] [--doctor]
+               [--write WRITE] [-o OUTPUT] [--metadata-json PATH]
                [--format {markdown,json,sarif}] [--post-summary]
                [--post-inline] [--dry-run] [--label] [--ci]
-               [--fail-on FAIL_ON] [-q] [--config-validate] [--strict-config]
-               [--version]
+               [--fail-on FAIL_ON] [--cache] [--clear-cache]
+               [--cache-dir CACHE_DIR] [-q] [--config-validate]
+               [--strict-config] [--version]
 
 Cross-vendor multi-agent PR review council.
 
@@ -24,7 +29,30 @@ options:
   --redact              redact secrets from prompt text before sending
                         (default: from config)
   --no-redact           do not redact secrets before sending
-  --rounds ROUNDS       override number of rounds (1=review, 2=+debate)
+  --rounds ROUNDS       override number of rounds (1=review, 2=+debate); a
+                        fixed value disables early-stop for reproducible
+                        benchmarking
+  --max-rounds MAX_ROUNDS
+                        ceiling on adaptive rounds when early-stop is on
+                        (issue #40)
+  --early-stop          stop after round 1 when reviewers agree; debate only
+                        on disagreement
+  --no-early-stop       disable adaptive early-stop (honour a fixed number of
+                        rounds)
+  --total-timeout TOTAL_TIMEOUT
+                        overall wall-clock budget (seconds) for the whole run
+                        (issue #30)
+  --phase-timeout PHASE_TIMEOUT
+                        per-phase wall-clock budget (seconds) (issue #30)
+  --retries RETRIES     extra attempts for transient (timeout/rate-
+                        limit/spawn) failures
+  --max-diff-bytes MAX_DIFF_BYTES
+                        size budget for the (filtered) diff before
+                        chunking/too-large (issue #31)
+  --chunk               chunk an over-budget diff by file instead of failing
+  --no-chunk            disable diff chunking (fail clearly when over budget)
+  --exclude GLOB        exclude files matching this path glob (repeatable)
+  --include GLOB        only review files matching this path glob (repeatable)
   --seed SEED           run seed for reproducible orchestration; mock runs
                         with the same seed produce byte-identical reports
                         (overrides [council] seed)
@@ -54,6 +82,14 @@ options:
   --ci                  CI mode: exit non-zero when blocking findings remain
   --fail-on FAIL_ON     comma-separated severities that fail CI (overrides
                         config)
+  --cache               use the local result cache: reuse a cached outcome for
+                        an unchanged diff+config, else run and store it (issue
+                        #33; off by default)
+  --clear-cache         delete all local cache entries and exit (also:
+                        `council cache clear`)
+  --cache-dir CACHE_DIR
+                        override the cache directory (default:
+                        $COUNCIL_CACHE_DIR or ~/.cache/agent-review-council)
   -q, --quiet           suppress progress logs on stderr
   --config-validate     validate the resolved config and exit (0 valid, 2
                         invalid)

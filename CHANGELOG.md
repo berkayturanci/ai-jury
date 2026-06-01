@@ -9,6 +9,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Run budget, retries, and partial-result policy (#30): optional `total_timeout`
+  / `phase_timeout` budgets and opt-in `retries` for transient
+  (timeout/rate-limit/spawn) failures. The effective per-call timeout is the min
+  of the agent timeout and the budgets; skipped/failed/retried/timed-out agents
+  are surfaced in the report and run metadata; `Ctrl-C` exits cleanly (130). CLI:
+  `--total-timeout`, `--phase-timeout`, `--retries`.
+- Convergence-based early stop / adaptive debate rounds (#40): with
+  `early_stop = true`, a unanimous round-1 panel skips the debate and
+  disagreement runs debate up to `max_rounds`, stopping when disputes resolve.
+  Rounds executed and the stop reason appear in logs and metadata. A fixed
+  `--rounds` keeps reproducible fixed-N behaviour. CLI: `--early-stop` /
+  `--no-early-stop`, `--max-rounds`.
+- Large-diff handling (#31): the diff is measured and filtered (binary,
+  generated/vendored files, and `[council.diff]` include/exclude globs) before
+  review; an over-budget diff is chunked by file (`chunk = true`) or rejected
+  with an actionable message. CLI reports size and the selected mode. CLI:
+  `--max-diff-bytes`, `--chunk` / `--no-chunk`, `--exclude`, `--include`.
+- Optional local result cache (#33): `--cache` reuses a stored outcome for an
+  unchanged diff+config (key covers diff, config hash, prompt version, package
+  version, context policy, seed) and stores on a miss; cache hits are marked in
+  logs and metadata. Clear with `council cache clear` or `--clear-cache`.
+  Privacy implications documented in `docs/configuration.md`.
+- Maintainer governance (#26): `MAINTAINERS.md` documents triage labels, release
+  cadence, the compatibility/deprecation policy, decision-making, security
+  routing, and how project-specific requests are handled; linked from
+  CONTRIBUTING.
+
+### Changed
+
+- Run metadata schema bumped to v2: adds `stop_reason`, `skipped`, `retried`,
+  `budget_exhausted`, `from_cache`, an `execution` block, and per-agent
+  `attempts`.
+
 - Public CLI compatibility contract: `tests/test_cli_contract.py` locks the
   CLI's flags, `--help` text (width/color-pinned golden under `tests/golden/`),
   error messages, exit codes, and report headings, with a documented stability
