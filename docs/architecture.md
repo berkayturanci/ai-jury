@@ -130,6 +130,35 @@ OS-specific notes:
   3.11–3.13 sweep runs on Linux. The supported range is declared once in
   `pyproject.toml` (`requires-python`) and mirrored by this matrix and the README.
 
+### CI & runners
+
+The **authoritative** per-push / per-PR signal is
+[`Local CI (self-hosted)`](../.github/workflows/local-ci.yml), which runs the
+unit tests, the mock smoke test, and the coverage gate on a maintainer-run
+self-hosted macOS runner (labels `self-hosted, macOS, ARM64`). It is free, fast,
+and not subject to GitHub-hosted billing.
+
+The hosted matrix above ([`ci.yml`](../.github/workflows/ci.yml)) and the
+[`CodeQL`](../.github/workflows/codeql.yml) /
+[`OpenSSF Scorecard`](../.github/workflows/scorecard.yml) workflows run on
+GitHub-hosted runners. While the account's billing/spending limit prevents
+hosted jobs from starting, those jobs would fail instantly on every commit
+without actually running, so they are **not** wired to `push`/`pull_request`:
+
+| Workflow | Runner | Trigger |
+|:--|:--|:--|
+| Local CI (self-hosted) | self-hosted macOS | push + PR — **authoritative** |
+| CI (cross-OS matrix) | GitHub-hosted | `workflow_dispatch` (manual) |
+| CodeQL | GitHub-hosted | weekly `schedule` + manual |
+| OpenSSF Scorecard | GitHub-hosted | weekly `schedule` + manual |
+
+**Restoring hosted CI once hosted minutes are available:** re-add
+`push:`/`pull_request:` triggers to `ci.yml` (and `push:` to `codeql.yml` /
+`scorecard.yml`) to make the cross-OS matrix and per-commit security scanning
+automatic again. The self-hosted coverage gate can stay as the enforced bar, or
+move back to the hosted `coverage` job — both run the same `coverage report`
+against the `fail_under` threshold in `pyproject.toml`.
+
 ## Roadmap
 
 Prioritized from the prior-art research (see [`feasibility.md`](feasibility.md)):
