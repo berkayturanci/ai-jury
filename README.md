@@ -119,6 +119,29 @@ They are **intentionally excluded from the CI matrix** (no CLIs, auth, or
 secrets are available there) and are meant to be run locally before a release
 or when touching the adapter layer.
 
+## Review-quality benchmark
+
+A **small, directional** benchmark (`benchmark/`) measures whether a council's
+findings line up with hand-authored expectations for a handful of fixture diffs
+(obvious logic bug, subtle boolean-guard bug, missing error handling, a
+false-positive trap, and a docs-only change).
+
+> It is **not a universal quality claim**. The default *offline* mode is
+> deterministic and runs with **no live CLIs**: it scores each fixture's
+> *recorded* sample findings against an expected spec, which validates the
+> scorer and the recorded baselines — it does not measure live review quality.
+> (`--mock` is deliberately not used per fixture: the mock adapter emits a fixed
+> finding regardless of the diff, so it would be fake signal.) Only the opt-in
+> *live* mode (`COUNCIL_BENCH_LIVE=1`) runs real agents and measures quality.
+
+```bash
+make benchmark                                          # offline, deterministic
+COUNCIL_BENCH_LIVE=1 PYTHONPATH=src python3 -m agent_review_council.benchmark  # live (opt-in)
+```
+
+See [`benchmark/README.md`](benchmark/README.md) for the fixture list, the
+expected/recorded schema, and the match/scoring rules.
+
 ## Usage
 
 ```bash

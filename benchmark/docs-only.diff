@@ -1,0 +1,14 @@
+--- a/README.md
++++ b/README.md
+@@ -1,6 +1,10 @@
+ # Widget
+
+ A small widget library.
+
++## Installation
++
++Install with `pip install widget`. Requires Python 3.11 or newer.
++
+ ## Usage
+
+ Import `widget` and call `widget.run()`.

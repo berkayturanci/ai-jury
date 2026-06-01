@@ -1,0 +1,16 @@
+{
+  "id": "missing-error-handling",
+  "description": "load_config does not handle a missing file or malformed JSON; the exception propagates uncaught.",
+  "expect": {
+    "min_findings": 1,
+    "must_match": [
+      {
+        "file": "src/loader.py",
+        "line": 9,
+        "severity": "minor",
+        "keywords": ["error handling", "exception", "FileNotFoundError", "JSONDecodeError", "try"]
+      }
+    ],
+    "must_not_flag": []
+  }
+}

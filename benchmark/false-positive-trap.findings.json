@@ -1,0 +1,11 @@
+[
+  {
+    "severity": "info",
+    "file": "src/checksum.py",
+    "line": 14,
+    "claim": "verify_token correctly uses hmac.compare_digest for constant-time comparison.",
+    "evidence": "Comparison uses hmac.compare_digest, not a plain equality, so it is not vulnerable to a timing attack. No change needed.",
+    "confidence": "high",
+    "reviewer": "claude"
+  }
+]

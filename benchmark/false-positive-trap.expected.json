@@ -1,0 +1,15 @@
+{
+  "id": "false-positive-trap",
+  "description": "Suspicious-looking but correct constant-time HMAC verification; expect NO blocking finding.",
+  "expect": {
+    "max_blocking": 0,
+    "must_match": [],
+    "must_not_flag": [
+      {
+        "file": "src/checksum.py",
+        "severity": "major",
+        "keywords": ["timing attack", "constant-time", "insecure comparison", "==", "vulnerable"]
+      }
+    ]
+  }
+}

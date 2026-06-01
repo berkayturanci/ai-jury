@@ -1,0 +1,12 @@
+[
+  {
+    "severity": "major",
+    "file": "src/auth.py",
+    "line": 8,
+    "claim": "Incorrect boolean guard: `and` rejects owners who are not admins.",
+    "evidence": "The comment says owners OR admins may access, but the condition uses `and`, so a non-admin owner is denied access.",
+    "suggested_fix": "Use `if user.is_owner(resource) or user.is_admin:`.",
+    "confidence": "high",
+    "reviewer": "codex"
+  }
+]

@@ -1,0 +1,14 @@
+{
+  "id": "docs-only",
+  "description": "Documentation-only change (README installation section); expect no code finding.",
+  "expect": {
+    "max_blocking": 0,
+    "must_match": [],
+    "must_not_flag": [
+      {
+        "file": "README.md",
+        "severity": "major"
+      }
+    ]
+  }
+}

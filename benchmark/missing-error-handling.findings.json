@@ -1,0 +1,12 @@
+[
+  {
+    "severity": "major",
+    "file": "src/loader.py",
+    "line": 9,
+    "claim": "Missing error handling around file open and JSON parse.",
+    "evidence": "open(path) raises FileNotFoundError and json.load raises JSONDecodeError; neither is caught, so callers get an unhandled exception with no context.",
+    "suggested_fix": "Wrap the open/parse in try/except and raise a domain error with the path, or return a documented default.",
+    "confidence": "high",
+    "reviewer": "claude"
+  }
+]
