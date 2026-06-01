@@ -92,9 +92,14 @@ def to_json(outcome: Any, config: Any) -> str:
     metadata = build_run_metadata(outcome, config)
     metadata.pop("generated_at", None)
 
+    # Surface the deterministic PR-level classification (issue #7) at the top
+    # level for easy machine consumption (it is also embedded in ``metadata``).
+    from .classification import classify
+
     doc: dict[str, Any] = {
         "schema_version": JSON_SCHEMA_VERSION,
         "metadata": metadata,
+        "classification": classify(outcome),
         "findings": [_finding_dict(f) for f in outcome.findings],
         "consensus": [_group_dict(g) for g in outcome.groups],
         "verdicts": [

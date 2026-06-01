@@ -148,3 +148,75 @@ Prioritized from the prior-art research (see [`feasibility.md`](feasibility.md))
 5. **Severity-gated CI exit codes** (`REQUEST CHANGES` → non-zero).
 6. **A2A transport** (later) — wrap each agent as an A2A server only to admit remote
    third-party agents; unnecessary for local subprocess orchestration.
+
+
+## PR-level classification (issue #7)
+
+After consensus, the council derives a compact, **deterministic** PR-level
+classification from the structured findings, the consensus groups, and
+(optionally) the unified diff. It lives in
+`agent_review_council/classification.py` and never calls an LLM or the network,
+so identical inputs always yield identical output (it is golden-tested under the
+mock pipeline).
+
+### Fields
+
+| field | type | meaning |
+| --- | --- | --- |
+| `review_effort` | int 1-5 | how much reviewer effort the PR likely needs |
+| `risk_level` | `low` / `medium` / `high` | severity of the issues found |
+| `security_sensitive` | bool | the change looks security-relevant |
+| `needs_human_attention` | bool | a human should look before merging |
+
+### Formulas
+
+**`risk_level`** — from the most severe finding:
+
+* `high` — any `critical` finding, OR any `major` finding that is part of a
+  confirmed consensus/majority group (not rejected/unsupported).
+* `medium` — any other `major` finding (single-reviewer/unverified), or any
+  `minor` finding.
+* `low` — only `nit`/`info` findings, or no findings at all.
+
+**`review_effort`** (clamped to 1-5):
+
+    base = 1
+    + finding count:   >= 8 -> +2,  >= 3 -> +1
+    + severity spread: any critical/major -> +2, else any minor -> +1
+    + diff size:       > 400 changed lines -> +2, > 80 -> +1
+
+Each term only ever raises the score, so it is monotonic-ish in count,
+severity, and diff size. Changed lines are counted from the unified diff
+(added/removed lines, excluding `+++`/`---` headers).
+
+**`security_sensitive`** — true if any finding has severity `critical`, OR any
+of the `SECURITY_KEYWORDS` tokens (e.g. `injection`, `xss`, `csrf`, `ssrf`,
+`rce`, `traversal`, `secret`, `credential`, `token`, `auth`, `deserialization`,
+`sanitize`, `vulnerab`, `exploit`, `privilege`) appears in a finding's claim,
+evidence, suggested fix, or file path. Matching is case-insensitive and
+word-boundary anchored, so `auth` does **not** fire inside `author`. The
+synthetic injection-scanner finding is caught via the keyword path.
+
+**`needs_human_attention`** — true if `risk_level` is `high`, OR
+`security_sensitive` is true, OR any consensus group is disputed / needs a human
+decision.
+
+### Where it surfaces
+
+* The markdown report includes a compact `## Classification` summary line, e.g.
+  `review effort: 4/5 · risk: high · security-sensitive: no · needs human
+  attention: yes`.
+* `build_run_metadata` embeds the classification dict, so it appears in
+  `--metadata-json` output and in the JSON report (`to_json`), both at the top
+  level (`classification`) and inside `metadata`.
+
+### Optional GitHub labels (opt-in)
+
+Labeling is **off by default** and never applied automatically. Pass `--label`
+together with `--pr` to apply classification labels to the pull request via
+`gh pr edit --add-label`. The labels are derived from the classification:
+
+* `review effort: N/5`
+* `risk: low|medium|high`
+* `possible security issue` (only when `security_sensitive`)
+* `needs human attention` (only when `needs_human_attention`)

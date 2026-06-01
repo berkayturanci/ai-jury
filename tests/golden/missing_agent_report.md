@@ -2,6 +2,10 @@
 
 **Panel:** `claude` (anthropic), `agy` (google)
 
+## Classification
+
+review effort: 1/5 · risk: low · security-sensitive: no · needs human attention: no
+
 ## Chair verdict
 
 _Synthesis failed: command not found on PATH: claude_

@@ -71,6 +71,7 @@ def build_run_metadata(outcome: "CouncilOutcome", config: "CouncilConfig") -> di
     # effective config let a run be reproduced/explained. The seed is whatever
     # the run was configured with (may be None when unseeded). The config hash
     # is a pure function of config, so it is stable across runs and over time.
+    from .classification import classify
     from .config import config_hash
 
     return {
@@ -83,6 +84,9 @@ def build_run_metadata(outcome: "CouncilOutcome", config: "CouncilConfig") -> di
         "redaction_count": outcome.redaction_count,
         "seed": config.seed,
         "config_hash": config_hash(config),
+        # PR-level classification (issue #7): deterministic summary derived from
+        # the structured findings + consensus groups. No diff text is included.
+        "classification": classify(outcome),
         # Wall-clock is an approximate COST PROXY, not a dollar cost. No token
         # counts are available from the underlying CLIs.
         "total_wall_clock_s": total_wall_clock_s,

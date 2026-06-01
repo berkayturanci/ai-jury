@@ -71,6 +71,7 @@ DOCUMENTED_FLAGS = [
     "--post",
     "--post-inline",
     "--dry-run",
+    "--label",
     "--ci",
     "--fail-on",
     "--quiet",

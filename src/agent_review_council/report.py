@@ -1,6 +1,7 @@
 """Render the council run into a single markdown report."""
 from __future__ import annotations
 
+from . import classification as _classification
 from .adapters import AgentResult
 from .findings import SEVERITY_ORDER, Finding
 
@@ -86,6 +87,20 @@ def _metadata_block(metadata: dict) -> list[str]:
     return lines
 
 
+def _classification_block(classification: dict) -> list[str]:
+    """Render the compact PR-level classification summary.
+
+    Deterministic: ``classification`` is produced by the pure
+    :mod:`agent_review_council.classification` module, so the rendered section is
+    stable for a deterministic run (and golden-tested under mock).
+    """
+    return [
+        "## Classification\n",
+        _classification.summary_line(classification),
+        "",
+    ]
+
+
 def _consensus_block(groups) -> list[str]:
     lines = ["## Consensus\n"]
     by_bucket: dict[str, list] = {b: [] for b in _BUCKET_ORDER}
@@ -116,6 +131,7 @@ def render(
     redact_secrets: bool | None = None,
     redaction_count: int = 0,
     metadata: dict | None = None,
+    classification: dict | None = None,
 ) -> str:
     findings = findings or []
     warnings = warnings or []
@@ -125,6 +141,13 @@ def render(
 
     panel = ", ".join(f"`{r.agent}` ({r.vendor})" for r in reviews)
     lines.append(f"**Panel:** {panel}\n")
+
+    # Compact, deterministic PR-level classification (issue #7). Derived from the
+    # structured findings/groups when not supplied explicitly so the section
+    # always renders for a normal run.
+    if classification is None:
+        classification = _classification.classify(findings=findings, groups=groups)
+    lines.extend(_classification_block(classification))
 
     if context_mode is not None or redact_secrets is not None:
         lines.append("## Context policy\n")

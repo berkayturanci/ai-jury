@@ -47,6 +47,38 @@ def post_pr_comment(pr: str, body: str, repo: str | None = None) -> None:
     _gh(*args)
 
 
+def build_label_args(pr: str, labels, repo: str | None = None) -> list[str]:
+    """Build the ``gh pr edit`` arg vector for applying labels (pure).
+
+    Returns ``[]`` when there are no labels (nothing to do). Kept pure and
+    network-free so the arg construction can be unit-tested without invoking
+    ``gh`` or hitting GitHub.
+    """
+    clean = [str(label) for label in (labels or []) if str(label).strip()]
+    if not clean:
+        return []
+    args = ["pr", "edit", str(pr)]
+    for label in clean:
+        args += ["--add-label", label]
+    if repo:
+        args += ["--repo", repo]
+    return args
+
+
+def apply_labels(pr: str, labels, repo: str | None = None) -> list[str]:
+    """Best-effort: apply ``labels`` to ``pr`` via ``gh pr edit --add-label``.
+
+    Only called when labeling is explicitly enabled (CLI ``--label``); it never
+    runs by default. No-op (returns ``[]``) when there are no labels. Returns the
+    ``gh`` arg vector that was invoked so callers can log it.
+    """
+    args = build_label_args(pr, labels, repo)
+    if not args:
+        return args
+    _gh(*args)
+    return args
+
+
 # Marker prefix identifying comments authored by the council (enables dedup).
 INLINE_MARKER = "<!-- arc-inline -->"
 

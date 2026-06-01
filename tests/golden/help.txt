@@ -5,8 +5,9 @@ usage: council [-h] [--pr PR] [--repo REPO] [--diff-file DIFF_FILE]
                [--strict] [--verify] [--no-verify] [--doctor] [--write WRITE]
                [-o OUTPUT] [--metadata-json PATH]
                [--format {markdown,json,sarif}] [--post-summary]
-               [--post-inline] [--dry-run] [--ci] [--fail-on FAIL_ON] [-q]
-               [--config-validate] [--strict-config] [--version]
+               [--post-inline] [--dry-run] [--label] [--ci]
+               [--fail-on FAIL_ON] [-q] [--config-validate] [--strict-config]
+               [--version]
 
 Cross-vendor multi-agent PR review council.
 
@@ -47,6 +48,9 @@ options:
                         --pr
   --dry-run             with --post-inline, print what would be posted without
                         calling GitHub
+  --label               apply classification labels (review effort / risk /
+                        security) to --pr (off by default; never applied
+                        automatically)
   --ci                  CI mode: exit non-zero when blocking findings remain
   --fail-on FAIL_ON     comma-separated severities that fail CI (overrides
                         config)
