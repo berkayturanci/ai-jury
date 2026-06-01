@@ -1,10 +1,16 @@
 name: Local CI (self-hosted)
 
-# Fast, free verification on a maintainer-run self-hosted macOS runner. This runs the
-# stdlib-only unit tests and the mock CLI smoke test without consuming GitHub-hosted
-# minutes. It complements (does not replace) the cross-OS matrix in ci.yml, which
-# provides the full Python 3.11-3.13 × Linux/macOS/Windows coverage on GitHub-hosted
-# runners. Requires the self-hosted runner (labels: self-hosted, macos, arm64) to be
+# Authoritative per-push/PR test signal for this project. Runs the stdlib-only
+# unit tests, the mock CLI smoke test, and the coverage gate on a maintainer-run
+# self-hosted macOS runner — free, fast, and not subject to GitHub-hosted billing.
+#
+# The hosted cross-OS / multi-Python matrix lives in ci.yml and is MANUAL-ONLY
+# (workflow_dispatch) while GitHub-hosted jobs fail to start under the account's
+# billing/spending limit; CodeQL and Scorecard run on a weekly schedule for the
+# same reason. See docs/architecture.md ("CI & runners") for the policy and how
+# to restore the hosted matrix once hosted minutes are available.
+#
+# Requires the self-hosted runner (labels: self-hosted, macOS, ARM64) to be
 # online; if it is offline, these jobs queue until it returns.
 
 on:
@@ -33,3 +39,20 @@ jobs:
           python3 -m agent_review_council --mock --diff-file examples/sample.diff -q | tee report.md
           grep -q "Agent Review Council" report.md
           grep -q "Chair verdict" report.md
+
+  coverage:
+    name: Coverage gate (self-hosted)
+    # The authoritative coverage gate, moved here from the hosted ci.yml so the
+    # minimum-coverage bar is actually enforced per push/PR. Threshold
+    # (fail_under) lives in pyproject.toml under [tool.coverage.report].
+    runs-on: [self-hosted, macos, arm64]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2 (updated 2026-05-31)
+      - name: Install package with dev tools
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -e ".[dev]"
+      - name: Run tests under coverage
+        run: python3 -m coverage run -m unittest discover -s tests
+      - name: Enforce minimum coverage
+        run: python3 -m coverage report

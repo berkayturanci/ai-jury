@@ -3,9 +3,12 @@ name: OpenSSF Scorecard
 on:
   # Scorecard publishes results from the default branch; it cannot publish from
   # pull requests or forks, so it intentionally does not run on `pull_request`.
+  # Hosted-only: runs on a weekly schedule (and on demand) rather than per-push,
+  # because GitHub-hosted jobs currently fail to start under the account's
+  # billing/spending limit and would otherwise paint every push red without
+  # running. Re-add `push: branches: [main]` once hosted minutes are restored.
   branch_protection_rule:
-  push:
-    branches: [main]
+  workflow_dispatch:
   schedule:
     - cron: "18 4 * * 2"
 
