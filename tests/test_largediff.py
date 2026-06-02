@@ -49,6 +49,22 @@ class FilterTest(unittest.TestCase):
         self.assertEqual(plan.kept_paths, ["src/a.py"])
         self.assertIn(("img.png", "binary"), plan.excluded)
 
+    def test_source_mentioning_binary_markers_is_not_binary(self):
+        # Regression: a source file whose *content* mentions "Binary files" or
+        # "GIT binary patch" (e.g. a binary detector) must NOT be misdetected as
+        # binary — those strings appear as added (+) content lines, not as the
+        # diff's unprefixed binary-marker header.
+        diff = (
+            "diff --git a/src/detect.py b/src/detect.py\n"
+            "--- a/src/detect.py\n+++ b/src/detect.py\n"
+            "@@ -0,0 +1,2 @@\n"
+            '+    return "Binary files " in text or "GIT binary patch" in text\n'
+            '+# handles the "Binary files a/x and b/x differ" marker\n'
+        )
+        plan = plan_diff(diff, max_bytes=1_000_000, chunk=False)
+        self.assertEqual(plan.kept_paths, ["src/detect.py"])
+        self.assertEqual(plan.excluded, [])
+
     def test_generated_lockfile_excluded(self):
         diff = _file_segment("package-lock.json", 50) + _file_segment("src/a.py")
         plan = plan_diff(diff, max_bytes=1_000_000, chunk=False)

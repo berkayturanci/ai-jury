@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Large-diff binary detection (#31) no longer misclassifies a *source* file as
+  binary just because its content mentions `Binary files` / `GIT binary patch`;
+  it now matches only the diff's unprefixed binary-marker header line.
+- `council --doctor` reports local/open-weight agents (#43) by their endpoint
+  reachability instead of a (non-existent) CLI on PATH, so a reachable local
+  server no longer shows as `MISSING`.
+
 ### Added
 
 - Local / open-weight reviewer (#43): a new `vendor = "local"` agent talks to any

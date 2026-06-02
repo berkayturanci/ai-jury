@@ -17,7 +17,6 @@ locally and only written where you explicitly ask (stdout, or ``--write``).
 from __future__ import annotations
 
 import platform
-import shutil
 import sys
 import tomllib
 from pathlib import Path
@@ -61,13 +60,26 @@ def _detect_capabilities(spec):
         }
 
 
+def _is_available(spec) -> bool:
+    """Whether an agent is reachable, via its adapter's own check.
+
+    Uses ``adapter.available()`` rather than ``shutil.which`` so a local/HTTP
+    agent (issue #43), which has no ``command`` and probes its endpoint instead,
+    is reported correctly. Guarded — any failure reads as unavailable.
+    """
+    try:
+        return make_adapter(spec).available()
+    except Exception:  # noqa: BLE001 - diagnostics must never crash
+        return False
+
+
 def _agent_entry(spec):
     caps = _detect_capabilities(spec)
     return {
         "name": _redact_value(spec.name),
         "command": _redact_value(spec.command),
         "vendor": _redact_value(spec.vendor),
-        "available": shutil.which(spec.command) is not None,
+        "available": _is_available(spec),
         "version": _redact_value(caps.get("version")),
         "capabilities": {
             "supports_headless": caps.get("supports_headless"),
@@ -102,7 +114,15 @@ def _detect_warnings(cfg) -> list[str]:
             f"chair '{_redact_value(cfg.chair)}' does not match any configured agent"
         )
     for agent in enabled:
-        if shutil.which(agent.command) is None:
+        if _is_available(agent):
+            continue
+        if agent.vendor == "local":
+            warnings.append(
+                f"agent '{_redact_value(agent.name)}' (local) endpoint "
+                f"'{_redact_value(agent.endpoint or 'http://localhost:11434/v1')}' "
+                f"is not reachable"
+            )
+        else:
             warnings.append(
                 f"agent '{_redact_value(agent.name)}' command "
                 f"'{_redact_value(agent.command)}' is not on PATH"

@@ -128,7 +128,21 @@ def split_diff(diff: str) -> list[DiffFile]:
 
 
 def _is_binary(text: str) -> bool:
-    return "Binary files " in text or "GIT binary patch" in text
+    """True when a file segment is a git *binary* diff.
+
+    Matches the binary marker on its own header line — ``Binary files … differ``
+    or a standalone ``GIT binary patch`` — rather than the substring anywhere in
+    the text. A diff's content lines are prefixed with ``+``/``-``/`` ``, so this
+    never misfires on source code that merely *mentions* those strings (e.g. this
+    module's own detector).
+    """
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped == "GIT binary patch":
+            return True
+        if stripped.startswith("Binary files ") and stripped.endswith(" differ"):
+            return True
+    return False
 
 
 def _matches_any(path: str, patterns) -> bool:
