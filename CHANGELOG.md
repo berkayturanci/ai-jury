@@ -60,6 +60,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `--post-progress` (#125): keeps a single, sticky status comment on the PR,
+  updated live at each round/chunk milestone (round 1 → debate → verify →
+  synthesis; chunk i/N), then replaced with the final verdict. Off by default;
+  requires `--pr`; best-effort (a GitHub hiccup never crashes the run).
 - Risk-aware auto-depth (#120): `--auto` / `[jury] auto_depth` scales review
   intensity to a cheap pre-review diff profile (size / files / docs-or-generated
   / security-sensitive paths) — a trivial or docs-only diff runs shallow
