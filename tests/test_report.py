@@ -27,3 +27,33 @@ class RenderNoneSafetyTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RenderSectionsTest(unittest.TestCase):
+    def test_three_sections_with_debate(self):
+        from ai_jury.adapters import AgentResult
+        from ai_jury.report import render_sections
+
+        reviews = [AgentResult("claude", "anthropic", True, "r-claude", 0.0),
+                   AgentResult("codex", "openai", True, "r-codex", 0.0)]
+        debate = [AgentResult("claude", "anthropic", True, "d-claude", 0.0)]
+        synth = AgentResult("claude", "anthropic", True, "## Verdict\nAPPROVE", 0.0)
+        secs = render_sections(reviews, debate, synth, chair="claude",
+                               findings=[], groups=[])
+        titles = [t for t, _ in secs]
+        self.assertEqual(len(secs), 3)
+        self.assertIn("Round 1", titles[0])
+        self.assertIn("Round 2", titles[1])
+        self.assertIn("Decision", titles[2])
+        self.assertIn("r-claude", secs[0][1])
+        self.assertIn("d-claude", secs[1][1])
+        self.assertIn("APPROVE", secs[2][1])
+
+    def test_debate_section_omitted_when_no_debate(self):
+        from ai_jury.adapters import AgentResult
+        from ai_jury.report import render_sections
+
+        reviews = [AgentResult("claude", "anthropic", True, "r", 0.0)]
+        secs = render_sections(reviews, [], None, chair="claude")
+        self.assertEqual(len(secs), 2)  # Round 1 + Decision, no debate
+        self.assertNotIn("Round 2", " ".join(t for t, _ in secs))

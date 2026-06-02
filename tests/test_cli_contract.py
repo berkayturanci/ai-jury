@@ -90,6 +90,7 @@ DOCUMENTED_FLAGS = [
     "--post",
     "--post-inline",
     "--post-progress",
+    "--post-mode",
     "--dry-run",
     "--label",
     "--ci",

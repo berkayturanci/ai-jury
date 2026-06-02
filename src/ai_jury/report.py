@@ -251,3 +251,75 @@ def render(
         " — a cross-vendor multi-agent PR review jury.</sub>"
     )
     return "\n".join(lines)
+
+
+def render_sections(
+    reviews: list[AgentResult],
+    debate: list[AgentResult],
+    synthesis: AgentResult | None,
+    *,
+    chair: str,
+    findings: list[Finding] | None = None,
+    warnings: list[str] | None = None,
+    groups: list | None = None,
+    verify: AgentResult | None = None,
+    classification: dict | None = None,
+) -> list[tuple[str, str]]:
+    """Split the report into ordered ``(title, body)`` sections for phased posting.
+
+    Returns up to three sections — **Round 1** (independent reviews), **Round 2**
+    (debate, omitted when there was none), and **Decision** (verification + chair
+    verdict + consensus + structured findings) — so a PR can show the flow as
+    separate, readable comments (issue #127). ``render()`` (the single-blob
+    report) is unchanged. Empty sections are skipped.
+    """
+    findings = findings or []
+    warnings = warnings or []
+    groups = groups or []
+    sections: list[tuple[str, str]] = []
+
+    # Round 1 — independent reviews.
+    r1 = [f"**Panel:** {', '.join(f'`{r.agent}` ({r.vendor})' for r in reviews)}\n"]
+    for r in reviews:
+        status = f"{r.duration_s:.0f}s" if r.ok else _fail_status(r)
+        r1.append(_block(f"`{r.agent}` ({r.vendor}) — {status}", r.output if r.ok else ""))
+    sections.append(("🏛️ AI Jury — Round 1: independent reviews", "\n".join(r1).strip()))
+
+    # Round 2 — cross-examination (only if a debate ran).
+    if debate:
+        r2 = []
+        for r in debate:
+            status = f"{r.duration_s:.0f}s" if r.ok else _fail_status(r)
+            r2.append(_block(f"`{r.agent}` — {status}", r.output if r.ok else ""))
+        sections.append(("🏛️ AI Jury — Round 2: cross-examination (debate)", "\n".join(r2).strip()))
+
+    # Decision — verification + chair verdict + consensus + findings.
+    dec: list[str] = []
+    if classification is None:
+        classification = _classification.classify(findings=findings, groups=groups)
+    dec.extend(_classification_block(classification))
+    if groups:
+        dec.extend(_consensus_block(groups))
+    if verify is not None:
+        dec.append("## Verification\n")
+        dec.append(f"> Verified by `{chair}`\n")
+        dec.append(verify.output.strip() + "\n" if verify.ok else f"_Verification failed: {verify.error}_\n")
+    if synthesis and synthesis.ok:
+        dec.append("## Chair verdict\n")
+        dec.append(f"> Synthesized by `{chair}`\n")
+        dec.append(synthesis.output.strip() + "\n")
+    elif synthesis and not synthesis.ok:
+        dec.append(f"## Chair verdict\n\n_Synthesis failed: {synthesis.error}_\n")
+    if findings:
+        dec.append("## Structured findings\n")
+        ranked = sorted(
+            findings,
+            key=lambda f: (SEVERITY_ORDER.get(f.severity, 99), f.file or "", f.line or 0),
+        )
+        dec.extend(_finding_line(f) for f in ranked)
+    if warnings:
+        dec.append("\n> ⚠️ agent output warnings\n")
+        dec.extend(f"- {w}" for w in warnings)
+    sections.append(("🏛️ AI Jury — Decision: verdict & consensus", "\n".join(dec).strip()))
+
+    return sections
