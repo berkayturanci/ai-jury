@@ -9,8 +9,8 @@
   <!-- classical pediment + columns (jury / courthouse) -->
   <path d="M13 25 L32 12 L51 25 Z" fill="#fff"/>
   <rect x="14" y="27" width="36" height="4" rx="1" fill="#fff"/>
-  <rect x="18"   y="33" width="4.5" height="15" fill="#fff"/>
-  <rect x="27.75" y="33" width="4.5" height="15" fill="#fff"/>
-  <rect x="37.5" y="33" width="4.5" height="15" fill="#fff"/>
+  <rect x="19.75" y="33" width="4.5" height="15" fill="#fff"/>
+  <rect x="29.75" y="33" width="4.5" height="15" fill="#fff"/>
+  <rect x="39.75" y="33" width="4.5" height="15" fill="#fff"/>
   <rect x="13" y="50" width="38" height="4.5" rx="1.5" fill="#fff"/>
 </svg>
