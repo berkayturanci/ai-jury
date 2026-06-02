@@ -2,17 +2,17 @@ usage: jury [-h] [--pr PR] [--repo REPO] [--diff-file DIFF_FILE]
             [--config CONFIG] [--policy POLICY]
             [--context-mode {diff-only,expanded}] [--redact] [--no-redact]
             [--rounds ROUNDS] [--max-rounds MAX_ROUNDS] [--early-stop]
-            [--no-early-stop] [--total-timeout TOTAL_TIMEOUT]
-            [--phase-timeout PHASE_TIMEOUT] [--retries RETRIES]
-            [--max-diff-bytes MAX_DIFF_BYTES] [--chunk] [--no-chunk]
-            [--exclude GLOB] [--include GLOB] [--seed SEED] [--chair CHAIR]
-            [--mock] [--strict] [--verify] [--no-verify] [--doctor]
-            [--write WRITE] [-o OUTPUT] [--metadata-json PATH]
+            [--no-early-stop] [--auto] [--no-auto]
+            [--total-timeout TOTAL_TIMEOUT] [--phase-timeout PHASE_TIMEOUT]
+            [--retries RETRIES] [--max-diff-bytes MAX_DIFF_BYTES] [--chunk]
+            [--no-chunk] [--exclude GLOB] [--include GLOB] [--seed SEED]
+            [--chair CHAIR] [--mock] [--strict] [--verify] [--no-verify]
+            [--doctor] [--write WRITE] [-o OUTPUT] [--metadata-json PATH]
             [--format {markdown,json,sarif}] [--post-summary] [--post-inline]
-            [--dry-run] [--label] [--ci] [--fail-on FAIL_ON] [--cache]
-            [--clear-cache] [--cache-dir CACHE_DIR] [--suggest-patches]
-            [--patches-out PATH] [--incremental] [-q] [--config-validate]
-            [--strict-config] [--version]
+            [--post-progress] [--dry-run] [--label] [--ci] [--fail-on FAIL_ON]
+            [--cache] [--clear-cache] [--cache-dir CACHE_DIR]
+            [--suggest-patches] [--patches-out PATH] [--incremental] [-q]
+            [--config-validate] [--strict-config] [--version]
 
 Cross-vendor multi-agent PR review jury.
 
@@ -38,6 +38,9 @@ options:
                         on disagreement
   --no-early-stop       disable adaptive early-stop (honour a fixed number of
                         rounds)
+  --auto                risk-aware auto-depth: scale rounds/verify to the diff
+                        (issue #120)
+  --no-auto             disable auto-depth (use configured/fixed rounds)
   --total-timeout TOTAL_TIMEOUT
                         overall wall-clock budget (seconds) for the whole run
                         (issue #30)
@@ -73,6 +76,8 @@ options:
                         post the report as a single summary comment on --pr
   --post-inline         post inline review comments for located findings on
                         --pr
+  --post-progress       keep a live, sticky status comment on --pr updated per
+                        round/chunk (issue #125)
   --dry-run             with --post-inline, print what would be posted without
                         calling GitHub
   --label               apply classification labels (review effort / risk /

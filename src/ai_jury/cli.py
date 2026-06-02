@@ -176,6 +176,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="post inline review comments for located findings on --pr",
     )
     p.add_argument(
+        "--post-progress", dest="post_progress", action="store_true",
+        help="keep a live, sticky status comment on --pr updated per round/chunk "
+             "(issue #125)",
+    )
+    p.add_argument(
         "--dry-run", dest="dry_run", action="store_true",
         help="with --post-inline, print what would be posted without calling GitHub",
     )
@@ -558,6 +563,17 @@ def _run_config(rest: list[str]) -> int:
     return 0
 
 
+_PROGRESS_PREFIXES = (
+    "round ", "reviewing chunk", "verification", "synthesis",
+    "diff size", "early stop", "auto-depth",
+)
+
+
+def _is_progress_milestone(msg: str) -> bool:
+    """Whether a log line is a coarse milestone worth a sticky-comment update."""
+    return msg.startswith(_PROGRESS_PREFIXES)
+
+
 def _maybe_add_local_fallback(config, args, log) -> None:
     """Append a local agent when nothing else can run, offline (issue: zero-config).
 
@@ -710,9 +726,21 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
+    # Live progress on the PR (issue #125): a single sticky comment updated at
+    # each round/chunk milestone. Opt-in and requires --pr.
+    progress = None
+    if args.post_progress:
+        if not args.pr:
+            raise SystemExit("error: --post-progress requires --pr")
+        from .github import ProgressReporter
+
+        progress = ProgressReporter(args.pr, args.repo)
+
     def log(msg: str) -> None:
         if not args.quiet:
             print(f"[jury] {msg}", file=sys.stderr)
+        if progress is not None and _is_progress_milestone(msg):
+            progress.update(msg)
 
     # Smart offline fallback: with NO config file and NO usable agent CLI, but a
     # local model server reachable, add a local agent so `jury` just works
@@ -864,6 +892,11 @@ def main(argv: list[str] | None = None) -> int:
             report += "\n\n" + patches_section.rstrip()
         else:
             log("--suggest-patches needs markdown output or --patches-out; skipped")
+
+    # Turn the live progress comment into the final verdict (issue #125).
+    if progress is not None:
+        progress.finish(report)
+        log(f"progress comment finalized on PR #{args.pr}")
 
     if args.output:
         with Path(args.output).open("w", encoding="utf-8") as fh:

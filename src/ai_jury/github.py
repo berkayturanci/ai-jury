@@ -288,3 +288,80 @@ def post_inline_comments(
         json.dumps(payload),
     )
     return payload
+
+
+# Hidden marker identifying the jury's single sticky progress comment (issue #125).
+PROGRESS_MARKER = "<!-- arc-progress -->"
+
+
+def render_progress_body(stages: list[str], *, done: bool = False, final: str | None = None) -> str:
+    """Render the sticky progress-comment body (pure, issue #125).
+
+    ``stages`` is the ordered list of milestones reached. When ``done`` and a
+    ``final`` report is given, the comment becomes the verdict (with the marker
+    kept so the same comment is reused on a re-run).
+    """
+    if done and final is not None:
+        return f"{PROGRESS_MARKER}\n{final}"
+    header = "🏛️ **AI Jury** — review complete." if done else "🏛️ **AI Jury** — review in progress…"
+    lines = [PROGRESS_MARKER, header, ""]
+    for s in stages:
+        lines.append(f"- {s}")
+    if not done:
+        lines.append("\n_Updating live; the verdict will replace this when done._")
+    return "\n".join(lines)
+
+
+def _create_issue_comment(pr: str, body: str, repo: str) -> int | None:
+    """Create a PR/issue comment, returning its numeric id (or None)."""
+    try:
+        out = _gh_with_input(
+            ["api", "--method", "POST", f"repos/{repo}/issues/{pr}/comments", "--input", "-"],
+            json.dumps({"body": body}),
+        )
+        return json.loads(out).get("id")
+    except (RuntimeError, json.JSONDecodeError):
+        return None
+
+
+def _edit_issue_comment(comment_id: int, body: str, repo: str) -> bool:
+    try:
+        _gh_with_input(
+            ["api", "--method", "PATCH",
+             f"repos/{repo}/issues/comments/{comment_id}", "--input", "-"],
+            json.dumps({"body": body}),
+        )
+        return True
+    except RuntimeError:
+        return False
+
+
+class ProgressReporter:
+    """Maintains ONE sticky PR comment, updated as the run advances (issue #125).
+
+    Best-effort and resilient: a resolve/create/edit failure is swallowed so a
+    GitHub hiccup never crashes the review. The first ``update`` creates the
+    comment; subsequent updates edit it in place; ``finish`` turns it into the
+    final verdict.
+    """
+
+    def __init__(self, pr: str, repo: str | None = None):
+        self.pr = str(pr)
+        self.repo = _resolve_repo(repo)
+        self.comment_id: int | None = None
+        self.stages: list[str] = []
+
+    def _push(self, body: str) -> None:
+        if not self.repo:
+            return
+        if self.comment_id is None:
+            self.comment_id = _create_issue_comment(self.pr, body, self.repo)
+        else:
+            _edit_issue_comment(self.comment_id, body, self.repo)
+
+    def update(self, milestone: str) -> None:
+        self.stages.append(milestone)
+        self._push(render_progress_body(self.stages, done=False))
+
+    def finish(self, final_report: str) -> None:
+        self._push(render_progress_body(self.stages, done=True, final=final_report))
