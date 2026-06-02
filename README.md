@@ -10,7 +10,9 @@
 [![GitHub release](https://img.shields.io/github/v/release/berkayturanci/ai-jury)](https://github.com/berkayturanci/ai-jury/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-![A diff or PR enters; four reviewers — Claude Code, Codex, Antigravity, and a free local/open-weight model — review it independently and debate each other's findings; a chair agent verifies and synthesizes one verdict (APPROVE / COMMENT / REQUEST CHANGES) plus a report and CI gate.](docs/assets/hero.png)
+<div align="center">
+  <img src="docs/assets/hero.svg" alt="ai-jury: A diff or PR enters; four reviewers review it independently and debate each other's findings; a chair agent verifies and synthesizes one verdict plus a report and CI gate.">
+</div>
 
 > **Install once. Run a cross-vendor review jury anywhere.**
 
