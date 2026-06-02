@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://berkayturanci.github.io/ai-jury/sitemap.xml
