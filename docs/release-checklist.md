@@ -12,8 +12,11 @@ true to announce/publish) and **Nice-to-have** (improves polish, not a blocker).
 - [ ] Version bumped and consistent across `pyproject.toml`, `__init__.__version__`,
       and `CHANGELOG.md`.
 - [ ] `pip install -e .` and `python -m build` (sdist + wheel) succeed cleanly.
-- [ ] PyPI **trusted publishing** (OIDC) configured for the repo, or an API token stored
-      as a repository secret; `publish.yml` points at the right environment.
+- [ ] PyPI **trusted publishing** (OIDC) configured for the repo (one-time PyPI
+      trusted-publisher setup); `publish.yml` publishes without a long-lived token.
+- [ ] Release artifacts include **checksums** (`SHA256SUMS`), a **CycloneDX SBOM**
+      (`sbom.cdx.json`), and a **build-provenance attestation** — see
+      [docs/releasing.md](releasing.md) for how they are built and verified (#25).
 
 ### CI & quality
 - [ ] CI green on the full matrix (Python 3.11–3.13; Linux + macOS + Windows).
@@ -59,10 +62,13 @@ true to announce/publish) and **Nice-to-have** (improves polish, not a blocker).
 4. Open a release PR; wait for green CI; merge.
 5. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
 6. Create the GitHub Release from the tag (paste the changelog section). This triggers
-   `publish.yml` to build and publish to PyPI via trusted publishing.
+   `publish.yml` to build sdist+wheel, generate the SBOM and `SHA256SUMS`, attest build
+   provenance, publish to PyPI via trusted publishing, and attach all assets.
 7. Verify the artifact: `pipx install agent-review-council==X.Y.Z` then
    `council --version` and `council --mock --diff-file examples/sample.diff`.
-8. Confirm the PyPI page, README rendering, and badges.
+8. Verify supply-chain metadata per [docs/releasing.md](releasing.md): `sha256sum -c
+   SHA256SUMS` and `gh attestation verify <wheel> --repo berkayturanci/agent-review-council`.
+9. Confirm the PyPI page, README rendering, and badges.
 
 ## Rollback notes
 

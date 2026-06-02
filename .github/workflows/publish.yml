@@ -10,8 +10,9 @@ jobs:
     name: Build, Publish to PyPI, and Create GitHub Release
     runs-on: ubuntu-latest
     permissions:
-      id-token: write
-      contents: write
+      id-token: write       # PyPI trusted publishing (OIDC) + provenance attestation
+      contents: write       # create the GitHub Release and upload assets
+      attestations: write   # build-provenance attestations (issue #25)
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2 (updated 2026-05-31)
 
@@ -28,11 +29,37 @@ jobs:
       - name: Build package distributions
         run: python -m build --sdist --wheel --outdir dist/
 
+      # SBOM (issue #25): a CycloneDX software bill of materials for the built
+      # package. The project has zero runtime dependencies, so the SBOM is small
+      # by design, but it is generated (not deferred) so consumers always get one.
+      - name: Generate CycloneDX SBOM
+        run: |
+          python -m pip install cyclonedx-bom
+          python -m pip install dist/*.whl
+          cyclonedx-py environment --output-format JSON --outfile dist/sbom.cdx.json
+
+      # Checksums (issue #25): a single SHA256SUMS over every release artifact so
+      # downloaders can verify integrity with `sha256sum -c SHA256SUMS`.
+      - name: Generate checksums
+        run: |
+          cd dist
+          sha256sum *.whl *.tar.gz sbom.cdx.json > SHA256SUMS
+          cat SHA256SUMS
+
+      # Build provenance (issue #25): cryptographic attestation binding the
+      # artifacts to this workflow run, verifiable with `gh attestation verify`.
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32  # v4.1.0 (pinned 2026-06-02)
+        with:
+          subject-path: "dist/*.whl, dist/*.tar.gz"
+
+      # PyPI trusted publishing (issue #25): OIDC, no long-lived API token. Requires
+      # a one-time trusted-publisher config on PyPI for this repo+workflow (see
+      # docs/releasing.md). `skip-existing` keeps re-runs idempotent.
       - name: Publish package to PyPI
         uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b  # v1.14.0 (updated 2026-05-31)
         continue-on-error: true
         with:
-          password: ${{ secrets.PYPI_API_TOKEN }}
           skip-existing: true
 
       - name: Create GitHub Release and Upload Packages
@@ -41,6 +68,8 @@ jobs:
           files: |
             dist/*.whl
             dist/*.tar.gz
+            dist/sbom.cdx.json
+            dist/SHA256SUMS
           name: Release ${{ github.ref_name }}
           draft: false
           prerelease: false
