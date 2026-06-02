@@ -271,6 +271,154 @@ def _run_comment_command(rest: list[str]) -> int:
     return main(inner)
 
 
+_AGENT_BLURB = {
+    "claude": "Claude Code (Anthropic)",
+    "codex": "Codex CLI (OpenAI)",
+    "agy": "Antigravity (Google)",
+    "qwen": "local / open-weight via Ollama (free, offline)",
+}
+
+
+def _init_available() -> dict:
+    """Map each known agent name to whether it is reachable right now."""
+    from .adapters import make_adapter
+    from .config import AgentSpec
+    from .scaffold import KNOWN_AGENTS, agent_templates
+
+    templates = agent_templates()
+    out = {}
+    for name in KNOWN_AGENTS:
+        try:
+            out[name] = make_adapter(AgentSpec(**templates[name])).available()
+        except Exception:  # noqa: BLE001 - detection is best-effort
+            out[name] = False
+    return out
+
+
+def _init_interactive(available: dict, input_fn=input) -> dict:
+    """Prompt for council settings; returns kwargs for scaffold.build_config.
+
+    ``input_fn`` is injectable for testing. Defaults are pre-filled from the
+    detected agents so pressing Enter accepts a sensible config.
+    """
+    from .scaffold import KNOWN_AGENTS
+
+    print("Configure a review council (council.toml).\n", file=sys.stderr)
+    for name in KNOWN_AGENTS:
+        mark = "available" if available.get(name) else "not found"
+        print(f"  - {name}: {_AGENT_BLURB[name]} [{mark}]", file=sys.stderr)
+    default_agents = [n for n in KNOWN_AGENTS if available.get(n)] or list(KNOWN_AGENTS)
+    raw_agents = input_fn(
+        f"\nAgents to include [default: {','.join(default_agents)}]: "
+    ).strip()
+    agents = [a.strip() for a in raw_agents.split(",") if a.strip()] or default_agents
+
+    rounds_raw = input_fn("Rounds — 1=review, 2=+debate [2]: ").strip()
+    rounds = int(rounds_raw) if rounds_raw.isdigit() else 2
+
+    chair_default = agents[0] if agents else "claude"
+    chair = input_fn(f"Chair agent [{chair_default}]: ").strip() or chair_default
+
+    verify = (input_fn("Run verification round? [Y/n]: ").strip().lower() or "y") != "n"
+
+    local_model = None
+    if "qwen" in agents:
+        local_model = input_fn("Local model name [qwen2.5-coder:7b]: ").strip() or None
+
+    return {
+        "agents": agents,
+        "rounds": rounds,
+        "chair": chair,
+        "verify": verify,
+        "local_model": local_model,
+    }
+
+
+def _run_init(rest: list[str]) -> int:
+    """Handle ``council init`` (issue #107): scaffold a council.toml."""
+    from .config import ConfigError, validate_config
+    from .scaffold import KNOWN_AGENTS, build_config, render_toml
+
+    sub = argparse.ArgumentParser(prog="council init")
+    sub.add_argument("--agents", help="comma-separated: claude,codex,agy,qwen")
+    sub.add_argument("--rounds", type=int, default=2)
+    sub.add_argument("--chair")
+    sub.add_argument("--no-verify", dest="verify", action="store_false", default=True)
+    sub.add_argument("--local-model", help="model id for a local agent (qwen)")
+    sub.add_argument("--local-endpoint", help="OpenAI-compatible base URL for a local agent")
+    sub.add_argument("-o", "--output", default="council.toml")
+    sub.add_argument("--force", action="store_true", help="overwrite an existing file")
+    sub.add_argument("--interactive", action="store_true", help="force interactive prompts")
+    sub.add_argument("--list-agents", action="store_true", help="list known agents + availability and exit")
+    ns = sub.parse_args(rest)
+
+    available = _init_available()
+
+    if ns.list_agents:
+        for name in KNOWN_AGENTS:
+            mark = "available" if available.get(name) else "not found"
+            print(f"{name:8} {_AGENT_BLURB[name]:45} [{mark}]")
+        return 0
+
+    if ns.agents:
+        kwargs = {
+            "agents": [a.strip() for a in ns.agents.split(",") if a.strip()],
+            "rounds": ns.rounds,
+            "chair": ns.chair,
+            "verify": ns.verify,
+            "local_model": ns.local_model,
+            "local_endpoint": ns.local_endpoint,
+        }
+    elif ns.interactive or sys.stdin.isatty():
+        kwargs = _init_interactive(available)
+        kwargs["local_endpoint"] = ns.local_endpoint
+        if ns.local_model:
+            kwargs["local_model"] = ns.local_model
+    else:
+        # Non-interactive with no --agents: default to whatever is available.
+        detected = [n for n in KNOWN_AGENTS if available.get(n)]
+        if not detected:
+            print(
+                "error: no agents detected and none specified; pass --agents "
+                "(e.g. --agents claude,codex) or run interactively.",
+                file=sys.stderr,
+            )
+            return 2
+        kwargs = {
+            "agents": detected, "rounds": ns.rounds, "chair": ns.chair,
+            "verify": ns.verify, "local_model": ns.local_model,
+            "local_endpoint": ns.local_endpoint,
+        }
+
+    try:
+        config = build_config(**kwargs)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    # The scaffolded config must itself be valid (fail loudly if a template drifts).
+    try:
+        validate_config(config)
+    except ConfigError as exc:
+        print(f"error: generated config is invalid: {exc}", file=sys.stderr)
+        return 2
+
+    out_path = Path(ns.output)
+    if out_path.exists() and not ns.force:
+        print(
+            f"error: {out_path} already exists; pass --force to overwrite.",
+            file=sys.stderr,
+        )
+        return 2
+
+    out_path.write_text(render_toml(config), encoding="utf-8")
+    chosen = ", ".join(a["name"] for a in config["agent"])
+    print(f"Wrote {out_path} — panel: {chosen} · rounds: {config['council']['rounds']}")
+    print(f"Next: council --config-validate --config {out_path}")
+    print("Then: git diff main... | council --diff-file -")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     raw = list(sys.argv[1:] if argv is None else argv)
     # Documented `council cache clear` UX (issue #33): handled before argparse so
@@ -294,6 +442,12 @@ def main(argv: list[str] | None = None) -> int:
     # the council's own flags, and never reaches a shell.
     if raw[:1] == ["comment"]:
         return _run_comment_command(raw[1:])
+
+    # Config scaffolding (issue #107): `council init` writes a council.toml from
+    # detected agents / flags / interactive prompts. Intercepted before the main
+    # parser so it keeps its own small flag surface.
+    if raw[:1] == ["init"]:
+        return _run_init(raw[1:])
 
     args = build_parser().parse_args(argv)
 

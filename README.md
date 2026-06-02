@@ -261,6 +261,18 @@ gh api -X POST repos/OWNER/REPO/code-scanning/sarifs \
 
 ## Configuration — `council.toml`
 
+Don't hand-write it the first time — scaffold one with **`council init`**, which
+detects your installed agents and writes a valid config:
+
+```bash
+council init                              # interactive: pick agents, rounds, chair
+council init --list-agents                # show known agents + availability
+council init --agents claude,codex,qwen --rounds 2   # non-interactive / scriptable
+```
+
+It uses the secure-by-default agent templates and refuses to overwrite an
+existing file without `--force`. The resulting `council.toml`:
+
 ```toml
 [council]
 rounds = 2          # 1 = review only, 2 = review + debate
