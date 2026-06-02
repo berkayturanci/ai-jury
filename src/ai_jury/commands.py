@@ -1,8 +1,8 @@
-"""Parse GitHub PR comment commands into safe, allowlisted council runs (#11).
+"""Parse GitHub PR comment commands into safe, allowlisted jury runs (#11).
 
-Mature review tools can be triggered from a PR comment like ``/council review``.
+Mature review tools can be triggered from a PR comment like ``/jury review``.
 This module parses such a comment into a structured, **allowlisted** command and
-maps it to a council CLI argument vector. Security properties:
+maps it to a jury CLI argument vector. Security properties:
 
 - only a fixed allowlist of subcommands (``review``, ``summary``) is accepted;
 - only an allowlist of flags (``--rounds N``) is accepted;
@@ -22,15 +22,15 @@ from dataclasses import dataclass
 # single-round pass intended for a short summary comment.
 ALLOWED_COMMANDS = ("review", "summary")
 
-# Bound on an allowlisted --rounds value (mirrors the council's practical range).
+# Bound on an allowlisted --rounds value (mirrors the jury's practical range).
 _MIN_ROUNDS, _MAX_ROUNDS = 1, 3
 
-# The trigger: a line that begins (ignoring leading space) with "/council".
-_TRIGGER_RE = re.compile(r"^\s*/council\b(.*)$", re.MULTILINE)
+# The trigger: a line that begins (ignoring leading space) with "/jury".
+_TRIGGER_RE = re.compile(r"^\s*/jury\b(.*)$", re.MULTILINE)
 
 
 class CommandError(Exception):
-    """Raised when a comment is not a valid, allowlisted council command."""
+    """Raised when a comment is not a valid, allowlisted jury command."""
 
 
 @dataclass
@@ -39,7 +39,7 @@ class ParsedCommand:
     rounds: int | None = None
 
     def to_cli_args(self) -> list[str]:
-        """Map the parsed command to a council CLI argument vector (allowlisted)."""
+        """Map the parsed command to a jury CLI argument vector (allowlisted)."""
         args: list[str] = []
         if self.command == "summary":
             # A summary is a fast single-round pass unless an explicit rounds
@@ -53,16 +53,16 @@ class ParsedCommand:
 def parse_comment(text: str) -> ParsedCommand:
     """Parse a PR comment into an allowlisted :class:`ParsedCommand`.
 
-    Raises :class:`CommandError` when the text is not a ``/council`` command, the
+    Raises :class:`CommandError` when the text is not a ``/jury`` command, the
     subcommand is not allowlisted, or any flag/argument is unrecognized or out of
     range.
     """
     if not text:
-        raise CommandError("empty comment: no /council command found")
+        raise CommandError("empty comment: no /jury command found")
 
     match = _TRIGGER_RE.search(text)
     if not match:
-        raise CommandError("no /council command found in comment")
+        raise CommandError("no /jury command found in comment")
 
     try:
         tokens = shlex.split(match.group(1).strip())

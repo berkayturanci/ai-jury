@@ -30,7 +30,7 @@ git commit -m "...
 Closes #<n>"
 ```
 
-> Tip: the council can review its own PRs — `git diff origin/HEAD... | council --diff-file -` (or `--mock` while the core is unstable). Dogfooding is the best test.
+> Tip: the jury can review its own PRs — `git diff origin/HEAD... | jury --diff-file -` (or `--mock` while the core is unstable). Dogfooding is the best test.
 
 ## Phases
 
@@ -60,6 +60,6 @@ The keystone chain. Everything downstream depends on a structured, trustworthy v
 The two highest-leverage *adoption* levers currently sit late:
 
 - **#43 (open-weight / local-model adapter)** is in v0.6. But it's the only path to a **credit-card-free, offline first run** — today a real run needs three paid CLIs installed and authed, which is the biggest onboarding wall. Arguably an early-adoption lever, not "future lab."
-- **#12 (benchmark fixtures)** is in v0.5. The "council caught bugs single reviewers missed" table is the single most *shareable* artifact — the thing that earns attention. A case for pulling it forward.
+- **#12 (benchmark fixtures)** is in v0.5. The "jury caught bugs single reviewers missed" table is the single most *shareable* artifact — the thing that earns attention. A case for pulling it forward.
 
 Both are deliberately deferred here ("wait for real demand"), which is a defensible product call. Flagged so the trade-off is explicit, not accidental.

@@ -1,8 +1,8 @@
 # Report format contract
 
-The markdown report produced by `agent_review_council.report.render` is the
+The markdown report produced by `ai_jury.report.render` is the
 tool's primary **user-facing output**. Downstream skill and workflow consumers
-(for example the Claude Code skill in `skill/review-council/`, and anything that
+(for example the Claude Code skill in `skill/ai-jury/`, and anything that
 posts the report to GitHub) depend on its structure, so the format is treated as
 a contract: it should only change deliberately.
 
@@ -18,14 +18,14 @@ Scenarios with committed fixtures:
 
 | Fixture | Scenario |
 | --- | --- |
-| `tests/golden/full_report.md` | Standard full council run: 3 agents, two rounds, consensus + structured findings. |
+| `tests/golden/full_report.md` | Standard full jury run: 3 agents, two rounds, consensus + structured findings. |
 | `tests/golden/single_round_report.md` | `rounds = 1`, so there is no Round 2 (debate) section. |
 | `tests/golden/verified_finding_report.md` | `verify = true`, adding the Verification section and per-group verification statuses. |
 | `tests/golden/failed_agent_report.md` | A reviewer (and a debater) errored (`ok = False`). |
 | `tests/golden/missing_agent_report.md` | A configured agent did not run and the chair synthesis failed. |
 
 The structured/verified cases are produced by running the real pipeline with
-`run_council(..., mock=True)` (the `MockAdapter` emits stable, phase-aware
+`run_jury(..., mock=True)` (the `MockAdapter` emits stable, phase-aware
 output). The failed/missing-agent cases hand-construct `AgentResult` lists so the
 error paths are exercised deterministically.
 

@@ -1,6 +1,6 @@
 """Thin GitHub helpers built on the `gh` CLI.
 
-Used to pull a PR diff in and to post the council verdict back as a comment.
+Used to pull a PR diff in and to post the jury verdict back as a comment.
 Kept dependency-free; if `gh` is unavailable these raise a clear error.
 """
 from __future__ import annotations
@@ -61,7 +61,7 @@ def pr_head_sha(pr: str, repo: str | None = None) -> str:
 def pr_comment_bodies(pr: str, repo: str | None = None) -> list[str]:
     """Return the bodies of a PR's issue comments (best-effort, [] on failure).
 
-    Used by incremental mode (issue #9) to find the council's prior
+    Used by incremental mode (issue #9) to find the jury's prior
     reviewed-SHA marker. Network errors degrade to an empty list so the caller
     safely falls back to a full review.
     """
@@ -125,7 +125,7 @@ def apply_labels(pr: str, labels, repo: str | None = None) -> list[str]:
     return args
 
 
-# Marker prefix identifying comments authored by the council (enables dedup).
+# Marker prefix identifying comments authored by the jury (enables dedup).
 INLINE_MARKER = "<!-- arc-inline -->"
 
 # Hidden per-finding signature marker, embedded in the comment body so that
@@ -207,7 +207,7 @@ def _resolve_repo(repo: str | None) -> str:
 
 
 def _existing_inline_keys(pr: str, repo: str) -> set:
-    """Return ``(path, line, signature)`` keys for existing council comments.
+    """Return ``(path, line, signature)`` keys for existing jury comments.
 
     Best-effort. ``line`` falls back to ``original_line`` when GitHub reports a
     null ``line`` (e.g. for outdated comments). ``signature`` is parsed back out
@@ -253,7 +253,7 @@ def post_inline_comments(
     """Post inline review comments as a single PR review.
 
     Best-effort dedup: skips comments whose ``(path, line, finding-signature)``
-    already has a council inline comment. Keying on the signature means two
+    already has a jury inline comment. Keying on the signature means two
     distinct findings on the same line are both posted. When ``dry_run`` is True
     the payload is printed and returned without any network call. Returns the
     review payload (would-be) posted.

@@ -1,6 +1,6 @@
 # Architecture
 
-`agent-review-council` orchestrates **native coding-agent CLIs from different vendors**
+`ai-jury` orchestrates **native coding-agent CLIs from different vendors**
 into an adversarial review panel over a single diff. The design goal is a clean
 separation between *what to ask* (orchestrator + prompts) and *how to invoke a given
 agent* (adapters), so new vendors are a ~20-line addition.
@@ -93,8 +93,8 @@ zero marginal cost and enables fully offline reviews.
 
 ## Repository review policy
 
-The runtime configuration in `council.toml` describes *how the agent runs* (which
-agents/vendors make up the council, rounds, chair). A repository under review may
+The runtime configuration in `jury.toml` describes *how the agent runs* (which
+agents/vendors make up the jury, rounds, chair). A repository under review may
 additionally ship an **optional, separate review policy** that describes *what
 reviewers should care about* for that project. The two are kept deliberately
 distinct: a different file and a different loader (`policy.py`).
@@ -102,8 +102,8 @@ distinct: a different file and a different loader (`policy.py`).
 A policy file is plain TOML, discovered (when `--policy` is not given) from the
 current working directory in this order:
 
-1. `.council/policy.toml`
-2. `council-policy.toml`
+1. `.jury/policy.toml`
+2. `jury-policy.toml`
 
 A missing policy is allowed and is a no-op (the loader returns `None`). A policy
 file that exists but is malformed raises a clear `PolicyError`. An explicit
@@ -198,13 +198,13 @@ landed; the current pipeline includes:
    the chair's own review is anonymized in synthesis too.
 4. **Convergence-based early stop** — adaptive rounds halt once agents agree
    (`early_stop`, `max_rounds`; `convergence.py`).
-5. **Severity-gated CI exit codes** — `council --ci` exits non-zero on blocking findings
+5. **Severity-gated CI exit codes** — `jury --ci` exits non-zero on blocking findings
    (`ci.py`).
 
 Also shipped since: a **local / open-weight adapter** (free, offline reviews); a run
 **budget + retries + partial-result** policy; **large-diff** filtering and chunking; an
 optional **result cache**; **incremental** review of updated PRs; opt-in **suggested
-patches**; allowlisted **comment-command** triggering; and **`council init`** config
+patches**; allowlisted **comment-command** triggering; and **`jury init`** config
 scaffolding with local-model discovery. See [`configuration.md`](configuration.md) and
 [`cookbook.md`](cookbook.md) for usage.
 
@@ -216,10 +216,10 @@ Still future:
 
 ## PR-level classification (issue #7)
 
-After consensus, the council derives a compact, **deterministic** PR-level
+After consensus, the jury derives a compact, **deterministic** PR-level
 classification from the structured findings, the consensus groups, and
 (optionally) the unified diff. It lives in
-`agent_review_council/classification.py` and never calls an LLM or the network,
+`ai_jury/classification.py` and never calls an LLM or the network,
 so identical inputs always yield identical output (it is golden-tested under the
 mock pipeline).
 

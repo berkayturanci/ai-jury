@@ -1,6 +1,6 @@
-"""Configuration loading for the council.
+"""Configuration loading for the jury.
 
-Config is TOML (see ``council.toml``). The loader is tolerant: a missing config
+Config is TOML (see ``jury.toml``). The loader is tolerant: a missing config
 file falls back to a sensible built-in default so the tool runs out of the box.
 """
 from __future__ import annotations
@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 DEFAULT_CONFIG: dict = {
-    "council": {
+    "jury": {
         "rounds": 2,
         "chair": "claude",
         "timeout": 600,
@@ -21,7 +21,7 @@ DEFAULT_CONFIG: dict = {
     },
     # Execution controls (issue #30) are optional and conservative by default:
     # no overall/per-phase budget and zero retries, so out-of-the-box behaviour
-    # is unchanged. They live under [council] and are documented in
+    # is unchanged. They live under [jury] and are documented in
     # docs/configuration.md.
     "agent": [
         {
@@ -41,7 +41,7 @@ DEFAULT_CONFIG: dict = {
             "command": "codex",
             # `codex exec` reads the prompt from stdin (see CodexAdapter) and only
             # needs to READ it and print a review — the diff is fetched by the
-            # council process (`gh`), not the agent. So the secure default is a
+            # jury process (`gh`), not the agent. So the secure default is a
             # read-only sandbox (issue #100); widen it (e.g. `-s workspace-write`
             # or `danger-full-access`) only if your workflow truly needs it.
             "extra_args": ["-s", "read-only"],
@@ -61,8 +61,8 @@ DEFAULT_CONFIG: dict = {
 
 KNOWN_VENDORS = ("anthropic", "openai", "google", "local")
 
-KNOWN_TOP_LEVEL_KEYS = ("council", "agent")
-KNOWN_COUNCIL_KEYS = (
+KNOWN_TOP_LEVEL_KEYS = ("jury", "agent")
+KNOWN_JURY_KEYS = (
     "rounds",
     "chair",
     "timeout",
@@ -97,7 +97,7 @@ KNOWN_AGENT_KEYS = (
 
 
 class ConfigError(Exception):
-    """Raised when a council configuration is invalid."""
+    """Raised when a jury configuration is invalid."""
 
 
 def validate_config(data: dict, strict: bool = False) -> list:
@@ -125,64 +125,64 @@ def validate_config(data: dict, strict: bool = False) -> list:
                 f"{', '.join(KNOWN_TOP_LEVEL_KEYS)})."
             )
 
-    council = data.get("council", {})
-    if not isinstance(council, dict):
-        raise ConfigError("[council] must be a table.")
+    jury = data.get("jury", {})
+    if not isinstance(jury, dict):
+        raise ConfigError("[jury] must be a table.")
 
-    for key in council:
-        if key not in KNOWN_COUNCIL_KEYS:
+    for key in jury:
+        if key not in KNOWN_JURY_KEYS:
             warnings.append(
-                f"unknown key 'council.{key}' (expected one of "
-                f"{', '.join(KNOWN_COUNCIL_KEYS)})."
+                f"unknown key 'jury.{key}' (expected one of "
+                f"{', '.join(KNOWN_JURY_KEYS)})."
             )
 
     # rounds >= 1 (hard).
-    rounds = council.get("rounds", 1)
+    rounds = jury.get("rounds", 1)
     if not isinstance(rounds, int) or isinstance(rounds, bool) or rounds < 1:
         errors.append(
-            f"council.rounds must be an integer >= 1 (got {rounds!r})."
+            f"jury.rounds must be an integer >= 1 (got {rounds!r})."
         )
 
     # timeout > 0 (hard).
-    timeout = council.get("timeout", 600)
+    timeout = jury.get("timeout", 600)
     if (
         not isinstance(timeout, int)
         or isinstance(timeout, bool)
         or timeout <= 0
     ):
         errors.append(
-            f"council.timeout must be a positive integer (got {timeout!r})."
+            f"jury.timeout must be a positive integer (got {timeout!r})."
         )
 
     # Execution controls (issue #30): optional positive budgets, non-negative
     # retries (hard when present and invalid).
     for key in ("total_timeout", "phase_timeout"):
-        val = council.get(key)
+        val = jury.get(key)
         if val is not None and (
             not isinstance(val, int) or isinstance(val, bool) or val <= 0
         ):
             errors.append(
-                f"council.{key} must be a positive integer when set (got {val!r})."
+                f"jury.{key} must be a positive integer when set (got {val!r})."
             )
-    retries = council.get("retries", 0)
+    retries = jury.get("retries", 0)
     if not isinstance(retries, int) or isinstance(retries, bool) or retries < 0:
         errors.append(
-            f"council.retries must be an integer >= 0 (got {retries!r})."
+            f"jury.retries must be an integer >= 0 (got {retries!r})."
         )
 
     # Adaptive rounds (issue #40): max_rounds >= 1 (hard); early_stop is a bool.
-    max_rounds = council.get("max_rounds")
+    max_rounds = jury.get("max_rounds")
     if max_rounds is not None and (
         not isinstance(max_rounds, int) or isinstance(max_rounds, bool) or max_rounds < 1
     ):
         errors.append(
-            f"council.max_rounds must be an integer >= 1 when set (got {max_rounds!r})."
+            f"jury.max_rounds must be an integer >= 1 when set (got {max_rounds!r})."
         )
 
-    # Large-diff handling (issue #31): [council.diff] sizes are positive ints.
-    diff_cfg = council.get("diff", {})
+    # Large-diff handling (issue #31): [jury.diff] sizes are positive ints.
+    diff_cfg = jury.get("diff", {})
     if not isinstance(diff_cfg, dict):
-        errors.append("[council.diff] must be a table.")
+        errors.append("[jury.diff] must be a table.")
     else:
         for key in ("max_bytes", "chunk_max_bytes"):
             val = diff_cfg.get(key)
@@ -190,7 +190,7 @@ def validate_config(data: dict, strict: bool = False) -> list:
                 not isinstance(val, int) or isinstance(val, bool) or val <= 0
             ):
                 errors.append(
-                    f"council.diff.{key} must be a positive integer when set "
+                    f"jury.diff.{key} must be a positive integer when set "
                     f"(got {val!r})."
                 )
 
@@ -269,10 +269,10 @@ def validate_config(data: dict, strict: bool = False) -> list:
 
     # Chair must reference an enabled agent (soft). The literal "rotate" is a
     # valid special value (deterministic per-run rotation) and never warns.
-    chair = council.get("chair", "claude")
+    chair = jury.get("chair", "claude")
     if enabled_names and chair != "rotate" and chair not in enabled_names:
         warnings.append(
-            f"council.chair '{chair}' is not an enabled agent (enabled: "
+            f"jury.chair '{chair}' is not an enabled agent (enabled: "
             f"{', '.join(sorted(enabled_names)) or 'none'}); the first "
             "enabled agent will be used as fallback."
         )
@@ -337,7 +337,7 @@ class DiffConfig:
 
 
 @dataclass
-class CouncilConfig:
+class JuryConfig:
     rounds: int = 2
     chair: str = "claude"
     timeout: int = 600
@@ -348,7 +348,7 @@ class CouncilConfig:
     context: ContextConfig = field(default_factory=ContextConfig)
     diff: DiffConfig = field(default_factory=DiffConfig)
     # Optional run seed. Controls the shared run RNG used by randomized
-    # orchestration features (see orchestrator.run_council). LLM output itself
+    # orchestration features (see orchestrator.run_jury). LLM output itself
     # is never made deterministic by this; only the orchestration around it.
     seed: int | None = None
     # Anonymize peer reviews shown in the round-2 debate (Chatham House rule,
@@ -430,14 +430,14 @@ def _diff_from_dict(data: dict) -> DiffConfig:
     )
 
 
-def _seed_from_dict(council: dict) -> int | None:
-    """Parse ``[council] seed`` into an int, or None when absent/invalid.
+def _seed_from_dict(jury: dict) -> int | None:
+    """Parse ``[jury] seed`` into an int, or None when absent/invalid.
 
     A non-integer or boolean seed is treated as "no seed" rather than an error:
     the seed only governs orchestration randomness, so a malformed value should
     degrade gracefully to the unseeded (still deterministic-orchestration) path.
     """
-    raw = council.get("seed")
+    raw = jury.get("seed")
     if raw is None or isinstance(raw, bool):
         return None
     try:
@@ -464,9 +464,9 @@ def _opt_positive_int(raw) -> int | None:
     return value if value > 0 else None
 
 
-def _from_dict(data: dict) -> CouncilConfig:
-    council = data.get("council", {})
-    default_timeout = int(council.get("timeout", 600))
+def _from_dict(data: dict) -> JuryConfig:
+    jury = data.get("jury", {})
+    default_timeout = int(jury.get("timeout", 600))
     agents: list[AgentSpec] = []
     for raw in data.get("agent", []):
         agents.append(
@@ -482,29 +482,29 @@ def _from_dict(data: dict) -> CouncilConfig:
                 endpoint=raw.get("endpoint"),
             )
         )
-    return CouncilConfig(
-        rounds=int(council.get("rounds", 2)),
-        chair=council.get("chair", agents[0].name if agents else "claude"),
+    return JuryConfig(
+        rounds=int(jury.get("rounds", 2)),
+        chair=jury.get("chair", agents[0].name if agents else "claude"),
         timeout=default_timeout,
-        parallel=bool(council.get("parallel", True)),
-        verify=bool(council.get("verify", True)),
+        parallel=bool(jury.get("parallel", True)),
+        verify=bool(jury.get("verify", True)),
         agents=agents,
-        ci=_ci_from_dict(council.get("ci", {})),
-        context=_context_from_dict(council.get("context", {})),
-        diff=_diff_from_dict(council.get("diff", {})),
-        seed=_seed_from_dict(council),
-        anonymize_debate=bool(council.get("anonymize_debate", True)),
-        prefer_non_reviewer_chair=bool(council.get("prefer_non_reviewer_chair", False)),
-        total_timeout=_opt_positive_int(council.get("total_timeout")),
-        phase_timeout=_opt_positive_int(council.get("phase_timeout")),
-        retries=max(0, int(council.get("retries", 0) or 0)),
-        max_rounds=_opt_positive_int(council.get("max_rounds")),
-        early_stop=bool(council.get("early_stop", False)),
+        ci=_ci_from_dict(jury.get("ci", {})),
+        context=_context_from_dict(jury.get("context", {})),
+        diff=_diff_from_dict(jury.get("diff", {})),
+        seed=_seed_from_dict(jury),
+        anonymize_debate=bool(jury.get("anonymize_debate", True)),
+        prefer_non_reviewer_chair=bool(jury.get("prefer_non_reviewer_chair", False)),
+        total_timeout=_opt_positive_int(jury.get("total_timeout")),
+        phase_timeout=_opt_positive_int(jury.get("phase_timeout")),
+        retries=max(0, int(jury.get("retries", 0) or 0)),
+        max_rounds=_opt_positive_int(jury.get("max_rounds")),
+        early_stop=bool(jury.get("early_stop", False)),
     )
 
 
-def config_hash(config: CouncilConfig) -> str:
-    """Return a stable SHA-256 hash of the EFFECTIVE council configuration.
+def config_hash(config: JuryConfig) -> str:
+    """Return a stable SHA-256 hash of the EFFECTIVE jury configuration.
 
     The hash is a function of the resolved configuration only (no timestamps,
     no diff text), so the same config always produces the same digest and a
@@ -567,12 +567,12 @@ def config_hash(config: CouncilConfig) -> str:
 def load_raw_config(path: str | Path | None = None) -> dict:
     """Return the raw config dict for *path*, or the built-in default.
 
-    If *path* is None, look for ``council.toml`` in the current directory and
+    If *path* is None, look for ``jury.toml`` in the current directory and
     fall back to :data:`DEFAULT_CONFIG` when it is absent. An explicit *path*
     that does not exist raises ``FileNotFoundError``.
     """
     if path is None:
-        candidate = Path("council.toml")
+        candidate = Path("jury.toml")
         if not candidate.exists():
             return DEFAULT_CONFIG
         path = candidate
@@ -587,10 +587,10 @@ def load_config(
     path: str | Path | None = None,
     validate: bool = False,
     strict: bool = False,
-) -> CouncilConfig:
-    """Load council config from *path*, or fall back to the built-in default.
+) -> JuryConfig:
+    """Load jury config from *path*, or fall back to the built-in default.
 
-    If *path* is None, look for ``council.toml`` in the current directory.
+    If *path* is None, look for ``jury.toml`` in the current directory.
 
     When *validate* is True, the resolved config dict is checked with
     :func:`validate_config` before being materialized; a ``ConfigError`` is

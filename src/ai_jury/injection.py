@@ -1,6 +1,6 @@
 """Prompt-injection heuristics for untrusted review input (OWASP LLM01).
 
-The council feeds attacker-controlled content (the PR diff, and via ``--pr`` the
+The jury feeds attacker-controlled content (the PR diff, and via ``--pr`` the
 PR title/body) into reviewer prompts. This module scans that content for common
 prompt-injection patterns and surfaces hits as *synthetic findings/warnings* —
 it never alters agent behaviour or the CI gate. Surfacing-not-obeying is the

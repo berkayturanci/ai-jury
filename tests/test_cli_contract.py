@@ -1,6 +1,6 @@
 """Public CLI compatibility contract tests.
 
-The ``council`` CLI is this project's public API. These tests lock the stable
+The ``jury`` CLI is this project's public API. These tests lock the stable
 surfaces (flags, help text, error messages, exit codes, and report headings) so
 accidental changes are caught in review. See the "CLI compatibility contract"
 section of the README for the documented policy.
@@ -29,8 +29,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from agent_review_council import __version__  # noqa: E402
-from agent_review_council.cli import build_parser, main  # noqa: E402
+from ai_jury import __version__  # noqa: E402
+from ai_jury.cli import build_parser, main  # noqa: E402
 
 GOLDEN_DIR = Path(__file__).resolve().parent / "golden"
 HELP_GOLDEN = GOLDEN_DIR / "help.txt"
@@ -100,7 +100,7 @@ DOCUMENTED_FLAGS = [
 
 
 def _render_help() -> str:
-    """Render ``council --help`` deterministically (width + color pinned)."""
+    """Render ``jury --help`` deterministically (width + color pinned)."""
     saved = {k: os.environ.get(k) for k in ("COLUMNS", "NO_COLOR")}
     os.environ["COLUMNS"] = "80"
     os.environ["NO_COLOR"] = "1"
@@ -147,7 +147,7 @@ class HelpSnapshotTests(unittest.TestCase):
         help_text = _render_help()
         for flag in DOCUMENTED_FLAGS:
             self.assertIn(flag, help_text, f"{flag} missing from --help")
-        self.assertIn("council", help_text)
+        self.assertIn("jury", help_text)
 
     def test_documented_flags_match_parser_exactly(self):
         # Version-INDEPENDENT guarantee that the public flag surface is locked.
@@ -206,19 +206,19 @@ class HelpSnapshotTests(unittest.TestCase):
         self.assertEqual(
             rendered,
             expected,
-            "council --help changed. If intentional, regenerate the golden "
+            "jury --help changed. If intentional, regenerate the golden "
             "with UPDATE_GOLDEN=1 and add a CHANGELOG entry (see the CLI "
             "compatibility contract in the README).",
         )
 
 
 class VersionTests(unittest.TestCase):
-    def test_version_prints_council_version_and_exits_zero(self):
+    def test_version_prints_jury_version_and_exits_zero(self):
         code, out, err = _run_cli(["--version"])
         self.assertEqual(code, 0)
         # argparse may print to either stream depending on version; the exact
-        # text "council <version>" is the locked contract.
-        self.assertEqual((out + err).strip(), f"council {__version__}")
+        # text "jury <version>" is the locked contract.
+        self.assertEqual((out + err).strip(), f"jury {__version__}")
 
 
 class ErrorContractTests(unittest.TestCase):
@@ -263,7 +263,7 @@ class MockPipelineTests(unittest.TestCase):
     def test_mock_run_succeeds_with_stable_headings(self):
         code, out, _ = _run_cli(["--mock", "--diff-file", "-"], stdin=SAMPLE_DIFF)
         self.assertEqual(code, 0)
-        for heading in ("Agent Review Council", "Chair verdict", "Round 1"):
+        for heading in ("AI Jury", "Chair verdict", "Round 1"):
             self.assertIn(heading, out)
 
     def test_mock_run_is_deterministic(self):
@@ -272,14 +272,14 @@ class MockPipelineTests(unittest.TestCase):
         self.assertEqual(out_a, out_b)
 
     def test_quiet_suppresses_progress_logs(self):
-        # --quiet suppresses the "[council] ..." progress lines on stderr; the
+        # --quiet suppresses the "[jury] ..." progress lines on stderr; the
         # report itself still goes to stdout.
         code, out, err = _run_cli(
             ["--mock", "--diff-file", "-", "--quiet"], stdin=SAMPLE_DIFF
         )
         self.assertEqual(code, 0)
-        self.assertNotIn("[council]", err)
-        self.assertIn("Agent Review Council", out)
+        self.assertNotIn("[jury]", err)
+        self.assertIn("AI Jury", out)
 
     def test_output_writes_report_to_file(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -290,7 +290,7 @@ class MockPipelineTests(unittest.TestCase):
             )
             self.assertEqual(code, 0)
             self.assertEqual(out, "")  # report went to the file, not stdout
-            self.assertIn("Agent Review Council", path.read_text(encoding="utf-8"))
+            self.assertIn("AI Jury", path.read_text(encoding="utf-8"))
 
 
 class CiGateTests(unittest.TestCase):

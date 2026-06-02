@@ -13,8 +13,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from agent_review_council.adapters import CodexAdapter  # noqa: E402
-from agent_review_council.config import AgentSpec  # noqa: E402
+from ai_jury.adapters import CodexAdapter  # noqa: E402
+from ai_jury.config import AgentSpec  # noqa: E402
 
 PROMPT = "Review this diff and report findings."
 

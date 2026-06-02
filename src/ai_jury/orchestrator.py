@@ -1,4 +1,4 @@
-"""Council orchestration: review -> debate -> synthesis.
+"""Jury orchestration: review -> debate -> synthesis.
 
 The orchestrator owns the round structure and prompt assembly; adapters only run
 their CLI. Rounds run agents concurrently (thread pool) because each call is an
@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 
 from . import convergence, injection, largediff, prompts
 from .adapters import RETRYABLE_ERROR_CODES, Adapter, AgentResult, make_adapter
-from .config import CouncilConfig
+from .config import JuryConfig
 from .policy import ReviewPolicy, render_policy_section
 from .consensus import FindingGroup, group_findings
 from .findings import Finding, Verdict, parse_findings, parse_verdicts
@@ -23,7 +23,7 @@ from .redaction import redact
 
 
 class RunBudget:
-    """Wall-clock budget for one council run (issue #30).
+    """Wall-clock budget for one jury run (issue #30).
 
     Tracks the elapsed time since construction and derives the timeout to pass a
     single agent call from the optional total-run and per-phase budgets. ``None``
@@ -122,7 +122,7 @@ def _order_by_agents(results: list[AgentResult], order: list[str]) -> list[Agent
 
 
 @dataclass
-class CouncilOutcome:
+class JuryOutcome:
     reviews: list[AgentResult]
     debate: list[AgentResult]
     synthesis: AgentResult | None
@@ -231,7 +231,7 @@ def _debate_round(
     debaters: list[Adapter],
     reviews: list[AgentResult],
     diff: str,
-    config: CouncilConfig,
+    config: JuryConfig,
     run_rng: random.Random,
     agent_order: list[str],
     prior: list[AgentResult],
@@ -286,8 +286,8 @@ def _debate_round(
     return _order_by_agents(results, agent_order)
 
 
-def run_council(
-    config: CouncilConfig,
+def run_jury(
+    config: JuryConfig,
     diff: str,
     *,
     context: str = "",
@@ -297,7 +297,7 @@ def run_council(
     policy: ReviewPolicy | None = None,
     log=lambda _msg: None,
     budget: RunBudget | None = None,
-) -> CouncilOutcome:
+) -> JuryOutcome:
     # Repository review policy (optional, #8): maintainer-authored, TRUSTED
     # content rendered into each REVIEW prompt in a clearly separated section.
     # When ``policy`` is None a sentinel placeholder is used, so the prompt is
@@ -309,7 +309,7 @@ def run_council(
     # chair, tie-breaks). The seed comes from the explicit ``seed`` argument if
     # given, else from ``config.seed``. We construct a dedicated
     # ``random.Random`` instance rather than touching the global ``random``
-    # module so seeding a council run never perturbs unrelated global state.
+    # module so seeding a jury run never perturbs unrelated global state.
     # When the seed is None the RNG is unseeded (still deterministic
     # orchestration; randomness, if any, is just not reproducible run-to-run).
     # LLM output itself is never made deterministic by this — only the
@@ -558,7 +558,7 @@ def run_council(
             rng=run_rng,
         )
 
-    return CouncilOutcome(
+    return JuryOutcome(
         reviews=reviews,
         debate=debate,
         synthesis=synthesis,
@@ -580,7 +580,7 @@ def run_council(
 
 
 def resolve_chair(
-    config: CouncilConfig,
+    config: JuryConfig,
     usable: list[str],
     reviewers: list[str],
     rng: random.Random,
@@ -814,8 +814,8 @@ def _combine_chair_results(
     )
 
 
-def _merge_chunk_outcomes(outcomes: list[CouncilOutcome]) -> CouncilOutcome:
-    """Fold per-chunk outcomes (issue #31) into one renderable CouncilOutcome.
+def _merge_chunk_outcomes(outcomes: list[JuryOutcome]) -> JuryOutcome:
+    """Fold per-chunk outcomes (issue #31) into one renderable JuryOutcome.
 
     Findings are unioned and re-grouped across all chunks so the consensus view
     is global; verdicts are re-applied to the merged groups. Review/debate/chair
@@ -840,7 +840,7 @@ def _merge_chunk_outcomes(outcomes: list[CouncilOutcome]) -> CouncilOutcome:
     synthesis = _combine_chair_results([o.synthesis for o in outcomes if o.synthesis], base.chair)
     verify = _combine_chair_results([o.verify for o in outcomes if o.verify], base.chair)
 
-    return CouncilOutcome(
+    return JuryOutcome(
         reviews=reviews,
         debate=debate,
         synthesis=synthesis,
@@ -862,7 +862,7 @@ def _merge_chunk_outcomes(outcomes: list[CouncilOutcome]) -> CouncilOutcome:
 
 
 def review_diff(
-    config: CouncilConfig,
+    config: JuryConfig,
     diff: str,
     *,
     context: str = "",
@@ -871,18 +871,18 @@ def review_diff(
     seed: int | None = None,
     policy: ReviewPolicy | None = None,
     log=lambda _msg: None,
-) -> tuple[CouncilOutcome, largediff.DiffPlan]:
-    """Plan a diff (filter + size + mode) then run the council (issue #31).
+) -> tuple[JuryOutcome, largediff.DiffPlan]:
+    """Plan a diff (filter + size + mode) then run the jury (issue #31).
 
     The single entry point the CLI uses: it measures and filters the diff,
     reports the size and the selected handling mode, and dispatches:
 
-    - ``full``      — review the filtered diff in one ``run_council`` pass;
+    - ``full``      — review the filtered diff in one ``run_jury`` pass;
     - ``chunked``   — review each chunk and merge the outcomes;
     - ``too_large`` — raise ``RuntimeError`` with an actionable message.
 
     Returns ``(outcome, plan)`` so the caller can surface the plan. Existing
-    callers of :func:`run_council` are unaffected.
+    callers of :func:`run_jury` are unaffected.
     """
     dc = config.diff
     plan = largediff.plan_diff(
@@ -908,7 +908,7 @@ def review_diff(
     if not plan.chunks:
         raise RuntimeError(
             "nothing to review after filters — all files were excluded "
-            "(check [council.diff] include/exclude patterns)"
+            "(check [jury.diff] include/exclude patterns)"
         )
 
     # One shared budget across all chunks so ``total_timeout`` bounds the WHOLE
@@ -916,8 +916,8 @@ def review_diff(
     # per-agent timeouts still apply per call via the same budget.
     shared_budget = RunBudget(config.total_timeout, config.phase_timeout)
 
-    def _run(chunk: str) -> CouncilOutcome:
-        return run_council(
+    def _run(chunk: str) -> JuryOutcome:
+        return run_jury(
             config, chunk, context=context, mock=mock, strict=strict,
             seed=seed, policy=policy, log=log, budget=shared_budget,
         )

@@ -1,4 +1,4 @@
-"""Local diagnostics for the agent review council (``council --doctor``).
+"""Local diagnostics for the agent review jury (``jury --doctor``).
 
 The ``--doctor`` command reports local readiness and common configuration
 problems. Its output is intentionally SAFE to share:
@@ -8,7 +8,7 @@ problems. Its output is intentionally SAFE to share:
   version and capability summary, and detected config warnings.
 - It NEVER includes the raw diff under review or any agent output.
 - Secret-like values in the config summary are redacted via
-  :func:`agent_review_council.redaction.redact`.
+  :func:`ai_jury.redaction.redact`.
 
 This project collects and transmits NO telemetry. Diagnostics are built
 locally and only written where you explicitly ask (stdout, or ``--write``).
@@ -142,8 +142,8 @@ def _recommendations(config_path, config_summary, agents) -> dict:
     ready = bool(available)
 
     # No config file in play -> suggest scaffolding one.
-    if config_path is None and not Path("council.toml").exists():
-        steps.append("No council.toml found — run `council init` to create one.")
+    if config_path is None and not Path("jury.toml").exists():
+        steps.append("No jury.toml found — run `jury init` to create one.")
 
     if not ready:
         from .adapters import list_local_models
@@ -153,7 +153,7 @@ def _recommendations(config_path, config_summary, agents) -> dict:
             steps.append(
                 f"No agent CLI is available, but a local model server is reachable "
                 f"({len(models)} model(s): {', '.join(models[:3])}). Add a free local "
-                f"reviewer: `council init --preset offline` (or `--list-models`)."
+                f"reviewer: `jury init --preset offline` (or `--list-models`)."
             )
         else:
             steps.append(
@@ -231,7 +231,7 @@ def build_diagnostics(config_path=None):
 def render_report(diagnostics) -> str:
     """Render a human-readable text report from a diagnostics dict."""
     lines = []
-    lines.append("council doctor")
+    lines.append("jury doctor")
     lines.append("=" * 40)
     lines.append(f"tool version:   {diagnostics['tool_version']}")
     lines.append(

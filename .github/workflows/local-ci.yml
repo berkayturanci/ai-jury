@@ -42,8 +42,8 @@ jobs:
         run: python3 -m unittest discover -s tests -v
       - name: Smoke-test the CLI in mock mode
         run: |
-          python3 -m agent_review_council --mock --diff-file examples/sample.diff -q | tee report.md
-          grep -q "Agent Review Council" report.md
+          python3 -m ai_jury --mock --diff-file examples/sample.diff -q | tee report.md
+          grep -q "AI Jury" report.md
           grep -q "Chair verdict" report.md
 
   coverage:

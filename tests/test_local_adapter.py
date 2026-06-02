@@ -11,7 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from agent_review_council.adapters import (  # noqa: E402
+from ai_jury.adapters import (  # noqa: E402
     ERR_AUTH_REQUIRED,
     ERR_CONNECTION,
     ERR_NONZERO_EXIT,
@@ -20,7 +20,7 @@ from agent_review_council.adapters import (  # noqa: E402
     LocalAdapter,
     make_adapter,
 )
-from agent_review_council.config import (  # noqa: E402
+from ai_jury.config import (  # noqa: E402
     AgentSpec,
     ConfigError,
     _from_dict,
@@ -143,7 +143,7 @@ class FactoryAndConfigTest(unittest.TestCase):
 
     def test_local_agent_valid_without_command(self):
         cfg = {
-            "council": {"chair": "local"},
+            "jury": {"chair": "local"},
             "agent": [
                 {"name": "local", "vendor": "local", "model": "qwen2.5-coder:7b",
                  "endpoint": "http://localhost:11434/v1"}
@@ -158,19 +158,19 @@ class FactoryAndConfigTest(unittest.TestCase):
 
     def test_local_without_model_warns(self):
         cfg = {
-            "council": {},
+            "jury": {},
             "agent": [{"name": "local", "vendor": "local"}],
         }
         warnings = validate_config(cfg)
         self.assertTrue(any("has no 'model'" in w for w in warnings))
 
     def test_non_local_still_requires_command(self):
-        cfg = {"council": {}, "agent": [{"name": "x", "vendor": "anthropic"}]}
+        cfg = {"jury": {}, "agent": [{"name": "x", "vendor": "anthropic"}]}
         with self.assertRaises(ConfigError):
             validate_config(cfg)
 
     def test_local_is_a_known_vendor(self):
-        cfg = {"council": {}, "agent": [
+        cfg = {"jury": {}, "agent": [
             {"name": "local", "vendor": "local", "model": "m"}]}
         warnings = validate_config(cfg)
         self.assertFalse(any("unknown vendor" in w for w in warnings))

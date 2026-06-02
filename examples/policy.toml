@@ -1,7 +1,7 @@
 # Example repository review policy.
 #
 # This file is OPTIONAL and entirely project-agnostic. Drop it at
-# `.council/policy.toml` (or `council-policy.toml`) in the repository you are
+# `.jury/policy.toml` (or `jury-policy.toml`) in the repository you are
 # reviewing, or pass it explicitly with `--policy PATH`. It expresses review
 # expectations that get injected, as TRUSTED content, into the review prompt.
 #
@@ -14,7 +14,7 @@ high_risk_paths = [
     "infra/**",
 ]
 
-# Concerns the council should always weigh, beyond generic correctness.
+# Concerns the jury should always weigh, beyond generic correctness.
 focus_areas = [
     "Backward compatibility of public interfaces",
     "Input validation at trust boundaries",

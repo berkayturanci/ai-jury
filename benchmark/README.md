@@ -1,20 +1,20 @@
-# Council review-quality benchmark (issue #12)
+# Jury review-quality benchmark (issue #12)
 
-A **small, directional** benchmark that measures whether a council's structured
+A **small, directional** benchmark that measures whether a jury's structured
 findings line up with hand-authored expectations for a set of fixture diffs.
 
 > **This is not a universal quality claim.** It is a handful of fixtures and a
 > deterministic scorer. The offline (default) mode validates the *scorer* and a
 > set of *recorded baselines*; it does **not** measure live review quality.
 > Only the optional live mode runs real agents. Treat the numbers as a smoke
-> signal and a regression guard, not a benchmark of "how good the council is".
+> signal and a regression guard, not a benchmark of "how good the jury is".
 
 ## Why offline mode does not use `--mock`
 
 With `mock=True` the `MockAdapter` emits a **fixed** canned finding regardless of
 the diff. Running `--mock` per fixture and scoring it would be fake signal: the
 output never reflects the fixture. So instead each fixture ships a **recorded**
-sample council output (`<id>.findings.json`) that the scorer scores against the
+sample jury output (`<id>.findings.json`) that the scorer scores against the
 expected spec. This is deterministic, offline, and exercises the scorer +
 fixtures without any live CLI.
 
@@ -34,7 +34,7 @@ Each fixture is three files:
 
 - `<id>.diff` — the diff under review.
 - `<id>.expected.json` — hand-authored expectations (schema below).
-- `<id>.findings.json` — a recorded sample of council output for that diff,
+- `<id>.findings.json` — a recorded sample of jury output for that diff,
   a JSON array of finding dicts (`severity, file, line, claim, evidence, ...`).
 
 ### `expected.json` schema
@@ -68,7 +68,7 @@ Each fixture is three files:
 ## Match rule
 
 A finding matches a `must_match` / `must_not_flag` entry when **all** of these
-hold (see `finding_matches_expected` in `src/agent_review_council/benchmark.py`):
+hold (see `finding_matches_expected` in `src/ai_jury/benchmark.py`):
 
 - **file**: same file path (exact match) when the entry specifies `file`.
 - **line**: the finding's line is within ±3 (`LINE_TOLERANCE`) of the entry's
@@ -90,20 +90,20 @@ Offline (default; deterministic, no live CLIs, no network):
 ```bash
 make benchmark
 # or
-PYTHONPATH=src python3 -m agent_review_council.benchmark
+PYTHONPATH=src python3 -m ai_jury.benchmark
 ```
 
 Live (opt-in; runs the real agent CLIs per fixture diff; never in CI):
 
 ```bash
-COUNCIL_BENCH_LIVE=1 PYTHONPATH=src python3 -m agent_review_council.benchmark
+JURY_BENCH_LIVE=1 PYTHONPATH=src python3 -m ai_jury.benchmark
 ```
 
-The live path mirrors the `COUNCIL_LIVE=1` gate used by the live smoke tests
+The live path mirrors the `JURY_LIVE=1` gate used by the live smoke tests
 (`tests/live/`). There is also an opt-in live benchmark test:
 
 ```bash
-COUNCIL_BENCH_LIVE=1 PYTHONPATH=src python3 -m unittest discover -s tests -v
+JURY_BENCH_LIVE=1 PYTHONPATH=src python3 -m unittest discover -s tests -v
 ```
 
 ## What the tests cover
@@ -133,9 +133,9 @@ Ollama on `examples/sample.diff`:
   at zero marginal cost.
 
 **Takeaway (honest):** a small local model is a weaker standalone reviewer; its
-value is *diversity* — the documented load-bearing lever for a council (Smit et
+value is *diversity* — the documented load-bearing lever for a jury (Smit et
 al. 2024; Cohere PoLL 2024). The recommended setup is one local panelist
 alongside one or two cloud CLIs: more heterogeneity, lower spend. Quantifying the
 exact lift across the full fixture set is future work — run the live benchmark
-(`COUNCIL_BENCH_LIVE=1`) with a local agent configured to measure it on your
+(`JURY_BENCH_LIVE=1`) with a local agent configured to measure it on your
 hardware.

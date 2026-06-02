@@ -1,10 +1,10 @@
-# agent-review-council configuration
+# ai-jury configuration
 #
 # Each [[agent]] wraps a native coding-agent CLI invoked in headless mode.
 # `command` must be resolvable on PATH (verified with shutil.which). Disabled or
 # unavailable agents are skipped with a warning unless --strict is passed.
 
-[council]
+[jury]
 # Number of rounds: 1 = independent review only, 2 = review + debate/rebuttal.
 rounds = 2
 # Agent that synthesizes the final verdict. Must match an [[agent]] name below,
@@ -54,7 +54,7 @@ verify = true
 # over-budget diffs are chunked (chunk = true) or rejected with a clear message.
 # exclude_generated drops binary/generated/vendored files; exclude/include are
 # extra path-glob deny/allow lists.
-# [council.diff]
+# [jury.diff]
 # max_bytes = 200000
 # chunk = false
 # chunk_max_bytes = 200000
@@ -62,17 +62,17 @@ verify = true
 # exclude = ["docs/**", "*.lock"]
 # include = []
 
-# CI gate: when `council --ci` is used, exit non-zero if any finding has a
+# CI gate: when `jury --ci` is used, exit non-zero if any finding has a
 # severity in `fail_on`. When `ignore_unverified` is true, only findings the
 # verifier marked "verified" can fail the build (unverified ones never fail).
-[council.ci]
+[jury.ci]
 fail_on = ["critical", "major"]
 ignore_unverified = true
 
 # Context policy: what gets sent to each agent, and whether secrets are redacted.
 # mode = "diff-only" sends only the diff; "expanded" also sends PR context.
 # redact_secrets scrubs recognized secrets from the diff + context before sending.
-[council.context]
+[jury.context]
 mode = "diff-only"
 redact_secrets = true
 
@@ -96,7 +96,7 @@ vendor = "openai"
 command = "codex"
 # model = "gpt-5-codex"
 # `codex exec` receives the prompt on stdin (no positional prompt, so it never
-# hangs waiting for input non-interactively). The diff is fetched by the council
+# hangs waiting for input non-interactively). The diff is fetched by the jury
 # (`gh`), not by codex, so the reviewer only needs to READ its prompt and print a
 # review — `-s read-only` is the secure default (#100). Widen it only if your
 # workflow truly needs it: `-s workspace-write` or `-s danger-full-access`.

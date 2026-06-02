@@ -9,8 +9,8 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from agent_review_council import privilege
-from agent_review_council.config import AgentSpec
+from ai_jury import privilege
+from ai_jury.config import AgentSpec
 
 
 class AuditAgentTest(unittest.TestCase):
@@ -121,7 +121,7 @@ class AuditPrivilegeTest(unittest.TestCase):
     def test_shipped_default_config_has_no_warnings(self):
         # Issue #100: the out-of-the-box defaults must be secure (read-only codex,
         # sandboxed agy, locked-down claude) — no least-privilege warnings.
-        from agent_review_council.config import DEFAULT_CONFIG, _from_dict
+        from ai_jury.config import DEFAULT_CONFIG, _from_dict
 
         cfg = _from_dict(DEFAULT_CONFIG)
         self.assertEqual(privilege.audit_privilege(cfg.enabled_agents), [])

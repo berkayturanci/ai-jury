@@ -1,6 +1,6 @@
-# Contributing to agent-review-council
+# Contributing to ai-jury
 
-Thank you for your interest in contributing to **agent-review-council**. The goal of
+Thank you for your interest in contributing to **ai-jury**. The goal of
 this project is to keep cross-vendor code review orchestration small, inspectable,
 and easy to run from existing repositories.
 

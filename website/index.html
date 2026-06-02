@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>agent-review-council — cross-vendor multi-agent code review</title>
-  <meta name="description" content="Install once. Run a cross-vendor review council anywhere. A stdlib-only Python CLI that orchestrates native coding-agent CLIs (Claude Code, Codex, Antigravity) to review the same diff, debate, and synthesize one verdict." />
-  <meta property="og:title" content="agent-review-council" />
-  <meta property="og:description" content="Install once. Run a cross-vendor review council anywhere." />
+  <title>ai-jury — cross-vendor multi-agent code review</title>
+  <meta name="description" content="Install once. Run a cross-vendor review jury anywhere. A stdlib-only Python CLI that orchestrates native coding-agent CLIs (Claude Code, Codex, Antigravity) to review the same diff, debate, and synthesize one verdict." />
+  <meta property="og:title" content="ai-jury" />
+  <meta property="og:description" content="Install once. Run a cross-vendor review jury anywhere." />
   <meta property="og:image" content="assets/hero.png" />
   <meta property="og:type" content="website" />
   <link rel="stylesheet" href="style.css" />
@@ -14,12 +14,12 @@
 <body>
   <header class="hero">
     <nav>
-      <span class="brand">🏛️ agent-review-council</span>
-      <a class="nav-link" href="https://github.com/berkayturanci/agent-review-council">GitHub</a>
+      <span class="brand">🏛️ ai-jury</span>
+      <a class="nav-link" href="https://github.com/berkayturanci/ai-jury">GitHub</a>
     </nav>
 
     <div class="hero-inner">
-      <h1>Install once. Run a cross-vendor review council anywhere.</h1>
+      <h1>Install once. Run a cross-vendor review jury anywhere.</h1>
       <p class="lede">
         A small, <strong>stdlib-only</strong> Python CLI that drives each vendor's
         <strong>native coding-agent CLI</strong> — Claude Code, OpenAI Codex, Google
@@ -28,8 +28,8 @@
         synthesize <strong>one chair verdict</strong>. Local-first. Not API calls.
       </p>
       <div class="cta">
-        <a class="btn primary" href="https://github.com/berkayturanci/agent-review-council">View on GitHub</a>
-        <a class="btn" href="https://github.com/berkayturanci/agent-review-council/releases">Releases</a>
+        <a class="btn primary" href="https://github.com/berkayturanci/ai-jury">View on GitHub</a>
+        <a class="btn" href="https://github.com/berkayturanci/ai-jury/releases">Releases</a>
       </div>
       <img class="hero-img" src="assets/hero.png" width="1200" height="520"
            alt="A diff or PR enters; four reviewers — Claude Code, Codex, Antigravity, and a free local/open-weight model — review it independently and debate each other's findings; a chair agent verifies and synthesizes one verdict (APPROVE / COMMENT / REQUEST CHANGES) plus a report and CI gate." />
@@ -38,7 +38,7 @@
 
   <main>
     <section>
-      <h2>Why a native-CLI council</h2>
+      <h2>Why a native-CLI jury</h2>
       <p>
         Different models miss different things. Running them as an adversarial panel —
         each seeing the others' findings and arguing — surfaces more real issues and
@@ -51,13 +51,13 @@
 
     <section>
       <h2>Quickstart</h2>
-      <pre><code>pipx install agent-review-council
+      <pre><code>pipx install ai-jury
 
-council init                                      # scaffold council.toml (detects agents + local models)
-council --pr 123                                  # review a GitHub PR
-git diff origin/HEAD... | council --diff-file -   # review the current branch
-council --ci --fail-on high,critical              # gate CI on blocking findings
-council --mock --diff-file examples/sample.diff   # offline demo, no live CLIs</code></pre>
+jury init                                      # scaffold jury.toml (detects agents + local models)
+jury --pr 123                                  # review a GitHub PR
+git diff origin/HEAD... | jury --diff-file -   # review the current branch
+jury --ci --fail-on high,critical              # gate CI on blocking findings
+jury --mock --diff-file examples/sample.diff   # offline demo, no live CLIs</code></pre>
       <p class="muted">
         Requires Python 3.11+ and at least one reviewer — an agent CLI
         (<code>claude</code>, <code>codex</code>, <code>agy</code>) or a free, offline
@@ -79,19 +79,19 @@ council --mock --diff-file examples/sample.diff   # offline demo, no live CLIs</
     <section class="grid">
       <div>
         <h3>Free &amp; offline option</h3>
-        <p>Add a local open-weight model (Ollama, llama.cpp, vLLM, LM Studio) as a panel seat — zero cloud cost, fully offline, or mixed with cloud CLIs for more diversity. <a href="https://github.com/berkayturanci/agent-review-council/blob/main/README.md#local--open-weight-reviewer-free-offline">Local reviewer →</a></p>
+        <p>Add a local open-weight model (Ollama, llama.cpp, vLLM, LM Studio) as a panel seat — zero cloud cost, fully offline, or mixed with cloud CLIs for more diversity. <a href="https://github.com/berkayturanci/ai-jury/blob/main/README.md#local--open-weight-reviewer-free-offline">Local reviewer →</a></p>
       </div>
       <div>
         <h3>Local-first &amp; private</h3>
-        <p><code>diff-only</code> context by default; secret redaction on; reviewers run sandboxed/read-only. No source outside the diff, no repo history, no env vars are sent. <a href="https://github.com/berkayturanci/agent-review-council/blob/main/SECURITY.md">Security &amp; data-flow →</a></p>
+        <p><code>diff-only</code> context by default; secret redaction on; reviewers run sandboxed/read-only. No source outside the diff, no repo history, no env vars are sent. <a href="https://github.com/berkayturanci/ai-jury/blob/main/SECURITY.md">Security &amp; data-flow →</a></p>
       </div>
       <div>
         <h3>Fits your workflow</h3>
-        <p><code>council init</code> to set up, CI gating, incremental review, suggested patches, comment-triggered runs. <a href="https://github.com/berkayturanci/agent-review-council/blob/main/docs/cookbook.md">Cookbook →</a></p>
+        <p><code>jury init</code> to set up, CI gating, incremental review, suggested patches, comment-triggered runs. <a href="https://github.com/berkayturanci/ai-jury/blob/main/docs/cookbook.md">Cookbook →</a></p>
       </div>
       <div>
         <h3>Drop-in skill</h3>
-        <p>Install as a Claude Code plugin or copy the skill into <code>.claude/skills/</code>. <a href="https://github.com/berkayturanci/agent-review-council/blob/main/docs/platforms.md">Platform support →</a></p>
+        <p>Install as a Claude Code plugin or copy the skill into <code>.claude/skills/</code>. <a href="https://github.com/berkayturanci/ai-jury/blob/main/docs/platforms.md">Platform support →</a></p>
       </div>
     </section>
 
@@ -102,9 +102,9 @@ council --mock --diff-file examples/sample.diff   # offline demo, no live CLIs</
 
   <footer>
     <p>
-      <a href="https://github.com/berkayturanci/agent-review-council">GitHub</a> ·
-      <a href="https://github.com/berkayturanci/agent-review-council/blob/main/docs/architecture.md">Architecture</a> ·
-      <a href="https://github.com/berkayturanci/agent-review-council/blob/main/docs/feasibility.md">Feasibility</a> ·
+      <a href="https://github.com/berkayturanci/ai-jury">GitHub</a> ·
+      <a href="https://github.com/berkayturanci/ai-jury/blob/main/docs/architecture.md">Architecture</a> ·
+      <a href="https://github.com/berkayturanci/ai-jury/blob/main/docs/feasibility.md">Feasibility</a> ·
       MIT License
     </p>
   </footer>

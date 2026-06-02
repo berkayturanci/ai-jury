@@ -10,8 +10,8 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from agent_review_council import injection
-from agent_review_council.injection import InjectionHit
+from ai_jury import injection
+from ai_jury.injection import InjectionHit
 
 
 def _kinds(text, source="diff"):

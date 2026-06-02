@@ -1,6 +1,6 @@
 # Public release readiness checklist
 
-The bar to clear before promoting `agent-review-council` broadly, plus the manual
+The bar to clear before promoting `ai-jury` broadly, plus the manual
 release and rollback steps. Items are split into **Required before public** (must be
 true to announce/publish) and **Nice-to-have** (improves polish, not a blocker).
 
@@ -8,7 +8,7 @@ true to announce/publish) and **Nice-to-have** (improves polish, not a blocker).
 
 ### Package & metadata
 - [ ] `pyproject.toml` metadata correct: name, description, `requires-python`, license,
-      classifiers, `project.urls`, `console_scripts` (`council`).
+      classifiers, `project.urls`, `console_scripts` (`jury`).
 - [ ] Version bumped and consistent across `pyproject.toml`, `__init__.__version__`,
       and `CHANGELOG.md`.
 - [ ] `pip install -e .` and `python -m build` (sdist + wheel) succeed cleanly.
@@ -29,7 +29,7 @@ true to announce/publish) and **Nice-to-have** (improves polish, not a blocker).
 - [ ] README: install, usage, configuration, data-flow/privacy all current.
 - [ ] `docs/architecture.md`, `docs/comparison.md`, `docs/feasibility.md` accurate.
 - [ ] `llms.txt` / `llms-full.txt` present and current.
-- [ ] Skill install instructions verified (`skill/review-council/`).
+- [ ] Skill install instructions verified (`skill/ai-jury/`).
 - [ ] `SECURITY.md` data-flow/redaction reference matches the code.
 - [ ] No downstream/private project names anywhere (project-agnostic).
 
@@ -42,9 +42,9 @@ true to announce/publish) and **Nice-to-have** (improves polish, not a blocker).
 
 ## Nice-to-have
 
-- [ ] Public website / landing page (roadmap [#14](https://github.com/berkayturanci/agent-review-council/issues/14)).
-- [ ] Polished README hero visual (roadmap [#46](https://github.com/berkayturanci/agent-review-council/issues/46)).
-- [ ] Plugin manifests + platform support matrix (roadmap [#45](https://github.com/berkayturanci/agent-review-council/issues/45)).
+- [ ] Public website / landing page (roadmap [#14](https://github.com/berkayturanci/ai-jury/issues/14)).
+- [ ] Polished README hero visual (roadmap [#46](https://github.com/berkayturanci/ai-jury/issues/46)).
+- [ ] Plugin manifests + platform support matrix (roadmap [#45](https://github.com/berkayturanci/ai-jury/issues/45)).
 - [ ] OpenSSF Scorecard score reviewed and low-hanging items addressed.
 - [ ] Asciinema/GIF demo of a real run.
 
@@ -58,16 +58,16 @@ true to announce/publish) and **Nice-to-have** (improves polish, not a blocker).
 
 1. Confirm every **Required before public** box above is checked.
 2. Update `CHANGELOG.md`: rename `[Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD`.
-3. Bump the version in `pyproject.toml` and `src/agent_review_council/__init__.py`.
+3. Bump the version in `pyproject.toml` and `src/ai_jury/__init__.py`.
 4. Open a release PR; wait for green CI; merge.
 5. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
 6. Create the GitHub Release from the tag (paste the changelog section). This triggers
    `publish.yml` to build sdist+wheel, generate the SBOM and `SHA256SUMS`, attest build
    provenance, publish to PyPI via trusted publishing, and attach all assets.
-7. Verify the artifact: `pipx install agent-review-council==X.Y.Z` then
-   `council --version` and `council --mock --diff-file examples/sample.diff`.
+7. Verify the artifact: `pipx install ai-jury==X.Y.Z` then
+   `jury --version` and `jury --mock --diff-file examples/sample.diff`.
 8. Verify supply-chain metadata per [docs/releasing.md](releasing.md): `sha256sum -c
-   SHA256SUMS` and `gh attestation verify <wheel> --repo berkayturanci/agent-review-council`.
+   SHA256SUMS` and `gh attestation verify <wheel> --repo berkayturanci/ai-jury`.
 9. Confirm the PyPI page, README rendering, and badges.
 
 ## Rollback notes

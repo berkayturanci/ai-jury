@@ -10,18 +10,18 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from agent_review_council import policy as policy_mod  # noqa: E402
-from agent_review_council import prompts  # noqa: E402
-from agent_review_council.config import DEFAULT_CONFIG, _from_dict  # noqa: E402
-from agent_review_council.orchestrator import run_council  # noqa: E402
-from agent_review_council.policy import (  # noqa: E402
+from ai_jury import policy as policy_mod  # noqa: E402
+from ai_jury import prompts  # noqa: E402
+from ai_jury.config import DEFAULT_CONFIG, _from_dict  # noqa: E402
+from ai_jury.orchestrator import run_jury  # noqa: E402
+from ai_jury.policy import (  # noqa: E402
     PolicyError,
     ReviewPolicy,
     SeverityOverride,
     load_policy,
     render_policy_section,
 )
-from agent_review_council.report import render  # noqa: E402
+from ai_jury.report import render  # noqa: E402
 
 SAMPLE_DIFF = (
     "diff --git a/src/example.py b/src/example.py\n"
@@ -86,8 +86,8 @@ class LoadPolicyTest(unittest.TestCase):
             cwd = Path.cwd()
             try:
                 os.chdir(tmp)
-                Path(".council").mkdir()
-                Path(".council/policy.toml").write_text(VALID_POLICY, encoding="utf-8")
+                Path(".jury").mkdir()
+                Path(".jury/policy.toml").write_text(VALID_POLICY, encoding="utf-8")
                 self.assertIsNotNone(load_policy(None))
             finally:
                 os.chdir(cwd)
@@ -97,7 +97,7 @@ class LoadPolicyTest(unittest.TestCase):
             cwd = Path.cwd()
             try:
                 os.chdir(tmp)
-                Path("council-policy.toml").write_text(VALID_POLICY, encoding="utf-8")
+                Path("jury-policy.toml").write_text(VALID_POLICY, encoding="utf-8")
                 self.assertIsNotNone(load_policy(None))
             finally:
                 os.chdir(cwd)
@@ -213,20 +213,20 @@ class PromptInclusionTest(unittest.TestCase):
 class RunCouncilWithPolicyTest(unittest.TestCase):
     def test_run_with_policy_succeeds(self):
         pol = ReviewPolicy(focus_areas=["Something"])
-        outcome = run_council(_config(), SAMPLE_DIFF, mock=True, policy=pol, seed=1)
+        outcome = run_jury(_config(), SAMPLE_DIFF, mock=True, policy=pol, seed=1)
         self.assertEqual(len(outcome.reviews), 3)
         self.assertTrue(all(r.ok for r in outcome.reviews))
 
     def test_run_without_policy_succeeds(self):
-        outcome = run_council(_config(), SAMPLE_DIFF, mock=True, seed=1)
+        outcome = run_jury(_config(), SAMPLE_DIFF, mock=True, seed=1)
         self.assertEqual(len(outcome.reviews), 3)
 
     def test_policy_does_not_change_mock_report(self):
         config = _config()
-        with_p = run_council(
+        with_p = run_jury(
             config, SAMPLE_DIFF, mock=True, policy=ReviewPolicy(focus_areas=["X"]), seed=3
         )
-        without_p = run_council(config, SAMPLE_DIFF, mock=True, seed=3)
+        without_p = run_jury(config, SAMPLE_DIFF, mock=True, seed=3)
         self.assertEqual(
             render(with_p.reviews, with_p.debate, with_p.synthesis, chair=with_p.chair),
             render(

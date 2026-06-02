@@ -1,5 +1,5 @@
 name: Bug Report
-description: Report a reproducible bug in agent-review-council
+description: Report a reproducible bug in ai-jury
 title: "[Bug]: "
 labels: ["bug"]
 body:
@@ -17,7 +17,7 @@ body:
       label: Steps to Reproduce
       description: Provide the exact command and minimal inputs needed to reproduce the issue.
       placeholder: |
-        1. Run `council ...`
+        1. Run `jury ...`
         2. See error `...`
     validations:
       required: true
@@ -35,7 +35,7 @@ body:
       placeholder: |
         - OS:
         - Python version:
-        - agent-review-council version:
+        - ai-jury version:
         - Installed agent CLIs:
         - Does `--mock` reproduce it?
     validations:

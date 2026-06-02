@@ -1,6 +1,6 @@
 """Run metadata and cost-awareness (wall-clock proxy) reporting.
 
-Builds a machine-readable metadata dict describing a council run: which
+Builds a machine-readable metadata dict describing a jury run: which
 agents participated, their per-agent status and wall-clock duration, how many
 rounds ran, whether verification was enabled, and timestamps.
 
@@ -17,8 +17,8 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
-    from .config import CouncilConfig
-    from .orchestrator import CouncilOutcome
+    from .config import JuryConfig
+    from .orchestrator import JuryOutcome
 
 # v2 (issue #30/#40) added: stop_reason, skipped, retried, budget_exhausted,
 # execution{...}, and per-agent ``attempts``.
@@ -43,7 +43,7 @@ def _agent_entry(result) -> dict:
     }
 
 
-def _rounds_executed(outcome: "CouncilOutcome") -> int:
+def _rounds_executed(outcome: "JuryOutcome") -> int:
     # Prefer the orchestrator's authoritative count (adaptive rounds, issue #40);
     # fall back to inferring it from the phases that produced output.
     recorded = getattr(outcome, "rounds_executed", None)
@@ -55,8 +55,8 @@ def _rounds_executed(outcome: "CouncilOutcome") -> int:
     return rounds
 
 
-def build_run_metadata(outcome: "CouncilOutcome", config: "CouncilConfig") -> dict:
-    """Return a machine-readable metadata dict for a council run.
+def build_run_metadata(outcome: "JuryOutcome", config: "JuryConfig") -> dict:
+    """Return a machine-readable metadata dict for a jury run.
 
     The dict is safe to serialize as JSON and contains no diff text, prompt
     text, agent output, or secrets.

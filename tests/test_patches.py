@@ -7,9 +7,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from agent_review_council.consensus import FindingGroup  # noqa: E402
-from agent_review_council.findings import Finding  # noqa: E402
-from agent_review_council.patches import (  # noqa: E402
+from ai_jury.consensus import FindingGroup  # noqa: E402
+from ai_jury.findings import Finding  # noqa: E402
+from ai_jury.patches import (  # noqa: E402
     patch_suggestions,
     render_patch_suggestions,
 )
@@ -51,7 +51,7 @@ class PatchSuggestionTest(unittest.TestCase):
         self.assertIn("## Suggested patches", md)
         self.assertIn("src/a.py:42", md)
         self.assertIn("[major]", md)
-        self.assertIn("Verified by the council", md)
+        self.assertIn("Verified by the jury", md)
         self.assertIn("```suggestion", md)
         self.assertIn("add a guard", md)
 

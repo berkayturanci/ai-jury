@@ -1,14 +1,14 @@
 """Tests for secret redaction and context policy (issue #6)."""
 import unittest
 
-from agent_review_council.config import (
+from ai_jury.config import (
     AgentSpec,
     ContextConfig,
-    CouncilConfig,
+    JuryConfig,
     _from_dict,
 )
-from agent_review_council.orchestrator import run_council
-from agent_review_council.redaction import redact
+from ai_jury.orchestrator import run_jury
+from ai_jury.redaction import redact
 
 
 class RedactionTests(unittest.TestCase):
@@ -105,18 +105,18 @@ class ContextConfigTests(unittest.TestCase):
 
     def test_load_expanded(self):
         cfg = _from_dict(
-            {"council": {"context": {"mode": "expanded", "redact_secrets": False}}}
+            {"jury": {"context": {"mode": "expanded", "redact_secrets": False}}}
         )
         self.assertEqual(cfg.context.mode, "expanded")
         self.assertFalse(cfg.context.redact_secrets)
 
     def test_invalid_mode_falls_back(self):
-        cfg = _from_dict({"council": {"context": {"mode": "everything"}}})
+        cfg = _from_dict({"jury": {"context": {"mode": "everything"}}})
         self.assertEqual(cfg.context.mode, "diff-only")
 
 
 def _cfg(mode="diff-only", redact_secrets=True):
-    cfg = CouncilConfig(
+    cfg = JuryConfig(
         rounds=1,
         chair="claude",
         verify=False,
@@ -129,26 +129,26 @@ def _cfg(mode="diff-only", redact_secrets=True):
 
 class ContextSelectionTests(unittest.TestCase):
     def test_diff_only_mode_recorded(self):
-        outcome = run_council(
+        outcome = run_jury(
             _cfg("diff-only"), "some diff", context="pr body", mock=True
         )
         self.assertEqual(outcome.context_mode, "diff-only")
 
     def test_expanded_mode_recorded(self):
-        outcome = run_council(
+        outcome = run_jury(
             _cfg("expanded"), "some diff", context="pr body", mock=True
         )
         self.assertEqual(outcome.context_mode, "expanded")
 
     def test_redaction_counted_in_outcome(self):
-        outcome = run_council(
+        outcome = run_jury(
             _cfg("diff-only", True), "leak AKIAABCDEFGHIJKLMNOP", context="", mock=True
         )
         self.assertTrue(outcome.redact_secrets)
         self.assertEqual(outcome.redaction_count, 1)
 
     def test_redaction_off(self):
-        outcome = run_council(
+        outcome = run_jury(
             _cfg("diff-only", False), "leak AKIAABCDEFGHIJKLMNOP", context="", mock=True
         )
         self.assertFalse(outcome.redact_secrets)

@@ -4,10 +4,10 @@ Guidance for working in this repository.
 
 ## What this is
 
-`agent-review-council` is a small, **stdlib-only** Python CLI (`council`) that
+`ai-jury` is a small, **stdlib-only** Python CLI (`jury`) that
 orchestrates native coding-agent CLIs from different vendors — plus an optional
 local / open-weight model — to review the same diff/PR, debate, verify, and
-synthesize one verdict. Entry point: `agent_review_council.cli:main`.
+synthesize one verdict. Entry point: `ai_jury.cli:main`.
 
 ## Hard constraints
 
@@ -25,13 +25,13 @@ synthesize one verdict. Entry point: `agent_review_council.cli:main`.
 
 ```bash
 make test        # PYTHONPATH=src python3 -m unittest discover -s tests  (offline, no network)
-make smoke       # council --mock --diff-file examples/sample.diff
+make smoke       # jury --mock --diff-file examples/sample.diff
 make lint        # ruff check .
 make coverage    # coverage gate (fail_under in pyproject.toml [tool.coverage.report])
 ```
 
 Run a single test module: `PYTHONPATH=src python3 -m unittest tests.test_<name>`.
-Live agent tests are opt-in: `COUNCIL_LIVE=1` (CLIs) / `COUNCIL_LOCAL_LIVE=1`
+Live agent tests are opt-in: `JURY_LIVE=1` (CLIs) / `JURY_LOCAL_LIVE=1`
 (local model). Tests must pass offline with no credentials.
 
 ## Design conventions (match these)
@@ -45,7 +45,7 @@ Live agent tests are opt-in: `COUNCIL_LIVE=1` (CLIs) / `COUNCIL_LOCAL_LIVE=1`
 - **Adapters fail soft.** A missing CLI, nonzero exit (even with stdout), timeout,
   or unreachable local endpoint → non-fatal `AgentResult(ok=False, …)` with a
   typed `ERR_*` code. The run continues unless `--strict`.
-- **CLI subcommands are argv-intercepts.** `council init|config|comment|cache clear`
+- **CLI subcommands are argv-intercepts.** `jury init|config|comment|cache clear`
   are handled in `cli.main` *before* `argparse`, so the main flag surface stays
   flat. The public flag set is locked by `tests/test_cli_contract.py`
   (`DOCUMENTED_FLAGS`) — update it when you add a top-level flag.
@@ -61,9 +61,9 @@ Live agent tests are opt-in: `COUNCIL_LIVE=1` (CLIs) / `COUNCIL_LOCAL_LIVE=1`
 - **Run metadata shape** → bump `metadata.SCHEMA_VERSION` and update
   `tests/test_metadata.py`.
 - **Prompt templates** → bump `prompts.PROMPT_VERSION` (invalidates the cache).
-- **`council.toml` schema** → update `config.py` (dataclass, `_from_dict`,
+- **`jury.toml` schema** → update `config.py` (dataclass, `_from_dict`,
   `validate_config`, `config_hash`, `KNOWN_*`), `docs/configuration.md`, and the
-  `scaffold.py` templates used by `council init`.
+  `scaffold.py` templates used by `jury init`.
 - Any user-visible change → add a `CHANGELOG.md` entry under `[Unreleased]`.
 
 ## Module map
@@ -72,7 +72,7 @@ Live agent tests are opt-in: `COUNCIL_LIVE=1` (CLIs) / `COUNCIL_LOCAL_LIVE=1`
 (per-vendor + `LocalAdapter` + error taxonomy) · `config` · `findings`/`consensus`
 (structured findings + tiered grouping) · `convergence` (adaptive early-stop) ·
 `largediff` (filter + chunk) · `cache` · `incremental` · `patches` · `commands`
-(comment parsing) · `scaffold` (`council init`) · `doctor` · `privilege` ·
+(comment parsing) · `scaffold` (`jury init`) · `doctor` · `privilege` ·
 `redaction` · `injection` · `classification` · `metadata` · `report`/`formats`
 (markdown/json/sarif) · `ci` · `github` · `policy`.
 

@@ -14,16 +14,16 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from agent_review_council import classification as C  # noqa: E402
-from agent_review_council.config import (  # noqa: E402
+from ai_jury import classification as C  # noqa: E402
+from ai_jury.config import (  # noqa: E402
     DEFAULT_CONFIG,
-    CouncilConfig,
+    JuryConfig,
     _from_dict,
 )
-from agent_review_council.consensus import FindingGroup, group_findings  # noqa: E402
-from agent_review_council.findings import Finding  # noqa: E402
-from agent_review_council.orchestrator import run_council  # noqa: E402
-from agent_review_council.report import render  # noqa: E402
+from ai_jury.consensus import FindingGroup, group_findings  # noqa: E402
+from ai_jury.findings import Finding  # noqa: E402
+from ai_jury.orchestrator import run_jury  # noqa: E402
+from ai_jury.report import render  # noqa: E402
 
 
 def _f(severity, claim="a problem", file="src/app.py", line=10, reviewer="claude"):
@@ -36,7 +36,7 @@ def _f(severity, claim="a problem", file="src/app.py", line=10, reviewer="claude
     )
 
 
-def _config() -> CouncilConfig:
+def _config() -> JuryConfig:
     return _from_dict(DEFAULT_CONFIG)
 
 
@@ -178,7 +178,7 @@ class DeterminismTests(unittest.TestCase):
         self.assertEqual(a, b)
 
     def test_outcome_positional_matches_kwargs(self):
-        outcome = run_council(_config(), SAMPLE_DIFF, mock=True)
+        outcome = run_jury(_config(), SAMPLE_DIFF, mock=True)
         via_outcome = C.classify(outcome)
         via_kwargs = C.classify(findings=outcome.findings, groups=outcome.groups)
         self.assertEqual(via_outcome, via_kwargs)
@@ -213,24 +213,24 @@ class LabelingDefaultOffTests(unittest.TestCase):
     """Labeling is OFF by default: assert the DECISION, never the network."""
 
     def test_label_flag_defaults_false(self):
-        from agent_review_council.cli import build_parser
+        from ai_jury.cli import build_parser
 
         args = build_parser().parse_args(["--mock", "--diff-file", "-"])
         self.assertFalse(args.label)
 
     def test_label_flag_can_be_enabled(self):
-        from agent_review_council.cli import build_parser
+        from ai_jury.cli import build_parser
 
         args = build_parser().parse_args(["--pr", "1", "--label"])
         self.assertTrue(args.label)
 
     def test_build_label_args_empty_when_no_labels(self):
-        from agent_review_council.github import build_label_args
+        from ai_jury.github import build_label_args
 
         self.assertEqual(build_label_args("1", []), [])
 
     def test_build_label_args_constructs_gh_args(self):
-        from agent_review_council.github import build_label_args
+        from ai_jury.github import build_label_args
 
         args = build_label_args("42", ["risk: high", "review effort: 3/5"], repo="o/r")
         self.assertEqual(
@@ -247,7 +247,7 @@ class LabelingDefaultOffTests(unittest.TestCase):
 class RenderClassificationSectionTests(unittest.TestCase):
     def test_full_mock_renders_classification_deterministically(self):
         cfg = _config()
-        outcome = run_council(cfg, SAMPLE_DIFF, mock=True)
+        outcome = run_jury(cfg, SAMPLE_DIFF, mock=True)
 
         def _render():
             return render(

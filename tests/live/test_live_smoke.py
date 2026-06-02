@@ -8,7 +8,7 @@ unnoticed until a live run.
 These smoke tests close that gap by running a trivial real review prompt
 through each *installed* adapter. They are intentionally:
 
-* **Opt-in.** The whole suite is skipped unless ``COUNCIL_LIVE=1`` is set
+* **Opt-in.** The whole suite is skipped unless ``JURY_LIVE=1`` is set
   in the environment, so they never run in the default test suite or CI.
 * **Per-agent skippable.** An agent whose CLI is not on ``PATH`` is skipped
   individually, so a machine with only ``claude`` installed still does
@@ -20,7 +20,7 @@ Run them with::
 
     make live-smoke
     # or
-    COUNCIL_LIVE=1 PYTHONPATH=src python -m unittest discover -s tests -v
+    JURY_LIVE=1 PYTHONPATH=src python -m unittest discover -s tests -v
 """
 
 from __future__ import annotations
@@ -29,8 +29,8 @@ import dataclasses
 import os
 import unittest
 
-from agent_review_council.adapters import make_adapter
-from agent_review_council.config import DEFAULT_CONFIG, _from_dict
+from ai_jury.adapters import make_adapter
+from ai_jury.config import DEFAULT_CONFIG, _from_dict
 
 # Short per-agent timeout so a hung CLI fails fast instead of blocking the
 # whole suite for the production default (600s).
@@ -51,8 +51,8 @@ SMOKE_PROMPT = (
 
 
 @unittest.skipUnless(
-    os.environ.get("COUNCIL_LIVE") == "1",
-    "live smoke tests disabled; set COUNCIL_LIVE=1",
+    os.environ.get("JURY_LIVE") == "1",
+    "live smoke tests disabled; set JURY_LIVE=1",
 )
 class LiveSmokeTest(unittest.TestCase):
     """Run a trivial real review through each installed native CLI."""

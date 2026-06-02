@@ -3,11 +3,11 @@
 Reviewers process attacker-controlled content (the PR diff and, via ``--pr``, the
 PR title/body). If an agent CLI is invoked with write/tool/network powers, a
 successful prompt injection could escalate from "bad review text" to real
-side effects. The council mitigates this by running agents read-only.
+side effects. The jury mitigates this by running agents read-only.
 
 This module inspects each configured agent's ``extra_args`` and WARNS when an
 agent could perform write or tool actions during review. It is advisory by
-default (a warning, surfaced via ``run_council``); ``--strict`` promotes the
+default (a warning, surfaced via ``run_jury``); ``--strict`` promotes the
 warnings to a hard failure.
 
 Required read-only invocation per adapter (documented here and in docs/security.md):

@@ -1,6 +1,6 @@
 # Feasibility & Prior Art
 
-Research grounding for `agent-review-council`, gathered before/while building the MVP
+Research grounding for `ai-jury`, gathered before/while building the MVP
 (2026). Two questions: **does cross-vendor multi-agent code review actually work**, and
 **has someone already built this?**
 
@@ -29,12 +29,12 @@ Research grounding for `agent-review-council`, gathered before/while building th
 | Project | What it is | Closeness |
 |:--|:--|:--|
 | **[Magpie](https://github.com/liliu-z/magpie)** | TS CLI; multi-vendor adversarial PR review **with debate rounds**, shelling out to claude-code/codex/gemini/qwen. Author also published [a benchmark](https://milvus.io/blog/ai-code-review-gets-better-when-models-debate-claude-vs-gemini-vs-codex-vs-qwen-vs-minimax.md) on 15 real bug-shipping PRs: **80% bug detection after debate; 100% on the hardest system-level bugs**, well above single-model. | Essentially this concept. Study before extending. |
-| **[agent-council](https://github.com/yogirk/agent-council)** | Bun/TS skill; convenes claude/codex/gemini, 4 stages: independent → anonymized peer review → chairman synthesis → nudge. `--with-review` for audits. | Very close (general deliberation + review). |
-| **[the-council](https://github.com/DantesPeak85/the-council)** | Claude Code skill; Claude chairs, invokes Codex + Gemini in read-only sandboxes, synthesizes. | Close; no rebuttal round. |
+| **[agent-jury](https://github.com/yogirk/agent-jury)** | Bun/TS skill; convenes claude/codex/gemini, 4 stages: independent → anonymized peer review → chairman synthesis → nudge. `--with-review` for audits. | Very close (general deliberation + review). |
+| **[the-jury](https://github.com/DantesPeak85/the-jury)** | Claude Code skill; Claude chairs, invokes Codex + Gemini in read-only sandboxes, synthesizes. | Close; no rebuttal round. |
 | **[Star Chamber](https://blog.mozilla.ai/the-star-chamber-multi-llm-consensus-for-code-quality/)** (Mozilla.ai) | Multi-LLM consensus skill / `uvx star-chamber`, optional `--debate --rounds N`. API-level (`any-llm`), not vendor CLIs. | Same pattern, different transport. |
 | **[reviewd](https://github.com/simion/reviewd)** | Python; single-reviewer PR review via one CLI. | Adjacent (no debate). |
 
-Originating pattern: Karpathy's [llm-council](https://github.com/karpathy/llm-council)
+Originating pattern: Karpathy's [llm-jury](https://github.com/karpathy/llm-jury)
 (respond → peer-review anonymized → chairman synthesizes).
 
 ## What the research says about debate/consensus

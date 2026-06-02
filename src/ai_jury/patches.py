@@ -1,6 +1,6 @@
 """Suggested-patch output for verified findings (issue #10).
 
-The council identifies issues; this renders a *separate*, opt-in "suggested
+The jury identifies issues; this renders a *separate*, opt-in "suggested
 patches" section that turns verified findings into concrete, inspectable fix
 suggestions. It is deliberately conservative:
 
@@ -81,7 +81,7 @@ def render_patch_suggestions(groups: list[FindingGroup]) -> str:
     for s in suggestions:
         lines.append(f"### {s.location()} — [{s.severity}] {s.claim}")
         lines.append("")
-        lines.append("> Verified by the council.")
+        lines.append("> Verified by the jury.")
         lines.append("")
         lines.append("```suggestion")
         lines.append(s.suggested_fix)

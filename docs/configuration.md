@@ -1,31 +1,31 @@
-# `council.toml` configuration reference
+# `jury.toml` configuration reference
 
-The council reads `./council.toml` by default (override with `--config PATH`).
+The jury reads `./jury.toml` by default (override with `--config PATH`).
 If the file is absent, built-in defaults are used.
 
-> **Tip:** don't hand-write it the first time — run **`council init`** to scaffold a
+> **Tip:** don't hand-write it the first time — run **`jury init`** to scaffold a
 > valid config from your installed agents (and discovered local models). See
-> [the README](../README.md#configuration--counciltoml) for the `init` flags.
+> [the README](../README.md#configuration--jurytoml) for the `init` flags.
 
 ## Validation
 
 Check a config without running a review:
 
 ```
-council --config-validate --config council.toml
+jury --config-validate --config jury.toml
 ```
 
 Exit codes: `0` valid (warnings printed if any), `2` invalid. During a normal
 run the config is validated too; pass `--strict-config` to turn warnings into
 hard errors (exit `2`).
 
-- **Hard errors** (always fail): `rounds < 1`, non-positive `timeout` (council
+- **Hard errors** (always fail): `rounds < 1`, non-positive `timeout` (jury
   or per-agent), duplicate agent names, missing/empty agent `name` or
   `command`, no `[[agent]]` entries at all, malformed tables.
 - **Warnings** (fail only under `--strict-config`): unknown vendor, `chair`
   not matching an enabled agent, unknown top-level/section/agent keys.
 
-## `[council]`
+## `[jury]`
 
 | Field      | Type   | Default    | Allowed / notes                                   |
 | ---------- | ------ | ---------- | ------------------------------------------------- |
@@ -66,21 +66,21 @@ metadata and the report's "Run metadata" section. A fixed `--rounds` (or
 `rounds` with `early_stop = false`) keeps reproducible fixed-N behaviour for
 benchmarking. CLI overrides: `--early-stop` / `--no-early-stop`, `--max-rounds`.
 
-### `[council.ci]`
+### `[jury.ci]`
 
 | Field               | Type      | Default                  | Notes                                  |
 | ------------------- | --------- | ------------------------ | -------------------------------------- |
 | `fail_on`           | list[str] | `["critical", "major"]`  | Severities that fail CI mode.          |
 | `ignore_unverified` | bool      | `true`                   | Skip findings not confirmed by verify. |
 
-### `[council.context]`
+### `[jury.context]`
 
 | Field            | Type   | Default       | Notes                                          |
 | ---------------- | ------ | ------------- | ---------------------------------------------- |
 | `mode`           | string | `"diff-only"` | `"diff-only"` or `"expanded"`.                 |
 | `redact_secrets` | bool   | `true`        | Scrub recognized secrets before sending.       |
 
-### `[council.diff]` (large-diff handling, issue #31)
+### `[jury.diff]` (large-diff handling, issue #31)
 
 | Field              | Type      | Default    | Notes                                                            |
 | ------------------ | --------- | ---------- | ---------------------------------------------------------------- |
@@ -102,12 +102,12 @@ reviewed and the findings are merged into one report. CLI overrides:
 
 ## Local result cache (issue #33)
 
-Re-running the council on an unchanged diff with an unchanged config wastes time
+Re-running the jury on an unchanged diff with an unchanged config wastes time
 and tokens. The cache is **off by default**; enable it with `--cache`:
 
 ```
-council --pr 123 --cache      # reuse a cached outcome, or run + store on a miss
-council cache clear           # delete all cache entries (alias: --clear-cache)
+jury --pr 123 --cache      # reuse a cached outcome, or run + store on a miss
+jury cache clear           # delete all cache entries (alias: --clear-cache)
 ```
 
 The cache key covers the diff, the effective config hash, the prompt-template
@@ -119,7 +119,7 @@ cache`).
 **Privacy.** A cache entry stores the full structured outcome, including agent
 review/debate/synthesis text derived from the diff. Treat the cache directory as
 sensitive — same trust level as the diff. It defaults to
-`$COUNCIL_CACHE_DIR` or `~/.cache/agent-review-council` (override with
+`$JURY_CACHE_DIR` or `~/.cache/ai-jury` (override with
 `--cache-dir`).
 
 ## `[[agent]]`
@@ -132,6 +132,6 @@ At least one entry is required.
 | `vendor`     | string    | —       | `anthropic`, `openai`, `google`; unknown → fallback warn. |
 | `command`    | string    | —       | Required, non-empty CLI command.                         |
 | `model`      | string    | unset   | Optional model identifier.                               |
-| `timeout`    | int       | `600`   | Positive seconds (inherits `council.timeout`).           |
+| `timeout`    | int       | `600`   | Positive seconds (inherits `jury.timeout`).           |
 | `enabled`    | bool      | `true`  | Disabled agents are skipped.                             |
 | `extra_args` | list[str] | `[]`    | Extra CLI args passed to the agent command.              |

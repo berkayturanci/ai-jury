@@ -7,11 +7,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from agent_review_council import __version__  # noqa: E402
-from agent_review_council.config import load_config  # noqa: E402
-from agent_review_council.consensus import FindingGroup  # noqa: E402
-from agent_review_council.findings import Finding  # noqa: E402
-from agent_review_council.formats import (  # noqa: E402
+from ai_jury import __version__  # noqa: E402
+from ai_jury.config import load_config  # noqa: E402
+from ai_jury.consensus import FindingGroup  # noqa: E402
+from ai_jury.findings import Finding  # noqa: E402
+from ai_jury.formats import (  # noqa: E402
     JSON_SCHEMA_VERSION,
     SARIF_SCHEMA,
     SARIF_VERSION,
@@ -19,7 +19,7 @@ from agent_review_council.formats import (  # noqa: E402
     to_json,
     to_sarif,
 )
-from agent_review_council.orchestrator import run_council  # noqa: E402
+from ai_jury.orchestrator import run_jury  # noqa: E402
 
 SARIF_LEVELS = {"error", "warning", "note"}
 
@@ -37,7 +37,7 @@ SAMPLE_DIFF = (
 
 def _mock_outcome(diff: str = SAMPLE_DIFF):
     config = load_config(None)
-    outcome = run_council(config, diff, mock=True, log=lambda _m: None)
+    outcome = run_jury(config, diff, mock=True, log=lambda _m: None)
     return outcome, config
 
 
@@ -101,19 +101,19 @@ class TestSARIF(unittest.TestCase):
     def test_driver_metadata(self):
         outcome, config = _mock_outcome()
         driver = json.loads(to_sarif(outcome, config))["runs"][0]["tool"]["driver"]
-        self.assertEqual(driver["name"], "agent-review-council")
+        self.assertEqual(driver["name"], "ai-jury")
         self.assertEqual(driver["version"], __version__)
         self.assertIn("rules", driver)
         self.assertTrue(driver["rules"], "rules should be present for used severities")
         for rule in driver["rules"]:
-            self.assertTrue(rule["id"].startswith("council/"))
+            self.assertTrue(rule["id"].startswith("jury/"))
 
     def test_results_shape(self):
         outcome, config = _mock_outcome()
         results = json.loads(to_sarif(outcome, config))["runs"][0]["results"]
         self.assertTrue(results)
         for r in results:
-            self.assertTrue(r["ruleId"].startswith("council/"))
+            self.assertTrue(r["ruleId"].startswith("jury/"))
             self.assertIn(r["level"], SARIF_LEVELS)
             self.assertTrue(r["message"]["text"])
             phys = r["locations"][0]["physicalLocation"]
@@ -144,7 +144,7 @@ class TestSARIF(unittest.TestCase):
         phys = result["locations"][0]["physicalLocation"]
         self.assertNotIn("region", phys)
         self.assertEqual(phys["artifactLocation"]["uri"], "a.py")
-        self.assertEqual(result["ruleId"], "council/minor")
+        self.assertEqual(result["ruleId"], "jury/minor")
         self.assertEqual(result["level"], "warning")
 
     def test_level_mapping(self):

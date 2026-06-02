@@ -1,18 +1,18 @@
 # Workflow cookbook
 
-Practical, copy-paste recipes for running `agent-review-council` in day-to-day
+Practical, copy-paste recipes for running `ai-jury` in day-to-day
 work. Each recipe states its **prerequisites**, the exact **command(s)**, and the
 **expected outcome**.
 
-`council --help` (and [`cli.py`](../src/agent_review_council/cli.py)) is the
+`jury --help` (and [`cli.py`](../src/ai_jury/cli.py)) is the
 single source of truth for flags; every command below uses only real flags.
 Anything that should run without credentials uses `--mock`, which executes the
 full pipeline offline with deterministic mock agents — no live CLIs are called,
 no network, no keys.
 
-> **Running from a clone (no install).** All recipes assume `council` is on PATH
-> (`pipx install agent-review-council`). From a checkout you can swap `council`
-> for `PYTHONPATH=src python3 -m agent_review_council` — every flag is identical.
+> **Running from a clone (no install).** All recipes assume `jury` is on PATH
+> (`pipx install ai-jury`). From a checkout you can swap `jury`
+> for `PYTHONPATH=src python3 -m ai_jury` — every flag is identical.
 
 ---
 
@@ -20,23 +20,23 @@ no network, no keys.
 
 **Prerequisites:** none (works before any agent is configured).
 
-Generate a `council.toml` instead of hand-writing it. `council init` detects which
+Generate a `jury.toml` instead of hand-writing it. `jury init` detects which
 agent CLIs are installed and, for a local agent, the models on your Ollama/OpenAI-
 compatible server:
 
 ```bash
-council init                      # interactive: pick agents, rounds, chair, local model
-council init --preset offline     # free, local-only ($0); also: fast / balanced / thorough
-council init --list-agents        # show known agents + availability
-council init --list-models        # list local (Ollama) models you can pick
-council init --agents claude,codex,qwen --rounds 2   # non-interactive / scriptable
+jury init                      # interactive: pick agents, rounds, chair, local model
+jury init --preset offline     # free, local-only ($0); also: fast / balanced / thorough
+jury init --list-agents        # show known agents + availability
+jury init --list-models        # list local (Ollama) models you can pick
+jury init --agents claude,codex,qwen --rounds 2   # non-interactive / scriptable
 ```
 
-> **Zero-config offline:** even without a `council.toml`, if no agent CLI is
-> installed but a local model server is reachable, `council` adds a local agent
-> automatically — so `git diff main... | council --diff-file -` just works offline.
+> **Zero-config offline:** even without a `jury.toml`, if no agent CLI is
+> installed but a local model server is reachable, `jury` adds a local agent
+> automatically — so `git diff main... | jury --diff-file -` just works offline.
 
-**Outcome:** a validated `council.toml` using the secure-by-default agent templates
+**Outcome:** a validated `jury.toml` using the secure-by-default agent templates
 (Codex read-only, Antigravity sandboxed, Claude write-tool denylist). It won't overwrite
 an existing file without `--force`.
 
@@ -47,10 +47,10 @@ an existing file without `--force`.
 **Prerequisites:** at least one agent CLI (`claude`, `codex`, or `agy`). No `gh`
 needed — this reviews a diff, not a PR.
 
-Pipe the branch diff straight into the council via stdin (`--diff-file -`):
+Pipe the branch diff straight into the jury via stdin (`--diff-file -`):
 
 ```bash
-git diff main... | council --diff-file -
+git diff main... | jury --diff-file -
 ```
 
 `main...` (three dots) diffs your branch against its merge-base with `main`, so
@@ -58,17 +58,17 @@ you review exactly what the PR would contain. Use `origin/HEAD...` if your
 default branch isn't `main`:
 
 ```bash
-git diff origin/HEAD... | council --diff-file -
+git diff origin/HEAD... | jury --diff-file -
 ```
 
 Or capture the diff to a file first, then review it:
 
 ```bash
 git diff main... > /tmp/branch.diff
-council --diff-file /tmp/branch.diff
+jury --diff-file /tmp/branch.diff
 ```
 
-**Outcome:** a markdown report on stdout headed `# 🏛️ Agent Review Council`
+**Outcome:** a markdown report on stdout headed `# 🏛️ AI Jury`
 with a recommendation, a Findings section, and the per-agent review rounds. Act
 on the findings before you open the PR. (If the diff is empty, the CLI exits with
 `error: empty diff — nothing to review`.)
@@ -81,7 +81,7 @@ on the findings before you open the PR. (If the diff is empty, the CLI exits wit
 least one agent CLI.
 
 ```bash
-council --pr 123 -o report.md
+jury --pr 123 -o report.md
 ```
 
 `--pr` fetches the diff via `gh`; `-o/--output` writes the rendered report to a
@@ -89,7 +89,7 @@ file instead of stdout. Add `--repo owner/name` if you're not inside the target
 repo's checkout:
 
 ```bash
-council --pr 123 --repo owner/name -o report.md
+jury --pr 123 --repo owner/name -o report.md
 ```
 
 **Outcome:** `report.md` contains the full verdict and findings. Progress logs
@@ -106,30 +106,30 @@ one agent CLI.
 Post the whole verdict as a single summary comment:
 
 ```bash
-council --pr 123 --post-summary
+jury --pr 123 --post-summary
 ```
 
 `--post` is an accepted alias for `--post-summary`. To attach findings as inline
 review comments on the relevant lines instead:
 
 ```bash
-council --pr 123 --post-inline
+jury --pr 123 --post-inline
 ```
 
 **Preview before posting.** Combine `--post-inline` with `--dry-run` to print the
 exact inline payload without making any GitHub call — nothing is posted:
 
 ```bash
-council --pr 123 --post-inline --dry-run
+jury --pr 123 --post-inline --dry-run
 ```
 
 You can also write the report locally and post in the same run:
 
 ```bash
-council --pr 123 --post-summary -o report.md
+jury --pr 123 --post-summary -o report.md
 ```
 
-**Outcome:** with `--post-summary`/`--post-inline`, the council's feedback lands
+**Outcome:** with `--post-summary`/`--post-inline`, the jury's feedback lands
 on the PR as advisory comments (`--post-*` require `--pr`). With `--dry-run`, you
 see what *would* be posted and the network is never touched. These are advisory
 by design — they comment, they don't block a merge; gating is the separate `--ci`
@@ -139,27 +139,27 @@ concern (see recipe 5).
 
 ## 4. Run the bundled skill from an assistant
 
-**Prerequisites:** Claude Code, the `council` CLI reachable from the assistant's
+**Prerequisites:** Claude Code, the `jury` CLI reachable from the assistant's
 shell, and at least one agent CLI. For PR review/posting, `gh` authenticated.
 
 Install the skill as a plugin (this repo doubles as a single-plugin
 marketplace):
 
 ```text
-/plugin marketplace add berkayturanci/agent-review-council
-/plugin install review-council@agent-review-council
+/plugin marketplace add berkayturanci/ai-jury
+/plugin install ai-jury@ai-jury
 ```
 
-Or drop [`skill/review-council/`](../skill/review-council/SKILL.md) into a
+Or drop [`skill/ai-jury/`](../skill/ai-jury/SKILL.md) into a
 project's `.claude/skills/` directory manually.
 
 Then ask the assistant for a review, e.g.:
 
-> Convene the review council on my current branch.
+> Convene the review jury on my current branch.
 
-**Outcome:** the skill shells out to `council` (typically
-`git diff origin/HEAD... | council --diff-file -` for the working branch, or
-`council --pr <n>` for a PR) and reports the chair verdict plus consensus
+**Outcome:** the skill shells out to `jury` (typically
+`git diff origin/HEAD... | jury --diff-file -` for the working branch, or
+`jury --pr <n>` for a PR) and reports the chair verdict plus consensus
 findings back in the conversation. You decide what to act on. See the
 [platform support matrix](platforms.md) for other surfaces.
 
@@ -171,36 +171,36 @@ findings back in the conversation. You decide what to act on. See the
 runs, `gh` authenticated (CI typically provides a token). Use `--mock` for a
 pipeline smoke test with no agents at all.
 
-The council fits as a **non-blocking, advisory** stage: run it, surface the
+The jury fits as a **non-blocking, advisory** stage: run it, surface the
 verdict, but don't fail the build on its opinion. Keep the step from breaking the
 pipeline by neutralizing its exit code:
 
 ```bash
 # Advisory: always succeeds, posts the verdict, never blocks the merge.
-council --pr "$PR_NUMBER" --post-summary || true
+jury --pr "$PR_NUMBER" --post-summary || true
 ```
 
 As a generic shell stage in any ship script:
 
 ```bash
 # Soft review gate — report-only, exit status ignored.
-git diff origin/HEAD... | council --diff-file - -o council-report.md || true
-echo "Council report saved to council-report.md (advisory)."
+git diff origin/HEAD... | jury --diff-file - -o jury-report.md || true
+echo "Jury report saved to jury-report.md (advisory)."
 ```
 
-If you later want the council to actually **gate** merges, opt in explicitly with
+If you later want the jury to actually **gate** merges, opt in explicitly with
 `--ci`, which exits non-zero when blocking findings remain:
 
 ```bash
 # Hard gate — fails the build on critical/major findings.
-council --pr "$PR_NUMBER" --ci --fail-on critical,major
+jury --pr "$PR_NUMBER" --ci --fail-on critical,major
 ```
 
-`--fail-on` overrides the `[council.ci] fail_on` severities in `council.toml`;
+`--fail-on` overrides the `[jury.ci] fail_on` severities in `jury.toml`;
 drop the trailing `|| true` to let the stage fail.
 
 **Outcome:** the advisory form always reports and never blocks; the `--ci` form
-turns the council into an enforced quality gate. Start advisory, graduate to
+turns the jury into an enforced quality gate. Start advisory, graduate to
 `--ci` once the team trusts the signal.
 
 ---
@@ -211,23 +211,23 @@ turns the council into an enforced quality gate. Start advisory, graduate to
 deterministic mock agents — no live CLIs, no `gh`, no credentials.
 
 ```bash
-council --mock --diff-file - < examples/sample.diff
+jury --mock --diff-file - < examples/sample.diff
 ```
 
 Or against any diff file or piped branch diff:
 
 ```bash
-council --mock --diff-file examples/sample.diff
-git diff main... | council --mock --diff-file -
+jury --mock --diff-file examples/sample.diff
+git diff main... | jury --mock --diff-file -
 ```
 
 You can exercise the CI gate offline too:
 
 ```bash
-council --mock --ci --fail-on critical,major --diff-file examples/sample.diff
+jury --mock --ci --fail-on critical,major --diff-file examples/sample.diff
 ```
 
-**Outcome:** a complete markdown report (headed `# 🏛️ Agent Review Council`)
+**Outcome:** a complete markdown report (headed `# 🏛️ AI Jury`)
 is produced without contacting any agent or GitHub. This is the fastest way to
 confirm your install, config, and command shapes are correct before wiring in
 real agents — and it's safe to run anywhere.
@@ -239,7 +239,7 @@ real agents — and it's safe to run anywhere.
 **Prerequisites:** at least one agent CLI installed. Missing agents are skipped
 with a warning automatically, so you can also simply install fewer.
 
-**Option A — disable agents in `council.toml`.** Set `enabled = false` on the
+**Option A — disable agents in `jury.toml`.** Set `enabled = false` on the
 agents you don't want. For example, to run *only* Claude Code:
 
 ```toml
@@ -264,18 +264,18 @@ enabled = false
 If the configured `chair` is one of the disabled/unavailable agents, the first
 available agent is used instead — set `chair` to an enabled agent to be explicit.
 
-**Option B — point at a custom config.** Keep your default `council.toml` intact
+**Option B — point at a custom config.** Keep your default `jury.toml` intact
 and pass a slimmed-down one per run with `--config`:
 
 ```bash
-council --config ./two-agents.toml --diff-file -
+jury --config ./two-agents.toml --diff-file -
 ```
 
 **Option C — rely on auto-skip.** If an agent CLI simply isn't installed, the
-council skips it with a warning and continues with whatever is available. (Pass
+jury skips it with a warning and continues with whatever is available. (Pass
 `--strict` to instead fail when any configured agent CLI is missing.)
 
-**Outcome:** the council runs with just the agents you enabled/installed. With a
+**Outcome:** the jury runs with just the agents you enabled/installed. With a
 single agent there's no cross-vendor debate (the debate round needs ≥2 successful
 reviews), but you still get a structured verdict and report — handy while
 trialing the tool with one CLI.
@@ -283,23 +283,23 @@ trialing the tool with one CLI.
 > **Heads-up:** the research lever behind this tool is **vendor heterogeneity** —
 > two or three *different* vendors catch more than one reviewer run repeatedly.
 > Trimming to one agent is fine for smoke tests and cost control, but use ≥2
-> vendors when you want the real council effect.
+> vendors when you want the real jury effect.
 
 ---
 
 ## 8. Incremental review on PR updates (issue #9)
 
 Re-reviewing a large PR's full diff on every push is slow. With `--incremental`,
-the council records the reviewed head SHA on its summary comment and, on the next
+the jury records the reviewed head SHA on its summary comment and, on the next
 run, reviews only the range since that SHA — falling back to a full review when
 no prior marker exists or the head is unchanged.
 
 ```bash
 # First run establishes the marker on the posted summary.
-council --pr 123 --post-summary
+jury --pr 123 --post-summary
 
-# Later runs review only what changed since the last council run.
-council --pr 123 --incremental --post-summary
+# Later runs review only what changed since the last jury run.
+jury --pr 123 --incremental --post-summary
 ```
 
 The report's header states the scope (`Review scope: Incremental — …` or
@@ -313,35 +313,35 @@ automatically, and unverified/rejected findings never produce a suggestion.
 
 ```bash
 # Append a "Suggested patches" section after the markdown report.
-council --pr 123 --suggest-patches
+jury --pr 123 --suggest-patches
 
 # Or write the patches to their own file, leaving the report untouched.
-council --diff-file changes.diff --suggest-patches --patches-out patches.md -o report.md
+jury --diff-file changes.diff --suggest-patches --patches-out patches.md -o report.md
 ```
 
 ## 10. Comment-triggered runs in GitHub Actions (issue #11)
 
-The council can be triggered from a PR comment such as `/council review` or
-`/council summary` via a workflow. Commands are parsed by an **allowlist**
+The jury can be triggered from a PR comment such as `/jury review` or
+`/jury summary` via a workflow. Commands are parsed by an **allowlist**
 (`review`, `summary`; only the `--rounds N` flag) — the comment text is never
 passed to a shell, so arbitrary commands in a comment cannot run. Parsing is
-exposed through the `council comment` mode:
+exposed through the `jury comment` mode:
 
 ```bash
-# Resolve a comment to a safe council argv (used by the workflow):
-council comment --text "/council review --rounds 1" --pr 123 --print-args
+# Resolve a comment to a safe jury argv (used by the workflow):
+jury comment --text "/jury review --rounds 1" --pr 123 --print-args
 #   -> --rounds 1 --pr 123 --post-summary
 
 # Reject anything not on the allowlist (exit 2):
-council comment --text "/council deploy" --print-args   # rejected
+jury comment --text "/jury deploy" --print-args   # rejected
 ```
 
 A minimal, safe workflow recipe (gate on a trusted author association and only
 on PR comments):
 
 ```yaml
-# .github/workflows/council-comment.yml
-name: council-comment
+# .github/workflows/jury-comment.yml
+name: jury-comment
 on:
   issue_comment:
     types: [created]
@@ -349,29 +349,29 @@ permissions:
   contents: read
   pull-requests: write
 jobs:
-  council:
-    # Only PR comments, only from maintainers/owners, only the /council trigger.
+  jury:
+    # Only PR comments, only from maintainers/owners, only the /jury trigger.
     if: >
       github.event.issue.pull_request &&
-      contains(github.event.comment.body, '/council') &&
+      contains(github.event.comment.body, '/jury') &&
       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.13" }
-      - run: pip install agent-review-council
-      - name: Run council from the comment command
+      - run: pip install ai-jury
+      - name: Run jury from the comment command
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           COMMENT_BODY: ${{ github.event.comment.body }}
           PR_NUMBER: ${{ github.event.issue.number }}
         # The comment body is passed as an argument value (never via a shell
-        # template), and the council allowlist rejects anything unsupported.
-        run: council comment --text "$COMMENT_BODY" --pr "$PR_NUMBER"
+        # template), and the jury allowlist rejects anything unsupported.
+        run: jury comment --text "$COMMENT_BODY" --pr "$PR_NUMBER"
 ```
 
-> The `if:` guard restricts *who* can trigger a run; the `council comment`
+> The `if:` guard restricts *who* can trigger a run; the `jury comment`
 > allowlist restricts *what* can run. Both layers matter — keep the author
 > association check so untrusted forks cannot trigger agent runs.
 
@@ -380,7 +380,7 @@ jobs:
 ## See also
 
 - [Architecture](architecture.md) — components, round structure, adapters.
-- [Platform support matrix](platforms.md) — where you can install and run the council.
+- [Platform support matrix](platforms.md) — where you can install and run the jury.
 - [Example run](example-run.md) — a deterministic mock report end to end.
-- [Live four-vendor review](example-live-review.md) — a real run of the council
+- [Live four-vendor review](example-live-review.md) — a real run of the jury
   reviewing its own repository, with honest notes on false positives and cost.

@@ -11,14 +11,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from agent_review_council.cache import (  # noqa: E402
+from ai_jury.cache import (  # noqa: E402
     Cache,
     cache_key,
     outcome_from_dict,
     outcome_to_dict,
 )
-from agent_review_council.config import DEFAULT_CONFIG, _from_dict  # noqa: E402
-from agent_review_council.orchestrator import run_council  # noqa: E402
+from ai_jury.config import DEFAULT_CONFIG, _from_dict  # noqa: E402
+from ai_jury.orchestrator import run_jury  # noqa: E402
 
 SAMPLE_DIFF = (
     "diff --git a/src/example.py b/src/example.py\n"
@@ -66,7 +66,7 @@ class CacheKeyTest(unittest.TestCase):
 
 class RoundTripTest(unittest.TestCase):
     def test_outcome_survives_serialization(self):
-        outcome = run_council(_config(), SAMPLE_DIFF, mock=True)
+        outcome = run_jury(_config(), SAMPLE_DIFF, mock=True)
         restored = outcome_from_dict(outcome_to_dict(outcome))
         self.assertEqual(len(restored.reviews), len(outcome.reviews))
         self.assertEqual(len(restored.findings), len(outcome.findings))
@@ -90,7 +90,7 @@ class CacheHitMissTest(unittest.TestCase):
             key = cache_key(cfg, SAMPLE_DIFF)
             self.assertIsNone(cache.load(key))  # miss
 
-            outcome = run_council(cfg, SAMPLE_DIFF, mock=True)
+            outcome = run_jury(cfg, SAMPLE_DIFF, mock=True)
             self.assertFalse(outcome.from_cache)
             cache.store(key, outcome)
 
@@ -103,7 +103,7 @@ class CacheHitMissTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             cache = Cache(tmp)
             cfg = _config()
-            cache.store(cache_key(cfg, SAMPLE_DIFF), run_council(cfg, SAMPLE_DIFF, mock=True))
+            cache.store(cache_key(cfg, SAMPLE_DIFF), run_jury(cfg, SAMPLE_DIFF, mock=True))
             # A changed diff yields a different key -> miss (invalidation).
             self.assertIsNone(cache.load(cache_key(cfg, SAMPLE_DIFF + "\n+more")))
 
@@ -111,7 +111,7 @@ class CacheHitMissTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             cache = Cache(tmp)
             cfg = _config()
-            cache.store(cache_key(cfg, SAMPLE_DIFF), run_council(cfg, SAMPLE_DIFF, mock=True))
+            cache.store(cache_key(cfg, SAMPLE_DIFF), run_jury(cfg, SAMPLE_DIFF, mock=True))
             self.assertEqual(cache.clear(), 1)
             self.assertIsNone(cache.load(cache_key(cfg, SAMPLE_DIFF)))
 

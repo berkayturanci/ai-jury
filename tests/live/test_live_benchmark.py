@@ -1,21 +1,21 @@
-"""Opt-in live benchmark: run the real council per fixture diff and score it.
+"""Opt-in live benchmark: run the real jury per fixture diff and score it.
 
 The offline benchmark (``tests/test_benchmark.py``) scores *recorded* findings
 and never touches a live CLI. This module exercises the optional live path,
-which runs ``run_council(..., mock=False)`` against the real agent CLIs and
+which runs ``run_jury(..., mock=False)`` against the real agent CLIs and
 scores the live findings against each fixture's expected spec.
 
 It is intentionally:
 
-* **Opt-in.** Skipped entirely unless ``COUNCIL_BENCH_LIVE=1`` is set, so it
-  never runs in the default suite or CI. This mirrors the ``COUNCIL_LIVE=1``
+* **Opt-in.** Skipped entirely unless ``JURY_BENCH_LIVE=1`` is set, so it
+  never runs in the default suite or CI. This mirrors the ``JURY_LIVE=1``
   gate used by ``tests/live/test_live_smoke.py``.
 * **Honest.** Live mode is the only mode that measures real review quality; the
   offline benchmark validates the scorer and recorded baselines.
 
 Run with::
 
-    COUNCIL_BENCH_LIVE=1 PYTHONPATH=src python -m unittest discover -s tests -v
+    JURY_BENCH_LIVE=1 PYTHONPATH=src python -m unittest discover -s tests -v
 """
 from __future__ import annotations
 
@@ -26,15 +26,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-from agent_review_council import benchmark  # noqa: E402
+from ai_jury import benchmark  # noqa: E402
 
 
 @unittest.skipUnless(
-    os.environ.get("COUNCIL_BENCH_LIVE") == "1",
-    "live benchmark disabled; set COUNCIL_BENCH_LIVE=1",
+    os.environ.get("JURY_BENCH_LIVE") == "1",
+    "live benchmark disabled; set JURY_BENCH_LIVE=1",
 )
 class LiveBenchmarkTest(unittest.TestCase):
-    """Run the real council over the fixtures and score the live findings."""
+    """Run the real jury over the fixtures and score the live findings."""
 
     def test_live_benchmark_scores_every_fixture(self) -> None:
         scores, summary = benchmark.run_live()

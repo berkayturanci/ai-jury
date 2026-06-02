@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from agent_review_council.config import (  # noqa: E402
+from ai_jury.config import (  # noqa: E402
     DEFAULT_CONFIG,
     ConfigError,
     load_config,
@@ -28,13 +28,13 @@ class TestValidateConfig(unittest.TestCase):
 
     def test_rounds_zero_raises(self):
         data = _valid()
-        data["council"]["rounds"] = 0
+        data["jury"]["rounds"] = 0
         with self.assertRaises(ConfigError):
             validate_config(data)
 
     def test_timeout_negative_raises(self):
         data = _valid()
-        data["council"]["timeout"] = -1
+        data["jury"]["timeout"] = -1
         with self.assertRaises(ConfigError):
             validate_config(data)
 
@@ -70,13 +70,13 @@ class TestValidateConfig(unittest.TestCase):
 
     def test_chair_mismatch_warns(self):
         data = _valid()
-        data["council"]["chair"] = "nobody"
+        data["jury"]["chair"] = "nobody"
         warnings = validate_config(data)
         self.assertTrue(any("chair" in w for w in warnings))
 
     def test_chair_mismatch_strict_raises(self):
         data = _valid()
-        data["council"]["chair"] = "nobody"
+        data["jury"]["chair"] = "nobody"
         with self.assertRaises(ConfigError):
             validate_config(data, strict=True)
 

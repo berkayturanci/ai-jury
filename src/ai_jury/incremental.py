@@ -1,7 +1,7 @@
 """Incremental review mode for updated PRs (issue #9).
 
 Re-reviewing a large PR's full diff on every push is slow and costly. Incremental
-mode reviews only what changed since the council last ran: it records the
+mode reviews only what changed since the jury last ran: it records the
 reviewed head SHA in a hidden marker on its summary comment, and on the next run
 compares that SHA to the current head to fetch just the new range.
 
@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import re
 
-# Hidden marker embedded in the council summary comment recording the SHA that
+# Hidden marker embedded in the jury summary comment recording the SHA that
 # was reviewed, so a later run can compute the incremental range.
 _MARKER_RE = re.compile(r"<!--\s*arc-reviewed-sha:([0-9a-fA-F]{7,40})\s*-->")
 
@@ -28,7 +28,7 @@ def reviewed_sha_marker(sha: str) -> str:
 
 
 def parse_reviewed_sha(comment_bodies) -> str | None:
-    """Return the most recent reviewed SHA across council comment bodies, or None.
+    """Return the most recent reviewed SHA across jury comment bodies, or None.
 
     Scans every body for the marker and returns the LAST match found (later
     comments override earlier ones), so a fresh re-review marker wins.
@@ -48,7 +48,7 @@ def decide_review(prev_sha: str | None, head_sha: str | None) -> tuple[str, str]
     prior marker, unknown head, or an unchanged head (nothing new to review).
     """
     if not prev_sha:
-        return MODE_FULL, "no prior council marker found — full review"
+        return MODE_FULL, "no prior jury marker found — full review"
     if not head_sha:
         return MODE_FULL, "current head SHA unavailable — full review"
     if prev_sha == head_sha:
