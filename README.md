@@ -267,11 +267,15 @@ detects your installed agents and writes a valid config:
 ```bash
 council init                              # interactive: pick agents, rounds, chair
 council init --list-agents                # show known agents + availability
+council init --list-models                # list local (Ollama) models you can pick
 council init --agents claude,codex,qwen --rounds 2   # non-interactive / scriptable
 ```
 
-It uses the secure-by-default agent templates and refuses to overwrite an
-existing file without `--force`. The resulting `council.toml`:
+It detects which agent CLIs are installed and, for a local agent, **discovers the
+models on your Ollama/OpenAI-compatible server** so you can pick one in the
+interactive prompt (e.g. `gemma:2b`, `deepseek-coder:6.7b`). It uses the
+secure-by-default agent templates and refuses to overwrite an existing file
+without `--force`. The resulting `council.toml`:
 
 ```toml
 [council]

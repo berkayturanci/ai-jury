@@ -50,6 +50,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`--agents claude,codex,qwen --rounds 2`), using the secure-by-default agent
   templates. `--list-agents` shows availability; existing files are not
   overwritten without `--force`.
+- `council init` discovers **local (Ollama/OpenAI-compatible) models** (#109):
+  the interactive flow lists the models on your server and lets you pick one
+  (preferring a coder model); `council init --list-models` prints them. Falls
+  back gracefully to a typed default when no server is reachable.
 - Local / open-weight reviewer (#43): a new `vendor = "local"` agent talks to any
   OpenAI-compatible server (Ollama, llama.cpp, vLLM, LM Studio) over plain HTTP
   via the stdlib — no new dependencies, no subprocess. Configure with an

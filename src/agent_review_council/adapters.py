@@ -334,6 +334,31 @@ class AgyAdapter(Adapter):
 _DEFAULT_LOCAL_ENDPOINT = "http://localhost:11434/v1"
 
 
+def list_local_models(endpoint: str = _DEFAULT_LOCAL_ENDPOINT) -> list[str]:
+    """List model ids from a local OpenAI-compatible server (issue #109).
+
+    GETs ``{endpoint}/models`` (the OpenAI-compatible listing that Ollama,
+    vLLM, LM Studio, etc. expose) and returns the model ids in their reported
+    order. Best-effort and stdlib-only: any failure (server down, bad JSON)
+    returns ``[]`` so callers can fall back gracefully.
+    """
+    import json as _json
+    import urllib.request
+
+    base = (endpoint or _DEFAULT_LOCAL_ENDPOINT).rstrip("/")
+    url = base if base.endswith("/models") else f"{base}/models"
+    try:
+        with urllib.request.urlopen(url, timeout=_VERSION_PROBE_TIMEOUT) as resp:  # noqa: S310
+            data = _json.loads(resp.read().decode("utf-8"))
+    except Exception:  # noqa: BLE001 - discovery is best-effort
+        return []
+    models = data.get("data") if isinstance(data, dict) else None
+    if not isinstance(models, list):
+        return []
+    ids = [m.get("id") for m in models if isinstance(m, dict) and m.get("id")]
+    return [str(i) for i in ids]
+
+
 class LocalAdapter(Adapter):
     """Open-weight / local-model reviewer over an OpenAI-compatible API (issue #43).
 

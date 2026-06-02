@@ -131,18 +131,84 @@ class InitCliTest(unittest.TestCase):
         for name in ("claude", "codex", "agy", "qwen"):
             self.assertIn(name, out)
 
-    def test_interactive_with_injected_input(self):
-        # Drive the interactive helper directly with a fake input function.
+    def test_interactive_picks_discovered_model_by_number(self):
+        # qwen selected + a server that lists models -> user picks one by number.
         available = {"claude": True, "codex": True, "agy": False, "qwen": True}
-        answers = iter(["claude,qwen", "1", "claude", "n", "mymodel"])
-        kwargs = cli._init_interactive(available, input_fn=lambda _p: next(answers))
+        answers = iter(["claude,qwen", "1", "claude", "n", "2"])
+        kwargs = cli._init_interactive(
+            available,
+            input_fn=lambda _p: next(answers),
+            models_fn=lambda _ep: ["gemma:2b", "qwen2.5-coder:7b"],
+        )
         self.assertEqual(kwargs["agents"], ["claude", "qwen"])
         self.assertEqual(kwargs["rounds"], 1)
-        self.assertEqual(kwargs["chair"], "claude")
         self.assertFalse(kwargs["verify"])
-        self.assertEqual(kwargs["local_model"], "mymodel")
-        # And the result builds a valid config.
+        self.assertEqual(kwargs["local_model"], "qwen2.5-coder:7b")  # picked #2
         validate_config(build_config(**kwargs))
+
+    def test_interactive_no_server_falls_back_to_typed_model(self):
+        available = {"claude": False, "codex": False, "agy": False, "qwen": True}
+        answers = iter(["qwen", "2", "qwen", "y", "deepseek-coder:6.7b"])
+        kwargs = cli._init_interactive(
+            available, input_fn=lambda _p: next(answers), models_fn=lambda _ep: []
+        )
+        self.assertEqual(kwargs["local_model"], "deepseek-coder:6.7b")
+
+
+class LocalModelDiscoveryTest(unittest.TestCase):
+    def test_pick_default_prefers_coder_model(self):
+        from agent_review_council.scaffold import pick_default_model
+
+        self.assertEqual(
+            pick_default_model(["gemma:2b", "deepseek-coder:6.7b"]),
+            "deepseek-coder:6.7b",
+        )
+
+    def test_pick_default_first_when_no_coder(self):
+        from agent_review_council.scaffold import pick_default_model
+
+        self.assertEqual(pick_default_model(["gemma:2b", "phi3:mini"]), "gemma:2b")
+
+    def test_pick_default_none_when_empty(self):
+        from agent_review_council.scaffold import pick_default_model
+
+        self.assertIsNone(pick_default_model([]))
+
+    def test_list_local_models_parses_openai_shape(self):
+        # Parse the OpenAI-compatible /v1/models response shape offline.
+        import json
+        from unittest import mock
+
+        from agent_review_council.adapters import list_local_models
+
+        payload = json.dumps(
+            {"data": [{"id": "gemma:2b"}, {"id": "qwen2.5-coder:7b"}]}
+        ).encode()
+
+        class _Resp:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def read(self):
+                return payload
+
+        with mock.patch("urllib.request.urlopen", return_value=_Resp()):
+            models = list_local_models("http://localhost:11434/v1")
+        self.assertEqual(models, ["gemma:2b", "qwen2.5-coder:7b"])
+
+    def test_list_local_models_empty_on_failure(self):
+        import urllib.error
+        from unittest import mock
+
+        from agent_review_council.adapters import list_local_models
+
+        with mock.patch(
+            "urllib.request.urlopen", side_effect=urllib.error.URLError("down")
+        ):
+            self.assertEqual(list_local_models("http://localhost:11434/v1"), [])
 
 
 if __name__ == "__main__":
