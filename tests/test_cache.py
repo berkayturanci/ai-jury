@@ -53,6 +53,33 @@ class CacheKeyTest(unittest.TestCase):
         cfg2.seed = 99
         self.assertNotEqual(cache_key(_config(), SAMPLE_DIFF), cache_key(cfg2, SAMPLE_DIFF))
 
+    def test_policy_changes_key(self):
+        # Issue #122: a repository review policy is injected into the prompts, so
+        # it must be part of the cache key (and an empty policy must not change it).
+        from ai_jury.policy import ReviewPolicy
+
+        cfg = _config()
+        self.assertEqual(
+            cache_key(cfg, SAMPLE_DIFF), cache_key(cfg, SAMPLE_DIFF, policy=ReviewPolicy())
+        )
+        self.assertNotEqual(
+            cache_key(cfg, SAMPLE_DIFF),
+            cache_key(cfg, SAMPLE_DIFF, policy=ReviewPolicy(high_risk_paths=["src/pay.py"])),
+        )
+
+    def test_config_hash_covers_orchestration_toggles(self):
+        # Issue #122: anonymize_debate / prefer_non_reviewer_chair change how a run
+        # is orchestrated, so config_hash must include them.
+        from ai_jury.config import config_hash
+
+        base = _config()
+        a = _config()
+        a.anonymize_debate = not base.anonymize_debate
+        b = _config()
+        b.prefer_non_reviewer_chair = not base.prefer_non_reviewer_chair
+        self.assertNotEqual(config_hash(base), config_hash(a))
+        self.assertNotEqual(config_hash(base), config_hash(b))
+
     def test_mock_flag_changes_key(self):
         # A --mock run must never share a cache entry with a real run (review
         # finding): mock serves canned findings and would otherwise masquerade

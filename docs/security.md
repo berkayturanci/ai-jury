@@ -114,16 +114,17 @@ make the reviewers approve a bad change or suppress findings. This is a classic
    configured `extra_args` and warns (or, under `--strict`, fails) when an agent
    could perform write/tool actions:
 
-   | Agent | Required read-only invocation |
+   | Agent | Read-only invocation (shipped default) |
    | --- | --- |
-   | `claude` | `--disallowed-tools Edit,Write,NotebookEdit,Bash` (the default config does this) |
-   | `codex` | prefer `-s read-only` / `--sandbox read-only`; the shipped default `-s danger-full-access` is flagged so operators opt in knowingly (it is needed for `gh`/network during `--pr` review — see "Codex invocation" above) |
-   | `agy` / gemini | avoid `--dangerously-skip-permissions` / `--yolo`; use the default permission prompts or an explicit read-only mode |
+   | `claude` | `--disallowed-tools Edit,Write,NotebookEdit,Bash` |
+   | `codex` | `-s read-only` (the diff is fetched by the jury via `gh`, not by the agent, so it needs no write/network) |
+   | `agy` / gemini | `--sandbox` (with `--dangerously-skip-permissions` only to avoid a non-interactive prompt hang) |
 
    The audit is **advisory by default** (warnings surfaced in `run_jury`);
-   `--strict` promotes these warnings to a hard failure. The shipped default
-   config trips the codex/agy warnings on purpose, documenting that those agents
-   trade strict least-privilege for reliable non-interactive runs.
+   `--strict` promotes these warnings to a hard failure. The shipped defaults are
+   **secure** (issue #100) and raise **no** warnings; the audit only fires when an
+   agent is widened (e.g. codex `-s danger-full-access`, or a bare
+   `--dangerously-skip-permissions` without `--sandbox`).
 
 5. **Secret redaction.** `redaction.redact` masks common secret formats in the
    diff/context before they are sent to external agents, limiting exfiltration

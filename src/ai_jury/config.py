@@ -539,6 +539,11 @@ def config_hash(config: JuryConfig) -> str:
         "max_rounds": config.max_rounds,
         "early_stop": config.early_stop,
         "auto_depth": config.auto_depth,
+        # Orchestration-affecting toggles (issue #122): both change how a run is
+        # conducted, so the "same hash ⇒ same orchestration" promise must include
+        # them.
+        "anonymize_debate": config.anonymize_debate,
+        "prefer_non_reviewer_chair": config.prefer_non_reviewer_chair,
         "ci": {
             "fail_on": list(config.ci.fail_on),
             "ignore_unverified": config.ci.ignore_unverified,

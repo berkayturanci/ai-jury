@@ -41,8 +41,30 @@ def default_cache_dir() -> Path:
     return Path(base) / "ai-jury"
 
 
+def _policy_fingerprint(policy) -> str:
+    """Stable fingerprint of a review policy for the cache key (issue #122).
+
+    Returns "none" for no/empty policy. The policy is maintainer-authored review
+    guidance injected into the prompts, so it changes the outcome and must be
+    part of the key.
+    """
+    if policy is None or (hasattr(policy, "is_empty") and policy.is_empty()):
+        return "none"
+    from dataclasses import asdict, is_dataclass
+
+    data = asdict(policy) if is_dataclass(policy) else policy
+    return hashlib.sha256(
+        json.dumps(data, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest()
+
+
 def cache_key(
-    config: JuryConfig, diff: str, *, seed: int | None = None, mock: bool = False
+    config: JuryConfig,
+    diff: str,
+    *,
+    seed: int | None = None,
+    mock: bool = False,
+    policy=None,
 ) -> str:
     """Stable cache key for a run.
 
@@ -50,7 +72,9 @@ def cache_key(
     the key (it changes randomized orchestration), unlike in ``config_hash``
     which describes configuration independent of seed. ``mock`` is included so a
     ``--mock`` run (deterministic canned findings) can NEVER be served as a real
-    review for the same diff+config, and vice versa.
+    review for the same diff+config, and vice versa. ``policy`` (the repository
+    review policy) is fingerprinted in too, since it is injected into the prompts
+    and changes the result (issue #122).
     """
     payload = {
         "cache_schema": CACHE_SCHEMA,
@@ -63,6 +87,7 @@ def cache_key(
         "verify": config.verify,
         "seed": seed if seed is not None else config.seed,
         "mock": bool(mock),
+        "policy": _policy_fingerprint(policy),
     }
     blob = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
