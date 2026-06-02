@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Result cache key now includes the `--mock` flag, so a mock run can never be
+  served as a real review (or vice versa) for the same diff+config.
+- `total_timeout` now bounds a whole **chunked** review instead of resetting per
+  chunk: `review_diff` threads one shared budget through every chunk's
+  `run_council` (which gained an optional `budget` parameter).
+- The structured-findings report no longer crashes (`TypeError`) when two
+  same-severity findings include one with no `file`/`line`; the sort key is
+  None-safe.
+- Self-hosted CI (`local-ci.yml`) no longer runs untrusted **forked-PR** code on
+  the self-hosted runner — both jobs are guarded to same-repo pushes/PRs,
+  closing an arbitrary-code-execution exposure on the runner host.
 - Large-diff binary detection (#31) no longer misclassifies a *source* file as
   binary just because its content mentions `Binary files` / `GIT binary patch`;
   it now matches only the diff's unprefixed binary-marker header line.

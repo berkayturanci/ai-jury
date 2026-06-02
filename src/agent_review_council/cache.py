@@ -41,12 +41,16 @@ def default_cache_dir() -> Path:
     return Path(base) / "agent-review-council"
 
 
-def cache_key(config: CouncilConfig, diff: str, *, seed: int | None = None) -> str:
+def cache_key(
+    config: CouncilConfig, diff: str, *, seed: int | None = None, mock: bool = False
+) -> str:
     """Stable cache key for a run.
 
     A pure function of the inputs that determine the outcome. The seed is part of
     the key (it changes randomized orchestration), unlike in ``config_hash``
-    which describes configuration independent of seed.
+    which describes configuration independent of seed. ``mock`` is included so a
+    ``--mock`` run (deterministic canned findings) can NEVER be served as a real
+    review for the same diff+config, and vice versa.
     """
     payload = {
         "cache_schema": CACHE_SCHEMA,
@@ -58,6 +62,7 @@ def cache_key(config: CouncilConfig, diff: str, *, seed: int | None = None) -> s
         "redact_secrets": config.context.redact_secrets,
         "verify": config.verify,
         "seed": seed if seed is not None else config.seed,
+        "mock": bool(mock),
     }
     blob = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()

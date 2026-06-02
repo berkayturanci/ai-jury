@@ -53,6 +53,16 @@ class CacheKeyTest(unittest.TestCase):
         cfg2.seed = 99
         self.assertNotEqual(cache_key(_config(), SAMPLE_DIFF), cache_key(cfg2, SAMPLE_DIFF))
 
+    def test_mock_flag_changes_key(self):
+        # A --mock run must never share a cache entry with a real run (review
+        # finding): mock serves canned findings and would otherwise masquerade
+        # as a real review for the same diff+config.
+        cfg = _config()
+        self.assertNotEqual(
+            cache_key(cfg, SAMPLE_DIFF, mock=True),
+            cache_key(cfg, SAMPLE_DIFF, mock=False),
+        )
+
 
 class RoundTripTest(unittest.TestCase):
     def test_outcome_survives_serialization(self):

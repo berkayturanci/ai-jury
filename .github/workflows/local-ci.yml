@@ -25,6 +25,12 @@ permissions:
 jobs:
   test:
     name: Tests & smoke (self-hosted macOS)
+    # SECURITY: never run untrusted forked-PR code on the self-hosted runner —
+    # that would be arbitrary code execution on the runner host. Only run for
+    # pushes and PRs from branches in THIS repository.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, macos, arm64]
     env:
       PYTHONPATH: src
@@ -45,6 +51,11 @@ jobs:
     # The authoritative coverage gate, moved here from the hosted ci.yml so the
     # minimum-coverage bar is actually enforced per push/PR. Threshold
     # (fail_under) lives in pyproject.toml under [tool.coverage.report].
+    # SECURITY: same fork guard as the test job — no untrusted fork code on the
+    # self-hosted runner.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, macos, arm64]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2 (updated 2026-05-31)

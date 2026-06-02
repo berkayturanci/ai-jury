@@ -296,6 +296,7 @@ def run_council(
     seed: int | None = None,
     policy: ReviewPolicy | None = None,
     log=lambda _msg: None,
+    budget: RunBudget | None = None,
 ) -> CouncilOutcome:
     # Repository review policy (optional, #8): maintainer-authored, TRUSTED
     # content rendered into each REVIEW prompt in a clearly separated section.
@@ -320,8 +321,11 @@ def run_council(
     # Run budget (issue #30): a single wall-clock budget threaded through every
     # phase. Defaults (both None) leave behaviour identical to no budget, with
     # each agent bounded only by its own per-agent timeout. ``retries`` is the
-    # number of extra attempts for transient (retryable) failures.
-    budget = RunBudget(config.total_timeout, config.phase_timeout)
+    # number of extra attempts for transient (retryable) failures. A caller may
+    # pass a SHARED budget so ``total_timeout`` spans a whole chunked review
+    # rather than resetting per chunk (issue #31 / review finding).
+    if budget is None:
+        budget = RunBudget(config.total_timeout, config.phase_timeout)
     retries = config.retries
 
     # Context policy: diff-only sends only the diff; expanded includes context.
@@ -907,10 +911,15 @@ def review_diff(
             "(check [council.diff] include/exclude patterns)"
         )
 
+    # One shared budget across all chunks so ``total_timeout`` bounds the WHOLE
+    # review, not each chunk independently (review finding). ``phase_timeout`` and
+    # per-agent timeouts still apply per call via the same budget.
+    shared_budget = RunBudget(config.total_timeout, config.phase_timeout)
+
     def _run(chunk: str) -> CouncilOutcome:
         return run_council(
             config, chunk, context=context, mock=mock, strict=strict,
-            seed=seed, policy=policy, log=log,
+            seed=seed, policy=policy, log=log, budget=shared_budget,
         )
 
     if plan.mode == largediff.MODE_FULL:
