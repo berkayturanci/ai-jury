@@ -75,6 +75,15 @@ class AuditAgentTest(unittest.TestCase):
         )
         self.assertEqual(privilege.audit_agent(spec), [])
 
+    def test_agy_skip_permissions_with_sandbox_has_no_warning(self):
+        # Issue #100: --sandbox neutralizes --dangerously-skip-permissions, so the
+        # shipped agy default is not flagged.
+        spec = AgentSpec(
+            name="agy", vendor="google", command="agy",
+            extra_args=["--dangerously-skip-permissions", "--sandbox"],
+        )
+        self.assertEqual(privilege.audit_agent(spec), [])
+
 
 class AuditPrivilegeTest(unittest.TestCase):
     def test_dangerous_config_produces_warnings(self):
@@ -108,6 +117,14 @@ class AuditPrivilegeTest(unittest.TestCase):
 
     def test_empty_specs_has_no_warnings(self):
         self.assertEqual(privilege.audit_privilege([]), [])
+
+    def test_shipped_default_config_has_no_warnings(self):
+        # Issue #100: the out-of-the-box defaults must be secure (read-only codex,
+        # sandboxed agy, locked-down claude) — no least-privilege warnings.
+        from agent_review_council.config import DEFAULT_CONFIG, _from_dict
+
+        cfg = _from_dict(DEFAULT_CONFIG)
+        self.assertEqual(privilege.audit_privilege(cfg.enabled_agents), [])
 
 
 if __name__ == "__main__":

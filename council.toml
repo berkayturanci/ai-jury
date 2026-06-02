@@ -96,19 +96,21 @@ vendor = "openai"
 command = "codex"
 # model = "gpt-5-codex"
 # `codex exec` receives the prompt on stdin (no positional prompt, so it never
-# hangs waiting for input non-interactively). `-s danger-full-access` is the
-# default because Codex's standard sandbox can block the outbound network /
-# `gh` access used during PR review; this tool only orchestrates read-only
-# reviews, so it stays safe. Want stricter sandboxing? Override extra_args
-# (e.g. drop the flag, or set a narrower `-s` mode for your environment).
-extra_args = ["-s", "danger-full-access"]
+# hangs waiting for input non-interactively). The diff is fetched by the council
+# (`gh`), not by codex, so the reviewer only needs to READ its prompt and print a
+# review — `-s read-only` is the secure default (#100). Widen it only if your
+# workflow truly needs it: `-s workspace-write` or `-s danger-full-access`.
+extra_args = ["-s", "read-only"]
 
 [[agent]]
 name = "agy"
 vendor = "google"
 command = "agy"
 # Antigravity CLI; alias on interactive shells, real binary on PATH.
-extra_args = ["--dangerously-skip-permissions"]
+# `--dangerously-skip-permissions` avoids a non-interactive permission prompt
+# hanging the run; `--sandbox` keeps the agent's tools restricted while it reads
+# untrusted PR content (#100). Drop `--sandbox` only if you fully trust the diff.
+extra_args = ["--dangerously-skip-permissions", "--sandbox"]
 
 # Local / open-weight reviewer (#43): a free, offline panelist over any
 # OpenAI-compatible server (Ollama, llama.cpp, vLLM, LM Studio). It talks plain

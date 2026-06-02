@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Secure-by-default agent sandboxing (#100): the shipped reviewer defaults no
+  longer grant broad powers while reading untrusted PR content. `codex` now runs
+  `-s read-only` (was `danger-full-access`) — the diff is fetched by the council,
+  not the agent, so the reviewer needs no write/network; `agy` now runs
+  `--sandbox`; `claude` keeps its write-tool denylist. The least-privilege audit
+  recognizes a sandbox as a mitigation, and the shipped defaults raise no
+  warnings. Widen a sandbox only if your workflow needs it.
+
 ### Fixed
 
 - Secret redaction now preserves the surrounding quotes of a redacted

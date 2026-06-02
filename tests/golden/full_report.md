@@ -60,11 +60,6 @@ REQUEST CHANGES — one confirmed major issue.
 - [minor] src/example.py:7 — codex: missing docstring (medium, by codex)
 - [minor] src/example.py:7 — agy: missing docstring (medium, by agy)
 
-> ⚠️ agent output warnings
-
-- agent 'codex' is configured with `danger-full-access`, granting write/tool/network powers while reviewing untrusted content; prefer a read-only sandbox (e.g. codex `-s read-only`).
-- agent 'agy' is configured with `--dangerously-skip-permissions`, granting write/tool/network powers while reviewing untrusted content; prefer a read-only sandbox (e.g. codex `-s read-only`).
-
 ## Round 1 — independent reviews
 
 ### `claude` (anthropic) — 0s
