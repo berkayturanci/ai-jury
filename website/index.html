@@ -56,8 +56,12 @@
 <body>
   <header class="hero">
     <nav>
-      <span class="brand">🏛️ ai-jury <a id="site-version" class="ver" href="https://github.com/berkayturanci/ai-jury/releases/latest">v1.0.0</a></span>
-      <a class="nav-link" href="https://github.com/berkayturanci/ai-jury">GitHub</a>
+      <span class="brand"><img class="brand-mark" src="favicon.svg" alt="" width="24" height="24" /> ai-jury <a id="site-version" class="ver" href="https://github.com/berkayturanci/ai-jury/releases/latest">v1.0.0</a></span>
+      <span class="nav-links">
+        <a class="nav-link" href="#demo">Demo</a>
+        <a class="nav-link" href="#config">Config</a>
+        <a class="nav-link" href="https://github.com/berkayturanci/ai-jury">GitHub</a>
+      </span>
     </nav>
 
     <div class="hero-inner">
@@ -194,6 +198,52 @@ jury --mock --diff-file examples/sample.diff   # offline demo, no live CLIs</cod
         (<code>claude</code>, <code>codex</code>, <code>agy</code>) or a free, offline
         local model via Ollama; missing/unreachable ones are skipped. <code>gh</code>
         is needed for <code>--pr</code>.
+      </p>
+    </section>
+
+    <section id="config">
+      <h2>Configuration</h2>
+      <p class="muted">
+        A run is driven by a <code>jury.toml</code> (or built-in defaults). Don't hand-write
+        it the first time — <strong>scaffold</strong> one, <strong>inspect</strong> what will
+        run, then go. Every field is in the
+        <a href="https://github.com/berkayturanci/ai-jury/blob/main/docs/configuration.md">configuration reference</a>.
+      </p>
+
+      <div class="config-grid">
+        <div>
+          <h3>Set up &amp; inspect</h3>
+          <pre><code>jury init                  # interactive scaffold
+jury init --preset balanced # or: offline | fast | thorough
+jury init --list-agents     # which CLIs are available
+jury init --list-models     # local (Ollama) models
+jury config show            # the effective resolved config
+jury --doctor               # readiness + next steps</code></pre>
+        </div>
+        <div>
+          <h3>A <code>jury.toml</code></h3>
+          <pre class="toml"><code>[jury]
+rounds = 2          # 1 = review only, 2 = + debate
+chair  = "claude"   # who synthesizes the verdict
+verify = true       # drop false positives
+# auto_depth = true # scale depth to the diff (--auto)
+
+[[agent]]
+name = "claude"
+vendor = "anthropic"
+command = "claude"
+
+[[agent]]              # free, offline reviewer
+name = "qwen"
+vendor = "local"
+model = "qwen2.5-coder:7b"
+endpoint = "http://localhost:11434/v1"</code></pre>
+        </div>
+      </div>
+      <p class="muted">
+        CLI flags override the file per run (e.g. <code>--rounds</code>, <code>--verify</code>,
+        <code>--auto</code>, <code>--chair</code>). Validate with
+        <code>jury --config-validate</code>; <code>--strict-config</code> turns warnings into errors.
       </p>
     </section>
 
@@ -337,7 +387,7 @@ jury --mock --diff-file examples/sample.diff   # offline demo, no live CLIs</cod
       $("toml-out").textContent = lines.join("\n").trim() + "\n";
     }
 
-    ctrls.addEventListener("change", render);
+    ctrls.addEventListener("change", function () { render(); syncRun(); });
     render();
 
     // ---- Scripted "Run review" demo -------------------------------------
@@ -484,33 +534,60 @@ jury --mock --diff-file examples/sample.diff   # offline demo, no live CLIs</cod
       $("gh-comments").innerHTML = html;
     }
 
+    function consoleLine(line) {
+      var span = document.createElement("span");
+      span.className = "cl " + (line[1] || "");
+      span.textContent = line[0] + "\n";
+      return span;
+    }
+
+    var runTimer = null;
     function runDemo() {
-      var ags = selectedAgents();
-      var btn = $("run-btn");
-      if (ags.length === 0) { $("flow-note").textContent = "Pick at least one reviewer to run."; return; }
+      if (selectedAgents().length === 0) { $("flow-note").textContent = "Pick at least one reviewer to run."; return; }
       var run = buildRun();
+      var btn = $("run-btn");
       $("run-out").hidden = false;
       $("console-body").innerHTML = "";
       $("gh-comments").innerHTML = "";
-      btn.disabled = true;
+      if (runTimer) { clearTimeout(runTimer); runTimer = null; }
 
       var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (reduce) {
+        run.con.forEach(function (l) { $("console-body").appendChild(consoleLine(l)); });
+        renderComments(run);
+        return;
+      }
+      btn.disabled = true;
       var i = 0;
-      function step() {
+      (function step() {
         if (i < run.con.length) {
-          var line = run.con[i++];
-          var span = document.createElement("span");
-          span.className = "cl " + (line[1] || "");
-          span.textContent = line[0] + "\n";
-          $("console-body").appendChild(span);
+          $("console-body").appendChild(consoleLine(run.con[i++]));
           $("console-body").scrollTop = $("console-body").scrollHeight;
-          if (reduce) { step(); } else { setTimeout(step, 230); }
+          runTimer = setTimeout(step, 230);
         } else {
+          runTimer = null;
           renderComments(run);
           btn.disabled = false;
         }
+      })();
+    }
+
+    // Once a run is on screen, keep it in sync with the controls — re-paint it
+    // instantly (no replay) on any change so the output always matches the panel
+    // and depth selected above. A pending animation is cancelled first.
+    function syncRun() {
+      if ($("run-out").hidden) return;
+      if (runTimer) { clearTimeout(runTimer); runTimer = null; }
+      $("run-btn").disabled = false;
+      if (selectedAgents().length === 0) {
+        $("console-body").innerHTML = "";
+        $("gh-comments").innerHTML = '<p class="muted">Pick at least one reviewer.</p>';
+        return;
       }
-      step();
+      var run = buildRun();
+      $("console-body").innerHTML = "";
+      run.con.forEach(function (l) { $("console-body").appendChild(consoleLine(l)); });
+      renderComments(run);
     }
 
     $("run-btn").addEventListener("click", runDemo);

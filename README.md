@@ -1,4 +1,4 @@
-# 🏛️ ai-jury
+# <img src="website/favicon.svg" alt="" height="30" align="top"> ai-jury
 
 > Convene a **cross-vendor multi-agent review jury**: native coding-agent CLIs from
 > different vendors review the *same* pull request, cross-examine each other, and a
