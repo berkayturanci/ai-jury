@@ -14,12 +14,19 @@
 <body>
   <header class="hero">
     <nav>
-      <span class="brand">🏛️ ai-jury</span>
+      <span class="brand">🏛️ ai-jury <a id="site-version" class="ver" href="https://github.com/berkayturanci/ai-jury/releases/latest">v1.0.0</a></span>
       <a class="nav-link" href="https://github.com/berkayturanci/ai-jury">GitHub</a>
     </nav>
 
     <div class="hero-inner">
       <h1>Install once. Run a cross-vendor review jury anywhere.</h1>
+      <p class="badges">
+        <a href="https://pypi.org/project/ai-jury/"><img src="https://img.shields.io/pypi/v/ai-jury.svg?label=PyPI&logo=pypi&logoColor=white&color=3775A9" alt="PyPI version" /></a>
+        <a href="https://github.com/berkayturanci/ai-jury/releases/latest"><img src="https://img.shields.io/github/v/release/berkayturanci/ai-jury?label=release&logo=github" alt="Latest release" /></a>
+        <a href="https://github.com/berkayturanci/ai-jury/actions/workflows/ci.yml"><img src="https://github.com/berkayturanci/ai-jury/actions/workflows/ci.yml/badge.svg" alt="CI status" /></a>
+        <a href="https://pypi.org/project/ai-jury/"><img src="https://img.shields.io/pypi/pyversions/ai-jury?logo=python&logoColor=white" alt="Supported Python versions" /></a>
+        <a href="https://github.com/berkayturanci/ai-jury/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT" /></a>
+      </p>
       <p class="lede">
         A small, <strong>stdlib-only</strong> Python CLI that drives each vendor's
         <strong>native coding-agent CLI</strong> — Claude Code, OpenAI Codex, Google
@@ -55,7 +62,9 @@
       <h2>Build your jury</h2>
       <p class="muted">
         Pick a panel and depth — the flow and the generated <code>jury.toml</code> update
-        live. (Illustrative; nothing runs in your browser.)
+        live. Then hit <strong>Run review</strong> to watch a scripted run play out on a
+        sample diff: the staged console output and the GitHub-style verdict change with
+        your choices. (Illustrative; nothing runs in your browser.)
       </p>
 
       <div class="demo-grid">
@@ -106,6 +115,22 @@
           <p class="flow-note" id="flow-note"></p>
           <pre class="toml"><code id="toml-out"></code></pre>
         </div>
+      </div>
+
+      <div class="demo-run">
+        <button type="button" id="run-btn" class="btn primary">▶ Run review (demo)</button>
+        <span class="muted run-hint">Scripted on a sample diff — nothing executes in your browser. The output changes with the panel and depth above.</span>
+      </div>
+
+      <div class="run-out" id="run-out" hidden>
+        <div class="console-box">
+          <div class="console-header">
+            <span class="cdot red"></span><span class="cdot yellow"></span><span class="cdot green"></span>
+            <span class="console-title" id="console-title">jury --pr 123</span>
+          </div>
+          <pre class="console-body" id="console-body"></pre>
+        </div>
+        <div class="gh-comments" id="gh-comments" aria-live="polite"></div>
       </div>
     </section>
 
@@ -272,6 +297,193 @@ jury --mock --diff-file examples/sample.diff   # offline demo, no live CLIs</cod
 
     ctrls.addEventListener("change", render);
     render();
+
+    // ---- Scripted "Run review" demo -------------------------------------
+    // A deterministic, canned run over a fixed sample diff. Nothing executes;
+    // the staged console output and the GitHub-style comments simply react to
+    // the panel/depth chosen above, so the difference each option makes is
+    // visible as *output*, not just config.
+    var LABEL = { claude: "Claude Code", codex: "Codex", agy: "Antigravity", qwen: "Local" };
+    var SEV_RANK = { high: 3, medium: 2, low: 1 };
+
+    // Planted issues in the sample diff. `by` = which agents independently
+    // raise each; `refuted` marks the false positive that debate/verify kills.
+    var FINDINGS = [
+      { id: "sqli", sev: "high", file: "db.py:42",
+        title: "Query built with an f-string — SQL injection",
+        by: ["codex", "claude"], evidence: "user_id flows from the request into the SQL string unescaped" },
+      { id: "null", sev: "medium", file: "auth.py:88",
+        title: "token can be None before .expires_at",
+        by: ["claude", "qwen"], evidence: "the cache-miss early return leaves token unbound" },
+      { id: "nplus1", sev: "low", file: "db.py:51",
+        title: "N+1 query inside the per-user loop",
+        by: ["agy"], evidence: "a separate fetch per row instead of one batched query" },
+      { id: "race", sev: "medium", file: "auth.py:12",
+        title: "Possible race on the shared cache dict",
+        by: ["qwen"], evidence: "two requests could write the same key", refuted: true }
+    ];
+
+    function esc(s) {
+      return String(s).replace(/[&<>"]/g, function (c) {
+        return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+      });
+    }
+    function bySev(a, b) { return SEV_RANK[b.sev] - SEV_RANK[a.sev]; }
+
+    function buildRun() {
+      var ags = selectedAgents();
+      var auto = $("auto").checked;
+      var r = parseInt(rounds(), 10);
+      var verify = $("verify").checked;
+      var pm = postmode();
+      var progress = $("progress").checked;
+
+      var debate = auto ? true : (r === 2 && ags.length >= 2);
+      var verifyOn = auto ? true : verify;
+      var chair = ags[0];
+      var resolved = debate || verifyOn; // can the false positive be caught?
+
+      var surfaced = FINDINGS.filter(function (f) {
+        return f.by.some(function (a) { return ags.indexOf(a) !== -1; });
+      });
+      var dropped = surfaced.filter(function (f) { return f.refuted && resolved; });
+      var finalF = surfaced.filter(function (f) { return !(f.refuted && resolved); });
+      var verdict = finalF.some(function (f) { return f.sev === "high"; })
+        ? "REQUEST CHANGES" : (finalF.length ? "COMMENT" : "APPROVE");
+
+      // --- console lines (text, optional css class) ---
+      var con = [];
+      con.push(["$ jury --pr 123" + (auto ? " --auto" : "") +
+        (pm === "phased" ? " --post --post-mode phased" : " --post") +
+        (progress ? " --post-progress" : ""), "cmd"]);
+      con.push(["→ diff: auth.py, db.py  (+58 −12) · security-sensitive path", "dim"]);
+      if (auto) con.push(["[auto-depth] risk=high → rounds=2, verify=on", "warn"]);
+      con.push(["round 1: " + ags.length + " agent" + (ags.length > 1 ? "s" : "") + " reviewing", "head"]);
+      ags.forEach(function (a) {
+        var n = surfaced.filter(function (f) { return f.by.indexOf(a) !== -1; }).length;
+        con.push(["  • " + LABEL[a] + " → " + n + " finding" + (n === 1 ? "" : "s"), ""]);
+      });
+      if (debate) {
+        con.push(["round 2: cross-examination", "head"]);
+        if (dropped.length) {
+          con.push(["  • DISPUTE " + dropped[0].file + " — refuted by the panel (false positive)", "bad"]);
+        }
+        con.push(["  • AGREE on the remaining findings", ""]);
+      } else if (r === 1) {
+        con.push(["round 2: skipped (1 round) — a false positive may survive", "dim"]);
+      }
+      if (verifyOn) {
+        con.push(["verify: chair '" + LABEL[chair] + "' judging " + surfaced.length + " candidate findings", "head"]);
+        finalF.slice().sort(bySev).forEach(function (f) {
+          con.push(["  ✓ " + f.file + " confirmed (" + f.sev + ")", "ok"]);
+        });
+        dropped.forEach(function (f) { con.push(["  ✗ " + f.file + " dropped (unsupported)", "bad"]); });
+      }
+      con.push(["synthesis: chair '" + LABEL[chair] + "' → " + verdict, "head"]);
+      con.push(["done in 1m12s", "dim"]);
+
+      return { ags: ags, debate: debate, verifyOn: verifyOn, pm: pm, progress: progress,
+        chair: chair, surfaced: surfaced, dropped: dropped, finalF: finalF,
+        verdict: verdict, con: con, r: r, auto: auto };
+    }
+
+    function verdictClass(v) {
+      return v === "REQUEST CHANGES" ? "v-bad" : (v === "COMMENT" ? "v-warn" : "v-ok");
+    }
+    function findingRow(f) {
+      return '<li class="gh-finding"><span class="sev sev-' + f.sev + '">' + f.sev +
+        '</span> <code>' + esc(f.file) + '</code> — ' + esc(f.title) +
+        '<span class="why">why: ' + esc(f.evidence) + "</span></li>";
+    }
+    function commentCard(title, who, inner) {
+      return '<div class="gh-comment"><div class="gh-head"><span class="gh-bot">🏛️ ' +
+        esc(who) + '</span><span class="gh-meta">' + esc(title) + "</span></div>" +
+        '<div class="gh-body">' + inner + "</div></div>";
+    }
+
+    function renderComments(run) {
+      var html = "";
+      if (run.progress) {
+        html += '<div class="gh-comment sticky"><div class="gh-head"><span class="gh-bot">🏛️ AI Jury</span>' +
+          '<span class="gh-meta">live status · edited</span></div><div class="gh-body">' +
+          "✅ synthesis complete — round 1 → " + (run.debate ? "debate → " : "") +
+          (run.verifyOn ? "verify → " : "") + "verdict</div></div>";
+      }
+      var panel = run.ags.map(function (a) { return LABEL[a]; }).join(", ");
+      if (run.pm === "phased") {
+        var r1 = "<ul class='gh-list'>" + run.ags.map(function (a) {
+          var fs = run.surfaced.filter(function (f) { return f.by.indexOf(a) !== -1; });
+          return "<li><b>" + esc(LABEL[a]) + "</b>: " + (fs.length
+            ? fs.map(function (f) { return esc(f.file); }).join(", ") : "no findings") + "</li>";
+        }).join("") + "</ul>";
+        html += commentCard("Round 1 · independent review", "AI Jury", r1);
+
+        var dbody = run.debate
+          ? (run.dropped.length
+              ? "Refuted <code>" + esc(run.dropped[0].file) + "</code> as a false positive; agreed on the rest."
+              : "Reviewers cross-examined and agreed on the findings.")
+          : "Skipped (1 round). With debate, the panel cross-examines and filters false positives.";
+        html += commentCard("Round 2 · debate", "AI Jury", dbody);
+
+        var dec = '<div class="gh-verdict ' + verdictClass(run.verdict) + '">' + esc(run.verdict) + "</div>" +
+          (run.finalF.length ? "<ul class='gh-findings'>" +
+            run.finalF.slice().sort(bySev).map(findingRow).join("") + "</ul>"
+            : "<p>No blocking findings.</p>");
+        html += commentCard("Decision · " + panel, "AI Jury", dec);
+      } else {
+        var body = '<div class="gh-verdict ' + verdictClass(run.verdict) + '">' + esc(run.verdict) + "</div>" +
+          (run.finalF.length ? "<ul class='gh-findings'>" +
+            run.finalF.slice().sort(bySev).map(findingRow).join("") + "</ul>"
+            : "<p>No blocking findings — looks good.</p>") +
+          '<div class="gh-foot">panel: ' + esc(panel) + " · rounds: " + (run.auto ? "auto" : run.r) +
+          (run.verifyOn ? " · verified" : "") + "</div>";
+        html += commentCard(run.ags.length + "-reviewer jury", "AI Jury", body);
+      }
+      $("gh-comments").innerHTML = html;
+    }
+
+    function runDemo() {
+      var ags = selectedAgents();
+      var btn = $("run-btn");
+      if (ags.length === 0) { $("flow-note").textContent = "Pick at least one reviewer to run."; return; }
+      var run = buildRun();
+      $("run-out").hidden = false;
+      $("console-body").innerHTML = "";
+      $("gh-comments").innerHTML = "";
+      btn.disabled = true;
+
+      var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      var i = 0;
+      function step() {
+        if (i < run.con.length) {
+          var line = run.con[i++];
+          var span = document.createElement("span");
+          span.className = "cl " + (line[1] || "");
+          span.textContent = line[0] + "\n";
+          $("console-body").appendChild(span);
+          $("console-body").scrollTop = $("console-body").scrollHeight;
+          if (reduce) { step(); } else { setTimeout(step, 230); }
+        } else {
+          renderComments(run);
+          btn.disabled = false;
+        }
+      }
+      step();
+    }
+
+    $("run-btn").addEventListener("click", runDemo);
+
+    // Keep the version pill in sync with the latest published release; the
+    // server-rendered number is the fallback if the API is unreachable.
+    (function () {
+      var el = $("site-version");
+      if (!el || !window.fetch) return;
+      fetch("https://api.github.com/repos/berkayturanci/ai-jury/releases/latest",
+        { headers: { Accept: "application/vnd.github+json" } })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (d) { if (d && d.tag_name) el.textContent = d.tag_name; })
+        .catch(function () { /* keep the rendered version */ });
+    })();
   })();
   </script>
 </body>
