@@ -149,6 +149,40 @@ class ChunkedPipelineTest(unittest.TestCase):
         self.assertIn("chunk", outcome.reviews[0].output)
         self.assertIn("part(s)", outcome.stop_reason)
 
+    def test_total_timeout_budget_shared_across_chunks(self):
+        # Regression: total_timeout must bound the WHOLE chunked review, not reset
+        # per chunk. Verify review_diff passes the SAME budget object to every
+        # chunk's run_council call.
+        import agent_review_council.orchestrator as orch
+
+        cfg = _from_dict(
+            {
+                "council": {
+                    "rounds": 1, "verify": False, "total_timeout": 300,
+                    "diff": {"max_bytes": 10, "chunk": True, "chunk_max_bytes": 200},
+                },
+                "agent": [{"name": "claude", "vendor": "anthropic", "command": "claude"}],
+            }
+        )
+        diff = _file_segment("src/a.py", 20) + _file_segment("src/b.py", 20)
+        seen_budgets = []
+        real = orch.run_council
+
+        def capture(config, chunk, **kw):
+            seen_budgets.append(kw.get("budget"))
+            return real(config, chunk, **kw)
+
+        orch.run_council = capture
+        try:
+            outcome, plan = orch.review_diff(cfg, diff, mock=True)
+        finally:
+            orch.run_council = real
+        self.assertGreaterEqual(len(plan.chunks), 2)
+        self.assertEqual(len(seen_budgets), len(plan.chunks))
+        self.assertIsNotNone(seen_budgets[0])
+        # All chunks share one budget object -> total_timeout spans the run.
+        self.assertTrue(all(b is seen_budgets[0] for b in seen_budgets))
+
     def test_too_large_raises(self):
         cfg = _from_dict(
             {

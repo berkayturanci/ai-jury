@@ -211,8 +211,11 @@ def render(
     lines.append("---\n")
     lines.append("## Structured findings\n")
     if findings:
+        # ``f.file``/``f.line`` may be None (a finding need not be located), so
+        # coerce in the sort key — comparing None against str/int raises TypeError.
         ranked = sorted(
-            findings, key=lambda f: (SEVERITY_ORDER.get(f.severity, 99), f.file, f.line or 0)
+            findings,
+            key=lambda f: (SEVERITY_ORDER.get(f.severity, 99), f.file or "", f.line or 0),
         )
         for f in ranked:
             lines.append(_finding_line(f))
