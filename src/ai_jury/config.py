@@ -80,6 +80,8 @@ KNOWN_JURY_KEYS = (
     # Adaptive rounds (issue #40).
     "max_rounds",
     "early_stop",
+    # Risk-aware auto-depth (issue #120).
+    "auto_depth",
     # Large-diff handling (issue #31).
     "diff",
 )
@@ -380,6 +382,11 @@ class JuryConfig:
     # benchmarking stays reproducible. ``max_rounds`` defaults to ``rounds``.
     max_rounds: int | None = None
     early_stop: bool = False
+    # Risk-aware auto-depth (issue #120): when True, the CLI sets rounds/verify/
+    # early_stop from a cheap pre-review diff profile (size/paths/security), so a
+    # trivial diff runs shallow and a risky one runs full. Off by default; the
+    # panel is never trimmed; explicit --rounds/--verify/--early-stop override it.
+    auto_depth: bool = False
 
     @property
     def effective_max_rounds(self) -> int:
@@ -500,6 +507,7 @@ def _from_dict(data: dict) -> JuryConfig:
         retries=max(0, int(jury.get("retries", 0) or 0)),
         max_rounds=_opt_positive_int(jury.get("max_rounds")),
         early_stop=bool(jury.get("early_stop", False)),
+        auto_depth=bool(jury.get("auto_depth", False)),
     )
 
 
@@ -530,6 +538,7 @@ def config_hash(config: JuryConfig) -> str:
         "retries": config.retries,
         "max_rounds": config.max_rounds,
         "early_stop": config.early_stop,
+        "auto_depth": config.auto_depth,
         "ci": {
             "fail_on": list(config.ci.fail_on),
             "ignore_unverified": config.ci.ignore_unverified,

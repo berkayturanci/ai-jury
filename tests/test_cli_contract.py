@@ -59,6 +59,8 @@ DOCUMENTED_FLAGS = [
     "--max-rounds",
     "--early-stop",
     "--no-early-stop",
+    "--auto",
+    "--no-auto",
     "--total-timeout",
     "--phase-timeout",
     "--retries",
