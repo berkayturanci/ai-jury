@@ -16,18 +16,22 @@ review effort: 4/5 · risk: high · security-sensitive: no · needs human attent
 ### Consensus (all reviewers)
 
 - [major] src/example.py:42 — agy: unchecked return value may swallow an error (reviewers: agy, claude, codex)
+  - _evidence:_ the added code ignores the return value of int(x)
   - _verification:_ verified — the added code ignores the return value of int(x)
   - _fix:_ check the result and raise on failure
 
 ### Rejected (unsupported by verifier)
 
 - [minor] src/example.py:7 — agy: missing docstring (reviewers: agy)
+  - _evidence:_ the new function parse() has no docstring
   - _verification:_ unsupported — a missing docstring is not a defect the diff introduces
   - _fix:_ add a one-line docstring
 - [minor] src/example.py:7 — claude: missing docstring (reviewers: claude)
+  - _evidence:_ the new function parse() has no docstring
   - _verification:_ unsupported — a missing docstring is not a defect the diff introduces
   - _fix:_ add a one-line docstring
 - [minor] src/example.py:7 — codex: missing docstring (reviewers: codex)
+  - _evidence:_ the new function parse() has no docstring
   - _verification:_ unsupported — a missing docstring is not a defect the diff introduces
   - _fix:_ add a one-line docstring
 
