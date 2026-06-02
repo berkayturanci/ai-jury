@@ -130,6 +130,54 @@ def _detect_warnings(cfg) -> list[str]:
     return warnings
 
 
+def _recommendations(config_path, config_summary, agents) -> dict:
+    """Build actionable next-steps from the diagnostics (issue: doctor UX).
+
+    Returns ``{"ready": bool, "steps": [str, ...]}``. ``ready`` is true when at
+    least one agent is reachable. Steps point the user at the cheapest fix:
+    scaffold a config, install a CLI, or use a reachable local model.
+    """
+    steps: list[str] = []
+    available = [a for a in agents if a.get("available")]
+    ready = bool(available)
+
+    # No config file in play -> suggest scaffolding one.
+    if config_path is None and not Path("council.toml").exists():
+        steps.append("No council.toml found — run `council init` to create one.")
+
+    if not ready:
+        from .adapters import list_local_models
+
+        models = list_local_models()
+        if models:
+            steps.append(
+                f"No agent CLI is available, but a local model server is reachable "
+                f"({len(models)} model(s): {', '.join(models[:3])}). Add a free local "
+                f"reviewer: `council init --preset offline` (or `--list-models`)."
+            )
+        else:
+            steps.append(
+                "No reviewer is available. Install an agent CLI (claude / codex / agy), "
+                "or run a local model (e.g. `ollama serve` + `ollama pull "
+                "qwen2.5-coder:7b`) and add a `vendor = \"local\"` agent — or use "
+                "`--mock` for an offline demo."
+            )
+    else:
+        missing = [
+            a["name"] for a in agents
+            if not a.get("available")
+            and config_summary
+            and a["name"] in config_summary.get("enabled_agents", [])
+        ]
+        if missing:
+            steps.append(
+                f"Enabled but unavailable (will be skipped): {', '.join(missing)}. "
+                f"Install them or run with `--strict` to fail instead."
+            )
+
+    return {"ready": ready, "steps": steps}
+
+
 def build_diagnostics(config_path=None):
     """Build a SAFE diagnostics dict for the given config path.
 
@@ -176,6 +224,7 @@ def build_diagnostics(config_path=None):
         "agents": agents,
         "config": config_summary,
         "config_warnings": config_warnings,
+        "recommendations": _recommendations(config_path, config_summary, agents),
     }
 
 
@@ -242,6 +291,14 @@ def render_report(diagnostics) -> str:
     else:
         for warning in warnings:
             lines.append(f"  - {warning}")
+    lines.append("")
+
+    rec = diagnostics.get("recommendations") or {}
+    lines.append("Next steps")
+    lines.append("-" * 40)
+    lines.append(f"  ready to run: {'yes' if rec.get('ready') else 'no'}")
+    for step in rec.get("steps", []):
+        lines.append(f"  - {step}")
     lines.append("")
 
     lines.append(

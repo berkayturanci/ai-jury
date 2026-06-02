@@ -211,5 +211,40 @@ class LocalModelDiscoveryTest(unittest.TestCase):
             self.assertEqual(list_local_models("http://localhost:11434/v1"), [])
 
 
+class ConfigShowTest(unittest.TestCase):
+    def _run(self, argv):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = cli.main(argv)
+        return code, out.getvalue(), err.getvalue()
+
+    def test_config_show_renders_effective_config(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "council.toml"
+            cli.main(["init", "--agents", "claude,qwen", "--rounds", "1", "-o", str(path)])
+            code, out, _ = self._run(["config", "show", "--config", str(path)])
+            self.assertEqual(code, 0)
+            self.assertIn(f"source: {path}", out)
+            self.assertIn("[council] rounds=1", out)
+            self.assertIn("claude (anthropic)", out)
+            self.assertIn("qwen (local)", out)
+
+    def test_config_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "council.toml"
+            cli.main(["init", "--agents", "claude", "-o", str(path)])
+            code, out, _ = self._run(["config", "path", "--config", str(path)])
+            self.assertEqual(code, 0)
+            self.assertEqual(out.strip(), str(path))
+
+    def test_config_show_invalid_exits_2(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "bad.toml"
+            path.write_text("[council]\nrounds = 0\n[[agent]]\nname='x'\nvendor='anthropic'\ncommand='c'\n", encoding="utf-8")
+            code, _, err = self._run(["config", "show", "--config", str(path)])
+            self.assertEqual(code, 2)
+            self.assertIn("error", err)
+
+
 if __name__ == "__main__":
     unittest.main()
