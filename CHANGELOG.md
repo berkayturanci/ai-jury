@@ -18,6 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   minutes make it unnecessary. The website (GitHub Pages) and PyPI publishing
   (OIDC trusted publishing on `v*` tags) are now live.
 
+### Fixed
+
+- Printing the report no longer crashes with `UnicodeEncodeError` on a Windows
+  console (legacy cp1252 code page): the CLI now reconfigures stdout/stderr to
+  UTF-8 at startup so the report's `🏛️`/`⇄` characters encode cleanly. Surfaced
+  by the now-active hosted Windows CI job.
+
 ### Security
 
 - Secure-by-default agent sandboxing (#100): the shipped reviewer defaults no
