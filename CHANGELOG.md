@@ -45,6 +45,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `council init` scaffolds a `council.toml` (#107): detects which agent CLIs are
+  available and writes a valid config from interactive prompts or flags
+  (`--agents claude,codex,qwen --rounds 2`), using the secure-by-default agent
+  templates. `--list-agents` shows availability; existing files are not
+  overwritten without `--force`.
 - Local / open-weight reviewer (#43): a new `vendor = "local"` agent talks to any
   OpenAI-compatible server (Ollama, llama.cpp, vLLM, LM Studio) over plain HTTP
   via the stdlib — no new dependencies, no subprocess. Configure with an
