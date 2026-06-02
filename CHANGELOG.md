@@ -110,6 +110,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- README and hero visual updated to cover current capabilities (#112): the hero now
+  shows the **fourth, local / open-weight** panelist (alongside Claude/Codex/Antigravity)
+  and the broader pipeline; the README leads with free/offline reviews, `council init`,
+  and secure-by-default sandboxing, and the Status section reflects shipped features.
 - Run metadata schema bumped to v2: adds `stop_reason`, `skipped`, `retried`,
   `budget_exhausted`, `from_cache`, an `execution` block, and per-agent
   `attempts`.
