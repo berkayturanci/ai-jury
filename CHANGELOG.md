@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-06-03
+
+First public release. `ai-jury` orchestrates native coding-agent CLIs (Claude
+Code, Codex, Antigravity) plus an optional local/open-weight model to review,
+debate, verify, and synthesize one verdict on a diff or PR — stdlib-only, secure
+by default, project-agnostic.
+
 ### Changed
 
 - **CI runs entirely on GitHub-hosted runners now that the repo is public.** The
