@@ -32,6 +32,11 @@ jury init --list-models        # list local (Ollama) models you can pick
 jury init --agents claude,codex,qwen --rounds 2   # non-interactive / scriptable
 ```
 
+> **Cost-aware depth:** add `--auto` (or `[jury] auto_depth = true`) and the jury
+> scales to the diff — a docs-only or few-line change runs shallow (1 round, no
+> verify), a large or security-touching change runs full. The panel is never
+> trimmed; explicit `--rounds`/`--verify` override it.
+
 > **Zero-config offline:** even without a `jury.toml`, if no agent CLI is
 > installed but a local model server is reachable, `jury` adds a local agent
 > automatically — so `git diff main... | jury --diff-file -` just works offline.

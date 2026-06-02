@@ -95,6 +95,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="disable adaptive early-stop (honour a fixed number of rounds)",
     )
     p.add_argument(
+        "--auto", dest="auto", action="store_true", default=None,
+        help="risk-aware auto-depth: scale rounds/verify to the diff (issue #120)",
+    )
+    p.add_argument(
+        "--no-auto", dest="auto", action="store_false",
+        help="disable auto-depth (use configured/fixed rounds)",
+    )
+    p.add_argument(
         "--total-timeout", type=int,
         help="overall wall-clock budget (seconds) for the whole run (issue #30)",
     )
@@ -740,6 +748,22 @@ def main(argv: list[str] | None = None) -> int:
 
     if not diff.strip():
         raise SystemExit("error: empty diff — nothing to review")
+
+    # Risk-aware auto-depth (issue #120): scale rounds/verify to the diff when
+    # enabled. Explicit --rounds/--verify/--early-stop always win; the panel is
+    # never trimmed. Off unless --auto or [jury] auto_depth.
+    if (args.auto if args.auto is not None else config.auto_depth):
+        from .diffprofile import depth_for, describe, profile_diff
+
+        prof = profile_diff(diff)
+        rounds, verify, early_stop = depth_for(prof.risk)
+        if args.rounds is None:
+            config.rounds = rounds
+            if args.early_stop is None:
+                config.early_stop = early_stop
+        if args.verify is None:
+            config.verify = verify
+        log(describe(prof))
 
     # Optional local result cache (issue #33): a hit skips the run entirely; a
     # miss runs the jury and stores the outcome. The key covers the diff,

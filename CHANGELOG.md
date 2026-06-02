@@ -45,6 +45,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Risk-aware auto-depth (#120): `--auto` / `[jury] auto_depth` scales review
+  intensity to a cheap pre-review diff profile (size / files / docs-or-generated
+  / security-sensitive paths) — a trivial or docs-only diff runs shallow
+  (`rounds=1`, no verify) while a large or security-touching diff runs full.
+  The panel (vendor diversity) is never trimmed; explicit `--rounds`/`--verify`/
+  `--early-stop` override it; the chosen depth is logged.
 - `jury init --preset offline|fast|balanced|thorough` — one-command setup for
   common intents (offline = free local-only; fast = 1 round; balanced = debate +
   early-stop; thorough = all agents + debate + verify). Explicit flags override
