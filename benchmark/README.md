@@ -116,3 +116,26 @@ COUNCIL_BENCH_LIVE=1 PYTHONPATH=src python3 -m unittest discover -s tests -v
 - `run_offline()` returns a result for every fixture and is deterministic.
 
 It never requires live agents.
+
+## Local / open-weight reviewer (issue #43)
+
+The [local adapter](../README.md#local--open-weight-reviewer-free-offline) lets a
+free, offline open-weight model sit on the panel. A directional spot-check (not a
+rigorous benchmark — one diff, one model, one run) using `qwen2.5-coder:7b` via
+Ollama on `examples/sample.diff`:
+
+- **Caught the real bug.** It independently flagged the `payments.py` retry logic
+  returning the last (possibly failed) response as a `major` finding with a
+  correct suggested fix, and emitted well-formed structured JSON that flowed
+  through consensus → synthesis like any CLI agent.
+- **Cost / latency.** ~40s on a laptop, **$0**. A frontier CLI is faster and a
+  stronger reviewer, but the local model adds a genuinely *different* perspective
+  at zero marginal cost.
+
+**Takeaway (honest):** a small local model is a weaker standalone reviewer; its
+value is *diversity* — the documented load-bearing lever for a council (Smit et
+al. 2024; Cohere PoLL 2024). The recommended setup is one local panelist
+alongside one or two cloud CLIs: more heterogeneity, lower spend. Quantifying the
+exact lift across the full fixture set is future work — run the live benchmark
+(`COUNCIL_BENCH_LIVE=1`) with a local agent configured to measure it on your
+hardware.

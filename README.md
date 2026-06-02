@@ -277,6 +277,38 @@ Override per run with `--rounds`, `--chair`, `--config`.
 
 The config is validated on every run. Check it without running a review with `council --config-validate` (exit `0` valid, `2` invalid); add `--strict-config` to turn warnings into errors. See [docs/configuration.md](docs/configuration.md) for the full schema — every field, allowed values, defaults, and which problems are hard errors vs. warnings.
 
+### Local / open-weight reviewer (free, offline)
+
+A panelist can run on a **local open-weight model** via any OpenAI-compatible
+server ([Ollama](https://ollama.com/), `llama.cpp` `llama-server`, vLLM, LM
+Studio). Use `vendor = "local"` with an `endpoint` and a `model` — it talks plain
+HTTP (stdlib only, no extra deps) and participates in every round and the
+consensus exactly like a CLI agent:
+
+```toml
+[[agent]]
+name = "qwen"
+vendor = "local"
+model = "qwen2.5-coder:7b"
+endpoint = "http://localhost:11434/v1"   # default; Ollama's OpenAI-compatible API
+```
+
+```bash
+# One-time: install Ollama and pull a coding model.
+ollama pull qwen2.5-coder:7b
+# Review with zero cloud cost, fully offline:
+council --diff-file changes.diff --config local-only.toml
+```
+
+**Trade-off (be honest):** a small local model is a *weaker* reviewer than a
+frontier CLI — its value is added **diversity** (the load-bearing advantage for a
+council) and **zero marginal cost**, not parity. The sweet spot is mixing one
+local panelist with one or two cloud CLIs: more vendor heterogeneity, lower spend.
+An unreachable server fails fast with a typed `connection_error` (the run
+continues with the other agents). See the
+[benchmark note](benchmark/README.md#local-open-weight-reviewer-issue-43) for the
+measured diversity contribution.
+
 ## Repository review policy (optional)
 
 A repository under review may ship an optional, separate **review policy** that

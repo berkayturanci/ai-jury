@@ -43,6 +43,9 @@ ERR_NONZERO_EXIT = "nonzero_exit"
 ERR_EMPTY_OUTPUT = "empty_output"
 ERR_SPAWN_FAILED = "spawn_failed"
 ERR_RATE_LIMITED = "rate_limited"
+# Local/HTTP adapter could not reach its server (issue #43): connection refused,
+# DNS failure, or the local model server is not running.
+ERR_CONNECTION = "connection_error"
 ERR_UNKNOWN = "unknown"
 
 ERROR_CODES = frozenset({
@@ -54,17 +57,20 @@ ERROR_CODES = frozenset({
     ERR_EMPTY_OUTPUT,
     ERR_SPAWN_FAILED,
     ERR_RATE_LIMITED,
+    ERR_CONNECTION,
     ERR_UNKNOWN,
 })
 
 # Failures that are worth retrying because they are typically transient (issue
-# #30): a timeout, a rate-limit, or a process that failed to spawn. Auth,
-# missing-CLI, permission-prompt, empty-output, and generic nonzero-exit are
-# treated as deterministic — retrying them just burns time and tokens.
+# #30): a timeout, a rate-limit, a process that failed to spawn, or a local
+# server that was briefly unreachable (#43). Auth, missing-CLI,
+# permission-prompt, empty-output, and generic nonzero-exit are treated as
+# deterministic — retrying them just burns time and tokens.
 RETRYABLE_ERROR_CODES = frozenset({
     ERR_TIMEOUT,
     ERR_RATE_LIMITED,
     ERR_SPAWN_FAILED,
+    ERR_CONNECTION,
 })
 
 
@@ -318,6 +324,163 @@ class AgyAdapter(Adapter):
         return argv + self.spec.extra_args
 
 
+_DEFAULT_LOCAL_ENDPOINT = "http://localhost:11434/v1"
+
+
+class LocalAdapter(Adapter):
+    """Open-weight / local-model reviewer over an OpenAI-compatible API (issue #43).
+
+    Targets the ``/v1/chat/completions`` endpoint exposed by common local servers
+    (Ollama, llama.cpp ``llama-server``, vLLM, LM Studio). It talks plain HTTP via
+    the stdlib (``urllib``) — no new dependencies and no subprocess — so one panel
+    seat can run free and fully offline, adding model diversity (the load-bearing
+    advantage) at zero marginal cost.
+
+    Configure as a normal ``[[agent]]`` with ``vendor = "local"``, an
+    ``endpoint`` (base URL, default ``http://localhost:11434/v1``), and a
+    ``model``. ``extra_args`` is unused. An unreachable server fails with the
+    typed ``connection_error`` code (issue #29) rather than a crash.
+    """
+
+    SUPPORTS_HEADLESS = True
+    SUPPORTS_MODEL_SELECTION = True
+
+    @property
+    def endpoint(self) -> str:
+        return (self.spec.endpoint or _DEFAULT_LOCAL_ENDPOINT).rstrip("/")
+
+    def completions_url(self) -> str:
+        """Resolve the chat-completions URL from the configured base endpoint.
+
+        Accepts either a base URL (``…/v1``) or a full completions URL; pure so it
+        can be unit-tested without network.
+        """
+        base = self.endpoint
+        if base.endswith("/chat/completions"):
+            return base
+        return f"{base}/chat/completions"
+
+    def build_payload(self, prompt: str) -> dict:
+        """Build the OpenAI-compatible chat-completions request body (pure)."""
+        return {
+            "model": self.spec.model or "",
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": False,
+            "temperature": 0,
+        }
+
+    @staticmethod
+    def parse_content(data: dict) -> str:
+        """Extract the assistant message text from a chat-completions response."""
+        choices = data.get("choices") or []
+        if not choices:
+            return ""
+        message = choices[0].get("message") or {}
+        return (message.get("content") or "").strip()
+
+    @staticmethod
+    def classify_http_status(status: int) -> str:
+        """Map an HTTP error status to a typed error code (issue #29)."""
+        if status in (401, 403):
+            return ERR_AUTH_REQUIRED
+        if status == 429:
+            return ERR_RATE_LIMITED
+        return ERR_NONZERO_EXIT
+
+    def available(self) -> bool:
+        """A local agent is 'available' when its server answers a quick probe.
+
+        Probes the OpenAI-compatible ``/v1/models`` (or the endpoint root) with a
+        short timeout. Network-only; never raises.
+        """
+        import urllib.error
+        import urllib.request
+
+        url = f"{self.endpoint}/models"
+        try:
+            with urllib.request.urlopen(url, timeout=_VERSION_PROBE_TIMEOUT) as resp:  # noqa: S310
+                return 200 <= resp.status < 500
+        except urllib.error.HTTPError as exc:
+            # A 4xx (e.g. 404 on /models) still means the server is up.
+            return exc.code < 500
+        except Exception:  # noqa: BLE001 - unreachable server -> not available
+            return False
+
+    def detect_capabilities(self) -> dict:
+        reachable = self.available()
+        return {
+            "version": None,
+            "supports_headless": self.SUPPORTS_HEADLESS,
+            "supports_model_selection": self.SUPPORTS_MODEL_SELECTION,
+            "raw_version_output": f"local endpoint {self.endpoint}",
+            "status": CAP_OK if reachable else CAP_UNAVAILABLE,
+            "warnings": (
+                [] if reachable else [f"local server unreachable at {self.endpoint}"]
+            ),
+        }
+
+    def run(self, prompt: str, phase: str = "review", timeout: int | None = None) -> AgentResult:
+        import json as _json
+        import urllib.error
+        import urllib.request
+
+        del phase
+        effective_timeout = self.spec.timeout
+        if timeout is not None:
+            effective_timeout = max(1, min(self.spec.timeout, int(timeout)))
+        body = _json.dumps(self.build_payload(prompt)).encode("utf-8")
+        req = urllib.request.Request(
+            self.completions_url(),
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        start = time.monotonic()
+        try:
+            with urllib.request.urlopen(req, timeout=effective_timeout) as resp:  # noqa: S310
+                raw = resp.read().decode("utf-8")
+            data = _json.loads(raw)
+        except urllib.error.HTTPError as exc:
+            detail = ""
+            try:
+                detail = exc.read().decode("utf-8")[:300]
+            except Exception:  # noqa: BLE001
+                detail = exc.reason or ""
+            return AgentResult(
+                self.name, self.spec.vendor, False, "",
+                time.monotonic() - start, f"HTTP {exc.code}: {detail}",
+                error_code=self.classify_http_status(exc.code),
+            )
+        except TimeoutError:
+            return AgentResult(
+                self.name, self.spec.vendor, False, "",
+                time.monotonic() - start, f"timed out after {effective_timeout}s",
+                error_code=ERR_TIMEOUT,
+            )
+        except urllib.error.URLError as exc:
+            return AgentResult(
+                self.name, self.spec.vendor, False, "",
+                time.monotonic() - start,
+                f"could not reach local server at {self.endpoint}: {exc.reason}",
+                error_code=ERR_CONNECTION,
+            )
+        except Exception as exc:  # noqa: BLE001 - surface any other failure
+            return AgentResult(
+                self.name, self.spec.vendor, False, "",
+                time.monotonic() - start, f"local request failed: {exc}",
+                error_code=ERR_UNKNOWN,
+            )
+        dur = time.monotonic() - start
+        content = self.parse_content(data)
+        if not content:
+            return AgentResult(
+                self.name, self.spec.vendor, False, "",
+                dur, "local model returned empty content",
+                error_code=ERR_EMPTY_OUTPUT,
+            )
+        return AgentResult(self.name, self.spec.vendor, True, content, dur)
+
+
 class MockAdapter(Adapter):
     """Offline adapter for tests and ``--mock`` runs.
 
@@ -406,6 +569,7 @@ _VENDOR_ADAPTERS: dict[str, type[Adapter]] = {
     "anthropic": ClaudeAdapter,
     "openai": CodexAdapter,
     "google": AgyAdapter,
+    "local": LocalAdapter,
 }
 
 

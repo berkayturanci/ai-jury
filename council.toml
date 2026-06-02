@@ -109,3 +109,14 @@ vendor = "google"
 command = "agy"
 # Antigravity CLI; alias on interactive shells, real binary on PATH.
 extra_args = ["--dangerously-skip-permissions"]
+
+# Local / open-weight reviewer (#43): a free, offline panelist over any
+# OpenAI-compatible server (Ollama, llama.cpp, vLLM, LM Studio). It talks plain
+# HTTP (stdlib only) — no `command`, just an `endpoint` + `model`. Its value is
+# vendor diversity at zero marginal cost, not parity with frontier models.
+# Uncomment after `ollama pull qwen2.5-coder:7b`:
+# [[agent]]
+# name = "qwen"
+# vendor = "local"
+# model = "qwen2.5-coder:7b"
+# endpoint = "http://localhost:11434/v1"   # default; Ollama's OpenAI-compatible API

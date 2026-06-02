@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Local / open-weight reviewer (#43): a new `vendor = "local"` agent talks to any
+  OpenAI-compatible server (Ollama, llama.cpp, vLLM, LM Studio) over plain HTTP
+  via the stdlib — no new dependencies, no subprocess. Configure with an
+  `endpoint` (default `http://localhost:11434/v1`) and a `model`; it participates
+  in every round and the consensus like a CLI agent, adding vendor diversity at
+  zero marginal cost and enabling fully offline reviews. An unreachable server
+  fails with the typed `connection_error` code. README + benchmark note document
+  one concrete setup (Ollama) and the cost/quality trade-off.
+
 - Release provenance, checksums, and SBOM (#25): the publish workflow now emits a
   `SHA256SUMS` checksum file, a CycloneDX SBOM (`sbom.cdx.json`), and a signed
   build-provenance attestation, and publishes to PyPI via trusted publishing
