@@ -57,6 +57,9 @@ be served from / stored in an optional **cache** (`--cache`). Full detail:
 
 - `jury init [--agents a,b,c] [--rounds N] [-o jury.toml] [--force]` — scaffold a
   config; detects installed agents + local models. `--list-agents`, `--list-models`.
+  `--preset offline|fast|balanced|thorough` for one-command setup.
+- `jury config show` — print the effective resolved config and its source;
+  `jury config path` — print the resolved config path.
 - `jury cache clear` (alias `--clear-cache`) — delete the local result cache.
 - `jury comment --text "/jury review …" --pr N` — parse an allowlisted PR-comment
   command (`review`/`summary`, `--rounds` only) and dispatch a safe run (`--print-args`
@@ -77,12 +80,15 @@ Input (choose one): `--pr <num/url>` (+ optional `--repo owner/name`), `--diff-f
 - `--total-timeout <s>`, `--phase-timeout <s>`, `--retries <n>` — run budget + retries (#30).
 - `--max-diff-bytes <n>`, `--chunk` / `--no-chunk`, `--exclude <glob>`, `--include <glob>`
   — large-diff filtering/chunking (#31).
+- `--auto` — auto-depth: set rounds/verify from a pre-review diff profile (#120; config `auto_depth`).
 - `--incremental` — review only changes since the last jury run on `--pr` (#9).
 - `--suggest-patches`, `--patches-out <path>` — inspectable patches for verified findings (#10).
 - `--cache`, `--cache-dir <path>`, `--clear-cache` — optional result cache (#33).
 - `--context-mode diff-only|expanded`, `--redact` / `--no-redact` — what leaves your machine.
 - `--format markdown|json|sarif`, `-o/--output <path>`, `--metadata-json <path>`.
 - `--post-summary` (alias `--post`), `--post-inline`, `--dry-run`, `--label` — GitHub output.
+- `--post-progress` — live sticky PR status comment updated each round/chunk (#125; needs `--pr`).
+- `--post-mode single|phased` — `phased` posts Round 1 / debate / decision as separate comments (#126).
 - `--ci`, `--fail-on <sev,...>` — CI gating.
 - `--mock`, `--strict`, `--doctor`, `-q/--quiet`, `--version`.
 
@@ -96,6 +102,7 @@ timeout = 300       # per-agent wall-clock seconds (hung CLI killed at this boun
 parallel = true
 verify = true
 # early_stop = false ; max_rounds = 3            # adaptive rounds (#40)
+# auto_depth = false                              # risk-aware auto-depth (#120; CLI --auto)
 # total_timeout = 1200 ; phase_timeout = 600 ; retries = 0   # run budget (#30)
 
 [jury.ci]

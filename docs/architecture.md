@@ -52,6 +52,16 @@ with opt-in **retries** for transient failures, and can be served from / stored 
 optional **result cache** (`--cache`). Large diffs are measured, filtered (binary /
 generated / path globs), and **chunked** before review.
 
+**Auto-depth (`--auto` / `auto_depth`).** Before round 1 the diff is profiled
+(`diffprofile.py`) and the round count / verify flag are set from its risk level, so a
+trivial change runs shallow and a risky one runs the full panel without manual flags.
+
+**Live output.** Because a full run can take minutes, the orchestrator emits milestone
+events the CLI can surface on the PR: `--post-progress` maintains one **sticky** status
+comment updated each round/chunk, and `--post-mode phased` posts Round 1 / debate /
+decision as **separate** comments as each phase completes (vs the default single
+end-of-run comment).
+
 ## Adapters
 
 Each adapter knows only how to invoke one CLI headlessly; the orchestrator owns prompt

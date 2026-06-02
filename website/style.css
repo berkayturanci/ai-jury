@@ -147,3 +147,36 @@ footer {
   color: var(--faint);
 }
 footer a { color: var(--muted); }
+
+/* ── Interactive "Build your jury" demo ───────────────────────────── */
+.demo { border-top: 1px solid var(--border); }
+.demo-grid { display: grid; grid-template-columns: 280px 1fr; gap: 1.5rem; align-items: start; }
+@media (max-width: 760px) { .demo-grid { grid-template-columns: 1fr; } }
+
+.demo-controls fieldset {
+  border: 1px solid var(--border); border-radius: 12px;
+  padding: 0.75rem 1rem 1rem; margin: 0 0 1rem;
+}
+.demo-controls legend { color: var(--muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; padding: 0 0.4rem; }
+.demo-controls label { display: flex; align-items: center; gap: 0.5rem; padding: 0.28rem 0; font-size: 0.95rem; cursor: pointer; }
+.demo-controls input:disabled + .dot, .demo-controls input:disabled { opacity: 0.4; }
+.tag { font-size: 0.7rem; color: var(--green); border: 1px solid var(--green); border-radius: 999px; padding: 0 0.4rem; margin-left: auto; }
+
+.dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: none; }
+.d-claude { background: #d97757; } .d-codex { background: #10a37f; }
+.d-agy { background: #4285f4; } .d-qwen { background: #a855f7; }
+
+.demo-stage { min-width: 0; }
+.flow { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; padding: 1rem; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; }
+.flow .node {
+  background: var(--bg-soft); border: 1px solid var(--border); border-radius: 10px;
+  padding: 0.45rem 0.7rem; font-size: 0.9rem; display: flex; align-items: center; gap: 0.4rem;
+  transition: opacity 0.25s ease, transform 0.25s ease, border-color 0.25s ease;
+}
+.flow .arrow { color: var(--faint); transition: opacity 0.25s ease; }
+.flow .panel-col { display: flex; flex-direction: column; gap: 0.35rem; }
+.flow .node-chair { border-color: var(--accent); }
+.flow .node-out { border-color: var(--green); color: #d1fae5; }
+.flow .dim { opacity: 0.22; transform: scale(0.96); }
+.flow-note { color: var(--muted); font-size: 0.9rem; margin: 0.8rem 0 0.6rem; min-height: 1.2em; }
+pre.toml { margin: 0; max-height: 360px; overflow: auto; }

@@ -39,6 +39,20 @@ hard errors (exit `2`).
 | `retries`  | int    | `0`        | Extra attempts for *transient* failures (timeout / rate-limit / spawn). |
 | `max_rounds` | int  | = `rounds` | Round ceiling when `early_stop` is on (issue #40). |
 | `early_stop` | bool | `false`    | Adaptive rounds: skip debate when reviewers agree, else debate up to `max_rounds`. |
+| `auto_depth` | bool | `false`    | Risk-aware auto-depth: set rounds/verify from a pre-review diff profile (#120). Equivalent CLI: `--auto`. |
+
+### Setup, introspection & live output (CLI)
+
+Beyond `jury.toml`, several CLI surfaces help you set up and follow a run:
+
+- **`jury init`** scaffolds this file from detected agents/local models;
+  `--preset offline|fast|balanced|thorough` for one-command setup;
+  `--list-agents` / `--list-models` to inspect availability.
+- **`jury config show`** prints the *effective* resolved config (and its source);
+  **`jury --doctor`** adds a readiness verdict + next steps.
+- **`--auto`** scales depth to the diff; **`--post-progress`** keeps a live sticky
+  PR comment; **`--post-mode phased`** posts Round 1 / debate / decision as
+  separate comments.
 
 ### Execution controls (issue #30)
 

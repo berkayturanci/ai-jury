@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>ai-jury — cross-vendor multi-agent code review</title>
-  <meta name="description" content="Install once. Run a cross-vendor review jury anywhere. A stdlib-only Python CLI that orchestrates native coding-agent CLIs (Claude Code, Codex, Antigravity) to review the same diff, debate, and synthesize one verdict." />
+  <meta name="description" content="Install once. Run a cross-vendor review jury anywhere. A stdlib-only Python CLI that orchestrates native coding-agent CLIs (Claude Code, Codex, Antigravity) plus a free local model to review the same diff, debate, verify, and synthesize one verdict." />
   <meta property="og:title" content="ai-jury" />
   <meta property="og:description" content="Install once. Run a cross-vendor review jury anywhere." />
   <meta property="og:image" content="assets/hero.png" />
@@ -29,7 +29,7 @@
       </p>
       <div class="cta">
         <a class="btn primary" href="https://github.com/berkayturanci/ai-jury">View on GitHub</a>
-        <a class="btn" href="https://github.com/berkayturanci/ai-jury/releases">Releases</a>
+        <a class="btn" href="#demo">Try the interactive demo ↓</a>
       </div>
       <img class="hero-img" src="assets/hero.png" width="1200" height="520"
            alt="A diff or PR enters; four reviewers — Claude Code, Codex, Antigravity, and a free local/open-weight model — review it independently and debate each other's findings; a chair agent verifies and synthesizes one verdict (APPROVE / COMMENT / REQUEST CHANGES) plus a report and CI gate." />
@@ -43,10 +43,70 @@
         Different models miss different things. Running them as an adversarial panel —
         each seeing the others' findings and arguing — surfaces more real issues and
         filters more false positives than any single reviewer. The research-backed lever
-        is <strong>vendor heterogeneity</strong>, not more rounds. Each reviewer runs in
-        its own native CLI with its own tooling and context, rather than as a raw model
-        API call.
+        is <strong>vendor heterogeneity</strong>, not more rounds — and a free
+        local/open-weight model adds a <em>different</em> perspective at zero marginal
+        cost. Each reviewer runs in its own native CLI with its own tooling, not a raw
+        model API call.
       </p>
+    </section>
+
+    <!-- ───────────────────── Interactive demo ───────────────────── -->
+    <section id="demo" class="demo">
+      <h2>Build your jury</h2>
+      <p class="muted">
+        Pick a panel and depth — the flow and the generated <code>jury.toml</code> update
+        live. (Illustrative; nothing runs in your browser.)
+      </p>
+
+      <div class="demo-grid">
+        <form class="demo-controls" aria-label="jury configuration">
+          <fieldset>
+            <legend>Reviewers</legend>
+            <label><input type="checkbox" id="ag-claude" checked /> <span class="dot d-claude"></span> Claude Code</label>
+            <label><input type="checkbox" id="ag-codex" checked /> <span class="dot d-codex"></span> Codex</label>
+            <label><input type="checkbox" id="ag-agy" /> <span class="dot d-agy"></span> Antigravity</label>
+            <label><input type="checkbox" id="ag-qwen" checked /> <span class="dot d-qwen"></span> Local / open-weight <span class="tag">free</span></label>
+          </fieldset>
+
+          <fieldset>
+            <legend>Depth</legend>
+            <label><input type="radio" name="rounds" value="1" /> 1 round (review only)</label>
+            <label><input type="radio" name="rounds" value="2" checked /> 2 rounds (+ debate)</label>
+            <label><input type="checkbox" id="verify" checked /> Verification pass</label>
+            <label><input type="checkbox" id="auto" /> Auto-depth <span class="tag">scales to the diff</span></label>
+          </fieldset>
+
+          <fieldset>
+            <legend>PR output</legend>
+            <label><input type="radio" name="postmode" value="single" checked /> Single comment</label>
+            <label><input type="radio" name="postmode" value="phased" /> Phased (Round 1 / Debate / Decision)</label>
+            <label><input type="checkbox" id="progress" /> Live progress comment</label>
+          </fieldset>
+        </form>
+
+        <div class="demo-stage">
+          <div class="flow" aria-hidden="true">
+            <div class="node node-in">diff / PR</div>
+            <div class="arrow">→</div>
+            <div class="panel-col">
+              <div class="node rev" data-rev="claude"><span class="dot d-claude"></span>Claude</div>
+              <div class="node rev" data-rev="codex"><span class="dot d-codex"></span>Codex</div>
+              <div class="node rev" data-rev="agy"><span class="dot d-agy"></span>Antigravity</div>
+              <div class="node rev" data-rev="qwen"><span class="dot d-qwen"></span>Local</div>
+            </div>
+            <div class="arrow" id="arr-debate">⇄</div>
+            <div class="node node-debate" id="n-debate">debate</div>
+            <div class="arrow">→</div>
+            <div class="node node-verify" id="n-verify">verify</div>
+            <div class="arrow">→</div>
+            <div class="node node-chair">chair</div>
+            <div class="arrow">→</div>
+            <div class="node node-out" id="n-out">verdict</div>
+          </div>
+          <p class="flow-note" id="flow-note"></p>
+          <pre class="toml"><code id="toml-out"></code></pre>
+        </div>
+      </div>
     </section>
 
     <section>
@@ -54,8 +114,12 @@
       <pre><code>pipx install ai-jury
 
 jury init                                      # scaffold jury.toml (detects agents + local models)
+jury init --preset offline                     # free, local-only ($0); also: fast / balanced / thorough
+jury config show                               # see the effective config that will run
 jury --pr 123                                  # review a GitHub PR
-git diff origin/HEAD... | jury --diff-file -   # review the current branch
+jury --pr 123 --post --post-progress           # live: a sticky PR comment updated each round/chunk
+jury --pr 123 --post --post-mode phased        # post Round 1 / debate / decision as separate comments
+jury --pr 123 --auto                           # auto-depth: scale rounds/verify to the diff
 jury --ci --fail-on high,critical              # gate CI on blocking findings
 jury --mock --diff-file examples/sample.diff   # offline demo, no live CLIs</code></pre>
       <p class="muted">
@@ -70,10 +134,15 @@ jury --mock --diff-file examples/sample.diff   # offline demo, no live CLIs</cod
       <h2>How it works</h2>
       <ol>
         <li><strong>Round 1 — independent review.</strong> Every available agent reviews the diff concurrently with the same rubric.</li>
-        <li><strong>Round 2 — debate.</strong> Each agent sees the others' reviews and emits agree / dispute / missed.</li>
-        <li><strong>Verification.</strong> A tool-equipped agent re-reads the code per finding to drop false positives.</li>
+        <li><strong>Round 2 — debate (adaptive).</strong> Each agent sees the others' reviews and emits agree / dispute / missed; with <code>early_stop</code> a unanimous panel skips it.</li>
+        <li><strong>Verification.</strong> The chair re-judges each finding to drop false positives — and the report shows the <em>evidence</em> behind each one.</li>
         <li><strong>Synthesis.</strong> The chair consolidates into one verdict plus consensus, disputed, and single-reviewer findings.</li>
       </ol>
+      <p class="muted">
+        Large diffs are filtered + chunked; runs are bounded by an optional budget with
+        retries; results can be cached; and a review can be incremental (only what changed
+        since the last run).
+      </p>
     </section>
 
     <section class="grid">
@@ -82,12 +151,20 @@ jury --mock --diff-file examples/sample.diff   # offline demo, no live CLIs</cod
         <p>Add a local open-weight model (Ollama, llama.cpp, vLLM, LM Studio) as a panel seat — zero cloud cost, fully offline, or mixed with cloud CLIs for more diversity. <a href="https://github.com/berkayturanci/ai-jury/blob/main/README.md#local--open-weight-reviewer-free-offline">Local reviewer →</a></p>
       </div>
       <div>
-        <h3>Local-first &amp; private</h3>
-        <p><code>diff-only</code> context by default; secret redaction on; reviewers run sandboxed/read-only. No source outside the diff, no repo history, no env vars are sent. <a href="https://github.com/berkayturanci/ai-jury/blob/main/SECURITY.md">Security &amp; data-flow →</a></p>
+        <h3>Follow the run live</h3>
+        <p><code>--post-progress</code> keeps a sticky PR comment updated each round/chunk; <code>--post-mode phased</code> posts Round 1 / debate / decision as separate comments. <a href="https://github.com/berkayturanci/ai-jury/blob/main/docs/cookbook.md">Cookbook →</a></p>
       </div>
       <div>
-        <h3>Fits your workflow</h3>
-        <p><code>jury init</code> to set up, CI gating, incremental review, suggested patches, comment-triggered runs. <a href="https://github.com/berkayturanci/ai-jury/blob/main/docs/cookbook.md">Cookbook →</a></p>
+        <h3>Secure by default</h3>
+        <p>Reviewers read attacker-controlled diffs, so they run sandboxed/read-only (Codex <code>-s read-only</code>, Antigravity <code>--sandbox</code>, Claude tool denylist). <code>diff-only</code> context + secret redaction on. <a href="https://github.com/berkayturanci/ai-jury/blob/main/SECURITY.md">Security &amp; data-flow →</a></p>
+      </div>
+      <div>
+        <h3>Cost-aware</h3>
+        <p><code>--auto</code> scales rounds/verify to the diff (docs-only → shallow; security-touching → full); large diffs are chunked; results cached. <a href="https://github.com/berkayturanci/ai-jury/blob/main/docs/configuration.md">Configuration →</a></p>
+      </div>
+      <div>
+        <h3>CI citizen</h3>
+        <p><code>--ci --fail-on</code> gates merges; <code>--format json|sarif</code> for code scanning; inline + summary PR comments; opt-in classification labels.</p>
       </div>
       <div>
         <h3>Drop-in skill</h3>
@@ -108,5 +185,94 @@ jury --mock --diff-file examples/sample.diff   # offline demo, no live CLIs</cod
       MIT License
     </p>
   </footer>
+
+  <script>
+  // Interactive demo: build a config from the controls and reflect it live in the
+  // flow diagram + a generated jury.toml. Pure client-side; nothing runs.
+  (function () {
+    var AGENTS = {
+      claude: { vendor: "anthropic", command: "claude",
+        extra: ['"--output-format"', '"text"', '"--disallowed-tools"', '"Edit,Write,NotebookEdit,Bash"', '"--dangerously-skip-permissions"'] },
+      codex:  { vendor: "openai", command: "codex", extra: ['"-s"', '"read-only"'] },
+      agy:    { vendor: "google", command: "agy", extra: ['"--dangerously-skip-permissions"', '"--sandbox"'] },
+      qwen:   { vendor: "local", model: "qwen2.5-coder:7b", endpoint: "http://localhost:11434/v1" }
+    };
+    var $ = function (id) { return document.getElementById(id); };
+    var q = function (sel) { return document.querySelector(sel); };
+    var ctrls = document.querySelector(".demo-controls");
+
+    function selectedAgents() {
+      return ["claude", "codex", "agy", "qwen"].filter(function (n) { return $("ag-" + n).checked; });
+    }
+    function rounds() { return q('input[name="rounds"]:checked').value; }
+    function postmode() { return q('input[name="postmode"]:checked').value; }
+
+    function setDim(el, dim) { if (el) el.classList.toggle("dim", dim); }
+
+    function render() {
+      var ags = selectedAgents();
+      var auto = $("auto").checked;
+      var r = parseInt(rounds(), 10);
+      var verify = $("verify").checked;
+      var pm = postmode();
+      var progress = $("progress").checked;
+
+      // Auto-depth owns rounds/verify: disable + visually note it.
+      $("verify").disabled = auto;
+      document.querySelectorAll('input[name="rounds"]').forEach(function (el) { el.disabled = auto; });
+
+      var debate = !auto && r === 2 && ags.length >= 2;
+      var verifyOn = auto ? true : verify; // auto uses full for risky diffs; show as "varies"
+
+      // Flow: dim unselected reviewers + toggle debate/verify nodes.
+      ["claude", "codex", "agy", "qwen"].forEach(function (n) {
+        setDim(q('.rev[data-rev="' + n + '"]'), ags.indexOf(n) === -1);
+      });
+      setDim($("n-debate"), auto ? false : !debate);
+      setDim($("arr-debate"), auto ? false : !debate);
+      setDim($("n-verify"), auto ? false : !verifyOn);
+      $("n-debate").textContent = auto ? "debate*" : "debate";
+      $("n-verify").textContent = auto ? "verify*" : "verify";
+      $("n-out").textContent = pm === "phased" ? "3 comments" : "verdict";
+
+      // Flow note.
+      var note;
+      if (ags.length === 0) {
+        note = "Pick at least one reviewer.";
+      } else if (auto) {
+        note = "Auto-depth decides rounds & verify per diff (* docs-only → shallow; security/large → full). Panel never trimmed.";
+      } else {
+        var bits = [ags.length + " reviewer" + (ags.length > 1 ? "s" : "")];
+        bits.push(r === 2 && ags.length >= 2 ? "debate" : "no debate");
+        bits.push(verify ? "verify on" : "verify off");
+        bits.push(pm === "phased" ? "phased PR comments" : "one PR comment");
+        if (progress) bits.push("live progress");
+        note = bits.join(" · ");
+      }
+      $("flow-note").textContent = note;
+
+      // Generate jury.toml.
+      var lines = ["[jury]", "rounds = " + r, 'chair = "' + (ags[0] || "claude") + '"',
+                   "verify = " + (verify ? "true" : "false")];
+      if (auto) lines.push("auto_depth = true");
+      lines.push("");
+      ags.forEach(function (n) {
+        var a = AGENTS[n];
+        lines.push("[[agent]]");
+        lines.push('name = "' + n + '"');
+        lines.push('vendor = "' + a.vendor + '"');
+        if (a.command) lines.push('command = "' + a.command + '"');
+        if (a.endpoint) lines.push('endpoint = "' + a.endpoint + '"');
+        if (a.model) lines.push('model = "' + a.model + '"');
+        if (a.extra) lines.push("extra_args = [" + a.extra.join(", ") + "]");
+        lines.push("");
+      });
+      $("toml-out").textContent = lines.join("\n").trim() + "\n";
+    }
+
+    ctrls.addEventListener("change", render);
+    render();
+  })();
+  </script>
 </body>
 </html>
