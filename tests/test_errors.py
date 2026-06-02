@@ -162,6 +162,29 @@ class RunClassificationTest(unittest.TestCase):
         self.assertTrue(res.ok)
         self.assertIsNone(res.error_code)
 
+    def test_nonzero_exit_with_stdout_is_failure(self):
+        # Issue #101: a nonzero exit must be a failure even when the CLI printed
+        # something — partial/error output must not count as a clean review.
+        def fake_run(*args, **kwargs):
+            return _Completed(1, stdout="partial review then crash", stderr="")
+
+        with _patched(fake_run):
+            res = _FakeAdapter(_spec()).run("prompt")
+        self.assertFalse(res.ok)
+        self.assertEqual(res.output, "")
+        self.assertIn(res.error_code, ERROR_CODES)
+        self.assertEqual(res.error_code, ERR_NONZERO_EXIT)
+
+    def test_nonzero_exit_with_stdout_classifies_from_stderr(self):
+        # stderr still drives classification when present, even with stdout.
+        def fake_run(*args, **kwargs):
+            return _Completed(1, stdout="some output", stderr="rate limit exceeded")
+
+        with _patched(fake_run):
+            res = _FakeAdapter(_spec()).run("prompt")
+        self.assertFalse(res.ok)
+        self.assertEqual(res.error_code, ERR_RATE_LIMITED)
+
 
 class _MissingAdapter(_FakeAdapter):
     def available(self) -> bool:

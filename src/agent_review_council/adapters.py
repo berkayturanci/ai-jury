@@ -276,12 +276,19 @@ class Adapter:
             )
         dur = time.monotonic() - start
         out = (proc.stdout or "").strip()
-        if proc.returncode != 0 and not out:
+        # A nonzero exit is ALWAYS a failure, even with stdout (issue #101): a
+        # crashing CLI can still print partial or error output, and counting that
+        # as a clean review would silently feed it into consensus, synthesis, and
+        # the CI gate. We classify from stderr (falling back to any stdout) and
+        # keep a short snippet in the error for debugging — but ok=False, so the
+        # orchestrator excludes it.
+        if proc.returncode != 0:
             stderr = (proc.stderr or "").strip()
+            detail = stderr or out
             return AgentResult(
                 self.name, self.spec.vendor, False, "",
-                dur, f"exit {proc.returncode}: {stderr[:500]}",
-                error_code=classify_stderr(proc.returncode, stderr),
+                dur, f"exit {proc.returncode}: {detail[:500]}",
+                error_code=classify_stderr(proc.returncode, stderr or out),
             )
         if not out:
             # Exit 0 but nothing on stdout: the agent produced no usable review.
