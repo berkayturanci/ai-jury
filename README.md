@@ -10,37 +10,50 @@
 [![GitHub release](https://img.shields.io/github/v/release/berkayturanci/agent-review-council)](https://github.com/berkayturanci/agent-review-council/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-![A diff or PR enters; three native vendor agents — Claude Code, Codex, and Antigravity — review it independently and debate each other's findings; a chair agent verifies and synthesizes one verdict (APPROVE / COMMENT / REQUEST CHANGES) plus a markdown report.](docs/assets/hero.png)
+![A diff or PR enters; four reviewers — Claude Code, Codex, Antigravity, and a free local/open-weight model — review it independently and debate each other's findings; a chair agent verifies and synthesizes one verdict (APPROVE / COMMENT / REQUEST CHANGES) plus a report and CI gate.](docs/assets/hero.png)
 
 > **Install once. Run a cross-vendor review council anywhere.**
 
 Most "multi-model review" tools call models at the **API level**. This one drives each
 vendor's **native CLI agent** — `claude` (Claude Code), `codex` (OpenAI Codex CLI), and
-`agy` (Google Antigravity) — so every reviewer runs in its own native environment with
-its own tooling. Each agent runs headless; the orchestrator owns the round structure.
+`agy` (Google Antigravity) — plus an optional **free, offline local / open-weight model**
+(via Ollama or any OpenAI-compatible server), so every reviewer runs in its own native
+environment with its own tooling. Each agent runs headless; the orchestrator owns the
+round structure.
 
 ```
-        ┌──────── round 1 ────────┐   ┌──── round 2 ────┐   ┌── synthesis ──┐
-diff ──▶ claude  codex  agy  (review) ▶ each rebuts the   ▶ chair agent ▶ verdict
-         (parallel, independent)         others' findings    consolidates    + report
+        ┌──────── round 1 ────────┐   ┌─ round 2 (adaptive) ─┐   ┌─ verify + synthesis ─┐
+diff ──▶ claude codex agy qwen (review) ▶ each rebuts the      ▶ chair verifies, then   ▶ verdict
+         (parallel, independent)           others' findings       consolidates             + report
 ```
+
+Highlights: **free/offline** local reviews · **secure by default** (reviewers run
+sandboxed/read-only) · `council init` setup · debate + verification · CI gating ·
+incremental review · suggested patches · large-diff chunking. Configure once in
+`council.toml`; mix cloud CLIs and a local model however you like.
 
 ## Why
 
 Different models miss different things. Running them as an adversarial panel — each
 seeing the others' findings and arguing — surfaces more real issues and filters more
 false positives than any single reviewer. The research-backed lever is **vendor
-heterogeneity**, not more rounds. See [`docs/architecture.md`](docs/architecture.md)
-and [`docs/feasibility.md`](docs/feasibility.md).
+heterogeneity**, not more rounds — and a free local/open-weight model adds a *different*
+perspective at **zero marginal cost**, so a council needn't mean paying three vendors.
+See [`docs/architecture.md`](docs/architecture.md) and
+[`docs/feasibility.md`](docs/feasibility.md).
 
 ## Install
 
 ```bash
-pipx install agent-review-council         # or: pip install -e .
+pipx install agent-review-council         # once published; until then:
+pipx install git+https://github.com/berkayturanci/agent-review-council.git
+# dev: pip install -e ".[dev]"
 ```
 
-Requires Python 3.11+. Install at least one agent CLI (`claude`, `codex`, `agy`);
-missing ones are skipped automatically. `gh` is needed for `--pr` / `--post`.
+Requires Python 3.11+. Then scaffold a config with **`council init`** (it detects your
+installed agents and local models). You need at least one reviewer: an agent CLI
+(`claude`, `codex`, `agy`) **or** a free local model via Ollama; missing/unreachable ones
+are skipped. `gh` is needed for `--pr` / `--post`.
 
 For development, install the dev extras (linting, build, and coverage tooling):
 
@@ -145,14 +158,16 @@ expected/recorded schema, and the match/scoring rules.
 ## Usage
 
 ```bash
+council init                              # scaffold council.toml (detects agents + local models)
 council --pr 123                          # review a GitHub PR
 council --pr 123 --post                   # ...and post the verdict as a comment
+council --pr 123 --incremental            # review only changes since the last run
+council --pr 123 --suggest-patches        # also emit inspectable patches for verified findings
 git diff origin/HEAD... | council --diff-file -   # review the current branch
 council --diff-file examples/sample.diff  # review a diff file
 council --rounds 1                        # independent review only (no debate)
 council --mock --diff-file examples/sample.diff   # offline demo, no live CLIs
 council --doctor                          # local readiness check (versions, agents, config)
-council --doctor --write diagnostics.json # ...and write a safe JSON report
 ```
 
 A sample report is in [`docs/example-run.md`](docs/example-run.md). For a **real**
@@ -470,11 +485,15 @@ it differs from hosted, API-level, and other native-CLI tools, and
 
 ## Status
 
-MVP (v0.1). Cross-vendor round 1 (review) + round 2 (debate) run end-to-end with the real
-CLIs; the offline `--mock` path is covered by tests. Roadmap (from the research): a
-verify/audit pass that re-reads code to kill false positives, JSON structurizer +
-tiered consensus (consensus / majority / individual), anonymized rebuttal to curb
-position bias, and severity-gated CI exit codes. See [`docs/architecture.md`](docs/architecture.md).
+Active (v0.x). The full pipeline runs end-to-end with the real CLIs and the offline
+`--mock` path is covered by tests. **Shipped:** structured findings + tiered consensus
+(consensus / majority / single-reviewer), a verification pass that drops false positives,
+anonymized rebuttal, adaptive early-stop, severity-gated CI exit codes, secure-by-default
+sandboxing, run budget/retries, large-diff filtering + chunking, an optional result
+cache, incremental review, suggested patches, comment-command triggering, a **local /
+open-weight adapter** (free, offline), and **`council init`** config scaffolding. See
+[`docs/architecture.md`](docs/architecture.md) and the
+[milestones](https://github.com/berkayturanci/agent-review-council/milestones).
 
 The phased plan and how to pick up a session's worth of work is in [`ROADMAP.md`](ROADMAP.md);
 issues are tracked under [milestones](https://github.com/berkayturanci/agent-review-council/milestones).
