@@ -20,8 +20,12 @@ _PATTERNS: list[tuple[str, "re.Pattern"]] = [
     ("github_token", re.compile(r"gh[pousr]_[A-Za-z0-9]{20,}")),
     ("openai_key", re.compile(r"sk-[A-Za-z0-9]{20,}")),
     ("bearer_token", re.compile(r"Bearer\s+[A-Za-z0-9._\-]+")),
+    # Capture the surrounding quotes (groups 3 and 4) so they are PRESERVED in
+    # the replacement (issue #102): redacting only the value keeps a quoted
+    # assignment a valid string literal instead of producing a broken,
+    # unterminated string that misleads reviewers into phantom syntax findings.
     ("secret_assignment", re.compile(
-        r"(api[_-]?key|secret|token)(\s*[=:]\s*)[\"']?[A-Za-z0-9_\-+/=]{16,}[\"']?",
+        r"(api[_-]?key|secret|token)(\s*[=:]\s*)([\"']?)[A-Za-z0-9_\-+/=]{16,}([\"']?)",
         re.IGNORECASE,
     )),
 ]
@@ -41,8 +45,12 @@ def redact(text: str) -> tuple[str, int]:
             def _sub_assign(m, _kind=kind):
                 nonlocal count
                 count += 1
-                # Preserve the key and separator, redact the value.
-                return f"{m.group(1)}{m.group(2)}[REDACTED:{_kind}]"
+                # Preserve the key, separator, AND surrounding quotes; redact
+                # only the value so a quoted assignment stays syntactically valid.
+                return (
+                    f"{m.group(1)}{m.group(2)}{m.group(3)}"
+                    f"[REDACTED:{_kind}]{m.group(4)}"
+                )
             result = pattern.sub(_sub_assign, result)
         else:
             def _sub(m, _kind=kind):
