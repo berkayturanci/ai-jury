@@ -42,6 +42,24 @@ def agent_templates() -> dict[str, dict]:
 
 KNOWN_AGENTS: tuple[str, ...] = ("claude", "codex", "agy", "qwen")
 
+# Substrings that hint a local model is code-oriented (preferred for reviews).
+_CODER_HINTS: tuple[str, ...] = ("coder", "code", "deepseek", "qwen")
+
+
+def pick_default_model(models: list[str]) -> str | None:
+    """Choose a sensible default from discovered local models (issue #109).
+
+    Prefers a code-oriented model (name contains 'coder'/'code'/etc.), else the
+    first listed; returns None for an empty list.
+    """
+    if not models:
+        return None
+    for m in models:
+        low = m.lower()
+        if any(h in low for h in _CODER_HINTS):
+            return m
+    return models[0]
+
 
 def build_config(
     agents: list[str],

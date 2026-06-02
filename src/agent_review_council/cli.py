@@ -295,13 +295,17 @@ def _init_available() -> dict:
     return out
 
 
-def _init_interactive(available: dict, input_fn=input) -> dict:
+def _init_interactive(available: dict, input_fn=input, local_endpoint=None, models_fn=None) -> dict:
     """Prompt for council settings; returns kwargs for scaffold.build_config.
 
-    ``input_fn`` is injectable for testing. Defaults are pre-filled from the
-    detected agents so pressing Enter accepts a sensible config.
+    ``input_fn`` and ``models_fn`` are injectable for testing (the latter lists
+    local models). Defaults are pre-filled from the detected agents/models so
+    pressing Enter accepts a sensible config.
     """
     from .scaffold import KNOWN_AGENTS
+
+    if models_fn is None:
+        from .adapters import list_local_models as models_fn
 
     print("Configure a review council (council.toml).\n", file=sys.stderr)
     for name in KNOWN_AGENTS:
@@ -322,8 +326,30 @@ def _init_interactive(available: dict, input_fn=input) -> dict:
     verify = (input_fn("Run verification round? [Y/n]: ").strip().lower() or "y") != "n"
 
     local_model = None
-    if "qwen" in agents:
-        local_model = input_fn("Local model name [qwen2.5-coder:7b]: ").strip() or None
+    has_local = any(a in agents for a in ("qwen", "local"))
+    if has_local:
+        from .scaffold import pick_default_model
+
+        models = models_fn(local_endpoint or "http://localhost:11434/v1")
+        if models:
+            default = pick_default_model(models)
+            print("\nLocal models available on the server:", file=sys.stderr)
+            for i, m in enumerate(models, 1):
+                star = " (default)" if m == default else ""
+                print(f"  {i}. {m}{star}", file=sys.stderr)
+            raw = input_fn(f"Pick a local model [number or name, default: {default}]: ").strip()
+            if raw.isdigit() and 1 <= int(raw) <= len(models):
+                local_model = models[int(raw) - 1]
+            elif raw:
+                local_model = raw
+            else:
+                local_model = default
+        else:
+            print(
+                "\n(could not reach the local server to list models; using the default)",
+                file=sys.stderr,
+            )
+            local_model = input_fn("Local model name [qwen2.5-coder:7b]: ").strip() or None
 
     return {
         "agents": agents,
@@ -350,7 +376,22 @@ def _run_init(rest: list[str]) -> int:
     sub.add_argument("--force", action="store_true", help="overwrite an existing file")
     sub.add_argument("--interactive", action="store_true", help="force interactive prompts")
     sub.add_argument("--list-agents", action="store_true", help="list known agents + availability and exit")
+    sub.add_argument("--list-models", action="store_true", help="list local models on the server and exit")
     ns = sub.parse_args(rest)
+
+    from .adapters import list_local_models
+
+    endpoint = ns.local_endpoint or "http://localhost:11434/v1"
+
+    if ns.list_models:
+        models = list_local_models(endpoint)
+        if not models:
+            print(f"No local models found (is a server reachable at {endpoint}?).")
+            return 0
+        print(f"Local models at {endpoint}:")
+        for m in models:
+            print(f"  - {m}")
+        return 0
 
     available = _init_available()
 
@@ -358,6 +399,10 @@ def _run_init(rest: list[str]) -> int:
         for name in KNOWN_AGENTS:
             mark = "available" if available.get(name) else "not found"
             print(f"{name:8} {_AGENT_BLURB[name]:45} [{mark}]")
+        # Show discovered local models so the user sees what they can pick.
+        models = list_local_models(endpoint)
+        if models:
+            print(f"\nlocal models at {endpoint}: {', '.join(models)}")
         return 0
 
     if ns.agents:
@@ -370,7 +415,7 @@ def _run_init(rest: list[str]) -> int:
             "local_endpoint": ns.local_endpoint,
         }
     elif ns.interactive or sys.stdin.isatty():
-        kwargs = _init_interactive(available)
+        kwargs = _init_interactive(available, local_endpoint=ns.local_endpoint)
         kwargs["local_endpoint"] = ns.local_endpoint
         if ns.local_model:
             kwargs["local_model"] = ns.local_model
