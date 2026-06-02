@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Release provenance, checksums, and SBOM (#25): the publish workflow now emits a
+  `SHA256SUMS` checksum file, a CycloneDX SBOM (`sbom.cdx.json`), and a signed
+  build-provenance attestation, and publishes to PyPI via trusted publishing
+  (OIDC, no long-lived token). New `docs/releasing.md` documents how artifacts
+  are built and verified (`sha256sum -c`, `gh attestation verify`); the release
+  checklist references it.
+
 - Incremental review mode (#9): `--incremental` reviews only the diff since the
   last council run on a PR (the reviewed head SHA is recorded as a hidden marker
   on the summary comment), falling back to a full review when no prior marker
