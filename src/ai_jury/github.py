@@ -173,6 +173,12 @@ def _comment_body(finding) -> str:
     return f"{INLINE_MARKER}{sig}\n{text}"
 
 
+def _review_body(n: int) -> str:
+    """Top-level review body. GitHub's create-review API requires a non-empty
+    ``body`` when ``event`` is COMMENT (omitting it can 422) — issue #122."""
+    return f"{INLINE_MARKER}\n🏛️ AI Jury — {n} inline finding(s)."
+
+
 def build_inline_payload(findings) -> list[dict]:
     """Build the inline review-comment array for the GitHub reviews API.
 
@@ -261,7 +267,7 @@ def post_inline_comments(
     comments = build_inline_payload(findings)
 
     if dry_run:
-        payload = {"event": "COMMENT", "comments": comments}
+        payload = {"event": "COMMENT", "body": _review_body(len(comments)), "comments": comments}
         print(json.dumps(payload, indent=2))
         return payload
 
@@ -273,7 +279,7 @@ def post_inline_comments(
         if (c["path"], c["line"], _sig_from_body(c["body"])) not in existing
     ]
 
-    payload = {"event": "COMMENT", "comments": deduped}
+    payload = {"event": "COMMENT", "body": _review_body(len(deduped)), "comments": deduped}
     if not deduped:
         return payload
 

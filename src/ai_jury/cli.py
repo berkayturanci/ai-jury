@@ -775,7 +775,7 @@ def main(argv: list[str] | None = None) -> int:
         from .cache import Cache, cache_key
 
         cache = Cache(args.cache_dir)
-        cache_k = cache_key(config, diff, mock=args.mock)
+        cache_k = cache_key(config, diff, mock=args.mock, policy=policy)
         outcome = cache.load(cache_k)
         if outcome is not None:
             log(f"cache hit ({cache_k[:12]}…) — reusing stored outcome")

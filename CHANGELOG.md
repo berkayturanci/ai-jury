@@ -19,6 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The result cache key now includes the repository review policy (#122); a
+  `--policy` change no longer collides on the same key and serves a stale outcome.
+- `config_hash` now covers `anonymize_debate` and `prefer_non_reviewer_chair`
+  (#122), so the "same hash ⇒ same orchestration" guarantee (and the cache key)
+  holds.
+- Inline review posting sends a top-level `body` (#122); GitHub's create-review
+  API requires it for a COMMENT event, so `--post-inline` no longer risks a 422.
+- docs/security.md least-privilege table corrected to the secure-by-default
+  sandboxing (codex `-s read-only`, agy `--sandbox`) — it still described the old
+  `danger-full-access` default (#122).
 - Secret redaction now scrubs modern OpenAI keys `sk-proj-…` / `sk-svcacct-…` /
   `sk-admin-…` (#122); the old pattern stopped at the first hyphen and would have
   sent them to review agents (no real key actually leaked).

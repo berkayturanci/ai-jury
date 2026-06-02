@@ -46,6 +46,14 @@ class PostInlineDryRunTests(unittest.TestCase):
         self.assertEqual(printed["comments"][0]["path"], "a.py")
         self.assertEqual(printed["comments"][0]["side"], "RIGHT")
 
+    def test_review_payload_has_nonempty_body(self):
+        # Issue #122: GitHub's create-review API requires a top-level `body` when
+        # event is COMMENT, else it can 422.
+        findings = [Finding(severity="major", file="a.py", line=10, claim="c1")]
+        with redirect_stdout(io.StringIO()):
+            payload = post_inline_comments("1", findings, dry_run=True)
+        self.assertTrue(payload.get("body"))
+
 
 class FindingSignatureTests(unittest.TestCase):
     def test_signature_stable_across_calls(self):
