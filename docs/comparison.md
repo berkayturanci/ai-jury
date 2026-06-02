@@ -35,6 +35,8 @@ Legend: ✅ yes · ➖ partial / optional · ❌ no · — not applicable.
 | CI gating (non-zero on blocking) | ✅ (`--ci`, `--fail-on`) | ➖ | ❌ | ✅ |
 | Suggested fixes (inspectable, no auto-apply) | ➖ (`--suggest-patches`, verified findings only) | ➖ | ❌ | ✅ |
 | Incremental review (changed-since-last-run) | ✅ (`--incremental`) | ❌ | ❌ | ✅ |
+| Risk-aware auto-depth (scale rounds to the diff) | ✅ (`--auto` / `auto_depth`) | ❌ | ❌ | ➖ |
+| Live progress on the PR (sticky / phased comments) | ✅ (`--post-progress`, `--post-mode phased`) | ❌ | ❌ | ➖ |
 | Comment-triggered runs (`/jury …`) | ➖ (`jury comment` + workflow recipe) | ➖ | ❌ | ✅ |
 | Offline / local open-weight reviewer | ✅ (`vendor = "local"`, Ollama/etc., $0) | ➖ | ➖ | ❌ |
 | Guided config setup | ✅ (`jury init`) | ❌ | ❌ | n/a (hosted) |

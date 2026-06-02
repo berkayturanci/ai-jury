@@ -28,10 +28,14 @@ Key facts:
 
 ## Quickstart
 
-- `jury init` — scaffold a `jury.toml` (detects installed agents + local models).
+- `jury init` — scaffold a `jury.toml` (detects installed agents + local models);
+  `--preset offline|fast|balanced|thorough`; `--list-agents` / `--list-models`.
+- `jury config show` — print the effective resolved config; `jury --doctor` — readiness + next steps.
 - `jury --pr 123` — review a GitHub PR (needs `gh`).
 - `git diff origin/HEAD... | jury --diff-file -` — review the current branch.
-- `jury --diff-file examples/sample.diff` — review a diff file.
+- `jury --pr 123 --auto` — auto-depth: scale rounds/verify to the diff.
+- `jury --pr 123 --post --post-progress` — live sticky PR status comment per round/chunk.
+- `jury --pr 123 --post --post-mode phased` — post Round 1 / debate / decision as separate comments.
 - `jury --pr 123 --incremental` — review only changes since the last jury run.
 - `jury --pr 123 --suggest-patches` — also emit inspectable patches for verified findings.
 - `jury --mock --diff-file examples/sample.diff` — offline demo, no live CLIs.

@@ -142,6 +142,39 @@ concern (see recipe 5).
 
 ---
 
+## 3a. Follow a long run live (progress + phased posting)
+
+**Prerequisites:** `--pr` with `gh` write access. A full multi-round run on a big
+diff can take many minutes — these surfaces tell you *where* it is instead of
+making you wait blind.
+
+Keep a single sticky status comment updated at each milestone (round start, per
+chunk, verification, synthesis):
+
+```bash
+jury --pr 123 --post-progress
+```
+
+The sticky comment is edited in place — one comment, not a flood — and is
+replaced by the final verdict when the run finishes. To instead see the *content*
+of each stage as it lands, post the run in phases:
+
+```bash
+jury --pr 123 --post --post-mode phased
+```
+
+`phased` posts Round 1 (independent reviews), the debate round, and the final
+decision as **separate** comments as each completes, so reviewers can read and
+react to round 1 while the debate is still running. The default `--post-mode
+single` posts one consolidated comment at the end. The two combine: add
+`--post-progress` for a live status line *and* `--post-mode phased` for the
+staged content.
+
+**Outcome:** on a slow run you can watch progress (sticky comment) and read each
+phase as it completes (phased posting) instead of waiting for one final drop.
+
+---
+
 ## 4. Run the bundled skill from an assistant
 
 **Prerequisites:** Claude Code, the `jury` CLI reachable from the assistant's
