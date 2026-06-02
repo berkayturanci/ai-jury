@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **CI runs entirely on GitHub-hosted runners now that the repo is public.** The
+  hosted `ci.yml` matrix (ubuntu/macOS/windows × Python 3.11–3.13) plus a
+  coverage gate is the authoritative per-push/PR signal, and CodeQL + OpenSSF
+  Scorecard run per-commit again. The self-hosted macOS runner and its
+  `local-ci.yml` workflow were **removed**: running untrusted forked-PR code on a
+  maintainer machine is an arbitrary-code-execution risk, and free public-repo
+  minutes make it unnecessary. The website (GitHub Pages) and PyPI publishing
+  (OIDC trusted publishing on `v*` tags) are now live.
+
 ### Security
 
 - Secure-by-default agent sandboxing (#100): the shipped reviewer defaults no

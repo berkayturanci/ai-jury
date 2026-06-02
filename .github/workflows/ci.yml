@@ -1,14 +1,15 @@
 name: CI
 
-# Hosted cross-OS / multi-Python matrix. The self-hosted `Local CI (self-hosted)`
-# workflow is the authoritative per-push/PR signal (see docs/architecture.md);
-# this hosted matrix is MANUAL-ONLY (`workflow_dispatch`) because GitHub-hosted
-# jobs currently fail to start under the account's billing/spending limit, which
-# would otherwise paint every commit red without running. Trigger it from the
-# Actions tab to recover full ubuntu/macOS/windows × Python 3.11-3.13 coverage
-# once hosted minutes are available again; re-add `push`/`pull_request` here to
-# make it automatic.
+# Authoritative per-push/PR signal: the hosted cross-OS / multi-Python matrix
+# plus a coverage gate. The repository is public, so GitHub-hosted minutes are
+# free and unlimited — there is no longer any reason to gate this behind a
+# self-hosted runner (which would be an arbitrary-code-execution risk on a public
+# repo's forked PRs). See docs/architecture.md ("CI & runners").
 on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
