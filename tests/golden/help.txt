@@ -11,7 +11,8 @@ usage: council [-h] [--pr PR] [--repo REPO] [--diff-file DIFF_FILE]
                [--format {markdown,json,sarif}] [--post-summary]
                [--post-inline] [--dry-run] [--label] [--ci]
                [--fail-on FAIL_ON] [--cache] [--clear-cache]
-               [--cache-dir CACHE_DIR] [-q] [--config-validate]
+               [--cache-dir CACHE_DIR] [--suggest-patches]
+               [--patches-out PATH] [--incremental] [-q] [--config-validate]
                [--strict-config] [--version]
 
 Cross-vendor multi-agent PR review council.
@@ -90,6 +91,14 @@ options:
   --cache-dir CACHE_DIR
                         override the cache directory (default:
                         $COUNCIL_CACHE_DIR or ~/.cache/agent-review-council)
+  --suggest-patches     emit a separate, opt-in suggested-patches section for
+                        VERIFIED findings (read-only; never applied
+                        automatically) (issue #10)
+  --patches-out PATH    with --suggest-patches, write the patches to this file
+                        instead of appending them after the report
+  --incremental         review only the diff since the last council run on
+                        --pr when a prior marker exists, else fall back to a
+                        full review (issue #9)
   -q, --quiet           suppress progress logs on stderr
   --config-validate     validate the resolved config and exit (0 valid, 2
                         invalid)

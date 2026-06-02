@@ -261,6 +261,96 @@ trialing the tool with one CLI.
 
 ---
 
+## 8. Incremental review on PR updates (issue #9)
+
+Re-reviewing a large PR's full diff on every push is slow. With `--incremental`,
+the council records the reviewed head SHA on its summary comment and, on the next
+run, reviews only the range since that SHA — falling back to a full review when
+no prior marker exists or the head is unchanged.
+
+```bash
+# First run establishes the marker on the posted summary.
+council --pr 123 --post-summary
+
+# Later runs review only what changed since the last council run.
+council --pr 123 --incremental --post-summary
+```
+
+The report's header states the scope (`Review scope: Incremental — …` or
+`Full — …`). The marker is a hidden HTML comment, so it is invisible to readers.
+
+## 9. Suggested patches for verified findings (issue #10)
+
+`--suggest-patches` emits a **separate**, opt-in section that turns *verified*
+findings into inspectable fix suggestions. It is read-only — nothing is applied
+automatically, and unverified/rejected findings never produce a suggestion.
+
+```bash
+# Append a "Suggested patches" section after the markdown report.
+council --pr 123 --suggest-patches
+
+# Or write the patches to their own file, leaving the report untouched.
+council --diff-file changes.diff --suggest-patches --patches-out patches.md -o report.md
+```
+
+## 10. Comment-triggered runs in GitHub Actions (issue #11)
+
+The council can be triggered from a PR comment such as `/council review` or
+`/council summary` via a workflow. Commands are parsed by an **allowlist**
+(`review`, `summary`; only the `--rounds N` flag) — the comment text is never
+passed to a shell, so arbitrary commands in a comment cannot run. Parsing is
+exposed through the `council comment` mode:
+
+```bash
+# Resolve a comment to a safe council argv (used by the workflow):
+council comment --text "/council review --rounds 1" --pr 123 --print-args
+#   -> --rounds 1 --pr 123 --post-summary
+
+# Reject anything not on the allowlist (exit 2):
+council comment --text "/council deploy" --print-args   # rejected
+```
+
+A minimal, safe workflow recipe (gate on a trusted author association and only
+on PR comments):
+
+```yaml
+# .github/workflows/council-comment.yml
+name: council-comment
+on:
+  issue_comment:
+    types: [created]
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  council:
+    # Only PR comments, only from maintainers/owners, only the /council trigger.
+    if: >
+      github.event.issue.pull_request &&
+      contains(github.event.comment.body, '/council') &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.13" }
+      - run: pip install agent-review-council
+      - name: Run council from the comment command
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+        # The comment body is passed as an argument value (never via a shell
+        # template), and the council allowlist rejects anything unsupported.
+        run: council comment --text "$COMMENT_BODY" --pr "$PR_NUMBER"
+```
+
+> The `if:` guard restricts *who* can trigger a run; the `council comment`
+> allowlist restricts *what* can run. Both layers matter — keep the author
+> association check so untrusted forks cannot trigger agent runs.
+
+---
+
 ## See also
 
 - [Architecture](architecture.md) — components, round structure, adapters.
