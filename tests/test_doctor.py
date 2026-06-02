@@ -317,5 +317,34 @@ class CapabilityDiagnosticsTests(unittest.TestCase):
         self.assertIn("headless", report)
 
 
+class RecommendationsTest(unittest.TestCase):
+    def test_not_ready_when_no_agents_available(self):
+        # VALID_CONFIG's agents use bogus commands -> none available.
+        path = _write_config(VALID_CONFIG)
+        self.addCleanup(os.unlink, path)
+        diag = doctor.build_diagnostics(path)
+        rec = diag["recommendations"]
+        self.assertFalse(rec["ready"])
+        self.assertTrue(rec["steps"])  # at least one actionable step
+        report = doctor.render_report(diag)
+        self.assertIn("Next steps", report)
+        self.assertIn("ready to run: no", report)
+
+    def test_ready_and_render(self):
+        # A reachable agent (mock the availability) -> ready, no "install" step.
+        import agent_review_council.doctor as d
+
+        real = d._is_available
+        d._is_available = lambda spec: True  # noqa: ARG005
+        try:
+            path = _write_config(VALID_CONFIG)
+            self.addCleanup(os.unlink, path)
+            diag = d.build_diagnostics(path)
+        finally:
+            d._is_available = real
+        self.assertTrue(diag["recommendations"]["ready"])
+        self.assertIn("ready to run: yes", d.render_report(diag))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -464,6 +464,72 @@ def _run_init(rest: list[str]) -> int:
     return 0
 
 
+def _config_source(config_arg) -> str:
+    """Human-readable source of the config the council would load."""
+    if config_arg:
+        return str(config_arg)
+    return "council.toml" if Path("council.toml").exists() else "(built-in defaults)"
+
+
+def _render_effective_config(cfg) -> str:
+    """Render the EFFECTIVE resolved config as a readable summary (config show)."""
+    on = lambda b: "on" if b else "off"  # noqa: E731
+    lines = []
+    lines.append(
+        f"[council] rounds={cfg.rounds} chair={cfg.chair} verify={on(cfg.verify)} "
+        f"parallel={on(cfg.parallel)} timeout={cfg.timeout}s"
+    )
+    adaptive = f"early_stop={on(cfg.early_stop)} max_rounds={cfg.effective_max_rounds}"
+    budget = (
+        f"total_timeout={cfg.total_timeout or '—'} "
+        f"phase_timeout={cfg.phase_timeout or '—'} retries={cfg.retries}"
+    )
+    lines.append(f"          {adaptive}  ·  {budget}  ·  seed={cfg.seed if cfg.seed is not None else '—'}")
+    lines.append(
+        f"[council.ci] fail_on={cfg.ci.fail_on} ignore_unverified={on(cfg.ci.ignore_unverified)}"
+    )
+    lines.append(
+        f"[council.context] mode={cfg.context.mode} redact_secrets={on(cfg.context.redact_secrets)}"
+    )
+    d = cfg.diff
+    lines.append(
+        f"[council.diff] max_bytes={d.max_bytes} chunk={on(d.chunk)} "
+        f"exclude_generated={on(d.exclude_generated)} "
+        f"exclude={d.exclude or '[]'} include={d.include or '[]'}"
+    )
+    lines.append("agents:")
+    for a in cfg.agents:
+        flag = "" if a.enabled else "  (disabled)"
+        target = a.endpoint if a.vendor == "local" else (a.command or "—")
+        model = f" model={a.model}" if a.model else ""
+        lines.append(f"  - {a.name} ({a.vendor}) → {target}{model}{flag}")
+    return "\n".join(lines)
+
+
+def _run_config(rest: list[str]) -> int:
+    """Handle ``council config show|path``."""
+    from .config import ConfigError, load_config
+
+    sub = argparse.ArgumentParser(prog="council config")
+    sub.add_argument("action", choices=["show", "path"])
+    sub.add_argument("--config", help="path to council.toml (default: ./council.toml or built-in)")
+    ns = sub.parse_args(rest)
+
+    source = _config_source(ns.config)
+    if ns.action == "path":
+        print(source)
+        return 0
+
+    try:
+        cfg = load_config(ns.config, validate=True)
+    except (ConfigError, FileNotFoundError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    print(f"source: {source}")
+    print(_render_effective_config(cfg))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     raw = list(sys.argv[1:] if argv is None else argv)
     # Documented `council cache clear` UX (issue #33): handled before argparse so
@@ -493,6 +559,12 @@ def main(argv: list[str] | None = None) -> int:
     # parser so it keeps its own small flag surface.
     if raw[:1] == ["init"]:
         return _run_init(raw[1:])
+
+    # Config introspection: `council config show` prints the EFFECTIVE resolved
+    # config + its source so you can see exactly what will run; `config path`
+    # prints just the source.
+    if raw[:1] == ["config"]:
+        return _run_config(raw[1:])
 
     args = build_parser().parse_args(argv)
 

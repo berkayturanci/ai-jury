@@ -167,7 +167,8 @@ git diff origin/HEAD... | council --diff-file -   # review the current branch
 council --diff-file examples/sample.diff  # review a diff file
 council --rounds 1                        # independent review only (no debate)
 council --mock --diff-file examples/sample.diff   # offline demo, no live CLIs
-council --doctor                          # local readiness check (versions, agents, config)
+council config show                       # print the effective resolved config + its source
+council --doctor                          # readiness check + actionable next steps
 ```
 
 A sample report is in [`docs/example-run.md`](docs/example-run.md). For a **real**
