@@ -11,7 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from agent_review_council.findings import (  # noqa: E402
+from ai_jury.findings import (  # noqa: E402
     CONFIDENCES,
     SEVERITIES,
     SEVERITY_ORDER,

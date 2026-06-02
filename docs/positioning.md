@@ -1,10 +1,10 @@
 # Positioning
 
-> A small, project-agnostic, stdlib-first native-CLI review council that runs
+> A small, project-agnostic, stdlib-first native-CLI review jury that runs
 > independent cross-vendor reviews, debate, and verified consensus for pull
 > requests and diffs.
 
-This page pins down what `agent-review-council` *is* — and, just as importantly,
+This page pins down what `ai-jury` *is* — and, just as importantly,
 what it is **not** — so the project doesn't drift into being a hosted code-review
 SaaS or a general-purpose multi-agent framework.
 
@@ -36,8 +36,8 @@ already have installed.
 - **Local-first.** It runs on your machine, spawns the CLIs you already have, and
   only talks to the network when *you* point it at a PR. There is no service to
   sign up for and no central server in the loop.
-- **Project-agnostic.** Configuration lives in a single `council.toml`. Nothing
-  about the council assumes a particular codebase, language, or team.
+- **Project-agnostic.** Configuration lives in a single `jury.toml`. Nothing
+  about the jury assumes a particular codebase, language, or team.
 
 ## Target users
 
@@ -57,16 +57,16 @@ already have installed.
   drives CLIs you control. If you want a hosted PR-review product, use one — this
   is the opposite trade-off on purpose.
 - **NOT a general-purpose multi-agent framework.** It does one thing: convene a
-  review council over a diff (review → debate → synthesis). It is not a toolkit
+  review jury over a diff (review → debate → synthesis). It is not a toolkit
   for building arbitrary agent workflows, orchestration graphs, or autonomous
   agents. The round structure is deliberately fixed and auditable.
 - **Downstream, project-specific policy does not belong here.** House style,
   required checks, severity gates tuned to one team, org-specific rules — these
-  belong in the consuming repository's own policy files (e.g. `council.toml`,
-  CI configuration, lint/test rules) or in a thin wrapper around the council, not
-  baked into this project. Keeping the council policy-neutral is what lets it stay
+  belong in the consuming repository's own policy files (e.g. `jury.toml`,
+  CI configuration, lint/test rules) or in a thin wrapper around the jury, not
+  baked into this project. Keeping the jury policy-neutral is what lets it stay
   small and drop into *any* repo; the moment it encodes one project's opinions it
-  stops being project-agnostic. Configure behavior through `council.toml` and CLI
+  stops being project-agnostic. Configure behavior through `jury.toml` and CLI
   flags; express bespoke rules in your own repository.
 
 ## Design principles
@@ -80,14 +80,14 @@ already have installed.
 - **Orchestrator owns the prompts; adapters own invocation.** The round
   structure lives in one file and stays auditable; adding a vendor is a small,
   isolated adapter.
-- **Policy-neutral core.** The council ships sensible defaults and exposes
+- **Policy-neutral core.** The jury ships sensible defaults and exposes
   configuration; it does not encode any single project's rules.
 - **Mock path is first-class.** `--mock` runs the whole pipeline deterministically
   so tests and CI never need credentials or token spend.
 
 ## Privacy and local-first expectations
 
-The council runs on your machine and, by default, shares the smallest possible
+The jury runs on your machine and, by default, shares the smallest possible
 data surface:
 
 - **Diff-only by default.** Agents receive only the diff. Surrounding PR context
@@ -123,4 +123,4 @@ and `SECURITY.md` for the full reference.
   isn't one.
 - You need to encode one project's bespoke review policy *inside the tool* —
   instead, express it in your repository's policy files or a wrapper and keep the
-  council policy-neutral.
+  jury policy-neutral.

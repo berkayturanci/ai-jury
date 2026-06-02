@@ -1,6 +1,6 @@
 """Deterministic PR-level classification derived from structured findings.
 
-The council report already lists individual findings and consensus groups, but
+The jury report already lists individual findings and consensus groups, but
 maintainers also want a compact, at-a-glance signal: how much review effort a PR
 needs, how risky it is, whether it touches security-sensitive code, and whether
 it warrants human attention. This module derives those four classifications as a
@@ -246,7 +246,7 @@ def classify(
 ) -> dict:
     """Return the deterministic PR-level classification dict.
 
-    Accepts either a ``CouncilOutcome`` (positional) or explicit ``findings`` /
+    Accepts either a ``JuryOutcome`` (positional) or explicit ``findings`` /
     ``groups`` keyword arguments (which take precedence). ``diff`` is optional;
     when given, its changed-line count feeds the review-effort score.
 

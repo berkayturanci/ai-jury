@@ -1,6 +1,6 @@
-"""Optional local result cache for repeated council runs (issue #33).
+"""Optional local result cache for repeated jury runs (issue #33).
 
-Re-running the council against an unchanged diff with an unchanged config
+Re-running the jury against an unchanged diff with an unchanged config
 re-spends time and tokens for an identical result. This module adds an opt-in,
 on-disk cache keyed by everything that can change the outcome: the diff, the
 effective config hash, the prompt-template version, the package version, the
@@ -10,7 +10,7 @@ Privacy note: a cache entry stores the full structured outcome — including age
 review/debate/synthesis text, which is derived from the diff. Treat the cache
 directory as sensitive (same trust level as the diff itself). The cache is OFF
 by default and only writes when explicitly enabled with ``--cache``; clear it
-with ``--clear-cache`` (or ``council cache clear``).
+with ``--clear-cache`` (or ``jury cache clear``).
 """
 from __future__ import annotations
 
@@ -22,27 +22,27 @@ from pathlib import Path
 
 from . import __version__, prompts
 from .adapters import AgentResult
-from .config import CouncilConfig, config_hash
+from .config import JuryConfig, config_hash
 from .consensus import FindingGroup
 from .findings import Finding, Verdict
 from .injection import InjectionHit
-from .orchestrator import CouncilOutcome
+from .orchestrator import JuryOutcome
 
 CACHE_SCHEMA = 1
-_ENV_DIR = "COUNCIL_CACHE_DIR"
+_ENV_DIR = "JURY_CACHE_DIR"
 
 
 def default_cache_dir() -> Path:
-    """Cache directory: ``$COUNCIL_CACHE_DIR`` or ``~/.cache/agent-review-council``."""
+    """Cache directory: ``$JURY_CACHE_DIR`` or ``~/.cache/ai-jury``."""
     override = os.environ.get(_ENV_DIR)
     if override:
         return Path(override)
     base = os.environ.get("XDG_CACHE_HOME") or str(Path.home() / ".cache")
-    return Path(base) / "agent-review-council"
+    return Path(base) / "ai-jury"
 
 
 def cache_key(
-    config: CouncilConfig, diff: str, *, seed: int | None = None, mock: bool = False
+    config: JuryConfig, diff: str, *, seed: int | None = None, mock: bool = False
 ) -> str:
     """Stable cache key for a run.
 
@@ -129,14 +129,14 @@ def _hit(d: dict) -> InjectionHit:
     )
 
 
-def outcome_to_dict(outcome: CouncilOutcome) -> dict:
-    """Serialize a CouncilOutcome to a JSON-safe dict (dataclasses all the way down)."""
+def outcome_to_dict(outcome: JuryOutcome) -> dict:
+    """Serialize a JuryOutcome to a JSON-safe dict (dataclasses all the way down)."""
     return asdict(outcome)
 
 
-def outcome_from_dict(data: dict) -> CouncilOutcome:
-    """Rebuild a CouncilOutcome from :func:`outcome_to_dict` output."""
-    return CouncilOutcome(
+def outcome_from_dict(data: dict) -> JuryOutcome:
+    """Rebuild a JuryOutcome from :func:`outcome_to_dict` output."""
+    return JuryOutcome(
         reviews=[_agent_result(r) for r in data.get("reviews", [])],
         debate=[_agent_result(r) for r in data.get("debate", [])],
         synthesis=_agent_result(data.get("synthesis")),
@@ -159,7 +159,7 @@ def outcome_from_dict(data: dict) -> CouncilOutcome:
 
 
 class Cache:
-    """A simple on-disk JSON cache of council outcomes."""
+    """A simple on-disk JSON cache of jury outcomes."""
 
     def __init__(self, directory: Path | str | None = None):
         self.dir = Path(directory) if directory else default_cache_dir()
@@ -167,7 +167,7 @@ class Cache:
     def _path(self, key: str) -> Path:
         return self.dir / f"{key}.json"
 
-    def load(self, key: str) -> CouncilOutcome | None:
+    def load(self, key: str) -> JuryOutcome | None:
         """Return the cached outcome for ``key`` (marked ``from_cache``), or None.
 
         A corrupt or unreadable entry is treated as a miss rather than an error,
@@ -186,7 +186,7 @@ class Cache:
         outcome.from_cache = True
         return outcome
 
-    def store(self, key: str, outcome: CouncilOutcome) -> None:
+    def store(self, key: str, outcome: JuryOutcome) -> None:
         """Persist ``outcome`` under ``key`` (best-effort; ignores write errors)."""
         try:
             self.dir.mkdir(parents=True, exist_ok=True)

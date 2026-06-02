@@ -1,6 +1,6 @@
-"""Machine-readable renderers for the council outcome.
+"""Machine-readable renderers for the jury outcome.
 
-Markdown rendering lives in :mod:`agent_review_council.report`. This module
+Markdown rendering lives in :mod:`ai_jury.report`. This module
 adds structured outputs intended for tooling:
 
 * :func:`to_json` -- a structured JSON report (schema documented in the README).
@@ -27,8 +27,8 @@ JSON_SCHEMA_VERSION = "1.0"
 SARIF_SCHEMA = "https://json.schemastore.org/sarif-2.1.0.json"
 SARIF_VERSION = "2.1.0"
 
-TOOL_NAME = "agent-review-council"
-TOOL_URI = "https://github.com/berkayturanci/agent-review-council"
+TOOL_NAME = "ai-jury"
+TOOL_URI = "https://github.com/berkayturanci/ai-jury"
 
 #: Mapping from finding severity to SARIF result level.
 _SARIF_LEVEL = {
@@ -41,7 +41,7 @@ _SARIF_LEVEL = {
 
 
 def severity_to_sarif_level(severity: str) -> str:
-    """Map a council severity to a SARIF result ``level``.
+    """Map a jury severity to a SARIF result ``level``.
 
     critical/major -> ``error``, minor -> ``warning``, nit/info -> ``note``.
     Unknown severities fall back to ``note``.
@@ -75,7 +75,7 @@ def _group_dict(g: Any) -> dict[str, Any]:
 
 
 def to_json(outcome: Any, config: Any) -> str:
-    """Render the council outcome as a structured, pretty-printed JSON report.
+    """Render the jury outcome as a structured, pretty-printed JSON report.
 
     Top-level keys: ``schema_version``, ``metadata`` (from
     :func:`build_run_metadata`), ``findings``, ``consensus``, ``verdicts`` and
@@ -123,7 +123,7 @@ def _sarif_result(f: Finding) -> dict[str, Any]:
     if f.line is not None:
         physical["region"] = {"startLine": f.line}
     return {
-        "ruleId": f"council/{f.severity}",
+        "ruleId": f"jury/{f.severity}",
         "level": severity_to_sarif_level(f.severity),
         "message": {"text": f.claim},
         "locations": [{"physicalLocation": physical}],
@@ -131,7 +131,7 @@ def _sarif_result(f: Finding) -> dict[str, Any]:
 
 
 def to_sarif(outcome: Any, config: Any) -> str:
-    """Render the council outcome as a SARIF 2.1.0 document.
+    """Render the jury outcome as a SARIF 2.1.0 document.
 
     Consensus group representatives are preferred as the source of results; if
     there are no groups the raw findings are used. Rules are derived from the
@@ -146,10 +146,10 @@ def to_sarif(outcome: Any, config: Any) -> str:
     used = {f.severity for f in findings}
     rules = [
         {
-            "id": f"council/{sev}",
-            "name": f"council-{sev}",
+            "id": f"jury/{sev}",
+            "name": f"jury-{sev}",
             "shortDescription": {
-                "text": f"{sev} finding reported by the review council"
+                "text": f"{sev} finding reported by the review jury"
             },
             "defaultConfiguration": {"level": severity_to_sarif_level(sev)},
         }

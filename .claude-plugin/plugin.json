@@ -1,13 +1,13 @@
 {
-  "name": "review-council",
+  "name": "ai-jury",
   "version": "0.1.0",
-  "description": "Convene a cross-vendor multi-agent review council (Claude Code + Codex + Antigravity) on a PR or diff: independent review, cross-examination, verification, and one chair verdict.",
+  "description": "Convene a cross-vendor multi-agent review jury (Claude Code + Codex + Antigravity) on a PR or diff: independent review, cross-examination, verification, and one chair verdict.",
   "author": {
     "name": "Berkay Turancı",
     "url": "https://github.com/berkayturanci"
   },
-  "homepage": "https://github.com/berkayturanci/agent-review-council",
-  "repository": "https://github.com/berkayturanci/agent-review-council",
+  "homepage": "https://github.com/berkayturanci/ai-jury",
+  "repository": "https://github.com/berkayturanci/ai-jury",
   "license": "MIT",
   "keywords": [
     "code-review",

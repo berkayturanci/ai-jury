@@ -4,9 +4,9 @@ help:
 	@echo "Available commands:"
 	@echo "  make install    - Install the package in editable mode with development tools"
 	@echo "  make test       - Run the offline unit test suite"
-	@echo "  make live-smoke - Run opt-in live native-CLI smoke tests (COUNCIL_LIVE=1)"
+	@echo "  make live-smoke - Run opt-in live native-CLI smoke tests (JURY_LIVE=1)"
 	@echo "  make smoke      - Run the mock CLI smoke test"
-	@echo "  make benchmark  - Run the offline review-quality benchmark (COUNCIL_BENCH_LIVE=1 for live)"
+	@echo "  make benchmark  - Run the offline review-quality benchmark (JURY_BENCH_LIVE=1 for live)"
 	@echo "  make lint       - Run Ruff checks"
 	@echo "  make format     - Format Python code with Ruff"
 	@echo "  make coverage   - Measure test coverage and enforce the minimum gate"
@@ -21,21 +21,21 @@ test:
 	python3 -m unittest discover -s tests -v
 
 # Opt-in live smoke tests: exercise the real native agent CLIs (claude, codex,
-# agy) end to end. Skipped entirely unless COUNCIL_LIVE=1; each agent whose CLI
+# agy) end to end. Skipped entirely unless JURY_LIVE=1; each agent whose CLI
 # is not on PATH is skipped individually. Intentionally excluded from CI.
 live-smoke:
-	COUNCIL_LIVE=1 PYTHONPATH=src python3 -m unittest discover -s tests -v
+	JURY_LIVE=1 PYTHONPATH=src python3 -m unittest discover -s tests -v
 
 smoke:
-	PYTHONPATH=src python3 -m agent_review_council --mock --diff-file examples/sample.diff -q
+	PYTHONPATH=src python3 -m ai_jury --mock --diff-file examples/sample.diff -q
 
-# Offline council-review-quality benchmark (issue #12). Scores each fixture's
+# Offline jury-review-quality benchmark (issue #12). Scores each fixture's
 # recorded findings against its expected spec; deterministic, no live CLIs, no
-# network. Set COUNCIL_BENCH_LIVE=1 to instead run the real council per fixture
+# network. Set JURY_BENCH_LIVE=1 to instead run the real jury per fixture
 # diff and score the live output (opt-in; never in CI). Small and directional —
 # not a universal quality claim. See benchmark/README.md.
 benchmark:
-	PYTHONPATH=src python3 -m agent_review_council.benchmark
+	PYTHONPATH=src python3 -m ai_jury.benchmark
 
 lint:
 	ruff check .

@@ -13,8 +13,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from agent_review_council import adapters  # noqa: E402
-from agent_review_council.adapters import (  # noqa: E402
+from ai_jury import adapters  # noqa: E402
+from ai_jury.adapters import (  # noqa: E402
     ERR_AUTH_REQUIRED,
     ERR_EMPTY_OUTPUT,
     ERR_MISSING_CLI,
@@ -27,7 +27,7 @@ from agent_review_council.adapters import (  # noqa: E402
     Adapter,
     classify_stderr,
 )
-from agent_review_council.config import AgentSpec  # noqa: E402
+from ai_jury.config import AgentSpec  # noqa: E402
 
 
 def _spec(command: str = "definitely-not-a-real-cli-xyz") -> AgentSpec:

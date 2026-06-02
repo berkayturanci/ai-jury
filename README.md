@@ -1,18 +1,18 @@
-# 🏛️ agent-review-council
+# 🏛️ ai-jury
 
-> Convene a **cross-vendor multi-agent review council**: native coding-agent CLIs from
+> Convene a **cross-vendor multi-agent review jury**: native coding-agent CLIs from
 > different vendors review the *same* pull request, cross-examine each other, and a
 > chair synthesizes one verdict.
 
-[![CI](https://github.com/berkayturanci/agent-review-council/actions/workflows/ci.yml/badge.svg)](https://github.com/berkayturanci/agent-review-council/actions/workflows/ci.yml)
-[![CodeQL](https://github.com/berkayturanci/agent-review-council/actions/workflows/codeql.yml/badge.svg)](https://github.com/berkayturanci/agent-review-council/actions/workflows/codeql.yml)
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/berkayturanci/agent-review-council/badge)](https://scorecard.dev/viewer/?uri=github.com/berkayturanci/agent-review-council)
-[![GitHub release](https://img.shields.io/github/v/release/berkayturanci/agent-review-council)](https://github.com/berkayturanci/agent-review-council/releases)
+[![CI](https://github.com/berkayturanci/ai-jury/actions/workflows/ci.yml/badge.svg)](https://github.com/berkayturanci/ai-jury/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/berkayturanci/ai-jury/actions/workflows/codeql.yml/badge.svg)](https://github.com/berkayturanci/ai-jury/actions/workflows/codeql.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/berkayturanci/ai-jury/badge)](https://scorecard.dev/viewer/?uri=github.com/berkayturanci/ai-jury)
+[![GitHub release](https://img.shields.io/github/v/release/berkayturanci/ai-jury)](https://github.com/berkayturanci/ai-jury/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ![A diff or PR enters; four reviewers — Claude Code, Codex, Antigravity, and a free local/open-weight model — review it independently and debate each other's findings; a chair agent verifies and synthesizes one verdict (APPROVE / COMMENT / REQUEST CHANGES) plus a report and CI gate.](docs/assets/hero.png)
 
-> **Install once. Run a cross-vendor review council anywhere.**
+> **Install once. Run a cross-vendor review jury anywhere.**
 
 Most "multi-model review" tools call models at the **API level**. This one drives each
 vendor's **native CLI agent** — `claude` (Claude Code), `codex` (OpenAI Codex CLI), and
@@ -28,9 +28,9 @@ diff ──▶ claude codex agy qwen (review) ▶ each rebuts the      ▶ chair
 ```
 
 Highlights: **free/offline** local reviews · **secure by default** (reviewers run
-sandboxed/read-only) · `council init` setup · debate + verification · CI gating ·
+sandboxed/read-only) · `jury init` setup · debate + verification · CI gating ·
 incremental review · suggested patches · large-diff chunking. Configure once in
-`council.toml`; mix cloud CLIs and a local model however you like.
+`jury.toml`; mix cloud CLIs and a local model however you like.
 
 ## Why
 
@@ -38,19 +38,19 @@ Different models miss different things. Running them as an adversarial panel —
 seeing the others' findings and arguing — surfaces more real issues and filters more
 false positives than any single reviewer. The research-backed lever is **vendor
 heterogeneity**, not more rounds — and a free local/open-weight model adds a *different*
-perspective at **zero marginal cost**, so a council needn't mean paying three vendors.
+perspective at **zero marginal cost**, so a jury needn't mean paying three vendors.
 See [`docs/architecture.md`](docs/architecture.md) and
 [`docs/feasibility.md`](docs/feasibility.md).
 
 ## Install
 
 ```bash
-pipx install agent-review-council         # once published; until then:
-pipx install git+https://github.com/berkayturanci/agent-review-council.git
+pipx install ai-jury         # once published; until then:
+pipx install git+https://github.com/berkayturanci/ai-jury.git
 # dev: pip install -e ".[dev]"
 ```
 
-Requires Python 3.11+. Then scaffold a config with **`council init`** (it detects your
+Requires Python 3.11+. Then scaffold a config with **`jury init`** (it detects your
 installed agents and local models). You need at least one reviewer: an agent CLI
 (`claude`, `codex`, `agy`) **or** a free local model via Ollama; missing/unreachable ones
 are skipped. `gh` is needed for `--pr` / `--post`.
@@ -89,12 +89,12 @@ single job rather than across the whole test matrix to keep CI cheap and free of
 cross-OS path noise.
 
 **Measurement method.** Branch coverage is enabled (`branch = true`) and the
-package is measured by import name (`source = ["agent_review_council"]`).
+package is measured by import name (`source = ["ai_jury"]`).
 
 **Exclusions.** Intentionally-untested paths are excluded so the number stays
 honest:
 
-- `src/agent_review_council/__main__.py` is omitted (a thin `python -m` entry shim).
+- `src/ai_jury/__main__.py` is omitted (a thin `python -m` entry shim).
 - Lines matching these patterns are excluded from the count: `pragma: no cover`,
   `if __name__ == "__main__":`, `raise NotImplementedError`, `if TYPE_CHECKING:`,
   and abstract-method decorators.
@@ -110,7 +110,7 @@ optional **live smoke tests** close that gap: they run a tiny, cheap review
 prompt (a two-line diff) through each *installed* real adapter and assert the
 run succeeds (`ok`, non-empty output, `error_code is None`).
 
-They are **opt-in** and skipped entirely unless `COUNCIL_LIVE=1` is set, so
+They are **opt-in** and skipped entirely unless `JURY_LIVE=1` is set, so
 they never run in `make test` or in CI.
 
 **Requirements** for a meaningful live run:
@@ -125,7 +125,7 @@ they never run in `make test` or in CI.
 ```bash
 make live-smoke
 # equivalent to:
-COUNCIL_LIVE=1 PYTHONPATH=src python3 -m unittest discover -s tests -v
+JURY_LIVE=1 PYTHONPATH=src python3 -m unittest discover -s tests -v
 ```
 
 They are **intentionally excluded from the CI matrix** (no CLIs, auth, or
@@ -134,7 +134,7 @@ or when touching the adapter layer.
 
 ## Review-quality benchmark
 
-A **small, directional** benchmark (`benchmark/`) measures whether a council's
+A **small, directional** benchmark (`benchmark/`) measures whether a jury's
 findings line up with hand-authored expectations for a handful of fixture diffs
 (obvious logic bug, subtle boolean-guard bug, missing error handling, a
 false-positive trap, and a docs-only change).
@@ -145,11 +145,11 @@ false-positive trap, and a docs-only change).
 > scorer and the recorded baselines — it does not measure live review quality.
 > (`--mock` is deliberately not used per fixture: the mock adapter emits a fixed
 > finding regardless of the diff, so it would be fake signal.) Only the opt-in
-> *live* mode (`COUNCIL_BENCH_LIVE=1`) runs real agents and measures quality.
+> *live* mode (`JURY_BENCH_LIVE=1`) runs real agents and measures quality.
 
 ```bash
 make benchmark                                          # offline, deterministic
-COUNCIL_BENCH_LIVE=1 PYTHONPATH=src python3 -m agent_review_council.benchmark  # live (opt-in)
+JURY_BENCH_LIVE=1 PYTHONPATH=src python3 -m ai_jury.benchmark  # live (opt-in)
 ```
 
 See [`benchmark/README.md`](benchmark/README.md) for the fixture list, the
@@ -158,21 +158,21 @@ expected/recorded schema, and the match/scoring rules.
 ## Usage
 
 ```bash
-council init                              # scaffold council.toml (detects agents + local models)
-council --pr 123                          # review a GitHub PR
-council --pr 123 --post                   # ...and post the verdict as a comment
-council --pr 123 --incremental            # review only changes since the last run
-council --pr 123 --suggest-patches        # also emit inspectable patches for verified findings
-git diff origin/HEAD... | council --diff-file -   # review the current branch
-council --diff-file examples/sample.diff  # review a diff file
-council --rounds 1                        # independent review only (no debate)
-council --mock --diff-file examples/sample.diff   # offline demo, no live CLIs
-council config show                       # print the effective resolved config + its source
-council --doctor                          # readiness check + actionable next steps
+jury init                              # scaffold jury.toml (detects agents + local models)
+jury --pr 123                          # review a GitHub PR
+jury --pr 123 --post                   # ...and post the verdict as a comment
+jury --pr 123 --incremental            # review only changes since the last run
+jury --pr 123 --suggest-patches        # also emit inspectable patches for verified findings
+git diff origin/HEAD... | jury --diff-file -   # review the current branch
+jury --diff-file examples/sample.diff  # review a diff file
+jury --rounds 1                        # independent review only (no debate)
+jury --mock --diff-file examples/sample.diff   # offline demo, no live CLIs
+jury config show                       # print the effective resolved config + its source
+jury --doctor                          # readiness check + actionable next steps
 ```
 
 A sample report is in [`docs/example-run.md`](docs/example-run.md). For a **real**
-four-vendor run where the council reviews its own repository (with honest notes on
+four-vendor run where the jury reviews its own repository (with honest notes on
 false positives and the local model's contribution), see
 [`docs/example-live-review.md`](docs/example-live-review.md).
 
@@ -184,8 +184,8 @@ writes the metadata block to its own file, and the `--ci` exit code is computed
 the same way regardless of format.
 
 ```bash
-council --diff-file changes.diff --format json  -o report.json
-council --diff-file changes.diff --format sarif -o report.sarif
+jury --diff-file changes.diff --format json  -o report.json
+jury --diff-file changes.diff --format sarif -o report.sarif
 ```
 
 ### JSON
@@ -210,7 +210,7 @@ Valid [SARIF 2.1.0](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.
 suitable for GitHub code scanning. Results are drawn from consensus group
 representatives (falling back to raw findings). Each result maps to a
 `physicalLocation` (`artifactLocation.uri` = file, `region.startLine` = line when
-known), `message.text` = the claim, and a stable `ruleId` of `council/<severity>`.
+known), `message.text` = the claim, and a stable `ruleId` of `jury/<severity>`.
 Severity maps to the SARIF `level` as:
 
 | Severity | SARIF level |
@@ -227,7 +227,7 @@ Results then show up in the PR's **Code scanning** view and the repo's
 `contents: read`:
 
 ```yaml
-name: Council code scanning
+name: Jury code scanning
 
 on:
   pull_request:
@@ -237,7 +237,7 @@ permissions:
   security-events: write   # required by upload-sarif
 
 jobs:
-  council:
+  jury:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -248,18 +248,18 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install council
-        run: pip install agent-review-council   # or: pip install .
+      - name: Install jury
+        run: pip install ai-jury   # or: pip install .
 
       - name: Produce SARIF from the PR diff
         run: |
           git diff "origin/${{ github.base_ref }}...HEAD" > pr.diff
-          council --diff-file pr.diff --format sarif -o council.sarif
+          jury --diff-file pr.diff --format sarif -o jury.sarif
 
       - name: Upload to code scanning
         uses: github/codeql-action/upload-sarif@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4.36.0
         with:
-          sarif_file: council.sarif
+          sarif_file: jury.sarif
 ```
 
 This uses a diff file so no agent CLIs or `gh` token are required to *generate*
@@ -275,26 +275,26 @@ gh api -X POST repos/OWNER/REPO/code-scanning/sarifs \
   -f sarif="$(gzip -c report.sarif | base64 -w0)"
 ```
 
-## Configuration — `council.toml`
+## Configuration — `jury.toml`
 
-Don't hand-write it the first time — scaffold one with **`council init`**, which
+Don't hand-write it the first time — scaffold one with **`jury init`**, which
 detects your installed agents and writes a valid config:
 
 ```bash
-council init                              # interactive: pick agents, rounds, chair
-council init --list-agents                # show known agents + availability
-council init --list-models                # list local (Ollama) models you can pick
-council init --agents claude,codex,qwen --rounds 2   # non-interactive / scriptable
+jury init                              # interactive: pick agents, rounds, chair
+jury init --list-agents                # show known agents + availability
+jury init --list-models                # list local (Ollama) models you can pick
+jury init --agents claude,codex,qwen --rounds 2   # non-interactive / scriptable
 ```
 
 It detects which agent CLIs are installed and, for a local agent, **discovers the
 models on your Ollama/OpenAI-compatible server** so you can pick one in the
 interactive prompt (e.g. `gemma:2b`, `deepseek-coder:6.7b`). It uses the
 secure-by-default agent templates and refuses to overwrite an existing file
-without `--force`. The resulting `council.toml`:
+without `--force`. The resulting `jury.toml`:
 
 ```toml
-[council]
+[jury]
 rounds = 2          # 1 = review only, 2 = review + debate
 chair  = "claude"   # which agent synthesizes the verdict
 timeout = 300       # per-agent wall-clock seconds (a hung CLI is killed at this bound)
@@ -310,7 +310,7 @@ extra_args = ["--output-format", "text", "--disallowed-tools", "Edit,Write,Noteb
 
 Override per run with `--rounds`, `--chair`, `--config`.
 
-The config is validated on every run. Check it without running a review with `council --config-validate` (exit `0` valid, `2` invalid); add `--strict-config` to turn warnings into errors. See [docs/configuration.md](docs/configuration.md) for the full schema — every field, allowed values, defaults, and which problems are hard errors vs. warnings.
+The config is validated on every run. Check it without running a review with `jury --config-validate` (exit `0` valid, `2` invalid); add `--strict-config` to turn warnings into errors. See [docs/configuration.md](docs/configuration.md) for the full schema — every field, allowed values, defaults, and which problems are hard errors vs. warnings.
 
 ### Local / open-weight reviewer (free, offline)
 
@@ -332,12 +332,12 @@ endpoint = "http://localhost:11434/v1"   # default; Ollama's OpenAI-compatible A
 # One-time: install Ollama and pull a coding model.
 ollama pull qwen2.5-coder:7b
 # Review with zero cloud cost, fully offline:
-council --diff-file changes.diff --config local-only.toml
+jury --diff-file changes.diff --config local-only.toml
 ```
 
 **Trade-off (be honest):** a small local model is a *weaker* reviewer than a
 frontier CLI — its value is added **diversity** (the load-bearing advantage for a
-council) and **zero marginal cost**, not parity. The sweet spot is mixing one
+jury) and **zero marginal cost**, not parity. The sweet spot is mixing one
 local panelist with one or two cloud CLIs: more vendor heterogeneity, lower spend.
 An unreachable server fails fast with a typed `connection_error` (the run
 continues with the other agents). See the
@@ -347,16 +347,16 @@ measured diversity contribution.
 ## Repository review policy (optional)
 
 A repository under review may ship an optional, separate **review policy** that
-tells the council what to care about for that project (high-risk paths, focus
+tells the jury what to care about for that project (high-risk paths, focus
 areas, forbidden output, severity overrides, a checklist, and doc links). This is
-distinct from the runtime `council.toml`: it configures *what reviewers should
+distinct from the runtime `jury.toml`: it configures *what reviewers should
 care about*, not *how the agent runs*.
 
-It is auto-discovered from `.council/policy.toml` or `council-policy.toml`, or
+It is auto-discovered from `.jury/policy.toml` or `jury-policy.toml`, or
 pointed at explicitly:
 
 ```bash
-council --mock --diff-file examples/sample.diff --policy .council/policy.toml
+jury --mock --diff-file examples/sample.diff --policy .jury/policy.toml
 ```
 
 The policy is maintainer-authored, so it is injected into the review prompts as a
@@ -368,11 +368,11 @@ schema.
 
 ## Data flow / privacy
 
-What gets sent to each agent is governed by `[council.context]` in
-`council.toml` (and overridable per run on the CLI):
+What gets sent to each agent is governed by `[jury.context]` in
+`jury.toml` (and overridable per run on the CLI):
 
 ```toml
-[council.context]
+[jury.context]
 mode = "diff-only"      # "diff-only" (default) or "expanded"
 redact_secrets = true   # scrub recognized secrets before sending (default on)
 ```
@@ -389,7 +389,7 @@ Either way, no source files outside the diff, no repository history, and no
 environment variables are read or sent.
 
 **Secret redaction** — before anything is sent to an agent, the diff (and any
-context) is passed through a redactor (`src/agent_review_council/redaction.py`)
+context) is passed through a redactor (`src/ai_jury/redaction.py`)
 that masks recognized secrets: PEM private keys, AWS access keys, GitHub/OpenAI
 tokens, `Bearer` tokens, and generic `api_key`/`secret`/`token` assignments
 (including base64-style values). Each hit becomes `[REDACTED:<kind>]`. Redaction
@@ -397,7 +397,7 @@ is **on by default**.
 
 **Controls:**
 
-- `council.toml`: `[council.context] mode = "diff-only"|"expanded"` and
+- `jury.toml`: `[jury.context] mode = "diff-only"|"expanded"` and
   `redact_secrets = true|false`.
 - CLI (override config for a single run): `--context-mode diff-only|expanded`,
   and `--redact` / `--no-redact`.
@@ -412,13 +412,13 @@ telemetry** and **no analytics**, not now and not behind any opt-in flag. The
 tool never phones home. The only network activity is performed by the agent CLIs
 you explicitly configure (and `gh` for `--pr` / `--post*`).
 
-### Diagnostics — `council --doctor`
+### Diagnostics — `jury --doctor`
 
 Run a local readiness check that surfaces common configuration problems:
 
 ```bash
-council --doctor                          # print a readable report
-council --doctor --write diagnostics.json # also write the report as JSON
+jury --doctor                          # print a readable report
+jury --doctor --write diagnostics.json # also write the report as JSON
 ```
 
 The report covers the tool version, Python version, OS, a config summary
@@ -431,17 +431,17 @@ Diagnostics are built locally and only written to disk when you pass
 
 ## Use it from another project (skill)
 
-A Claude Code skill ships in [`skill/review-council/`](skill/review-council/SKILL.md).
+A Claude Code skill ships in [`skill/ai-jury/`](skill/ai-jury/SKILL.md).
 Install it as a **plugin** from this repo (it doubles as a single-plugin marketplace):
 
 ```text
-/plugin marketplace add berkayturanci/agent-review-council
-/plugin install review-council@agent-review-council
+/plugin marketplace add berkayturanci/ai-jury
+/plugin install ai-jury@ai-jury
 ```
 
-Or drop [`skill/review-council/`](skill/review-council/SKILL.md) into a project's
-`.claude/skills/` manually. Either way the agent can convene the council on demand, and
-it composes with existing review workflows: run the council for a cross-vendor pass,
+Or drop [`skill/ai-jury/`](skill/ai-jury/SKILL.md) into a project's
+`.claude/skills/` manually. Either way the agent can convene the jury on demand, and
+it composes with existing review workflows: run the jury for a cross-vendor pass,
 then act on the consensus findings. For other platforms (Codex, Antigravity, CI) and
 their support status, see the [platform support matrix](docs/platforms.md).
 
@@ -449,7 +449,7 @@ their support status, see the [platform support matrix](docs/platforms.md).
 
 | Module | Responsibility |
 |:--|:--|
-| `config.py` | Load `council.toml` (or built-in default) |
+| `config.py` | Load `jury.toml` (or built-in default) |
 | `adapters.py` | One adapter per vendor CLI; turns a prompt into a headless subprocess |
 | `orchestrator.py` | Round structure: review → debate → synthesis (agents run in parallel) |
 | `prompts.py` | The three prompt templates |
@@ -461,7 +461,7 @@ their support status, see the [platform support matrix](docs/platforms.md).
 The markdown report is the tool's user-facing output and a contract for
 downstream skill/workflow consumers, so it changes only deliberately.
 `tests/test_report_golden.py` renders the report for several scenarios (full
-council run, single-round, verified-finding, failed-agent, missing-agent) and
+jury run, single-round, verified-finding, failed-agent, missing-agent) and
 compares each against a committed snapshot in `tests/golden/*.md`. Unintended
 formatting drift fails CI; an intentional change shows up as a reviewable
 fixture diff. Durations (the only non-deterministic token) are normalized to
@@ -475,11 +475,11 @@ This is a known pattern, not a new invention. The closest project is
 **[Magpie](https://github.com/liliu-z/magpie)** (multi-vendor CLI review + debate, with a
 [benchmark](https://milvus.io/blog/ai-code-review-gets-better-when-models-debate-claude-vs-gemini-vs-codex-vs-qwen-vs-minimax.md)
 showing debate lifts bug detection to ~80%); see also
-[agent-council](https://github.com/yogirk/agent-council),
-[the-council](https://github.com/DantesPeak85/the-council), and Mozilla.ai's
+[agent-jury](https://github.com/yogirk/agent-jury),
+[the-jury](https://github.com/DantesPeak85/the-jury), and Mozilla.ai's
 [Star Chamber](https://blog.mozilla.ai/the-star-chamber-multi-llm-consensus-for-code-quality/).
-`agent-review-council` aims to be the **smallest drop-in** version: stdlib-only Python, a
-single `council.toml`, and a Claude Code skill that snaps into an existing repo's review
+`ai-jury` aims to be the **smallest drop-in** version: stdlib-only Python, a
+single `jury.toml`, and a Claude Code skill that snaps into an existing repo's review
 workflow. See the [ecosystem comparison & capability matrix](docs/comparison.md) for how
 it differs from hosted, API-level, and other native-CLI tools, and
 [`docs/feasibility.md`](docs/feasibility.md) for the supporting research.
@@ -492,26 +492,26 @@ Active (v0.x). The full pipeline runs end-to-end with the real CLIs and the offl
 anonymized rebuttal, adaptive early-stop, severity-gated CI exit codes, secure-by-default
 sandboxing, run budget/retries, large-diff filtering + chunking, an optional result
 cache, incremental review, suggested patches, comment-command triggering, a **local /
-open-weight adapter** (free, offline), and **`council init`** config scaffolding. See
+open-weight adapter** (free, offline), and **`jury init`** config scaffolding. See
 [`docs/architecture.md`](docs/architecture.md) and the
-[milestones](https://github.com/berkayturanci/agent-review-council/milestones).
+[milestones](https://github.com/berkayturanci/ai-jury/milestones).
 
 The phased plan and how to pick up a session's worth of work is in [`ROADMAP.md`](ROADMAP.md);
-issues are tracked under [milestones](https://github.com/berkayturanci/agent-review-council/milestones).
+issues are tracked under [milestones](https://github.com/berkayturanci/ai-jury/milestones).
 
 ## Security & the Codex sandbox
 
-The council performs **read-only review orchestration** — it sends a diff to each agent CLI and collects their feedback; it does not apply edits.
+The jury performs **read-only review orchestration** — it sends a diff to each agent CLI and collects their feedback; it does not apply edits.
 
-The Codex adapter pipes the prompt on **stdin** (`codex exec` with no positional prompt) so non-interactive runs never hang waiting for input, and defaults `extra_args` to **`["-s", "read-only"]`** — a secure-by-default sandbox. The diff is fetched by the council (`gh`), not by codex, so the reviewer only needs to read its prompt and print findings; a prompt injection in the diff can't make it write files, run shell, or reach the network. The `agy` agent runs under `--sandbox`, and `claude` under a write-tool denylist, for the same reason.
+The Codex adapter pipes the prompt on **stdin** (`codex exec` with no positional prompt) so non-interactive runs never hang waiting for input, and defaults `extra_args` to **`["-s", "read-only"]`** — a secure-by-default sandbox. The diff is fetched by the jury (`gh`), not by codex, so the reviewer only needs to read its prompt and print findings; a prompt injection in the diff can't make it write files, run shell, or reach the network. The `agy` agent runs under `--sandbox`, and `claude` under a write-tool denylist, for the same reason.
 
-Need codex to write or reach the network for your flow? Widen `extra_args` for the `codex` agent in `council.toml` (e.g. `-s workspace-write`). See [docs/security.md](docs/security.md) for details.
+Need codex to write or reach the network for your flow? Widen `extra_args` for the `codex` agent in `jury.toml` (e.g. `-s workspace-write`). See [docs/security.md](docs/security.md) for details.
 
 ## CLI compatibility contract
 
-The `council` command is this project's public API. The surfaces below are
+The `jury` command is this project's public API. The surfaces below are
 **stable** and are locked by `tests/test_cli_contract.py` (including a
-width/color-pinned snapshot of `council --help` under `tests/golden/`) so
+width/color-pinned snapshot of `jury --help` under `tests/golden/`) so
 accidental changes are caught in review.
 
 **Stable flags** (names, short aliases, and semantics):
@@ -537,12 +537,12 @@ documented and a documented flag can't silently disappear.
 | `--post-summary` without `--pr` | exits non-zero with `error: --post-summary requires --pr` |
 | `--post-inline` without `--pr` | exits non-zero with `error: --post-inline requires --pr` |
 | Unknown flag / bad arguments | argparse exits with code `2` |
-| `--version` | prints `council <version>` and exits `0` |
+| `--version` | prints `jury <version>` and exits `0` |
 | Successful review (no `--ci`) | exits `0` |
 | `--ci` with blocking findings remaining | exits non-zero (see `ci.evaluate_ci`) |
 
 **Stable report headings** (substrings other tooling may parse):
-`Agent Review Council`, `Chair verdict`, `Round 1` (and subsequent `Round N`).
+`AI Jury`, `Chair verdict`, `Round 1` (and subsequent `Round N`).
 
 **Policy:** Any breaking change to the surfaces above — renaming or removing a
 flag, changing an error message or exit code, or altering a report heading —
@@ -559,8 +559,8 @@ flag-presence checks run on all supported versions (3.11–3.13).
 - [Architecture](docs/architecture.md) — components, round structure, adapters, supported platforms.
 - [Ecosystem comparison](docs/comparison.md) — capability matrix vs hosted / API-level / native-CLI tools.
 - [Feasibility & prior art](docs/feasibility.md) — research grounding and verified CLI invocations.
-- [Platform support matrix](docs/platforms.md) — where you can install/run the council and how.
-- [Skill packaging & install](docs/skill.md) — install/version the review council as a reusable skill artifact.
+- [Platform support matrix](docs/platforms.md) — where you can install/run the jury and how.
+- [Skill packaging & install](docs/skill.md) — install/version the review jury as a reusable skill artifact.
 - [Release readiness checklist](docs/release-checklist.md) — the bar before a public release.
 - [Report format contract](docs/report-format.md) — the golden-file snapshot tests and how to regenerate them.
 - [SECURITY.md](SECURITY.md) — data-flow and secret-redaction reference.

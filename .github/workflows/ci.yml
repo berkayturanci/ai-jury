@@ -47,8 +47,8 @@ jobs:
         # smoke assertions identical across operating systems.
         shell: bash
         run: |
-          python -m agent_review_council --mock --diff-file examples/sample.diff -q | tee report.md
-          grep -q "Agent Review Council" report.md
+          python -m ai_jury --mock --diff-file examples/sample.diff -q | tee report.md
+          grep -q "AI Jury" report.md
           grep -q "Chair verdict" report.md
 
   coverage:

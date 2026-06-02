@@ -1,6 +1,6 @@
-# agent-review-council — full reference
+# ai-jury — full reference
 
-> Install once. Run a cross-vendor review council anywhere.
+> Install once. Run a cross-vendor review jury anywhere.
 
 A small, stdlib-only Python CLI that orchestrates native coding-agent CLIs from
 different vendors to review the same diff/PR, debate, verify, and synthesize one
@@ -22,9 +22,9 @@ rather than duplicating them.
 
 - Python ≥3.11. Zero runtime dependencies (stdlib: `subprocess`, `tomllib`,
   `concurrent.futures`, `argparse`).
-- `pipx install agent-review-council` → `council` entry point (once published; until then
-  `pipx install git+https://github.com/berkayturanci/agent-review-council.git`).
-  `pip install -e .` for dev. Run `council init` to scaffold a `council.toml`.
+- `pipx install ai-jury` → `jury` entry point (once published; until then
+  `pipx install git+https://github.com/berkayturanci/ai-jury.git`).
+  `pip install -e .` for dev. Run `jury init` to scaffold a `jury.toml`.
 - Install at least one agent CLI: `claude` (Claude Code), `codex` (OpenAI Codex CLI),
   `agy` (Google Antigravity); OR run a free **local / open-weight** model via Ollama (or
   any OpenAI-compatible server) as a `vendor = "local"` agent. Missing/unreachable agents
@@ -55,10 +55,10 @@ be served from / stored in an optional **cache** (`--cache`). Full detail:
 
 ## Subcommands
 
-- `council init [--agents a,b,c] [--rounds N] [-o council.toml] [--force]` — scaffold a
+- `jury init [--agents a,b,c] [--rounds N] [-o jury.toml] [--force]` — scaffold a
   config; detects installed agents + local models. `--list-agents`, `--list-models`.
-- `council cache clear` (alias `--clear-cache`) — delete the local result cache.
-- `council comment --text "/council review …" --pr N` — parse an allowlisted PR-comment
+- `jury cache clear` (alias `--clear-cache`) — delete the local result cache.
+- `jury comment --text "/jury review …" --pr N` — parse an allowlisted PR-comment
   command (`review`/`summary`, `--rounds` only) and dispatch a safe run (`--print-args`
   to just resolve, `--no-post` to skip posting).
 
@@ -66,10 +66,10 @@ be served from / stored in an optional **cache** (`--cache`). Full detail:
 
 Input (choose one): `--pr <num/url>` (+ optional `--repo owner/name`), `--diff-file <path|->`.
 
-- `--config <path>` — path to `council.toml`; `--config-validate` validates and exits;
+- `--config <path>` — path to `jury.toml`; `--config-validate` validates and exits;
   `--strict-config` treats config warnings as errors.
 - `--policy <path>` — optional repository review policy (else auto-discovers
-  `.council/policy.toml`).
+  `.jury/policy.toml`).
 - `--rounds <n>` — fixed rounds (1=review, 2=+debate); disables early-stop.
 - `--early-stop` / `--no-early-stop`, `--max-rounds <n>` — adaptive debate (issue #40).
 - `--chair <name>` — agent that synthesizes. `--seed <n>` — reproducible orchestration.
@@ -77,7 +77,7 @@ Input (choose one): `--pr <num/url>` (+ optional `--repo owner/name`), `--diff-f
 - `--total-timeout <s>`, `--phase-timeout <s>`, `--retries <n>` — run budget + retries (#30).
 - `--max-diff-bytes <n>`, `--chunk` / `--no-chunk`, `--exclude <glob>`, `--include <glob>`
   — large-diff filtering/chunking (#31).
-- `--incremental` — review only changes since the last council run on `--pr` (#9).
+- `--incremental` — review only changes since the last jury run on `--pr` (#9).
 - `--suggest-patches`, `--patches-out <path>` — inspectable patches for verified findings (#10).
 - `--cache`, `--cache-dir <path>`, `--clear-cache` — optional result cache (#33).
 - `--context-mode diff-only|expanded`, `--redact` / `--no-redact` — what leaves your machine.
@@ -86,10 +86,10 @@ Input (choose one): `--pr <num/url>` (+ optional `--repo owner/name`), `--diff-f
 - `--ci`, `--fail-on <sev,...>` — CI gating.
 - `--mock`, `--strict`, `--doctor`, `-q/--quiet`, `--version`.
 
-## Configuration schema — `council.toml`
+## Configuration schema — `jury.toml`
 
 ```toml
-[council]
+[jury]
 rounds = 2          # 1 = review only, 2 = review + debate
 chair  = "claude"   # which agent synthesizes the verdict
 timeout = 300       # per-agent wall-clock seconds (hung CLI killed at this bound)
@@ -98,15 +98,15 @@ verify = true
 # early_stop = false ; max_rounds = 3            # adaptive rounds (#40)
 # total_timeout = 1200 ; phase_timeout = 600 ; retries = 0   # run budget (#30)
 
-[council.ci]
+[jury.ci]
 fail_on = ["critical", "major"]   # severities that fail `--ci`
 ignore_unverified = true
 
-[council.context]
+[jury.context]
 mode = "diff-only"      # "diff-only" (default) or "expanded"
 redact_secrets = true   # scrub recognized secrets before sending (default on)
 
-[council.diff]           # large-diff handling (#31), all optional
+[jury.diff]           # large-diff handling (#31), all optional
 # max_bytes = 200000 ; chunk = false ; exclude_generated = true
 # exclude = ["docs/**"] ; include = []
 
@@ -125,12 +125,12 @@ extra_args = ["--output-format", "text", "--disallowed-tools", "Edit,Write,Noteb
 # endpoint = "http://localhost:11434/v1"   # OpenAI-compatible (Ollama/llama.cpp/vLLM/LM Studio)
 ```
 
-Scaffold the file with `council init` instead of writing it by hand. See
+Scaffold the file with `jury init` instead of writing it by hand. See
 [docs/configuration.md](docs/configuration.md) for every field.
 
 ## Adapter contract
 
-Each adapter (in `src/agent_review_council/adapters.py`) knows only how to reach one
+Each adapter (in `src/ai_jury/adapters.py`) knows only how to reach one
 agent; the orchestrator owns prompt content. Adding a vendor is a ~20-line addition.
 Adapters fail soft — a missing CLI, **non-zero exit (even with stdout)**, timeout, or an
 unreachable local endpoint (`connection_error`) becomes a non-fatal
@@ -172,8 +172,8 @@ Antigravity `--sandbox`; `privilege.py` audits this. Invocations:
 
 ## Skill / distribution
 
-A Claude Code skill ships in [skill/review-council/](skill/review-council/SKILL.md);
-drop it into a project's `.claude/skills/` to convene the council on demand. The repo is
+A Claude Code skill ships in [skill/ai-jury/](skill/ai-jury/SKILL.md);
+drop it into a project's `.claude/skills/` to convene the jury on demand. The repo is
 also installable as a single-plugin marketplace via `.claude-plugin/` manifests, and a
 platform support matrix lives in [docs/platforms.md](docs/platforms.md).
 
@@ -182,9 +182,9 @@ platform support matrix lives in [docs/platforms.md](docs/platforms.md).
 The v0.2–v0.6 roadmap has landed: structured findings + tiered consensus, verification,
 anonymized rebuttal, adaptive early-stop, CI gating, secure-by-default sandboxing, run
 budget/retries, large-diff chunking, result cache, incremental review, suggested patches,
-comment-command triggering, a local/open-weight adapter, and `council init`. Phased
+comment-command triggering, a local/open-weight adapter, and `jury init`. Phased
 history in [ROADMAP.md](ROADMAP.md); open items under
-[milestones](https://github.com/berkayturanci/agent-review-council/milestones).
+[milestones](https://github.com/berkayturanci/ai-jury/milestones).
 
 ## Troubleshooting
 
@@ -199,7 +199,7 @@ history in [ROADMAP.md](ROADMAP.md); open items under
 
 ## Links
 
-- Repo: https://github.com/berkayturanci/agent-review-council
-- Issues: https://github.com/berkayturanci/agent-review-council/issues
+- Repo: https://github.com/berkayturanci/ai-jury
+- Issues: https://github.com/berkayturanci/ai-jury/issues
 - README: [README.md](README.md) · Architecture: [docs/architecture.md](docs/architecture.md)
 - Comparison: [docs/comparison.md](docs/comparison.md) · Concise index: [llms.txt](llms.txt)

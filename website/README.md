@@ -1,6 +1,6 @@
 # Website
 
-The static landing page for `agent-review-council`. No build step — plain HTML/CSS plus
+The static landing page for `ai-jury`. No build step — plain HTML/CSS plus
 one image. It reuses the same hero asset as the README (`assets/hero.png`).
 
 ## Preview locally
@@ -20,12 +20,12 @@ One-time repository setup (Settings → Pages):
 
 1. Set **Source** to **GitHub Actions**.
 2. Trigger the *Deploy website* workflow (push to `main` or run it manually).
-3. The default URL is `https://berkayturanci.github.io/agent-review-council/`.
+3. The default URL is `https://berkayturanci.github.io/ai-jury/`.
 
 ## Custom domain (optional)
 
 To serve under a maintainer-owned subdomain such as
-`council.berkayturanci.com` or `agent-review-council.berkayturanci.com`:
+`jury.berkayturanci.com` or `ai-jury.berkayturanci.com`:
 
 1. **DNS** (at your domain provider): add a `CNAME` record for the subdomain pointing to
    `berkayturanci.github.io` (do not append the repo path).

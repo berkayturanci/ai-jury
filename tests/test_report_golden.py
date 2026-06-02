@@ -38,15 +38,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from agent_review_council.adapters import AgentResult  # noqa: E402
-from agent_review_council.config import (  # noqa: E402
+from ai_jury.adapters import AgentResult  # noqa: E402
+from ai_jury.config import (  # noqa: E402
     DEFAULT_CONFIG,
-    CouncilConfig,
+    JuryConfig,
     _from_dict,
 )
-from agent_review_council.metadata import build_run_metadata  # noqa: E402
-from agent_review_council.orchestrator import run_council  # noqa: E402
-from agent_review_council.report import render  # noqa: E402
+from ai_jury.metadata import build_run_metadata  # noqa: E402
+from ai_jury.orchestrator import run_jury  # noqa: E402
+from ai_jury.report import render  # noqa: E402
 
 GOLDEN_DIR = Path(__file__).parent / "golden"
 UPDATE = os.environ.get("UPDATE_GOLDEN") == "1"
@@ -62,7 +62,7 @@ SAMPLE_DIFF = """diff --git a/src/example.py b/src/example.py
 _DURATION_RE = re.compile(r"\b\d+s\b")
 
 
-def _config() -> CouncilConfig:
+def _config() -> JuryConfig:
     return _from_dict(DEFAULT_CONFIG)
 
 
@@ -99,9 +99,9 @@ class ReportGoldenTest(unittest.TestCase):
         )
 
     def test_full_report(self):
-        """Standard full council report: 3 agents, two rounds, structured findings."""
+        """Standard full jury report: 3 agents, two rounds, structured findings."""
         cfg = _config()
-        outcome = run_council(cfg, SAMPLE_DIFF, mock=True)
+        outcome = run_jury(cfg, SAMPLE_DIFF, mock=True)
         report = render(
             outcome.reviews,
             outcome.debate,
@@ -121,7 +121,7 @@ class ReportGoldenTest(unittest.TestCase):
         """Single-round report: rounds=1 means no debate (Round 2) section."""
         cfg = _config()
         cfg.rounds = 1
-        outcome = run_council(cfg, SAMPLE_DIFF, mock=True)
+        outcome = run_jury(cfg, SAMPLE_DIFF, mock=True)
         self.assertEqual(outcome.debate, [])
         report = render(
             outcome.reviews,
@@ -141,7 +141,7 @@ class ReportGoldenTest(unittest.TestCase):
         """Verified-finding report: verify=True adds Verification + group statuses."""
         cfg = _config()
         cfg.verify = True
-        outcome = run_council(cfg, SAMPLE_DIFF, mock=True)
+        outcome = run_jury(cfg, SAMPLE_DIFF, mock=True)
         self.assertIsNotNone(outcome.verify)
         report = render(
             outcome.reviews,

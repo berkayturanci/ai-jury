@@ -1,17 +1,17 @@
-# Publishing & installing the review-council skill
+# Publishing & installing the ai-jury skill
 
 > The CLI is the stable executable surface. The skill is the assistant-facing layer
 > that knows *when* and *how* to invoke that CLI.
 
-`agent-review-council` ships two things that travel together:
+`ai-jury` ships two things that travel together:
 
-- the **`council` CLI** — the stable, testable executable surface; and
-- the **review-council skill** — a small `SKILL.md` that teaches a coding agent when to
-  convene the council and how to read back the result.
+- the **`jury` CLI** — the stable, testable executable surface; and
+- the **ai-jury skill** — a small `SKILL.md` that teaches a coding agent when to
+  convene the jury and how to read back the result.
 
 This page covers the skill as a reusable artifact: its layout, how to install it into
 Codex/Claude-compatible skill folders, the external tools it expects, how its version
-relates to the CLI, worked examples, and a smoke-test checklist. For *where* the council
+relates to the CLI, worked examples, and a smoke-test checklist. For *where* the jury
 runs across platforms (and the support status of each), see the
 [platform support matrix](platforms.md); for the Claude Code plugin manifests, see
 [`.claude-plugin/`](../.claude-plugin/).
@@ -22,24 +22,24 @@ The skill is a self-contained directory under [`skill/`](../skill):
 
 ```text
 skill/
-└── review-council/
+└── ai-jury/
     └── SKILL.md      # YAML front matter (name, description) + instructions
 ```
 
 `SKILL.md` is the entire artifact. Its front matter declares the skill `name`
-(`review-council`) and a `description` that tells the host agent when to trigger it
-("review council", "convene the council", "cross-model review", a PR/diff/branch review).
+(`ai-jury`) and a `description` that tells the host agent when to trigger it
+("review jury", "convene the jury", "cross-model review", a PR/diff/branch review).
 The body documents prerequisites, the command table, what to report back, and how the
 skill composes with an existing review workflow.
 
 Nothing else is required for the skill to work — it carries no code of its own; it drives
-the `council` CLI. The repository's [`.claude-plugin/plugin.json`](../.claude-plugin/plugin.json)
+the `jury` CLI. The repository's [`.claude-plugin/plugin.json`](../.claude-plugin/plugin.json)
 points its `skills` field at this same `skill/` directory, so the plugin install path and
 the manual copy path serve the identical artifact (no duplication).
 
 ## Install into a skill folder
 
-The skill is platform-portable because every host ultimately runs the same `council`
+The skill is platform-portable because every host ultimately runs the same `jury`
 command. Two install routes exist; pick by host.
 
 ### Claude Code (plugin — recommended)
@@ -47,8 +47,8 @@ command. Two install routes exist; pick by host.
 This repo doubles as a single-plugin marketplace. Install the bundled skill as a plugin:
 
 ```text
-/plugin marketplace add berkayturanci/agent-review-council
-/plugin install review-council@agent-review-council
+/plugin marketplace add berkayturanci/ai-jury
+/plugin install ai-jury@ai-jury
 ```
 
 The manifests that make this work are in [`.claude-plugin/`](../.claude-plugin/)
@@ -60,16 +60,16 @@ The manifests that make this work are in [`.claude-plugin/`](../.claude-plugin/)
 Copy the directory into the host project's skill folder:
 
 ```bash
-cp -R skill/review-council <your-project>/.claude/skills/review-council
+cp -R skill/ai-jury <your-project>/.claude/skills/ai-jury
 ```
 
 ### Codex / other Claude-compatible skill folders
 
 Codex does not yet expose a stable plugin manifest equivalent. Until it does, install the
-skill the same way — copy `skill/review-council/` into the host's skill directory — or
-reference the `council` command from an `AGENTS.md`. The
+skill the same way — copy `skill/ai-jury/` into the host's skill directory — or
+reference the `jury` command from an `AGENTS.md`. The
 [Codex template in the platform matrix](platforms.md#codex-cli-template--manual) shows the
-minimal `AGENTS.md` snippet; the underlying capability (running `council`) is identical
+minimal `AGENTS.md` snippet; the underlying capability (running `jury`) is identical
 across hosts, only the packaging differs.
 
 ## Required external tools
@@ -77,16 +77,16 @@ across hosts, only the packaging differs.
 The skill itself adds no dependencies beyond what the CLI needs. At review time the host
 must have:
 
-- **`council`** — required. The CLI entry point on `PATH`
-  (`pipx install agent-review-council`). The skill is inert without it.
+- **`jury`** — required. The CLI entry point on `PATH`
+  (`pipx install ai-jury`). The skill is inert without it.
 - **`gh`** — required only for GitHub-sourced or GitHub-posted runs (`--pr`,
   `--post-summary` / `--post-inline`). Must be authenticated.
 - **`claude` / `codex` / `agy`** — optional native agent CLIs. At least **one** must be
   installed for a live review; missing CLIs are skipped automatically (unless `--strict`).
-  The council runs with whoever is available.
+  The jury runs with whoever is available.
 
 The same prerequisite detail lives in the [platform matrix](platforms.md); a future
-`council doctor` command will check these per host.
+`jury doctor` command will check these per host.
 
 ## Versioning policy (skill ↔ CLI)
 
@@ -94,7 +94,7 @@ The skill is versioned to track **CLI compatibility**, not to advertise new pros
 
 - The skill version follows the CLI/plugin version in
   [`.claude-plugin/plugin.json`](../.claude-plugin/plugin.json). A consumer reading the
-  skill version knows which `council` CLI it was written against.
+  skill version knows which `jury` CLI it was written against.
 - A **breaking CLI change** — a renamed/removed flag, a changed command surface, or
   changed output contract that the skill instructs the agent to rely on — **bumps the
   skill version**. The skill must never instruct an agent to call a flag the pinned CLI
@@ -110,20 +110,20 @@ them.
 
 ## Examples
 
-All examples assume `council` is on `PATH` and at least one agent CLI is installed.
+All examples assume `jury` is on `PATH` and at least one agent CLI is installed.
 
 ### PR review
 
 Review a GitHub pull request and report the verdict:
 
 ```bash
-council --pr 123
+jury --pr 123
 ```
 
 Post the chair verdict back as a PR comment (requires authenticated `gh`):
 
 ```bash
-council --pr 123 --post
+jury --pr 123 --post
 ```
 
 ### Diff-file review
@@ -131,20 +131,20 @@ council --pr 123 --post
 Review the current branch against the default branch, or a saved diff:
 
 ```bash
-git diff origin/HEAD... | council --diff-file -
-council --diff-file path/to/changes.diff
+git diff origin/HEAD... | jury --diff-file -
+jury --diff-file path/to/changes.diff
 ```
 
 ### Advisory ship/review integration
 
-The council is an **advisory** cross-vendor pass that composes with — and does not
-replace — a host project's own review workflow. A typical pattern: run the council first
+The jury is an **advisory** cross-vendor pass that composes with — and does not
+replace — a host project's own review workflow. A typical pattern: run the jury first
 for a cross-vendor read, surface its consensus findings, then let the project's existing
 reviewers (or a ship gate) act on them.
 
 ```bash
 # advisory cross-vendor pass before the project's own gate
-git diff origin/HEAD... | council --diff-file - -o council-report.md
+git diff origin/HEAD... | jury --diff-file - -o jury-report.md
 ```
 
 The skill reports the chair verdict (APPROVE / COMMENT / REQUEST CHANGES), the consensus
@@ -155,13 +155,13 @@ a human decision — leaving the actual ship/block decision to the host workflow
 
 A minimal pass to confirm the skill is installed and wired correctly:
 
-- [ ] `council --help` runs (CLI is on `PATH`).
+- [ ] `jury --help` runs (CLI is on `PATH`).
 - [ ] The skill directory is present in the host's skill folder
-      (`.claude/skills/review-council/SKILL.md`), or the plugin shows as installed.
+      (`.claude/skills/ai-jury/SKILL.md`), or the plugin shows as installed.
 - [ ] Offline dry run produces a report with no live CLIs:
-      `council --mock --diff-file examples/sample.diff`
+      `jury --mock --diff-file examples/sample.diff`
 - [ ] At least one agent CLI is resolvable (`claude`, `codex`, or `agy`), or a live run is
       not expected.
 - [ ] For PR runs: `gh auth status` is authenticated.
-- [ ] Invoking the skill by name/trigger ("convene the council") prompts the host agent to
-      run the matching `council` command and report the verdict + consensus findings.
+- [ ] Invoking the skill by name/trigger ("convene the jury") prompts the host agent to
+      run the matching `jury` command and report the verdict + consensus findings.

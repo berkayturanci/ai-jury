@@ -10,15 +10,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from agent_review_council.config import _from_dict  # noqa: E402
-from agent_review_council.largediff import (  # noqa: E402
+from ai_jury.config import _from_dict  # noqa: E402
+from ai_jury.largediff import (  # noqa: E402
     MODE_CHUNKED,
     MODE_FULL,
     MODE_TOO_LARGE,
     plan_diff,
     split_diff,
 )
-from agent_review_council.orchestrator import review_diff  # noqa: E402
+from ai_jury.orchestrator import review_diff  # noqa: E402
 
 
 def _file_segment(path: str, added_lines: int = 1) -> str:
@@ -132,7 +132,7 @@ class ChunkedPipelineTest(unittest.TestCase):
     def test_chunked_mock_run_reviews_all_chunks(self):
         cfg = _from_dict(
             {
-                "council": {
+                "jury": {
                     "rounds": 1,
                     "verify": False,
                     "diff": {"max_bytes": 10, "chunk": True, "chunk_max_bytes": 200},
@@ -152,12 +152,12 @@ class ChunkedPipelineTest(unittest.TestCase):
     def test_total_timeout_budget_shared_across_chunks(self):
         # Regression: total_timeout must bound the WHOLE chunked review, not reset
         # per chunk. Verify review_diff passes the SAME budget object to every
-        # chunk's run_council call.
-        import agent_review_council.orchestrator as orch
+        # chunk's run_jury call.
+        import ai_jury.orchestrator as orch
 
         cfg = _from_dict(
             {
-                "council": {
+                "jury": {
                     "rounds": 1, "verify": False, "total_timeout": 300,
                     "diff": {"max_bytes": 10, "chunk": True, "chunk_max_bytes": 200},
                 },
@@ -166,17 +166,17 @@ class ChunkedPipelineTest(unittest.TestCase):
         )
         diff = _file_segment("src/a.py", 20) + _file_segment("src/b.py", 20)
         seen_budgets = []
-        real = orch.run_council
+        real = orch.run_jury
 
         def capture(config, chunk, **kw):
             seen_budgets.append(kw.get("budget"))
             return real(config, chunk, **kw)
 
-        orch.run_council = capture
+        orch.run_jury = capture
         try:
             outcome, plan = orch.review_diff(cfg, diff, mock=True)
         finally:
-            orch.run_council = real
+            orch.run_jury = real
         self.assertGreaterEqual(len(plan.chunks), 2)
         self.assertEqual(len(seen_budgets), len(plan.chunks))
         self.assertIsNotNone(seen_budgets[0])
@@ -186,7 +186,7 @@ class ChunkedPipelineTest(unittest.TestCase):
     def test_too_large_raises(self):
         cfg = _from_dict(
             {
-                "council": {"diff": {"max_bytes": 10, "chunk": False}},
+                "jury": {"diff": {"max_bytes": 10, "chunk": False}},
                 "agent": [{"name": "claude", "vendor": "anthropic", "command": "claude"}],
             }
         )

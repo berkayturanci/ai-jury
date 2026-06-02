@@ -10,17 +10,17 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from agent_review_council import orchestrator  # noqa: E402
-from agent_review_council.adapters import (  # noqa: E402
+from ai_jury import orchestrator  # noqa: E402
+from ai_jury.adapters import (  # noqa: E402
     ERR_AUTH_REQUIRED,
     ERR_TIMEOUT,
     AgentResult,
     MockAdapter,
 )
-from agent_review_council.config import DEFAULT_CONFIG, _from_dict  # noqa: E402
-from agent_review_council.metadata import build_run_metadata  # noqa: E402
-from agent_review_council.orchestrator import RunBudget, _run_with_retry, run_council  # noqa: E402
-from agent_review_council.report import _metadata_block  # noqa: E402
+from ai_jury.config import DEFAULT_CONFIG, _from_dict  # noqa: E402
+from ai_jury.metadata import build_run_metadata  # noqa: E402
+from ai_jury.orchestrator import RunBudget, _run_with_retry, run_jury  # noqa: E402
+from ai_jury.report import _metadata_block  # noqa: E402
 
 SAMPLE_DIFF = (
     "diff --git a/src/example.py b/src/example.py\n"
@@ -120,7 +120,7 @@ class PartialResultTest(unittest.TestCase):
         # fatal, and surfaces in the outcome + metadata + report.
         cfg = _from_dict(
             {
-                "council": {"chair": "real", "verify": False, "rounds": 1},
+                "jury": {"chair": "real", "verify": False, "rounds": 1},
                 "agent": [
                     {"name": "real", "vendor": "anthropic", "command": "claude"},
                     {
@@ -145,7 +145,7 @@ class PartialResultTest(unittest.TestCase):
 
         orchestrator.make_adapter = make
         try:
-            outcome = run_council(cfg, SAMPLE_DIFF, mock=False)
+            outcome = run_jury(cfg, SAMPLE_DIFF, mock=False)
         finally:
             orchestrator.make_adapter = real_make
 

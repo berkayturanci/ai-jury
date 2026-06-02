@@ -2,7 +2,7 @@
 
 ## Supported Versions
 
-Only the latest released version of **agent-review-council** is supported with security
+Only the latest released version of **ai-jury** is supported with security
 updates.
 
 | Version | Supported |
@@ -23,16 +23,16 @@ suggested fix. We will acknowledge the report within 48 hours when possible.
 ## Security Notes
 
 This tool invokes local agent CLIs and may pass PR diffs or repository context to those
-tools. Review your configured agent CLIs, authentication state, and `council.toml`
+tools. Review your configured agent CLIs, authentication state, and `jury.toml`
 before running it on sensitive repositories.
 
-## Council data flow & redaction
+## Jury data flow & redaction
 
-What the council sends to each configured agent is deliberately narrow.
+What the jury sends to each configured agent is deliberately narrow.
 
 **By default, only the diff is sent.** In the default `diff-only` context mode each
 agent receives the unified diff under review and nothing else. In `expanded` mode the
-agent additionally receives the PR title and body. In **neither** mode does the council
+agent additionally receives the PR title and body. In **neither** mode does the jury
 send:
 
 - source files outside the diff,
@@ -58,7 +58,7 @@ scanned by `redaction.py` and recognized secrets are replaced with
   `diff-only`).
 - `--redact` / `--no-redact` — enable or disable secret redaction. Redaction is on by
   default; `--no-redact` sends the raw text and is intended only for trusted local use.
-- The same behavior can be configured under `[council.context]` in `council.toml`
+- The same behavior can be configured under `[jury.context]` in `jury.toml`
   (e.g. `mode = "expanded"`, `redact_secrets = true`).
 
 The `--doctor` diagnostics report is independent of this path: it never includes the
@@ -72,10 +72,10 @@ analytics, no usage reporting, and no opt-in data collection. The tool never
 phones home; the only network activity is performed by the agent CLIs you
 explicitly configure (and `gh` for `--pr` / `--post*`).
 
-The `council --doctor` command produces a local diagnostics report intended to
+The `jury --doctor` command produces a local diagnostics report intended to
 be safe to share when filing a bug report. It includes the tool/Python/OS
 versions, a config summary (rounds, chair, context mode, enabled agents) with
 secret-like values redacted via `redaction.py`, agent availability on `PATH`,
 and detected config warnings. It **never** includes the diff under review or any
 agent output. The report is printed locally and only written to disk when you
-pass `council --doctor --write PATH`.
+pass `jury --doctor --write PATH`.

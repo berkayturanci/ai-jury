@@ -1,11 +1,11 @@
-<!-- A real, live council run: the tool reviewing its OWN repository with a
+<!-- A real, live jury run: the tool reviewing its OWN repository with a
      four-vendor panel. Findings are quoted from the actual report; machine-
      specific paths were scrubbed. The deterministic mock sample is in
      example-run.md. -->
 
-# Example: a live four-vendor review (the council reviewing itself)
+# Example: a live four-vendor review (the jury reviewing itself)
 
-This walks through a **real** council run — not the mock — where the council
+This walks through a **real** jury run — not the mock — where the jury
 reviewed its **own repository** end to end. It's the most honest demo we have:
 a heterogeneous panel, a full codebase, real findings (and real false positives
 the panel caught itself).
@@ -38,7 +38,7 @@ whole-repo diff
 
 ## A few real findings it caught
 
-Quoted from the run (the council found these in its *own* code, and the chair
+Quoted from the run (the jury found these in its *own* code, and the chair
 **verified** each):
 
 - **`[critical] .github/workflows/local-ci.yml` — arbitrary code execution on the
@@ -62,7 +62,7 @@ plus a verification round turned up real, actionable defects.
 
 - **The panel caught its own false positives.** Several `critical` "syntax error"
   findings were artifacts of the secret-redaction layer rewriting the project's
-  *secret-fixture test files* before reviewers saw them — and the council
+  *secret-fixture test files* before reviewers saw them — and the jury
   **diagnosed exactly that** and rejected them ("the redaction is lossy enough to
   fabricate phantom syntax errors"). A verification round earns its keep.
 - **The local model is a weaker, but useful, seat.** On one chunk `claude` noted
@@ -81,7 +81,7 @@ plus a verification round turned up real, actionable defects.
 # then review the whole repo as one diff with chunking + debate:
 EMPTY=$(git hash-object -t tree /dev/null)
 git diff "$EMPTY" HEAD > whole-repo.diff
-council --diff-file whole-repo.diff --config council.toml --chunk --rounds 2
+jury --diff-file whole-repo.diff --config jury.toml --chunk --rounds 2
 ```
 
 See the [cookbook](cookbook.md) for incremental reviews, suggested patches, and

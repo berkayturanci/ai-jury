@@ -1,13 +1,13 @@
-"""Command-line entry point: ``council``.
+"""Command-line entry point: ``jury``.
 
 Examples:
-  council --pr 123                        # review a GitHub PR
-  council --pr 123 --post                 # ...and post the verdict as a comment
-  council --diff-file changes.diff        # review a local diff file
-  council --diff-file -                   # read a diff from stdin
-  council --mock                          # offline pipeline demo (no live CLIs)
-  council --doctor                        # local readiness diagnostics
-  council --config-validate               # validate council.toml and exit
+  jury --pr 123                        # review a GitHub PR
+  jury --pr 123 --post                 # ...and post the verdict as a comment
+  jury --diff-file changes.diff        # review a local diff file
+  jury --diff-file -                   # read a diff from stdin
+  jury --mock                          # offline pipeline demo (no live CLIs)
+  jury --doctor                        # local readiness diagnostics
+  jury --config-validate               # validate jury.toml and exit
 """
 from __future__ import annotations
 
@@ -48,21 +48,21 @@ def _read_diff(args) -> tuple[str, str]:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="council",
-        description="Cross-vendor multi-agent PR review council.",
+        prog="jury",
+        description="Cross-vendor multi-agent PR review jury.",
     )
     src = p.add_argument_group("input")
     src.add_argument("--pr", help="GitHub PR number/URL to review (uses `gh`)")
     src.add_argument("--repo", help="owner/name for --pr (defaults to current repo)")
     src.add_argument("--diff-file", help="path to a diff file, or '-' for stdin")
 
-    p.add_argument("--config", help="path to council.toml (default: ./council.toml or built-in)")
+    p.add_argument("--config", help="path to jury.toml (default: ./jury.toml or built-in)")
     p.add_argument(
         "--policy",
         type=Path,
         default=None,
         help="path to an optional repository review policy file (default: "
-             "auto-discover .council/policy.toml or council-policy.toml); "
+             "auto-discover .jury/policy.toml or jury-policy.toml); "
              "missing policy files are allowed",
     )
     p.add_argument(
@@ -129,7 +129,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--seed", type=int,
         help="run seed for reproducible orchestration; mock runs with the same seed "
-             "produce byte-identical reports (overrides [council] seed)",
+             "produce byte-identical reports (overrides [jury] seed)",
     )
     p.add_argument("--chair", help="override the synthesizing chair agent")
     p.add_argument("--mock", action="store_true", help="offline demo: use deterministic mock agents")
@@ -191,12 +191,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--clear-cache", action="store_true",
-        help="delete all local cache entries and exit (also: `council cache clear`)",
+        help="delete all local cache entries and exit (also: `jury cache clear`)",
     )
     p.add_argument(
         "--cache-dir",
-        help="override the cache directory (default: $COUNCIL_CACHE_DIR or "
-             "~/.cache/agent-review-council)",
+        help="override the cache directory (default: $JURY_CACHE_DIR or "
+             "~/.cache/ai-jury)",
     )
     p.add_argument(
         "--suggest-patches", dest="suggest_patches", action="store_true",
@@ -210,7 +210,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--incremental", action="store_true",
-        help="review only the diff since the last council run on --pr when a prior "
+        help="review only the diff since the last jury run on --pr when a prior "
              "marker exists, else fall back to a full review (issue #9)",
     )
     p.add_argument("-q", "--quiet", action="store_true", help="suppress progress logs on stderr")
@@ -227,8 +227,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _run_comment_command(rest: list[str]) -> int:
-    """Handle ``council comment`` (issue #11): parse an allowlisted PR-comment
-    command and either print the resolved council args or dispatch the run.
+    """Handle ``jury comment`` (issue #11): parse an allowlisted PR-comment
+    command and either print the resolved jury args or dispatch the run.
 
     Returns 2 on a rejected/invalid command (so a workflow can ignore it), else
     the dispatched run's exit code (or 0 with --print-args).
@@ -237,13 +237,13 @@ def _run_comment_command(rest: list[str]) -> int:
 
     from .commands import CommandError, parse_comment
 
-    sub = argparse.ArgumentParser(prog="council comment", add_help=True)
+    sub = argparse.ArgumentParser(prog="jury comment", add_help=True)
     sub.add_argument("--text", required=True, help="the PR comment body to parse")
     sub.add_argument("--pr", help="PR number/URL to review and post back to")
     sub.add_argument("--repo", help="owner/name (defaults to current repo)")
     sub.add_argument(
         "--print-args", dest="print_args", action="store_true",
-        help="print the resolved council args instead of running",
+        help="print the resolved jury args instead of running",
     )
     sub.add_argument(
         "--no-post", dest="no_post", action="store_true",
@@ -296,7 +296,7 @@ def _init_available() -> dict:
 
 
 def _init_interactive(available: dict, input_fn=input, local_endpoint=None, models_fn=None) -> dict:
-    """Prompt for council settings; returns kwargs for scaffold.build_config.
+    """Prompt for jury settings; returns kwargs for scaffold.build_config.
 
     ``input_fn`` and ``models_fn`` are injectable for testing (the latter lists
     local models). Defaults are pre-filled from the detected agents/models so
@@ -307,7 +307,7 @@ def _init_interactive(available: dict, input_fn=input, local_endpoint=None, mode
     if models_fn is None:
         from .adapters import list_local_models as models_fn
 
-    print("Configure a review council (council.toml).\n", file=sys.stderr)
+    print("Configure a review jury (jury.toml).\n", file=sys.stderr)
     for name in KNOWN_AGENTS:
         mark = "available" if available.get(name) else "not found"
         print(f"  - {name}: {_AGENT_BLURB[name]} [{mark}]", file=sys.stderr)
@@ -361,11 +361,11 @@ def _init_interactive(available: dict, input_fn=input, local_endpoint=None, mode
 
 
 def _run_init(rest: list[str]) -> int:
-    """Handle ``council init`` (issue #107): scaffold a council.toml."""
+    """Handle ``jury init`` (issue #107): scaffold a jury.toml."""
     from .config import ConfigError, validate_config
     from .scaffold import KNOWN_AGENTS, PRESETS, build_config, render_toml
 
-    sub = argparse.ArgumentParser(prog="council init")
+    sub = argparse.ArgumentParser(prog="jury init")
     sub.add_argument(
         "--preset", choices=sorted(PRESETS),
         help="setup preset: offline (local-only), fast (1 round), balanced "
@@ -378,7 +378,7 @@ def _run_init(rest: list[str]) -> int:
     sub.add_argument("--no-verify", dest="verify", action="store_false")
     sub.add_argument("--local-model", help="model id for a local agent (qwen)")
     sub.add_argument("--local-endpoint", help="OpenAI-compatible base URL for a local agent")
-    sub.add_argument("-o", "--output", default="council.toml")
+    sub.add_argument("-o", "--output", default="jury.toml")
     sub.add_argument("--force", action="store_true", help="overwrite an existing file")
     sub.add_argument("--interactive", action="store_true", help="force interactive prompts")
     sub.add_argument("--list-agents", action="store_true", help="list known agents + availability and exit")
@@ -478,17 +478,17 @@ def _run_init(rest: list[str]) -> int:
 
     out_path.write_text(render_toml(config), encoding="utf-8")
     chosen = ", ".join(a["name"] for a in config["agent"])
-    print(f"Wrote {out_path} — panel: {chosen} · rounds: {config['council']['rounds']}")
-    print(f"Next: council --config-validate --config {out_path}")
-    print("Then: git diff main... | council --diff-file -")
+    print(f"Wrote {out_path} — panel: {chosen} · rounds: {config['jury']['rounds']}")
+    print(f"Next: jury --config-validate --config {out_path}")
+    print("Then: git diff main... | jury --diff-file -")
     return 0
 
 
 def _config_source(config_arg) -> str:
-    """Human-readable source of the config the council would load."""
+    """Human-readable source of the config the jury would load."""
     if config_arg:
         return str(config_arg)
-    return "council.toml" if Path("council.toml").exists() else "(built-in defaults)"
+    return "jury.toml" if Path("jury.toml").exists() else "(built-in defaults)"
 
 
 def _render_effective_config(cfg) -> str:
@@ -496,7 +496,7 @@ def _render_effective_config(cfg) -> str:
     on = lambda b: "on" if b else "off"  # noqa: E731
     lines = []
     lines.append(
-        f"[council] rounds={cfg.rounds} chair={cfg.chair} verify={on(cfg.verify)} "
+        f"[jury] rounds={cfg.rounds} chair={cfg.chair} verify={on(cfg.verify)} "
         f"parallel={on(cfg.parallel)} timeout={cfg.timeout}s"
     )
     adaptive = f"early_stop={on(cfg.early_stop)} max_rounds={cfg.effective_max_rounds}"
@@ -506,14 +506,14 @@ def _render_effective_config(cfg) -> str:
     )
     lines.append(f"          {adaptive}  ·  {budget}  ·  seed={cfg.seed if cfg.seed is not None else '—'}")
     lines.append(
-        f"[council.ci] fail_on={cfg.ci.fail_on} ignore_unverified={on(cfg.ci.ignore_unverified)}"
+        f"[jury.ci] fail_on={cfg.ci.fail_on} ignore_unverified={on(cfg.ci.ignore_unverified)}"
     )
     lines.append(
-        f"[council.context] mode={cfg.context.mode} redact_secrets={on(cfg.context.redact_secrets)}"
+        f"[jury.context] mode={cfg.context.mode} redact_secrets={on(cfg.context.redact_secrets)}"
     )
     d = cfg.diff
     lines.append(
-        f"[council.diff] max_bytes={d.max_bytes} chunk={on(d.chunk)} "
+        f"[jury.diff] max_bytes={d.max_bytes} chunk={on(d.chunk)} "
         f"exclude_generated={on(d.exclude_generated)} "
         f"exclude={d.exclude or '[]'} include={d.include or '[]'}"
     )
@@ -527,12 +527,12 @@ def _render_effective_config(cfg) -> str:
 
 
 def _run_config(rest: list[str]) -> int:
-    """Handle ``council config show|path``."""
+    """Handle ``jury config show|path``."""
     from .config import ConfigError, load_config
 
-    sub = argparse.ArgumentParser(prog="council config")
+    sub = argparse.ArgumentParser(prog="jury config")
     sub.add_argument("action", choices=["show", "path"])
-    sub.add_argument("--config", help="path to council.toml (default: ./council.toml or built-in)")
+    sub.add_argument("--config", help="path to jury.toml (default: ./jury.toml or built-in)")
     ns = sub.parse_args(rest)
 
     source = _config_source(ns.config)
@@ -554,11 +554,11 @@ def _maybe_add_local_fallback(config, args, log) -> None:
     """Append a local agent when nothing else can run, offline (issue: zero-config).
 
     Only fires in the safe "fresh user" case: no explicit `--config`, no
-    `./council.toml`, not `--mock`, none of the configured agents are available,
+    `./jury.toml`, not `--mock`, none of the configured agents are available,
     and a local OpenAI-compatible server is reachable with at least one model.
     Mutates ``config`` in place and points the chair at the local agent.
     """
-    if args.config or args.mock or Path("council.toml").exists():
+    if args.config or args.mock or Path("jury.toml").exists():
         return
     from .adapters import list_local_models, make_adapter
     from .config import AgentSpec
@@ -583,7 +583,7 @@ def _maybe_add_local_fallback(config, args, log) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     raw = list(sys.argv[1:] if argv is None else argv)
-    # Documented `council cache clear` UX (issue #33): handled before argparse so
+    # Documented `jury cache clear` UX (issue #33): handled before argparse so
     # the rest of the CLI keeps its flat flag surface (no subcommands).
     if raw[:2] == ["cache", "clear"]:
         from .cache import Cache
@@ -598,20 +598,20 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Cleared {removed} cache entr{'y' if removed == 1 else 'ies'}.")
         return 0
 
-    # Comment-command mode (issue #11): `council comment --text "/council review"`
-    # parses an allowlisted PR-comment command and dispatches a safe council run.
+    # Comment-command mode (issue #11): `jury comment --text "/jury review"`
+    # parses an allowlisted PR-comment command and dispatches a safe jury run.
     # Handled before the main parser so the comment text is never confused with
-    # the council's own flags, and never reaches a shell.
+    # the jury's own flags, and never reaches a shell.
     if raw[:1] == ["comment"]:
         return _run_comment_command(raw[1:])
 
-    # Config scaffolding (issue #107): `council init` writes a council.toml from
+    # Config scaffolding (issue #107): `jury init` writes a jury.toml from
     # detected agents / flags / interactive prompts. Intercepted before the main
     # parser so it keeps its own small flag surface.
     if raw[:1] == ["init"]:
         return _run_init(raw[1:])
 
-    # Config introspection: `council config show` prints the EFFECTIVE resolved
+    # Config introspection: `jury config show` prints the EFFECTIVE resolved
     # config + its source so you can see exactly what will run; `config path`
     # prints just the source.
     if raw[:1] == ["config"]:
@@ -641,7 +641,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.config_validate:
-        source = args.config or "council.toml (or built-in defaults)"
+        source = args.config or "jury.toml (or built-in defaults)"
         try:
             data = load_raw_config(args.config)
             warnings = validate_config(data, strict=args.strict_config)
@@ -704,17 +704,17 @@ def main(argv: list[str] | None = None) -> int:
 
     def log(msg: str) -> None:
         if not args.quiet:
-            print(f"[council] {msg}", file=sys.stderr)
+            print(f"[jury] {msg}", file=sys.stderr)
 
     # Smart offline fallback: with NO config file and NO usable agent CLI, but a
-    # local model server reachable, add a local agent so `council` just works
+    # local model server reachable, add a local agent so `jury` just works
     # offline out of the box (issue: easier zero-config). Never overrides an
     # explicit config or a working CLI panel.
     _maybe_add_local_fallback(config, args, log)
 
     diff, context = _read_diff(args)
 
-    # Incremental review (issue #9): when --incremental and a prior council
+    # Incremental review (issue #9): when --incremental and a prior jury
     # marker exists, narrow the diff to the range since the last reviewed SHA;
     # otherwise fall back safely to the full diff. The reviewed head SHA is also
     # recorded on the posted summary so a later run can go incremental.
@@ -742,7 +742,7 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("error: empty diff — nothing to review")
 
     # Optional local result cache (issue #33): a hit skips the run entirely; a
-    # miss runs the council and stores the outcome. The key covers the diff,
+    # miss runs the jury and stores the outcome. The key covers the diff,
     # effective config, prompt version, package version, context policy, and seed.
     cache = None
     cache_k = None
@@ -756,7 +756,7 @@ def main(argv: list[str] | None = None) -> int:
         if outcome is not None:
             log(f"cache hit ({cache_k[:12]}…) — reusing stored outcome")
         else:
-            log(f"cache miss ({cache_k[:12]}…) — running council")
+            log(f"cache miss ({cache_k[:12]}…) — running jury")
 
     if outcome is None:
         try:
@@ -765,12 +765,12 @@ def main(argv: list[str] | None = None) -> int:
                 policy=policy, log=log,
             )
         except KeyboardInterrupt:
-            # Graceful cancellation (issue #30): a council run can be long, so
+            # Graceful cancellation (issue #30): a jury run can be long, so
             # Ctrl-C should exit cleanly with the conventional 130 rather than
             # dumping a traceback. Work already completed is not partially
             # rendered here because the orchestrator returns atomically; we just
             # report the cancellation.
-            print("\n[council] cancelled (interrupted) — no report produced", file=sys.stderr)
+            print("\n[jury] cancelled (interrupted) — no report produced", file=sys.stderr)
             return 130
         except RuntimeError as exc:
             # Large-diff "too large / nothing to review" (issue #31) and "no

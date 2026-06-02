@@ -14,14 +14,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from agent_review_council.config import (  # noqa: E402
+from ai_jury.config import (  # noqa: E402
     DEFAULT_CONFIG,
-    CouncilConfig,
+    JuryConfig,
     _from_dict,
 )
-from agent_review_council.metadata import build_run_metadata  # noqa: E402
-from agent_review_council.orchestrator import run_council  # noqa: E402
-from agent_review_council.report import render  # noqa: E402
+from ai_jury.metadata import build_run_metadata  # noqa: E402
+from ai_jury.orchestrator import run_jury  # noqa: E402
+from ai_jury.report import render  # noqa: E402
 
 SECRET = "sk-SUPERSECRETxyz1234567890"
 PROMPT_MARKER = "RAW-PROMPT-DIFF-TEXT-MARKER"
@@ -35,14 +35,14 @@ SAMPLE_DIFF = (
 )
 
 
-def _config() -> CouncilConfig:
+def _config() -> JuryConfig:
     return _from_dict(DEFAULT_CONFIG)
 
 
 class MetadataShapeTest(unittest.TestCase):
     def test_keys_and_types(self) -> None:
         cfg = _config()
-        outcome = run_council(cfg, SAMPLE_DIFF, mock=True)
+        outcome = run_jury(cfg, SAMPLE_DIFF, mock=True)
         meta = build_run_metadata(outcome, cfg)
 
         expected_keys = {
@@ -87,7 +87,7 @@ class MetadataShapeTest(unittest.TestCase):
 
     def test_per_agent_duration_and_status(self) -> None:
         cfg = _config()
-        outcome = run_council(cfg, SAMPLE_DIFF, mock=True)
+        outcome = run_jury(cfg, SAMPLE_DIFF, mock=True)
         meta = build_run_metadata(outcome, cfg)
 
         self.assertEqual(len(meta["agents"]), len(outcome.reviews))
@@ -103,7 +103,7 @@ class MetadataShapeTest(unittest.TestCase):
 
     def test_failed_agent_status_and_error_code(self) -> None:
         cfg = _config()
-        outcome = run_council(cfg, SAMPLE_DIFF, mock=True)
+        outcome = run_jury(cfg, SAMPLE_DIFF, mock=True)
         # Force one reviewer to look failed.
         outcome.reviews[1].ok = False
         outcome.reviews[1].error_code = "nonzero_exit"
@@ -116,14 +116,14 @@ class MetadataShapeTest(unittest.TestCase):
         single = _config()
         single.rounds = 1
         meta_single = build_run_metadata(
-            run_council(single, SAMPLE_DIFF, mock=True), single
+            run_jury(single, SAMPLE_DIFF, mock=True), single
         )
         self.assertEqual(meta_single["rounds_executed"], 1)
 
         multi = _config()
         multi.rounds = 2
         meta_multi = build_run_metadata(
-            run_council(multi, SAMPLE_DIFF, mock=True), multi
+            run_jury(multi, SAMPLE_DIFF, mock=True), multi
         )
         self.assertEqual(meta_multi["rounds_executed"], 2)
 
@@ -132,7 +132,7 @@ class MetadataShapeTest(unittest.TestCase):
         off.verify = False
         self.assertFalse(
             build_run_metadata(
-                run_council(off, SAMPLE_DIFF, mock=True), off
+                run_jury(off, SAMPLE_DIFF, mock=True), off
             )["verify_enabled"]
         )
 
@@ -140,7 +140,7 @@ class MetadataShapeTest(unittest.TestCase):
         on.verify = True
         self.assertTrue(
             build_run_metadata(
-                run_council(on, SAMPLE_DIFF, mock=True), on
+                run_jury(on, SAMPLE_DIFF, mock=True), on
             )["verify_enabled"]
         )
 
@@ -150,7 +150,7 @@ class MetadataNoSecretsTest(unittest.TestCase):
         cfg = _config()
         # Disable redaction so the secret would survive into outputs if copied.
         cfg.context.redact_secrets = False
-        outcome = run_council(
+        outcome = run_jury(
             cfg, f"{PROMPT_MARKER} {SECRET}\n{SAMPLE_DIFF}", mock=True
         )
         # Inject a fake secret + prompt marker into agent output/error to be
@@ -182,7 +182,7 @@ class MetadataJsonSidecarTest(unittest.TestCase):
     def test_json_round_trips(self) -> None:
         cfg = _config()
         cfg.verify = True
-        outcome = run_council(cfg, SAMPLE_DIFF, mock=True)
+        outcome = run_jury(cfg, SAMPLE_DIFF, mock=True)
         meta = build_run_metadata(outcome, cfg)
 
         text = json.dumps(meta, indent=2)

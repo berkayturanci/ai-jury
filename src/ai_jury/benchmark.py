@@ -1,11 +1,11 @@
-"""Offline benchmark for council review quality (issue #12).
+"""Offline benchmark for jury review quality (issue #12).
 
-Measures, in a small and *directional* way, whether a council's structured
+Measures, in a small and *directional* way, whether a jury's structured
 findings line up with hand-authored expectations for a set of fixture diffs.
 
 Design (honesty matters here)
 -----------------------------
-The :class:`~agent_review_council.adapters.MockAdapter` emits a *fixed* canned
+The :class:`~ai_jury.adapters.MockAdapter` emits a *fixed* canned
 finding regardless of the diff it is given, so ``--mock`` output does **not**
 reflect a fixture's content. Running ``--mock`` per fixture and scoring it would
 be fake signal. We therefore separate two concerns:
@@ -16,11 +16,11 @@ be fake signal. We therefore separate two concerns:
 * A **finding source**:
   - *Offline / CI default ("recorded" mode):* every fixture ships a
     hand-authored ``<id>.expected.json`` AND a recorded ``<id>.findings.json``
-    (a realistic sample of what a council produced for that diff). The offline
+    (a realistic sample of what a jury produced for that diff). The offline
     benchmark scores recorded -> expected. It validates the SCORER + FIXTURES
     and provides recorded baselines. It runs with no live CLIs and no network.
-  - *Optional live mode:* gated behind ``COUNCIL_BENCH_LIVE=1``. It runs the
-    real council (``run_council(..., mock=False)``) per fixture diff and scores
+  - *Optional live mode:* gated behind ``JURY_BENCH_LIVE=1``. It runs the
+    real jury (``run_jury(..., mock=False)``) per fixture diff and scores
     the live findings. OFF by default; never in CI.
 
 What this benchmark does and does NOT claim
@@ -327,29 +327,29 @@ def run_offline(base_dir: Path | None = None) -> tuple[list[FixtureScore], dict]
 
 def live_enabled() -> bool:
     """True when the optional live benchmark mode is explicitly enabled."""
-    return os.environ.get("COUNCIL_BENCH_LIVE") == "1"
+    return os.environ.get("JURY_BENCH_LIVE") == "1"
 
 
 def run_live(base_dir: Path | None = None) -> tuple[list[FixtureScore], dict]:
-    """Run the real council per fixture diff and score the live findings.
+    """Run the real jury per fixture diff and score the live findings.
 
-    Only meaningful when ``COUNCIL_BENCH_LIVE=1``. Imports the orchestrator
+    Only meaningful when ``JURY_BENCH_LIVE=1``. Imports the orchestrator
     lazily so the offline path never touches the live machinery. This invokes
     real agent CLIs and is never run in CI.
     """
     if not live_enabled():
         raise RuntimeError(
-            "live benchmark is disabled; set COUNCIL_BENCH_LIVE=1 to enable it"
+            "live benchmark is disabled; set JURY_BENCH_LIVE=1 to enable it"
         )
     # Lazy imports: keep the offline/import path free of live dependencies.
     from .config import DEFAULT_CONFIG, _from_dict
-    from .orchestrator import run_council
+    from .orchestrator import run_jury
 
     config = _from_dict(DEFAULT_CONFIG)
     fixtures = load_fixtures(base_dir)
     scores: list[FixtureScore] = []
     for fx in fixtures:
-        outcome = run_council(config, fx.diff, mock=False)
+        outcome = run_jury(config, fx.diff, mock=False)
         findings = [_finding_to_dict(f) for f in outcome.findings]
         scores.append(score_fixture(findings, fx.expected))
     return scores, aggregate(scores)
@@ -392,8 +392,8 @@ def format_table(scores: list[FixtureScore], summary: dict) -> str:
 def main(argv: list[str] | None = None) -> int:
     """Module entry point: print the score table (offline by default)."""
     live = live_enabled()
-    mode = "live (COUNCIL_BENCH_LIVE=1)" if live else "offline/recorded"
-    print(f"agent-review-council benchmark — mode: {mode}")
+    mode = "live (JURY_BENCH_LIVE=1)" if live else "offline/recorded"
+    print(f"ai-jury benchmark — mode: {mode}")
     print(
         "NOTE: small and directional, not a universal quality claim. "
         "Offline mode validates the scorer + recorded baselines, not live quality.\n"

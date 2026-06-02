@@ -1,10 +1,10 @@
 """Tests for the severity-gated CI exit policy (issue #4)."""
 import unittest
 
-from agent_review_council.ci import evaluate_ci
-from agent_review_council.config import CiConfig, _from_dict
-from agent_review_council.consensus import FindingGroup
-from agent_review_council.findings import Finding
+from ai_jury.ci import evaluate_ci
+from ai_jury.config import CiConfig, _from_dict
+from ai_jury.consensus import FindingGroup
+from ai_jury.findings import Finding
 
 
 def _group(severity, status=""):
@@ -70,7 +70,7 @@ class CiConfigTests(unittest.TestCase):
 
     def test_load_from_dict(self):
         cfg = _from_dict(
-            {"council": {"ci": {"fail_on": ["critical"], "ignore_unverified": False}}}
+            {"jury": {"ci": {"fail_on": ["critical"], "ignore_unverified": False}}}
         )
         self.assertEqual(cfg.ci.fail_on, ["critical"])
         self.assertFalse(cfg.ci.ignore_unverified)

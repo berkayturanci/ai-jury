@@ -1,6 +1,6 @@
 # Ecosystem comparison
 
-Where `agent-review-council` sits among adjacent code-review tools. The goal is to help
+Where `ai-jury` sits among adjacent code-review tools. The goal is to help
 you pick the right tool — not to claim superiority. Several tools below are mature,
 hosted products with capabilities this project deliberately does **not** try to match.
 
@@ -12,7 +12,7 @@ against their current docs before deciding.
 
 - **Native-CLI orchestration** — drives each vendor's *own* coding-agent CLI
   (`claude`, `codex`, `agy`/`gemini`, `qwen`, …) as a subprocess. Each reviewer runs in
-  its native environment. *This project, Magpie, agent-council, the-council.*
+  its native environment. *This project, Magpie, agent-jury, the-jury.*
 - **API-level multi-model** — calls models through provider/aggregator APIs rather than
   their CLIs. *Star Chamber (Mozilla.ai).*
 - **Hosted PR reviewers** — managed SaaS that reviews PRs in your repo with a dashboard,
@@ -23,27 +23,27 @@ against their current docs before deciding.
 
 Legend: ✅ yes · ➖ partial / optional · ❌ no · — not applicable.
 
-| Capability | agent-review-council | Native-CLI peers (Magpie / agent-council / the-council) | API-level (Star Chamber) | Hosted PR reviewers |
+| Capability | ai-jury | Native-CLI peers (Magpie / agent-jury / the-jury) | API-level (Star Chamber) | Hosted PR reviewers |
 |:--|:--:|:--:|:--:|:--:|
 | Native CLI execution (per-vendor agent) | ✅ | ✅ | ❌ | ❌ |
 | API-level model calls | ❌ | ❌ | ✅ | ✅ |
 | Multiple vendors / models | ✅ | ✅ | ✅ | ➖ |
-| Consensus / debate rounds | ✅ | ✅ (Magpie, agent-council) | ➖ (`--debate`) | ➖ |
+| Consensus / debate rounds | ✅ | ✅ (Magpie, agent-jury) | ➖ (`--debate`) | ➖ |
 | Verification pass (re-read code) | ✅ | ➖ | ❌ | ➖ |
 | Structured findings (severity/file/line) | ✅ | ➖ | ➖ | ✅ |
 | Inline PR comments | ✅ (`--post-inline`) | ➖ | ❌ | ✅ |
 | CI gating (non-zero on blocking) | ✅ (`--ci`, `--fail-on`) | ➖ | ❌ | ✅ |
 | Suggested fixes (inspectable, no auto-apply) | ➖ (`--suggest-patches`, verified findings only) | ➖ | ❌ | ✅ |
 | Incremental review (changed-since-last-run) | ✅ (`--incremental`) | ❌ | ❌ | ✅ |
-| Comment-triggered runs (`/council …`) | ➖ (`council comment` + workflow recipe) | ➖ | ❌ | ✅ |
+| Comment-triggered runs (`/jury …`) | ➖ (`jury comment` + workflow recipe) | ➖ | ❌ | ✅ |
 | Offline / local open-weight reviewer | ✅ (`vendor = "local"`, Ollama/etc., $0) | ➖ | ➖ | ❌ |
-| Guided config setup | ✅ (`council init`) | ❌ | ❌ | n/a (hosted) |
+| Guided config setup | ✅ (`jury init`) | ❌ | ❌ | n/a (hosted) |
 | Hosted dashboard | ❌ | ❌ | ❌ | ✅ |
 | Local-first (no data leaves to a SaaS) | ✅ | ✅ | ➖ | ❌ |
 | Secret redaction before send | ✅ | ➖ | ➖ | n/a (hosted) |
 | Dependency footprint | ✅ stdlib-only | ➖ (Node/Bun runtimes) | ➖ (Python + `any-llm`) | — (hosted) |
-| Project-specific review policy | ✅ (`.council/policy.toml`) | ➖ | ➖ | ✅ |
-| Skill drop-in for an existing repo | ✅ (Claude Code skill) | ➖ (the-council, agent-council are skills) | ➖ | ❌ |
+| Project-specific review policy | ✅ (`.jury/policy.toml`) | ➖ | ➖ | ✅ |
+| Skill drop-in for an existing repo | ✅ (Claude Code skill) | ➖ (the-jury, agent-jury are skills) | ➖ | ❌ |
 
 Entries for other projects are intentionally conservative; where a project's support is
 configurable or undocumented it is marked ➖. Corrections via PR are welcome.
@@ -56,7 +56,7 @@ configurable or undocumented it is marked ➖. Corrections via PR are welcome.
   project and solve a broader product surface.
 - **Use an API-level tool** (Star Chamber) when you want multi-model consensus but
   prefer provider APIs over installing vendor CLIs.
-- **Use `agent-review-council`** when you specifically want each reviewer to run as a
+- **Use `ai-jury`** when you specifically want each reviewer to run as a
   *native vendor CLI agent* (its own tooling/context), want a **local-first**,
   **stdlib-only** drop-in that snaps into an existing repo's review workflow via a
   Claude Code skill, and want debate + a verification pass + CI gating without a hosted
@@ -74,8 +74,8 @@ Honest gaps, and where they now stand:
   never applies them automatically.
 - **Hosted dashboard / website** — a landing/docs site exists under `website/`; there is
   no hosted review SaaS, and that is a deliberate non-goal.
-- **Project-specific policy** — supported via `.council/policy.toml` (high-risk paths,
+- **Project-specific policy** — supported via `.jury/policy.toml` (high-risk paths,
   focus areas, severity overrides); deeper rule engines remain out of scope.
 
-See the [milestones](https://github.com/berkayturanci/agent-review-council/milestones)
+See the [milestones](https://github.com/berkayturanci/ai-jury/milestones)
 for anything still open.

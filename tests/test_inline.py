@@ -4,9 +4,9 @@ import json
 import unittest
 from contextlib import redirect_stdout
 
-from agent_review_council import github
-from agent_review_council.github import build_inline_payload, post_inline_comments
-from agent_review_council.findings import Finding
+from ai_jury import github
+from ai_jury.github import build_inline_payload, post_inline_comments
+from ai_jury.findings import Finding
 
 
 class BuildInlinePayloadTests(unittest.TestCase):

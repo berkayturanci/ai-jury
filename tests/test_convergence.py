@@ -11,16 +11,16 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from agent_review_council.adapters import AgentResult, MockAdapter  # noqa: E402
-from agent_review_council.config import DEFAULT_CONFIG, _from_dict  # noqa: E402
-from agent_review_council.consensus import group_findings  # noqa: E402
-from agent_review_council.convergence import (  # noqa: E402
+from ai_jury.adapters import AgentResult, MockAdapter  # noqa: E402
+from ai_jury.config import DEFAULT_CONFIG, _from_dict  # noqa: E402
+from ai_jury.consensus import group_findings  # noqa: E402
+from ai_jury.convergence import (  # noqa: E402
     debate_convergence,
     review_convergence,
 )
-from agent_review_council.findings import Finding  # noqa: E402
-from agent_review_council.metadata import build_run_metadata  # noqa: E402
-from agent_review_council.orchestrator import run_council  # noqa: E402
+from ai_jury.findings import Finding  # noqa: E402
+from ai_jury.metadata import build_run_metadata  # noqa: E402
+from ai_jury.orchestrator import run_jury  # noqa: E402
 
 SAMPLE_DIFF = (
     "diff --git a/src/example.py b/src/example.py\n"
@@ -132,7 +132,7 @@ class EarlyStopPipelineTest(unittest.TestCase):
     def test_unanimous_run_skips_debate(self):
         # When every reviewer raises the identical finding the panel is unanimous,
         # so early-stop skips the debate round entirely.
-        import agent_review_council.orchestrator as orch
+        import ai_jury.orchestrator as orch
 
         cfg = _config()
         cfg.early_stop = True
@@ -140,7 +140,7 @@ class EarlyStopPipelineTest(unittest.TestCase):
         real_make = orch.make_adapter
         orch.make_adapter = lambda spec, mock=False: _UnanimousAdapter(spec)  # noqa: ARG005
         try:
-            outcome = run_council(cfg, SAMPLE_DIFF, mock=True)
+            outcome = run_jury(cfg, SAMPLE_DIFF, mock=True)
         finally:
             orch.make_adapter = real_make
         self.assertEqual(outcome.debate, [])
@@ -148,7 +148,7 @@ class EarlyStopPipelineTest(unittest.TestCase):
         self.assertIn("early stop after round 1", outcome.stop_reason)
 
     def test_disagreement_runs_debate_up_to_max_rounds(self):
-        import agent_review_council.orchestrator as orch
+        import ai_jury.orchestrator as orch
 
         cfg = _config()
         cfg.early_stop = True
@@ -156,7 +156,7 @@ class EarlyStopPipelineTest(unittest.TestCase):
         real_make = orch.make_adapter
         orch.make_adapter = lambda spec, mock=False: _DivergentAdapter(spec)  # noqa: ARG005
         try:
-            outcome = run_council(cfg, SAMPLE_DIFF, mock=True)
+            outcome = run_jury(cfg, SAMPLE_DIFF, mock=True)
         finally:
             orch.make_adapter = real_make
         # Disagreement -> debate runs; the mock debate always disputes, so it runs
@@ -171,7 +171,7 @@ class EarlyStopPipelineTest(unittest.TestCase):
         # Default config has early_stop = False: rounds=2 always debates.
         cfg = _config()
         self.assertFalse(cfg.early_stop)
-        outcome = run_council(cfg, SAMPLE_DIFF, mock=True)
+        outcome = run_jury(cfg, SAMPLE_DIFF, mock=True)
         self.assertEqual(outcome.rounds_executed, 2)
         self.assertTrue(outcome.debate)
 

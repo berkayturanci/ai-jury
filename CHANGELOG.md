@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Secure-by-default agent sandboxing (#100): the shipped reviewer defaults no
   longer grant broad powers while reading untrusted PR content. `codex` now runs
-  `-s read-only` (was `danger-full-access`) — the diff is fetched by the council,
+  `-s read-only` (was `danger-full-access`) — the diff is fetched by the jury,
   not the agent, so the reviewer needs no write/network; `agy` now runs
   `--sandbox`; `claude` keeps its write-tool denylist. The least-privilege audit
   recognizes a sandbox as a mitigation, and the shipped defaults raise no
@@ -29,7 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   served as a real review (or vice versa) for the same diff+config.
 - `total_timeout` now bounds a whole **chunked** review instead of resetting per
   chunk: `review_diff` threads one shared budget through every chunk's
-  `run_council` (which gained an optional `budget` parameter).
+  `run_jury` (which gained an optional `budget` parameter).
 - The structured-findings report no longer crashes (`TypeError`) when two
   same-severity findings include one with no `file`/`line`; the sort key is
   None-safe.
@@ -39,33 +39,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Large-diff binary detection (#31) no longer misclassifies a *source* file as
   binary just because its content mentions `Binary files` / `GIT binary patch`;
   it now matches only the diff's unprefixed binary-marker header line.
-- `council --doctor` reports local/open-weight agents (#43) by their endpoint
+- `jury --doctor` reports local/open-weight agents (#43) by their endpoint
   reachability instead of a (non-existent) CLI on PATH, so a reachable local
   server no longer shows as `MISSING`.
 
 ### Added
 
-- `council init --preset offline|fast|balanced|thorough` — one-command setup for
+- `jury init --preset offline|fast|balanced|thorough` — one-command setup for
   common intents (offline = free local-only; fast = 1 round; balanced = debate +
   early-stop; thorough = all agents + debate + verify). Explicit flags override
   the preset's defaults.
 - Smart offline fallback: with no config file, no available agent CLI, and a
-  reachable local model server, `council` automatically adds a local agent so it
+  reachable local model server, `jury` automatically adds a local agent so it
   works offline out of the box (never overrides an explicit config or a working
   CLI panel).
-- `council config show` / `council config path` print the **effective resolved
+- `jury config show` / `jury config path` print the **effective resolved
   config** (and its source file) so you can see exactly what a run will use.
-- `council --doctor` now ends with a **Next steps** section: a `ready to run:
+- `jury --doctor` now ends with a **Next steps** section: a `ready to run:
   yes/no` verdict plus actionable fixes (scaffold a config, install a CLI, or use
   a reachable local model).
-- `council init` scaffolds a `council.toml` (#107): detects which agent CLIs are
+- `jury init` scaffolds a `jury.toml` (#107): detects which agent CLIs are
   available and writes a valid config from interactive prompts or flags
   (`--agents claude,codex,qwen --rounds 2`), using the secure-by-default agent
   templates. `--list-agents` shows availability; existing files are not
   overwritten without `--force`.
-- `council init` discovers **local (Ollama/OpenAI-compatible) models** (#109):
+- `jury init` discovers **local (Ollama/OpenAI-compatible) models** (#109):
   the interactive flow lists the models on your server and lets you pick one
-  (preferring a coder model); `council init --list-models` prints them. Falls
+  (preferring a coder model); `jury init --list-models` prints them. Falls
   back gracefully to a typed default when no server is reachable.
 - Local / open-weight reviewer (#43): a new `vendor = "local"` agent talks to any
   OpenAI-compatible server (Ollama, llama.cpp, vLLM, LM Studio) over plain HTTP
@@ -84,15 +84,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   checklist references it.
 
 - Incremental review mode (#9): `--incremental` reviews only the diff since the
-  last council run on a PR (the reviewed head SHA is recorded as a hidden marker
+  last jury run on a PR (the reviewed head SHA is recorded as a hidden marker
   on the summary comment), falling back to a full review when no prior marker
   exists or the head is unchanged. The report states the review scope.
 - Suggested patches (#10): `--suggest-patches` emits a separate, opt-in
   suggested-patches section for **verified** findings only — read-only, never
   applied automatically. `--patches-out PATH` writes them to a file instead.
-- GitHub comment commands (#11): a `council comment --text "/council review …"`
+- GitHub comment commands (#11): a `jury comment --text "/jury review …"`
   mode parses allowlisted PR-comment commands (`review`, `summary`; `--rounds`
-  only) into a safe council run — comment text never reaches a shell. Includes a
+  only) into a safe jury run — comment text never reaches a shell. Includes a
   documented, author-gated GitHub Actions recipe in the cookbook.
 - Run budget, retries, and partial-result policy (#30): optional `total_timeout`
   / `phase_timeout` budgets and opt-in `retries` for transient
@@ -107,14 +107,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `--rounds` keeps reproducible fixed-N behaviour. CLI: `--early-stop` /
   `--no-early-stop`, `--max-rounds`.
 - Large-diff handling (#31): the diff is measured and filtered (binary,
-  generated/vendored files, and `[council.diff]` include/exclude globs) before
+  generated/vendored files, and `[jury.diff]` include/exclude globs) before
   review; an over-budget diff is chunked by file (`chunk = true`) or rejected
   with an actionable message. CLI reports size and the selected mode. CLI:
   `--max-diff-bytes`, `--chunk` / `--no-chunk`, `--exclude`, `--include`.
 - Optional local result cache (#33): `--cache` reuses a stored outcome for an
   unchanged diff+config (key covers diff, config hash, prompt version, package
   version, context policy, seed) and stores on a miss; cache hits are marked in
-  logs and metadata. Clear with `council cache clear` or `--clear-cache`.
+  logs and metadata. Clear with `jury cache clear` or `--clear-cache`.
   Privacy implications documented in `docs/configuration.md`.
 - Maintainer governance (#26): `MAINTAINERS.md` documents triage labels, release
   cadence, the compatibility/deprecation policy, decision-making, security
@@ -123,14 +123,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- The `review-council` skill is now a compound, end-to-end flow: scaffold a config
-  if needed (`council init`) → review → capture the report (`-o`) → summarize,
-  noting that `council` already combines review + report in one command. Covers the
+- The `ai-jury` skill is now a compound, end-to-end flow: scaffold a config
+  if needed (`jury init`) → review → capture the report (`-o`) → summarize,
+  noting that `jury` already combines review + report in one command. Covers the
   local/open-weight option and add-ons (`--incremental`, `--suggest-patches`,
   `config show`, `--doctor`).
 - README and hero visual updated to cover current capabilities (#112): the hero now
   shows the **fourth, local / open-weight** panelist (alongside Claude/Codex/Antigravity)
-  and the broader pipeline; the README leads with free/offline reviews, `council init`,
+  and the broader pipeline; the README leads with free/offline reviews, `jury init`,
   and secure-by-default sandboxing, and the Status section reflects shipped features.
 - Run metadata schema bumped to v2: adds `stop_reason`, `skipped`, `retried`,
   `budget_exhausted`, `from_cache`, an `execution` block, and per-agent
@@ -168,9 +168,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Initial project-agnostic release of the cross-vendor review council.
+- Initial project-agnostic release of the cross-vendor review jury.
 - Native CLI adapters for Claude Code, Codex CLI, and Antigravity.
 - Review, debate, and synthesis orchestration pipeline.
 - Offline mock mode with unit tests and CLI smoke coverage.
 - GitHub PR diff input and optional PR comment output through the GitHub CLI.
-- Bundled Claude Code skill for invoking the council from another project.
+- Bundled Claude Code skill for invoking the jury from another project.

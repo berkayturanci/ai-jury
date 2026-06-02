@@ -1,13 +1,13 @@
 """Tests for the verification round (issue #3)."""
 import unittest
 
-from agent_review_council.config import AgentSpec, CouncilConfig
-from agent_review_council.findings import parse_verdicts
-from agent_review_council.orchestrator import run_council
+from ai_jury.config import AgentSpec, JuryConfig
+from ai_jury.findings import parse_verdicts
+from ai_jury.orchestrator import run_jury
 
 
 def _config(verify=True):
-    return CouncilConfig(
+    return JuryConfig(
         rounds=2,
         chair="claude",
         verify=verify,
@@ -58,7 +58,7 @@ class ParseVerdictsTests(unittest.TestCase):
 
 class VerifyRoundTests(unittest.TestCase):
     def test_verify_runs_and_attaches_status(self):
-        outcome = run_council(_config(verify=True), "fake diff", mock=True)
+        outcome = run_jury(_config(verify=True), "fake diff", mock=True)
         self.assertIsNotNone(outcome.verify)
         self.assertTrue(outcome.verify.ok)
         self.assertTrue(outcome.verdicts)
@@ -73,7 +73,7 @@ class VerifyRoundTests(unittest.TestCase):
         self.assertEqual(by_line[7].bucket, "rejected")
 
     def test_verify_disabled_skips_phase(self):
-        outcome = run_council(_config(verify=False), "fake diff", mock=True)
+        outcome = run_jury(_config(verify=False), "fake diff", mock=True)
         self.assertIsNone(outcome.verify)
         self.assertEqual(outcome.verdicts, [])
         for g in outcome.groups:

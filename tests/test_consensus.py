@@ -1,13 +1,13 @@
 """Tests for deterministic consensus grouping."""
 import unittest
 
-from agent_review_council.consensus import (
+from ai_jury.consensus import (
     BUCKET_CONSENSUS,
     BUCKET_MAJORITY,
     BUCKET_SINGLE,
     group_findings,
 )
-from agent_review_council.findings import Finding
+from ai_jury.findings import Finding
 
 
 def _f(reviewer, severity="major", file="src/a.py", line=10, claim="Null deref"):

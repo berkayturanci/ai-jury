@@ -1,4 +1,4 @@
-"""Offline tests for ``council --doctor`` diagnostics.
+"""Offline tests for ``jury --doctor`` diagnostics.
 
 Run with: python -m unittest discover -s tests
 No third-party dependencies, no live agent CLIs, no network.
@@ -14,15 +14,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from agent_review_council import doctor  # noqa: E402
+from ai_jury import doctor  # noqa: E402
 
 
 VALID_CONFIG = """\
-[council]
+[jury]
 rounds = 2
 chair = "claude"
 
-[council.context]
+[jury.context]
 mode = "diff-only"
 
 [[agent]]
@@ -42,11 +42,11 @@ enabled = false
 # redact it so it never appears in any rendered output or JSON.
 SECRET = "sk-ABCDEF0123456789ABCDEF0123456789secretvalue"
 SECRET_CONFIG = """\
-[council]
+[jury]
 rounds = 1
 chair = "token={secret}"
 
-[council.context]
+[jury.context]
 mode = "diff-only"
 
 [[agent]]
@@ -102,7 +102,7 @@ class BuildDiagnosticsTests(unittest.TestCase):
 
     def test_real_command_is_available(self):
         config = """\
-[council]
+[jury]
 rounds = 1
 chair = "claude"
 
@@ -126,13 +126,13 @@ enabled = true
         self.assertTrue(diag["config_warnings"])
 
     def test_missing_config_is_best_effort(self):
-        diag = doctor.build_diagnostics("/nonexistent/path/council.toml")
+        diag = doctor.build_diagnostics("/nonexistent/path/jury.toml")
         self.assertIsNone(diag["config"])
         self.assertTrue(diag["config_warnings"])
 
     def test_chair_mismatch_warning(self):
         config = """\
-[council]
+[jury]
 rounds = 1
 chair = "nonexistent-chair"
 
@@ -190,7 +190,7 @@ class RenderReportTests(unittest.TestCase):
         diag = doctor.build_diagnostics(path)
         report = doctor.render_report(diag)
 
-        self.assertIn("council doctor", report)
+        self.assertIn("jury doctor", report)
         self.assertIn("Agents", report)
         self.assertIn("Config summary", report)
         self.assertIn("no telemetry", report.lower())
@@ -281,7 +281,7 @@ class CapabilityDiagnosticsTests(unittest.TestCase):
         )
         # Doctor still renders without raising.
         report = doctor.render_report(diag)
-        self.assertIn("council doctor", report)
+        self.assertIn("jury doctor", report)
         self.assertIn("version=unknown", report)
 
     def test_disabled_agent_capability_warnings_not_surfaced(self):
@@ -332,7 +332,7 @@ class RecommendationsTest(unittest.TestCase):
 
     def test_ready_and_render(self):
         # A reachable agent (mock the availability) -> ready, no "install" step.
-        import agent_review_council.doctor as d
+        import ai_jury.doctor as d
 
         real = d._is_available
         d._is_available = lambda spec: True  # noqa: ARG005

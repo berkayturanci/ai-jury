@@ -18,10 +18,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from agent_review_council import orchestrator  # noqa: E402
-from agent_review_council.config import DEFAULT_CONFIG, CouncilConfig, _from_dict  # noqa: E402
-from agent_review_council.orchestrator import resolve_chair, run_council  # noqa: E402
-from agent_review_council.report import render  # noqa: E402
+from ai_jury import orchestrator  # noqa: E402
+from ai_jury.config import DEFAULT_CONFIG, JuryConfig, _from_dict  # noqa: E402
+from ai_jury.orchestrator import resolve_chair, run_jury  # noqa: E402
+from ai_jury.report import render  # noqa: E402
 
 SAMPLE_DIFF = (
     "diff --git a/src/example.py b/src/example.py\n"
@@ -35,7 +35,7 @@ AGENT_NAMES = ("claude", "codex", "agy")
 VENDOR_NAMES = ("anthropic", "openai", "google")
 
 
-def _config() -> CouncilConfig:
+def _config() -> JuryConfig:
     return _from_dict(DEFAULT_CONFIG)
 
 
@@ -86,13 +86,13 @@ class PreferNonReviewerChairTest(unittest.TestCase):
     def test_non_reviewer_chair_used_end_to_end(self) -> None:
         # Configure a 4th agent that is NOT a reviewer in this run by disabling
         # its review path is not trivial in mock; instead assert resolve picks a
-        # non-reviewer when reviewers is a strict subset, via run_council with a
+        # non-reviewer when reviewers is a strict subset, via run_jury with a
         # config whose chair is unusable and preference on. All three mock
         # agents review, so we assert the documented fallback (first usable).
         cfg = _config()
         cfg.chair = "nonexistent"
         cfg.prefer_non_reviewer_chair = True
-        outcome = run_council(cfg, SAMPLE_DIFF, mock=True, seed=1)
+        outcome = run_jury(cfg, SAMPLE_DIFF, mock=True, seed=1)
         # All mock agents review successfully, so non-reviewer set is empty ->
         # fallback to first usable, and verify/synthesis use that SAME chair.
         self.assertEqual(outcome.chair, "claude")
@@ -120,8 +120,8 @@ class RotateChairTest(unittest.TestCase):
     def test_rotate_end_to_end_same_seed_same_chair(self) -> None:
         cfg = _config()
         cfg.chair = "rotate"
-        c1 = run_council(cfg, SAMPLE_DIFF, mock=True, seed=2024).chair
-        c2 = run_council(cfg, SAMPLE_DIFF, mock=True, seed=2024).chair
+        c1 = run_jury(cfg, SAMPLE_DIFF, mock=True, seed=2024).chair
+        c2 = run_jury(cfg, SAMPLE_DIFF, mock=True, seed=2024).chair
         self.assertEqual(c1, c2)
         self.assertIn(c1, USABLE)
 
@@ -129,7 +129,7 @@ class RotateChairTest(unittest.TestCase):
         cfg = _config()
         cfg.chair = "rotate"
         chairs = {
-            run_council(cfg, SAMPLE_DIFF, mock=True, seed=s).chair
+            run_jury(cfg, SAMPLE_DIFF, mock=True, seed=s).chair
             for s in range(30)
         }
         self.assertGreater(len(chairs), 1)
@@ -137,7 +137,7 @@ class RotateChairTest(unittest.TestCase):
     def test_verify_and_synthesis_use_same_resolved_chair(self) -> None:
         cfg = _config()
         cfg.chair = "rotate"
-        outcome = run_council(cfg, SAMPLE_DIFF, mock=True, seed=7)
+        outcome = run_jury(cfg, SAMPLE_DIFF, mock=True, seed=7)
         report = render(
             outcome.reviews,
             outcome.debate,
@@ -153,7 +153,7 @@ class RotateChairTest(unittest.TestCase):
 class SynthesisAnonymizationTest(unittest.TestCase):
     """When the chair is also a reviewer, synthesis input must be anonymized."""
 
-    def _capture_synthesis_prompt(self, cfg: CouncilConfig, seed: int) -> str:
+    def _capture_synthesis_prompt(self, cfg: JuryConfig, seed: int) -> str:
         captured: dict[str, str] = {}
         real_run_phase = orchestrator._run_phase
 
@@ -161,7 +161,7 @@ class SynthesisAnonymizationTest(unittest.TestCase):
         # Simplest: patch _anonymize/_synthesize boundary by intercepting the
         # chair adapter. We instead monkeypatch MockAdapter.run to record the
         # synthesis prompt.
-        from agent_review_council.adapters import MockAdapter
+        from ai_jury.adapters import MockAdapter
 
         real_run = MockAdapter.run
 
@@ -172,7 +172,7 @@ class SynthesisAnonymizationTest(unittest.TestCase):
 
         MockAdapter.run = recording_run
         try:
-            run_council(cfg, SAMPLE_DIFF, mock=True, seed=seed)
+            run_jury(cfg, SAMPLE_DIFF, mock=True, seed=seed)
         finally:
             MockAdapter.run = real_run
             orchestrator._run_phase = real_run_phase
@@ -206,7 +206,7 @@ class SynthesisAnonymizationTest(unittest.TestCase):
     def test_report_still_attributes_by_real_name(self) -> None:
         cfg = _config()
         cfg.chair = "claude"
-        outcome = run_council(cfg, SAMPLE_DIFF, mock=True, seed=3)
+        outcome = run_jury(cfg, SAMPLE_DIFF, mock=True, seed=3)
         report = render(
             outcome.reviews,
             outcome.debate,

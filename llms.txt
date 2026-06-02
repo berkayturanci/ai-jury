@@ -1,6 +1,6 @@
-# agent-review-council
+# ai-jury
 
-> Install once. Run a cross-vendor review council anywhere. A small, stdlib-only Python
+> Install once. Run a cross-vendor review jury anywhere. A small, stdlib-only Python
 > CLI that orchestrates native coding-agent CLIs from different vendors (Claude Code,
 > OpenAI Codex, Google Antigravity) to review the *same* diff/PR, debate each other's
 > findings, verify them against the code, and synthesize one chair verdict.
@@ -8,9 +8,9 @@
 Key facts:
 
 - Language/runtime: Python ≥3.11, **zero runtime dependencies** (standard library only).
-- Install: `pipx install agent-review-council` once published; until then
-  `pipx install git+https://github.com/berkayturanci/agent-review-council.git`
-  (entry point: `council`).
+- Install: `pipx install ai-jury` once published; until then
+  `pipx install git+https://github.com/berkayturanci/ai-jury.git`
+  (entry point: `jury`).
 - Differentiator: drives each vendor's **native CLI agent** as a headless subprocess,
   not API-level model calls. The research-backed lever is **vendor heterogeneity**.
 - Panel: Claude Code, OpenAI Codex, Google Antigravity (cloud CLIs), plus an optional
@@ -28,15 +28,15 @@ Key facts:
 
 ## Quickstart
 
-- `council init` — scaffold a `council.toml` (detects installed agents + local models).
-- `council --pr 123` — review a GitHub PR (needs `gh`).
-- `git diff origin/HEAD... | council --diff-file -` — review the current branch.
-- `council --diff-file examples/sample.diff` — review a diff file.
-- `council --pr 123 --incremental` — review only changes since the last council run.
-- `council --pr 123 --suggest-patches` — also emit inspectable patches for verified findings.
-- `council --mock --diff-file examples/sample.diff` — offline demo, no live CLIs.
-- `council --ci --fail-on high,critical` — gate CI on blocking findings.
-- `council comment --text "/council review" --pr 123` — run from an allowlisted PR comment.
+- `jury init` — scaffold a `jury.toml` (detects installed agents + local models).
+- `jury --pr 123` — review a GitHub PR (needs `gh`).
+- `git diff origin/HEAD... | jury --diff-file -` — review the current branch.
+- `jury --diff-file examples/sample.diff` — review a diff file.
+- `jury --pr 123 --incremental` — review only changes since the last jury run.
+- `jury --pr 123 --suggest-patches` — also emit inspectable patches for verified findings.
+- `jury --mock --diff-file examples/sample.diff` — offline demo, no live CLIs.
+- `jury --ci --fail-on high,critical` — gate CI on blocking findings.
+- `jury comment --text "/jury review" --pr 123` — run from an allowlisted PR comment.
 
 ## Docs
 
@@ -49,14 +49,14 @@ Key facts:
 
 ## Configuration
 
-- File: `council.toml` (`[council]`, `[[agent]]`, `[council.context]`, `[council.ci]`,
-  `[council.diff]`); per-run overrides via CLI flags. Scaffold it with `council init`.
+- File: `jury.toml` (`[jury]`, `[[agent]]`, `[jury.context]`, `[jury.ci]`,
+  `[jury.diff]`); per-run overrides via CLI flags. Scaffold it with `jury init`.
 - Key settings: `rounds` (1=review, 2=+debate), `early_stop`/`max_rounds`, `chair`,
   `timeout`, `total_timeout`/`phase_timeout`/`retries`, `verify`; per-agent
   `vendor`/`command`/`extra_args`, or for a local agent `vendor = "local"` +
   `endpoint`/`model`.
-- Optional project review policy: `.council/policy.toml` (high-risk paths, focus areas,
-  severity overrides) — trusted, separate from `council.toml`.
+- Optional project review policy: `.jury/policy.toml` (high-risk paths, focus areas,
+  severity overrides) — trusted, separate from `jury.toml`.
 
 ## Non-goals
 

@@ -18,15 +18,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from agent_review_council import orchestrator, prompts  # noqa: E402
-from agent_review_council.adapters import AgentResult  # noqa: E402
-from agent_review_council.config import DEFAULT_CONFIG, CouncilConfig, _from_dict  # noqa: E402
-from agent_review_council.orchestrator import (  # noqa: E402
+from ai_jury import orchestrator, prompts  # noqa: E402
+from ai_jury.adapters import AgentResult  # noqa: E402
+from ai_jury.config import DEFAULT_CONFIG, JuryConfig, _from_dict  # noqa: E402
+from ai_jury.orchestrator import (  # noqa: E402
     _anon_label,
     _anonymize_peers,
-    run_council,
+    run_jury,
 )
-from agent_review_council.report import render  # noqa: E402
+from ai_jury.report import render  # noqa: E402
 
 SAMPLE_DIFF = (
     "diff --git a/src/example.py b/src/example.py\n"
@@ -40,7 +40,7 @@ AGENT_NAMES = ("claude", "codex", "agy")
 VENDOR_NAMES = ("anthropic", "openai", "google")
 
 
-def _config() -> CouncilConfig:
+def _config() -> JuryConfig:
     return _from_dict(DEFAULT_CONFIG)
 
 
@@ -116,9 +116,9 @@ class AnonymizePeersTest(unittest.TestCase):
 
 
 class DebatePromptNoLeakTest(unittest.TestCase):
-    """End-to-end: the actual debate prompt built by run_council leaks no names."""
+    """End-to-end: the actual debate prompt built by run_jury leaks no names."""
 
-    def _capture_debate_prompts(self, cfg: CouncilConfig) -> dict[str, str]:
+    def _capture_debate_prompts(self, cfg: JuryConfig) -> dict[str, str]:
         captured: dict[str, str] = {}
         real_run_phase = orchestrator._run_phase
 
@@ -129,7 +129,7 @@ class DebatePromptNoLeakTest(unittest.TestCase):
 
         orchestrator._run_phase = capturing_run_phase
         try:
-            run_council(cfg, SAMPLE_DIFF, mock=True, seed=123)
+            run_jury(cfg, SAMPLE_DIFF, mock=True, seed=123)
         finally:
             orchestrator._run_phase = real_run_phase
         return captured
@@ -178,7 +178,7 @@ class DebatePromptNoLeakTest(unittest.TestCase):
 
 class ReportStillUsesRealNamesTest(unittest.TestCase):
     def test_rendered_report_attributes_by_real_name(self) -> None:
-        outcome = run_council(_config(), SAMPLE_DIFF, mock=True, seed=5)
+        outcome = run_jury(_config(), SAMPLE_DIFF, mock=True, seed=5)
         report = render(
             outcome.reviews,
             outcome.debate,

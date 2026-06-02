@@ -1,7 +1,7 @@
 """Optional repository review policy.
 
-The review *policy* is distinct from the agent-runtime ``council.toml`` handled
-by :mod:`agent_review_council.config`. A policy file is authored and committed
+The review *policy* is distinct from the agent-runtime ``jury.toml`` handled
+by :mod:`ai_jury.config`. A policy file is authored and committed
 by the maintainers of the repository being reviewed and expresses
 project-specific review expectations (high-risk paths, focus areas, forbidden
 output behaviour, severity overrides, a free-form checklist, and links to docs
@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 # Standard discovery locations, searched in order when no explicit path is given.
-DEFAULT_POLICY_NAMES = (".council/policy.toml", "council-policy.toml")
+DEFAULT_POLICY_NAMES = (".jury/policy.toml", "jury-policy.toml")
 
 
 class PolicyError(Exception):

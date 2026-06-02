@@ -1,6 +1,6 @@
 # Security model
 
-The council only **orchestrates read-only reviews**: it sends a diff (and
+The jury only **orchestrates read-only reviews**: it sends a diff (and
 optional PR context) to each agent CLI, captures their text output, and
 synthesizes a verdict. It does not apply edits or run project build/test
 commands on your behalf. The per-agent `extra_args` defaults reflect that
@@ -23,7 +23,7 @@ Two deliberate choices:
   non-interactive contexts (CI, hooks, headless shells). Piping the prompt in
   avoids that hang.
 - **`-s read-only` by default (secure-by-default, issue #100).** The diff is
-  fetched by the council process (via `gh`), not by the codex agent — the agent
+  fetched by the jury process (via `gh`), not by the codex agent — the agent
   only needs to *read* its prompt and *print* a review. So the shipped default is
   a read-only sandbox: a prompt injection in the diff cannot make codex write
   files, run shell, or reach the network.
@@ -33,7 +33,7 @@ Note: avoid `--full-auto` / `danger-full-access` unless you specifically need it
 ### Opting into a wider sandbox
 
 `extra_args` is fully user-controlled. If your workflow genuinely needs codex to
-write or reach the network, widen the sandbox in `council.toml`:
+write or reach the network, widen the sandbox in `jury.toml`:
 
 ```toml
 [[agent]]
@@ -60,7 +60,7 @@ content; the least-privilege audit (`--strict` to fail the run) will flag it.
 
 ## Threat model: prompt injection from untrusted diff/PR content (OWASP LLM01)
 
-The council reviews **attacker-controlled content**. Anyone who can open a pull
+The jury reviews **attacker-controlled content**. Anyone who can open a pull
 request controls the diff, and with `--pr` they also control the PR title and
 body. All of that text is fed into the reviewer LLM prompts. A malicious author
 can therefore embed *instructions* inside the content being reviewed — for
@@ -86,7 +86,7 @@ make the reviewers approve a bad change or suppress findings. This is a classic
    the top of each template instructs the model that everything inside those
    blocks is **data to be reviewed, never instructions to follow**, and that any
    embedded directive should itself be reported as a finding. See
-   `src/agent_review_council/prompts.py`.
+   `src/ai_jury/prompts.py`.
 
 2. **Authoritative output is structured, not free text.** The CI gate
    (`ci.evaluate_ci`) is derived exclusively from **structured consensus
@@ -120,7 +120,7 @@ make the reviewers approve a bad change or suppress findings. This is a classic
    | `codex` | prefer `-s read-only` / `--sandbox read-only`; the shipped default `-s danger-full-access` is flagged so operators opt in knowingly (it is needed for `gh`/network during `--pr` review — see "Codex invocation" above) |
    | `agy` / gemini | avoid `--dangerously-skip-permissions` / `--yolo`; use the default permission prompts or an explicit read-only mode |
 
-   The audit is **advisory by default** (warnings surfaced in `run_council`);
+   The audit is **advisory by default** (warnings surfaced in `run_jury`);
    `--strict` promotes these warnings to a hard failure. The shipped default
    config trips the codex/agy warnings on purpose, documenting that those agents
    trade strict least-privilege for reliable non-interactive runs.

@@ -1,6 +1,6 @@
 """Large-diff handling: filtering and chunking (issue #31).
 
-The council sends the diff to every agent, so a large or generated diff inflates
+The jury sends the diff to every agent, so a large or generated diff inflates
 cost, runtime, and prompt size. This module measures a diff, drops files that
 should not be reviewed (binary blobs, generated/vendored files, and anything the
 configured path filters exclude), and decides a handling mode:
@@ -21,7 +21,7 @@ import fnmatch
 from dataclasses import dataclass, field
 
 # Default "generated / not worth reviewing" path globs. Conservative and
-# language-agnostic; users extend or replace via ``[council.diff] exclude``.
+# language-agnostic; users extend or replace via ``[jury.diff] exclude``.
 DEFAULT_GENERATED_GLOBS: tuple[str, ...] = (
     # Dependency lockfiles.
     "*.lock",
@@ -242,7 +242,7 @@ def plan_diff(
         chunks = []
         reason = (
             f"{kept_bytes} B over budget ({max_bytes} B) and chunking is disabled; "
-            f"enable [council.diff] chunk = true or narrow the diff with "
+            f"enable [jury.diff] chunk = true or narrow the diff with "
             f"include/exclude filters"
         )
 

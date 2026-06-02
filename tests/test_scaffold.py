@@ -1,4 +1,4 @@
-"""Tests for `council init` config scaffolding (issue #107)."""
+"""Tests for `jury init` config scaffolding (issue #107)."""
 from __future__ import annotations
 
 import contextlib
@@ -11,9 +11,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from agent_review_council import cli  # noqa: E402
-from agent_review_council.config import _from_dict, validate_config  # noqa: E402
-from agent_review_council.scaffold import (  # noqa: E402
+from ai_jury import cli  # noqa: E402
+from ai_jury.config import _from_dict, validate_config  # noqa: E402
+from ai_jury.scaffold import (  # noqa: E402
     build_config,
     render_toml,
 )
@@ -24,8 +24,8 @@ class BuildConfigTest(unittest.TestCase):
         cfg = build_config(["claude", "codex"], rounds=2)
         names = [a["name"] for a in cfg["agent"]]
         self.assertEqual(names, ["claude", "codex"])
-        self.assertEqual(cfg["council"]["chair"], "claude")  # defaults to first
-        self.assertEqual(cfg["council"]["rounds"], 2)
+        self.assertEqual(cfg["jury"]["chair"], "claude")  # defaults to first
+        self.assertEqual(cfg["jury"]["rounds"], 2)
 
     def test_secure_defaults_carried_over(self):
         cfg = build_config(["codex", "agy"])
@@ -61,8 +61,8 @@ class RenderTomlTest(unittest.TestCase):
         text = render_toml(cfg)
         # Parses as TOML and round-trips through the real loader + validator.
         parsed = tomllib.loads(text)
-        self.assertEqual(parsed["council"]["rounds"], 1)
-        self.assertFalse(parsed["council"]["verify"])
+        self.assertEqual(parsed["jury"]["rounds"], 1)
+        self.assertFalse(parsed["jury"]["verify"])
         warnings = validate_config(parsed)  # no ConfigError
         self.assertIsInstance(warnings, list)
         loaded = _from_dict(parsed)
@@ -88,7 +88,7 @@ class InitCliTest(unittest.TestCase):
 
     def test_flag_driven_writes_valid_config(self):
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "council.toml"
+            path = Path(tmp) / "jury.toml"
             code, out, _ = self._run(
                 ["init", "--agents", "claude,codex", "--rounds", "2", "-o", str(path)]
             )
@@ -101,7 +101,7 @@ class InitCliTest(unittest.TestCase):
 
     def test_refuses_overwrite_without_force(self):
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "council.toml"
+            path = Path(tmp) / "jury.toml"
             path.write_text("existing", encoding="utf-8")
             code, _, err = self._run(["init", "--agents", "claude", "-o", str(path)])
             self.assertEqual(code, 2)
@@ -110,7 +110,7 @@ class InitCliTest(unittest.TestCase):
 
     def test_force_overwrites(self):
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "council.toml"
+            path = Path(tmp) / "jury.toml"
             path.write_text("existing", encoding="utf-8")
             code, _, _ = self._run(
                 ["init", "--agents", "claude", "-o", str(path), "--force"]
@@ -120,7 +120,7 @@ class InitCliTest(unittest.TestCase):
 
     def test_unknown_agent_exits_2(self):
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "council.toml"
+            path = Path(tmp) / "jury.toml"
             code, _, err = self._run(["init", "--agents", "nope", "-o", str(path)])
             self.assertEqual(code, 2)
             self.assertIn("unknown agent", err)
@@ -157,7 +157,7 @@ class InitCliTest(unittest.TestCase):
 
 class LocalModelDiscoveryTest(unittest.TestCase):
     def test_pick_default_prefers_coder_model(self):
-        from agent_review_council.scaffold import pick_default_model
+        from ai_jury.scaffold import pick_default_model
 
         self.assertEqual(
             pick_default_model(["gemma:2b", "deepseek-coder:6.7b"]),
@@ -165,12 +165,12 @@ class LocalModelDiscoveryTest(unittest.TestCase):
         )
 
     def test_pick_default_first_when_no_coder(self):
-        from agent_review_council.scaffold import pick_default_model
+        from ai_jury.scaffold import pick_default_model
 
         self.assertEqual(pick_default_model(["gemma:2b", "phi3:mini"]), "gemma:2b")
 
     def test_pick_default_none_when_empty(self):
-        from agent_review_council.scaffold import pick_default_model
+        from ai_jury.scaffold import pick_default_model
 
         self.assertIsNone(pick_default_model([]))
 
@@ -179,7 +179,7 @@ class LocalModelDiscoveryTest(unittest.TestCase):
         import json
         from unittest import mock
 
-        from agent_review_council.adapters import list_local_models
+        from ai_jury.adapters import list_local_models
 
         payload = json.dumps(
             {"data": [{"id": "gemma:2b"}, {"id": "qwen2.5-coder:7b"}]}
@@ -203,7 +203,7 @@ class LocalModelDiscoveryTest(unittest.TestCase):
         import urllib.error
         from unittest import mock
 
-        from agent_review_council.adapters import list_local_models
+        from ai_jury.adapters import list_local_models
 
         with mock.patch(
             "urllib.request.urlopen", side_effect=urllib.error.URLError("down")
@@ -220,28 +220,28 @@ class PresetTest(unittest.TestCase):
 
     def test_offline_preset_is_local_only(self):
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "council.toml"
+            path = Path(tmp) / "jury.toml"
             code, _, _ = self._run(["init", "--preset", "offline", "-o", str(path)])
             self.assertEqual(code, 0)
             data = tomllib.loads(path.read_text(encoding="utf-8"))
             validate_config(data)
             self.assertEqual([a["name"] for a in data["agent"]], ["qwen"])
-            self.assertEqual(data["council"]["rounds"], 1)
-            self.assertFalse(data["council"]["verify"])
+            self.assertEqual(data["jury"]["rounds"], 1)
+            self.assertFalse(data["jury"]["verify"])
 
     def test_balanced_preset_sets_early_stop(self):
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "council.toml"
+            path = Path(tmp) / "jury.toml"
             self._run(["init", "--preset", "balanced", "--agents", "claude,codex",
                        "-o", str(path)])
             data = tomllib.loads(path.read_text(encoding="utf-8"))
-            self.assertEqual(data["council"]["rounds"], 2)
-            self.assertTrue(data["council"]["verify"])
-            self.assertTrue(data["council"]["early_stop"])
+            self.assertEqual(data["jury"]["rounds"], 2)
+            self.assertTrue(data["jury"]["verify"])
+            self.assertTrue(data["jury"]["early_stop"])
 
     def test_thorough_preset_uses_all_agents(self):
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "council.toml"
+            path = Path(tmp) / "jury.toml"
             self._run(["init", "--preset", "thorough", "-o", str(path)])
             data = tomllib.loads(path.read_text(encoding="utf-8"))
             self.assertEqual(
@@ -250,11 +250,11 @@ class PresetTest(unittest.TestCase):
 
     def test_explicit_flag_overrides_preset(self):
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "council.toml"
+            path = Path(tmp) / "jury.toml"
             # offline preset defaults rounds=1; explicit --rounds 2 wins.
             self._run(["init", "--preset", "offline", "--rounds", "2", "-o", str(path)])
             data = tomllib.loads(path.read_text(encoding="utf-8"))
-            self.assertEqual(data["council"]["rounds"], 2)
+            self.assertEqual(data["jury"]["rounds"], 2)
 
 
 class OfflineFallbackTest(unittest.TestCase):
@@ -264,9 +264,9 @@ class OfflineFallbackTest(unittest.TestCase):
     def test_adds_local_agent_when_nothing_else_available(self):
         from unittest import mock
 
-        import agent_review_council.adapters as adapters
-        import agent_review_council.cli as climod
-        from agent_review_council.config import DEFAULT_CONFIG, _from_dict
+        import ai_jury.adapters as adapters
+        import ai_jury.cli as climod
+        from ai_jury.config import DEFAULT_CONFIG, _from_dict
 
         cfg = _from_dict(DEFAULT_CONFIG)  # claude/codex/agy, no local
         logs = []
@@ -283,12 +283,12 @@ class OfflineFallbackTest(unittest.TestCase):
         self.assertTrue(any("offline" in m for m in logs))
 
     def test_no_fallback_when_config_file_present(self):
-        import agent_review_council.cli as climod
-        from agent_review_council.config import DEFAULT_CONFIG, _from_dict
+        import ai_jury.cli as climod
+        from ai_jury.config import DEFAULT_CONFIG, _from_dict
 
         cfg = _from_dict(DEFAULT_CONFIG)
         before = len(cfg.agents)
-        climod._maybe_add_local_fallback(cfg, self._args(config="council.toml"), lambda _m: None)
+        climod._maybe_add_local_fallback(cfg, self._args(config="jury.toml"), lambda _m: None)
         self.assertEqual(len(cfg.agents), before)  # explicit --config -> no-op
 
 
@@ -301,18 +301,18 @@ class ConfigShowTest(unittest.TestCase):
 
     def test_config_show_renders_effective_config(self):
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "council.toml"
+            path = Path(tmp) / "jury.toml"
             cli.main(["init", "--agents", "claude,qwen", "--rounds", "1", "-o", str(path)])
             code, out, _ = self._run(["config", "show", "--config", str(path)])
             self.assertEqual(code, 0)
             self.assertIn(f"source: {path}", out)
-            self.assertIn("[council] rounds=1", out)
+            self.assertIn("[jury] rounds=1", out)
             self.assertIn("claude (anthropic)", out)
             self.assertIn("qwen (local)", out)
 
     def test_config_path(self):
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "council.toml"
+            path = Path(tmp) / "jury.toml"
             cli.main(["init", "--agents", "claude", "-o", str(path)])
             code, out, _ = self._run(["config", "path", "--config", str(path)])
             self.assertEqual(code, 0)
@@ -321,7 +321,7 @@ class ConfigShowTest(unittest.TestCase):
     def test_config_show_invalid_exits_2(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "bad.toml"
-            path.write_text("[council]\nrounds = 0\n[[agent]]\nname='x'\nvendor='anthropic'\ncommand='c'\n", encoding="utf-8")
+            path.write_text("[jury]\nrounds = 0\n[[agent]]\nname='x'\nvendor='anthropic'\ncommand='c'\n", encoding="utf-8")
             code, _, err = self._run(["config", "show", "--config", str(path)])
             self.assertEqual(code, 2)
             self.assertIn("error", err)

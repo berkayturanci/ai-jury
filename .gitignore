@@ -15,9 +15,9 @@ venv/
 coverage.xml
 htmlcov/
 
-# Council runtime output
-*.council.md
-.council-cache/
+# Jury runtime output
+*.jury.md
+.jury-cache/
 
 # Editor / OS
 .DS_Store

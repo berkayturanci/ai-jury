@@ -1,4 +1,4 @@
-"""Report-rendering regression tests (council self-review findings)."""
+"""Report-rendering regression tests (jury self-review findings)."""
 from __future__ import annotations
 
 import sys
@@ -7,8 +7,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from agent_review_council.findings import Finding  # noqa: E402
-from agent_review_council.report import render  # noqa: E402
+from ai_jury.findings import Finding  # noqa: E402
+from ai_jury.report import render  # noqa: E402
 
 
 class RenderNoneSafetyTest(unittest.TestCase):

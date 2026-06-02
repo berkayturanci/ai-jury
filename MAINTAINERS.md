@@ -47,7 +47,7 @@ releases and occasional breaking changes (see below).
 
 The project follows [semantic versioning](https://semver.org/) intent:
 
-- **Pre-1.0 (`0.x`).** The CLI surface and `council.toml` schema may change
+- **Pre-1.0 (`0.x`).** The CLI surface and `jury.toml` schema may change
   between minor versions. Breaking changes are called out in the
   [CHANGELOG](CHANGELOG.md). The [public CLI compatibility
   contract](tests/test_cli_contract.py) guards the flags that downstream
@@ -85,11 +85,11 @@ This project stays **project-agnostic**. Requests that encode a specific
 repository's workflow, an organization's process, or a private integration are
 generally declined *in core* and pointed at the right home instead:
 
-- Need it for your repo? Wrap the `council` CLI in your own automation — the
+- Need it for your repo? Wrap the `jury` CLI in your own automation — the
   [cookbook](docs/cookbook.md) shows the integration points.
 - Think it's broadly useful? Open a feature request framing it generically (see
   [CONTRIBUTING.md](CONTRIBUTING.md)), and explain why it belongs in core rather
   than in a wrapper.
 
-This keeps the council reusable across projects instead of accreting any single
+This keeps the jury reusable across projects instead of accreting any single
 project's assumptions.

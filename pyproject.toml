@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "agent-review-council"
+name = "ai-jury"
 version = "0.1.0"
-description = "Cross-vendor multi-agent PR review council — orchestrate native coding-agent CLIs (Claude Code, Codex, Antigravity) to mutually review and debate the same pull request."
+description = "Cross-vendor multi-agent PR review jury — orchestrate native coding-agent CLIs (Claude Code, Codex, Antigravity) to mutually review and debate the same pull request."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
@@ -30,12 +30,12 @@ dependencies = []
 dev = ["ruff>=0.6", "build>=1.2", "coverage>=7.5"]
 
 [project.urls]
-Homepage = "https://github.com/berkayturanci/agent-review-council"
-Issues = "https://github.com/berkayturanci/agent-review-council/issues"
-Changelog = "https://github.com/berkayturanci/agent-review-council/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/berkayturanci/ai-jury"
+Issues = "https://github.com/berkayturanci/ai-jury/issues"
+Changelog = "https://github.com/berkayturanci/ai-jury/blob/main/CHANGELOG.md"
 
 [project.scripts]
-council = "agent_review_council.cli:main"
+jury = "ai_jury.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -58,11 +58,11 @@ exclude = [
 [tool.coverage.run]
 # Measure the installed package by import name so coverage works whether the
 # package is run from ``src/`` (PYTHONPATH) or an editable install.
-source = ["agent_review_council"]
+source = ["ai_jury"]
 branch = true
 omit = [
-    # Thin ``python -m agent_review_council`` shim; only an entrypoint guard.
-    "*/agent_review_council/__main__.py",
+    # Thin ``python -m ai_jury`` shim; only an entrypoint guard.
+    "*/ai_jury/__main__.py",
 ]
 
 [tool.coverage.report]

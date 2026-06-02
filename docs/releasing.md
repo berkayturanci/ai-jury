@@ -1,6 +1,6 @@
 # Releasing: provenance, checksums, and verification
 
-This document describes how `agent-review-council` release artifacts are built,
+This document describes how `ai-jury` release artifacts are built,
 what supply-chain metadata ships with them, and how to verify a release (issue
 #25). Releases are cut by pushing a `v*` tag, which triggers
 [`.github/workflows/publish.yml`](../.github/workflows/publish.yml).
@@ -46,8 +46,8 @@ Download the artifacts and `SHA256SUMS` from the GitHub Release, then:
 sha256sum -c SHA256SUMS
 
 # 2. Provenance — verify the attestation against this repository.
-gh attestation verify agent_review_council-<version>-py3-none-any.whl \
-  --repo berkayturanci/agent-review-council
+gh attestation verify ai_jury-<version>-py3-none-any.whl \
+  --repo berkayturanci/ai-jury
 
 # 3. SBOM — inspect the bill of materials.
 cat sbom.cdx.json | jq '.components[].name'

@@ -13,8 +13,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from agent_review_council import adapters  # noqa: E402
-from agent_review_council.config import AgentSpec  # noqa: E402
+from ai_jury import adapters  # noqa: E402
+from ai_jury.config import AgentSpec  # noqa: E402
 
 
 class _FakeCompleted:

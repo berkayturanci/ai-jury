@@ -21,16 +21,16 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from agent_review_council import orchestrator  # noqa: E402
-from agent_review_council.config import (  # noqa: E402
+from ai_jury import orchestrator  # noqa: E402
+from ai_jury.config import (  # noqa: E402
     DEFAULT_CONFIG,
-    CouncilConfig,
+    JuryConfig,
     _from_dict,
     config_hash,
 )
-from agent_review_council.metadata import build_run_metadata  # noqa: E402
-from agent_review_council.orchestrator import run_council  # noqa: E402
-from agent_review_council.report import render  # noqa: E402
+from ai_jury.metadata import build_run_metadata  # noqa: E402
+from ai_jury.orchestrator import run_jury  # noqa: E402
+from ai_jury.report import render  # noqa: E402
 
 SAMPLE_DIFF = (
     "diff --git a/src/example.py b/src/example.py\n"
@@ -40,7 +40,7 @@ SAMPLE_DIFF = (
 )
 
 
-def _config() -> CouncilConfig:
+def _config() -> JuryConfig:
     return _from_dict(DEFAULT_CONFIG)
 
 
@@ -67,8 +67,8 @@ class SeedDeterminismTest(unittest.TestCase):
         cfg_b = _config()
         cfg_b.seed = 123
 
-        report_a = _render_outcome(run_council(cfg_a, SAMPLE_DIFF, mock=True))
-        report_b = _render_outcome(run_council(cfg_b, SAMPLE_DIFF, mock=True))
+        report_a = _render_outcome(run_jury(cfg_a, SAMPLE_DIFF, mock=True))
+        report_b = _render_outcome(run_jury(cfg_b, SAMPLE_DIFF, mock=True))
         self.assertEqual(report_a, report_b)
 
     def test_seed_via_kwarg_matches_seed_via_config(self) -> None:
@@ -76,10 +76,10 @@ class SeedDeterminismTest(unittest.TestCase):
         # the same shared run RNG, so both produce identical mock output.
         cfg = _config()
         cfg.seed = 7
-        via_config = _render_outcome(run_council(cfg, SAMPLE_DIFF, mock=True))
+        via_config = _render_outcome(run_jury(cfg, SAMPLE_DIFF, mock=True))
 
         cfg2 = _config()  # no config seed
-        via_kwarg = _render_outcome(run_council(cfg2, SAMPLE_DIFF, mock=True, seed=7))
+        via_kwarg = _render_outcome(run_jury(cfg2, SAMPLE_DIFF, mock=True, seed=7))
         self.assertEqual(via_config, via_kwarg)
 
 
@@ -87,7 +87,7 @@ class OrderIndependenceTest(unittest.TestCase):
     """The key regression guard: report order must not depend on completion order."""
 
     def _run_with_phase_shuffle(self, reverse: bool):
-        """Run the council with ``_run_phase`` results returned in a non-canonical
+        """Run the jury with ``_run_phase`` results returned in a non-canonical
         order, simulating thread-pool completions arriving out of order.
         """
         real_run_phase = orchestrator._run_phase
@@ -101,7 +101,7 @@ class OrderIndependenceTest(unittest.TestCase):
 
         orchestrator._run_phase = shuffling_run_phase
         try:
-            return run_council(_config(), SAMPLE_DIFF, mock=True)
+            return run_jury(_config(), SAMPLE_DIFF, mock=True)
         finally:
             orchestrator._run_phase = real_run_phase
 
@@ -126,7 +126,7 @@ class ConfigHashMetadataTest(unittest.TestCase):
     def test_metadata_includes_seed_and_config_hash(self) -> None:
         cfg = _config()
         cfg.seed = 42
-        meta = build_run_metadata(run_council(cfg, SAMPLE_DIFF, mock=True), cfg)
+        meta = build_run_metadata(run_jury(cfg, SAMPLE_DIFF, mock=True), cfg)
         self.assertEqual(meta["seed"], 42)
         self.assertIsInstance(meta["config_hash"], str)
         self.assertEqual(len(meta["config_hash"]), 64)

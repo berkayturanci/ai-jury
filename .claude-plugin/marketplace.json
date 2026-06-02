@@ -1,13 +1,13 @@
 {
-  "name": "agent-review-council",
+  "name": "ai-jury",
   "owner": {
     "name": "Berkay Turancı"
   },
   "plugins": [
     {
-      "name": "review-council",
+      "name": "ai-jury",
       "source": "./",
-      "description": "Cross-vendor multi-agent review council skill for Claude Code. Drives native vendor CLIs (Claude Code, Codex, Antigravity) to review the same diff/PR, debate, and synthesize one verdict. Requires the `council` CLI on PATH."
+      "description": "Cross-vendor multi-agent review jury skill for Claude Code. Drives native vendor CLIs (Claude Code, Codex, Antigravity) to review the same diff/PR, debate, and synthesize one verdict. Requires the `jury` CLI on PATH."
     }
   ]
 }

@@ -1,11 +1,11 @@
-"""Tests for the offline council-review-quality benchmark (issue #12).
+"""Tests for the offline jury-review-quality benchmark (issue #12).
 
 Run with: python -m unittest discover -s tests
 No third-party dependencies, no live CLIs, no network.
 
 These tests exercise the scorer math deterministically, validate every shipped
 fixture's schema, and confirm the offline runner is deterministic. They never
-require live agents (live mode is gated behind COUNCIL_BENCH_LIVE=1).
+require live agents (live mode is gated behind JURY_BENCH_LIVE=1).
 """
 from __future__ import annotations
 
@@ -17,8 +17,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from agent_review_council import benchmark  # noqa: E402
-from agent_review_council.benchmark import (  # noqa: E402
+from ai_jury import benchmark  # noqa: E402
+from ai_jury.benchmark import (  # noqa: E402
     BLOCKING_SEVERITIES,
     aggregate,
     discover_fixture_ids,
@@ -284,7 +284,7 @@ class LiveModeGuardTest(unittest.TestCase):
             benchmark.run_live()
 
     def test_finding_to_dict_maps_fields(self):
-        from agent_review_council.findings import Finding
+        from ai_jury.findings import Finding
 
         f = Finding(
             severity="major",
@@ -305,7 +305,7 @@ class MainEntryTest(unittest.TestCase):
     """The module entry point runs offline without live CLIs."""
 
     def test_main_offline_returns_zero(self):
-        # COUNCIL_BENCH_LIVE is not set in the unit-test environment.
+        # JURY_BENCH_LIVE is not set in the unit-test environment.
         self.assertFalse(benchmark.live_enabled())
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
