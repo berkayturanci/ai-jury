@@ -45,6 +45,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `council init --preset offline|fast|balanced|thorough` — one-command setup for
+  common intents (offline = free local-only; fast = 1 round; balanced = debate +
+  early-stop; thorough = all agents + debate + verify). Explicit flags override
+  the preset's defaults.
+- Smart offline fallback: with no config file, no available agent CLI, and a
+  reachable local model server, `council` automatically adds a local agent so it
+  works offline out of the box (never overrides an explicit config or a working
+  CLI panel).
 - `council config show` / `council config path` print the **effective resolved
   config** (and its source file) so you can see exactly what a run will use.
 - `council --doctor` now ends with a **Next steps** section: a `ready to run:

@@ -26,10 +26,15 @@ compatible server:
 
 ```bash
 council init                      # interactive: pick agents, rounds, chair, local model
+council init --preset offline     # free, local-only ($0); also: fast / balanced / thorough
 council init --list-agents        # show known agents + availability
 council init --list-models        # list local (Ollama) models you can pick
 council init --agents claude,codex,qwen --rounds 2   # non-interactive / scriptable
 ```
+
+> **Zero-config offline:** even without a `council.toml`, if no agent CLI is
+> installed but a local model server is reachable, `council` adds a local agent
+> automatically — so `git diff main... | council --diff-file -` just works offline.
 
 **Outcome:** a validated `council.toml` using the secure-by-default agent templates
 (Codex read-only, Antigravity sandboxed, Claude write-tool denylist). It won't overwrite
