@@ -55,7 +55,7 @@ DEFAULT_CONFIG: dict = {
 }
 
 
-KNOWN_VENDORS = ("anthropic", "openai", "google")
+KNOWN_VENDORS = ("anthropic", "openai", "google", "local")
 
 KNOWN_TOP_LEVEL_KEYS = ("council", "agent")
 KNOWN_COUNCIL_KEYS = (
@@ -87,6 +87,8 @@ KNOWN_AGENT_KEYS = (
     "timeout",
     "enabled",
     "extra_args",
+    # OpenAI-compatible local/open-weight endpoint (issue #43).
+    "endpoint",
 )
 
 
@@ -223,9 +225,19 @@ def validate_config(data: dict, strict: bool = False) -> list:
         else:
             seen_names.add(name)
 
-        # Non-empty command (hard).
+        # A local OpenAI-compatible agent (issue #43) talks to an HTTP
+        # ``endpoint`` (default ``http://localhost:11434/v1``) instead of a CLI,
+        # so it does not require a ``command``; it does need a ``model``. Every
+        # other vendor requires a non-empty ``command``.
         command = agent.get("command", "")
-        if not command:
+        is_local = agent.get("vendor", "") == "local"
+        if is_local:
+            if not agent.get("model"):
+                warnings.append(
+                    f"agent '{label}' (vendor 'local') has no 'model'; the local "
+                    f"server will likely reject the request."
+                )
+        elif not command:
             errors.append(f"agent '{label}' is missing a non-empty 'command'.")
 
         # Per-agent timeout (hard if present and invalid).
@@ -279,11 +291,14 @@ def validate_config(data: dict, strict: bool = False) -> list:
 class AgentSpec:
     name: str
     vendor: str
-    command: str
+    command: str = ""
     model: str | None = None
     timeout: int = 600
     enabled: bool = True
     extra_args: list[str] = field(default_factory=list)
+    # OpenAI-compatible base URL for a local/open-weight agent (issue #43).
+    # Ignored by CLI-backed vendors; defaults applied by the local adapter.
+    endpoint: str | None = None
 
 
 @dataclass
@@ -454,11 +469,13 @@ def _from_dict(data: dict) -> CouncilConfig:
             AgentSpec(
                 name=raw["name"],
                 vendor=raw.get("vendor", "unknown"),
-                command=raw["command"],
+                # ``command`` is optional for local/HTTP agents (issue #43).
+                command=raw.get("command", ""),
                 model=raw.get("model"),
                 timeout=int(raw.get("timeout", default_timeout)),
                 enabled=bool(raw.get("enabled", True)),
                 extra_args=list(raw.get("extra_args", [])),
+                endpoint=raw.get("endpoint"),
             )
         )
     return CouncilConfig(
@@ -530,6 +547,7 @@ def config_hash(config: CouncilConfig) -> str:
                 "name": a.name,
                 "vendor": a.vendor,
                 "command": a.command,
+                "endpoint": a.endpoint,
                 "model": a.model,
                 "timeout": a.timeout,
                 "enabled": a.enabled,
