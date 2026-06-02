@@ -46,6 +46,10 @@ def _group_line(g) -> str:
         loc = f"{loc}:{f.line}"
     reviewers = ", ".join(g.reviewers) if g.reviewers else "(unknown)"
     out = f"- [{g.severity}] {loc} — {f.claim} (reviewers: {reviewers})"
+    # Surface the reviewer's supporting evidence — the "why" behind the claim —
+    # so the verdict is auditable, not just asserted (issue: evidence surfacing).
+    if getattr(f, "evidence", ""):
+        out += f"\n  - _evidence:_ {f.evidence}"
     status = getattr(g, "status", "")
     if status:
         out += f"\n  - _verification:_ {_STATUS_LABELS.get(status, status)}"

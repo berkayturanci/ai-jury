@@ -60,6 +60,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The consensus section now shows each finding's supporting **evidence** (the
+  reviewer's "why"), so a verdict is auditable rather than just asserted.
 - `--post-mode {single,phased}` (#127): with `--post-summary`, post the review as
   one comment (default) or as separate **Round 1 / Debate / Decision** comments,
   so the flow (each reviewer's findings → cross-examination → verdict & why) is
