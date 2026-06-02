@@ -18,7 +18,11 @@ _PATTERNS: list[tuple[str, "re.Pattern"]] = [
     )),
     ("aws_access_key", re.compile(r"AKIA[0-9A-Z]{16}")),
     ("github_token", re.compile(r"gh[pousr]_[A-Za-z0-9]{20,}")),
-    ("openai_key", re.compile(r"sk-[A-Za-z0-9]{20,}")),
+    # Classic `sk-…` AND modern project/service keys `sk-proj-…` /
+    # `sk-svcacct-…` / `sk-admin-…`, which embed hyphens the old `[A-Za-z0-9]`
+    # class stopped at (issue #122). First char after `sk-` is alphanumeric, then
+    # 18+ of alphanumeric / hyphen / underscore.
+    ("openai_key", re.compile(r"sk-[A-Za-z0-9][A-Za-z0-9_-]{18,}")),
     ("bearer_token", re.compile(r"Bearer\s+[A-Za-z0-9._\-]+")),
     # Capture the surrounding quotes (groups 3 and 4) so they are PRESERVED in
     # the replacement (issue #102): redacting only the value keeps a quoted

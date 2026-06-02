@@ -28,6 +28,19 @@ class RedactionTests(unittest.TestCase):
         self.assertEqual(n, 1)
         self.assertIn("[REDACTED:openai_key]", out)
 
+    def test_modern_openai_keys_redacted(self):
+        # Issue #122: project/service/admin keys embed hyphens; the old pattern
+        # stopped at the first one and leaked them.
+        for key in (
+            "sk-proj-ABCDEF0123456789ABCDEFmoremore",
+            "sk-svcacct-ABCDEF0123456789ABCDEF",
+            "sk-admin-ABCDEF0123456789ABCDEF",
+        ):
+            out, n = redact("OPENAI_API_KEY=" + key)
+            self.assertEqual(n, 1, key)
+            self.assertNotIn(key, out)
+            self.assertIn("[REDACTED:openai_key]", out)
+
     def test_bearer_token(self):
         out, n = redact("Authorization: Bearer abc.def-123_XYZ")
         self.assertEqual(n, 1)

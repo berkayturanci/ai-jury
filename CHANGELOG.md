@@ -19,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Secret redaction now scrubs modern OpenAI keys `sk-proj-…` / `sk-svcacct-…` /
+  `sk-admin-…` (#122); the old pattern stopped at the first hyphen and would have
+  sent them to review agents (no real key actually leaked).
+- Removed an accidentally-committed machine-local `cache/projects.json` (local
+  paths, no secret) and gitignored `cache/` (#122).
 - Secret redaction now preserves the surrounding quotes of a redacted
   assignment (#102), so scrubbing a secret-fixture file keeps it a valid string
   literal instead of fabricating phantom "syntax error" findings for reviewers.
