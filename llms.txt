@@ -8,22 +8,35 @@
 Key facts:
 
 - Language/runtime: Python ≥3.11, **zero runtime dependencies** (standard library only).
-- Install: `pipx install agent-review-council` (entry point: `council`).
+- Install: `pipx install agent-review-council` once published; until then
+  `pipx install git+https://github.com/berkayturanci/agent-review-council.git`
+  (entry point: `council`).
 - Differentiator: drives each vendor's **native CLI agent** as a headless subprocess,
   not API-level model calls. The research-backed lever is **vendor heterogeneity**.
-- Pipeline: round 1 independent review → round 2 cross-examination/debate → optional
-  verification pass → chair synthesis → one markdown report.
-- Output: markdown report; optional GitHub summary comment and inline review comments;
+- Panel: Claude Code, OpenAI Codex, Google Antigravity (cloud CLIs), plus an optional
+  **local / open-weight** reviewer (`vendor = "local"`) over any OpenAI-compatible
+  server (Ollama, llama.cpp, vLLM, LM Studio) — free, offline, $0.
+- Pipeline: round 1 independent review → round 2 cross-examination/debate (adaptive
+  early-stop) → optional verification pass → chair synthesis → one report. Large diffs
+  are filtered + chunked; runs are bounded by an optional budget/retries and an optional
+  result cache.
+- Secure by default: reviewers run sandboxed/read-only (Codex `-s read-only`, Antigravity
+  `--sandbox`, Claude write-tool denylist), since they read attacker-controlled diffs.
+- Output: markdown / JSON / SARIF report; optional GitHub summary + inline comments;
   structured findings (severity/file/line); CI gating via exit code.
 - Privacy: `diff-only` context by default; secret redaction on by default; local-first.
 
 ## Quickstart
 
+- `council init` — scaffold a `council.toml` (detects installed agents + local models).
 - `council --pr 123` — review a GitHub PR (needs `gh`).
 - `git diff origin/HEAD... | council --diff-file -` — review the current branch.
 - `council --diff-file examples/sample.diff` — review a diff file.
+- `council --pr 123 --incremental` — review only changes since the last council run.
+- `council --pr 123 --suggest-patches` — also emit inspectable patches for verified findings.
 - `council --mock --diff-file examples/sample.diff` — offline demo, no live CLIs.
 - `council --ci --fail-on high,critical` — gate CI on blocking findings.
+- `council comment --text "/council review" --pr 123` — run from an allowlisted PR comment.
 
 ## Docs
 
@@ -36,11 +49,18 @@ Key facts:
 
 ## Configuration
 
-- File: `council.toml` (`[council]`, `[[agent]]`, `[council.context]`); per-run overrides via CLI flags.
-- Key settings: `rounds` (1=review, 2=+debate), `chair`, `timeout`, per-agent `vendor`/`command`/`extra_args`.
+- File: `council.toml` (`[council]`, `[[agent]]`, `[council.context]`, `[council.ci]`,
+  `[council.diff]`); per-run overrides via CLI flags. Scaffold it with `council init`.
+- Key settings: `rounds` (1=review, 2=+debate), `early_stop`/`max_rounds`, `chair`,
+  `timeout`, `total_timeout`/`phase_timeout`/`retries`, `verify`; per-agent
+  `vendor`/`command`/`extra_args`, or for a local agent `vendor = "local"` +
+  `endpoint`/`model`.
+- Optional project review policy: `.council/policy.toml` (high-risk paths, focus areas,
+  severity overrides) — trusted, separate from `council.toml`.
 
 ## Non-goals
 
 - Not a hosted review SaaS and not a dashboard product.
 - Not a general multi-agent framework — scope is cross-vendor review orchestration only.
-- Does not rewrite code or post auto-fix patches; it reviews and reports.
+- Does not **auto-apply** patches; `--suggest-patches` emits inspectable suggestions for
+  verified findings only, never applied automatically.

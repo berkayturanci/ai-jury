@@ -9,19 +9,26 @@ rather than duplicating them.
 
 ## What it is / is not
 
-- **Is:** a local-first orchestrator that shells out to each vendor's native agent CLI
-  (`claude`, `codex`, `agy`) as headless subprocesses, runs an adversarial review +
-  debate + verification pipeline, and renders one markdown report.
+- **Is:** a local-first orchestrator that drives each vendor's native agent CLI
+  (`claude`, `codex`, `agy`) as headless subprocesses — plus an optional local /
+  open-weight reviewer over an OpenAI-compatible HTTP endpoint — through an adversarial
+  review + debate + verification pipeline, and renders one report (markdown/JSON/SARIF).
 - **Is not:** a hosted review SaaS, a dashboard product, a general multi-agent
-  framework, or an auto-fix/patch tool. Scope stays on review orchestration.
+  framework, or an auto-apply patch tool. It can emit *inspectable* suggested patches for
+  verified findings (`--suggest-patches`) but never applies them. Scope stays on review
+  orchestration.
 
 ## Install & requirements
 
 - Python ≥3.11. Zero runtime dependencies (stdlib: `subprocess`, `tomllib`,
   `concurrent.futures`, `argparse`).
-- `pipx install agent-review-council` → `council` entry point. (`pip install -e .` for dev.)
+- `pipx install agent-review-council` → `council` entry point (once published; until then
+  `pipx install git+https://github.com/berkayturanci/agent-review-council.git`).
+  `pip install -e .` for dev. Run `council init` to scaffold a `council.toml`.
 - Install at least one agent CLI: `claude` (Claude Code), `codex` (OpenAI Codex CLI),
-  `agy` (Google Antigravity). Missing ones are skipped unless `--strict`.
+  `agy` (Google Antigravity); OR run a free **local / open-weight** model via Ollama (or
+  any OpenAI-compatible server) as a `vendor = "local"` agent. Missing/unreachable agents
+  are skipped unless `--strict`.
 - `gh` (GitHub CLI) is required for `--pr` input and `--post-summary`/`--post-inline`.
 - Supported platforms: see [docs/architecture.md](docs/architecture.md#supported-platforms)
   (Linux primary; macOS/Windows tested on the latest Python; live CLIs depend on each
@@ -33,33 +40,51 @@ rather than duplicating them.
    rubric (correctness → security → regressions → tests), concurrently.
 2. **Round 2 — cross-examination (optional, `rounds = 2`).** Each agent sees the diff,
    its own review, and the others' reviews; emits AGREE / DISPUTE / MISSED. Needs ≥2 agents.
-3. **Verification pass (optional).** A tool-equipped agent re-reads the actual code per
-   finding to drop false positives and recalibrate severity.
+   With `early_stop = true` this is adaptive: unanimous panels skip it; disagreement runs
+   up to `max_rounds`.
+3. **Verification pass (optional, `verify = true`).** The chair re-judges each finding
+   (verified / unsupported / needs-human-decision) to drop false positives before synthesis.
 4. **Synthesis.** The `chair` agent consolidates into one verdict (APPROVE / COMMENT /
    REQUEST CHANGES) with consensus, disputed, and single-reviewer findings.
 
-Full detail: [docs/architecture.md](docs/architecture.md).
+Cross-cutting: secrets are redacted and the diff scanned for injection before send; large
+diffs are filtered (binary/generated/path globs) and **chunked**; the run is bounded by an
+optional **budget** (`total_timeout`/`phase_timeout`) with opt-in **retries**; results can
+be served from / stored in an optional **cache** (`--cache`). Full detail:
+[docs/architecture.md](docs/architecture.md).
+
+## Subcommands
+
+- `council init [--agents a,b,c] [--rounds N] [-o council.toml] [--force]` — scaffold a
+  config; detects installed agents + local models. `--list-agents`, `--list-models`.
+- `council cache clear` (alias `--clear-cache`) — delete the local result cache.
+- `council comment --text "/council review …" --pr N` — parse an allowlisted PR-comment
+  command (`review`/`summary`, `--rounds` only) and dispatch a safe run (`--print-args`
+  to just resolve, `--no-post` to skip posting).
 
 ## CLI flags
 
 Input (choose one): `--pr <num/url>` (+ optional `--repo owner/name`), `--diff-file <path|->`.
 
-- `--config <path>` — path to `council.toml` (default: `./council.toml` or built-in).
-- `--rounds <n>` — 1 = review only, 2 = + debate.
-- `--chair <name>` — agent that synthesizes.
-- `--mock` — deterministic offline agents (no live CLIs, no spend).
-- `--strict` — fail if any configured CLI is missing.
-- `--verify` / `--no-verify` — toggle the verification round (default from config).
-- `--context-mode diff-only|expanded` — what context leaves your machine.
-- `--redact` / `--no-redact` — secret redaction (default from config; on by default).
-- `-o, --output <path>` — write report to a file instead of stdout.
-- `--post-summary` (alias `--post`) — post the report as one summary comment on `--pr`.
-- `--post-inline` — post inline review comments for located findings on `--pr`.
-- `--dry-run` — with `--post-inline`, print what would be posted without calling GitHub.
-- `--ci` — exit non-zero when blocking findings remain.
-- `--fail-on <sev,...>` — comma-separated severities that fail CI (overrides config).
-- `-q, --quiet` — suppress progress logs on stderr.
-- `--version`.
+- `--config <path>` — path to `council.toml`; `--config-validate` validates and exits;
+  `--strict-config` treats config warnings as errors.
+- `--policy <path>` — optional repository review policy (else auto-discovers
+  `.council/policy.toml`).
+- `--rounds <n>` — fixed rounds (1=review, 2=+debate); disables early-stop.
+- `--early-stop` / `--no-early-stop`, `--max-rounds <n>` — adaptive debate (issue #40).
+- `--chair <name>` — agent that synthesizes. `--seed <n>` — reproducible orchestration.
+- `--verify` / `--no-verify` — verification round (default from config).
+- `--total-timeout <s>`, `--phase-timeout <s>`, `--retries <n>` — run budget + retries (#30).
+- `--max-diff-bytes <n>`, `--chunk` / `--no-chunk`, `--exclude <glob>`, `--include <glob>`
+  — large-diff filtering/chunking (#31).
+- `--incremental` — review only changes since the last council run on `--pr` (#9).
+- `--suggest-patches`, `--patches-out <path>` — inspectable patches for verified findings (#10).
+- `--cache`, `--cache-dir <path>`, `--clear-cache` — optional result cache (#33).
+- `--context-mode diff-only|expanded`, `--redact` / `--no-redact` — what leaves your machine.
+- `--format markdown|json|sarif`, `-o/--output <path>`, `--metadata-json <path>`.
+- `--post-summary` (alias `--post`), `--post-inline`, `--dry-run`, `--label` — GitHub output.
+- `--ci`, `--fail-on <sev,...>` — CI gating.
+- `--mock`, `--strict`, `--doctor`, `-q/--quiet`, `--version`.
 
 ## Configuration schema — `council.toml`
 
@@ -69,40 +94,68 @@ rounds = 2          # 1 = review only, 2 = review + debate
 chair  = "claude"   # which agent synthesizes the verdict
 timeout = 300       # per-agent wall-clock seconds (hung CLI killed at this bound)
 parallel = true
+verify = true
+# early_stop = false ; max_rounds = 3            # adaptive rounds (#40)
+# total_timeout = 1200 ; phase_timeout = 600 ; retries = 0   # run budget (#30)
+
+[council.ci]
+fail_on = ["critical", "major"]   # severities that fail `--ci`
+ignore_unverified = true
 
 [council.context]
 mode = "diff-only"      # "diff-only" (default) or "expanded"
 redact_secrets = true   # scrub recognized secrets before sending (default on)
 
+[council.diff]           # large-diff handling (#31), all optional
+# max_bytes = 200000 ; chunk = false ; exclude_generated = true
+# exclude = ["docs/**"] ; include = []
+
 [[agent]]
 name = "claude"
-vendor = "anthropic"    # anthropic | openai | google
+vendor = "anthropic"    # anthropic | openai | google | local
 command = "claude"
 # model = "claude-opus-4-8"
 extra_args = ["--output-format", "text", "--disallowed-tools", "Edit,Write,NotebookEdit,Bash", "--dangerously-skip-permissions"]
+
+# A free, offline local / open-weight reviewer (#43):
+# [[agent]]
+# name = "qwen"
+# vendor = "local"
+# model = "qwen2.5-coder:7b"
+# endpoint = "http://localhost:11434/v1"   # OpenAI-compatible (Ollama/llama.cpp/vLLM/LM Studio)
 ```
+
+Scaffold the file with `council init` instead of writing it by hand. See
+[docs/configuration.md](docs/configuration.md) for every field.
 
 ## Adapter contract
 
-Each adapter (in `src/agent_review_council/adapters.py`) knows only how to invoke one
-CLI headlessly; the orchestrator owns prompt content. Adding a vendor is a ~20-line
-addition. Adapters fail soft — a missing CLI, non-zero exit, or timeout becomes a
-non-fatal `AgentResult(ok=False, error=…)`; the run continues unless `--strict`.
-Read-only safety is enforced per vendor via `extra_args`.
+Each adapter (in `src/agent_review_council/adapters.py`) knows only how to reach one
+agent; the orchestrator owns prompt content. Adding a vendor is a ~20-line addition.
+Adapters fail soft — a missing CLI, **non-zero exit (even with stdout)**, timeout, or an
+unreachable local endpoint (`connection_error`) becomes a non-fatal
+`AgentResult(ok=False, error=…)`; the run continues unless `--strict`.
 
-Verified headless invocations (early 2026):
+**Secure by default:** reviewers read attacker-controlled diffs, so they run sandboxed —
+Claude `--disallowed-tools Edit,Write,NotebookEdit,Bash`, Codex `-s read-only`,
+Antigravity `--sandbox`; `privilege.py` audits this. Invocations:
 
 - Anthropic `ClaudeAdapter`: `claude -p "<prompt>" --output-format text`
-- OpenAI `CodexAdapter`: `codex exec "<prompt>"`
-- Google `AgyAdapter`: `agy --print "<prompt>"`
+- OpenAI `CodexAdapter`: `codex exec` (prompt on stdin), `-s read-only`
+- Google `AgyAdapter`: `agy --print "<prompt>" --sandbox`
+- local `LocalAdapter`: HTTP `POST {endpoint}/v1/chat/completions` (stdlib `urllib`)
 - `MockAdapter`: deterministic, phase-aware output; no subprocess (tests/CI).
 
 ## Output formats
 
-- Markdown report to stdout or `-o <file>` (see a sample in [docs/example-run.md](docs/example-run.md)).
-- Structured findings keyed by `{severity, file, line, category}` feed consensus tiers.
+- Report to stdout or `-o <file>` in `--format markdown` (default), `json`, or `sarif`.
+  Samples: mock [docs/example-run.md](docs/example-run.md); a real 4-vendor run
+  [docs/example-live-review.md](docs/example-live-review.md).
+- Structured findings keyed by `{severity, file, line, claim}` feed consensus tiers; a
+  deterministic PR-level classification + run metadata (`--metadata-json`) are emitted too.
 - GitHub: one summary comment (`--post-summary`) and/or inline review comments
-  (`--post-inline`) via `gh`.
+  (`--post-inline`) via `gh`; opt-in classification labels (`--label`).
+- Suggested patches for verified findings (`--suggest-patches`, `--patches-out`).
 - CI: exit code is non-zero when blocking findings remain (`--ci`, `--fail-on`).
 
 ## Security / data-flow model
@@ -120,16 +173,18 @@ Verified headless invocations (early 2026):
 ## Skill / distribution
 
 A Claude Code skill ships in [skill/review-council/](skill/review-council/SKILL.md);
-drop it into a project's `.claude/skills/` to convene the council on demand. Platform
-support matrix and plugin manifests are roadmap
-([#45](https://github.com/berkayturanci/agent-review-council/issues/45)).
+drop it into a project's `.claude/skills/` to convene the council on demand. The repo is
+also installable as a single-plugin marketplace via `.claude-plugin/` manifests, and a
+platform support matrix lives in [docs/platforms.md](docs/platforms.md).
 
-## Roadmap
+## Status
 
-Phased plan in [ROADMAP.md](ROADMAP.md); issues under
-[milestones](https://github.com/berkayturanci/agent-review-council/milestones). Near-term
-themes: verification quality, tiered consensus, anonymized rebuttal, public launch
-(docs site, comparison, distribution).
+The v0.2–v0.6 roadmap has landed: structured findings + tiered consensus, verification,
+anonymized rebuttal, adaptive early-stop, CI gating, secure-by-default sandboxing, run
+budget/retries, large-diff chunking, result cache, incremental review, suggested patches,
+comment-command triggering, a local/open-weight adapter, and `council init`. Phased
+history in [ROADMAP.md](ROADMAP.md); open items under
+[milestones](https://github.com/berkayturanci/agent-review-council/milestones).
 
 ## Troubleshooting
 

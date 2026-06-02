@@ -3,6 +3,10 @@
 The council reads `./council.toml` by default (override with `--config PATH`).
 If the file is absent, built-in defaults are used.
 
+> **Tip:** don't hand-write it the first time — run **`council init`** to scaffold a
+> valid config from your installed agents (and discovered local models). See
+> [the README](../README.md#configuration--counciltoml) for the `init` flags.
+
 ## Validation
 
 Check a config without running a review:

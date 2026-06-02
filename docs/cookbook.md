@@ -16,6 +16,27 @@ no network, no keys.
 
 ---
 
+## 0. First-time setup — scaffold a config
+
+**Prerequisites:** none (works before any agent is configured).
+
+Generate a `council.toml` instead of hand-writing it. `council init` detects which
+agent CLIs are installed and, for a local agent, the models on your Ollama/OpenAI-
+compatible server:
+
+```bash
+council init                      # interactive: pick agents, rounds, chair, local model
+council init --list-agents        # show known agents + availability
+council init --list-models        # list local (Ollama) models you can pick
+council init --agents claude,codex,qwen --rounds 2   # non-interactive / scriptable
+```
+
+**Outcome:** a validated `council.toml` using the secure-by-default agent templates
+(Codex read-only, Antigravity sandboxed, Claude write-tool denylist). It won't overwrite
+an existing file without `--force`.
+
+---
+
 ## 1. Review a local branch before opening a PR
 
 **Prerequisites:** at least one agent CLI (`claude`, `codex`, or `agy`). No `gh`

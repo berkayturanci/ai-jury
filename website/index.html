@@ -23,8 +23,9 @@
       <p class="lede">
         A small, <strong>stdlib-only</strong> Python CLI that drives each vendor's
         <strong>native coding-agent CLI</strong> — Claude Code, OpenAI Codex, Google
-        Antigravity — to review the <em>same</em> diff or PR, cross-examine each other,
-        and synthesize <strong>one chair verdict</strong>. Local-first. Not API calls.
+        Antigravity — plus an optional <strong>free, offline local / open-weight</strong>
+        model, to review the <em>same</em> diff or PR, cross-examine each other, and
+        synthesize <strong>one chair verdict</strong>. Local-first. Not API calls.
       </p>
       <div class="cta">
         <a class="btn primary" href="https://github.com/berkayturanci/agent-review-council">View on GitHub</a>
@@ -52,13 +53,15 @@
       <h2>Quickstart</h2>
       <pre><code>pipx install agent-review-council
 
+council init                                      # scaffold council.toml (detects agents + local models)
 council --pr 123                                  # review a GitHub PR
 git diff origin/HEAD... | council --diff-file -   # review the current branch
 council --ci --fail-on high,critical              # gate CI on blocking findings
 council --mock --diff-file examples/sample.diff   # offline demo, no live CLIs</code></pre>
       <p class="muted">
-        Requires Python 3.11+ and at least one agent CLI (<code>claude</code>,
-        <code>codex</code>, <code>agy</code>); missing ones are skipped. <code>gh</code>
+        Requires Python 3.11+ and at least one reviewer — an agent CLI
+        (<code>claude</code>, <code>codex</code>, <code>agy</code>) or a free, offline
+        local model via Ollama; missing/unreachable ones are skipped. <code>gh</code>
         is needed for <code>--pr</code>.
       </p>
     </section>
@@ -75,25 +78,25 @@ council --mock --diff-file examples/sample.diff   # offline demo, no live CLIs</
 
     <section class="grid">
       <div>
-        <h3>Local-first &amp; private</h3>
-        <p><code>diff-only</code> context by default; secret redaction on by default. No source files outside the diff, no repo history, no env vars are sent. <a href="https://github.com/berkayturanci/agent-review-council/blob/main/SECURITY.md">Security &amp; data-flow →</a></p>
+        <h3>Free &amp; offline option</h3>
+        <p>Add a local open-weight model (Ollama, llama.cpp, vLLM, LM Studio) as a panel seat — zero cloud cost, fully offline, or mixed with cloud CLIs for more diversity. <a href="https://github.com/berkayturanci/agent-review-council/blob/main/README.md#local--open-weight-reviewer-free-offline">Local reviewer →</a></p>
       </div>
       <div>
-        <h3>Where it fits</h3>
-        <p>Smaller in scope than hosted PR reviewers and different from API-level tools. <a href="https://github.com/berkayturanci/agent-review-council/blob/main/docs/comparison.md">Ecosystem comparison →</a></p>
+        <h3>Local-first &amp; private</h3>
+        <p><code>diff-only</code> context by default; secret redaction on; reviewers run sandboxed/read-only. No source outside the diff, no repo history, no env vars are sent. <a href="https://github.com/berkayturanci/agent-review-council/blob/main/SECURITY.md">Security &amp; data-flow →</a></p>
+      </div>
+      <div>
+        <h3>Fits your workflow</h3>
+        <p><code>council init</code> to set up, CI gating, incremental review, suggested patches, comment-triggered runs. <a href="https://github.com/berkayturanci/agent-review-council/blob/main/docs/cookbook.md">Cookbook →</a></p>
       </div>
       <div>
         <h3>Drop-in skill</h3>
         <p>Install as a Claude Code plugin or copy the skill into <code>.claude/skills/</code>. <a href="https://github.com/berkayturanci/agent-review-council/blob/main/docs/platforms.md">Platform support →</a></p>
       </div>
-      <div>
-        <h3>Roadmap</h3>
-        <p>Verification quality, tiered consensus, anonymized rebuttal, public launch. <a href="https://github.com/berkayturanci/agent-review-council/milestones">Milestones →</a></p>
-      </div>
     </section>
 
     <section class="notice">
-      <p><strong>Not a hosted SaaS.</strong> This is a local-first CLI + skill, not a hosted review service or a general multi-agent framework. It reviews and reports; it does not rewrite your code.</p>
+      <p><strong>Not a hosted SaaS.</strong> This is a local-first CLI + skill, not a hosted review service or a general multi-agent framework. It reviews and reports; it can emit inspectable suggested patches for verified findings, but never applies them automatically.</p>
     </section>
   </main>
 

@@ -14,9 +14,12 @@ tooling), not API-level prompting.
 
 - `agent-review-council` is installed and `council` is on PATH
   (`pipx install agent-review-council` or `pip install -e /path/to/agent-review-council`).
-- At least one agent CLI is installed: `claude`, `codex`, and/or `agy`.
-  Missing CLIs are skipped automatically; the council runs with whoever is available.
+- At least one reviewer: an agent CLI (`claude`, `codex`, and/or `agy`) **or** a free,
+  offline **local / open-weight** model via Ollama (configured as a `vendor = "local"`
+  agent). Missing/unreachable agents are skipped; the council runs with whoever is available.
 - `gh` is authenticated for `--pr` / `--post`.
+- First time in a repo? Run `council init` to scaffold a `council.toml` (it detects
+  installed agents and local models).
 
 ## How to run
 
