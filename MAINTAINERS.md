@@ -7,9 +7,12 @@ under the [LICENSE](LICENSE).
 
 ## Maintainers
 
-| Name           | Role         | Areas                          |
-| -------------- | ------------ | ------------------------------ |
-| Berkay Turancı | Lead maintainer | Orchestration, releases, security triage |
+| Name           | GitHub          | Role            | Areas                          |
+| -------------- | --------------- | --------------- | ------------------------------ |
+| Berkay Turancı | [@berkayturanci](https://github.com/berkayturanci) | Lead maintainer / owner | Orchestration, releases, security triage |
+
+The lead maintainer is the repository **owner** and the default
+[code owner](.github/CODEOWNERS) — auto-requested for review on every PR.
 
 A maintainer's job is to keep the project **small, inspectable, and
 project-agnostic** — not to grow it indefinitely. Concretely, maintainers:

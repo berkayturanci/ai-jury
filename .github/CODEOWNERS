@@ -1,0 +1,7 @@
+# Code owners for ai-jury.
+#
+# @berkayturanci is the default owner of everything in this repository and is
+# automatically requested for review on every pull request. See MAINTAINERS.md
+# for the governance model.
+
+*       @berkayturanci
