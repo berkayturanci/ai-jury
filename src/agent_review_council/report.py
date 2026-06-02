@@ -154,6 +154,7 @@ def render(
     redaction_count: int = 0,
     metadata: dict | None = None,
     classification: dict | None = None,
+    review_scope: str | None = None,
 ) -> str:
     findings = findings or []
     warnings = warnings or []
@@ -163,6 +164,11 @@ def render(
 
     panel = ", ".join(f"`{r.agent}` ({r.vendor})" for r in reviews)
     lines.append(f"**Panel:** {panel}\n")
+
+    # Review-scope note (issue #9): only rendered when the caller supplies it
+    # (incremental mode), so the default report is unchanged.
+    if review_scope:
+        lines.append(f"{review_scope}\n")
 
     # Compact, deterministic PR-level classification (issue #7). Derived from the
     # structured findings/groups when not supplied explicitly so the section

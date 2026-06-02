@@ -47,6 +47,52 @@ def post_pr_comment(pr: str, body: str, repo: str | None = None) -> None:
     _gh(*args)
 
 
+def pr_head_sha(pr: str, repo: str | None = None) -> str:
+    """Return the current head commit SHA of a PR (best-effort, '' on failure)."""
+    args = ["pr", "view", str(pr), "--json", "headRefOid", "--jq", ".headRefOid"]
+    if repo:
+        args += ["--repo", repo]
+    try:
+        return _gh(*args).strip()
+    except RuntimeError:
+        return ""
+
+
+def pr_comment_bodies(pr: str, repo: str | None = None) -> list[str]:
+    """Return the bodies of a PR's issue comments (best-effort, [] on failure).
+
+    Used by incremental mode (issue #9) to find the council's prior
+    reviewed-SHA marker. Network errors degrade to an empty list so the caller
+    safely falls back to a full review.
+    """
+    args = ["pr", "view", str(pr), "--json", "comments", "--jq", ".comments[].body"]
+    if repo:
+        args += ["--repo", repo]
+    try:
+        out = _gh(*args)
+    except RuntimeError:
+        return []
+    return out.splitlines()
+
+
+def compare_diff(base: str, head: str, repo: str | None = None) -> str:
+    """Return the unified diff between two SHAs via the compare API (issue #9).
+
+    Uses the ``application/vnd.github.v3.diff`` media type so the response is a
+    ready-to-review unified diff. Returns '' on failure so callers can fall back.
+    """
+    resolved = _resolve_repo(repo)
+    if not resolved:
+        return ""
+    try:
+        return _gh(
+            "api", f"repos/{resolved}/compare/{base}...{head}",
+            "-H", "Accept: application/vnd.github.v3.diff",
+        )
+    except RuntimeError:
+        return ""
+
+
 def build_label_args(pr: str, labels, repo: str | None = None) -> list[str]:
     """Build the ``gh pr edit`` arg vector for applying labels (pure).
 

@@ -198,6 +198,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="override the cache directory (default: $COUNCIL_CACHE_DIR or "
              "~/.cache/agent-review-council)",
     )
+    p.add_argument(
+        "--suggest-patches", dest="suggest_patches", action="store_true",
+        help="emit a separate, opt-in suggested-patches section for VERIFIED "
+             "findings (read-only; never applied automatically) (issue #10)",
+    )
+    p.add_argument(
+        "--patches-out", metavar="PATH",
+        help="with --suggest-patches, write the patches to this file instead of "
+             "appending them after the report",
+    )
+    p.add_argument(
+        "--incremental", action="store_true",
+        help="review only the diff since the last council run on --pr when a prior "
+             "marker exists, else fall back to a full review (issue #9)",
+    )
     p.add_argument("-q", "--quiet", action="store_true", help="suppress progress logs on stderr")
     p.add_argument(
         "--config-validate", action="store_true",
@@ -209,6 +224,51 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return p
+
+
+def _run_comment_command(rest: list[str]) -> int:
+    """Handle ``council comment`` (issue #11): parse an allowlisted PR-comment
+    command and either print the resolved council args or dispatch the run.
+
+    Returns 2 on a rejected/invalid command (so a workflow can ignore it), else
+    the dispatched run's exit code (or 0 with --print-args).
+    """
+    import shlex
+
+    from .commands import CommandError, parse_comment
+
+    sub = argparse.ArgumentParser(prog="council comment", add_help=True)
+    sub.add_argument("--text", required=True, help="the PR comment body to parse")
+    sub.add_argument("--pr", help="PR number/URL to review and post back to")
+    sub.add_argument("--repo", help="owner/name (defaults to current repo)")
+    sub.add_argument(
+        "--print-args", dest="print_args", action="store_true",
+        help="print the resolved council args instead of running",
+    )
+    sub.add_argument(
+        "--no-post", dest="no_post", action="store_true",
+        help="do not post the result back as a summary comment",
+    )
+    ns = sub.parse_args(rest)
+
+    try:
+        parsed = parse_comment(ns.text)
+    except CommandError as exc:
+        print(f"comment command rejected: {exc}", file=sys.stderr)
+        return 2
+
+    inner = parsed.to_cli_args()
+    if ns.pr:
+        inner += ["--pr", ns.pr]
+        if not ns.no_post:
+            inner += ["--post-summary"]
+    if ns.repo:
+        inner += ["--repo", ns.repo]
+
+    if ns.print_args:
+        print(" ".join(shlex.quote(a) for a in inner))
+        return 0
+    return main(inner)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -227,6 +287,13 @@ def main(argv: list[str] | None = None) -> int:
         removed = Cache(cache_dir).clear()
         print(f"Cleared {removed} cache entr{'y' if removed == 1 else 'ies'}.")
         return 0
+
+    # Comment-command mode (issue #11): `council comment --text "/council review"`
+    # parses an allowlisted PR-comment command and dispatches a safe council run.
+    # Handled before the main parser so the comment text is never confused with
+    # the council's own flags, and never reaches a shell.
+    if raw[:1] == ["comment"]:
+        return _run_comment_command(raw[1:])
 
     args = build_parser().parse_args(argv)
 
@@ -318,6 +385,31 @@ def main(argv: list[str] | None = None) -> int:
             print(f"[council] {msg}", file=sys.stderr)
 
     diff, context = _read_diff(args)
+
+    # Incremental review (issue #9): when --incremental and a prior council
+    # marker exists, narrow the diff to the range since the last reviewed SHA;
+    # otherwise fall back safely to the full diff. The reviewed head SHA is also
+    # recorded on the posted summary so a later run can go incremental.
+    review_scope = None
+    head_sha = ""
+    if args.incremental:
+        if not args.pr:
+            raise SystemExit("error: --incremental requires --pr")
+        from . import incremental as inc
+        from .github import compare_diff, pr_comment_bodies, pr_head_sha
+
+        head_sha = pr_head_sha(args.pr, args.repo)
+        prev_sha = inc.parse_reviewed_sha(pr_comment_bodies(args.pr, args.repo))
+        mode, reason = inc.decide_review(prev_sha, head_sha)
+        if mode == inc.MODE_INCREMENTAL:
+            inc_diff = compare_diff(prev_sha, head_sha, args.repo)
+            if inc_diff.strip():
+                diff = inc_diff
+            else:
+                mode, reason = inc.MODE_FULL, "incremental range unavailable — full review"
+        review_scope = inc.scope_note(mode, reason)
+        log(reason)
+
     if not diff.strip():
         raise SystemExit("error: empty diff — nothing to review")
 
@@ -383,6 +475,7 @@ def main(argv: list[str] | None = None) -> int:
             redact_secrets=outcome.redact_secrets,
             redaction_count=outcome.redaction_count,
             metadata=metadata,
+            review_scope=review_scope,
         )
 
     if args.metadata_json:
@@ -403,6 +496,23 @@ def main(argv: list[str] | None = None) -> int:
         if args.format == "markdown":
             report += f"\n\n## CI gate\n\n{ci_reason}\n"
 
+    # Suggested patches (issue #10): opt-in and kept separate from the default
+    # report. Written to a file with --patches-out, else appended after the
+    # markdown report under its own heading. The default flow stays read-only.
+    if args.suggest_patches:
+        from .patches import render_patch_suggestions
+
+        patches_section = render_patch_suggestions(outcome.groups)
+        if not patches_section:
+            log("no verified findings with a suggested fix — no patches emitted")
+        elif args.patches_out:
+            Path(args.patches_out).write_text(patches_section, encoding="utf-8")
+            log(f"suggested patches written to {args.patches_out}")
+        elif args.format == "markdown":
+            report += "\n\n" + patches_section.rstrip()
+        else:
+            log("--suggest-patches needs markdown output or --patches-out; skipped")
+
     if args.output:
         with Path(args.output).open("w", encoding="utf-8") as fh:
             fh.write(report + "\n")
@@ -413,7 +523,16 @@ def main(argv: list[str] | None = None) -> int:
     if args.post_summary:
         if not args.pr:
             raise SystemExit("error: --post-summary requires --pr")
-        post_pr_comment(args.pr, report, args.repo)
+        body = report
+        # Record the reviewed head SHA as a hidden marker so a later
+        # --incremental run can review only the new range (issue #9).
+        from .github import pr_head_sha
+        from .incremental import reviewed_sha_marker
+
+        marker_sha = head_sha or pr_head_sha(args.pr, args.repo)
+        if marker_sha:
+            body = f"{body}\n\n{reviewed_sha_marker(marker_sha)}"
+        post_pr_comment(args.pr, body, args.repo)
         log(f"posted verdict to PR #{args.pr}")
 
     if args.post_inline:

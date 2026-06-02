@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Incremental review mode (#9): `--incremental` reviews only the diff since the
+  last council run on a PR (the reviewed head SHA is recorded as a hidden marker
+  on the summary comment), falling back to a full review when no prior marker
+  exists or the head is unchanged. The report states the review scope.
+- Suggested patches (#10): `--suggest-patches` emits a separate, opt-in
+  suggested-patches section for **verified** findings only — read-only, never
+  applied automatically. `--patches-out PATH` writes them to a file instead.
+- GitHub comment commands (#11): a `council comment --text "/council review …"`
+  mode parses allowlisted PR-comment commands (`review`, `summary`; `--rounds`
+  only) into a safe council run — comment text never reaches a shell. Includes a
+  documented, author-gated GitHub Actions recipe in the cookbook.
 - Run budget, retries, and partial-result policy (#30): optional `total_timeout`
   / `phase_timeout` budgets and opt-in `retries` for transient
   (timeout/rate-limit/spawn) failures. The effective per-call timeout is the min
