@@ -64,6 +64,24 @@ class RedactionTests(unittest.TestCase):
         self.assertNotIn(secret, out)
         self.assertIn("api_key", out)  # key name preserved
 
+    def test_quotes_preserved_keeps_valid_syntax(self):
+        # Issue #102: redacting a quoted assignment must keep the quotes so the
+        # line stays a valid string literal (no fabricated syntax errors).
+        out, n = redact('api_key = "abcdef0123456789ABCDEF"')
+        self.assertEqual(n, 1)
+        self.assertEqual(out, 'api_key = "[REDACTED:secret_assignment]"')
+        # The redacted line is still syntactically valid Python.
+        compile(out, "<redacted>", "exec")
+
+    def test_single_quotes_preserved(self):
+        out, _ = redact("token = 'supersecretvalue1234567'")
+        self.assertEqual(out, "token = '[REDACTED:secret_assignment]'")
+
+    def test_unquoted_assignment_unchanged_shape(self):
+        out, n = redact("token: supersecretvalue1234567")
+        self.assertEqual(n, 1)
+        self.assertEqual(out, "token: [REDACTED:secret_assignment]")
+
     def test_no_secret(self):
         out, n = redact("just some normal code text")
         self.assertEqual(n, 0)
