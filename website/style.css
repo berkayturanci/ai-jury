@@ -243,3 +243,13 @@ pre.toml { margin: 0; max-height: 360px; overflow: auto; }
 .gh-foot { color: var(--faint); font-size: 0.75rem; margin-top: 0.6rem; border-top: 1px solid var(--border); padding-top: 0.5rem; }
 
 @media (max-width: 760px) { .run-out { grid-template-columns: 1fr; } }
+
+/* ---- Brand mark + nav links ------------------------------------------ */
+.brand-mark { vertical-align: -5px; border-radius: 6px; }
+.nav-links { display: flex; gap: 1.1rem; align-items: center; }
+
+/* ---- Configuration section ------------------------------------------- */
+.config-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; align-items: start; margin: 1rem 0; }
+.config-grid h3 { margin: 0 0 0.5rem; font-size: 1rem; }
+.config-grid pre { margin: 0; height: 100%; }
+@media (max-width: 760px) { .config-grid { grid-template-columns: 1fr; } }
