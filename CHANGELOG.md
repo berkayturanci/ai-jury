@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A reviewer CLI that exits **nonzero** is now always treated as a failure, even
+  when it printed to stdout (#101); partial/error output no longer silently
+  counts as a clean review feeding consensus, synthesis, and the CI gate.
 - Result cache key now includes the `--mock` flag, so a mock run can never be
   served as a real review (or vice versa) for the same diff+config.
 - `total_timeout` now bounds a whole **chunked** review instead of resetting per
