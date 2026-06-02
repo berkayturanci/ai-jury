@@ -123,6 +123,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The `review-council` skill is now a compound, end-to-end flow: scaffold a config
+  if needed (`council init`) → review → capture the report (`-o`) → summarize,
+  noting that `council` already combines review + report in one command. Covers the
+  local/open-weight option and add-ons (`--incremental`, `--suggest-patches`,
+  `config show`, `--doctor`).
 - README and hero visual updated to cover current capabilities (#112): the hero now
   shows the **fourth, local / open-weight** panelist (alongside Claude/Codex/Antigravity)
   and the broader pipeline; the README leads with free/offline reviews, `council init`,

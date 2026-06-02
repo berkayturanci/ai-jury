@@ -1,6 +1,6 @@
 ---
 name: review-council
-description: Convene a cross-vendor multi-agent review council on a PR or diff — Claude Code, Codex, and Antigravity each review independently, cross-examine each other, and a chair synthesizes a verdict. Use when the user wants a multi-model review of a pull request, a diff, or the current branch, or says "review council", "convene the council", or "cross-model review".
+description: Convene a cross-vendor multi-agent review council on a PR or diff and produce one report — Claude Code, Codex, Antigravity, and/or a free local/open-weight model each review independently, cross-examine each other, and a chair synthesizes a verdict. Handles the whole flow end to end (scaffold config if needed → review → report → summarize). Use when the user wants a multi-model review of a pull request, a diff, or the current branch, or says "review council", "convene the council", or "cross-model review".
 ---
 
 # Review Council
@@ -35,6 +35,28 @@ Pick the form that matches the request:
 | Offline smoke test (no live CLIs) | `council --mock --diff-file examples/sample.diff` |
 
 Stream progress goes to stderr; the markdown report goes to stdout (or `-o file.md`).
+
+## End-to-end flow (setup → review → report)
+
+When asked to "review" something, run the whole flow in one go — `council` already
+combines the review and the report, so you do not need separate steps for them:
+
+1. **Ensure a config exists.** If there's no `council.toml` in the repo, scaffold one
+   non-interactively: `council init --agents <detected>` (or `council init --preset
+   offline` for a free, local-only setup). If agent CLIs are already installed, this
+   step is optional — `council` falls back to built-in defaults, and with no CLIs but a
+   local model server up it auto-adds a local agent.
+2. **Review and capture the report in one command:**
+   - PR: `council --pr <n> -o council-report.md` (add `--post-summary` to also post it).
+   - Branch/diff: `git diff origin/HEAD... | council --diff-file - -o council-report.md`.
+   - Gate a merge: add `--ci --fail-on critical,major` (non-zero exit blocks).
+3. **Summarize back** the verdict + consensus findings (see below), and point the user
+   at `council-report.md` for the full report.
+
+Useful add-ons in the same run: `--incremental` (only changes since the last council
+run on a PR), `--suggest-patches` (inspectable fixes for verified findings),
+`--format json|sarif` (machine-readable). `council config show` prints the effective
+config; `council --doctor` checks readiness and suggests next steps.
 
 ## What to report back to the user
 
