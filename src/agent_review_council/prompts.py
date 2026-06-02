@@ -16,6 +16,11 @@ verbatim in source diffs.
 """
 from __future__ import annotations
 
+# Prompt template version. Bump whenever a template below changes in a way that
+# could alter agent output, so the result cache (issue #33) invalidates stale
+# entries instead of serving results produced under different prompts.
+PROMPT_VERSION = 1
+
 # Standing anti-injection preamble, reused across templates. Untrusted blocks
 # below are demarcated with these sentinels.
 _UNTRUSTED_NOTICE = """SECURITY NOTICE — UNTRUSTED INPUT HANDLING:

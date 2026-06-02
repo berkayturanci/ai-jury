@@ -35,6 +35,33 @@ parallel = true
 # reduce false positives. Disable with --no-verify.
 verify = true
 
+# Adaptive rounds (#40): when early_stop is true the debate round is skipped if
+# the round-1 reviewers already agree, and otherwise runs up to max_rounds,
+# stopping as soon as a round resolves all disputes. A fixed --rounds disables
+# this for reproducible benchmarking. max_rounds defaults to `rounds`.
+# early_stop = false
+# max_rounds = 3
+
+# Execution controls (#30), all optional and off by default. total_timeout /
+# phase_timeout bound the whole run / a single phase (seconds); the effective
+# per-call timeout is the min of the agent timeout and these budgets. retries is
+# the number of extra attempts for transient failures (timeout/rate-limit/spawn).
+# total_timeout = 1200
+# phase_timeout = 600
+# retries = 0
+
+# Large-diff handling (#31). The diff is measured + filtered before review;
+# over-budget diffs are chunked (chunk = true) or rejected with a clear message.
+# exclude_generated drops binary/generated/vendored files; exclude/include are
+# extra path-glob deny/allow lists.
+# [council.diff]
+# max_bytes = 200000
+# chunk = false
+# chunk_max_bytes = 200000
+# exclude_generated = true
+# exclude = ["docs/**", "*.lock"]
+# include = []
+
 # CI gate: when `council --ci` is used, exit non-zero if any finding has a
 # severity in `fail_on`. When `ignore_unverified` is true, only findings the
 # verifier marked "verified" can fail the build (unverified ones never fail).

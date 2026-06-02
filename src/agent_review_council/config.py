@@ -19,6 +19,10 @@ DEFAULT_CONFIG: dict = {
         "ci": {"fail_on": ["critical", "major"], "ignore_unverified": True},
         "context": {"mode": "diff-only", "redact_secrets": True},
     },
+    # Execution controls (issue #30) are optional and conservative by default:
+    # no overall/per-phase budget and zero retries, so out-of-the-box behaviour
+    # is unchanged. They live under [council] and are documented in
+    # docs/configuration.md.
     "agent": [
         {
             "name": "claude",
@@ -65,6 +69,15 @@ KNOWN_COUNCIL_KEYS = (
     "seed",
     "anonymize_debate",
     "prefer_non_reviewer_chair",
+    # Execution controls (issue #30).
+    "total_timeout",
+    "phase_timeout",
+    "retries",
+    # Adaptive rounds (issue #40).
+    "max_rounds",
+    "early_stop",
+    # Large-diff handling (issue #31).
+    "diff",
 )
 KNOWN_AGENT_KEYS = (
     "name",
@@ -134,6 +147,46 @@ def validate_config(data: dict, strict: bool = False) -> list:
         errors.append(
             f"council.timeout must be a positive integer (got {timeout!r})."
         )
+
+    # Execution controls (issue #30): optional positive budgets, non-negative
+    # retries (hard when present and invalid).
+    for key in ("total_timeout", "phase_timeout"):
+        val = council.get(key)
+        if val is not None and (
+            not isinstance(val, int) or isinstance(val, bool) or val <= 0
+        ):
+            errors.append(
+                f"council.{key} must be a positive integer when set (got {val!r})."
+            )
+    retries = council.get("retries", 0)
+    if not isinstance(retries, int) or isinstance(retries, bool) or retries < 0:
+        errors.append(
+            f"council.retries must be an integer >= 0 (got {retries!r})."
+        )
+
+    # Adaptive rounds (issue #40): max_rounds >= 1 (hard); early_stop is a bool.
+    max_rounds = council.get("max_rounds")
+    if max_rounds is not None and (
+        not isinstance(max_rounds, int) or isinstance(max_rounds, bool) or max_rounds < 1
+    ):
+        errors.append(
+            f"council.max_rounds must be an integer >= 1 when set (got {max_rounds!r})."
+        )
+
+    # Large-diff handling (issue #31): [council.diff] sizes are positive ints.
+    diff_cfg = council.get("diff", {})
+    if not isinstance(diff_cfg, dict):
+        errors.append("[council.diff] must be a table.")
+    else:
+        for key in ("max_bytes", "chunk_max_bytes"):
+            val = diff_cfg.get(key)
+            if val is not None and (
+                not isinstance(val, int) or isinstance(val, bool) or val <= 0
+            ):
+                errors.append(
+                    f"council.diff.{key} must be a positive integer when set "
+                    f"(got {val!r})."
+                )
 
     agents_data = data.get("agent", [])
     if not isinstance(agents_data, list):
@@ -246,6 +299,25 @@ class ContextConfig:
 
 
 @dataclass
+class DiffConfig:
+    """Large-diff handling policy (issue #31).
+
+    ``max_bytes`` is the size (UTF-8 bytes, measured after filtering) above which
+    a diff is either chunked or rejected. ``chunk`` enables per-file chunking;
+    ``chunk_max_bytes`` bounds each chunk (defaults to ``max_bytes``).
+    ``exclude_generated`` drops binary and common generated/vendored files;
+    ``exclude``/``include`` are extra path-glob deny/allow lists.
+    """
+
+    max_bytes: int = 200_000
+    chunk: bool = False
+    chunk_max_bytes: int | None = None
+    exclude_generated: bool = True
+    exclude: list[str] = field(default_factory=list)
+    include: list[str] = field(default_factory=list)
+
+
+@dataclass
 class CouncilConfig:
     rounds: int = 2
     chair: str = "claude"
@@ -255,6 +327,7 @@ class CouncilConfig:
     agents: list[AgentSpec] = field(default_factory=list)
     ci: CiConfig = field(default_factory=CiConfig)
     context: ContextConfig = field(default_factory=ContextConfig)
+    diff: DiffConfig = field(default_factory=DiffConfig)
     # Optional run seed. Controls the shared run RNG used by randomized
     # orchestration features (see orchestrator.run_council). LLM output itself
     # is never made deterministic by this; only the orchestration around it.
@@ -271,6 +344,28 @@ class CouncilConfig:
     # effect when chair == "rotate" (rotation already picks among usable agents)
     # or when an explicit usable chair name is configured.
     prefer_non_reviewer_chair: bool = False
+    # Execution controls (issue #30). All optional and off by default so the
+    # out-of-the-box run is unchanged. ``total_timeout``/``phase_timeout`` cap the
+    # whole run / a single phase (None = uncapped); the effective per-agent-call
+    # timeout is the minimum of the agent timeout, the phase budget, and the
+    # remaining total budget. ``retries`` is the number of EXTRA attempts for
+    # transient (retryable) failures — 0 means try once.
+    total_timeout: int | None = None
+    phase_timeout: int | None = None
+    retries: int = 0
+    # Adaptive rounds (issue #40). When ``early_stop`` is True the orchestrator
+    # decides whether to run the debate round(s) from the round-1 convergence
+    # signal instead of always honouring a fixed ``rounds``: a unanimous panel
+    # stops after round 1, and disagreement runs debate up to ``max_rounds``.
+    # A CLI ``--rounds`` (or any explicit fixed-N intent) disables early stop so
+    # benchmarking stays reproducible. ``max_rounds`` defaults to ``rounds``.
+    max_rounds: int | None = None
+    early_stop: bool = False
+
+    @property
+    def effective_max_rounds(self) -> int:
+        """Round ceiling for adaptive mode: ``max_rounds`` or ``rounds``."""
+        return self.max_rounds if self.max_rounds is not None else self.rounds
 
     @property
     def enabled_agents(self) -> list[AgentSpec]:
@@ -295,6 +390,27 @@ def _context_from_dict(data: dict) -> ContextConfig:
     return ContextConfig(mode=mode, redact_secrets=bool(data.get("redact_secrets", True)))
 
 
+def _str_list(value) -> list[str]:
+    """Coerce a config value into a clean list of non-empty strings."""
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, list):
+        return []
+    return [str(v).strip() for v in value if str(v).strip()]
+
+
+def _diff_from_dict(data: dict) -> DiffConfig:
+    default = DiffConfig()
+    return DiffConfig(
+        max_bytes=_opt_positive_int(data.get("max_bytes")) or default.max_bytes,
+        chunk=bool(data.get("chunk", default.chunk)),
+        chunk_max_bytes=_opt_positive_int(data.get("chunk_max_bytes")),
+        exclude_generated=bool(data.get("exclude_generated", default.exclude_generated)),
+        exclude=_str_list(data.get("exclude", [])),
+        include=_str_list(data.get("include", [])),
+    )
+
+
 def _seed_from_dict(council: dict) -> int | None:
     """Parse ``[council] seed`` into an int, or None when absent/invalid.
 
@@ -309,6 +425,24 @@ def _seed_from_dict(council: dict) -> int | None:
         return int(raw)
     except (TypeError, ValueError):
         return None
+
+
+def _opt_positive_int(raw) -> int | None:
+    """Coerce an optional positive-int config value, else None.
+
+    Used for the optional execution budgets (issue #30) and ``max_rounds``
+    (issue #40). A missing, boolean, non-numeric, or non-positive value degrades
+    to None (uncapped) rather than raising, so ``_from_dict`` stays tolerant when
+    called without validation; :func:`validate_config` is what reports the hard
+    error for an explicit bad value.
+    """
+    if raw is None or isinstance(raw, bool):
+        return None
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None
 
 
 def _from_dict(data: dict) -> CouncilConfig:
@@ -336,9 +470,15 @@ def _from_dict(data: dict) -> CouncilConfig:
         agents=agents,
         ci=_ci_from_dict(council.get("ci", {})),
         context=_context_from_dict(council.get("context", {})),
+        diff=_diff_from_dict(council.get("diff", {})),
         seed=_seed_from_dict(council),
         anonymize_debate=bool(council.get("anonymize_debate", True)),
         prefer_non_reviewer_chair=bool(council.get("prefer_non_reviewer_chair", False)),
+        total_timeout=_opt_positive_int(council.get("total_timeout")),
+        phase_timeout=_opt_positive_int(council.get("phase_timeout")),
+        retries=max(0, int(council.get("retries", 0) or 0)),
+        max_rounds=_opt_positive_int(council.get("max_rounds")),
+        early_stop=bool(council.get("early_stop", False)),
     )
 
 
@@ -364,6 +504,11 @@ def config_hash(config: CouncilConfig) -> str:
         "timeout": config.timeout,
         "parallel": config.parallel,
         "verify": config.verify,
+        "total_timeout": config.total_timeout,
+        "phase_timeout": config.phase_timeout,
+        "retries": config.retries,
+        "max_rounds": config.max_rounds,
+        "early_stop": config.early_stop,
         "ci": {
             "fail_on": list(config.ci.fail_on),
             "ignore_unverified": config.ci.ignore_unverified,
@@ -371,6 +516,14 @@ def config_hash(config: CouncilConfig) -> str:
         "context": {
             "mode": config.context.mode,
             "redact_secrets": config.context.redact_secrets,
+        },
+        "diff": {
+            "max_bytes": config.diff.max_bytes,
+            "chunk": config.diff.chunk,
+            "chunk_max_bytes": config.diff.chunk_max_bytes,
+            "exclude_generated": config.diff.exclude_generated,
+            "exclude": list(config.diff.exclude),
+            "include": list(config.diff.include),
         },
         "agents": [
             {

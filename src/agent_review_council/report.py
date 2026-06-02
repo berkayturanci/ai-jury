@@ -66,8 +66,26 @@ def _metadata_block(metadata: dict) -> list[str]:
     """
     lines = ["## Run metadata\n"]
     lines.append(f"- rounds executed: {metadata['rounds_executed']}")
+    # Adaptive-rounds explanation (issue #40): only shown when the orchestrator
+    # recorded a reason, so a plain fixed-N run stays unchanged.
+    if metadata.get("from_cache"):
+        lines.append("- ♻️ served from local cache (not re-computed)")
+    stop_reason = metadata.get("stop_reason")
+    if stop_reason:
+        lines.append(f"- rounds decision: {stop_reason}")
     lines.append(f"- verify: {'on' if metadata['verify_enabled'] else 'off'}")
     lines.append(f"- context mode: {metadata['context_mode']}")
+    # Partial-result signals (issue #30): only rendered when relevant so a
+    # complete, unbudgeted run is unaffected.
+    if metadata.get("budget_exhausted"):
+        lines.append("- ⚠️ run budget exhausted: some phases were skipped")
+    skipped = metadata.get("skipped") or []
+    if skipped:
+        names = ", ".join(f"{s['name']} ({s['reason']})" for s in skipped)
+        lines.append(f"- skipped agents (never ran): {names}")
+    retried = metadata.get("retried") or []
+    if retried:
+        lines.append(f"- retried agents: {', '.join(retried)}")
     total = metadata["total_wall_clock_s"]
     lines.append(f"- total wall-clock (cost proxy, not $): {total:.0f}s")
     lines.append("")
@@ -76,6 +94,10 @@ def _metadata_block(metadata: dict) -> list[str]:
     for a in metadata["agents"]:
         code = a.get("error_code")
         status = a["status"] if not code else f"{a['status']} ({code})"
+        # Note a retried agent inline; attempts == 1 leaves the row unchanged.
+        attempts = a.get("attempts", 1)
+        if attempts and attempts > 1:
+            status += f", {attempts} attempts"
         lines.append(
             f"| {a['name']} | {a['vendor']} | {status} | {a['duration_s']:.0f}s |"
         )

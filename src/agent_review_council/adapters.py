@@ -57,6 +57,16 @@ ERROR_CODES = frozenset({
     ERR_UNKNOWN,
 })
 
+# Failures that are worth retrying because they are typically transient (issue
+# #30): a timeout, a rate-limit, or a process that failed to spawn. Auth,
+# missing-CLI, permission-prompt, empty-output, and generic nonzero-exit are
+# treated as deterministic — retrying them just burns time and tokens.
+RETRYABLE_ERROR_CODES = frozenset({
+    ERR_TIMEOUT,
+    ERR_RATE_LIMITED,
+    ERR_SPAWN_FAILED,
+})
+
 
 # Ordered keyword groups for classify_stderr. Each keyword is matched on word
 # boundaries (\b...\b) so incidental substrings do NOT trigger a false
@@ -115,6 +125,9 @@ class AgentResult:
     findings: list = field(default_factory=list)
     warnings: list = field(default_factory=list)
     error_code: str | None = None
+    # Number of attempts made for this result (issue #30): 1 means no retry.
+    # >1 records that a transient failure was retried before this outcome.
+    attempts: int = 1
 
 
 class Adapter:
@@ -219,7 +232,7 @@ class Adapter:
             )
         return caps
 
-    def run(self, prompt: str, phase: str = "review") -> AgentResult:
+    def run(self, prompt: str, phase: str = "review", timeout: int | None = None) -> AgentResult:
         del phase
         if not self.available():
             return AgentResult(
@@ -227,6 +240,11 @@ class Adapter:
                 0.0, f"command not found on PATH: {self.spec.command}",
                 error_code=ERR_MISSING_CLI,
             )
+        # The effective timeout is the caller's override (the run budget, issue
+        # #30) when smaller than the agent's own bound, else the agent timeout.
+        effective_timeout = self.spec.timeout
+        if timeout is not None:
+            effective_timeout = max(1, min(self.spec.timeout, int(timeout)))
         argv = self.build_argv(prompt)
         stdin = self._stdin_for(prompt)
         start = time.monotonic()
@@ -236,12 +254,12 @@ class Adapter:
                 input=stdin,
                 capture_output=True,
                 text=True,
-                timeout=self.spec.timeout,
+                timeout=effective_timeout,
             )
         except subprocess.TimeoutExpired:
             return AgentResult(
                 self.name, self.spec.vendor, False, "",
-                time.monotonic() - start, f"timed out after {self.spec.timeout}s",
+                time.monotonic() - start, f"timed out after {effective_timeout}s",
                 error_code=ERR_TIMEOUT,
             )
         except Exception as exc:  # noqa: BLE001 - surface any spawn failure
@@ -325,8 +343,8 @@ class MockAdapter(Adapter):
             "warnings": [],
         }
 
-    def run(self, prompt: str, phase: str = "review") -> AgentResult:
-        del prompt
+    def run(self, prompt: str, phase: str = "review", timeout: int | None = None) -> AgentResult:
+        del prompt, timeout
         n = self.name
         if phase == "review":
             body = (

@@ -20,7 +20,9 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from .config import CouncilConfig
     from .orchestrator import CouncilOutcome
 
-SCHEMA_VERSION = 1
+# v2 (issue #30/#40) added: stop_reason, skipped, retried, budget_exhausted,
+# execution{...}, and per-agent ``attempts``.
+SCHEMA_VERSION = 2
 
 
 def _agent_entry(result) -> dict:
@@ -35,10 +37,18 @@ def _agent_entry(result) -> dict:
         "status": "ok" if result.ok else "failed",
         "duration_s": round(float(result.duration_s), 3),
         "error_code": result.error_code,
+        # Number of attempts made (issue #30): >1 means a transient failure was
+        # retried before this outcome.
+        "attempts": int(getattr(result, "attempts", 1) or 1),
     }
 
 
 def _rounds_executed(outcome: "CouncilOutcome") -> int:
+    # Prefer the orchestrator's authoritative count (adaptive rounds, issue #40);
+    # fall back to inferring it from the phases that produced output.
+    recorded = getattr(outcome, "rounds_executed", None)
+    if isinstance(recorded, int) and recorded >= 1:
+        return recorded
     rounds = 1 if outcome.reviews else 0
     if outcome.debate:
         rounds += 1
@@ -74,10 +84,32 @@ def build_run_metadata(outcome: "CouncilOutcome", config: "CouncilConfig") -> di
     from .classification import classify
     from .config import config_hash
 
+    # Execution / partial-result signals (issue #30) and adaptive-round signals
+    # (issue #40). ``skipped`` lists agents whose CLI was unavailable so they
+    # never ran; ``budget_exhausted`` flags a run that stopped early on the total
+    # timeout; ``stop_reason`` explains why debate ran or stopped.
+    skipped = [
+        {"name": name, "reason": reason}
+        for name, reason in getattr(outcome, "skipped", []) or []
+    ]
+    retried = [a["name"] for a in agents if a["attempts"] > 1]
+
     return {
         "schema_version": SCHEMA_VERSION,
         "agents": agents,
         "rounds_executed": _rounds_executed(outcome),
+        "from_cache": bool(getattr(outcome, "from_cache", False)),
+        "stop_reason": getattr(outcome, "stop_reason", "") or "",
+        "skipped": skipped,
+        "retried": retried,
+        "budget_exhausted": bool(getattr(outcome, "budget_exhausted", False)),
+        "execution": {
+            "total_timeout": config.total_timeout,
+            "phase_timeout": config.phase_timeout,
+            "retries": config.retries,
+            "early_stop": config.early_stop,
+            "max_rounds": config.effective_max_rounds,
+        },
         "verify_enabled": bool(config.verify),
         "context_mode": outcome.context_mode,
         "redact_secrets": bool(outcome.redact_secrets),

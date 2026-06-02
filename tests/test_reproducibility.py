@@ -92,8 +92,8 @@ class OrderIndependenceTest(unittest.TestCase):
         """
         real_run_phase = orchestrator._run_phase
 
-        def shuffling_run_phase(adapters, prompt_for, phase, parallel):
-            results = real_run_phase(adapters, prompt_for, phase, parallel)
+        def shuffling_run_phase(adapters, prompt_for, phase, parallel, **kwargs):
+            results = real_run_phase(adapters, prompt_for, phase, parallel, **kwargs)
             # Genuinely permute the completion order. Reversal is a deterministic
             # but non-identity permutation, which is enough to prove the
             # orchestrator re-sorts rather than relying on arrival order.

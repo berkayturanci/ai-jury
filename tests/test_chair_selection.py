@@ -165,10 +165,10 @@ class SynthesisAnonymizationTest(unittest.TestCase):
 
         real_run = MockAdapter.run
 
-        def recording_run(self, prompt, phase="review"):
+        def recording_run(self, prompt, phase="review", timeout=None):
             if phase == "synthesis":
                 captured["prompt"] = prompt
-            return real_run(self, prompt, phase=phase)
+            return real_run(self, prompt, phase=phase, timeout=timeout)
 
         MockAdapter.run = recording_run
         try:

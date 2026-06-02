@@ -8,17 +8,101 @@ from __future__ import annotations
 
 import random
 import string
+import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
-from . import injection, prompts
-from .adapters import Adapter, AgentResult, make_adapter
+from . import convergence, injection, largediff, prompts
+from .adapters import RETRYABLE_ERROR_CODES, Adapter, AgentResult, make_adapter
 from .config import CouncilConfig
 from .policy import ReviewPolicy, render_policy_section
 from .consensus import FindingGroup, group_findings
 from .findings import Finding, Verdict, parse_findings, parse_verdicts
 from .privilege import audit_privilege
 from .redaction import redact
+
+
+class RunBudget:
+    """Wall-clock budget for one council run (issue #30).
+
+    Tracks the elapsed time since construction and derives the timeout to pass a
+    single agent call from the optional total-run and per-phase budgets. ``None``
+    for either budget means uncapped; when both are unset ``call_timeout``
+    returns ``None`` so adapters fall back to their own per-agent timeout and
+    behaviour is identical to having no budget at all.
+    """
+
+    def __init__(self, total_timeout: int | None, phase_timeout: int | None):
+        self.total = total_timeout
+        self.phase = phase_timeout
+        self._start = time.monotonic()
+
+    def elapsed(self) -> float:
+        return time.monotonic() - self._start
+
+    def remaining(self) -> float | None:
+        if self.total is None:
+            return None
+        return max(0.0, self.total - self.elapsed())
+
+    def expired(self) -> bool:
+        return self.total is not None and self.elapsed() >= self.total
+
+    def call_timeout(self) -> int | None:
+        """Per-call timeout: the min of the phase budget and remaining total.
+
+        The agent's own per-agent timeout is applied by the adapter (it takes the
+        min with this value), so it is not needed here. Returns ``None`` when
+        neither budget caps the call, leaving the adapter to use its configured
+        per-agent timeout.
+        """
+        caps: list[float] = []
+        if self.phase is not None:
+            caps.append(float(self.phase))
+        remaining = self.remaining()
+        if remaining is not None:
+            caps.append(remaining)
+        if not caps:
+            return None
+        return max(1, int(min(caps)))
+
+
+def _run_with_retry(
+    adapter: Adapter,
+    prompt: str,
+    phase: str,
+    budget: RunBudget,
+    retries: int,
+    log,
+) -> AgentResult:
+    """Run one agent for one phase, retrying transient failures (issue #30).
+
+    Retries only failures whose typed error code is in
+    ``RETRYABLE_ERROR_CODES`` (timeout/rate-limit/spawn), up to ``retries`` extra
+    attempts. A deterministic failure (auth, missing CLI, empty output, generic
+    nonzero exit) is returned immediately. The returned result's ``attempts``
+    records how many tries were made. Retrying stops early when the run budget is
+    exhausted so a retry never overruns the total timeout.
+    """
+    max_attempts = max(1, retries + 1)
+    result = adapter.run(prompt, phase=phase, timeout=budget.call_timeout())
+    attempts = 1
+    while (
+        not result.ok
+        and result.error_code in RETRYABLE_ERROR_CODES
+        and attempts < max_attempts
+        and not budget.expired()
+    ):
+        log(
+            f"{adapter.name}: {phase} attempt {attempts} failed "
+            f"({result.error_code}); retrying"
+        )
+        result = adapter.run(
+            prompt, phase=phase, timeout=budget.call_timeout()
+        )
+        attempts += 1
+    result.attempts = attempts
+    return result
 
 
 def _order_by_agents(results: list[AgentResult], order: list[str]) -> list[AgentResult]:
@@ -52,6 +136,18 @@ class CouncilOutcome:
     redact_secrets: bool = True
     redaction_count: int = 0
     injection_hits: list = field(default_factory=list)
+    # Execution/partial-result signals (issue #30): agents skipped because their
+    # CLI was unavailable (name, reason), and whether the run budget was
+    # exhausted before all phases completed.
+    skipped: list = field(default_factory=list)
+    budget_exhausted: bool = False
+    # Adaptive-rounds signals (issue #40): rounds actually executed and a short
+    # human-readable reason for why the debate ran / stopped.
+    rounds_executed: int = 1
+    stop_reason: str = ""
+    # Set when this outcome was served from the local result cache (issue #33),
+    # so the report/metadata can mark it as cached rather than freshly computed.
+    from_cache: bool = False
 
 
 def _run_phase(
@@ -59,9 +155,13 @@ def _run_phase(
     prompt_for: dict[str, str],
     phase: str,
     parallel: bool,
+    *,
+    budget: RunBudget,
+    retries: int,
+    log,
 ) -> list[AgentResult]:
     def task(a: Adapter) -> AgentResult:
-        return a.run(prompt_for[a.name], phase=phase)
+        return _run_with_retry(a, prompt_for[a.name], phase, budget, retries, log)
 
     if parallel and len(adapters) > 1:
         with ThreadPoolExecutor(max_workers=len(adapters)) as pool:
@@ -127,6 +227,65 @@ def _anonymize_peers(
     return "\n\n".join(chunks), label_to_agent
 
 
+def _debate_round(
+    debaters: list[Adapter],
+    reviews: list[AgentResult],
+    diff: str,
+    config: CouncilConfig,
+    run_rng: random.Random,
+    agent_order: list[str],
+    prior: list[AgentResult],
+    budget: RunBudget,
+    retries: int,
+    log,
+    round_no: int,
+) -> list[AgentResult]:
+    """Run one debate round and return its results in stable agent order.
+
+    ``prior`` holds the previous round's debate outputs (empty for the first
+    debate round); when present they are appended to each debater's prompt as a
+    "prior debate" addendum so later rounds in an adaptive run (issue #40) build
+    on, rather than repeat, earlier cross-examination. The peer-review anonymizing
+    path (#37) is preserved unchanged.
+    """
+    log(f"round {round_no}: {len(debaters)} agents cross-examining")
+    own = {r.agent: r.output for r in reviews if r.ok}
+    prior_txt = "\n\n".join(
+        f"### {r.agent}\n{r.output}" for r in prior if r.ok and r.output
+    )
+    debate_prompt: dict[str, str] = {}
+    for a in debaters:
+        if config.anonymize_debate:
+            # Per-debater deterministic shuffle: derive a child RNG from the
+            # shared run RNG so each debater gets an independent but reproducible
+            # peer ordering (same seed -> same order).
+            peer_rng = random.Random(run_rng.random())
+            other_reviews, _label_map = _anonymize_peers(reviews, a.name, peer_rng)
+        else:
+            other_reviews = _others(reviews, a.name)
+        text = prompts.DEBATE.format(
+            name=a.name,
+            diff=diff,
+            own_review=own.get(a.name, "_(your review was unavailable)_"),
+            other_reviews=other_reviews,
+            notice=prompts._UNTRUSTED_NOTICE,
+        )
+        if prior_txt:
+            text += (
+                "\n\n=== PRIOR DEBATE (earlier round) ===\n"
+                "Build on this; do not just repeat it. Only keep a DISPUTE or "
+                "MISSED item if it is still unresolved.\n\n" + prior_txt + "\n"
+            )
+        debate_prompt[a.name] = text
+    results = _run_phase(
+        debaters, debate_prompt, "debate", config.parallel,
+        budget=budget, retries=retries, log=log,
+    )
+    # Same stable-ordering guarantee as round 1: independent of thread-pool
+    # completion order.
+    return _order_by_agents(results, agent_order)
+
+
 def run_council(
     config: CouncilConfig,
     diff: str,
@@ -157,6 +316,13 @@ def run_council(
     # any feature that needs reproducible randomness instead of using ``random``.
     run_seed = seed if seed is not None else config.seed
     run_rng = random.Random(run_seed)  # shared run RNG (see docstring)
+
+    # Run budget (issue #30): a single wall-clock budget threaded through every
+    # phase. Defaults (both None) leave behaviour identical to no budget, with
+    # each agent bounded only by its own per-agent timeout. ``retries`` is the
+    # number of extra attempts for transient (retryable) failures.
+    budget = RunBudget(config.total_timeout, config.phase_timeout)
+    retries = config.retries
 
     # Context policy: diff-only sends only the diff; expanded includes context.
     ctx_cfg = getattr(config, "context", None)
@@ -200,14 +366,19 @@ def run_council(
     adapters = [make_adapter(s, mock=mock) for s in specs]
 
     # Filter to available agents (unless strict, where a missing CLI is fatal).
+    # Skipped agents are recorded (name, reason) so the report can state exactly
+    # which agents never ran — part of the partial-result policy (issue #30).
     usable: list[Adapter] = []
+    skipped: list[tuple[str, str]] = []
     for a in adapters:
         if a.available():
             usable.append(a)
         elif strict:
             raise RuntimeError(f"agent '{a.name}' CLI not available: {a.spec.command}")
         else:
-            log(f"skipping '{a.name}': CLI not found ({a.spec.command})")
+            reason = f"CLI not found ({a.spec.command})"
+            log(f"skipping '{a.name}': {reason}")
+            skipped.append((a.name, reason))
     if not usable:
         raise RuntimeError("no usable agents — install at least one agent CLI or use --mock")
 
@@ -225,7 +396,10 @@ def run_council(
         )
         for a in usable
     }
-    reviews = _run_phase(usable, review_prompt, "review", config.parallel)
+    reviews = _run_phase(
+        usable, review_prompt, "review", config.parallel,
+        budget=budget, retries=retries, log=log,
+    )
     # Stable ordering: the thread pool can return results in any completion
     # order. Reorder to the enabled-agent order so the report (and every
     # downstream consumer) is independent of which thread finished first.
@@ -260,65 +434,125 @@ def run_council(
     # per phase) is what keeps a rotating chair stable within a run (#38).
     chair_name = resolve_chair(config, usable_names, reviewer_names, run_rng)
 
-    # Round 2: debate (only agents whose round-1 succeeded participate).
+    # Round 2+: debate. Only agents whose round-1 review succeeded participate.
+    # Two modes (issue #40):
+    #   - fixed (early_stop = false): honour ``rounds`` exactly — run one debate
+    #     round iff rounds >= 2. Reproducible fixed-N behaviour for benchmarking.
+    #   - adaptive (early_stop = true): skip the debate when round-1 reviewers
+    #     already agree, otherwise run debate up to ``max_rounds`` rounds and stop
+    #     as soon as a round resolves all disputes.
     debate: list[AgentResult] = []
-    if config.rounds >= 2:
-        debaters = [a for a in usable if any(r.agent == a.name and r.ok for r in reviews)]
-        if len(debaters) >= 2:
-            log(f"round 2: {len(debaters)} agents cross-examining")
-            own = {r.agent: r.output for r in reviews if r.ok}
-            debate_prompt = {}
-            for a in debaters:
-                if config.anonymize_debate:
-                    # Per-debater deterministic shuffle: derive a child RNG from
-                    # the shared run RNG so each debater gets an independent but
-                    # reproducible peer ordering (same seed -> same order).
-                    peer_rng = random.Random(run_rng.random())
-                    other_reviews, _label_map = _anonymize_peers(reviews, a.name, peer_rng)
-                else:
-                    other_reviews = _others(reviews, a.name)
-                debate_prompt[a.name] = prompts.DEBATE.format(
-                    name=a.name,
-                    diff=diff,
-                    own_review=own.get(a.name, "_(your review was unavailable)_"),
-                    other_reviews=other_reviews,
-                    notice=prompts._UNTRUSTED_NOTICE,
-                )
-            debate = _run_phase(debaters, debate_prompt, "debate", config.parallel)
-            # Same stable-ordering guarantee as round 1: independent of
-            # thread-pool completion order.
-            debate = _order_by_agents(debate, agent_order)
-        else:
-            log("round 2 skipped: need >=2 successful reviews to debate")
+    rounds_executed = 1
+    stop_reason = ""
+    budget_exhausted = False
+    debaters = [a for a in usable if any(r.agent == a.name and r.ok for r in reviews)]
+    can_debate = len(debaters) >= 2
 
-    # Verification: the chair judges candidate findings to reduce false positives.
+    if config.early_stop:
+        max_rounds = config.effective_max_rounds
+        if not can_debate:
+            stop_reason = "stopped after round 1: need >=2 successful reviews to debate"
+            log(stop_reason)
+        elif max_rounds < 2:
+            stop_reason = "stopped after round 1: max_rounds < 2"
+            log(stop_reason)
+        else:
+            converged, why = convergence.review_convergence(groups, len(reviews))
+            if converged:
+                stop_reason = f"early stop after round 1: {why}"
+                log(stop_reason)
+            else:
+                log(f"early stop active: {why}; running debate up to {max_rounds} round(s)")
+                prior: list[AgentResult] = []
+                round_no = 1
+                while round_no < max_rounds:
+                    if budget.expired():
+                        budget_exhausted = True
+                        stop_reason = f"stopped at round {rounds_executed}: run budget exhausted"
+                        log(stop_reason)
+                        break
+                    round_no += 1
+                    debate = _debate_round(
+                        debaters, reviews, diff, config, run_rng, agent_order,
+                        prior, budget, retries, log, round_no,
+                    )
+                    rounds_executed = round_no
+                    dconv, dwhy = convergence.debate_convergence(debate)
+                    if dconv:
+                        stop_reason = f"converged after round {round_no}: {dwhy}"
+                        log(stop_reason)
+                        break
+                    prior = debate
+                    stop_reason = f"ran {round_no} rounds: {dwhy}"
+                else:
+                    stop_reason = stop_reason or (
+                        f"reached max_rounds ({max_rounds}) with disagreement remaining"
+                    )
+    else:
+        # Fixed-N: exactly the historical behaviour.
+        if config.rounds >= 2 and can_debate:
+            if budget.expired():
+                budget_exhausted = True
+                stop_reason = "round 2 skipped: run budget exhausted"
+                log(stop_reason)
+            else:
+                debate = _debate_round(
+                    debaters, reviews, diff, config, run_rng, agent_order,
+                    [], budget, retries, log, 2,
+                )
+                rounds_executed = 2
+        elif config.rounds >= 2:
+            stop_reason = "round 2 skipped: need >=2 successful reviews to debate"
+            log(stop_reason)
+        else:
+            stop_reason = "single round (rounds = 1)"
+
+    # Verification: the chair judges candidate findings to reduce false
+    # positives. Skipped when the run budget is exhausted (issue #30) so a
+    # partial run still returns what completed instead of overrunning.
     verify_result: AgentResult | None = None
     verdicts: list[Verdict] = []
     if config.verify:
-        verify_result, verdicts, verify_warnings = _verify(
-            chair_name, usable, all_findings, diff, context, log
-        )
-        all_warnings.extend(verify_warnings)
-        _apply_verdicts(groups, verdicts)
+        if budget.expired():
+            budget_exhausted = True
+            msg = "verification skipped: run budget exhausted"
+            log(msg)
+            all_warnings.append(msg)
+        else:
+            verify_result, verdicts, verify_warnings = _verify(
+                chair_name, usable, all_findings, diff, context, budget, retries, log
+            )
+            all_warnings.extend(verify_warnings)
+            _apply_verdicts(groups, verdicts)
 
     # Synthesis: the chair consolidates. When the resolved chair is ALSO a
     # round-1 reviewer, feed it an anonymized view of the reviews (#38 guardrail)
     # so it cannot preferentially weight its own findings; the report still
     # attributes by real name because it renders the real outcome data, not this
     # synthesis prompt.
-    chair_is_reviewer = chair_name in reviewer_names
-    anonymize_synthesis = config.anonymize_debate and chair_is_reviewer
-    synthesis = _synthesize(
-        chair_name,
-        usable,
-        reviews,
-        debate,
-        diff,
-        log,
-        verdicts=verdicts,
-        anonymize_reviews=anonymize_synthesis,
-        rng=run_rng,
-    )
+    synthesis: AgentResult | None = None
+    if budget.expired():
+        budget_exhausted = True
+        msg = "synthesis skipped: run budget exhausted"
+        log(msg)
+        if msg not in all_warnings:
+            all_warnings.append(msg)
+    else:
+        chair_is_reviewer = chair_name in reviewer_names
+        anonymize_synthesis = config.anonymize_debate and chair_is_reviewer
+        synthesis = _synthesize(
+            chair_name,
+            usable,
+            reviews,
+            debate,
+            diff,
+            budget,
+            retries,
+            log,
+            verdicts=verdicts,
+            anonymize_reviews=anonymize_synthesis,
+            rng=run_rng,
+        )
 
     return CouncilOutcome(
         reviews=reviews,
@@ -334,6 +568,10 @@ def run_council(
         redact_secrets=redact_on,
         redaction_count=redaction_count,
         injection_hits=injection_hits,
+        skipped=skipped,
+        budget_exhausted=budget_exhausted,
+        rounds_executed=rounds_executed,
+        stop_reason=stop_reason,
     )
 
 
@@ -411,7 +649,7 @@ def _format_verdicts(verdicts: list[Verdict]) -> str:
 
 
 def _verify(
-    chair_name, usable, findings, diff, context, log
+    chair_name, usable, findings, diff, context, budget, retries, log
 ) -> tuple[AgentResult | None, list[Verdict], list[str]]:
     chair = next((a for a in usable if a.name == chair_name), None)
     if chair is None:
@@ -423,7 +661,7 @@ def _verify(
         context=context or "_(none)_",
         notice=prompts._UNTRUSTED_NOTICE,
     )
-    result = chair.run(prompt, phase="verify")
+    result = _run_with_retry(chair, prompt, "verify", budget, retries, log)
     if not result.ok:
         return result, [], [f"verification failed: {result.error}"]
     verdicts, warnings = parse_verdicts(result.output, chair_name)
@@ -478,6 +716,8 @@ def _synthesize(
     reviews,
     debate,
     diff,
+    budget,
+    retries,
     log,
     verdicts=None,
     anonymize_reviews=False,
@@ -510,4 +750,174 @@ def _synthesize(
     )
     if verdicts:
         prompt += f"\n\n=== VERIFICATION VERDICTS ===\n{_format_verdicts(verdicts)}\n"
-    return chair.run(prompt, phase="synthesis")
+    return _run_with_retry(chair, prompt, "synthesis", budget, retries, log)
+
+
+def _merge_results_by_agent(phase_lists: list[list[AgentResult]]) -> list[AgentResult]:
+    """Merge per-chunk results for the same agent into one result (issue #31).
+
+    Outputs are concatenated under per-chunk headers, durations summed, ``ok`` is
+    true if the agent succeeded on any chunk, and ``attempts`` keeps the max so a
+    retried chunk is still visible. Agent order follows first appearance.
+    """
+    order: list[str] = []
+    by_agent: dict[str, list[AgentResult]] = {}
+    for lst in phase_lists:
+        for r in lst:
+            if r.agent not in by_agent:
+                by_agent[r.agent] = []
+                order.append(r.agent)
+            by_agent[r.agent].append(r)
+
+    merged: list[AgentResult] = []
+    for name in order:
+        parts = by_agent[name]
+        ok = any(p.ok for p in parts)
+        body = "\n\n".join(
+            f"#### chunk {i}\n{p.output}"
+            for i, p in enumerate(parts, 1)
+            if p.ok and p.output
+        )
+        first_err = next((p for p in parts if not p.ok), None)
+        merged.append(
+            AgentResult(
+                name,
+                parts[0].vendor,
+                ok,
+                body,
+                round(sum(p.duration_s for p in parts), 3),
+                error=None if ok else (first_err.error if first_err else None),
+                error_code=None if ok else (first_err.error_code if first_err else None),
+                attempts=max(p.attempts for p in parts),
+            )
+        )
+    return merged
+
+
+def _combine_chair_results(
+    results: list[AgentResult], chair: str
+) -> AgentResult | None:
+    """Combine per-chunk chair results (verify/synthesis) into one labelled result."""
+    ok_parts = [r for r in results if r.ok and r.output]
+    if not ok_parts:
+        return results[0] if results else None
+    vendor = ok_parts[0].vendor
+    body = "\n\n".join(
+        f"### chunk {i}\n{r.output}" for i, r in enumerate(ok_parts, 1)
+    )
+    return AgentResult(
+        chair, vendor, True, body, round(sum(r.duration_s for r in ok_parts), 3)
+    )
+
+
+def _merge_chunk_outcomes(outcomes: list[CouncilOutcome]) -> CouncilOutcome:
+    """Fold per-chunk outcomes (issue #31) into one renderable CouncilOutcome.
+
+    Findings are unioned and re-grouped across all chunks so the consensus view
+    is global; verdicts are re-applied to the merged groups. Review/debate/chair
+    outputs are merged per agent with chunk labels so the report stays coherent.
+    """
+    if len(outcomes) == 1:
+        return outcomes[0]
+    base = outcomes[0]
+
+    reviews = _merge_results_by_agent([o.reviews for o in outcomes])
+    debate = (
+        _merge_results_by_agent([o.debate for o in outcomes])
+        if any(o.debate for o in outcomes)
+        else []
+    )
+    findings = [f for o in outcomes for f in o.findings]
+    groups = group_findings(findings, len(reviews))
+    verdicts = [v for o in outcomes for v in o.verdicts]
+    _apply_verdicts(groups, verdicts)
+    warnings = [w for o in outcomes for w in o.warnings]
+
+    synthesis = _combine_chair_results([o.synthesis for o in outcomes if o.synthesis], base.chair)
+    verify = _combine_chair_results([o.verify for o in outcomes if o.verify], base.chair)
+
+    return CouncilOutcome(
+        reviews=reviews,
+        debate=debate,
+        synthesis=synthesis,
+        chair=base.chair,
+        findings=findings,
+        warnings=warnings,
+        groups=groups,
+        verify=verify,
+        verdicts=verdicts,
+        context_mode=base.context_mode,
+        redact_secrets=base.redact_secrets,
+        redaction_count=sum(o.redaction_count for o in outcomes),
+        injection_hits=[h for o in outcomes for h in o.injection_hits],
+        skipped=base.skipped,
+        budget_exhausted=any(o.budget_exhausted for o in outcomes),
+        rounds_executed=max(o.rounds_executed for o in outcomes),
+        stop_reason=f"chunked review across {len(outcomes)} part(s)",
+    )
+
+
+def review_diff(
+    config: CouncilConfig,
+    diff: str,
+    *,
+    context: str = "",
+    mock: bool = False,
+    strict: bool = False,
+    seed: int | None = None,
+    policy: ReviewPolicy | None = None,
+    log=lambda _msg: None,
+) -> tuple[CouncilOutcome, largediff.DiffPlan]:
+    """Plan a diff (filter + size + mode) then run the council (issue #31).
+
+    The single entry point the CLI uses: it measures and filters the diff,
+    reports the size and the selected handling mode, and dispatches:
+
+    - ``full``      — review the filtered diff in one ``run_council`` pass;
+    - ``chunked``   — review each chunk and merge the outcomes;
+    - ``too_large`` — raise ``RuntimeError`` with an actionable message.
+
+    Returns ``(outcome, plan)`` so the caller can surface the plan. Existing
+    callers of :func:`run_council` are unaffected.
+    """
+    dc = config.diff
+    plan = largediff.plan_diff(
+        diff,
+        max_bytes=dc.max_bytes,
+        chunk=dc.chunk,
+        chunk_max_bytes=dc.chunk_max_bytes,
+        exclude_generated=dc.exclude_generated,
+        exclude=dc.exclude,
+        include=dc.include,
+    )
+    log(
+        f"diff size: {plan.total_bytes} B total, {plan.kept_bytes} B after filters "
+        f"({len(plan.kept)} file(s) kept, {len(plan.excluded)} excluded); "
+        f"mode: {plan.mode}"
+    )
+    if plan.excluded:
+        log("excluded: " + ", ".join(f"{p} [{why}]" for p, why in plan.excluded))
+    log(plan.reason)
+
+    if plan.mode == largediff.MODE_TOO_LARGE:
+        raise RuntimeError(f"diff too large to review: {plan.reason}")
+    if not plan.chunks:
+        raise RuntimeError(
+            "nothing to review after filters — all files were excluded "
+            "(check [council.diff] include/exclude patterns)"
+        )
+
+    def _run(chunk: str) -> CouncilOutcome:
+        return run_council(
+            config, chunk, context=context, mock=mock, strict=strict,
+            seed=seed, policy=policy, log=log,
+        )
+
+    if plan.mode == largediff.MODE_FULL:
+        return _run(plan.chunks[0]), plan
+
+    outcomes = []
+    for i, chunk in enumerate(plan.chunks, 1):
+        log(f"reviewing chunk {i}/{len(plan.chunks)}")
+        outcomes.append(_run(chunk))
+    return _merge_chunk_outcomes(outcomes), plan

@@ -8,6 +8,14 @@ and easy to run from existing repositories.
 
 By participating in this project, you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
+## Governance and maintenance
+
+How the project is maintained — triage, release cadence, the compatibility and
+deprecation policy, how major roadmap decisions are made, and how
+project-specific requests are routed — is documented in
+[MAINTAINERS.md](MAINTAINERS.md). Support is best-effort and the project makes no
+service-level promise.
+
 ## Reporting Bugs
 
 Before opening a bug report, please search existing issues. Include:
