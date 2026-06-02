@@ -167,32 +167,24 @@ OS-specific notes:
 
 ### CI & runners
 
-The **authoritative** per-push / per-PR signal is
-[`Local CI (self-hosted)`](../.github/workflows/local-ci.yml), which runs the
-unit tests, the mock smoke test, and the coverage gate on a maintainer-run
-self-hosted macOS runner (labels `self-hosted, macOS, ARM64`). It is free, fast,
-and not subject to GitHub-hosted billing.
+The repository is **public**, so GitHub-hosted runner minutes are free and
+unlimited. The **authoritative** per-push / per-PR signal is the hosted
+[`ci.yml`](../.github/workflows/ci.yml) matrix: the stdlib-only unit tests and
+the mock smoke test across ubuntu/macOS/windows × Python 3.11–3.13, plus a
+dedicated coverage gate (`fail_under` in `pyproject.toml`).
 
-The hosted matrix above ([`ci.yml`](../.github/workflows/ci.yml)) and the
-[`CodeQL`](../.github/workflows/codeql.yml) /
-[`OpenSSF Scorecard`](../.github/workflows/scorecard.yml) workflows run on
-GitHub-hosted runners. While the account's billing/spending limit prevents
-hosted jobs from starting, those jobs would fail instantly on every commit
-without actually running, so they are **not** wired to `push`/`pull_request`:
+There is **no self-hosted runner**. An earlier self-hosted macOS runner was
+removed when the repo went public: running untrusted forked-PR code on a
+maintainer's machine is an arbitrary-code-execution risk, and with free hosted
+minutes there is no reason to keep it. Security scanning runs per-commit too:
 
 | Workflow | Runner | Trigger |
 |:--|:--|:--|
-| Local CI (self-hosted) | self-hosted macOS | push + PR — **authoritative** |
-| CI (cross-OS matrix) | GitHub-hosted | `workflow_dispatch` (manual) |
-| CodeQL | GitHub-hosted | weekly `schedule` + manual |
-| OpenSSF Scorecard | GitHub-hosted | weekly `schedule` + manual |
-
-**Restoring hosted CI once hosted minutes are available:** re-add
-`push:`/`pull_request:` triggers to `ci.yml` (and `push:` to `codeql.yml` /
-`scorecard.yml`) to make the cross-OS matrix and per-commit security scanning
-automatic again. The self-hosted coverage gate can stay as the enforced bar, or
-move back to the hosted `coverage` job — both run the same `coverage report`
-against the `fail_under` threshold in `pyproject.toml`.
+| CI (cross-OS matrix + coverage) | GitHub-hosted | push + PR — **authoritative** |
+| CodeQL | GitHub-hosted | push + PR + weekly `schedule` |
+| OpenSSF Scorecard | GitHub-hosted | push to `main` + weekly `schedule` |
+| Deploy website (Pages) | GitHub-hosted | push to `website/**` |
+| Publish to PyPI + Release | GitHub-hosted | `v*` tag (OIDC trusted publishing) |
 
 ## Implemented capabilities
 

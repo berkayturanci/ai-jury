@@ -610,7 +610,26 @@ def _maybe_add_local_fallback(config, args, log) -> None:
     log(f"no agent CLIs found; using local model '{model}' (offline, $0)")
 
 
+def _force_utf8_output() -> None:
+    """Ensure stdout/stderr can emit the report's Unicode (emoji, arrows).
+
+    On Windows the console defaults to a legacy code page (e.g. cp1252) that
+    can't encode the report's `🏛️`/`⇄` characters, so `print(report)` raises
+    `UnicodeEncodeError`. Reconfigure the real streams to UTF-8 when possible;
+    `reconfigure` is absent on replaced streams (tests' StringIO, some pipes),
+    so this is a best-effort no-op there.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            try:
+                reconfigure(encoding="utf-8")
+            except (ValueError, OSError):
+                pass
+
+
 def main(argv: list[str] | None = None) -> int:
+    _force_utf8_output()
     raw = list(sys.argv[1:] if argv is None else argv)
     # Documented `jury cache clear` UX (issue #33): handled before argparse so
     # the rest of the CLI keeps its flat flag surface (no subcommands).

@@ -1,12 +1,13 @@
 name: CodeQL
 
 on:
-  # Hosted-only analysis. Runs on a weekly schedule (and on demand) rather than
-  # per-push/PR: GitHub-hosted jobs currently fail to start under the account's
-  # billing/spending limit, so per-commit triggers would paint every commit red
-  # without analyzing anything. The weekly scan still catches newly disclosed
-  # query patterns once hosted minutes are available. Re-add `push`/`pull_request`
-  # to restore per-commit scanning when billing is restored.
+  # Per-commit security analysis (the repository is public, so hosted minutes are
+  # free), plus a weekly re-scan to catch newly disclosed query patterns and an
+  # on-demand trigger.
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
   schedule:
     # Weekly re-scan so newly disclosed query patterns are caught even without a push.
