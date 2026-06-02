@@ -25,3 +25,4 @@ htmlcov/
 .vscode/
 __pycache__/
 *.pyc
+cache/
