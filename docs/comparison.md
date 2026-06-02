@@ -33,12 +33,16 @@ Legend: ✅ yes · ➖ partial / optional · ❌ no · — not applicable.
 | Structured findings (severity/file/line) | ✅ | ➖ | ➖ | ✅ |
 | Inline PR comments | ✅ (`--post-inline`) | ➖ | ❌ | ✅ |
 | CI gating (non-zero on blocking) | ✅ (`--ci`, `--fail-on`) | ➖ | ❌ | ✅ |
-| Suggested fixes / auto-patch | ❌ | ➖ | ❌ | ✅ |
+| Suggested fixes (inspectable, no auto-apply) | ➖ (`--suggest-patches`, verified findings only) | ➖ | ❌ | ✅ |
+| Incremental review (changed-since-last-run) | ✅ (`--incremental`) | ❌ | ❌ | ✅ |
+| Comment-triggered runs (`/council …`) | ➖ (`council comment` + workflow recipe) | ➖ | ❌ | ✅ |
+| Offline / local open-weight reviewer | ✅ (`vendor = "local"`, Ollama/etc., $0) | ➖ | ➖ | ❌ |
+| Guided config setup | ✅ (`council init`) | ❌ | ❌ | n/a (hosted) |
 | Hosted dashboard | ❌ | ❌ | ❌ | ✅ |
 | Local-first (no data leaves to a SaaS) | ✅ | ✅ | ➖ | ❌ |
 | Secret redaction before send | ✅ | ➖ | ➖ | n/a (hosted) |
 | Dependency footprint | ✅ stdlib-only | ➖ (Node/Bun runtimes) | ➖ (Python + `any-llm`) | — (hosted) |
-| Project-specific review policy | ➖ (`council.toml` + prompts) | ➖ | ➖ | ✅ |
+| Project-specific review policy | ✅ (`.council/policy.toml`) | ➖ | ➖ | ✅ |
 | Skill drop-in for an existing repo | ✅ (Claude Code skill) | ➖ (the-council, agent-council are skills) | ➖ | ❌ |
 
 Entries for other projects are intentionally conservative; where a project's support is
@@ -56,22 +60,22 @@ configurable or undocumented it is marked ➖. Corrections via PR are welcome.
   *native vendor CLI agent* (its own tooling/context), want a **local-first**,
   **stdlib-only** drop-in that snaps into an existing repo's review workflow via a
   Claude Code skill, and want debate + a verification pass + CI gating without a hosted
-  service. It is intentionally **small in scope**: not a hosted product, not a general
+  service. It can also run **fully offline at $0** with a local open-weight model
+  (`vendor = "local"`), or mix one local seat with cloud CLIs for more vendor diversity.
+  It is intentionally **small in scope**: not a hosted product, not a general
   multi-agent framework.
 
-## Gaps that map to the roadmap
+## Gaps relative to mature products
 
-Honest gaps relative to mature products, each tracked as a roadmap issue/milestone:
+Honest gaps, and where they now stand:
 
-- **Suggested fixes / auto-patch** — not implemented; this tool reports, it does not
-  rewrite.
-- **Hosted dashboard / website** — landing/docs site is roadmap
-  ([#14](https://github.com/berkayturanci/agent-review-council/issues/14)); there is no
-  hosted review SaaS and that is a non-goal.
-- **Richer project-specific policy** — currently `council.toml` + prompt templates;
-  deeper rule support is future work.
-- **Plugin/distribution maturity** — platform support matrix and manifests are roadmap
-  ([#45](https://github.com/berkayturanci/agent-review-council/issues/45)).
+- **Auto-apply fixes** — by design this tool does not rewrite code. It can emit
+  *inspectable* suggested patches for **verified** findings (`--suggest-patches`), but
+  never applies them automatically.
+- **Hosted dashboard / website** — a landing/docs site exists under `website/`; there is
+  no hosted review SaaS, and that is a deliberate non-goal.
+- **Project-specific policy** — supported via `.council/policy.toml` (high-risk paths,
+  focus areas, severity overrides); deeper rule engines remain out of scope.
 
 See the [milestones](https://github.com/berkayturanci/agent-review-council/milestones)
-for the current plan.
+for anything still open.

@@ -8,19 +8,23 @@ agent* (adapters), so new vendors are a ~20-line addition.
 ## Components
 
 ```
-                       ┌──────────────────────────────────────────┐
-   diff / PR  ───────▶ │              orchestrator                 │
-   (gh / file / stdin) │  round 1 review → round 2 debate → synth  │
-                       └───────┬───────────────┬──────────────┬────┘
-                               │ prompts.py     │              │
-                       ┌───────▼──────┐  ┌──────▼─────┐  ┌─────▼──────┐
-                       │ ClaudeAdapter│  │CodexAdapter│  │ AgyAdapter │   (adapters.py)
-                       │  claude -p   │  │ codex exec │  │ agy --print│
-                       └──────────────┘  └────────────┘  └────────────┘
-                               │                │              │
-                               └───── subprocess (headless, parallel) ─────┘
+   diff / PR            ┌──────────────────────────────────────────────────────┐
+   (gh / file / stdin)─▶│ prep: redact secrets · scan injection · filter+chunk  │ (redaction/injection/largediff)
+                        └───────────────────────────┬──────────────────────────┘
+                        ┌───────────────────────────▼──────────────────────────┐
+                        │                     orchestrator                      │
+                        │  round 1 review → round 2 debate (adaptive) →         │
+                        │  verify → synthesis      (budget · retries · cache)   │
+                        └──┬───────────────┬───────────────┬───────────────┬────┘
+                           │ prompts.py     │               │               │
+                    ┌──────▼─────┐  ┌───────▼────┐  ┌────────▼───┐  ┌────────▼─────┐
+                    │ClaudeAdapter│ │CodexAdapter│  │ AgyAdapter │  │ LocalAdapter │  (adapters.py)
+                    │  claude -p  │ │ codex exec │  │ agy --print│  │ HTTP /v1 chat│
+                    └─────────────┘ └────────────┘  └────────────┘  └──────────────┘
+                       cloud CLIs (subprocess, headless, parallel)   local / open-weight
                                                 │
-                                         report.py → markdown → stdout / -o / gh comment
+                                  consensus.py → report.py → markdown / json / sarif
+                                                          → stdout / -o / gh comment / CI gate
 ```
 
 ## Round structure
@@ -32,11 +36,21 @@ agent* (adapters), so new vendors are a ~20-line addition.
    diff, its own review, and every *other* agent's review, then emits `AGREE` /
    `DISPUTE` / `MISSED`. This is where cross-model disagreement filters false
    positives and surfaces gaps. Only agents whose round-1 call succeeded participate;
-   debate needs ≥2 of them.
-3. **Synthesis.** The configured `chair` agent consolidates all rounds into a single
+   debate needs ≥2 of them. With `early_stop = true` the debate is **adaptive**: a
+   unanimous round-1 panel skips it, and disagreement runs debate up to `max_rounds`
+   (see `convergence.py`).
+3. **Verify (optional, `verify = true`).** The chair re-judges each candidate finding
+   (`verified` / `unsupported` / `needs_human_decision`) to drop false positives
+   before synthesis; verdicts attach to the consensus groups.
+4. **Synthesis.** The configured `chair` agent consolidates all rounds into a single
    verdict (`APPROVE` / `COMMENT` / `REQUEST CHANGES`) plus consensus, disputed, and
    notable single-reviewer findings. If the chair is unavailable, the first available
    agent chairs.
+
+The whole run is bounded by an optional **budget** (`total_timeout` / `phase_timeout`)
+with opt-in **retries** for transient failures, and can be served from / stored in an
+optional **result cache** (`--cache`). Large diffs are measured, filtered (binary /
+generated / path globs), and **chunked** before review.
 
 ## Adapters
 
@@ -46,14 +60,25 @@ content. Verified headless invocations (early 2026):
 | Vendor | Adapter | Invocation |
 |:--|:--|:--|
 | Anthropic | `ClaudeAdapter` | `claude -p "<prompt>" --output-format text` |
-| OpenAI | `CodexAdapter` | `codex exec "<prompt>"` |
+| OpenAI | `CodexAdapter` | `codex exec "<prompt>"` (prompt on stdin) |
 | Google | `AgyAdapter` | `agy --print "<prompt>"` |
+| local / open-weight | `LocalAdapter` | HTTP `POST {endpoint}/v1/chat/completions` (Ollama, llama.cpp, vLLM, LM Studio) — stdlib `urllib`, no subprocess |
 | — (tests) | `MockAdapter` | deterministic, phase-aware output; no subprocess |
 
-Adapters fail soft: a missing CLI, non-zero exit, or timeout becomes a non-fatal
+Adapters fail soft: a missing CLI, **non-zero exit** (even with stdout), timeout, or an
+unreachable local endpoint (`connection_error`) becomes a non-fatal
 `AgentResult(ok=False, error=…)`. The run continues with whoever is available unless
-`--strict` is passed. Read-only safety is enforced per vendor via `extra_args`
-(e.g. Claude's `--disallowed-tools Edit,Write,...`).
+`--strict` is passed; the report lists skipped / failed / retried / timed-out agents.
+
+**Read-only by default (secure):** reviewers read attacker-controlled diffs, so the
+shipped defaults run them sandboxed — Claude with `--disallowed-tools
+Edit,Write,NotebookEdit,Bash`, Codex with `-s read-only`, Antigravity with
+`--sandbox`. `privilege.py` audits this and warns (or fails under `--strict`) when an
+agent is given broad powers without a sandbox.
+
+A `local` agent is a normal `[[agent]]` with `vendor = "local"`, an `endpoint`
+(default `http://localhost:11434/v1`), and a `model`; it adds vendor diversity at
+zero marginal cost and enables fully offline reviews.
 
 ## Design decisions
 
@@ -159,24 +184,34 @@ automatic again. The self-hosted coverage gate can stay as the enforced bar, or
 move back to the hosted `coverage` job — both run the same `coverage report`
 against the `fail_under` threshold in `pyproject.toml`.
 
-## Roadmap
+## Implemented capabilities
 
-Prioritized from the prior-art research (see [`feasibility.md`](feasibility.md)):
+The prior-art research priorities (see [`feasibility.md`](feasibility.md)) have
+landed; the current pipeline includes:
 
-1. **Verify/audit pass** — after findings are collected, a tool-equipped agent re-reads
-   the actual code per finding to drop false positives / by-design issues and recalibrate
-   severity. Identified as the single biggest quality multiplier (Magpie).
-2. **JSON structurizer + tiered consensus** — capture machine output
-   (`claude --output-format json`, `codex --output-schema`) via a dedicated prose→JSON
-   step, then aggregate by `{severity, file, line, category}` into
-   consensus / majority / individual tiers instead of free-text.
-3. **Anonymized rebuttal** — strip agent identity/order in round 2 to curb position bias
-   (which debate can amplify).
-4. **Convergence-based early stop** — halt extra rounds once agents agree (cost control;
-   multi-agent ≈ 15× single-chat tokens).
-5. **Severity-gated CI exit codes** (`REQUEST CHANGES` → non-zero).
-6. **A2A transport** (later) — wrap each agent as an A2A server only to admit remote
-   third-party agents; unnecessary for local subprocess orchestration.
+1. **Verify/audit pass** — the chair re-judges each finding to drop false positives and
+   recalibrate before synthesis (`verify = true`). *(biggest quality multiplier)*
+2. **Structured findings + tiered consensus** — reviewer output is parsed into a
+   `Finding` schema and grouped by `{severity, file, line, claim}` into
+   consensus / majority / single-reviewer tiers (`findings.py`, `consensus.py`).
+3. **Anonymized rebuttal** — round 2 strips agent identity/order to curb position bias;
+   the chair's own review is anonymized in synthesis too.
+4. **Convergence-based early stop** — adaptive rounds halt once agents agree
+   (`early_stop`, `max_rounds`; `convergence.py`).
+5. **Severity-gated CI exit codes** — `council --ci` exits non-zero on blocking findings
+   (`ci.py`).
+
+Also shipped since: a **local / open-weight adapter** (free, offline reviews); a run
+**budget + retries + partial-result** policy; **large-diff** filtering and chunking; an
+optional **result cache**; **incremental** review of updated PRs; opt-in **suggested
+patches**; allowlisted **comment-command** triggering; and **`council init`** config
+scaffolding with local-model discovery. See [`configuration.md`](configuration.md) and
+[`cookbook.md`](cookbook.md) for usage.
+
+Still future:
+
+- **A2A transport** — wrap each agent as an A2A server only to admit remote third-party
+  agents; unnecessary for local subprocess / HTTP orchestration.
 
 
 ## PR-level classification (issue #7)

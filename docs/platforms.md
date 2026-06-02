@@ -29,14 +29,17 @@ orchestration.
 
 Prerequisites in detail:
 
-- **`council`** — `pipx install agent-review-council` (entry point on PATH).
-- **Agent CLIs** — at least one of `claude` (Claude Code), `codex` (OpenAI Codex CLI),
-  `agy` (Google Antigravity). Missing CLIs are skipped automatically unless `--strict`.
+- **`council`** — `pipx install agent-review-council` (entry point on PATH). Run
+  `council init` to scaffold a `council.toml`.
+- **A reviewer** — at least one agent CLI (`claude`, `codex`, `agy`) **or** a free,
+  offline **local / open-weight** model via Ollama or any OpenAI-compatible server
+  (configured as a `vendor = "local"` agent). Missing/unreachable agents are skipped
+  unless `--strict`.
 - **`gh`** — GitHub CLI, authenticated, for `--pr` input and `--post-*` output.
 
-A future `council doctor` command will check these prerequisites per platform and report
-what is missing (tracked in
-[#34](https://github.com/berkayturanci/agent-review-council/issues/34)).
+`council --doctor` checks these prerequisites and reports what is missing (per-agent
+availability + versions); `council init --list-agents` / `--list-models` do the same for
+config setup.
 
 ## Claude Code plugin
 
