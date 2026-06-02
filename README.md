@@ -155,7 +155,10 @@ council --doctor                          # local readiness check (versions, age
 council --doctor --write diagnostics.json # ...and write a safe JSON report
 ```
 
-A sample report is in [`docs/example-run.md`](docs/example-run.md).
+A sample report is in [`docs/example-run.md`](docs/example-run.md). For a **real**
+four-vendor run where the council reviews its own repository (with honest notes on
+false positives and the local model's contribution), see
+[`docs/example-live-review.md`](docs/example-live-review.md).
 
 ## Output formats
 

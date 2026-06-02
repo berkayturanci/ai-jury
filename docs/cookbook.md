@@ -355,4 +355,6 @@ jobs:
 
 - [Architecture](architecture.md) — components, round structure, adapters.
 - [Platform support matrix](platforms.md) — where you can install and run the council.
-- [Example run](example-run.md) — a sample report end to end.
+- [Example run](example-run.md) — a deterministic mock report end to end.
+- [Live four-vendor review](example-live-review.md) — a real run of the council
+  reviewing its own repository, with honest notes on false positives and cost.
