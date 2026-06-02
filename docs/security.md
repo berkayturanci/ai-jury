@@ -22,32 +22,41 @@ Two deliberate choices:
   positionally can cause `codex exec` to block waiting for stdin in
   non-interactive contexts (CI, hooks, headless shells). Piping the prompt in
   avoids that hang.
-- **`-s danger-full-access` by default.** Codex's standard sandbox can block the
-  outbound network and `gh` access that PR review relies on, which surfaces as
-  spurious failures rather than review feedback. Because this tool performs only
-  read-only review orchestration, granting full access keeps runs reliable
-  without expanding what the tool itself does.
+- **`-s read-only` by default (secure-by-default, issue #100).** The diff is
+  fetched by the council process (via `gh`), not by the codex agent — the agent
+  only needs to *read* its prompt and *print* a review. So the shipped default is
+  a read-only sandbox: a prompt injection in the diff cannot make codex write
+  files, run shell, or reach the network.
 
-Note: avoid `--full-auto` here — it implies a stricter workspace sandbox that
-reintroduces the access problems above.
+Note: avoid `--full-auto` / `danger-full-access` unless you specifically need it.
 
-### Opting into stricter sandboxing
+### Opting into a wider sandbox
 
-`extra_args` is fully user-controlled. To tighten the sandbox, override it in
-`council.toml`:
+`extra_args` is fully user-controlled. If your workflow genuinely needs codex to
+write or reach the network, widen the sandbox in `council.toml`:
 
 ```toml
 [[agent]]
 name = "codex"
 vendor = "openai"
 command = "codex"
-# Drop danger-full-access, or pick a narrower sandbox mode for your setup.
-extra_args = ["-s", "read-only"]
+# Wider than the read-only default — grant only what your flow needs.
+extra_args = ["-s", "workspace-write"]   # or "danger-full-access"
 ```
 
-If you narrow the sandbox, verify that whatever access your review flow needs
-(e.g. `gh`, network) is still permitted, or some reviews may fail instead of
-reporting findings.
+If you widen the sandbox, remember the agent is reading attacker-controlled
+content; the least-privilege audit (`--strict` to fail the run) will flag it.
+
+### Other agents
+
+- **`claude`** runs with `--disallowed-tools Edit,Write,NotebookEdit,Bash` so the
+  reviewer cannot edit files or run commands (`--dangerously-skip-permissions`
+  only suppresses the non-interactive permission prompt; the denylist is what
+  makes it safe).
+- **`agy`** runs with `--sandbox` so its tools are restricted while it reads
+  untrusted content; `--dangerously-skip-permissions` only avoids a prompt hang.
+  A bare `--dangerously-skip-permissions` *without* `--sandbox` is flagged by the
+  least-privilege audit.
 
 ## Threat model: prompt injection from untrusted diff/PR content (OWASP LLM01)
 

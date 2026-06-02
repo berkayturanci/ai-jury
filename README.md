@@ -467,9 +467,9 @@ issues are tracked under [milestones](https://github.com/berkayturanci/agent-rev
 
 The council performs **read-only review orchestration** — it sends a diff to each agent CLI and collects their feedback; it does not apply edits.
 
-The Codex adapter pipes the prompt on **stdin** (`codex exec` with no positional prompt) so non-interactive runs never hang waiting for input, and defaults `extra_args` to `["-s", "danger-full-access"]`. Codex's standard sandbox can block the outbound network / `gh` access that PR review needs, which would surface as failures instead of findings; full access keeps runs reliable without changing what the tool itself does. (Avoid `--full-auto`, which implies a stricter workspace sandbox.)
+The Codex adapter pipes the prompt on **stdin** (`codex exec` with no positional prompt) so non-interactive runs never hang waiting for input, and defaults `extra_args` to **`["-s", "read-only"]`** — a secure-by-default sandbox. The diff is fetched by the council (`gh`), not by codex, so the reviewer only needs to read its prompt and print findings; a prompt injection in the diff can't make it write files, run shell, or reach the network. The `agy` agent runs under `--sandbox`, and `claude` under a write-tool denylist, for the same reason.
 
-Want tighter sandboxing? Override `extra_args` for the `codex` agent in `council.toml` (e.g. a narrower `-s` mode). See [docs/security.md](docs/security.md) for details.
+Need codex to write or reach the network for your flow? Widen `extra_args` for the `codex` agent in `council.toml` (e.g. `-s workspace-write`). See [docs/security.md](docs/security.md) for details.
 
 ## CLI compatibility contract
 

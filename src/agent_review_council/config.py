@@ -39,17 +39,21 @@ DEFAULT_CONFIG: dict = {
             "name": "codex",
             "vendor": "openai",
             "command": "codex",
-            # `codex exec` reads the prompt from stdin (see CodexAdapter). The
-            # default sandbox can block `gh`/network used during PR review, so
-            # `-s danger-full-access` keeps non-interactive runs from failing.
-            # Override extra_args for stricter sandboxing.
-            "extra_args": ["-s", "danger-full-access"],
+            # `codex exec` reads the prompt from stdin (see CodexAdapter) and only
+            # needs to READ it and print a review — the diff is fetched by the
+            # council process (`gh`), not the agent. So the secure default is a
+            # read-only sandbox (issue #100); widen it (e.g. `-s workspace-write`
+            # or `danger-full-access`) only if your workflow truly needs it.
+            "extra_args": ["-s", "read-only"],
         },
         {
             "name": "agy",
             "vendor": "google",
             "command": "agy",
-            "extra_args": ["--dangerously-skip-permissions"],
+            # `--dangerously-skip-permissions` avoids a non-interactive permission
+            # prompt hanging the run; `--sandbox` keeps the agent's tools
+            # restricted while it reviews untrusted content (issue #100).
+            "extra_args": ["--dangerously-skip-permissions", "--sandbox"],
         },
     ],
 }
