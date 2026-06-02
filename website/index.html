@@ -387,7 +387,7 @@ endpoint = "http://localhost:11434/v1"</code></pre>
       $("toml-out").textContent = lines.join("\n").trim() + "\n";
     }
 
-    ctrls.addEventListener("change", render);
+    ctrls.addEventListener("change", function () { render(); syncRun(); });
     render();
 
     // ---- Scripted "Run review" demo -------------------------------------
@@ -534,33 +534,60 @@ endpoint = "http://localhost:11434/v1"</code></pre>
       $("gh-comments").innerHTML = html;
     }
 
+    function consoleLine(line) {
+      var span = document.createElement("span");
+      span.className = "cl " + (line[1] || "");
+      span.textContent = line[0] + "\n";
+      return span;
+    }
+
+    var runTimer = null;
     function runDemo() {
-      var ags = selectedAgents();
-      var btn = $("run-btn");
-      if (ags.length === 0) { $("flow-note").textContent = "Pick at least one reviewer to run."; return; }
+      if (selectedAgents().length === 0) { $("flow-note").textContent = "Pick at least one reviewer to run."; return; }
       var run = buildRun();
+      var btn = $("run-btn");
       $("run-out").hidden = false;
       $("console-body").innerHTML = "";
       $("gh-comments").innerHTML = "";
-      btn.disabled = true;
+      if (runTimer) { clearTimeout(runTimer); runTimer = null; }
 
       var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (reduce) {
+        run.con.forEach(function (l) { $("console-body").appendChild(consoleLine(l)); });
+        renderComments(run);
+        return;
+      }
+      btn.disabled = true;
       var i = 0;
-      function step() {
+      (function step() {
         if (i < run.con.length) {
-          var line = run.con[i++];
-          var span = document.createElement("span");
-          span.className = "cl " + (line[1] || "");
-          span.textContent = line[0] + "\n";
-          $("console-body").appendChild(span);
+          $("console-body").appendChild(consoleLine(run.con[i++]));
           $("console-body").scrollTop = $("console-body").scrollHeight;
-          if (reduce) { step(); } else { setTimeout(step, 230); }
+          runTimer = setTimeout(step, 230);
         } else {
+          runTimer = null;
           renderComments(run);
           btn.disabled = false;
         }
+      })();
+    }
+
+    // Once a run is on screen, keep it in sync with the controls — re-paint it
+    // instantly (no replay) on any change so the output always matches the panel
+    // and depth selected above. A pending animation is cancelled first.
+    function syncRun() {
+      if ($("run-out").hidden) return;
+      if (runTimer) { clearTimeout(runTimer); runTimer = null; }
+      $("run-btn").disabled = false;
+      if (selectedAgents().length === 0) {
+        $("console-body").innerHTML = "";
+        $("gh-comments").innerHTML = '<p class="muted">Pick at least one reviewer.</p>';
+        return;
       }
-      step();
+      var run = buildRun();
+      $("console-body").innerHTML = "";
+      run.con.forEach(function (l) { $("console-body").appendChild(consoleLine(l)); });
+      renderComments(run);
     }
 
     $("run-btn").addEventListener("click", runDemo);
