@@ -162,6 +162,7 @@ jury init                              # scaffold jury.toml (detects agents + lo
 jury --pr 123                          # review a GitHub PR
 jury --pr 123 --post                   # ...and post the verdict as a comment
 jury --pr 123 --post-progress             # live: a sticky PR comment updated each round/chunk
+jury --pr 123 --post --post-mode phased   # post Round 1 / debate / decision as separate comments
 jury --pr 123 --incremental            # review only changes since the last run
 jury --pr 123 --suggest-patches        # also emit inspectable patches for verified findings
 git diff origin/HEAD... | jury --diff-file -   # review the current branch

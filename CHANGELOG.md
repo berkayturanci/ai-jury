@@ -60,6 +60,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `--post-mode {single,phased}` (#127): with `--post-summary`, post the review as
+  one comment (default) or as separate **Round 1 / Debate / Decision** comments,
+  so the flow (each reviewer's findings → cross-examination → verdict & why) is
+  easy to follow. Pairs with `--post-progress` for live stage tracking.
 - `--post-progress` (#125): keeps a single, sticky status comment on the PR,
   updated live at each round/chunk milestone (round 1 → debate → verify →
   synthesis; chunk i/N), then replaced with the final verdict. Off by default;

@@ -181,6 +181,11 @@ def build_parser() -> argparse.ArgumentParser:
              "(issue #125)",
     )
     p.add_argument(
+        "--post-mode", choices=["single", "phased"], default="single",
+        help="with --post-summary: 'single' (one comment) or 'phased' (separate "
+             "Round 1 / debate / decision comments) (issue #127)",
+    )
+    p.add_argument(
         "--dry-run", dest="dry_run", action="store_true",
         help="with --post-inline, print what would be posted without calling GitHub",
     )
@@ -908,17 +913,31 @@ def main(argv: list[str] | None = None) -> int:
     if args.post_summary:
         if not args.pr:
             raise SystemExit("error: --post-summary requires --pr")
-        body = report
         # Record the reviewed head SHA as a hidden marker so a later
         # --incremental run can review only the new range (issue #9).
         from .github import pr_head_sha
         from .incremental import reviewed_sha_marker
 
         marker_sha = head_sha or pr_head_sha(args.pr, args.repo)
-        if marker_sha:
-            body = f"{body}\n\n{reviewed_sha_marker(marker_sha)}"
-        post_pr_comment(args.pr, body, args.repo)
-        log(f"posted verdict to PR #{args.pr}")
+        marker = f"\n\n{reviewed_sha_marker(marker_sha)}" if marker_sha else ""
+
+        if args.post_mode == "phased":
+            # Post the flow as separate, readable comments (issue #127):
+            # Round 1 → debate → decision. The SHA marker rides the last one.
+            from .report import render_sections
+
+            sections = render_sections(
+                outcome.reviews, outcome.debate, outcome.synthesis,
+                chair=outcome.chair, findings=outcome.findings,
+                warnings=outcome.warnings, groups=outcome.groups, verify=outcome.verify,
+            )
+            for i, (title, body) in enumerate(sections):
+                tail = marker if i == len(sections) - 1 else ""
+                post_pr_comment(args.pr, f"## {title}\n\n{body}{tail}", args.repo)
+            log(f"posted {len(sections)} phased comments to PR #{args.pr}")
+        else:
+            post_pr_comment(args.pr, f"{report}{marker}", args.repo)
+            log(f"posted verdict to PR #{args.pr}")
 
     if args.post_inline:
         if not args.pr:
