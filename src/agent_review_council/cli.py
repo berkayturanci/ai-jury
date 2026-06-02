@@ -363,13 +363,19 @@ def _init_interactive(available: dict, input_fn=input, local_endpoint=None, mode
 def _run_init(rest: list[str]) -> int:
     """Handle ``council init`` (issue #107): scaffold a council.toml."""
     from .config import ConfigError, validate_config
-    from .scaffold import KNOWN_AGENTS, build_config, render_toml
+    from .scaffold import KNOWN_AGENTS, PRESETS, build_config, render_toml
 
     sub = argparse.ArgumentParser(prog="council init")
+    sub.add_argument(
+        "--preset", choices=sorted(PRESETS),
+        help="setup preset: offline (local-only), fast (1 round), balanced "
+             "(debate + early-stop), thorough (all agents + debate + verify)",
+    )
     sub.add_argument("--agents", help="comma-separated: claude,codex,agy,qwen")
-    sub.add_argument("--rounds", type=int, default=2)
+    sub.add_argument("--rounds", type=int, default=None)
     sub.add_argument("--chair")
-    sub.add_argument("--no-verify", dest="verify", action="store_false", default=True)
+    sub.add_argument("--verify", dest="verify", action="store_true", default=None)
+    sub.add_argument("--no-verify", dest="verify", action="store_false")
     sub.add_argument("--local-model", help="model id for a local agent (qwen)")
     sub.add_argument("--local-endpoint", help="OpenAI-compatible base URL for a local agent")
     sub.add_argument("-o", "--output", default="council.toml")
@@ -405,33 +411,47 @@ def _run_init(rest: list[str]) -> int:
             print(f"\nlocal models at {endpoint}: {', '.join(models)}")
         return 0
 
-    if ns.agents:
-        kwargs = {
-            "agents": [a.strip() for a in ns.agents.split(",") if a.strip()],
-            "rounds": ns.rounds,
-            "chair": ns.chair,
-            "verify": ns.verify,
-            "local_model": ns.local_model,
-            "local_endpoint": ns.local_endpoint,
-        }
-    elif ns.interactive or sys.stdin.isatty():
+    preset = PRESETS.get(ns.preset, {})
+
+    def _detected_agents():
+        return [n for n in KNOWN_AGENTS if available.get(n)]
+
+    def _resolve_preset_agents(spec):
+        if spec == "all":
+            return list(KNOWN_AGENTS)
+        if spec == "detected":
+            return _detected_agents() or list(KNOWN_AGENTS)
+        return list(spec)
+
+    # rounds / verify / early_stop: explicit flag > preset > built-in default.
+    rounds = ns.rounds if ns.rounds is not None else preset.get("rounds", 2)
+    verify = ns.verify if ns.verify is not None else preset.get("verify", True)
+    early_stop = preset.get("early_stop")
+
+    # Interactive only when neither --agents nor --preset was given and we're on a
+    # TTY (or --interactive). Presets/flags are non-interactive by design.
+    if not ns.agents and not ns.preset and (ns.interactive or sys.stdin.isatty()):
         kwargs = _init_interactive(available, local_endpoint=ns.local_endpoint)
         kwargs["local_endpoint"] = ns.local_endpoint
         if ns.local_model:
             kwargs["local_model"] = ns.local_model
     else:
-        # Non-interactive with no --agents: default to whatever is available.
-        detected = [n for n in KNOWN_AGENTS if available.get(n)]
-        if not detected:
-            print(
-                "error: no agents detected and none specified; pass --agents "
-                "(e.g. --agents claude,codex) or run interactively.",
-                file=sys.stderr,
-            )
-            return 2
+        if ns.agents:
+            agents = [a.strip() for a in ns.agents.split(",") if a.strip()]
+        elif ns.preset:
+            agents = _resolve_preset_agents(preset["agents"])
+        else:
+            agents = _detected_agents()
+            if not agents:
+                print(
+                    "error: no agents detected and none specified; pass --agents "
+                    "or --preset (e.g. --preset offline), or run interactively.",
+                    file=sys.stderr,
+                )
+                return 2
         kwargs = {
-            "agents": detected, "rounds": ns.rounds, "chair": ns.chair,
-            "verify": ns.verify, "local_model": ns.local_model,
+            "agents": agents, "rounds": rounds, "chair": ns.chair, "verify": verify,
+            "early_stop": early_stop, "local_model": ns.local_model,
             "local_endpoint": ns.local_endpoint,
         }
 
@@ -528,6 +548,37 @@ def _run_config(rest: list[str]) -> int:
     print(f"source: {source}")
     print(_render_effective_config(cfg))
     return 0
+
+
+def _maybe_add_local_fallback(config, args, log) -> None:
+    """Append a local agent when nothing else can run, offline (issue: zero-config).
+
+    Only fires in the safe "fresh user" case: no explicit `--config`, no
+    `./council.toml`, not `--mock`, none of the configured agents are available,
+    and a local OpenAI-compatible server is reachable with at least one model.
+    Mutates ``config`` in place and points the chair at the local agent.
+    """
+    if args.config or args.mock or Path("council.toml").exists():
+        return
+    from .adapters import list_local_models, make_adapter
+    from .config import AgentSpec
+    from .scaffold import pick_default_model
+
+    try:
+        if any(make_adapter(s).available() for s in config.enabled_agents):
+            return
+    except Exception:  # noqa: BLE001 - availability probing must never crash a run
+        return
+    models = list_local_models()
+    model = pick_default_model(models)
+    if not model:
+        return
+    config.agents.append(
+        AgentSpec(name="local", vendor="local", model=model,
+                  endpoint="http://localhost:11434/v1")
+    )
+    config.chair = "local"
+    log(f"no agent CLIs found; using local model '{model}' (offline, $0)")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -654,6 +705,12 @@ def main(argv: list[str] | None = None) -> int:
     def log(msg: str) -> None:
         if not args.quiet:
             print(f"[council] {msg}", file=sys.stderr)
+
+    # Smart offline fallback: with NO config file and NO usable agent CLI, but a
+    # local model server reachable, add a local agent so `council` just works
+    # offline out of the box (issue: easier zero-config). Never overrides an
+    # explicit config or a working CLI panel.
+    _maybe_add_local_fallback(config, args, log)
 
     diff, context = _read_diff(args)
 

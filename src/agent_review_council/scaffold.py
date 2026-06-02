@@ -61,12 +61,25 @@ def pick_default_model(models: list[str]) -> str | None:
     return models[0]
 
 
+# Named setup presets (issue: easier config). Each gives default agents +
+# settings for a common intent; explicit flags / detected agents override the
+# `agents` value ("detected" = the agents available right now, "all" = every
+# known agent). Resolved by the CLI, which knows availability.
+PRESETS: dict[str, dict] = {
+    "offline":  {"agents": ["qwen"], "rounds": 1, "verify": False},
+    "fast":     {"agents": "detected", "rounds": 1, "verify": False},
+    "balanced": {"agents": "detected", "rounds": 2, "verify": True, "early_stop": True},
+    "thorough": {"agents": "all", "rounds": 2, "verify": True},
+}
+
+
 def build_config(
     agents: list[str],
     *,
     rounds: int = 2,
     chair: str | None = None,
     verify: bool = True,
+    early_stop: bool | None = None,
     local_model: str | None = None,
     local_endpoint: str | None = None,
 ) -> dict:
@@ -102,10 +115,10 @@ def build_config(
     if chair is None:
         chair = chosen[0]["name"]
 
-    return {
-        "council": {"rounds": int(rounds), "chair": chair, "verify": bool(verify)},
-        "agent": chosen,
-    }
+    council: dict = {"rounds": int(rounds), "chair": chair, "verify": bool(verify)}
+    if early_stop:
+        council["early_stop"] = True
+    return {"council": council, "agent": chosen}
 
 
 def _scalar(value) -> str:
@@ -142,7 +155,7 @@ def render_toml(config: dict) -> str:
         "",
         "[council]",
     ]
-    for key in ("rounds", "chair", "verify"):
+    for key in ("rounds", "chair", "verify", "early_stop", "max_rounds"):
         if key in config["council"]:
             lines.append(f"{key} = {_render_value(config['council'][key])}")
     lines.append("")

@@ -211,6 +211,87 @@ class LocalModelDiscoveryTest(unittest.TestCase):
             self.assertEqual(list_local_models("http://localhost:11434/v1"), [])
 
 
+class PresetTest(unittest.TestCase):
+    def _run(self, argv):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = cli.main(argv)
+        return code, out.getvalue(), err.getvalue()
+
+    def test_offline_preset_is_local_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "council.toml"
+            code, _, _ = self._run(["init", "--preset", "offline", "-o", str(path)])
+            self.assertEqual(code, 0)
+            data = tomllib.loads(path.read_text(encoding="utf-8"))
+            validate_config(data)
+            self.assertEqual([a["name"] for a in data["agent"]], ["qwen"])
+            self.assertEqual(data["council"]["rounds"], 1)
+            self.assertFalse(data["council"]["verify"])
+
+    def test_balanced_preset_sets_early_stop(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "council.toml"
+            self._run(["init", "--preset", "balanced", "--agents", "claude,codex",
+                       "-o", str(path)])
+            data = tomllib.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(data["council"]["rounds"], 2)
+            self.assertTrue(data["council"]["verify"])
+            self.assertTrue(data["council"]["early_stop"])
+
+    def test_thorough_preset_uses_all_agents(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "council.toml"
+            self._run(["init", "--preset", "thorough", "-o", str(path)])
+            data = tomllib.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                [a["name"] for a in data["agent"]], ["claude", "codex", "agy", "qwen"]
+            )
+
+    def test_explicit_flag_overrides_preset(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "council.toml"
+            # offline preset defaults rounds=1; explicit --rounds 2 wins.
+            self._run(["init", "--preset", "offline", "--rounds", "2", "-o", str(path)])
+            data = tomllib.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(data["council"]["rounds"], 2)
+
+
+class OfflineFallbackTest(unittest.TestCase):
+    def _args(self, config=None, mock=False):
+        return type("A", (), {"config": config, "mock": mock})()
+
+    def test_adds_local_agent_when_nothing_else_available(self):
+        from unittest import mock
+
+        import agent_review_council.adapters as adapters
+        import agent_review_council.cli as climod
+        from agent_review_council.config import DEFAULT_CONFIG, _from_dict
+
+        cfg = _from_dict(DEFAULT_CONFIG)  # claude/codex/agy, no local
+        logs = []
+        with mock.patch.object(adapters.Adapter, "available", return_value=False), \
+             mock.patch.object(adapters, "list_local_models",
+                               return_value=["gemma:2b", "qwen2.5-coder:7b"]), \
+             mock.patch.object(climod.Path, "exists", return_value=False):
+            climod._maybe_add_local_fallback(cfg, self._args(), logs.append)
+
+        local = next((a for a in cfg.agents if a.name == "local"), None)
+        self.assertIsNotNone(local)
+        self.assertEqual(local.model, "qwen2.5-coder:7b")  # coder preferred
+        self.assertEqual(cfg.chair, "local")
+        self.assertTrue(any("offline" in m for m in logs))
+
+    def test_no_fallback_when_config_file_present(self):
+        import agent_review_council.cli as climod
+        from agent_review_council.config import DEFAULT_CONFIG, _from_dict
+
+        cfg = _from_dict(DEFAULT_CONFIG)
+        before = len(cfg.agents)
+        climod._maybe_add_local_fallback(cfg, self._args(config="council.toml"), lambda _m: None)
+        self.assertEqual(len(cfg.agents), before)  # explicit --config -> no-op
+
+
 class ConfigShowTest(unittest.TestCase):
     def _run(self, argv):
         out, err = io.StringIO(), io.StringIO()
