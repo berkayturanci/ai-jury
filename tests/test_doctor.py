@@ -316,6 +316,26 @@ class CapabilityDiagnosticsTests(unittest.TestCase):
         self.assertIn("capabilities=[", report)
         self.assertIn("headless", report)
 
+    def test_capability_probe_exception_caught(self):
+        orig = doctor.make_adapter
+        def _raising_factory(spec, mock=False):
+            raise RuntimeError("simulate probe crash")
+        doctor.make_adapter = _raising_factory
+        self.addCleanup(lambda: setattr(doctor, "make_adapter", orig))
+
+        path = _write_config(VALID_CONFIG)
+        self.addCleanup(os.unlink, path)
+        diag = doctor.build_diagnostics(path)
+
+        by_name = {a["name"]: a for a in diag["agents"]}
+        self.assertIsNone(by_name["claude"]["version"])
+        self.assertEqual(by_name["claude"]["capabilities"]["status"], "unknown_version")
+
+        self.assertTrue(
+            any("capability probe raised: simulate probe crash" in w for w in diag["config_warnings"]),
+            diag["config_warnings"],
+        )
+
 
 class RecommendationsTest(unittest.TestCase):
     def test_not_ready_when_no_agents_available(self):
