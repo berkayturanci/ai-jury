@@ -75,7 +75,7 @@
 
 /* ---- Base ------------------------------------------------------------ */
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; overflow-x: hidden; }
+html { scroll-behavior: smooth; }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 
 body {
@@ -94,6 +94,11 @@ body {
 a { color: var(--accent-2); text-decoration: none; }
 a:hover { color: var(--accent-3); }
 :root[data-theme="light"] a:hover { color: var(--accent-3); }
+/* buttons are <a>: keep their own text color on hover (beat the link-hover rule) */
+a.btn.primary:hover, a.btn.primary { color: #fff; }
+:root[data-theme="light"] a.btn.primary:hover { color: #fff; }
+a.btn:hover, :root[data-theme="light"] a.btn:hover { color: var(--text); }
+:root[data-theme="light"] a.btn.primary:hover, a.btn.primary:hover { color: #fff; }
 
 h1, h2, h3 { font-family: var(--font-display); letter-spacing: -0.02em; line-height: 1.1; }
 h2 { font-size: clamp(1.6rem, 3vw, 2.3rem); margin: 0 0 0.5rem; font-weight: 600; }

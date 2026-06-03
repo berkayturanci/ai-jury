@@ -100,8 +100,8 @@
 .cov-state.warn { background: rgba(245,158,11,.14); color: var(--amber); border-color: color-mix(in srgb, var(--amber) 50%, transparent); }
 .cov-shield { height: 20px; display: block; }
 .cov-note { font-size: .92rem; color: var(--muted); margin: 0 0 1rem; }
-.cov-actions { display: flex; gap: .7rem; flex-wrap: wrap; }
-.cov-actions .btn { font-size: .9rem; padding: .6rem 1.1rem; }
+.cov-actions { display: flex; gap: .6rem; flex-wrap: nowrap; }
+.cov-actions .btn { font-size: .86rem; padding: .58rem .7rem; flex: 1 1 0; justify-content: center; white-space: nowrap; }
 .cov-updated { font-size: .74rem; color: var(--faint); margin: .9rem 0 0; }
 
 /* ---- Rendered markdown (docs.html) --------------------------------- */
