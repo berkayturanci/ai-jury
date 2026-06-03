@@ -389,7 +389,7 @@ def format_table(scores: list[FixtureScore], summary: dict) -> str:
     return "\n".join(lines)
 
 
-def main(argv: list[str] | None = None) -> int:
+def main() -> int:
     """Module entry point: print the score table (offline by default)."""
     live = live_enabled()
     mode = "live (JURY_BENCH_LIVE=1)" if live else "offline/recorded"
