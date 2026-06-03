@@ -32,7 +32,7 @@ from .github import (
 from .metadata import build_run_metadata
 from .orchestrator import review_diff
 from .policy import PolicyError, load_policy
-from .report import render
+from .report import render, render_transcript
 
 
 def _read_diff(args) -> tuple[str, str]:
@@ -167,6 +167,19 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--format", choices=["markdown", "json", "sarif"], default="markdown",
         help="output format for stdout/--output (default: markdown)",
+    )
+    p.add_argument(
+        "--transcript", dest="transcript", action="store_true", default=None,
+        help="render the full play-by-play transcript (each agent's review, the "
+             "debate, and the chair's reasoning) instead of the summary report",
+    )
+    p.add_argument(
+        "--no-transcript", dest="transcript", action="store_false",
+        help="force the summary report even if [jury] transcript is set",
+    )
+    p.add_argument(
+        "--verbose", dest="verbose", action="store_true",
+        help="summary report followed by the full transcript, in one document",
     )
     p.add_argument(
         "--post-summary", "--post", dest="post_summary", action="store_true",
@@ -865,21 +878,44 @@ def main(argv: list[str] | None = None) -> int:
         from .formats import to_sarif
         report = to_sarif(outcome, config)
     else:
-        report = render(
-            outcome.reviews,
-            outcome.debate,
-            outcome.synthesis,
-            chair=outcome.chair,
-            findings=outcome.findings,
-            warnings=outcome.warnings,
-            groups=outcome.groups,
-            verify=outcome.verify,
-            context_mode=outcome.context_mode,
-            redact_secrets=outcome.redact_secrets,
-            redaction_count=outcome.redaction_count,
-            metadata=metadata,
-            review_scope=review_scope,
-        )
+        # Output mode (issue: full transcript). --verbose => summary + transcript;
+        # --transcript (or [jury] transcript, unless --no-transcript) => the
+        # chronological play-by-play; otherwise the consensus-first summary.
+        # Rendering-only — the orchestration/outcome is identical either way.
+        transcript_default = args.transcript if args.transcript is not None else config.transcript
+        if args.verbose or transcript_default:
+            report = render_transcript(
+                outcome.reviews,
+                outcome.debate,
+                outcome.synthesis,
+                chair=outcome.chair,
+                findings=outcome.findings,
+                warnings=outcome.warnings,
+                groups=outcome.groups,
+                verify=outcome.verify,
+                context_mode=outcome.context_mode,
+                redact_secrets=outcome.redact_secrets,
+                redaction_count=outcome.redaction_count,
+                metadata=metadata,
+                review_scope=review_scope,
+                lead_with_summary=bool(args.verbose),
+            )
+        else:
+            report = render(
+                outcome.reviews,
+                outcome.debate,
+                outcome.synthesis,
+                chair=outcome.chair,
+                findings=outcome.findings,
+                warnings=outcome.warnings,
+                groups=outcome.groups,
+                verify=outcome.verify,
+                context_mode=outcome.context_mode,
+                redact_secrets=outcome.redact_secrets,
+                redaction_count=outcome.redaction_count,
+                metadata=metadata,
+                review_scope=review_scope,
+            )
 
     if args.metadata_json:
         with Path(args.metadata_json).open("w", encoding="utf-8") as fh:
