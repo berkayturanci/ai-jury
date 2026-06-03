@@ -23,9 +23,10 @@
 }
 @media (max-width: 860px) {
   .docs-side {
-    position: static; max-height: none; overflow: visible;
+    position: fixed; left: 12px; right: 12px; top: 70px; z-index: 120;
+    max-height: calc(100dvh - 86px); overflow-y: auto;
     border: 1px solid var(--border); border-radius: var(--radius);
-    background: var(--surface); padding: 1rem 1.1rem;
+    background: var(--surface); padding: 1rem 1.1rem; box-shadow: var(--shadow-lg);
   }
 }
 .ds-label {
@@ -64,6 +65,7 @@
 }
 .docs-block:first-of-type h2 { margin-top: 0; }
 .docs-block p { margin: 0 0 .8rem; }
+.docs-block pre + p, .docs-block .code + p { margin-top: 1.1rem; }
 .docs-list { margin: 0 0 .8rem; padding-left: 1.1rem; color: var(--muted); }
 .docs-list li { margin: .35rem 0; }
 .docs-block code, .docs-list code, .docs-lede code {
@@ -196,12 +198,15 @@
 @media (max-width: 860px) {
   .docs-mobilebar {
     display: flex; align-items: center; justify-content: space-between; gap: 1rem;
-    margin-bottom: .4rem;
+    position: sticky; top: 64px; z-index: 121; margin: 0 0 1rem;
+    background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(8px);
+    padding: .5rem 0;
   }
   .docs-menu-btn {
     display: inline-flex; align-items: center; gap: .5rem; cursor: pointer;
     background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
-    border-radius: 10px; padding: .5rem .8rem; font-family: var(--font-body); font-weight: 600; font-size: .9rem;
+    border-radius: 10px; padding: .55rem .9rem; font-family: var(--font-body); font-weight: 600; font-size: .92rem;
   }
+  .docs-menu-btn[aria-expanded="true"] { border-color: var(--accent-line); color: var(--accent-2); }
   .docs-side.collapsed { display: none; }
 }

@@ -715,6 +715,9 @@ footer { border-top: 1px solid var(--border); padding: 2.4rem 0; color: var(--fa
 .health-card:hover .hc-link { color: var(--accent-3); }
 
 /* ---- utilities ------------------------------------------------------- */
+/* prevent grid/flex blowout: let children with code shrink so <pre> scrolls */
+.demo-grid > *, .run-out > *, .split > *, .steps3 > * { min-width: 0; }
+.code, .term-body, .md-body pre, .stage-card, .panel { max-width: 100%; }
 .muted { color: var(--muted); }
 .center { text-align: center; }
 .mono { font-family: var(--font-mono); }

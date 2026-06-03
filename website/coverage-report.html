@@ -103,7 +103,7 @@
   </nav>
 
   <div class="docs-shell wrap">
-    <aside class="docs-side">
+    <aside class="docs-side collapsed" id="docs-side">
       <p class="ds-label">Documentation</p>
       <nav class="ds-nav">
         <a class="ds-link" href="docs.html">Home</a>
@@ -141,6 +141,9 @@
     </aside>
 
     <main class="docs-main cov-report">
+      <div class="docs-mobilebar">
+        <button class="docs-menu-btn" id="menu-btn" type="button" aria-expanded="false">☰ Docs menu</button>
+      </div>
       <div class="crumbs"><a href="coverage.html">Test coverage</a> <span>/</span> <span>Full report</span></div>
       <p class="docs-kicker" style="margin-top:.2rem">Quality</p>
       <h1 class="docs-h1">Coverage report</h1>
@@ -165,6 +168,17 @@
     var nav = $("nav");
     var onScroll = function () { nav.classList.toggle("scrolled", window.scrollY > 8); };
     onScroll(); window.addEventListener("scroll", onScroll, { passive: true });
+
+    // mobile docs menu toggle
+    var side = $("docs-side"), mb = $("menu-btn");
+    if (mb && side) mb.addEventListener("click", function () {
+      var open = side.classList.toggle("collapsed") === false;
+      mb.setAttribute("aria-expanded", open ? "true" : "false");
+      mb.innerHTML = open ? "✕ Close menu" : "☰ Docs menu";
+    });
+    side && side.querySelectorAll(".ds-link").forEach(function (a) {
+      a.addEventListener("click", function () { if (window.innerWidth <= 860) { side.classList.add("collapsed"); if (mb) { mb.setAttribute("aria-expanded", "false"); mb.innerHTML = "☰ Docs menu"; } } });
+    });
 
     var REPORT_BASES = ["coverage/", "https://berkayturanci.github.io/ai-jury/coverage/"];
     var root = $("cr-root");
@@ -212,7 +226,7 @@
       var html = "";
       // summary
       html += '<div class="cr-summary">'
-        + '<div class="cr-big pc-' + cls(overall) + '">' + parseFloat(overall.toFixed(2)) + '%<small>overall</small></div>'
+        + '<div class="cr-big pc-' + cls(overall) + '">' + overall.toFixed(0) + '%<small>overall</small></div>'
         + '<div class="cr-sumbar"><div class="cr-track"><span class="bg-' + cls(overall) + '" style="width:' + overall.toFixed(1) + '%"></span></div>'
         + '<div class="cr-sublabel"><span>' + covAll + ' / ' + totalAll + ' covered</span><span>' + rows.length + ' files</span></div></div>'
         + '<div class="cr-actions"><a class="btn ghost" href="' + base + 'index.html" target="_blank" rel="noopener">Line-by-line ↗</a></div>'
@@ -235,7 +249,7 @@
         html += "<tr>"
           + '<td><span class="cr-file"><a href="' + base + esc(r.url) + '" target="_blank" rel="noopener">' + esc(r.file) + "</a></span></td>"
           + '<td><div class="cr-covcell"><div class="cr-mini"><span class="bg-' + c + '" style="width:' + r.pct.toFixed(1) + '%"></span></div>'
-          + '<span class="cr-pct pc-' + c + '">' + parseFloat(r.pct.toFixed(2)) + '%</span></div></td>'
+          + '<span class="cr-pct pc-' + c + '">' + r.pct.toFixed(0) + '%</span></div></td>'
           + '<td class="num">' + r.covered + "/" + r.total + "</td>"
           + '<td class="num">' + (r.missing || 0) + "</td>"
           + "</tr>";
