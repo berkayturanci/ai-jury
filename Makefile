@@ -60,7 +60,7 @@ build:
 # (provides rsvg-convert). The OG banner is a one-shot designer PNG (no SVG
 # source ships in-tree) and is intentionally not rebuilt here.
 assets:
-	rsvg-convert -w 2400 -h 1040 docs/assets/hero.svg -o docs/assets/hero.png
+	rsvg-convert -w 2400 -h 1260 docs/assets/hero.svg -o docs/assets/hero.png
 	rsvg-convert -w 180  -h 180  website/favicon.svg  -o website/apple-touch-icon.png
 	rsvg-convert -w 180  -h 180  website/favicon.svg  -o website/favicon-180.png
 	rsvg-convert -w 32   -h 32   website/favicon.svg  -o website/favicon-32.png
