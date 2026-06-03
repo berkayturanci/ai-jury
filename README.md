@@ -316,7 +316,7 @@ extra_args = ["--output-format", "text", "--disallowed-tools", "Edit,Write,Noteb
 
 Override per run with `--rounds`, `--chair`, `--config`.
 
-The config is validated on every run. Check it without running a review with `jury --config-validate` (exit `0` valid, `2` invalid); add `--strict-config` to turn warnings into errors. See [docs/configuration.md](docs/configuration.md) for the full schema — every field, allowed values, defaults, and which problems are hard errors vs. warnings.
+The config is validated on every run. Check it without running a review with `jury --config-validate` (exit `0` valid, `2` invalid); add `--strict-config` to turn warnings into errors. See the [**parameter reference**](docs/parameters.md) for every field, allowed value, and default (CLI flags + `jury.toml`), and [docs/configuration.md](docs/configuration.md) for the validation behaviour (hard errors vs. warnings) and other config semantics.
 
 ### Local / open-weight reviewer (free, offline)
 
@@ -560,6 +560,8 @@ flag-presence checks run on all supported versions (3.11–3.13).
 
 ## Documentation
 
+- [Parameter reference](docs/parameters.md) — **every** CLI flag and `jury.toml` key with allowed values and defaults.
+- [Configuration behaviour & validation](docs/configuration.md) — validation, budgets, adaptive rounds, large-diff handling, and the cache.
 - [Positioning](docs/positioning.md) — mission, what makes it different, principles, and non-goals.
 - [Cookbook](docs/cookbook.md) — copy-paste recipes for local, PR, advisory-comment, CI, mock, and assistant workflows.
 - [Architecture](docs/architecture.md) — components, round structure, adapters, supported platforms.
