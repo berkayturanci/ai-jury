@@ -236,10 +236,11 @@ class LabelingDefaultOffTests(unittest.TestCase):
         self.assertEqual(
             args,
             [
-                "pr", "edit", "42",
+                "pr", "edit",
                 "--add-label", "risk: high",
                 "--add-label", "review effort: 3/5",
                 "--repo", "o/r",
+                "--", "42",
             ],
         )
 

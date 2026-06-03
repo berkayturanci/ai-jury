@@ -22,18 +22,20 @@ def _gh(*args: str) -> str:
 
 
 def pr_diff(pr: str, repo: str | None = None) -> str:
-    args = ["pr", "diff", str(pr)]
+    args = ["pr", "diff"]
     if repo:
         args += ["--repo", repo]
+    args += ["--", str(pr)]
     return _gh(*args)
 
 
 def pr_context(pr: str, repo: str | None = None) -> str:
     """Return 'title\\n\\nbody' for a PR, best-effort."""
-    args = ["pr", "view", str(pr), "--json", "title,body",
+    args = ["pr", "view", "--json", "title,body",
             "--jq", '.title + "\\n\\n" + (.body // "")']
     if repo:
         args += ["--repo", repo]
+    args += ["--", str(pr)]
     try:
         return _gh(*args).strip()
     except RuntimeError:
@@ -41,17 +43,19 @@ def pr_context(pr: str, repo: str | None = None) -> str:
 
 
 def post_pr_comment(pr: str, body: str, repo: str | None = None) -> None:
-    args = ["pr", "comment", str(pr), "--body", body]
+    args = ["pr", "comment", "--body", body]
     if repo:
         args += ["--repo", repo]
+    args += ["--", str(pr)]
     _gh(*args)
 
 
 def pr_head_sha(pr: str, repo: str | None = None) -> str:
     """Return the current head commit SHA of a PR (best-effort, '' on failure)."""
-    args = ["pr", "view", str(pr), "--json", "headRefOid", "--jq", ".headRefOid"]
+    args = ["pr", "view", "--json", "headRefOid", "--jq", ".headRefOid"]
     if repo:
         args += ["--repo", repo]
+    args += ["--", str(pr)]
     try:
         return _gh(*args).strip()
     except RuntimeError:
@@ -65,9 +69,10 @@ def pr_comment_bodies(pr: str, repo: str | None = None) -> list[str]:
     reviewed-SHA marker. Network errors degrade to an empty list so the caller
     safely falls back to a full review.
     """
-    args = ["pr", "view", str(pr), "--json", "comments", "--jq", ".comments[].body"]
+    args = ["pr", "view", "--json", "comments", "--jq", ".comments[].body"]
     if repo:
         args += ["--repo", repo]
+    args += ["--", str(pr)]
     try:
         out = _gh(*args)
     except RuntimeError:
@@ -86,8 +91,9 @@ def compare_diff(base: str, head: str, repo: str | None = None) -> str:
         return ""
     try:
         return _gh(
-            "api", f"repos/{resolved}/compare/{base}...{head}",
+            "api",
             "-H", "Accept: application/vnd.github.v3.diff",
+            "--", f"repos/{resolved}/compare/{base}...{head}",
         )
     except RuntimeError:
         return ""
@@ -103,11 +109,12 @@ def build_label_args(pr: str, labels, repo: str | None = None) -> list[str]:
     clean = [str(label) for label in (labels or []) if str(label).strip()]
     if not clean:
         return []
-    args = ["pr", "edit", str(pr)]
+    args = ["pr", "edit"]
     for label in clean:
         args += ["--add-label", label]
     if repo:
         args += ["--repo", repo]
+    args += ["--", str(pr)]
     return args
 
 
@@ -222,7 +229,7 @@ def _existing_inline_keys(pr: str, repo: str) -> set:
     """
     keys: set = set()
     try:
-        out = _gh("api", f"repos/{repo}/pulls/{pr}/comments", "--paginate")
+        out = _gh("api", "--paginate", "--", f"repos/{repo}/pulls/{pr}/comments")
         data = json.loads(out)
     except (RuntimeError, json.JSONDecodeError):
         return keys
@@ -284,7 +291,7 @@ def post_inline_comments(
         return payload
 
     _gh_with_input(
-        ["api", "--method", "POST", f"repos/{resolved}/pulls/{pr}/reviews", "--input", "-"],
+        ["api", "--method", "POST", "--input", "-", "--", f"repos/{resolved}/pulls/{pr}/reviews"],
         json.dumps(payload),
     )
     return payload
@@ -316,7 +323,7 @@ def _create_issue_comment(pr: str, body: str, repo: str) -> int | None:
     """Create a PR/issue comment, returning its numeric id (or None)."""
     try:
         out = _gh_with_input(
-            ["api", "--method", "POST", f"repos/{repo}/issues/{pr}/comments", "--input", "-"],
+            ["api", "--method", "POST", "--input", "-", "--", f"repos/{repo}/issues/{pr}/comments"],
             json.dumps({"body": body}),
         )
         return json.loads(out).get("id")
@@ -327,8 +334,7 @@ def _create_issue_comment(pr: str, body: str, repo: str) -> int | None:
 def _edit_issue_comment(comment_id: int, body: str, repo: str) -> bool:
     try:
         _gh_with_input(
-            ["api", "--method", "PATCH",
-             f"repos/{repo}/issues/comments/{comment_id}", "--input", "-"],
+            ["api", "--method", "PATCH", "--input", "-", "--", f"repos/{repo}/issues/comments/{comment_id}"],
             json.dumps({"body": body}),
         )
         return True
