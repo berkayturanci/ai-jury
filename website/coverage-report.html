@@ -225,7 +225,7 @@
       var html = "";
       // summary
       html += '<div class="cr-summary">'
-        + '<div class="cr-big pc-' + cls(overall) + '">' + overall.toFixed(0) + '%<small>overall</small></div>'
+        + '<div class="cr-big pc-' + cls(overall) + '">' + (parseFloat(overall.toFixed(2)) + '') + '%<small>overall</small></div>'
         + '<div class="cr-sumbar"><div class="cr-track"><span class="bg-' + cls(overall) + '" style="width:' + overall.toFixed(1) + '%"></span></div>'
         + '<div class="cr-sublabel"><span>' + covAll + ' / ' + totalAll + ' covered</span><span>' + rows.length + ' files</span></div></div>'
         + '<div class="cr-actions"><a class="btn ghost" href="' + base + 'index.html" target="_blank" rel="noopener">Line-by-line ↗</a></div>'
