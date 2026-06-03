@@ -20,13 +20,13 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/fireba
 import { getAnalytics, isSupported } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-analytics.js";
 
 const firebaseConfig = {
-  apiKey:            "REPLACE_ME_API_KEY",
-  authDomain:        "REPLACE_ME.firebaseapp.com",
-  projectId:         "REPLACE_ME_PROJECT_ID",
-  storageBucket:     "REPLACE_ME.appspot.com",
-  messagingSenderId: "REPLACE_ME_SENDER_ID",
-  appId:             "REPLACE_ME_APP_ID",
-  measurementId:     "G-REPLACE_ME",
+  apiKey:            "AIzaSyCaNOq6fOJKUlEPGbJ-MnDPwsIc3-XNeW8",
+  authDomain:        "ai-jury.firebaseapp.com",
+  projectId:         "ai-jury",
+  storageBucket:     "ai-jury.firebasestorage.app",
+  messagingSenderId: "310027520210",
+  appId:             "1:310027520210:web:73ab7307d076a2c086c50b",
+  measurementId:     "G-72JDED64T7",
 };
 
 // Skip init while the placeholder config is still in place so local previews
