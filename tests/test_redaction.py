@@ -71,7 +71,7 @@ class RedactionTests(unittest.TestCase):
 
     def test_base64_style_secret_assignment(self):
         secret = "dGhpcytpcy9hPXNlY3JldA+b/c=="  # contains +, /, = and is 16+ chars
-        out, n = redact('api_key = "%s"' % secret)
+        out, n = redact(f'api_key = "{secret}"')
         self.assertEqual(n, 1)
         self.assertIn("[REDACTED:secret_assignment]", out)
         self.assertNotIn(secret, out)

@@ -12,6 +12,7 @@ Examples:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import sys
 from pathlib import Path
@@ -19,8 +20,8 @@ from pathlib import Path
 from . import __version__
 from . import doctor as doctor_module
 from .ci import evaluate_ci
-from .config import ConfigError, load_config, load_raw_config, validate_config
 from .classification import classify, label_strings
+from .config import ConfigError, load_config, load_raw_config, validate_config
 from .github import (
     apply_labels,
     post_inline_comments,
@@ -622,10 +623,8 @@ def _force_utf8_output() -> None:
     for stream in (sys.stdout, sys.stderr):
         reconfigure = getattr(stream, "reconfigure", None)
         if reconfigure is not None:
-            try:
+            with contextlib.suppress(ValueError, OSError):
                 reconfigure(encoding="utf-8")
-            except (ValueError, OSError):
-                pass
 
 
 def main(argv: list[str] | None = None) -> int:
