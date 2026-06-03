@@ -345,5 +345,19 @@ class RecommendationsTest(unittest.TestCase):
         self.assertIn("ready to run: yes", d.render_report(diag))
 
 
+class AvailabilityTests(unittest.TestCase):
+    def test_is_available_catches_exceptions(self):
+        orig = doctor.make_adapter
+        def _crashing_factory(spec, mock=False):
+            raise RuntimeError("adapter creation failed")
+
+        doctor.make_adapter = _crashing_factory
+        self.addCleanup(lambda: setattr(doctor, "make_adapter", orig))
+
+        # We can pass None as the spec since the factory doesn't check it
+        # before raising the exception.
+        self.assertFalse(doctor._is_available(None))
+
+
 if __name__ == "__main__":
     unittest.main()
