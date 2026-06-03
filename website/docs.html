@@ -135,7 +135,11 @@
     var nav = $("nav");
     var onScroll = function () { nav.classList.toggle("scrolled", window.scrollY > 8); };
     onScroll(); window.addEventListener("scroll", onScroll, { passive: true });
-    $("menu-btn").addEventListener("click", function () { sideEl.classList.toggle("collapsed"); });
+    $("menu-btn").addEventListener("click", function () {
+      var open = sideEl.classList.toggle("collapsed") === false;
+      this.setAttribute("aria-expanded", open ? "true" : "false");
+      this.innerHTML = open ? "✕ Close menu" : "☰ Docs menu";
+    });
 
     /* ---- sidebar ---- */
     function buildSidebar(activeSlug) {
@@ -284,7 +288,10 @@
       if (!slug) { renderHome(); }
       else { renderDoc(slug); }
       // collapse mobile menu after navigation
-      if (window.innerWidth <= 860) sideEl.classList.add("collapsed");
+      if (window.innerWidth <= 860) {
+        sideEl.classList.add("collapsed");
+        var mb = $("menu-btn"); if (mb) { mb.setAttribute("aria-expanded", "false"); mb.innerHTML = "☰ Docs menu"; }
+      }
     }
     window.addEventListener("hashchange", route);
     route();
