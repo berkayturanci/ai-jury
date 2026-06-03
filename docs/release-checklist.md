@@ -16,7 +16,7 @@ true to announce/publish) and **Nice-to-have** (improves polish, not a blocker).
       trusted-publisher setup); `publish.yml` publishes without a long-lived token.
 - [ ] Release artifacts include **checksums** (`SHA256SUMS`), a **CycloneDX SBOM**
       (`sbom.cdx.json`), and a **build-provenance attestation** — see
-      [docs/releasing.md](releasing.md) for how they are built and verified (#25).
+      [docs/releasing.md](releasing.md) for how they are built and verified.
 
 ### CI & quality
 - [ ] CI green on the full matrix (Python 3.11–3.13; Linux + macOS + Windows).

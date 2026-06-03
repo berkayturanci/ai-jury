@@ -216,7 +216,7 @@ Still future:
   agents; unnecessary for local subprocess / HTTP orchestration.
 
 
-## PR-level classification (issue #7)
+## PR-level classification
 
 After consensus, the jury derives a compact, **deterministic** PR-level
 classification from the structured findings, the consensus groups, and

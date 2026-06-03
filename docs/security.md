@@ -22,7 +22,7 @@ Two deliberate choices:
   positionally can cause `codex exec` to block waiting for stdin in
   non-interactive contexts (CI, hooks, headless shells). Piping the prompt in
   avoids that hang.
-- **`-s read-only` by default (secure-by-default, issue #100).** The diff is
+- **`-s read-only` by default (secure-by-default).** The diff is
   fetched by the jury process (via `gh`), not by the codex agent — the agent
   only needs to *read* its prompt and *print* a review. So the shipped default is
   a read-only sandbox: a prompt injection in the diff cannot make codex write
@@ -122,7 +122,7 @@ make the reviewers approve a bad change or suppress findings. This is a classic
 
    The audit is **advisory by default** (warnings surfaced in `run_jury`);
    `--strict` promotes these warnings to a hard failure. The shipped defaults are
-   **secure** (issue #100) and raise **no** warnings; the audit only fires when an
+   **secure** and raise **no** warnings; the audit only fires when an
    agent is widened (e.g. codex `-s danger-full-access`, or a bare
    `--dangerously-skip-permissions` without `--sandbox`).
 

@@ -325,7 +325,7 @@ trialing the tool with one CLI.
 
 ---
 
-## 8. Incremental review on PR updates (issue #9)
+## 8. Incremental review on PR updates
 
 Re-reviewing a large PR's full diff on every push is slow. With `--incremental`,
 the jury records the reviewed head SHA on its summary comment and, on the next
@@ -343,7 +343,7 @@ jury --pr 123 --incremental --post-summary
 The report's header states the scope (`Review scope: Incremental — …` or
 `Full — …`). The marker is a hidden HTML comment, so it is invisible to readers.
 
-## 9. Suggested patches for verified findings (issue #10)
+## 9. Suggested patches for verified findings
 
 `--suggest-patches` emits a **separate**, opt-in section that turns *verified*
 findings into inspectable fix suggestions. It is read-only — nothing is applied
@@ -357,7 +357,7 @@ jury --pr 123 --suggest-patches
 jury --diff-file changes.diff --suggest-patches --patches-out patches.md -o report.md
 ```
 
-## 10. Comment-triggered runs in GitHub Actions (issue #11)
+## 10. Comment-triggered runs in GitHub Actions
 
 The jury can be triggered from a PR comment such as `/jury review` or
 `/jury summary` via a workflow. Commands are parsed by an **allowlist**

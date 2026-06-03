@@ -1,7 +1,7 @@
 # Website
 
 The static landing site for `ai-jury`. Originated as a Claude Design handoff
-bundle (issue #159) and shipped here verbatim — `index.html`, `docs.html`,
+bundle and shipped here verbatim — `index.html`, `docs.html`,
 `coverage.html`, `coverage-report.html`, `404.html`, plus `styles.css`,
 `docs.css`, `app.js`, the favicon set, `site.webmanifest`, and the
 convergence logo + OG banner under `assets/`. No build step.

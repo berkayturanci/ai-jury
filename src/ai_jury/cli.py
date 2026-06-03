@@ -85,7 +85,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--max-rounds", type=int,
-        help="ceiling on adaptive rounds when early-stop is on (issue #40)",
+        help="ceiling on adaptive rounds when early-stop is on",
     )
     p.add_argument(
         "--early-stop", dest="early_stop", action="store_true", default=None,
@@ -97,7 +97,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--auto", dest="auto", action="store_true", default=None,
-        help="risk-aware auto-depth: scale rounds/verify to the diff (issue #120)",
+        help="risk-aware auto-depth: scale rounds/verify to the diff",
     )
     p.add_argument(
         "--no-auto", dest="auto", action="store_false",
@@ -105,11 +105,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--total-timeout", type=int,
-        help="overall wall-clock budget (seconds) for the whole run (issue #30)",
+        help="overall wall-clock budget (seconds) for the whole run",
     )
     p.add_argument(
         "--phase-timeout", type=int,
-        help="per-phase wall-clock budget (seconds) (issue #30)",
+        help="per-phase wall-clock budget (seconds)",
     )
     p.add_argument(
         "--retries", type=int,
@@ -117,7 +117,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--max-diff-bytes", type=int,
-        help="size budget for the (filtered) diff before chunking/too-large (issue #31)",
+        help="size budget for the (filtered) diff before chunking/too-large",
     )
     p.add_argument(
         "--chunk", dest="chunk", action="store_true", default=None,
@@ -196,13 +196,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--post-progress", dest="post_progress", action="store_true",
-        help="keep a live, sticky status comment on --pr updated per round/chunk "
-             "(issue #125)",
+        help="keep a live, sticky status comment on --pr updated per round/chunk",
     )
     p.add_argument(
         "--post-mode", choices=["single", "phased"], default="single",
         help="with --post-summary: 'single' (one comment) or 'phased' (separate "
-             "Round 1 / debate / decision comments) (issue #127)",
+             "Round 1 / debate / decision comments)",
     )
     p.add_argument(
         "--dry-run", dest="dry_run", action="store_true",
@@ -224,7 +223,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--cache", action="store_true",
         help="use the local result cache: reuse a cached outcome for an unchanged "
-             "diff+config, else run and store it (issue #33; off by default)",
+             "diff+config, else run and store it (off by default)",
     )
     p.add_argument(
         "--clear-cache", action="store_true",
@@ -238,7 +237,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--suggest-patches", dest="suggest_patches", action="store_true",
         help="emit a separate, opt-in suggested-patches section for VERIFIED "
-             "findings (read-only; never applied automatically) (issue #10)",
+             "findings (read-only; never applied automatically)",
     )
     p.add_argument(
         "--patches-out", metavar="PATH",
@@ -248,7 +247,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--incremental", action="store_true",
         help="review only the diff since the last jury run on --pr when a prior "
-             "marker exists, else fall back to a full review (issue #9)",
+             "marker exists, else fall back to a full review",
     )
     p.add_argument("-q", "--quiet", action="store_true", help="suppress progress logs on stderr")
     p.add_argument(
