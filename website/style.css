@@ -187,7 +187,7 @@ pre.toml { margin: 0; max-height: 360px; overflow: auto; }
   padding: 0.1rem 0.45rem; margin-left: 0.35rem; border-radius: 999px;
   background: var(--bg-soft); border: 1px solid var(--border); color: var(--muted);
 }
-.badges { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0 0 1rem; }
+.badges { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.4rem; margin: 0 0 1rem; }
 .badges img { height: 20px; display: block; }
 
 /* ---- "Run review" demo: console + GitHub-style comments -------------- */
