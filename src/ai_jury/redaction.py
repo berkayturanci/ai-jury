@@ -10,7 +10,7 @@ import re
 # Ordered list of (kind, compiled pattern). Order matters: more specific
 # patterns run before the generic key=value catch-all so secrets are labeled
 # with the most informative kind.
-_PATTERNS: list[tuple[str, "re.Pattern"]] = [
+_PATTERNS: list[tuple[str, re.Pattern]] = [
     ("pem_private_key", re.compile(
         r"-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----"
         r".*?-----END (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----",

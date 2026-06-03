@@ -16,7 +16,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from ai_jury import doctor  # noqa: E402
 
-
 VALID_CONFIG = """\
 [jury]
 rounds = 2
@@ -41,10 +40,10 @@ enabled = false
 # A config carrying a fake secret in string fields. The doctor summary must
 # redact it so it never appears in any rendered output or JSON.
 SECRET = "sk-ABCDEF0123456789ABCDEF0123456789secretvalue"
-SECRET_CONFIG = """\
+SECRET_CONFIG = f"""\
 [jury]
 rounds = 1
-chair = "token={secret}"
+chair = "token={SECRET}"
 
 [jury.context]
 mode = "diff-only"
@@ -54,7 +53,7 @@ name = "claude"
 vendor = "anthropic"
 command = "ls"
 enabled = true
-""".format(secret=SECRET)
+"""
 
 
 def _write_config(text):
