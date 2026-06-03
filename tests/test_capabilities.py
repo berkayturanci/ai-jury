@@ -27,7 +27,7 @@ class _FakeCompleted:
 
 
 def _spec(**kw):
-    base = {"name": "claude", "vendor": "anthropic", "command": "claude"}
+    base = dict(name="claude", vendor="anthropic", command="claude")
     base.update(kw)
     return AgentSpec(**base)
 

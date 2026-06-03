@@ -18,7 +18,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from ai_jury import orchestrator  # noqa: E402
+from ai_jury import orchestrator, prompts  # noqa: E402
 from ai_jury.adapters import AgentResult  # noqa: E402
 from ai_jury.config import DEFAULT_CONFIG, JuryConfig, _from_dict  # noqa: E402
 from ai_jury.orchestrator import (  # noqa: E402

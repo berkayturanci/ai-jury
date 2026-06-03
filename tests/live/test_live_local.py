@@ -53,8 +53,8 @@ class LocalLiveSmokeTest(unittest.TestCase):
         from ai_jury.config import (
             CiConfig,
             ContextConfig,
-            DiffConfig,
             JuryConfig,
+            DiffConfig,
         )
 
         cfg = JuryConfig(

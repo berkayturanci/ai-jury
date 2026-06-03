@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from .findings import SEVERITY_ORDER, Finding
+from .findings import Finding, SEVERITY_ORDER
 
 # Buckets describing how broadly a finding was raised.
 BUCKET_CONSENSUS = "consensus"
@@ -48,7 +48,8 @@ def _normalize_path(path) -> str:
 def _normalize_claim(claim) -> str:
     text = (claim or "").lower()
     text = re.sub(r"[^a-z0-9\s]+", " ", text)
-    return re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
 
 
 def _tokens(claim_norm: str) -> set[str]:

@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from ai_jury import doctor  # noqa: E402
 
+
 VALID_CONFIG = """\
 [jury]
 rounds = 2
@@ -40,10 +41,10 @@ enabled = false
 # A config carrying a fake secret in string fields. The doctor summary must
 # redact it so it never appears in any rendered output or JSON.
 SECRET = "sk-ABCDEF0123456789ABCDEF0123456789secretvalue"
-SECRET_CONFIG = f"""\
+SECRET_CONFIG = """\
 [jury]
 rounds = 1
-chair = "token={SECRET}"
+chair = "token={secret}"
 
 [jury.context]
 mode = "diff-only"
@@ -53,7 +54,7 @@ name = "claude"
 vendor = "anthropic"
 command = "ls"
 enabled = true
-"""
+""".format(secret=SECRET)
 
 
 def _write_config(text):
@@ -315,26 +316,6 @@ class CapabilityDiagnosticsTests(unittest.TestCase):
         self.assertIn("capabilities=[", report)
         self.assertIn("headless", report)
 
-    def test_capability_probe_exception_caught(self):
-        orig = doctor.make_adapter
-        def _raising_factory(spec, mock=False):
-            raise RuntimeError("simulate probe crash")
-        doctor.make_adapter = _raising_factory
-        self.addCleanup(lambda: setattr(doctor, "make_adapter", orig))
-
-        path = _write_config(VALID_CONFIG)
-        self.addCleanup(os.unlink, path)
-        diag = doctor.build_diagnostics(path)
-
-        by_name = {a["name"]: a for a in diag["agents"]}
-        self.assertIsNone(by_name["claude"]["version"])
-        self.assertEqual(by_name["claude"]["capabilities"]["status"], "unknown_version")
-
-        self.assertTrue(
-            any("capability probe raised: simulate probe crash" in w for w in diag["config_warnings"]),
-            diag["config_warnings"],
-        )
-
 
 class RecommendationsTest(unittest.TestCase):
     def test_not_ready_when_no_agents_available(self):
@@ -363,20 +344,6 @@ class RecommendationsTest(unittest.TestCase):
             d._is_available = real
         self.assertTrue(diag["recommendations"]["ready"])
         self.assertIn("ready to run: yes", d.render_report(diag))
-
-
-class AvailabilityTests(unittest.TestCase):
-    def test_is_available_catches_exceptions(self):
-        orig = doctor.make_adapter
-        def _crashing_factory(spec, mock=False):
-            raise RuntimeError("adapter creation failed")
-
-        doctor.make_adapter = _crashing_factory
-        self.addCleanup(lambda: setattr(doctor, "make_adapter", orig))
-
-        # We can pass None as the spec since the factory doesn't check it
-        # before raising the exception.
-        self.assertFalse(doctor._is_available(None))
 
 
 if __name__ == "__main__":

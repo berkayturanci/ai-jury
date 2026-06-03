@@ -72,7 +72,7 @@ class Finding:
             self.line = None
 
     @classmethod
-    def from_obj(cls, obj: dict, reviewer: str) -> Finding:
+    def from_obj(cls, obj: dict, reviewer: str) -> "Finding":
         """Build a Finding from a decoded JSON object, forcing ``reviewer``."""
         return cls(
             severity=str(obj.get("severity", _DEFAULT_SEVERITY)),
@@ -156,7 +156,7 @@ class Verdict:
     reasoning: str = ""
 
 
-def parse_verdicts(text: str, verifier: str = "") -> tuple[list[Verdict], list[str]]:
+def parse_verdicts(text: str, verifier: str = "") -> tuple[list["Verdict"], list[str]]:
     """Extract verification verdicts from a verifier's raw output.
 
     The verifier is asked to emit a fenced ```json block holding a JSON array of
