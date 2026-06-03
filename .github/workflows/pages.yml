@@ -1,11 +1,10 @@
 name: Deploy website (GitHub Pages)
 
 on:
+  # Deploy on any push to main so the published coverage report/badge stay
+  # current with the code, plus on-demand.
   push:
     branches: [main]
-    paths:
-      - "website/**"
-      - ".github/workflows/pages.yml"
   workflow_dispatch:
 
 permissions:
@@ -26,6 +25,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2 (pinned 2026-05-30)
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0 (updated 2026-05-31)
+        with:
+          python-version: "3.13"
+      # Build a browsable HTML coverage report + a self-hosted shields-endpoint
+      # badge, both published as part of the site (no external service).
+      - name: Generate coverage report + badge
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+          python -m coverage run -m unittest discover -s tests
+          python -m coverage html -d website/coverage
+          python -m coverage json -o coverage.json
+          python - <<'PY'
+          import json
+          pct = round(json.load(open("coverage.json"))["totals"]["percent_covered"])
+          color = ("brightgreen" if pct >= 90 else "green" if pct >= 80
+                   else "yellowgreen" if pct >= 70 else "yellow" if pct >= 60 else "red")
+          json.dump(
+              {"schemaVersion": 1, "label": "coverage", "message": f"{pct}%", "color": color},
+              open("website/coverage-badge.json", "w"),
+          )
+          print(f"coverage badge: {pct}% ({color})")
+          PY
       - name: Configure Pages
         uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b  # v5 (pinned 2026-05-31)
       - name: Upload site artifact

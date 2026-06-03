@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Published **test-coverage report + badge** on the project site (no external
+  service): the Pages deploy now runs the suite under coverage, publishes a
+  browsable HTML report at `/coverage/`, and writes a shields-endpoint badge
+  (`coverage-badge.json`) shown in the README and site badge row.
+
 ## [1.0.0] - 2026-06-03
 
 First public release. `ai-jury` orchestrates native coding-agent CLIs (Claude

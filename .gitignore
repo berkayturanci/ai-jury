@@ -26,3 +26,8 @@ htmlcov/
 __pycache__/
 *.pyc
 cache/
+
+# CI-generated coverage report + badge (published to Pages, not committed)
+website/coverage/
+website/coverage-badge.json
+coverage.json
