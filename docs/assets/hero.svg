@@ -1,110 +1,107 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="520" viewBox="0 0 1200 520" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" role="img" aria-label="ai-jury: a diff enters; four reviewers — Claude Code, Codex, Antigravity, and a free local/open-weight model — review it independently and debate; a chair agent verifies findings and synthesizes one verdict and report.">
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" font-family="&#39;Space Grotesk&#39;, -apple-system, BlinkMacSystemFont, &#39;Segoe UI&#39;, Roboto, sans-serif" role="img" aria-label="ai-jury: a diff enters; four reviewers — Claude Code, Codex, Antigravity, and a free local model — review it, debate, and a chair verifies and synthesizes one verdict.">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#0f172a"/>
-      <stop offset="1" stop-color="#1e293b"/>
+      <stop offset="0" stop-color="#0b1020"></stop>
+      <stop offset="1" stop-color="#080b16"></stop>
     </linearGradient>
-    <linearGradient id="chair" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#6366f1"/>
-      <stop offset="1" stop-color="#4f46e5"/>
+    <radialGradient id="glow" cx="78%" cy="0%" r="70%">
+      <stop offset="0" stop-color="#6366f1" stop-opacity="0.28"></stop>
+      <stop offset="1" stop-color="#6366f1" stop-opacity="0"></stop>
+    </radialGradient>
+    <radialGradient id="glow2" cx="8%" cy="100%" r="60%">
+      <stop offset="0" stop-color="#a855f7" stop-opacity="0.18"></stop>
+      <stop offset="1" stop-color="#a855f7" stop-opacity="0"></stop>
+    </radialGradient>
+    <linearGradient id="core" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#818cf8"></stop>
+      <stop offset="1" stop-color="#4f46e5"></stop>
     </linearGradient>
-    <linearGradient id="verdict" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#10b981"/>
-      <stop offset="1" stop-color="#059669"/>
+    <linearGradient id="verd" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#10b981"></stop>
+      <stop offset="1" stop-color="#059669"></stop>
     </linearGradient>
-    <linearGradient id="mark" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#6366f1"/>
-      <stop offset="1" stop-color="#818cf8"/>
+    <linearGradient id="title" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#818cf8"></stop>
+      <stop offset="0.7" stop-color="#a855f7"></stop>
+      <stop offset="1" stop-color="#818cf8"></stop>
     </linearGradient>
   </defs>
 
-  <rect width="1200" height="520" rx="20" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="url(#bg)"></rect>
+  <rect width="1200" height="630" fill="url(#glow)"></rect>
+  <rect width="1200" height="630" fill="url(#glow2)"></rect>
 
-  <!-- title + tagline -->
-  <g transform="translate(60,38) scale(0.72)">
-    <rect width="64" height="64" rx="14" fill="url(#mark)"/>
-    <path d="M13 25 L32 12 L51 25 Z" fill="#fff"/>
-    <rect x="14" y="27" width="36" height="4" rx="1" fill="#fff"/>
-    <rect x="19.75" y="33" width="4.5" height="15" fill="#fff"/>
-    <rect x="29.75" y="33" width="4.5" height="15" fill="#fff"/>
-    <rect x="39.75" y="33" width="4.5" height="15" fill="#fff"/>
-    <rect x="13" y="50" width="38" height="4.5" rx="1.5" fill="#fff"/>
-  </g>
-  <text x="120" y="78" fill="#f8fafc" font-size="38" font-weight="700">ai-jury</text>
-  <text x="60" y="118" fill="#94a3b8" font-size="20" font-weight="400">Install once. Run a cross-vendor review jury anywhere.</text>
-
-  <!-- input: diff / PR -->
-  <g>
-    <rect x="60" y="222" width="150" height="120" rx="14" fill="#111827" stroke="#334155" stroke-width="1.5"/>
-    <text x="135" y="270" fill="#cbd5e1" font-size="17" font-weight="600" text-anchor="middle">diff / PR</text>
-    <text x="135" y="298" fill="#64748b" font-size="13" text-anchor="middle">gh · file · stdin</text>
-    <text x="135" y="318" fill="#64748b" font-size="13" text-anchor="middle">redact · filter · chunk</text>
+  
+  <g transform="translate(64,54)">
+    <rect width="56" height="56" rx="14" fill="#0f172a" stroke="#25304b"></rect>
+    <circle cx="28" cy="28" r="16.5" fill="none" stroke="#334155" stroke-width="1.5"></circle>
+    <g stroke="#475569" stroke-width="1.6" stroke-linecap="round">
+      <line x1="28" y1="28" x2="28" y2="12.5"></line><line x1="28" y1="28" x2="43.5" y2="28"></line>
+      <line x1="28" y1="28" x2="28" y2="43.5"></line><line x1="28" y1="28" x2="12.5" y2="28"></line>
+    </g>
+    <circle cx="28" cy="12.5" r="4" fill="#d97757"></circle><circle cx="43.5" cy="28" r="4" fill="#10a37f"></circle>
+    <circle cx="28" cy="43.5" r="4" fill="#4285f4"></circle><circle cx="12.5" cy="28" r="4" fill="#a855f7"></circle>
+    <circle cx="28" cy="28" r="7.4" fill="url(#core)"></circle>
+    <path d="M24.8 28.2 L27 30.4 L31.2 26" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+    <text x="72" y="38" fill="#f3f6fc" font-size="34" font-weight="700" letter-spacing="-0.5">ai-jury</text>
   </g>
 
-  <!-- arrow in -->
-  <line x1="210" y1="282" x2="270" y2="282" stroke="#475569" stroke-width="2.5"/>
-  <polygon points="270,282 260,276 260,288" fill="#475569"/>
+  
+  <text x="64" y="186" fill="#f3f6fc" font-size="52" font-weight="700" letter-spacing="-1.5">Install once. Run a</text>
+  <text x="64" y="246" fill="url(#title)" font-size="52" font-weight="700" letter-spacing="-1.5">cross-vendor review jury</text>
+  <text x="64" y="306" fill="#f3f6fc" font-size="52" font-weight="700" letter-spacing="-1.5">anywhere.</text>
+  <text x="66" y="350" fill="#9aa8c4" font-size="20" font-weight="400" font-family="&#39;IBM Plex Sans&#39;, sans-serif">Native coding-agent CLIs + a free local model review the same diff, debate, and synthesize one verdict.</text>
 
-  <!-- four reviewers (parallel, independent) -->
-  <g>
-    <rect x="280" y="140" width="230" height="62" rx="12" fill="#0b1220" stroke="#475569" stroke-width="1.5"/>
-    <circle cx="312" cy="171" r="9" fill="#d97757"/>
-    <text x="332" y="167" fill="#f1f5f9" font-size="16" font-weight="600">Claude Code</text>
-    <text x="332" y="187" fill="#64748b" font-size="12">claude -p</text>
+  
+  <g transform="translate(66,408) scale(0.925)">
+    
+    <g stroke="#25304b" stroke-width="2" fill="none">
+      <line x1="150" y1="84" x2="196" y2="84"></line>
+      <line x1="470" y1="84" x2="516" y2="84"></line>
+      <line x1="640" y1="84" x2="686" y2="84"></line>
+      <line x1="810" y1="84" x2="856" y2="84"></line>
+    </g>
+    <circle cx="173" cy="84" r="3.5" fill="#818cf8"></circle>
+    <circle cx="663" cy="84" r="3.5" fill="#818cf8"></circle>
+    <circle cx="833" cy="84" r="3.5" fill="#818cf8"></circle>
 
-    <rect x="280" y="212" width="230" height="62" rx="12" fill="#0b1220" stroke="#475569" stroke-width="1.5"/>
-    <circle cx="312" cy="243" r="9" fill="#10a37f"/>
-    <text x="332" y="239" fill="#f1f5f9" font-size="16" font-weight="600">Codex</text>
-    <text x="332" y="259" fill="#64748b" font-size="12">codex exec</text>
+    
+    <rect x="0" y="48" width="150" height="72" rx="14" fill="#0f1526" stroke="#25304b"></rect>
+    <text x="75" y="80" fill="#5d6b89" font-size="11" font-weight="600" letter-spacing="1" text-anchor="middle" font-family="&#39;JetBrains Mono&#39;, monospace">INPUT</text>
+    <text x="75" y="102" fill="#f3f6fc" font-size="18" font-weight="600" text-anchor="middle">diff / PR</text>
 
-    <rect x="280" y="284" width="230" height="62" rx="12" fill="#0b1220" stroke="#475569" stroke-width="1.5"/>
-    <circle cx="312" cy="315" r="9" fill="#4285f4"/>
-    <text x="332" y="311" fill="#f1f5f9" font-size="16" font-weight="600">Antigravity</text>
-    <text x="332" y="331" fill="#64748b" font-size="12">agy --print</text>
+    
+    <g>
+      <rect x="196" y="2" width="274" height="40" rx="10" fill="#0f1526" stroke="#d97757"></rect>
+      <circle cx="216" cy="22" r="5" fill="#d97757"></circle><text x="230" y="27" fill="#f3f6fc" font-size="15" font-weight="600">Claude Code</text><text x="450" y="27" fill="#5d6b89" font-size="12" text-anchor="end" font-family="&#39;JetBrains Mono&#39;, monospace">claude</text>
+      <rect x="196" y="48" width="274" height="40" rx="10" fill="#0f1526" stroke="#10a37f"></rect>
+      <circle cx="216" cy="68" r="5" fill="#10a37f"></circle><text x="230" y="73" fill="#f3f6fc" font-size="15" font-weight="600">Codex</text><text x="450" y="73" fill="#5d6b89" font-size="12" text-anchor="end" font-family="&#39;JetBrains Mono&#39;, monospace">codex</text>
+      <rect x="196" y="94" width="274" height="40" rx="10" fill="#0f1526" stroke="#4285f4"></rect>
+      <circle cx="216" cy="114" r="5" fill="#4285f4"></circle><text x="230" y="119" fill="#f3f6fc" font-size="15" font-weight="600">Antigravity</text><text x="450" y="119" fill="#5d6b89" font-size="12" text-anchor="end" font-family="&#39;JetBrains Mono&#39;, monospace">agy</text>
+      <rect x="196" y="140" width="274" height="40" rx="10" fill="#0f1526" stroke="#a855f7"></rect>
+      <circle cx="216" cy="160" r="5" fill="#a855f7"></circle><text x="230" y="165" fill="#f3f6fc" font-size="15" font-weight="600">Local / open-weight</text><text x="452" y="165" fill="#34d399" font-size="11" text-anchor="end" font-family="&#39;JetBrains Mono&#39;, monospace">free</text>
+    </g>
 
-    <rect x="280" y="356" width="230" height="62" rx="12" fill="#0b1220" stroke="#a855f7" stroke-width="1.5"/>
-    <circle cx="312" cy="387" r="9" fill="#a855f7"/>
-    <text x="332" y="383" fill="#f1f5f9" font-size="16" font-weight="600">Local / open-weight</text>
-    <text x="332" y="403" fill="#94a3b8" font-size="12">Ollama /v1 · free · offline</text>
+    
+    <rect x="516" y="48" width="124" height="72" rx="14" fill="#0f1526" stroke="#25304b"></rect>
+    <text x="578" y="80" fill="#5d6b89" font-size="11" font-weight="600" letter-spacing="1" text-anchor="middle" font-family="&#39;JetBrains Mono&#39;, monospace">ROUND 2</text>
+    <text x="578" y="102" fill="#f3f6fc" font-size="17" font-weight="600" text-anchor="middle">debate ⇄</text>
+
+    <rect x="686" y="48" width="124" height="72" rx="14" fill="#0f1526" stroke="#25304b"></rect>
+    <text x="748" y="80" fill="#5d6b89" font-size="11" font-weight="600" letter-spacing="1" text-anchor="middle" font-family="&#39;JetBrains Mono&#39;, monospace">CHECK</text>
+    <text x="748" y="102" fill="#f3f6fc" font-size="17" font-weight="600" text-anchor="middle">verify</text>
+
+    
+    <rect x="856" y="48" width="124" height="72" rx="14" fill="#0f1526" stroke="#3a3f8a"></rect>
+    <text x="918" y="80" fill="#5d6b89" font-size="11" font-weight="600" letter-spacing="1" text-anchor="middle" font-family="&#39;JetBrains Mono&#39;, monospace">SYNTHESIS</text>
+    <text x="918" y="102" fill="#818cf8" font-size="18" font-weight="700" text-anchor="middle">chair</text>
+
+    
+    <rect x="996" y="48" width="156" height="72" rx="14" fill="#0f1526" stroke="#10b981"></rect>
+    <text x="1074" y="78" fill="#5d6b89" font-size="11" font-weight="600" letter-spacing="1" text-anchor="middle" font-family="&#39;JetBrains Mono&#39;, monospace">VERDICT</text>
+    <rect x="1018" y="86" width="112" height="26" rx="7" fill="url(#verd)"></rect>
+    <text x="1074" y="104" fill="#ffffff" font-size="14" font-weight="700" text-anchor="middle">✓ APPROVE</text>
   </g>
 
-  <!-- debate arrows between adjacent reviewers -->
-  <g stroke="#6366f1" stroke-width="2" opacity="0.8">
-    <line x1="395" y1="202" x2="395" y2="212"/>
-    <line x1="395" y1="274" x2="395" y2="284"/>
-    <line x1="395" y1="346" x2="395" y2="356"/>
-  </g>
-  <text x="448" y="129" fill="#818cf8" font-size="13" font-weight="600" text-anchor="middle">debate ⇄</text>
-
-  <!-- arrows reviewers -> chair -->
-  <g stroke="#475569" stroke-width="2.5" fill="none">
-    <path d="M510 171 C 590 171, 600 232, 660 238"/>
-    <path d="M510 243 C 590 243, 610 252, 660 256"/>
-    <path d="M510 315 C 590 315, 610 276, 660 272"/>
-    <path d="M510 387 C 590 387, 600 296, 660 288"/>
-  </g>
-
-  <!-- chair -->
-  <rect x="660" y="212" width="190" height="100" rx="14" fill="url(#chair)"/>
-  <text x="755" y="252" fill="#ffffff" font-size="18" font-weight="700" text-anchor="middle">chair agent</text>
-  <text x="755" y="278" fill="#e0e7ff" font-size="13" text-anchor="middle">verifies findings</text>
-  <text x="755" y="296" fill="#e0e7ff" font-size="13" text-anchor="middle">+ synthesizes</text>
-
-  <!-- arrow chair -> verdict -->
-  <line x1="850" y1="262" x2="912" y2="262" stroke="#475569" stroke-width="2.5"/>
-  <polygon points="912,262 902,256 902,268" fill="#475569"/>
-
-  <!-- verdict / report -->
-  <rect x="922" y="202" width="218" height="120" rx="14" fill="url(#verdict)"/>
-  <text x="1031" y="246" fill="#ffffff" font-size="18" font-weight="700" text-anchor="middle">one verdict</text>
-  <text x="1031" y="272" fill="#d1fae5" font-size="13" text-anchor="middle">APPROVE · COMMENT</text>
-  <text x="1031" y="290" fill="#d1fae5" font-size="13" text-anchor="middle">REQUEST CHANGES</text>
-  <text x="1031" y="308" fill="#d1fae5" font-size="13" text-anchor="middle">+ report · CI gate</text>
-
-  <!-- phase labels -->
-  <text x="395" y="448" fill="#64748b" font-size="13" text-anchor="middle">round 1: independent review (incl. local)</text>
-  <text x="755" y="448" fill="#64748b" font-size="13" text-anchor="middle">round 2 (adaptive) · verify · synthesis</text>
-
-  <!-- footer note -->
-  <text x="60" y="492" fill="#475569" font-size="13">Native vendor CLIs + a free local / open-weight model — not API calls. Stdlib-only Python. Local-first.</text>
+  <text x="64" y="612" fill="#5d6b89" font-size="14" font-family="&#39;JetBrains Mono&#39;, monospace">stdlib-only Python · local-first · MIT · not API calls</text>
 </svg>
