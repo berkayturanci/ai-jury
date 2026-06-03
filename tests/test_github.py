@@ -52,14 +52,14 @@ class TestGithubFunctions(unittest.TestCase):
         mock_gh.return_value = "diff output"
         result = github.pr_diff("123")
         self.assertEqual(result, "diff output")
-        mock_gh.assert_called_once_with("pr", "diff", "123")
+        mock_gh.assert_called_once_with("pr", "diff", "--", "123")
 
     @mock.patch("ai_jury.github._gh")
     def test_pr_diff_with_repo(self, mock_gh):
         mock_gh.return_value = "diff output"
         result = github.pr_diff("123", repo="org/repo")
         self.assertEqual(result, "diff output")
-        mock_gh.assert_called_once_with("pr", "diff", "123", "--repo", "org/repo")
+        mock_gh.assert_called_once_with("pr", "diff", "--repo", "org/repo", "--", "123")
 
     @mock.patch("ai_jury.github._gh")
     def test_pr_context_success(self, mock_gh):
@@ -77,7 +77,7 @@ class TestGithubFunctions(unittest.TestCase):
     @mock.patch("ai_jury.github._gh")
     def test_post_pr_comment(self, mock_gh):
         github.post_pr_comment("123", "my comment", repo="org/repo")
-        mock_gh.assert_called_once_with("pr", "comment", "123", "--body", "my comment", "--repo", "org/repo")
+        mock_gh.assert_called_once_with("pr", "comment", "--body", "my comment", "--repo", "org/repo", "--", "123")
 
     @mock.patch("ai_jury.github._gh")
     def test_pr_head_sha_success(self, mock_gh):
