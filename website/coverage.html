@@ -10,7 +10,7 @@
     })();
   </script>
   <title>Test coverage — ai-jury</title>
-  <meta name="description" content="Test coverage for ai-jury — branch coverage measured with coverage.py, gated at a minimum 80% in CI. Browse the full line-by-line report." />
+  <meta name="description" content="Test coverage for ai-jury — branch coverage measured with coverage.py, gated at a minimum 98% in CI. Browse the full line-by-line report." />
   <meta name="theme-color" content="#6366f1" />
   <link rel="canonical" href="https://berkayturanci.github.io/ai-jury/coverage.html" />
   <meta name="robots" content="index, follow" />
@@ -22,11 +22,11 @@
   <meta property="og:site_name" content="ai-jury" />
   <meta property="og:url" content="https://berkayturanci.github.io/ai-jury/coverage.html" />
   <meta property="og:title" content="Test coverage — ai-jury" />
-  <meta property="og:description" content="Branch coverage measured with coverage.py, gated at a minimum 80% in CI. Browse the full report." />
+  <meta property="og:description" content="Branch coverage measured with coverage.py, gated at a minimum 98% in CI. Browse the full report." />
   <meta property="og:image" content="assets/og-banner.png" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Test coverage — ai-jury" />
-  <meta name="twitter:description" content="Branch coverage measured with coverage.py, gated at a minimum 80% in CI." />
+  <meta name="twitter:description" content="Branch coverage measured with coverage.py, gated at a minimum 98% in CI." />
   <meta name="twitter:image" content="assets/og-banner.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -57,14 +57,39 @@
   <div class="docs-shell wrap">
     <!-- Sidebar / table of contents -->
     <aside class="docs-side">
-      <p class="ds-label">Docs</p>
+      <p class="ds-label">Documentation</p>
       <nav class="ds-nav">
-        <a class="ds-link" href="docs.html">All documentation</a>
+        <a class="ds-link" href="docs.html">Home</a>
         <a class="ds-link active" href="coverage.html">Test coverage</a>
+      </nav>
+      <p class="ds-label">Overview</p>
+      <nav class="ds-nav">
+        <a class="ds-link" href="docs.html#positioning">Positioning</a>
         <a class="ds-link" href="docs.html#architecture">Architecture</a>
+        <a class="ds-link" href="docs.html#feasibility">Feasibility &amp; prior art</a>
+        <a class="ds-link" href="docs.html#comparison">Ecosystem comparison</a>
+      </nav>
+      <p class="ds-label">Guides</p>
+      <nav class="ds-nav">
         <a class="ds-link" href="docs.html#configuration">Configuration</a>
-        <a class="ds-link" href="docs.html#comparison">Comparison</a>
+        <a class="ds-link" href="docs.html#cookbook">Cookbook</a>
+        <a class="ds-link" href="docs.html#platforms">Platform support</a>
+        <a class="ds-link" href="docs.html#skill">Skill packaging</a>
         <a class="ds-link" href="docs.html#security">Security</a>
+      </nav>
+      <p class="ds-label">Examples</p>
+      <nav class="ds-nav">
+        <a class="ds-link" href="docs.html#example-run">Example run</a>
+        <a class="ds-link" href="docs.html#example-live-review">Live review</a>
+      </nav>
+      <p class="ds-label">Reference</p>
+      <nav class="ds-nav">
+        <a class="ds-link" href="docs.html#report-format">Report format</a>
+      </nav>
+      <p class="ds-label">Project</p>
+      <nav class="ds-nav">
+        <a class="ds-link" href="docs.html#releasing">Releasing</a>
+        <a class="ds-link" href="docs.html#release-checklist">Release checklist</a>
       </nav>
       <p class="ds-label">On this page</p>
       <nav class="ds-nav">
@@ -107,7 +132,7 @@
 
       <section id="threshold" class="docs-block">
         <h2>Threshold &amp; gate</h2>
-        <p>The minimum total coverage is <strong>80%</strong>, configured once in <code>pyproject.toml</code> under <code>[tool.coverage.report] fail_under</code> and enforced by a dedicated <code>coverage</code> job in CI (Ubuntu / Python 3.13). CI fails if total coverage drops below that floor. The gate runs in a single job rather than across the whole matrix to keep CI cheap and free of cross-OS path noise.</p>
+        <p>The minimum total coverage is <strong>98%</strong>, configured once in <code>pyproject.toml</code> under <code>[tool.coverage.report] fail_under</code> and enforced by a dedicated <code>coverage</code> job in CI (Ubuntu / Python 3.13). CI fails if total coverage drops below that floor. The gate runs in a single job rather than across the whole matrix to keep CI cheap and free of cross-OS path noise.</p>
       </section>
 
       <section id="measured" class="docs-block">
@@ -177,8 +202,8 @@ python3 <span class="k">-m</span> coverage report</code></pre>
           arc.style.strokeDashoffset = C * (1 - clamped / 100);
         });
         var state = document.getElementById("cov-state");
-        if (pct >= 80) { state.textContent = "Above the 80% gate"; state.className = "cov-state ok"; }
-        else { state.textContent = "Below the 80% gate"; state.className = "cov-state warn"; }
+        if (pct >= 98) { state.textContent = "Above the 98% gate"; state.className = "cov-state ok"; }
+        else { state.textContent = "Below the 98% gate"; state.className = "cov-state warn"; }
       }
 
       // fetch the published shields-endpoint JSON (relative on Pages; absolute fallback elsewhere)

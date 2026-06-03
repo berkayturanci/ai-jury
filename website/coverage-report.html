@@ -61,8 +61,8 @@
     .cr-sort button:hover { color: var(--text); border-color: var(--accent-line); }
     .cr-sort button.on { color: var(--accent-2); border-color: var(--accent-line); background: var(--accent-soft); }
 
-    .cr-table-wrap { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--surface); }
-    table.cr { width: 100%; border-collapse: collapse; font-size: .9rem; }
+    .cr-table-wrap { border: 1px solid var(--border); border-radius: var(--radius); overflow-x: auto; background: var(--surface); }
+    table.cr { width: 100%; border-collapse: collapse; font-size: .9rem; min-width: 520px; }
     table.cr thead th { background: var(--surface-2); font-family: var(--font-display); font-weight: 600; font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); text-align: left; padding: .7rem .9rem; }
     table.cr thead th.num { text-align: right; }
     table.cr td { padding: .6rem .9rem; border-top: 1px solid var(--border-soft); vertical-align: middle; }
@@ -102,8 +102,45 @@
     </div>
   </nav>
 
-  <div class="wrap" style="padding-top:2rem;padding-bottom:4rem">
-    <div class="docs-main cov-report" style="margin:0 auto">
+  <div class="docs-shell wrap">
+    <aside class="docs-side">
+      <p class="ds-label">Documentation</p>
+      <nav class="ds-nav">
+        <a class="ds-link" href="docs.html">Home</a>
+        <a class="ds-link active" href="coverage.html">Test coverage</a>
+      </nav>
+      <p class="ds-label">Overview</p>
+      <nav class="ds-nav">
+        <a class="ds-link" href="docs.html#positioning">Positioning</a>
+        <a class="ds-link" href="docs.html#architecture">Architecture</a>
+        <a class="ds-link" href="docs.html#feasibility">Feasibility &amp; prior art</a>
+        <a class="ds-link" href="docs.html#comparison">Ecosystem comparison</a>
+      </nav>
+      <p class="ds-label">Guides</p>
+      <nav class="ds-nav">
+        <a class="ds-link" href="docs.html#configuration">Configuration</a>
+        <a class="ds-link" href="docs.html#cookbook">Cookbook</a>
+        <a class="ds-link" href="docs.html#platforms">Platform support</a>
+        <a class="ds-link" href="docs.html#skill">Skill packaging</a>
+        <a class="ds-link" href="docs.html#security">Security</a>
+      </nav>
+      <p class="ds-label">Examples</p>
+      <nav class="ds-nav">
+        <a class="ds-link" href="docs.html#example-run">Example run</a>
+        <a class="ds-link" href="docs.html#example-live-review">Live review</a>
+      </nav>
+      <p class="ds-label">Reference</p>
+      <nav class="ds-nav">
+        <a class="ds-link" href="docs.html#report-format">Report format</a>
+      </nav>
+      <p class="ds-label">Project</p>
+      <nav class="ds-nav">
+        <a class="ds-link" href="docs.html#releasing">Releasing</a>
+        <a class="ds-link" href="docs.html#release-checklist">Release checklist</a>
+      </nav>
+    </aside>
+
+    <main class="docs-main cov-report">
       <div class="crumbs"><a href="coverage.html">Test coverage</a> <span>/</span> <span>Full report</span></div>
       <p class="docs-kicker" style="margin-top:.2rem">Quality</p>
       <h1 class="docs-h1">Coverage report</h1>
@@ -112,7 +149,7 @@
       <div id="cr-root">
         <div class="doc-loading"><div class="doc-spinner"></div>Loading coverage data…</div>
       </div>
-    </div>
+    </main>
   </div>
 
   <script>

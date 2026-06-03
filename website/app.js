@@ -30,6 +30,23 @@
     window.addEventListener("scroll", onScroll, { passive: true });
   })();
 
+  /* ---- Mobile hamburger menu ---------------------------------------- */
+  (function () {
+    var burger = $("nav-burger"), menu = $("nav-mobile");
+    if (!burger || !menu) return;
+    function setOpen(open) {
+      burger.classList.toggle("open", open);
+      menu.classList.toggle("open", open);
+      burger.setAttribute("aria-expanded", open ? "true" : "false");
+      burger.setAttribute("aria-label", open ? "Close menu" : "Open menu");
+    }
+    burger.addEventListener("click", function () { setOpen(!menu.classList.contains("open")); });
+    // close after navigating
+    qa(".nav-mlink", menu).forEach(function (a) { a.addEventListener("click", function () { setOpen(false); }); });
+    // close if resized to desktop
+    window.addEventListener("resize", function () { if (window.innerWidth > 680) setOpen(false); });
+  })();
+
   /* ---- Scroll reveal (rect-based — robust across embeds) ------------ */
   (function () {
     var items = qa(".reveal");
@@ -181,7 +198,6 @@
     var timers = [];
     function at(ms, fn) { timers.push(setTimeout(fn, ms)); }
 
-    var D = 720;   // spark travel time (matches CSS)
     var idx = 0;
 
     function play() {
@@ -190,34 +206,40 @@
       var s = SCENARIOS[idx % SCENARIOS.length];
       setScenario(s);
 
-      var t = 250;
+      // motion preset scales the whole sequence (and the spark CSS duration)
+      var M = window.__juryMotion || 1;
+      var D = Math.round(720 * M);
+      document.documentElement.style.setProperty("--spark-dur", (0.72 * M).toFixed(2) + "s");
+      function g(ms) { return Math.round(ms * M); }
+
+      var t = g(250);
       // 0 — input
-      at(t, function () { lit(0); }); t += 520;
+      at(t, function () { lit(0); }); t += g(520);
       // hop: input → reviewers (spark travels, then destination lights on arrival)
       at(t, function () { spark(0); });
       at(t + D, function () { lit(1); });
-      t += D + 240;
+      t += D + g(240);
       // reviewers light up one by one
-      chips.forEach(function (c, i) { at(t + i * 200, function () { c.classList.add("lit"); }); });
-      t += chips.length * 200 + 260;
+      chips.forEach(function (c, i) { at(t + i * g(200), function () { c.classList.add("lit"); }); });
+      t += chips.length * g(200) + g(260);
       // hop: reviewers → round 2 (debate)
       at(t, function () { spark(1); });
       at(t + D, function () { lit(2); if (debateMark) debateMark.classList.add("lit"); });
-      t += D + 460;
+      t += D + g(460);
       // hop: round 2 → verify
       at(t, function () { spark(2); });
       at(t + D, function () { lit(3); });
-      t += D + 320;
+      t += D + g(320);
       // hop: verify → chair
       at(t, function () { spark(3); });
       at(t + D, function () { lit(4); });
-      t += D + 320;
+      t += D + g(320);
       // hop: chair → verdict
       at(t, function () { spark(4); });
       at(t + D, function () { lit(5); revealVerdict(s); });
-      t += D + 200;
+      t += D + g(200);
       // hold on the verdict, then advance to the next scenario
-      t += 2800;
+      t += g(2800);
       at(t, function () { idx++; play(); });
     }
 
