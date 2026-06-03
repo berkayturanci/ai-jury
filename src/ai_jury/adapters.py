@@ -80,7 +80,7 @@ RETRYABLE_ERROR_CODES = frozenset({
 # and "login" matches "login required" but not "login_attempts" ("_" is a word
 # char, so there is no boundary inside "login_attempts"). Multi-word phrases
 # tolerate a space OR "_" between tokens (e.g. "rate limit"/"rate_limit").
-def _keyword_pattern(*keywords: str) -> "re.Pattern[str]":
+def _keyword_pattern(*keywords: str) -> re.Pattern[str]:
     parts = [
         r"[ _]+".join(re.escape(tok) for tok in kw.split())
         for kw in keywords
