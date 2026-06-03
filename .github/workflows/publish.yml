@@ -5,6 +5,11 @@ on:
     tags:
       - "v*"
 
+# Least-privilege default for the whole workflow; the job below elevates only the
+# scopes it needs (OpenSSF Scorecard TokenPermissions).
+permissions:
+  contents: read
+
 jobs:
   build-n-publish:
     name: Build, Publish to PyPI, and Create GitHub Release

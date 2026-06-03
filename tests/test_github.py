@@ -1,6 +1,5 @@
 """Tests for github.py."""
 
-import json
 import sys
 import unittest
 from pathlib import Path

@@ -14,6 +14,7 @@ with ``--clear-cache`` (or ``jury cache clear``).
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
@@ -213,14 +214,12 @@ class Cache:
 
     def store(self, key: str, outcome: JuryOutcome) -> None:
         """Persist ``outcome`` under ``key`` (best-effort; ignores write errors)."""
-        try:
+        with contextlib.suppress(OSError):
             self.dir.mkdir(parents=True, exist_ok=True)
             payload = {"cache_schema": CACHE_SCHEMA, "outcome": outcome_to_dict(outcome)}
             self._path(key).write_text(
                 json.dumps(payload, separators=(",", ":")) + "\n", encoding="utf-8"
             )
-        except OSError:
-            pass
 
     def clear(self) -> int:
         """Remove all cache entries; return the number deleted."""
@@ -228,9 +227,7 @@ class Cache:
             return 0
         removed = 0
         for path in self.dir.glob("*.json"):
-            try:
+            with contextlib.suppress(OSError):
                 path.unlink()
                 removed += 1
-            except OSError:
-                pass
         return removed
