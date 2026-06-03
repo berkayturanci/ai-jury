@@ -35,24 +35,21 @@ options:
                         benchmarking
   --max-rounds MAX_ROUNDS
                         ceiling on adaptive rounds when early-stop is on
-                        (issue #40)
   --early-stop          stop after round 1 when reviewers agree; debate only
                         on disagreement
   --no-early-stop       disable adaptive early-stop (honour a fixed number of
                         rounds)
   --auto                risk-aware auto-depth: scale rounds/verify to the diff
-                        (issue #120)
   --no-auto             disable auto-depth (use configured/fixed rounds)
   --total-timeout TOTAL_TIMEOUT
                         overall wall-clock budget (seconds) for the whole run
-                        (issue #30)
   --phase-timeout PHASE_TIMEOUT
-                        per-phase wall-clock budget (seconds) (issue #30)
+                        per-phase wall-clock budget (seconds)
   --retries RETRIES     extra attempts for transient (timeout/rate-
                         limit/spawn) failures
   --max-diff-bytes MAX_DIFF_BYTES
                         size budget for the (filtered) diff before
-                        chunking/too-large (issue #31)
+                        chunking/too-large
   --chunk               chunk an over-budget diff by file instead of failing
   --no-chunk            disable diff chunking (fail clearly when over budget)
   --exclude GLOB        exclude files matching this path glob (repeatable)
@@ -89,11 +86,11 @@ options:
   --post-inline         post inline review comments for located findings on
                         --pr
   --post-progress       keep a live, sticky status comment on --pr updated per
-                        round/chunk (issue #125)
+                        round/chunk
   --post-mode {single,phased}
                         with --post-summary: 'single' (one comment) or
                         'phased' (separate Round 1 / debate / decision
-                        comments) (issue #127)
+                        comments)
   --dry-run             with --post-inline, print what would be posted without
                         calling GitHub
   --label               apply classification labels (review effort / risk /
@@ -103,8 +100,8 @@ options:
   --fail-on FAIL_ON     comma-separated severities that fail CI (overrides
                         config)
   --cache               use the local result cache: reuse a cached outcome for
-                        an unchanged diff+config, else run and store it (issue
-                        #33; off by default)
+                        an unchanged diff+config, else run and store it (off
+                        by default)
   --clear-cache         delete all local cache entries and exit (also: `jury
                         cache clear`)
   --cache-dir CACHE_DIR
@@ -112,12 +109,12 @@ options:
                         or ~/.cache/ai-jury)
   --suggest-patches     emit a separate, opt-in suggested-patches section for
                         VERIFIED findings (read-only; never applied
-                        automatically) (issue #10)
+                        automatically)
   --patches-out PATH    with --suggest-patches, write the patches to this file
                         instead of appending them after the report
   --incremental         review only the diff since the last jury run on --pr
                         when a prior marker exists, else fall back to a full
-                        review (issue #9)
+                        review
   -q, --quiet           suppress progress logs on stderr
   --config-validate     validate the resolved config and exit (0 valid, 2
                         invalid)
