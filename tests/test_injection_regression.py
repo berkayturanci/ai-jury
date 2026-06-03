@@ -20,7 +20,6 @@ from ai_jury.ci import evaluate_ci
 from ai_jury.config import DEFAULT_CONFIG, _from_dict
 from ai_jury.orchestrator import run_jury
 
-
 CLEAN_DIFF = """\
 diff --git a/app.py b/app.py
 index 0000000..1111111 100644
