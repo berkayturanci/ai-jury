@@ -5,9 +5,9 @@ from __future__ import annotations
 import os
 import sys
 import unittest
+import unittest.mock as mock
 from pathlib import Path
 from types import SimpleNamespace
-from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
@@ -49,7 +49,8 @@ class DefaultCacheDir(unittest.TestCase):
         env.pop("JURY_CACHE_DIR", None)
         env.pop("XDG_CACHE_HOME", None)
         with mock.patch.dict(os.environ, env, clear=True):
-            self.assertTrue(str(cache.default_cache_dir()).endswith("/.cache/ai-jury"))
+            # OS-portable: compare Path objects, not a POSIX-slash string.
+            self.assertEqual(cache.default_cache_dir(), Path.home() / ".cache" / "ai-jury")
 
 
 class ParseCommentErrors(unittest.TestCase):
