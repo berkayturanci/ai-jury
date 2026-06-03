@@ -16,7 +16,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from ai_jury import doctor  # noqa: E402
 
-
 VALID_CONFIG = """\
 [jury]
 rounds = 2
@@ -41,10 +40,10 @@ enabled = false
 # A config carrying a fake secret in string fields. The doctor summary must
 # redact it so it never appears in any rendered output or JSON.
 SECRET = "sk-ABCDEF0123456789ABCDEF0123456789secretvalue"
-SECRET_CONFIG = """\
+SECRET_CONFIG = f"""\
 [jury]
 rounds = 1
-chair = "token={secret}"
+chair = "token={SECRET}"
 
 [jury.context]
 mode = "diff-only"
@@ -54,7 +53,7 @@ name = "claude"
 vendor = "anthropic"
 command = "ls"
 enabled = true
-""".format(secret=SECRET)
+"""
 
 
 def _write_config(text):
@@ -364,6 +363,20 @@ class RecommendationsTest(unittest.TestCase):
             d._is_available = real
         self.assertTrue(diag["recommendations"]["ready"])
         self.assertIn("ready to run: yes", d.render_report(diag))
+
+
+class AvailabilityTests(unittest.TestCase):
+    def test_is_available_catches_exceptions(self):
+        orig = doctor.make_adapter
+        def _crashing_factory(spec, mock=False):
+            raise RuntimeError("adapter creation failed")
+
+        doctor.make_adapter = _crashing_factory
+        self.addCleanup(lambda: setattr(doctor, "make_adapter", orig))
+
+        # We can pass None as the spec since the factory doesn't check it
+        # before raising the exception.
+        self.assertFalse(doctor._is_available(None))
 
 
 if __name__ == "__main__":
