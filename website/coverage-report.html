@@ -61,7 +61,7 @@
     .cr-sort button:hover { color: var(--text); border-color: var(--accent-line); }
     .cr-sort button.on { color: var(--accent-2); border-color: var(--accent-line); background: var(--accent-soft); }
 
-    .cr-table-wrap { border: 1px solid var(--border); border-radius: var(--radius); overflow-x: auto; background: var(--surface); }
+    .cr-table-wrap { border: 1px solid var(--border); border-radius: var(--radius); overflow-x: auto; overflow-y: hidden; background: var(--surface); }
     table.cr { width: 100%; border-collapse: collapse; font-size: .9rem; min-width: 520px; }
     table.cr thead th { background: var(--surface-2); font-family: var(--font-display); font-weight: 600; font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); text-align: left; padding: .7rem .9rem; }
     table.cr thead th.num { text-align: right; }
@@ -74,7 +74,7 @@
     .cr-covcell { display: flex; align-items: center; gap: .7rem; min-width: 160px; }
     .cr-mini { flex: 1; height: 8px; border-radius: 999px; background: var(--surface-3); overflow: hidden; min-width: 60px; }
     .cr-mini > span { display: block; height: 100%; border-radius: 999px; }
-    .cr-pct { font-family: var(--font-mono); font-size: .82rem; font-weight: 600; width: 3.2rem; text-align: right; flex: none; }
+    .cr-pct { font-family: var(--font-mono); font-size: .82rem; font-weight: 600; width: 4rem; text-align: right; flex: none; }
     .pc-hi { color: var(--green-2); } .pc-mid { color: var(--amber); } .pc-lo { color: #f87171; }
     :root[data-theme="light"] .pc-lo { color: #dc2626; }
     .bg-hi { background: var(--green); } .bg-mid { background: var(--amber); } .bg-lo { background: var(--red); }
@@ -92,7 +92,7 @@
         <span class="ver">coverage</span>
       </div>
       <div class="nav-links">
-        <a class="nav-link" href="coverage.html">← Coverage</a>
+        <a class="nav-link hide-sm" href="coverage.html">← Coverage</a>
         <a class="nav-link hide-sm" href="docs.html">Docs</a>
         <button class="docs-menu-btn" id="menu-btn" type="button" aria-expanded="false">☰ Menu</button>
         <button class="icon-btn theme-track" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" title="Toggle light / dark">
@@ -183,6 +183,8 @@
     var root = $("cr-root");
 
     function cls(p) { return p >= 90 ? "hi" : (p >= 75 ? "mid" : "lo"); }
+    // exactly 100 → "100"; anything else keeps 2 decimals so 99.98 never rounds up to 100
+    function fmtPct(p) { return p >= 99.995 ? "100" : p.toFixed(2); }
     function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
 
     // Parse coverage.py htmlcov status.json into per-file rows.
@@ -225,7 +227,7 @@
       var html = "";
       // summary
       html += '<div class="cr-summary">'
-        + '<div class="cr-big pc-' + cls(overall) + '">' + (parseFloat(overall.toFixed(2)) + '') + '%<small>overall</small></div>'
+        + '<div class="cr-big pc-' + cls(overall) + '">' + fmtPct(overall) + '%<small>overall</small></div>'
         + '<div class="cr-sumbar"><div class="cr-track"><span class="bg-' + cls(overall) + '" style="width:' + overall.toFixed(1) + '%"></span></div>'
         + '<div class="cr-sublabel"><span>' + covAll + ' / ' + totalAll + ' covered</span><span>' + rows.length + ' files</span></div></div>'
         + '<div class="cr-actions"><a class="btn ghost" href="' + base + 'index.html" target="_blank" rel="noopener">Line-by-line ↗</a></div>'
@@ -248,7 +250,7 @@
         html += "<tr>"
           + '<td><span class="cr-file"><a href="' + base + esc(r.url) + '" target="_blank" rel="noopener">' + esc(r.file) + "</a></span></td>"
           + '<td><div class="cr-covcell"><div class="cr-mini"><span class="bg-' + c + '" style="width:' + r.pct.toFixed(1) + '%"></span></div>'
-          + '<span class="cr-pct pc-' + c + '">' + r.pct.toFixed(0) + '%</span></div></td>'
+          + '<span class="cr-pct pc-' + c + '">' + fmtPct(r.pct) + '%</span></div></td>'
           + '<td class="num">' + r.covered + "/" + r.total + "</td>"
           + '<td class="num">' + (r.missing || 0) + "</td>"
           + "</tr>";
