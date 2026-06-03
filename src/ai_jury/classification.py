@@ -87,7 +87,7 @@ def _severity_rank(severity: str) -> int:
     return SEVERITY_ORDER.get(severity, len(SEVERITY_ORDER))
 
 
-def _resolved_findings(outcome: Any, findings: Any, groups: Any) -> list:
+def _resolved_findings(outcome: Any, findings: Any) -> list:
     """Pick the finding list to classify on.
 
     Prefers an explicit ``findings`` argument, then ``outcome.findings``. The
@@ -260,7 +260,7 @@ def classify(
     Determinism: the result is a pure function of the inputs — same findings,
     groups, and diff always yield the same dict.
     """
-    fs = _resolved_findings(outcome, findings, groups)
+    fs = _resolved_findings(outcome, findings)
     gs = _resolved_groups(outcome, groups)
     lines_changed = diff_lines_changed(diff)
 
