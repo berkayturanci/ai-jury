@@ -15,8 +15,7 @@
   <style>
     .brand-hero { padding: clamp(2.5rem,6vw,4.5rem) 0 1rem; }
     .brand-hero h1 { font-size: clamp(2rem,4vw,3rem); max-width: 18ch; }
-    .logo-set { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.2rem; }
-    @media (max-width: 880px) { .logo-set { grid-template-columns: 1fr; } }
+    .logo-set { display: grid; grid-template-columns: minmax(0, 520px); gap: 1.2rem; justify-content: center; }
     .logo-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; transition: transform .3s, border-color .3s, box-shadow .3s; }
     .logo-card:hover { transform: translateY(-3px); border-color: var(--accent-line); box-shadow: var(--shadow-md); }
     .logo-card.pick { border-color: var(--accent-line); box-shadow: var(--shadow-glow); }
@@ -72,8 +71,8 @@
 
   <header class="brand-hero wrap">
     <p class="sec-kicker reveal">Brand</p>
-    <h1 class="reveal" data-d="1">Three marks for ai-jury. Pick one — they all carry the panel idea.</h1>
-    <p class="lede reveal" data-d="2" style="margin-left:0;text-align:left">Each logo works on light and dark, scales down to a favicon, and uses the project's indigo core with the four reviewer accent colors. Toggle the theme in the nav to preview both.</p>
+    <h1 class="reveal" data-d="1">The ai-jury mark — a panel idea, distilled.</h1>
+    <p class="lede reveal" data-d="2" style="margin-left:0;text-align:left">The Convergence mark works on light and dark, scales down to a favicon, and uses the project's indigo core with the four reviewer accent colors. Toggle the theme in the nav to preview both.</p>
   </header>
 
   <main class="wrap">
@@ -99,7 +98,7 @@
     </section>
 
     <section>
-      <div class="sec-head reveal"><p class="sec-kicker">Lockup</p><h2>Wordmark</h2><p class="muted">Mark + “ai-jury” set in Space Grotesk. Swap the mark below to the one you choose.</p></div>
+      <div class="sec-head reveal"><p class="sec-kicker">Lockup</p><h2>Wordmark</h2><p class="muted">Convergence mark + “ai-jury” set in Space Grotesk, shown on dark and light.</p></div>
       <div class="lockups reveal">
         <div class="lockup dk"><img src="assets/logos/mark-convergence.svg" alt="" /><span class="wm">ai-jury <span class="v">v1.0.0</span></span></div>
         <div class="lockup lt"><img src="assets/logos/mark-convergence.svg" alt="" /><span class="wm">ai-jury <span class="v">v1.0.0</span></span></div>
