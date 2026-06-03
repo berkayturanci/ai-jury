@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script>
+    (function () {
+      try { var t = localStorage.getItem("theme"); if (!t) t = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"; document.documentElement.setAttribute("data-theme", t); }
+      catch (e) { document.documentElement.setAttribute("data-theme", "dark"); }
+    })();
+  </script>
+  <title>404 — verdict not found · ai-jury</title>
+  <meta name="robots" content="noindex" />
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  <link rel="icon" href="favicon.ico" sizes="48x48" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" />
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    .nf { min-height: 100vh; display: grid; place-items: center; text-align: center; padding: 2rem; }
+    .nf-inner { max-width: 30rem; }
+    .nf-mark { width: 76px; height: 76px; border-radius: 19px; margin: 0 auto 1.6rem; display: block; box-shadow: var(--shadow-glow); }
+    .nf-verdict {
+      display: inline-flex; align-items: center; gap: .5rem; margin: 0 auto 1.4rem;
+      font-family: var(--font-display); font-weight: 700; font-size: .9rem;
+      padding: .3rem .8rem; border-radius: 8px; background: rgba(239,68,68,.14);
+      color: #fca5a5; border: 1px solid rgba(239,68,68,.5);
+    }
+    :root[data-theme="light"] .nf-verdict { color: #b91c1c; }
+    .nf h1 { font-size: clamp(3.4rem, 12vw, 6rem); margin: 0; line-height: 1; letter-spacing: -0.04em; }
+    .nf h1 .grad { background: linear-gradient(110deg, var(--accent-2), var(--c-qwen)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+    .nf p { font-size: 1.05rem; margin: 1rem 0 1.8rem; }
+    .nf code { font-family: var(--font-mono); background: var(--accent-soft); color: var(--accent-3); padding: .1rem .4rem; border-radius: 5px; font-size: .92rem; }
+    .nf-cta { display: flex; gap: .7rem; justify-content: center; flex-wrap: wrap; }
+  </style>
+  <script type="module" src="analytics.js"></script>
+</head>
+<body>
+  <div class="nf">
+    <div class="nf-inner">
+      <img class="nf-mark" src="assets/logos/mark-convergence.svg" alt="ai-jury" />
+      <div class="nf-verdict">✕ REQUEST CHANGES</div>
+      <h1><span class="grad">404</span></h1>
+      <p>The jury reviewed this URL and reached a unanimous verdict: <code>page not found</code>. Let's get you back to a working branch.</p>
+      <div class="nf-cta">
+        <a class="btn primary" href="./">← Back to home</a>
+        <a class="btn ghost" href="https://github.com/berkayturanci/ai-jury">View on GitHub</a>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
