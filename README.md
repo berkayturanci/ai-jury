@@ -85,7 +85,7 @@ python3 -m coverage run -m unittest discover -s tests
 python3 -m coverage report
 ```
 
-**Threshold.** The minimum total coverage is **80%**, configured once in
+**Threshold.** The minimum total coverage is **99%**, configured once in
 `pyproject.toml` under `[tool.coverage.report] fail_under` and enforced by a
 dedicated `coverage` job in CI (`.github/workflows/ci.yml`, Ubuntu / Python
 3.13). CI fails if total coverage drops below that floor. The gate runs in a
@@ -495,7 +495,7 @@ it differs from hosted, API-level, and other native-CLI tools, and
 
 ## Status
 
-Active (v0.x). The full pipeline runs end-to-end with the real CLIs and the offline
+Active (v1.0.0). The full pipeline runs end-to-end with the real CLIs and the offline
 `--mock` path is covered by tests. **Shipped:** structured findings + tiered consensus
 (consensus / majority / single-reviewer), a verification pass that drops false positives,
 anonymized rebuttal, adaptive early-stop, severity-gated CI exit codes, secure-by-default
