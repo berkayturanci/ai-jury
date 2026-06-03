@@ -1,7 +1,10 @@
 # Website
 
-The static landing page for `ai-jury`. No build step — plain HTML/CSS plus
-one image. It reuses the same hero asset as the README (`assets/hero.png`).
+The static landing site for `ai-jury`. Originated as a Claude Design handoff
+bundle (issue #159) and shipped here verbatim — `index.html`, `docs.html`,
+`brand.html`, `coverage.html`, `coverage-report.html`, `404.html`, plus
+`styles.css`, `docs.css`, `app.js`, the favicon set, `site.webmanifest`, and
+the convergence logo + OG banner under `assets/`. No build step.
 
 ## Preview locally
 
@@ -14,13 +17,22 @@ python3 -m http.server 8000
 ## Deploy
 
 `.github/workflows/pages.yml` publishes this directory to **GitHub Pages** on every push
-to `main` that touches `website/**` (and via manual `workflow_dispatch`).
+to `main` that touches `website/**` (and via manual `workflow_dispatch`). The same
+workflow also writes `website/coverage/` (HTML coverage report) and
+`website/coverage-badge.json` (shields-endpoint badge), which `index.html` links to.
 
 One-time repository setup (Settings → Pages):
 
 1. Set **Source** to **GitHub Actions**.
 2. Trigger the *Deploy website* workflow (push to `main` or run it manually).
 3. The default URL is `https://berkayturanci.github.io/ai-jury/`.
+
+## Assets
+
+Favicons and the README hero are regenerated from their SVG sources via
+`make assets` (requires `rsvg-convert` — `brew install librsvg` /
+`apt install librsvg2-bin`). The OG banner (`assets/og-banner.png`) is a
+one-shot designer asset and is **not** rebuilt by `make assets`.
 
 ## Custom domain (optional)
 

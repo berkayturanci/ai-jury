@@ -14,6 +14,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   browsable HTML report at `/coverage/`, and writes a shields-endpoint badge
   (`coverage-badge.json`) shown in the README and site badge row.
 
+### Changed
+
+- **Rebuilt the project website from a fresh design direction** (closes #159).
+  New landing page plus dedicated `docs.html`, `brand.html`, `coverage.html`,
+  `coverage-report.html`, and `404.html`; refreshed favicon set, OG banner, and
+  convergence logo mark. `make assets` now also regenerates the favicon set
+  from `website/favicon.svg`.
+
 ## [1.0.0] - 2026-06-03
 
 First public release. `ai-jury` orchestrates native coding-agent CLIs (Claude
