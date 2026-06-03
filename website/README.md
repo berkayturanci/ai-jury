@@ -29,14 +29,10 @@ One-time repository setup (Settings → Pages):
 
 ## Analytics
 
-Firebase Analytics (GA4) is wired in via `analytics.js`, loaded from every
-HTML `<head>` as a module. The committed file ships with placeholder config
-and is a no-op until real values are filled in:
-
-1. Firebase Console → Project Settings → Your apps → Web → copy
-   `firebaseConfig`.
-2. Replace the `REPLACE_ME…` constants at the top of
-   `website/analytics.js` and commit.
+Google Analytics 4 (gtag.js) is wired in via `analytics.js`, loaded from every
+HTML `<head>`. The active GA4 property is set by `MEASUREMENT_ID` at the top of
+that file (`G-…`); change it to rotate, or leave it as `G-REPLACE_ME…` to
+disable tracking entirely (the loader short-circuits).
 
 This only measures the **website**; the `ai-jury` CLI itself sends no
 telemetry.
