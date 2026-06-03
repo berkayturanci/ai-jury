@@ -212,12 +212,15 @@ pre.toml { margin: 0; max-height: 360px; overflow: auto; }
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.82rem; line-height: 1.5;
   color: #cbd5e1; white-space: pre-wrap; word-break: break-word;
 }
+/* The console is a fixed dark terminal in both themes, so its text colors are
+   fixed too — they must not follow the theme variables (which flip to dark
+   values for light mode and become unreadable on the near-black background). */
 .console-body .cl { display: block; }
 .console-body .cmd { color: #f8fafc; font-weight: 600; }
-.console-body .head { color: var(--accent-2); font-weight: 600; }
-.console-body .dim { color: var(--faint); }
+.console-body .head { color: #a5b4fc; font-weight: 600; }
+.console-body .dim { color: #94a3b8; }
 .console-body .warn { color: #fbbf24; }
-.console-body .ok { color: var(--green); }
+.console-body .ok { color: #34d399; }
 .console-body .bad { color: #f87171; }
 
 .gh-comments { display: flex; flex-direction: column; gap: 0.7rem; }
@@ -288,6 +291,8 @@ pre.toml { margin: 0; max-height: 360px; overflow: auto; }
 :root[data-theme="light"] .hero-img { box-shadow: 0 16px 48px rgba(15,23,42,0.18); }
 /* readability fixes for light backgrounds */
 :root[data-theme="light"] .flow .node-out { color: #047857; }
+/* the dark terminal sits on a light page — lift it with a shadow + softer border */
+:root[data-theme="light"] .console-box { box-shadow: 0 10px 28px rgba(15,23,42,0.18); border-color: #cbd5e1; }
 :root[data-theme="light"] .gh-verdict.v-bad { color: #b91c1c; }
 :root[data-theme="light"] .gh-verdict.v-warn { color: #b45309; }
 :root[data-theme="light"] .gh-verdict.v-ok { color: #047857; }
