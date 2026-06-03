@@ -264,6 +264,152 @@ def render(
     return "\n".join(lines)
 
 
+def _conversation_blocks(
+    reviews: list[AgentResult],
+    debate: list[AgentResult],
+    synthesis: AgentResult | None,
+    verify: AgentResult | None,
+    *,
+    chair: str,
+) -> list[str]:
+    """The chronological deliberation, foregrounded: each reviewer's raw output,
+    then the debate exchanges in order, then verification, then the chair's
+    decision *and its reasoning* — so a reader can follow who said what and why
+    the chair ruled as it did (issue: full transcript)."""
+    lines: list[str] = ["## Round 1 — independent reviews\n"]
+    for r in reviews:
+        status = f"{r.duration_s:.0f}s" if r.ok else _fail_status(r)
+        lines.append(_block(f"`{r.agent}` ({r.vendor}) — {status}", r.output if r.ok else ""))
+    if debate:
+        lines.append("## Round 2 — cross-examination (debate)\n")
+        for r in debate:
+            status = f"{r.duration_s:.0f}s" if r.ok else _fail_status(r)
+            lines.append(_block(f"`{r.agent}` — {status}", r.output if r.ok else ""))
+    if verify is not None:
+        lines.append("## Verification\n")
+        lines.append(f"> Verified by `{chair}`\n")
+        lines.append(verify.output.strip() + "\n" if verify.ok else f"_Verification failed: {verify.error}_\n")
+    lines.append("## Decision — verdict & reasoning\n")
+    if synthesis and synthesis.ok:
+        lines.append(f"> Decided by `{chair}`\n")
+        lines.append(synthesis.output.strip() + "\n")
+    elif synthesis and not synthesis.ok:
+        lines.append(f"_Synthesis failed: {synthesis.error}_\n")
+    else:
+        lines.append("_(no synthesis produced)_\n")
+    return lines
+
+
+def _summary_blocks(
+    findings: list[Finding],
+    warnings: list[str],
+    groups: list,
+    classification: dict,
+) -> list[str]:
+    """Consensus + structured-findings recap (the auditable at-a-glance summary)."""
+    lines = list(_classification_block(classification))
+    if groups:
+        lines.extend(_consensus_block(groups))
+    lines.append("## Structured findings\n")
+    if findings:
+        ranked = sorted(
+            findings,
+            key=lambda f: (SEVERITY_ORDER.get(f.severity, 99), f.file or "", f.line or 0),
+        )
+        lines.extend(_finding_line(f) for f in ranked)
+        lines.append("")
+    else:
+        lines.append("_(no structured findings parsed)_\n")
+    if warnings:
+        lines.append("> ⚠️ agent output warnings\n")
+        lines.extend(f"- {w}" for w in warnings)
+        lines.append("")
+    return lines
+
+
+def render_transcript(
+    reviews: list[AgentResult],
+    debate: list[AgentResult],
+    synthesis: AgentResult | None,
+    *,
+    chair: str,
+    findings: list[Finding] | None = None,
+    warnings: list[str] | None = None,
+    groups: list | None = None,
+    verify: AgentResult | None = None,
+    context_mode: str | None = None,
+    redact_secrets: bool | None = None,
+    redaction_count: int = 0,
+    metadata: dict | None = None,
+    classification: dict | None = None,
+    review_scope: str | None = None,
+    lead_with_summary: bool = False,
+) -> str:
+    """Render the full play-by-play transcript (issue: full transcript / --verbose).
+
+    Two layouts from one function:
+
+    * ``lead_with_summary=False`` (``--transcript``) — a dedicated, conversation-first
+      document: Round 1 → debate → verification → the chair's decision & reasoning,
+      then a compact consensus/findings recap for auditability.
+    * ``lead_with_summary=True`` (``--verbose``) — the consensus/verdict summary first,
+      then the same full transcript below it, in one document.
+
+    The default :func:`render` (consensus-first summary with a raw appendix) is
+    unchanged, so existing reports/goldens are unaffected.
+    """
+    findings = findings or []
+    warnings = warnings or []
+    groups = groups or []
+    if classification is None:
+        classification = _classification.classify(findings=findings, groups=groups)
+
+    lines: list[str] = []
+    lines.append(
+        "# 🏛️ AI Jury — verbose report\n" if lead_with_summary
+        else "# 🏛️ AI Jury — full transcript\n"
+    )
+    panel = ", ".join(f"`{r.agent}` ({r.vendor})" for r in reviews)
+    lines.append(f"**Panel:** {panel}\n")
+    if review_scope:
+        lines.append(f"{review_scope}\n")
+
+    # Disclose the context/redaction policy (parity with render()): whoever reads
+    # the shared transcript should see whether secrets were redacted before the
+    # diff reached the agents.
+    if context_mode is not None or redact_secrets is not None:
+        lines.append("## Context policy\n")
+        if context_mode is not None:
+            lines.append(f"- context mode: {context_mode}")
+        if redact_secrets is not None:
+            state = "on" if redact_secrets else "off"
+            extra = f" ({redaction_count} redacted)" if redact_secrets else ""
+            lines.append(f"- secret redaction: {state}{extra}")
+        lines.append("")
+
+    if lead_with_summary:
+        lines.extend(_summary_blocks(findings, warnings, groups, classification))
+        lines.append("---\n")
+        lines.append("# Full transcript\n")
+        lines.extend(_conversation_blocks(reviews, debate, synthesis, verify, chair=chair))
+    else:
+        lines.extend(_conversation_blocks(reviews, debate, synthesis, verify, chair=chair))
+        lines.append("---\n")
+        lines.extend(_summary_blocks(findings, warnings, groups, classification))
+
+    if metadata is not None:
+        lines.append("---\n")
+        lines.extend(_metadata_block(metadata))
+
+    lines.append("---")
+    lines.append(
+        "\n<sub>Generated by "
+        "[ai-jury](https://github.com/berkayturanci/ai-jury)"
+        " — a cross-vendor multi-agent PR review jury.</sub>"
+    )
+    return "\n".join(lines)
+
+
 def render_sections(
     reviews: list[AgentResult],
     debate: list[AgentResult],

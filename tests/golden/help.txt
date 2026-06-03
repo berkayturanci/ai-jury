@@ -8,9 +8,10 @@ usage: jury [-h] [--pr PR] [--repo REPO] [--diff-file DIFF_FILE]
             [--no-chunk] [--exclude GLOB] [--include GLOB] [--seed SEED]
             [--chair CHAIR] [--mock] [--strict] [--verify] [--no-verify]
             [--doctor] [--write WRITE] [-o OUTPUT] [--metadata-json PATH]
-            [--format {markdown,json,sarif}] [--post-summary] [--post-inline]
-            [--post-progress] [--post-mode {single,phased}] [--dry-run]
-            [--label] [--ci] [--fail-on FAIL_ON] [--cache] [--clear-cache]
+            [--format {markdown,json,sarif}] [--transcript] [--no-transcript]
+            [--verbose] [--post-summary] [--post-inline] [--post-progress]
+            [--post-mode {single,phased}] [--dry-run] [--label] [--ci]
+            [--fail-on FAIL_ON] [--cache] [--clear-cache]
             [--cache-dir CACHE_DIR] [--suggest-patches] [--patches-out PATH]
             [--incremental] [-q] [--config-validate] [--strict-config]
             [--version]
@@ -73,6 +74,13 @@ options:
                         status, rounds) as JSON
   --format {markdown,json,sarif}
                         output format for stdout/--output (default: markdown)
+  --transcript          render the full play-by-play transcript (each agent's
+                        review, the debate, and the chair's reasoning) instead
+                        of the summary report
+  --no-transcript       force the summary report even if [jury] transcript is
+                        set
+  --verbose             summary report followed by the full transcript, in one
+                        document
   --post-summary, --post
                         post the report as a single summary comment on --pr
   --post-inline         post inline review comments for located findings on

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Full-transcript / verbose output** (#208): `--transcript` renders the whole
+  play-by-play — each agent's raw review, the debate exchanges, and the chair's
+  decision *and its reasoning* — instead of the consensus-first summary;
+  `--verbose` shows the summary followed by the transcript in one document; and
+  `[jury] transcript = true` makes the transcript the default (`--no-transcript`
+  overrides). It works with `-o FILE` (a shareable Markdown artifact) and posts to
+  a PR via the existing `--post` flow. Rendering-only: the orchestration, outcome,
+  and cache key are unchanged.
+
 ### Changed
 
 - **Rebuilt the project website from a fresh design direction** (closes #159).

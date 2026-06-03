@@ -62,9 +62,15 @@ the default shown below.
 | Flag | Value | Default | Description |
 | --- | --- | --- | --- |
 | `--format` | `markdown` \| `json` \| `sarif` | `markdown` | Output format for stdout/`--output`. |
+| `--transcript` / `--no-transcript` | flag | from config | Render the full play-by-play transcript (each agent's review, the debate, and the chair's reasoning) instead of the consensus-first summary. `--no-transcript` forces the summary even if `[jury] transcript` is set. Markdown only; rendering-only (does not change the run or its cache key). |
+| `--verbose` | flag | off | Summary report **and** the full transcript, in one document. Implies a transcript even with `--no-transcript`. |
 | `-o`, `--output` | path | stdout | Write the report to a file. |
 | `--metadata-json` | path | — | Write machine-readable run metadata (durations, status, rounds) as JSON. |
 | `-q`, `--quiet` | flag | off | Suppress progress logs on stderr. |
+
+`--transcript` / `--verbose` shape the **stdout / `--output` / single-comment**
+report. Phased posting (`--post-mode phased`) always posts the per-round
+sections regardless, since it is already a round-by-round layout.
 
 ### GitHub posting (require `--pr`)
 
@@ -165,6 +171,7 @@ the default shown below.
 | `max_rounds` | int | = `rounds` | Round ceiling when `early_stop` is on. |
 | `early_stop` | bool | `false` | Adaptive rounds. |
 | `auto_depth` | bool | `false` | Risk-aware auto-depth (CLI `--auto`). |
+| `transcript` | bool | `false` | Default the markdown report to the full play-by-play transcript (CLI `--transcript` / `--no-transcript`). Rendering-only — not part of the config hash or cache key. |
 
 ### `[jury.ci]`
 

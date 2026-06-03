@@ -82,6 +82,8 @@ KNOWN_JURY_KEYS = (
     "early_stop",
     # Risk-aware auto-depth (issue #120).
     "auto_depth",
+    # Full-transcript / verbose rendering (rendering-only; not in config_hash).
+    "transcript",
     # Large-diff handling (issue #31).
     "diff",
 )
@@ -387,6 +389,14 @@ class JuryConfig:
     # trivial diff runs shallow and a risky one runs full. Off by default; the
     # panel is never trimmed; explicit --rounds/--verify/--early-stop override it.
     auto_depth: bool = False
+    # Full-transcript output (issue: full transcript). When True, the markdown
+    # report defaults to the chronological play-by-play (each agent's raw review,
+    # the debate, and the chair's reasoning) instead of the consensus-first
+    # summary. Rendering-only: it does NOT affect orchestration, so it is
+    # deliberately excluded from ``config_hash`` and the cache key. The CLI
+    # ``--transcript``/``--no-transcript`` override it; ``--verbose`` is summary +
+    # transcript in one document.
+    transcript: bool = False
 
     @property
     def effective_max_rounds(self) -> int:
@@ -508,6 +518,7 @@ def _from_dict(data: dict) -> JuryConfig:
         max_rounds=_opt_positive_int(jury.get("max_rounds")),
         early_stop=bool(jury.get("early_stop", False)),
         auto_depth=bool(jury.get("auto_depth", False)),
+        transcript=bool(jury.get("transcript", False)),
     )
 
 
