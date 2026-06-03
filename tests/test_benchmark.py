@@ -309,7 +309,7 @@ class MainEntryTest(unittest.TestCase):
         self.assertFalse(benchmark.live_enabled())
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
-            rc = benchmark.main([])
+            rc = benchmark.main()
         self.assertEqual(rc, 0)
         self.assertIn("TOTAL", buf.getvalue())
 
