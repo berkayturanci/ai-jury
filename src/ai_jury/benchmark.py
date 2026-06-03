@@ -155,9 +155,7 @@ def finding_matches_expected(finding: dict, entry: dict, tol: int = LINE_TOLERAN
     exp_sev = entry.get("severity")
     if exp_sev is not None and _severity_rank(finding.get("severity")) > _severity_rank(exp_sev):
         return False
-    if not _keywords_match(finding, entry.get("keywords", [])):
-        return False
-    return True
+    return _keywords_match(finding, entry.get("keywords", []))
 
 
 # ---------------------------------------------------------------------------
@@ -300,11 +298,10 @@ def discover_fixture_ids(base_dir: Path | None = None) -> list[str]:
     base = base_dir or BENCHMARK_DIR
     if not base.exists():
         return []
-    ids = sorted(
+    return sorted(
         p.name[: -len(".expected.json")]
         for p in base.glob("*.expected.json")
     )
-    return ids
 
 
 def load_fixtures(base_dir: Path | None = None) -> list[Fixture]:
