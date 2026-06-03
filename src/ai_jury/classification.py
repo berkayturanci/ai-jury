@@ -78,9 +78,6 @@ _KEYWORD_RES: tuple[re.Pattern[str], ...] = tuple(
     re.compile(r"\b" + re.escape(kw) + r"\b", re.IGNORECASE) for kw in SECURITY_KEYWORDS
 )
 
-# Hunk header of a unified diff, e.g. ``@@ -1,3 +1,6 @@``.
-_HUNK_RE = re.compile(r"^@@ ")
-
 
 def _severity_rank(severity: str) -> int:
     """Lower number = more severe (mirrors findings.SEVERITY_ORDER)."""

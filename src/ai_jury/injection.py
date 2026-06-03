@@ -50,7 +50,6 @@ _PHRASE_PATTERNS: tuple[tuple[str, re.Pattern], ...] = (
 
 # A long run of base64-ish characters can hide an encoded payload.
 _BASE64_RE = re.compile(r"[A-Za-z0-9+/]{120,}={0,2}")
-_BASE64_MIN_LEN = 120
 
 
 @dataclass
