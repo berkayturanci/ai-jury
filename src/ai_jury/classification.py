@@ -116,13 +116,10 @@ def diff_lines_changed(diff: str | None) -> int:
     """
     if not diff:
         return 0
-    changed = 0
-    for line in diff.splitlines():
-        if line.startswith("+++") or line.startswith("---"):
-            continue
-        if line.startswith("+") or line.startswith("-"):
-            changed += 1
-    return changed
+    return sum(
+        1 for line in diff.splitlines()
+        if line.startswith(("+", "-")) and not line.startswith(("+++", "---"))
+    )
 
 
 def _text_blob(finding: Any) -> str:
