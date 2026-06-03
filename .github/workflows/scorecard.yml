@@ -33,6 +33,10 @@ jobs:
         with:
           results_file: results.sarif
           results_format: sarif
+          # A read-only fine-grained PAT (admin:read) lets Scorecard evaluate the
+          # Branch-Protection check, which the default GITHUB_TOKEN cannot read.
+          # Optional: falls back to the workflow token when the secret is unset.
+          repo_token: ${{ secrets.SCORECARD_TOKEN || github.token }}
           # Publish to the OpenSSF REST API so the README badge can resolve.
           publish_results: true
       - name: Upload results artifact
