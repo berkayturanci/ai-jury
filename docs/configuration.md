@@ -3,6 +3,9 @@
 The jury reads `./jury.toml` by default (override with `--config PATH`).
 If the file is absent, built-in defaults are used.
 
+> For a single page listing **every** parameter (CLI flags + config keys) with
+> allowed values and defaults, see the [parameter reference](parameters.md).
+
 > **Tip:** don't hand-write it the first time — run **`jury init`** to scaffold a
 > valid config from your installed agents (and discovered local models). See
 > [the README](../README.md#configuration--jurytoml) for the `init` flags.
