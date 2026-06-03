@@ -35,19 +35,23 @@ jobs:
         run: python -m build --sdist --wheel --outdir dist/
 
       # SBOM (issue #25): a CycloneDX software bill of materials for the built
-      # package. The project has zero runtime dependencies, so the SBOM is small
-      # by design, but it is generated (not deferred) so consumers always get one.
+      # package. Written into release/ (NOT dist/) so the PyPI upload below sees
+      # only the wheel + sdist — twine rejects non-distribution files in the
+      # upload dir. The SBOM still ships with the GitHub Release.
       - name: Generate CycloneDX SBOM
         run: |
           python -m pip install cyclonedx-bom
           python -m pip install dist/*.whl
-          cyclonedx-py environment --output-format JSON --output-file dist/sbom.cdx.json
+          mkdir -p release
+          cyclonedx-py environment --output-format JSON --output-file release/sbom.cdx.json
 
       # Checksums (issue #25): a single SHA256SUMS over every release artifact so
-      # downloaders can verify integrity with `sha256sum -c SHA256SUMS`.
+      # downloaders can verify integrity with `sha256sum -c SHA256SUMS`. Staged in
+      # release/ next to the dists (kept out of dist/ for the same reason as above).
       - name: Generate checksums
         run: |
-          cd dist
+          cp dist/*.whl dist/*.tar.gz release/
+          cd release
           sha256sum *.whl *.tar.gz sbom.cdx.json > SHA256SUMS
           cat SHA256SUMS
 
@@ -58,12 +62,14 @@ jobs:
         with:
           subject-path: "dist/*.whl, dist/*.tar.gz"
 
-      # PyPI trusted publishing (issue #25): OIDC, no long-lived API token. Requires
-      # a one-time trusted-publisher config on PyPI for this repo+workflow (see
-      # docs/releasing.md). `skip-existing` keeps re-runs idempotent.
+      # PyPI trusted publishing (issue #25): OIDC, no long-lived API token. dist/
+      # holds only the wheel + sdist (SBOM/checksums live in release/), so the
+      # upload isn't tripped by non-distribution files. NOT continue-on-error: a
+      # failed publish must fail the release loudly. `skip-existing` keeps re-runs
+      # idempotent. Requires a one-time trusted-publisher config on PyPI for this
+      # repo+workflow (see docs/releasing.md).
       - name: Publish package to PyPI
         uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b  # v1.14.0 (updated 2026-05-31)
-        continue-on-error: true
         with:
           skip-existing: true
 
@@ -71,10 +77,10 @@ jobs:
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda  # v3.0.0 (updated 2026-05-31)
         with:
           files: |
-            dist/*.whl
-            dist/*.tar.gz
-            dist/sbom.cdx.json
-            dist/SHA256SUMS
+            release/*.whl
+            release/*.tar.gz
+            release/sbom.cdx.json
+            release/SHA256SUMS
           name: Release ${{ github.ref_name }}
           draft: false
           prerelease: false
