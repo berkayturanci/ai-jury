@@ -5,8 +5,8 @@ import unittest
 from contextlib import redirect_stdout
 
 from ai_jury import github
-from ai_jury.github import build_inline_payload, post_inline_comments
 from ai_jury.findings import Finding
+from ai_jury.github import build_inline_payload, post_inline_comments
 
 
 class BuildInlinePayloadTests(unittest.TestCase):
