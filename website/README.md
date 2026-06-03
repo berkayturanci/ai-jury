@@ -27,6 +27,20 @@ One-time repository setup (Settings → Pages):
 2. Trigger the *Deploy website* workflow (push to `main` or run it manually).
 3. The default URL is `https://berkayturanci.github.io/ai-jury/`.
 
+## Analytics
+
+Firebase Analytics (GA4) is wired in via `analytics.js`, loaded from every
+HTML `<head>` as a module. The committed file ships with placeholder config
+and is a no-op until real values are filled in:
+
+1. Firebase Console → Project Settings → Your apps → Web → copy
+   `firebaseConfig`.
+2. Replace the `REPLACE_ME…` constants at the top of
+   `website/analytics.js` and commit.
+
+This only measures the **website**; the `ai-jury` CLI itself sends no
+telemetry.
+
 ## Assets
 
 Favicons and the README hero are regenerated from their SVG sources via
