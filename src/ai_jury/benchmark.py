@@ -300,11 +300,10 @@ def discover_fixture_ids(base_dir: Path | None = None) -> list[str]:
     base = base_dir or BENCHMARK_DIR
     if not base.exists():
         return []
-    ids = sorted(
+    return sorted(
         p.name[: -len(".expected.json")]
         for p in base.glob("*.expected.json")
     )
-    return ids
 
 
 def load_fixtures(base_dir: Path | None = None) -> list[Fixture]:
