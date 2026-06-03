@@ -20,9 +20,7 @@ jobs:
     name: Scorecard analysis
     runs-on: ubuntu-latest
     permissions:
-      # Needed to upload results to the code-scanning dashboard.
-      security-events: write
-      # Needed to publish results and obtain a badge (OIDC).
+      # Needed to publish results to the OpenSSF REST API (OIDC).
       id-token: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2 (updated 2026-05-31)
@@ -45,7 +43,9 @@ jobs:
           name: scorecard-results
           path: results.sarif
           retention-days: 5
-      - name: Upload SARIF to code-scanning
-        uses: github/codeql-action/upload-sarif@7211b7c8077ea37d8641b6271f6a365a22a5fbfa  # v4.36.0 (updated 2026-05-31)
-        with:
-          sarif_file: results.sarif
+        # Scorecard results are intentionally NOT uploaded to the code-scanning
+        # dashboard: those checks (Pinned-Dependencies, Code-Review, Maintained,
+        # …) are supply-chain/policy signals, not code vulnerabilities, and they
+        # added noise to the Security tab alongside the real CodeQL findings. The
+        # run still publishes its score to the OpenSSF REST API and keeps the
+        # SARIF as a build artifact for inspection.
