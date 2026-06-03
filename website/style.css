@@ -201,11 +201,12 @@ pre.toml { margin: 0; max-height: 360px; overflow: auto; }
 }
 .console-header {
   display: flex; align-items: center; gap: 0.4rem;
-  padding: 0.5rem 0.7rem; background: var(--bg-soft); border-bottom: 1px solid var(--border);
+  /* The console is a dark terminal in both themes, so its chrome is fixed. */
+  padding: 0.5rem 0.7rem; background: #1e293b; border-bottom: 1px solid #334155;
 }
 .cdot { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
 .cdot.red { background: #ef4444; } .cdot.yellow { background: #eab308; } .cdot.green { background: #22c55e; }
-.console-title { margin-left: 0.5rem; color: var(--muted); font-size: 0.8rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.console-title { margin-left: 0.5rem; color: #94a3b8; font-size: 0.8rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .console-body {
   margin: 0; padding: 0.85rem 1rem; max-height: 340px; overflow: auto;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.82rem; line-height: 1.5;
@@ -249,7 +250,63 @@ pre.toml { margin: 0; max-height: 360px; overflow: auto; }
 .nav-links { display: flex; gap: 1.1rem; align-items: center; }
 
 /* ---- Configuration section ------------------------------------------- */
-.config-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; align-items: start; margin: 1rem 0; }
+/* minmax(0,…) + min-width:0 lets the track shrink below the code's min-content
+   instead of blowing the grid wider than the viewport on small screens. */
+.config-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; align-items: start; margin: 1rem 0; }
+.config-grid > div { min-width: 0; }
 .config-grid h3 { margin: 0 0 0.5rem; font-size: 1rem; }
 .config-grid pre { margin: 0; height: 100%; }
-@media (max-width: 760px) { .config-grid { grid-template-columns: 1fr; } }
+@media (max-width: 760px) { .config-grid { grid-template-columns: minmax(0, 1fr); } }
+
+/* ---- Theme toggle ---------------------------------------------------- */
+.theme-toggle {
+  background: var(--bg-soft); border: 1px solid var(--border); color: var(--muted);
+  border-radius: 8px; width: 34px; height: 34px; cursor: pointer; font-size: 1rem;
+  line-height: 1; display: inline-flex; align-items: center; justify-content: center; padding: 0;
+}
+.theme-toggle:hover { border-color: var(--accent); color: var(--text); }
+
+/* ---- Light theme (dark is the default :root) ------------------------- */
+:root[data-theme="light"] {
+  --bg: #ffffff;
+  --bg-soft: #f1f5f9;
+  --panel: #f8fafc;
+  --border: #e2e8f0;
+  --text: #0f172a;
+  --muted: #475569;
+  --faint: #64748b;
+  --accent: #6366f1;
+  --accent-2: #4f46e5;
+  --green: #059669;
+}
+:root[data-theme="light"] .hero { background: linear-gradient(160deg, #eef2ff 0%, #f8fafc 100%); }
+:root[data-theme="light"] p { color: #334155; }
+:root[data-theme="light"] ol { color: #334155; }
+:root[data-theme="light"] pre code { color: #1e293b; }
+:root[data-theme="light"] p code, :root[data-theme="light"] li code { background: rgba(99,102,241,0.1); color: #4338ca; }
+:root[data-theme="light"] .notice p { color: #3730a3; }
+:root[data-theme="light"] .hero-img { box-shadow: 0 16px 48px rgba(15,23,42,0.18); }
+/* readability fixes for light backgrounds */
+:root[data-theme="light"] .flow .node-out { color: #047857; }
+:root[data-theme="light"] .gh-verdict.v-bad { color: #b91c1c; }
+:root[data-theme="light"] .gh-verdict.v-warn { color: #b45309; }
+:root[data-theme="light"] .gh-verdict.v-ok { color: #047857; }
+
+/* ---- Tablet/stacked (≤760px): wrap code so nothing is cut off ---------- */
+@media (max-width: 760px) {
+  /* Long shell/TOML lines wrap instead of overflowing off the right edge.
+     white-space must be on the <pre> (the formatting root), not the inner code. */
+  pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .config-grid pre { height: auto; }
+}
+
+/* ---- Phones (≤640px): tidy the nav + spacing -------------------------- */
+@media (max-width: 640px) {
+  nav { flex-wrap: wrap; gap: 0.6rem 1rem; }
+  .nav-links { gap: 0.9rem; flex-wrap: wrap; }
+  main { padding: 1rem 1rem 2.5rem; }
+  section { padding: 1.5rem 0; }
+  h2 { font-size: 1.3rem; }
+  pre { padding: 0.85rem 0.95rem; }
+  pre code { font-size: 0.8rem; }
+}
