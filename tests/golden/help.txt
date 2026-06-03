@@ -9,9 +9,9 @@ usage: jury [-h] [--pr PR] [--repo REPO] [--diff-file DIFF_FILE]
             [--chair CHAIR] [--mock] [--strict] [--verify] [--no-verify]
             [--doctor] [--write WRITE] [-o OUTPUT] [--metadata-json PATH]
             [--format {markdown,json,sarif}] [--transcript] [--no-transcript]
-            [--verbose] [--post-summary] [--post-inline] [--post-progress]
-            [--post-mode {single,phased}] [--dry-run] [--label] [--ci]
-            [--fail-on FAIL_ON] [--cache] [--clear-cache]
+            [--verbose] [--live] [--post-summary] [--post-inline]
+            [--post-progress] [--post-mode {single,phased}] [--dry-run]
+            [--label] [--ci] [--fail-on FAIL_ON] [--cache] [--clear-cache]
             [--cache-dir CACHE_DIR] [--suggest-patches] [--patches-out PATH]
             [--incremental] [-q] [--config-validate] [--strict-config]
             [--version]
@@ -81,6 +81,9 @@ options:
                         set
   --verbose             summary report followed by the full transcript, in one
                         document
+  --live                stream each step (review, debate, verdict) as it
+                        happens; with --pr, also post each step as its own PR
+                        comment
   --post-summary, --post
                         post the report as a single summary comment on --pr
   --post-inline         post inline review comments for located findings on

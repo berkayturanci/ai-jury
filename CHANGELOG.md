@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Live play-by-play** (#210): `--live` streams the deliberation as it happens —
+  each reviewer's output, each debate turn, the verification, and the chair's
+  decision are emitted the moment they land, instead of only at the end. With
+  `--pr` each step is also posted as its own PR comment ("post after post", as if
+  watching the jury live). The orchestrator stays pure: it fires an optional
+  `on_event(kind, result, round_no)` callback in deterministic per-phase order;
+  the CLI does the I/O. PR posting is best-effort and never aborts the run.
+
 - **Full-transcript / verbose output** (#208): `--transcript` renders the whole
   play-by-play — each agent's raw review, the debate exchanges, and the chair's
   decision *and its reasoning* — instead of the consensus-first summary;

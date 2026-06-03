@@ -32,7 +32,7 @@ from .github import (
 from .metadata import build_run_metadata
 from .orchestrator import review_diff
 from .policy import PolicyError, load_policy
-from .report import render, render_transcript
+from .report import render, render_live_step, render_transcript
 
 
 def _read_diff(args) -> tuple[str, str]:
@@ -180,6 +180,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--verbose", dest="verbose", action="store_true",
         help="summary report followed by the full transcript, in one document",
+    )
+    p.add_argument(
+        "--live", dest="live", action="store_true",
+        help="stream each step (review, debate, verdict) to stdout as it happens; "
+             "add --pr --post to also post each step as its own PR comment",
     )
     p.add_argument(
         "--post-summary", "--post", dest="post_summary", action="store_true",
@@ -846,11 +851,32 @@ def main(argv: list[str] | None = None) -> int:
         else:
             log(f"cache miss ({cache_k[:12]}…) — running jury")
 
+    # Live play-by-play (issue #210): stream each step as it happens. Prints a
+    # titled block to stdout the moment a phase result lands. Posting each step to
+    # the PR is OPT-IN — it requires BOTH --pr and --post (bare --pr only selects
+    # the diff source, never auto-posts), so `--live` alone just streams locally.
+    # Posting is best-effort: a GitHub hiccup is logged and never aborts the run.
+    live_posts = bool(args.live and args.post_summary and args.pr)
+    on_event = None
+    if args.live:
+        def on_event(kind, result, round_no=None):
+            title, body = render_live_step(kind, result, round_no)
+            print(f"## {title}\n\n{body}\n", flush=True)
+            if live_posts:
+                try:
+                    post_pr_comment(args.pr, f"## {title}\n\n{body}", args.repo)
+                except Exception as exc:  # noqa: BLE001 - best-effort, never crash
+                    log(f"live: failed to post step to PR #{args.pr}: {exc}")
+
+    # We stream live only when actually running the jury; a cache hit has nothing
+    # to replay, so the consolidated report is still printed in that case.
+    live_streamed = bool(args.live) and outcome is None
+
     if outcome is None:
         try:
             outcome, _plan = review_diff(
                 config, diff, context=context, mock=args.mock, strict=args.strict,
-                policy=policy, log=log,
+                policy=policy, log=log, on_event=on_event,
             )
         except KeyboardInterrupt:
             # Graceful cancellation (issue #30): a jury run can be long, so
@@ -961,7 +987,11 @@ def main(argv: list[str] | None = None) -> int:
         with Path(args.output).open("w", encoding="utf-8") as fh:
             fh.write(report + "\n")
         log(f"report written to {args.output}")
-    else:
+    elif not (live_streamed and args.format == "markdown"):
+        # In --live markdown mode the step stream WAS the stdout output; don't also
+        # dump the consolidated report (it would duplicate everything just shown).
+        # For json/sarif the stream is human-readable markdown, so the requested
+        # machine-readable document must still go to stdout.
         print(report)
 
     if args.post_summary:
