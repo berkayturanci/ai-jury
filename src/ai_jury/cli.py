@@ -19,8 +19,8 @@ from pathlib import Path
 from . import __version__
 from . import doctor as doctor_module
 from .ci import evaluate_ci
-from .config import ConfigError, load_config, load_raw_config, validate_config
 from .classification import classify, label_strings
+from .config import ConfigError, load_config, load_raw_config, validate_config
 from .github import (
     apply_labels,
     post_inline_comments,
