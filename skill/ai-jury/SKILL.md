@@ -36,6 +36,43 @@ Pick the form that matches the request:
 
 Stream progress goes to stderr; the markdown report goes to stdout (or `-o file.md`).
 
+## Parameters (the ones you'll reach for)
+
+Grouped by intent — the common flags and what they do. The full, exhaustive
+reference (every flag + `jury.toml` key, with values and examples) is
+[`docs/parameters.md`](../../docs/parameters.md).
+
+**Choose what to review** (one of):
+- `--pr <n>` — a GitHub PR (via `gh`); `--repo owner/name` to target another repo.
+- `--diff-file <path>` / `--diff-file -` — a diff file, or stdin.
+
+**Depth** (how hard to look):
+- `--rounds {1,2}` — 1 = independent review only, 2 = + debate. Fixed value disables early-stop.
+- `--verify` / `--no-verify` — run the chair's verification round (default on).
+- `--auto` — risk-aware auto-depth: scale rounds/verify to the diff.
+- `--chair <agent|rotate>` — who synthesizes the verdict.
+
+**Output & how much to show:**
+- `--format {markdown,json,sarif}` — report format (default markdown).
+- `-o <file>` — write the report to a file instead of stdout.
+- `--transcript` — full play-by-play (each agent's review, the debate, the chair's reasoning) instead of the summary.
+- `--verbose` — summary **and** the full transcript in one document.
+- `--live` — stream each step as it happens; add `--pr --post` to post each step to the PR live.
+
+**Post to the PR** (require `--pr`):
+- `--post` — post the report as one summary comment (`--post-mode phased` splits it into Round 1 / debate / decision).
+- `--post-inline` — inline comments on located findings. `--label` — apply effort/risk/security labels.
+
+**Gate a merge (CI):**
+- `--ci --fail-on critical,major` — exit non-zero when a blocking finding remains.
+
+**Scope & cost:**
+- `--incremental` — only the diff since the last jury run on the PR.
+- `--suggest-patches` — opt-in, inspectable fixes for verified findings (never auto-applied).
+- `--cache` — reuse a cached outcome for an unchanged diff+config.
+
+Run `jury --help` for the complete flag list, or `jury config show` for the effective config.
+
 ## End-to-end flow (setup → review → report)
 
 When asked to "review" something, run the whole flow in one go — `jury` already
