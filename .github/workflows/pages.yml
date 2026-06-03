@@ -39,14 +39,18 @@ jobs:
           python -m coverage json -o coverage.json
           python - <<'PY'
           import json
-          pct = round(json.load(open("coverage.json"))["totals"]["percent_covered"])
+          # Keep two decimals so the badge reflects the true figure (e.g. 99.95%)
+          # instead of rounding 99.95 up to a misleading "100%". `:g` trims a
+          # trailing ".0" so a clean 100 still shows as "100%", not "100.0%".
+          pct = round(json.load(open("coverage.json"))["totals"]["percent_covered"], 2)
           color = ("brightgreen" if pct >= 90 else "green" if pct >= 80
                    else "yellowgreen" if pct >= 70 else "yellow" if pct >= 60 else "red")
+          msg = f"{pct:g}%"
           json.dump(
-              {"schemaVersion": 1, "label": "coverage", "message": f"{pct}%", "color": color},
+              {"schemaVersion": 1, "label": "coverage", "message": msg, "color": color},
               open("website/coverage-badge.json", "w"),
           )
-          print(f"coverage badge: {pct}% ({color})")
+          print(f"coverage badge: {msg} ({color})")
           PY
       - name: Configure Pages
         uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b  # v5 (pinned 2026-05-31)
