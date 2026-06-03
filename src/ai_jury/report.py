@@ -264,6 +264,33 @@ def render(
     return "\n".join(lines)
 
 
+_LIVE_LABELS = {
+    "review": "Round 1 review",
+    "debate": "Cross-examination",
+    "verify": "Verification",
+    "synthesis": "Decision — verdict & reasoning",
+}
+
+
+def render_live_step(kind: str, result: AgentResult, round_no: int | None = None) -> tuple[str, str]:
+    """Format one streamed step as ``(title, body)`` for live output (issue #210).
+
+    Pure — no I/O. The CLI ``--live`` handler prints this to stdout and (with
+    ``--pr``) posts it as its own comment, as each step completes. ``kind`` is one
+    of review / debate / verify / synthesis."""
+    label = _LIVE_LABELS.get(kind, kind)
+    if kind == "debate" and round_no:
+        label = f"Cross-examination · round {round_no}"
+    if kind in ("verify", "synthesis"):
+        who = f"chair `{result.agent}`"
+    else:
+        who = f"`{result.agent}` ({result.vendor})"
+    status = f"{result.duration_s:.0f}s" if result.ok else _fail_status(result)
+    title = f"🏛️ AI Jury — {label}: {who} — {status}"
+    body = result.output.strip() if result.ok else ""
+    return title, (body or "_(no output)_")
+
+
 def _conversation_blocks(
     reviews: list[AgentResult],
     debate: list[AgentResult],

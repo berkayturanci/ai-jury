@@ -297,7 +297,15 @@ def run_jury(
     policy: ReviewPolicy | None = None,
     log=lambda _msg: None,
     budget: RunBudget | None = None,
+    on_event=None,
 ) -> JuryOutcome:
+    # Live play-by-play hook (issue #210): an optional callback fired after each
+    # phase result is produced — ``on_event(kind, result, round_no=None)`` with
+    # kind in {"review", "debate", "verify", "synthesis"}. It lets a caller stream
+    # the deliberation as it happens (CLI ``--live``) without the orchestrator
+    # doing any I/O itself. Fired in stable per-phase order (not thread-completion
+    # order) so the event sequence is deterministic. Defaults to a no-op.
+    emit = on_event or (lambda *_a, **_k: None)
     # Repository review policy (optional, #8): maintainer-authored, TRUSTED
     # content rendered into each REVIEW prompt in a clearly separated section.
     # When ``policy`` is None a sentinel placeholder is used, so the prompt is
@@ -425,6 +433,10 @@ def run_jury(
         all_findings.extend(found)
         all_warnings.extend(warns)
 
+    # Stream round-1 reviews as they're now finalized (stable order).
+    for r in reviews:
+        emit("review", r)
+
     # Deterministic consensus grouping across reviewers.
     groups = group_findings(all_findings, len(reviews))
 
@@ -481,6 +493,8 @@ def run_jury(
                         prior, budget, retries, log, round_no,
                     )
                     rounds_executed = round_no
+                    for r in debate:
+                        emit("debate", r, round_no)
                     dconv, dwhy = convergence.debate_convergence(debate)
                     if dconv:
                         stop_reason = f"converged after round {round_no}: {dwhy}"
@@ -505,6 +519,8 @@ def run_jury(
                     [], budget, retries, log, 2,
                 )
                 rounds_executed = 2
+                for r in debate:
+                    emit("debate", r, 2)
         elif config.rounds >= 2:
             stop_reason = "round 2 skipped: need >=2 successful reviews to debate"
             log(stop_reason)
@@ -528,6 +544,8 @@ def run_jury(
             )
             all_warnings.extend(verify_warnings)
             _apply_verdicts(groups, verdicts)
+            if verify_result is not None:
+                emit("verify", verify_result)
 
     # Synthesis: the chair consolidates. When the resolved chair is ALSO a
     # round-1 reviewer, feed it an anonymized view of the reviews (#38 guardrail)
@@ -557,6 +575,8 @@ def run_jury(
             anonymize_reviews=anonymize_synthesis,
             rng=run_rng,
         )
+        if synthesis is not None:
+            emit("synthesis", synthesis)
 
     return JuryOutcome(
         reviews=reviews,
@@ -871,6 +891,7 @@ def review_diff(
     seed: int | None = None,
     policy: ReviewPolicy | None = None,
     log=lambda _msg: None,
+    on_event=None,
 ) -> tuple[JuryOutcome, largediff.DiffPlan]:
     """Plan a diff (filter + size + mode) then run the jury (issue #31).
 
@@ -920,6 +941,7 @@ def review_diff(
         return run_jury(
             config, chunk, context=context, mock=mock, strict=strict,
             seed=seed, policy=policy, log=log, budget=shared_budget,
+            on_event=on_event,
         )
 
     if plan.mode == largediff.MODE_FULL:

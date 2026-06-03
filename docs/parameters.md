@@ -64,6 +64,7 @@ the default shown below.
 | `--format` | `markdown` \| `json` \| `sarif` | `markdown` | Output format for stdout/`--output`. |
 | `--transcript` / `--no-transcript` | flag | from config | Render the full play-by-play transcript (each agent's review, the debate, and the chair's reasoning) instead of the consensus-first summary. `--no-transcript` forces the summary even if `[jury] transcript` is set. Markdown only; rendering-only (does not change the run or its cache key). |
 | `--verbose` | flag | off | Summary report **and** the full transcript, in one document. Implies a transcript even with `--no-transcript`. |
+| `--live` | flag | off | Stream each step (each review, each debate turn, verification, the decision) to stdout **as it happens**. Add **`--pr --post`** to also post each step as its own PR comment (posting is opt-in — bare `--pr` only selects the source). The live stream replaces the consolidated **markdown** stdout dump (`-o` still writes the full report to a file; `--format json`/`sarif` still print the document to stdout). In chunked large-diff mode the stream repeats once per chunk. |
 | `-o`, `--output` | path | stdout | Write the report to a file. |
 | `--metadata-json` | path | — | Write machine-readable run metadata (durations, status, rounds) as JSON. |
 | `-q`, `--quiet` | flag | off | Suppress progress logs on stderr. |
