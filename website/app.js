@@ -21,13 +21,23 @@
     });
   })();
 
-  /* ---- Nav scrolled state ------------------------------------------- */
+  /* ---- Nav scrolled + auto-hide on scroll --------------------------- */
   (function () {
     var nav = $("nav");
     if (!nav) return;
-    var onScroll = function () { nav.classList.toggle("scrolled", window.scrollY > 8); };
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
+    var last = window.scrollY, ticking = false;
+    function update() {
+      var y = window.scrollY;
+      nav.classList.toggle("scrolled", y > 8);
+      // hide when scrolling down past the hero; show when scrolling up
+      if (y > 240 && y > last + 6) nav.classList.add("nav-hidden");
+      else if (y < last - 6 || y <= 240) nav.classList.remove("nav-hidden");
+      last = y; ticking = false;
+    }
+    update();
+    window.addEventListener("scroll", function () {
+      if (!ticking) { ticking = true; requestAnimationFrame(update); }
+    }, { passive: true });
   })();
 
   /* ---- Mobile hamburger menu ---------------------------------------- */
@@ -159,13 +169,19 @@
     }
     function lit(stage) { if (stages[stage]) stages[stage].classList.add("lit"); }
 
-    // Two alternating scenarios — a clean PR and one that needs changes.
+    // Three looping scenarios — different panels & outcomes.
     var SCENARIOS = [
-      { pr: "123", changes: false },
-      { pr: "124", changes: true, findings: "2 blocking" }
+      { pr: "123", reviewers: ["claude", "codex", "agy", "qwen"], debate: true,  changes: false },
+      { pr: "124", reviewers: ["claude", "codex"],               debate: true,  changes: true, findings: "2 blocking" },
+      { pr: "125", reviewers: ["codex", "agy", "qwen"],          debate: false, changes: false }
     ];
     function setScenario(s) {
       if (ttl) ttl.textContent = "$ jury --pr " + s.pr;
+      // panel: fade reviewers not on this PR's jury
+      chips.forEach(function (c) { c.classList.toggle("muted", s.reviewers.indexOf(c.getAttribute("data-rev")) === -1); });
+      // round 2: shown only when the panel actually debates
+      if (stages[2]) stages[2].classList.toggle("skipped", !s.debate);
+      if (debateMark) { debateMark.classList.remove("lit"); debateMark.textContent = s.debate ? "debate ⇄" : "skip ✓"; }
       // start in a neutral "pending" state — the outcome isn't known until the flow arrives
       if (verdict) {
         verdict.className = "verdict-badge pending";
@@ -173,7 +189,6 @@
       }
       if (stages[5]) stages[5].classList.remove("changed");
       if (findings) { findings.hidden = true; findings.innerHTML = ""; }
-      if (debateMark) debateMark.textContent = "debate ⇄";
     }
     function revealVerdict(s) {
       if (verdict) {
@@ -219,12 +234,13 @@
       at(t, function () { spark(0); });
       at(t + D, function () { lit(1); });
       t += D + g(240);
-      // reviewers light up one by one
-      chips.forEach(function (c, i) { at(t + i * g(200), function () { c.classList.add("lit"); }); });
-      t += chips.length * g(200) + g(260);
-      // hop: reviewers → round 2 (debate)
+      // reviewers light up one by one (only this PR's panel)
+      var active = chips.filter(function (c) { return s.reviewers.indexOf(c.getAttribute("data-rev")) !== -1; });
+      active.forEach(function (c, i) { at(t + i * g(200), function () { c.classList.add("lit"); }); });
+      t += active.length * g(200) + g(260);
+      // hop: reviewers → round 2 (debate) — only when the panel debates
       at(t, function () { spark(1); });
-      at(t + D, function () { lit(2); if (debateMark) debateMark.classList.add("lit"); });
+      if (s.debate) { at(t + D, function () { lit(2); if (debateMark) debateMark.classList.add("lit"); }); }
       t += D + g(460);
       // hop: round 2 → verify
       at(t, function () { spark(2); });
