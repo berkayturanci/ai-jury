@@ -212,7 +212,7 @@
       var html = "";
       // summary
       html += '<div class="cr-summary">'
-        + '<div class="cr-big pc-' + cls(overall) + '">' + overall.toFixed(0) + '%<small>overall</small></div>'
+        + '<div class="cr-big pc-' + cls(overall) + '">' + parseFloat(overall.toFixed(2)) + '%<small>overall</small></div>'
         + '<div class="cr-sumbar"><div class="cr-track"><span class="bg-' + cls(overall) + '" style="width:' + overall.toFixed(1) + '%"></span></div>'
         + '<div class="cr-sublabel"><span>' + covAll + ' / ' + totalAll + ' covered</span><span>' + rows.length + ' files</span></div></div>'
         + '<div class="cr-actions"><a class="btn ghost" href="' + base + 'index.html" target="_blank" rel="noopener">Line-by-line ↗</a></div>'
@@ -235,7 +235,7 @@
         html += "<tr>"
           + '<td><span class="cr-file"><a href="' + base + esc(r.url) + '" target="_blank" rel="noopener">' + esc(r.file) + "</a></span></td>"
           + '<td><div class="cr-covcell"><div class="cr-mini"><span class="bg-' + c + '" style="width:' + r.pct.toFixed(1) + '%"></span></div>'
-          + '<span class="cr-pct pc-' + c + '">' + r.pct.toFixed(0) + '%</span></div></td>'
+          + '<span class="cr-pct pc-' + c + '">' + parseFloat(r.pct.toFixed(2)) + '%</span></div></td>'
           + '<td class="num">' + r.covered + "/" + r.total + "</td>"
           + '<td class="num">' + (r.missing || 0) + "</td>"
           + "</tr>";
