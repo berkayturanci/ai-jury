@@ -13,7 +13,7 @@ seconds are used as an approximate cost *proxy*, not a dollar cost.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -43,7 +43,7 @@ def _agent_entry(result) -> dict:
     }
 
 
-def _rounds_executed(outcome: JuryOutcome) -> int:
+def _rounds_executed(outcome: "JuryOutcome") -> int:
     # Prefer the orchestrator's authoritative count (adaptive rounds, issue #40);
     # fall back to inferring it from the phases that produced output.
     recorded = getattr(outcome, "rounds_executed", None)
@@ -55,7 +55,7 @@ def _rounds_executed(outcome: JuryOutcome) -> int:
     return rounds
 
 
-def build_run_metadata(outcome: JuryOutcome, config: JuryConfig) -> dict:
+def build_run_metadata(outcome: "JuryOutcome", config: "JuryConfig") -> dict:
     """Return a machine-readable metadata dict for a jury run.
 
     The dict is safe to serialize as JSON and contains no diff text, prompt
@@ -123,7 +123,7 @@ def build_run_metadata(outcome: JuryOutcome, config: JuryConfig) -> dict:
         # counts are available from the underlying CLIs.
         "total_wall_clock_s": total_wall_clock_s,
         "cost_signal": "wall-clock-proxy",
-        "generated_at": datetime.now(UTC).isoformat(),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
     }
 
 
