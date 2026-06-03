@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The **skill** (`skill/ai-jury/SKILL.md`) now includes a curated **Parameters**
+  section (#213) — the common flags grouped by intent (what to review, depth,
+  output incl. `--transcript`/`--verbose`/`--live`, PR posting, CI gating, scope)
+  with a pointer to the full `docs/parameters.md` reference — so the option surface
+  is discoverable when ai-jury is invoked as a Claude Code skill.
 - Removed internal `(issue #N)` references from user-facing surfaces (#212): the
   `jury --help` text and the docs pages no longer cite this repo's issue tracker,
   which means nothing to a reader. The `CHANGELOG` and source-code comments keep
