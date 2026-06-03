@@ -94,6 +94,7 @@
       <div class="nav-links">
         <a class="nav-link" href="coverage.html">← Coverage</a>
         <a class="nav-link hide-sm" href="docs.html">Docs</a>
+        <button class="docs-menu-btn" id="menu-btn" type="button" aria-expanded="false">☰ Menu</button>
         <button class="icon-btn theme-track" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" title="Toggle light / dark">
           <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
           <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
@@ -141,9 +142,6 @@
     </aside>
 
     <main class="docs-main cov-report">
-      <div class="docs-mobilebar">
-        <button class="docs-menu-btn" id="menu-btn" type="button" aria-expanded="false">☰ Docs menu</button>
-      </div>
       <div class="crumbs"><a href="coverage.html">Test coverage</a> <span>/</span> <span>Full report</span></div>
       <p class="docs-kicker" style="margin-top:.2rem">Quality</p>
       <h1 class="docs-h1">Coverage report</h1>
@@ -166,7 +164,7 @@
       try { localStorage.setItem("theme", light ? "dark" : "light"); } catch (e) {}
     });
     var nav = $("nav");
-    var onScroll = function () { nav.classList.toggle("scrolled", window.scrollY > 8); };
+    var __lastY = window.scrollY; var onScroll = function () { var y = window.scrollY; nav.classList.toggle("scrolled", y > 8); if (y > 200 && y > __lastY + 6) nav.classList.add("nav-hidden"); else if (y < __lastY - 6 || y <= 200) nav.classList.remove("nav-hidden"); document.body.classList.toggle("nav-up", nav.classList.contains("nav-hidden")); __lastY = y; };
     onScroll(); window.addEventListener("scroll", onScroll, { passive: true });
 
     // mobile docs menu toggle
@@ -174,10 +172,11 @@
     if (mb && side) mb.addEventListener("click", function () {
       var open = side.classList.toggle("collapsed") === false;
       mb.setAttribute("aria-expanded", open ? "true" : "false");
-      mb.innerHTML = open ? "✕ Close menu" : "☰ Docs menu";
+      mb.innerHTML = open ? "✕ Close" : "☰ Menu";
+      var bar = mb.closest(".docs-mobilebar"); if (bar) bar.classList.toggle("open", open);
     });
-    side && side.querySelectorAll(".ds-link").forEach(function (a) {
-      a.addEventListener("click", function () { if (window.innerWidth <= 860) { side.classList.add("collapsed"); if (mb) { mb.setAttribute("aria-expanded", "false"); mb.innerHTML = "☰ Docs menu"; } } });
+    side && side.querySelectorAll(".ds-link, .ds-sub").forEach(function (a) {
+      a.addEventListener("click", function () { if (window.innerWidth <= 860) { side.classList.add("collapsed"); if (mb) { mb.setAttribute("aria-expanded", "false"); mb.innerHTML = "☰ Menu"; var bar = mb.closest(".docs-mobilebar"); if (bar) bar.classList.remove("open"); } } });
     });
 
     var REPORT_BASES = ["coverage/", "https://berkayturanci.github.io/ai-jury/coverage/"];

@@ -59,6 +59,7 @@
       <div class="nav-links">
         <a class="nav-link" href="index.html">← Back to site</a>
         <a class="nav-link hide-sm" href="https://github.com/berkayturanci/ai-jury">GitHub</a>
+        <button class="docs-menu-btn" id="menu-btn" type="button" aria-expanded="false">☰ Menu</button>
         <button class="icon-btn theme-track" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" title="Toggle light / dark">
           <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
           <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
@@ -70,9 +71,6 @@
   <div class="docs-shell wrap">
     <aside class="docs-side collapsed" id="docs-side"><!-- sidebar injected --></aside>
     <main class="docs-main" id="docs-main">
-      <div class="docs-mobilebar">
-        <button class="docs-menu-btn" id="menu-btn" type="button">☰ Docs menu</button>
-      </div>
       <div id="doc-content"><div class="doc-loading"><div class="doc-spinner"></div>Loading…</div></div>
     </main>
   </div>
@@ -133,12 +131,13 @@
       try { localStorage.setItem("theme", next); } catch (e) {}
     });
     var nav = $("nav");
-    var onScroll = function () { nav.classList.toggle("scrolled", window.scrollY > 8); };
+    var __lastY = window.scrollY; var onScroll = function () { var y = window.scrollY; nav.classList.toggle("scrolled", y > 8); if (y > 200 && y > __lastY + 6) nav.classList.add("nav-hidden"); else if (y < __lastY - 6 || y <= 200) nav.classList.remove("nav-hidden"); document.body.classList.toggle("nav-up", nav.classList.contains("nav-hidden")); __lastY = y; };
     onScroll(); window.addEventListener("scroll", onScroll, { passive: true });
     $("menu-btn").addEventListener("click", function () {
       var open = sideEl.classList.toggle("collapsed") === false;
       this.setAttribute("aria-expanded", open ? "true" : "false");
-      this.innerHTML = open ? "✕ Close menu" : "☰ Docs menu";
+      this.innerHTML = open ? "✕ Close" : "☰ Menu";
+      var bar = this.closest(".docs-mobilebar"); if (bar) bar.classList.toggle("open", open);
     });
 
     /* ---- sidebar ---- */
@@ -219,6 +218,10 @@
           e.preventDefault();
           var el = document.getElementById(link.getAttribute("data-id"));
           if (el) { window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 76, behavior: "smooth" }); }
+          if (window.innerWidth <= 860) {
+            sideEl.classList.add("collapsed");
+            var mb = $("menu-btn"); if (mb) { mb.setAttribute("aria-expanded", "false"); mb.innerHTML = "☰ Menu"; }
+          }
         });
       });
     }
@@ -228,6 +231,10 @@
       buildSidebar(null);
       var html = '<p class="docs-kicker">Reference</p><h1 class="docs-h1">Documentation</h1>';
       html += '<p class="docs-lede">Everything about ai-jury, rendered live from the repository\u2019s <code>docs/</code>. Pick a topic.</p>';
+      html += '<div class="docs-block"><h2>Documentation</h2><div class="dh-grid">'
+        + '<a class="dh-card" href="coverage.html"><span class="dh-t">Test coverage</span><span class="dh-f mono">live gauge + per-file report</span></a>'
+        + '<a class="dh-card" href="https://github.com/' + OWNER + "/" + REPO + '/blob/' + BRANCH + '/README.md"><span class="dh-t">README</span><span class="dh-f mono">on GitHub</span></a>'
+        + "</div></div>";
       GROUPS.forEach(function (g) {
         html += '<div class="docs-block"><h2>' + g.title + "</h2><div class=\"dh-grid\">";
         g.items.forEach(function (it) {
@@ -290,7 +297,7 @@
       // collapse mobile menu after navigation
       if (window.innerWidth <= 860) {
         sideEl.classList.add("collapsed");
-        var mb = $("menu-btn"); if (mb) { mb.setAttribute("aria-expanded", "false"); mb.innerHTML = "☰ Docs menu"; }
+        var mb = $("menu-btn"); if (mb) { mb.setAttribute("aria-expanded", "false"); mb.innerHTML = "☰ Menu"; var bar = mb.closest(".docs-mobilebar"); if (bar) bar.classList.remove("open"); }
       }
     }
     window.addEventListener("hashchange", route);
