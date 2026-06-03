@@ -79,4 +79,5 @@ show_missing = true
 skip_covered = false
 # Minimum total coverage. Keep at or just below the measured baseline so the
 # gate reflects reality today; raise it deliberately as coverage improves.
-fail_under = 80
+# Current measured total ~88% (statements + branches); line coverage ~91%.
+fail_under = 87
