@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="ai-jury">
+  <defs>
+    <linearGradient id="ped-g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#818cf8"></stop>
+      <stop offset="1" stop-color="#4f46e5"></stop>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="15" fill="url(#ped-g)"></rect>
+  
+  <path d="M12 24.5 L32 11 L52 24.5 Z" fill="#fff"></path>
+  <rect x="13.5" y="27" width="37" height="3.4" rx="1.2" fill="#fff"></rect>
+  <rect x="17.5" y="33.5" width="4.2" height="14.5" rx="1" fill="#fff"></rect>
+  <rect x="29.9" y="33.5" width="4.2" height="14.5" rx="1" fill="#fff"></rect>
+  <rect x="42.3" y="33.5" width="4.2" height="14.5" rx="1" fill="#fff"></rect>
+  <rect x="12.5" y="50.5" width="39" height="3.6" rx="1.4" fill="#fff"></rect>
+</svg>

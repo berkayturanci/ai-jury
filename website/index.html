@@ -3,29 +3,39 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <!-- Set the theme before first paint (no flash). Default dark; honor a saved
-       choice, else the OS preference. -->
+  <!-- Set theme before first paint (no flash). Follows OS unless a choice is saved. -->
   <script>
     (function () {
       try {
         var t = localStorage.getItem("theme");
         if (!t) t = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
-        if (t === "light") document.documentElement.setAttribute("data-theme", "light");
-      } catch (e) {}
+        document.documentElement.setAttribute("data-theme", t);
+      } catch (e) { document.documentElement.setAttribute("data-theme", "dark"); }
     })();
   </script>
   <title>ai-jury — cross-vendor multi-agent code review</title>
-  <meta name="description" content="ai-jury is a stdlib-only Python CLI that orchestrates native coding-agent CLIs (Claude Code, Codex, Antigravity) plus a free local model to review the same diff or PR, debate, verify, and synthesize one chair verdict. Local-first, secure by default, MIT." />
-  <meta name="keywords" content="code review, AI code review, multi-agent, LLM, Claude Code, Codex, Antigravity, Ollama, pull request, CI, Python CLI" />
+  <meta name="description" content="ai-jury is a stdlib-only Python CLI that orchestrates native coding-agent CLIs (Claude Code, Codex, Antigravity) plus a free local model to review the same diff or PR, debate, verify, and synthesize one chair verdict. See how it compares to hosted PR reviewers, a sample report, and the FAQ. Local-first, secure by default, MIT." />
+  <meta name="keywords" content="code review, AI code review, multi-agent, LLM, Claude Code, Codex, Antigravity, Ollama, local model, pull request, CI gating, Python CLI, code review comparison, CodeRabbit alternative, offline code review" />
   <meta name="author" content="Berkay Turancı" />
   <meta name="theme-color" content="#6366f1" />
   <link rel="canonical" href="https://berkayturanci.github.io/ai-jury/" />
   <meta name="robots" content="index, follow" />
 
+  <!-- Fonts: preconnect + preload the stylesheet so first paint isn't blocked -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" />
+
+  <link rel="manifest" href="site.webmanifest" />
+
   <!-- Icons -->
-  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
-  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png" />
-  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  <link rel="icon" href="favicon.ico" sizes="48x48" />
+  <link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png" />
+  <link rel="icon" href="favicon-16.png" sizes="16x16" type="image/png" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" sizes="180x180" />
+  <link rel="mask-icon" href="favicon.svg" color="#6366f1" />
 
   <!-- Open Graph -->
   <meta property="og:type" content="website" />
@@ -33,7 +43,7 @@
   <meta property="og:url" content="https://berkayturanci.github.io/ai-jury/" />
   <meta property="og:title" content="ai-jury — cross-vendor multi-agent code review" />
   <meta property="og:description" content="Install once. Run a cross-vendor review jury anywhere. Native coding-agent CLIs plus a free local model review the same diff, debate, verify, and synthesize one chair verdict." />
-  <meta property="og:image" content="https://berkayturanci.github.io/ai-jury/assets/og-banner.png" />
+  <meta property="og:image" content="assets/og-banner.png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta property="og:image:alt" content="ai-jury — Claude Code, Codex, Antigravity and a free local model review the same diff, debate, and synthesize one verdict." />
@@ -42,7 +52,7 @@
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="ai-jury — cross-vendor multi-agent code review" />
   <meta name="twitter:description" content="A stdlib-only Python CLI that runs Claude Code, Codex, Antigravity and a free local model as one review jury — debate, verify, one verdict." />
-  <meta name="twitter:image" content="https://berkayturanci.github.io/ai-jury/assets/og-banner.png" />
+  <meta name="twitter:image" content="assets/og-banner.png" />
 
   <!-- Structured data -->
   <script type="application/ld+json">
@@ -62,578 +72,635 @@
   }
   </script>
 
-  <link rel="stylesheet" href="style.css" />
+  <!-- Structured data: FAQ (rich results) -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "Is ai-jury a hosted service or SaaS?",
+        "acceptedAnswer": { "@type": "Answer", "text": "No. ai-jury is a local-first CLI and skill that runs on your machine or in your CI. There is no dashboard and no review server — your code does not leave to a third-party service. A hosted review SaaS is a deliberate non-goal." }
+      },
+      {
+        "@type": "Question",
+        "name": "Does ai-jury edit or auto-apply fixes to my code?",
+        "acceptedAnswer": { "@type": "Answer", "text": "Never automatically. By design it reviews and reports. With --suggest-patches it can emit inspectable suggested patches for verified findings only — you review and apply them yourself." }
+      },
+      {
+        "@type": "Question",
+        "name": "Can ai-jury run completely offline and free?",
+        "acceptedAnswer": { "@type": "Answer", "text": "Yes. Add a local open-weight model as a panel seat (vendor = \"local\" via Ollama, llama.cpp, vLLM, or LM Studio) and run with --preset offline for a $0, fully-offline review, or mix one local seat with cloud CLIs for more vendor diversity." }
+      },
+      {
+        "@type": "Question",
+        "name": "Are these real API calls to the models?",
+        "acceptedAnswer": { "@type": "Answer", "text": "No — ai-jury drives each vendor's own coding-agent CLI (claude, codex, agy) as a subprocess, so each reviewer runs in its native environment with its own tooling and context. It is orchestration, not raw model API calls." }
+      },
+      {
+        "@type": "Question",
+        "name": "What do I need installed to use ai-jury?",
+        "acceptedAnswer": { "@type": "Answer", "text": "Python 3.11+ and at least one reviewer — an agent CLI (claude, codex, agy) or a local model via Ollama. The gh CLI is needed for --pr. The tool itself is stdlib-only, with no third-party Python dependencies." }
+      },
+      {
+        "@type": "Question",
+        "name": "How does ai-jury keep secrets and untrusted diffs safe?",
+        "acceptedAnswer": { "@type": "Answer", "text": "Reviewers read attacker-controlled diffs, so they run sandboxed/read-only with diff-only context by default, and secret redaction is on before anything is sent." }
+      }
+    ]
+  }
+  </script>
+
+  <!-- Structured data: site navigation -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    "name": "ai-jury",
+    "url": "https://berkayturanci.github.io/ai-jury/",
+    "hasPart": [
+      { "@type": "WebPageElement", "name": "How it works", "url": "https://berkayturanci.github.io/ai-jury/#how" },
+      { "@type": "WebPageElement", "name": "Demo", "url": "https://berkayturanci.github.io/ai-jury/#demo" },
+      { "@type": "WebPageElement", "name": "Configuration", "url": "https://berkayturanci.github.io/ai-jury/#config" },
+      { "@type": "WebPageElement", "name": "Comparison", "url": "https://berkayturanci.github.io/ai-jury/#compare" },
+      { "@type": "WebPageElement", "name": "Sample report", "url": "https://berkayturanci.github.io/ai-jury/#report" },
+      { "@type": "WebPageElement", "name": "FAQ", "url": "https://berkayturanci.github.io/ai-jury/#faq" }
+    ],
+    "subjectOf": [
+      { "@type": "TechArticle", "name": "Documentation", "url": "https://berkayturanci.github.io/ai-jury/docs.html" },
+      { "@type": "WebPage", "name": "Test coverage", "url": "https://berkayturanci.github.io/ai-jury/coverage.html" }
+    ]
+  }
+  </script>
+
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <header class="hero">
-    <nav>
-      <span class="brand"><img class="brand-mark" src="favicon.svg" alt="" width="24" height="24" /> ai-jury <a id="site-version" class="ver" href="https://github.com/berkayturanci/ai-jury/releases/latest">v1.0.0</a></span>
-      <span class="nav-links">
-        <a class="nav-link" href="#demo">Demo</a>
-        <a class="nav-link" href="#config">Config</a>
-        <a class="nav-link" href="https://github.com/berkayturanci/ai-jury">GitHub</a>
-        <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" title="Toggle light / dark">🌙</button>
-      </span>
-    </nav>
+  <!-- ───────────────────────── Nav ───────────────────────── -->
+  <nav class="nav" id="nav">
+    <div class="wrap nav-inner">
+      <div class="brand">
+        <a class="brand-link" href="#top"><img src="assets/logos/mark-convergence.svg" alt="" /> ai-jury</a>
+        <a class="ver" id="site-version" href="https://github.com/berkayturanci/ai-jury/releases/latest">v1.0.0</a>
+      </div>
+      <div class="nav-links">
+        <a class="nav-link hide-sm" href="#how">How it works</a>
+        <a class="nav-link hide-sm" href="#demo">Demo</a>
+        <a class="nav-link hide-sm" href="#compare">Compare</a>
+        <a class="nav-link hide-sm" href="#faq">FAQ</a>
+        <a class="nav-link hide-sm" href="docs.html">Docs</a>
+        <a class="nav-link hide-sm" href="https://github.com/berkayturanci/ai-jury">GitHub</a>
+        <button class="icon-btn theme-track" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" title="Toggle light / dark">
+          <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+        </button>
+      </div>
+    </div>
+  </nav>
 
-    <div class="hero-inner">
-      <h1>Install once. Run a cross-vendor review jury anywhere.</h1>
-      <p class="badges">
-        <a href="https://pypi.org/project/ai-jury/"><img src="https://img.shields.io/pypi/v/ai-jury.svg?label=PyPI&logo=pypi&logoColor=white&color=3775A9" alt="PyPI version" /></a>
-        <a href="https://github.com/berkayturanci/ai-jury/releases/latest"><img src="https://img.shields.io/github/v/release/berkayturanci/ai-jury?label=release&logo=github" alt="Latest release" /></a>
-        <a href="https://github.com/berkayturanci/ai-jury/actions/workflows/ci.yml"><img src="https://github.com/berkayturanci/ai-jury/actions/workflows/ci.yml/badge.svg" alt="CI status" /></a>
-        <a href="coverage/"><img src="https://img.shields.io/endpoint?url=https://berkayturanci.github.io/ai-jury/coverage-badge.json" alt="Test coverage" /></a>
-        <a href="https://pypi.org/project/ai-jury/"><img src="https://img.shields.io/pypi/pyversions/ai-jury?logo=python&logoColor=white" alt="Supported Python versions" /></a>
-        <a href="https://github.com/berkayturanci/ai-jury/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT" /></a>
-      </p>
-      <p class="lede">
+  <span id="top"></span>
+
+  <!-- ───────────────────────── Hero ───────────────────────── -->
+  <header class="hero">
+    <div class="wrap">
+      <span class="eyebrow reveal"><span class="pip"></span> <b>Local-first</b> · stdlib-only Python · MIT</span>
+      <h1 class="reveal" data-d="1">Install once. Run a <span class="grad">cross-vendor review jury</span> anywhere.</h1>
+      <p class="lede reveal" data-d="2">
         A small, <strong>stdlib-only</strong> Python CLI that drives each vendor's
         <strong>native coding-agent CLI</strong> — Claude Code, OpenAI Codex, Google
-        Antigravity — plus an optional <strong>free, offline local / open-weight</strong>
-        model, to review the <em>same</em> diff or PR, cross-examine each other, and
-        synthesize <strong>one chair verdict</strong>. Local-first. Not API calls.
+        Antigravity — plus an optional <strong>free, offline local</strong> model, to review the
+        <em>same</em> diff or PR, cross-examine each other, and synthesize
+        <strong>one chair verdict</strong>. Not API calls.
       </p>
-      <div class="cta">
-        <a class="btn primary" href="https://github.com/berkayturanci/ai-jury">View on GitHub</a>
-        <a class="btn" href="#demo">Try the interactive demo ↓</a>
+      <div class="hero-install reveal" data-d="3">
+        <span class="hi-prompt mono">$</span>
+        <code id="hero-install-cmd">pipx install ai-jury</code>
+        <button class="hi-copy" id="hero-copy" type="button" aria-label="Copy install command">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          <span>copy</span>
+        </button>
       </div>
-      <img class="hero-img" src="assets/hero.png" width="1200" height="520"
-           alt="A diff or PR enters; four reviewers — Claude Code, Codex, Antigravity, and a free local/open-weight model — review it independently and debate each other's findings; a chair agent verifies and synthesizes one verdict (APPROVE / COMMENT / REQUEST CHANGES) plus a report and CI gate." />
+      <div class="cta reveal" data-d="3">
+        <a class="btn primary" href="https://github.com/berkayturanci/ai-jury">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.2.8-.5v-1.7c-3.2.7-3.9-1.5-3.9-1.5-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.7 1.3 3.4 1 .1-.8.4-1.3.8-1.6-2.6-.3-5.3-1.3-5.3-5.8 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.7 18.3 5 18.3 5c.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.5-2.7 5.5-5.3 5.8.4.4.8 1.1.8 2.2v3.3c0 .3.2.6.8.5 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5z"/></svg>
+          View on GitHub
+        </a>
+        <a class="btn ghost" href="#demo">Try the interactive demo ↓</a>
+      </div>
+      <p class="badges reveal" data-d="4">
+        <a href="https://github.com/berkayturanci/ai-jury/actions/workflows/ci.yml" title="Continuous integration"><img src="https://img.shields.io/github/actions/workflow/status/berkayturanci/ai-jury/ci.yml?branch=main&label=CI&logo=githubactions&logoColor=white" alt="CI status" loading="lazy" /></a>
+        <a href="https://berkayturanci.github.io/ai-jury/coverage/" title="Test coverage report"><img src="https://img.shields.io/endpoint?url=https://berkayturanci.github.io/ai-jury/coverage-badge.json" alt="Test coverage" loading="lazy" /></a>
+        <a href="https://github.com/berkayturanci/ai-jury/actions/workflows/codeql.yml" title="CodeQL static analysis"><img src="https://img.shields.io/github/actions/workflow/status/berkayturanci/ai-jury/codeql.yml?branch=main&label=CodeQL&logo=github&logoColor=white" alt="CodeQL status" loading="lazy" /></a>
+        <a href="https://scorecard.dev/viewer/?uri=github.com/berkayturanci/ai-jury" title="OpenSSF Scorecard"><img src="https://img.shields.io/ossf-scorecard/github.com/berkayturanci/ai-jury?label=OpenSSF%20Scorecard&logo=securityscorecard&logoColor=white" alt="OpenSSF Scorecard" loading="lazy" /></a>
+        <a href="https://github.com/berkayturanci/ai-jury/blob/main/LICENSE" title="MIT License"><img src="https://img.shields.io/badge/license-MIT-6366f1" alt="License: MIT" loading="lazy" /></a>
+      </p>
+
+      <!-- Animated pipeline -->
+      <div class="pipe-shell reveal" data-d="5">
+        <div class="pipe" id="pipe">
+          <div class="pipe-cap">
+            <span class="ttl" id="pipe-ttl">$ jury --pr 123</span>
+            <span class="pipe-legend">
+              <span><span class="dot d-claude" style="width:9px;height:9px;border-radius:50%"></span> Claude</span>
+              <span><span class="dot d-codex" style="width:9px;height:9px;border-radius:50%"></span> Codex</span>
+              <span><span class="dot d-agy" style="width:9px;height:9px;border-radius:50%"></span> Antigravity</span>
+              <span><span class="dot d-qwen" style="width:9px;height:9px;border-radius:50%"></span> Local · free</span>
+            </span>
+          </div>
+
+          <div class="pipe-flow">
+            <div class="stage stage-in" data-stage="0">
+              <div class="s-label">input</div>
+              <div class="s-main">diff / PR</div>
+              <div class="s-sub">redact · chunk</div>
+            </div>
+
+            <div class="conn" data-conn="0"><span class="spark"></span></div>
+
+            <div class="stage stage-panel" data-stage="1">
+              <div class="rev-chip" data-rev="claude"><span class="dot d-claude"></span><span class="rname">Claude Code</span><span class="rcmd">claude -p</span></div>
+              <div class="rev-chip" data-rev="codex"><span class="dot d-codex"></span><span class="rname">Codex</span><span class="rcmd">codex exec</span></div>
+              <div class="rev-chip" data-rev="agy"><span class="dot d-agy"></span><span class="rname">Antigravity</span><span class="rcmd">agy</span></div>
+              <div class="rev-chip" data-rev="qwen"><span class="dot d-qwen"></span><span class="rname">Local</span><span class="rev-tag">free</span></div>
+            </div>
+
+            <div class="conn" data-conn="1"><span class="spark"></span></div>
+
+            <div class="stage" data-stage="2" style="min-width:84px">
+              <div class="s-label">round 2</div>
+              <div class="s-main debate-mark" id="debate-mark">debate ⇄</div>
+            </div>
+
+            <div class="conn" data-conn="2"><span class="spark"></span></div>
+
+            <div class="stage" data-stage="3" style="min-width:84px">
+              <div class="s-label">check</div>
+              <div class="s-main">verify</div>
+            </div>
+
+            <div class="conn" data-conn="3"><span class="spark"></span></div>
+
+            <div class="stage stage-chair chair" data-stage="4">
+              <div class="s-label">synthesis</div>
+              <div class="s-main">chair</div>
+            </div>
+
+            <div class="conn" data-conn="4"><span class="spark"></span></div>
+
+            <div class="stage stage-verdict" data-stage="5">
+              <div class="s-label">verdict</div>
+              <span class="verdict-badge approve" id="hero-verdict">✓ APPROVE</span>
+              <div class="v-findings" id="hero-findings" hidden></div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </header>
 
-  <main>
-    <section>
-      <h2>Why a native-CLI jury</h2>
-      <p>
-        Different models miss different things. Running them as an adversarial panel —
-        each seeing the others' findings and arguing — surfaces more real issues and
-        filters more false positives than any single reviewer. The research-backed lever
-        is <strong>vendor heterogeneity</strong>, not more rounds — and a free
-        local/open-weight model adds a <em>different</em> perspective at zero marginal
-        cost. Each reviewer runs in its own native CLI with its own tooling, not a raw
-        model API call.
-      </p>
+  <main class="wrap">
+    <!-- ───────────────── Why ───────────────── -->
+    <section id="why">
+      <div class="sec-head wide reveal">
+        <p class="sec-kicker">Why a panel</p>
+        <h2>Different models miss different things.</h2>
+        <p>
+          Running them as an adversarial panel — each seeing the others' findings and arguing —
+          surfaces more real issues and filters more false positives than any single reviewer.
+          The research-backed lever is <strong style="color:var(--text)">vendor heterogeneity</strong>,
+          not more rounds. A free local/open-weight model adds a different perspective at zero
+          marginal cost, and each reviewer runs in its own native CLI — not a raw model API call.
+        </p>
+      </div>
     </section>
 
-    <!-- ───────────────────── Interactive demo ───────────────────── -->
-    <section id="demo" class="demo">
-      <h2>Build your jury</h2>
-      <p class="muted">
-        Pick a panel and depth — the flow and the generated <code>jury.toml</code> update
-        live. Then hit <strong>Run review</strong> to watch a scripted run play out on a
-        sample diff: the staged console output and the GitHub-style verdict change with
-        your choices. (Illustrative; nothing runs in your browser.)
-      </p>
+    <!-- ───────────────── How it works ───────────────── -->
+    <section id="how">
+      <div class="sec-head reveal">
+        <p class="sec-kicker">Pipeline</p>
+        <h2>How a run plays out</h2>
+        <p class="muted">Round 1 → adaptive debate → verification → one synthesized verdict.</p>
+      </div>
+      <div class="steps">
+        <div class="step reveal" data-d="1"><span class="bar"></span><span class="num">1</span>
+          <div class="step-k">independent review</div>
+          <h3>Every agent reviews the diff</h3>
+          <p>All available agents review the same diff concurrently against the same rubric — no agent sees another's work yet.</p>
+        </div>
+        <div class="step reveal" data-d="2"><span class="bar"></span><span class="num">2</span>
+          <div class="step-k">cross-examination</div>
+          <h3>The panel debates</h3>
+          <p>Each agent sees the others' reviews and emits agree / dispute / missed. With <code>early_stop</code>, a unanimous panel skips the round.</p>
+        </div>
+        <div class="step reveal" data-d="3"><span class="bar"></span><span class="num">3</span>
+          <div class="step-k">verification</div>
+          <h3>The chair re-judges findings</h3>
+          <p>False positives are dropped, and the report keeps the <em>evidence</em> behind every finding that survives.</p>
+        </div>
+        <div class="step reveal" data-d="4"><span class="bar"></span><span class="num">4</span>
+          <div class="step-k">synthesis</div>
+          <h3>One verdict, one report</h3>
+          <p>The chair consolidates consensus, disputed, and single-reviewer findings into a single verdict plus a CI gate.</p>
+        </div>
+      </div>
+    </section>
 
-      <div class="demo-grid">
-        <form class="demo-controls" aria-label="jury configuration">
-          <fieldset>
-            <legend>Reviewers</legend>
-            <label><input type="checkbox" id="ag-claude" checked /> <span class="dot d-claude"></span> Claude Code</label>
-            <label><input type="checkbox" id="ag-codex" checked /> <span class="dot d-codex"></span> Codex</label>
-            <label><input type="checkbox" id="ag-agy" /> <span class="dot d-agy"></span> Antigravity</label>
-            <label><input type="checkbox" id="ag-qwen" checked /> <span class="dot d-qwen"></span> Local / open-weight <span class="tag">free</span></label>
-          </fieldset>
+    <!-- ───────────────── Interactive demo ───────────────── -->
+    <section id="demo">
+      <div class="sec-head wide reveal">
+        <p class="sec-kicker">Interactive</p>
+        <h2>Build your jury</h2>
+        <p class="muted">
+          Pick a panel and depth — the flow and generated <code style="font-family:var(--font-mono);color:var(--accent-2)">jury.toml</code>
+          update live. Hit <strong style="color:var(--text)">Run review</strong> to watch a scripted run play out on a sample diff.
+          (Illustrative; nothing runs in your browser.)
+        </p>
+      </div>
 
-          <fieldset>
-            <legend>Depth</legend>
-            <label><input type="radio" name="rounds" value="1" /> 1 round (review only)</label>
-            <label><input type="radio" name="rounds" value="2" checked /> 2 rounds (+ debate)</label>
-            <label><input type="checkbox" id="verify" checked /> Verification pass</label>
-            <label><input type="checkbox" id="auto" /> Auto-depth <span class="tag">scales to the diff</span></label>
-          </fieldset>
-
-          <fieldset>
-            <legend>PR output</legend>
-            <label><input type="radio" name="postmode" value="single" checked /> Single comment</label>
-            <label><input type="radio" name="postmode" value="phased" /> Phased (Round 1 / Debate / Decision)</label>
-            <label><input type="checkbox" id="progress" /> Live progress comment</label>
-          </fieldset>
+      <div class="demo-grid reveal">
+        <form class="panel demo-controls" aria-label="jury configuration">
+          <div class="fieldset">
+            <div class="legend">Reviewers</div>
+            <label class="opt"><input type="checkbox" id="ag-claude" checked /> <span class="dot d-claude"></span> Claude Code</label>
+            <label class="opt"><input type="checkbox" id="ag-codex" checked /> <span class="dot d-codex"></span> Codex</label>
+            <label class="opt"><input type="checkbox" id="ag-agy" /> <span class="dot d-agy"></span> Antigravity</label>
+            <label class="opt"><input type="checkbox" id="ag-qwen" checked /> <span class="dot d-qwen"></span> Local / open-weight <span class="tag">free</span></label>
+          </div>
+          <div class="fieldset">
+            <div class="legend">Depth</div>
+            <label class="opt"><input type="radio" name="rounds" value="1" /> 1 round (review only)</label>
+            <label class="opt"><input type="radio" name="rounds" value="2" checked /> 2 rounds (+ debate)</label>
+            <label class="opt"><input type="checkbox" id="verify" checked /> Verification pass</label>
+            <label class="opt" id="opt-auto"><input type="checkbox" id="auto" /> Auto-depth <span class="tag accent">⚡ scales to diff</span></label>
+          </div>
+          <div class="fieldset">
+            <div class="legend">PR output</div>
+            <label class="opt"><input type="radio" name="postmode" value="single" checked /> Single comment</label>
+            <label class="opt"><input type="radio" name="postmode" value="phased" /> Phased (R1 / debate / decision)</label>
+            <label class="opt"><input type="checkbox" id="progress" /> Live progress comment</label>
+          </div>
         </form>
 
-        <div class="demo-stage">
-          <div class="flow" aria-hidden="true">
-            <div class="node node-in">diff / PR</div>
-            <div class="arrow">→</div>
-            <div class="panel-col">
-              <div class="node rev" data-rev="claude"><span class="dot d-claude"></span>Claude</div>
-              <div class="node rev" data-rev="codex"><span class="dot d-codex"></span>Codex</div>
-              <div class="node rev" data-rev="agy"><span class="dot d-agy"></span>Antigravity</div>
-              <div class="node rev" data-rev="qwen"><span class="dot d-qwen"></span>Local</div>
-            </div>
-            <div class="arrow" id="arr-debate">⇄</div>
-            <div class="node node-debate" id="n-debate">debate</div>
-            <div class="arrow">→</div>
-            <div class="node node-verify" id="n-verify">verify</div>
-            <div class="arrow">→</div>
-            <div class="node node-chair">chair</div>
-            <div class="arrow">→</div>
-            <div class="node node-out" id="n-out">verdict</div>
-          </div>
+        <div class="stage-card">
           <p class="flow-note" id="flow-note"></p>
-          <pre class="toml"><code id="toml-out"></code></pre>
+          <pre class="code toml"><code id="toml-out"></code></pre>
         </div>
       </div>
 
-      <div class="demo-run">
+      <div class="run-bar reveal">
         <button type="button" id="run-btn" class="btn primary">▶ Run review (demo)</button>
-        <span class="muted run-hint">Scripted on a sample diff — nothing executes in your browser. The output changes with the panel and depth above.</span>
+        <span class="run-hint">Scripted on a sample diff — the output changes with the panel &amp; depth.</span>
       </div>
 
       <div class="run-out" id="run-out" hidden>
-        <div class="console-box">
-          <div class="console-header">
-            <span class="cdot red"></span><span class="cdot yellow"></span><span class="cdot green"></span>
-            <span class="console-title" id="console-title">jury --pr 123</span>
-          </div>
-          <pre class="console-body" id="console-body"></pre>
+        <div class="term">
+          <div class="term-bar"><span class="cdot r"></span><span class="cdot y"></span><span class="cdot g"></span><span class="term-title" id="term-title">jury --pr 123</span></div>
+          <pre class="term-body" id="term-body"></pre>
         </div>
-        <div class="gh-comments" id="gh-comments" aria-live="polite"></div>
+        <div class="gh" id="gh-comments" aria-live="polite"></div>
       </div>
     </section>
 
-    <section>
-      <h2>Quickstart</h2>
-      <pre><code>pipx install ai-jury
+    <!-- ───────────────── Quickstart ───────────────── -->
+    <section id="quickstart">
+      <div class="sec-head reveal">
+        <p class="sec-kicker">Quickstart</p>
+        <h2>From zero to a verdict</h2>
+      </div>
 
-jury init                                      # scaffold jury.toml (detects agents + local models)
-jury init --preset offline                     # free, local-only ($0); also: fast / balanced / thorough
-jury config show                               # see the effective config that will run
-jury --pr 123                                  # review a GitHub PR
-jury --pr 123 --post --post-progress           # live: a sticky PR comment updated each round/chunk
-jury --pr 123 --post --post-mode phased        # post Round 1 / debate / decision as separate comments
-jury --pr 123 --auto                           # auto-depth: scale rounds/verify to the diff
-jury --ci --fail-on high,critical              # gate CI on blocking findings
-jury --mock --diff-file examples/sample.diff   # offline demo, no live CLIs</code></pre>
-      <p class="muted">
-        Requires Python 3.11+ and at least one reviewer — an agent CLI
-        (<code>claude</code>, <code>codex</code>, <code>agy</code>) or a free, offline
-        local model via Ollama; missing/unreachable ones are skipped. <code>gh</code>
-        is needed for <code>--pr</code>.
+      <div class="steps3 reveal">
+        <div class="step3">
+          <div class="s3-n">1</div>
+          <div class="s3-k">install</div>
+          <code class="s3-cmd">pipx install ai-jury</code>
+          <p>One command. Stdlib-only, no heavy dependency tree to resolve.</p>
+        </div>
+        <div class="step3">
+          <div class="s3-n">2</div>
+          <div class="s3-k">scaffold</div>
+          <code class="s3-cmd">jury init</code>
+          <p>Detects your installed agent CLIs and local models, writes a valid <code>jury.toml</code>.</p>
+        </div>
+        <div class="step3">
+          <div class="s3-n">3</div>
+          <div class="s3-k">review</div>
+          <code class="s3-cmd">jury --pr 123</code>
+          <p>Convene the panel on a PR — debate, verify, and one synthesized verdict.</p>
+        </div>
+      </div>
+
+      <p class="sec-kicker reveal" style="margin:2.4rem 0 .6rem">More commands</p>      <pre class="code reveal"><code><span class="cm"># install once</span>
+pipx install ai-jury
+
+jury init                             <span class="cm"># scaffold jury.toml (detects agents + local models)</span>
+jury init <span class="k">--preset</span> offline            <span class="cm"># free, local-only ($0); also: fast / balanced / thorough</span>
+jury config show                      <span class="cm"># see the effective config that will run</span>
+jury <span class="k">--pr</span> 123                         <span class="cm"># review a GitHub PR</span>
+jury <span class="k">--pr</span> 123 <span class="k">--post --post-progress</span>  <span class="cm"># live: a sticky PR comment updated each round</span>
+jury <span class="k">--pr</span> 123 <span class="k">--auto</span>                  <span class="cm"># auto-depth: scale rounds/verify to the diff</span>
+jury <span class="k">--ci --fail-on</span> high,critical     <span class="cm"># gate CI on blocking findings</span></code></pre>
+      <p class="muted reveal" style="margin-top:1rem">
+        Requires Python 3.11+ and at least one reviewer — an agent CLI (<code class="mono" style="color:var(--accent-2)">claude</code>,
+        <code class="mono" style="color:var(--accent-2)">codex</code>, <code class="mono" style="color:var(--accent-2)">agy</code>)
+        or a free local model via Ollama. <code class="mono" style="color:var(--accent-2)">gh</code> is needed for <code class="mono" style="color:var(--accent-2)">--pr</code>.
       </p>
     </section>
 
+    <!-- ───────────────── Configuration ───────────────── -->
     <section id="config">
-      <h2>Configuration</h2>
-      <p class="muted">
-        A run is driven by a <code>jury.toml</code> (or built-in defaults). Don't hand-write
-        it the first time — <strong>scaffold</strong> one, <strong>inspect</strong> what will
-        run, then go. Every field is in the
-        <a href="https://github.com/berkayturanci/ai-jury/blob/main/docs/configuration.md">configuration reference</a>.
-      </p>
-
-      <div class="config-grid">
+      <div class="sec-head wide reveal">
+        <p class="sec-kicker">Configuration</p>
+        <h2>Scaffold it, inspect it, then go</h2>
+        <p class="muted">A run is driven by a <code class="mono" style="color:var(--accent-2)">jury.toml</code> (or built-in defaults). Don't hand-write it the first time — every field is in the <a href="docs.html#configuration">configuration reference</a>.</p>
+      </div>
+      <div class="split reveal">
         <div>
           <h3>Set up &amp; inspect</h3>
-          <pre><code>jury init                   # scaffold
-jury init --preset balanced # or fast/offline/thorough
-jury init --list-agents     # CLIs available
-jury init --list-models     # local Ollama models
-jury config show            # effective config
-jury --doctor               # readiness + steps</code></pre>
+          <pre class="code"><code>jury init                   <span class="cm"># scaffold</span>
+jury init <span class="k">--preset</span> balanced <span class="cm"># or fast/offline/thorough</span>
+jury init <span class="k">--list-agents</span>     <span class="cm"># CLIs available</span>
+jury init <span class="k">--list-models</span>     <span class="cm"># local Ollama models</span>
+jury config show            <span class="cm"># effective config</span>
+jury <span class="k">--doctor</span>               <span class="cm"># readiness + steps</span></code></pre>
         </div>
         <div>
-          <h3>A <code>jury.toml</code></h3>
-          <pre class="toml"><code>[jury]
-rounds = 2          # 1 = review only, 2 = + debate
-chair  = "claude"   # who synthesizes the verdict
-verify = true       # drop false positives
-# auto_depth = true # scale depth to the diff (--auto)
+          <h3>A <code class="mono" style="color:var(--accent-2);font-size:.9rem">jury.toml</code></h3>
+          <pre class="code"><code><span class="k">[jury]</span>
+rounds = <span class="n">2</span>          <span class="cm"># 1 = review, 2 = + debate</span>
+chair  = <span class="s">"claude"</span>   <span class="cm"># who synthesizes</span>
+verify = <span class="n">true</span>       <span class="cm"># drop false positives</span>
 
-[[agent]]
-name = "claude"
-vendor = "anthropic"
-command = "claude"
+<span class="k">[[agent]]</span>
+name   = <span class="s">"claude"</span>
+vendor = <span class="s">"anthropic"</span>
+command = <span class="s">"claude"</span>
 
-[[agent]]              # free, offline reviewer
-name = "qwen"
-vendor = "local"
-model = "qwen2.5-coder:7b"
-endpoint = "http://localhost:11434/v1"</code></pre>
+<span class="k">[[agent]]</span>              <span class="cm"># free, offline reviewer</span>
+name   = <span class="s">"qwen"</span>
+vendor = <span class="s">"local"</span>
+model  = <span class="s">"qwen2.5-coder:7b"</span>
+endpoint = <span class="s">"http://localhost:11434/v1"</span></code></pre>
         </div>
       </div>
-      <p class="muted">
-        CLI flags override the file per run (e.g. <code>--rounds</code>, <code>--verify</code>,
-        <code>--auto</code>, <code>--chair</code>). Validate with
-        <code>jury --config-validate</code>; <code>--strict-config</code> turns warnings into errors.
+
+      <div class="cfg-keys reveal">
+        <div class="cfg-key"><code>rounds</code><span><code>1</code> = independent review only · <code>2</code> = + a debate round. With <code>early_stop</code> / <code>max_rounds</code>, a unanimous panel stops early.</span></div>
+        <div class="cfg-key"><code>chair</code><span>Which reviewer synthesizes the final verdict and writes the report. Defaults to the first available agent.</span></div>
+        <div class="cfg-key"><code>verify</code><span>The chair re-judges each candidate finding against the code to drop false positives — evidence is kept in the report.</span></div>
+        <div class="cfg-key"><code>auto_depth</code><span>Scales rounds &amp; verify to the diff — docs-only → shallow, security-touching → full. The <code>--auto</code> flag.</span></div>
+        <div class="cfg-key"><code>[[agent]]</code><span>Per reviewer: <code>vendor</code>, <code>command</code>, <code>extra_args</code>; for a local seat use <code>vendor = "local"</code> + <code>endpoint</code> + <code>model</code>.</span></div>
+        <div class="cfg-key"><code>timeout · retries</code><span><code>total_timeout</code> / <code>phase_timeout</code> / <code>retries</code> bound a run; results can be cached and reviews made incremental.</span></div>
+        <div class="cfg-key"><code>[jury.diff]</code><span>Large diffs are filtered + chunked; <code>[jury.context]</code> is <code>diff-only</code> by default with secret redaction on.</span></div>
+        <div class="cfg-key"><code>[jury.ci]</code><span>Exit-code gating for CI; pick the report <code>format</code> (markdown / json / sarif) and PR posting behaviour.</span></div>
+      </div>
+
+      <p class="muted reveal cfg-note">
+        Start from a <strong style="color:var(--text)">preset</strong> — <code class="mono">jury init --preset fast|balanced|thorough|offline</code> — then tweak. CLI flags
+        override the file per run (<code class="mono">--rounds</code>, <code class="mono">--verify</code>, <code class="mono">--auto</code>, <code class="mono">--chair</code>). Validate with
+        <code class="mono">jury --config-validate</code>; <code class="mono">--strict-config</code> turns warnings into errors. An optional, trusted
+        <code class="mono">.jury/policy.toml</code> adds high-risk paths, focus areas, and severity overrides — kept separate from <code class="mono">jury.toml</code>.
       </p>
     </section>
 
+    <!-- ───────────────── Features ───────────────── -->
+    <section id="features">
+      <div class="sec-head reveal">
+        <p class="sec-kicker">Built in</p>
+        <h2>Everything a review needs</h2>
+      </div>
+      <div class="features">
+        <div class="feature reveal" data-d="1">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0z"/><path d="M12 7v5l3 2"/></svg></div>
+          <h3>Free &amp; offline option</h3>
+          <p>Add a local open-weight model (Ollama, llama.cpp, vLLM, LM Studio) as a panel seat — zero cloud cost, fully offline, or mixed with cloud CLIs for diversity.</p>
+        </div>
+        <div class="feature reveal" data-d="2">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+          <h3>Follow the run live</h3>
+          <p><code>--post-progress</code> keeps a sticky PR comment updated each round; <code>--post-mode phased</code> posts Round 1 / debate / decision as separate comments.</p>
+        </div>
+        <div class="feature reveal" data-d="3">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
+          <h3>Secure by default</h3>
+          <p>Reviewers read attacker-controlled diffs, so they run sandboxed/read-only. <code>diff-only</code> context plus secret redaction are on by default.</p>
+        </div>
+        <div class="feature reveal" data-d="1">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div>
+          <h3>Cost-aware</h3>
+          <p><code>--auto</code> scales rounds/verify to the diff (docs-only → shallow; security-touching → full); large diffs are chunked and results cached.</p>
+        </div>
+        <div class="feature reveal" data-d="2">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg></div>
+          <h3>CI citizen</h3>
+          <p><code>--ci --fail-on</code> gates merges; <code>--format json|sarif</code> for code scanning; inline + summary PR comments; opt-in classification labels.</p>
+        </div>
+        <div class="feature reveal" data-d="3">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h7l-1 8 10-12h-7z"/></svg></div>
+          <h3>Drop-in skill</h3>
+          <p>Install as a Claude Code plugin or copy the skill into <code>.claude/skills/</code>. Works across the major coding-agent platforms.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────────────── Comparison ───────────────── -->
+    <section id="compare">
+      <div class="sec-head wide reveal">
+        <p class="sec-kicker">Where it fits</p>
+        <h2>How ai-jury compares</h2>
+        <p class="muted">Not a claim of superiority — a map to help you pick the right tool. A point-in-time snapshot (2026) of public docs; verify against current docs before deciding.</p>
+      </div>
+
+      <div class="cmp-wrap reveal">
+        <table class="cmp">
+          <thead>
+            <tr>
+              <th scope="col">Capability</th>
+              <th scope="col" class="me">ai-jury</th>
+              <th scope="col">Native-CLI peers</th>
+              <th scope="col">API-level</th>
+              <th scope="col">Hosted SaaS</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">Native CLI execution (per-vendor agent)</th><td class="me"><span class="y">✓</span></td><td><span class="y">✓</span></td><td><span class="n">✕</span></td><td><span class="n">✕</span></td></tr>
+            <tr><th scope="row">Multiple vendors / models</th><td class="me"><span class="y">✓</span></td><td><span class="y">✓</span></td><td><span class="y">✓</span></td><td><span class="p">◐</span></td></tr>
+            <tr><th scope="row">Consensus / debate rounds</th><td class="me"><span class="y">✓</span></td><td><span class="y">✓</span></td><td><span class="p">◐</span></td><td><span class="p">◐</span></td></tr>
+            <tr><th scope="row">Verification pass (re-reads code)</th><td class="me"><span class="y">✓</span></td><td><span class="p">◐</span></td><td><span class="n">✕</span></td><td><span class="p">◐</span></td></tr>
+            <tr><th scope="row">CI gating (non-zero on blocking)</th><td class="me"><span class="y">✓</span></td><td><span class="p">◐</span></td><td><span class="n">✕</span></td><td><span class="y">✓</span></td></tr>
+            <tr><th scope="row">Risk-aware auto-depth</th><td class="me"><span class="y">✓</span></td><td><span class="n">✕</span></td><td><span class="n">✕</span></td><td><span class="p">◐</span></td></tr>
+            <tr><th scope="row">Offline / local open-weight reviewer ($0)</th><td class="me"><span class="y">✓</span></td><td><span class="p">◐</span></td><td><span class="p">◐</span></td><td><span class="n">✕</span></td></tr>
+            <tr><th scope="row">Local-first (no code leaves to a SaaS)</th><td class="me"><span class="y">✓</span></td><td><span class="y">✓</span></td><td><span class="p">◐</span></td><td><span class="n">✕</span></td></tr>
+            <tr><th scope="row">Secret redaction before send</th><td class="me"><span class="y">✓</span></td><td><span class="p">◐</span></td><td><span class="p">◐</span></td><td><span class="dash">—</span></td></tr>
+            <tr><th scope="row">Auto-apply fixes</th><td class="me"><span class="p">◐</span></td><td><span class="p">◐</span></td><td><span class="n">✕</span></td><td><span class="y">✓</span></td></tr>
+            <tr><th scope="row">Hosted dashboard</th><td class="me"><span class="n">✕</span></td><td><span class="n">✕</span></td><td><span class="n">✕</span></td><td><span class="y">✓</span></td></tr>
+            <tr><th scope="row">Dependency footprint</th><td class="me"><span class="badge-ok">stdlib-only</span></td><td><span class="p">◐</span> Node/Bun</td><td><span class="p">◐</span> Python</td><td><span class="dash">hosted</span></td></tr>
+          </tbody>
+        </table>
+        <p class="cmp-legend"><span class="y">✓</span> yes &nbsp;·&nbsp; <span class="p">◐</span> partial / optional &nbsp;·&nbsp; <span class="n">✕</span> no &nbsp;·&nbsp; <span class="dash">—</span> n/a</p>
+      </div>
+
+      <div class="when reveal">
+        <div class="when-card">
+          <h3>Use a hosted reviewer</h3>
+          <p>CodeRabbit, Greptile, Copilot review — when you want a zero-maintenance, dashboard-driven product with auto-fix and are fine sending code to a third party.</p>
+        </div>
+        <div class="when-card">
+          <h3>Use an API-level tool</h3>
+          <p>Star Chamber — when you want multi-model consensus but prefer provider APIs over installing each vendor's CLI.</p>
+        </div>
+        <div class="when-card pick">
+          <h3>Use ai-jury</h3>
+          <p>When you want each reviewer to run as its <strong>native vendor CLI agent</strong>, a <strong>local-first</strong>, stdlib-only drop-in with debate + verification + CI gating — and the option to run fully offline at $0.</p>
+        </div>
+      </div>
+      <p class="center muted reveal" style="margin-top:1.4rem;font-size:.92rem">Full matrix &amp; rationale in the <a href="docs.html#comparison">ecosystem comparison</a>.</p>
+    </section>
+
+    <!-- ───────────────── Example report ───────────────── -->
+    <section id="report">
+      <div class="sec-head wide reveal">
+        <p class="sec-kicker">Sample output</p>
+        <h2>What lands on your PR</h2>
+        <p class="muted">A trimmed real report from <code class="mono" style="color:var(--accent-2)">jury --mock</code> (deterministic, no live CLIs). A live run uses the same pipeline with the real agent CLIs.</p>
+      </div>
+
+      <div class="report reveal">
+        <div class="report-bar">
+          <span class="gh-bot"><img src="assets/logos/mark-convergence.svg" alt="" /> AI Jury</span>
+          <span class="gh-meta">commented on #123 · markdown report</span>
+        </div>
+        <div class="report-body">
+          <h3 class="rh"><img src="assets/logos/mark-convergence.svg" alt="" class="rh-mark" /> AI Jury</h3>
+          <p class="rmeta"><strong>Panel:</strong> <code>claude</code> (anthropic), <code>codex</code> (openai), <code>agy</code> (google) &nbsp;·&nbsp; <strong>Chair:</strong> <code>claude</code></p>
+
+          <div class="gh-verdict v-bad">✕ REQUEST CHANGES</div>
+          <p class="rsub">One confirmed major issue.</p>
+
+          <div class="rgroup">
+            <h4>Consensus findings</h4>
+            <ul class="gh-findings">
+              <li class="gh-finding"><span class="sev sev-high">major</span> <code>src/example.py:42</code> — unchecked return value may swallow an error <span class="why">raised by all three reviewers</span></li>
+            </ul>
+          </div>
+          <div class="rgroup">
+            <h4>Disputed</h4>
+            <ul class="gh-list"><li>Missing docstring at <code>src/example.py:7</code> — ruled a non-blocking nit.</li></ul>
+          </div>
+          <div class="rgroup">
+            <h4>Notable single-reviewer</h4>
+            <ul class="gh-list"><li>No test covers the error branch.</li></ul>
+          </div>
+
+          <details class="rounds">
+            <summary>Show round-by-round transcript</summary>
+            <div class="rd">
+              <p class="rd-h">Round 1 — independent reviews</p>
+              <p class="rd-agent"><span class="dot d-claude"></span> <b>claude</b> · <span class="dot d-codex"></span> <b>codex</b> · <span class="dot d-agy"></span> <b>agy</b></p>
+              <p class="rd-line">All three independently flag <code>src/example.py:42</code> <span class="sev sev-high">major</span> and <code>:7</code> missing docstring <span class="sev sev-low">minor</span>.</p>
+              <p class="rd-h">Round 2 — cross-examination</p>
+              <p class="rd-line"><b class="ok-t">AGREE</b> — confirm the unchecked-return finding at <code>:42</code>.</p>
+              <p class="rd-line"><b class="dis-t">DISPUTE</b> — the missing-docstring finding is a nit, not blocking.</p>
+              <p class="rd-line"><b class="miss-t">MISSED</b> — no test covers the error branch.</p>
+            </div>
+          </details>
+          <p class="report-foot">Generated by <a href="https://github.com/berkayturanci/ai-jury">ai-jury</a> — a cross-vendor multi-agent PR review jury.</p>
+        </div>
+      </div>
+
+      <a class="liveref reveal" href="docs.html#example-live-review">
+        <div class="lr-left">
+          <span class="lr-tag">Real run</span>
+          <h3>The jury reviewing its own repository</h3>
+          <p>A four-vendor panel (Claude, Codex, Antigravity + a free local model) reviewed the whole repo as one diff — and the verification round caught real defects <em>and</em> the panel's own false positives.</p>
+          <blockquote class="lr-quote">"the redaction is lossy enough to fabricate phantom syntax errors" <span>— the jury, rejecting its own false positive</span></blockquote>
+          <span class="lr-link">Read the full live review →</span>
+        </div>
+        <div class="lr-stats">
+          <div class="lr-stat"><span class="lr-num">4</span><span class="lr-lbl">vendors</span></div>
+          <div class="lr-stat"><span class="lr-num">10</span><span class="lr-lbl">chunks</span></div>
+          <div class="lr-stat"><span class="lr-num">2</span><span class="lr-lbl">critical caught</span></div>
+          <div class="lr-stat"><span class="lr-num">63</span><span class="lr-lbl">secrets redacted</span></div>
+        </div>
+      </a>
+    </section>
+
+    <!-- ───────────────── FAQ ───────────────── -->
+    <section id="faq">
+      <div class="sec-head wide reveal">
+        <p class="sec-kicker">FAQ</p>
+        <h2>Questions, answered</h2>
+      </div>
+      <div class="faq reveal">
+        <details class="qa">
+          <summary>Is this a hosted service or SaaS?<span class="chev"></span></summary>
+          <div class="qa-body"><p>No. ai-jury is a local-first CLI + skill that runs on your machine or in your CI. There's no dashboard and no review server — your code doesn't leave to a third-party service. A landing/docs site exists, but a hosted review SaaS is a deliberate non-goal.</p></div>
+        </details>
+        <details class="qa">
+          <summary>Does it edit or auto-apply fixes to my code?<span class="chev"></span></summary>
+          <div class="qa-body"><p>Never automatically. By design it reviews and reports. With <code class="mono">--suggest-patches</code> it can emit <em>inspectable</em> suggested patches for <strong>verified</strong> findings only — you review and apply them yourself.</p></div>
+        </details>
+        <details class="qa">
+          <summary>Can it run completely offline and free?<span class="chev"></span></summary>
+          <div class="qa-body"><p>Yes. Add a local open-weight model as a panel seat (<code class="mono">vendor = "local"</code> via Ollama, llama.cpp, vLLM, or LM Studio) and run with <code class="mono">--preset offline</code> for a $0, fully-offline review — or mix one local seat with cloud CLIs for more vendor diversity.</p></div>
+        </details>
+        <details class="qa">
+          <summary>Are these real API calls to the models?<span class="chev"></span></summary>
+          <div class="qa-body"><p>No — ai-jury drives each vendor's <strong>own coding-agent CLI</strong> (<code class="mono">claude</code>, <code class="mono">codex</code>, <code class="mono">agy</code>) as a subprocess, so each reviewer runs in its native environment with its own tooling and context. It's orchestration, not raw model API calls.</p></div>
+        </details>
+        <details class="qa">
+          <summary>What do I need installed?<span class="chev"></span></summary>
+          <div class="qa-body"><p>Python 3.11+ and at least one reviewer — an agent CLI (<code class="mono">claude</code>, <code class="mono">codex</code>, <code class="mono">agy</code>) or a local model via Ollama. The <code class="mono">gh</code> CLI is needed for <code class="mono">--pr</code>. The tool itself is <strong>stdlib-only</strong> — no third-party Python dependencies.</p></div>
+        </details>
+        <details class="qa">
+          <summary>How does it keep secrets and untrusted diffs safe?<span class="chev"></span></summary>
+          <div class="qa-body"><p>Reviewers read attacker-controlled diffs, so they run sandboxed/read-only with <code class="mono">diff-only</code> context by default, and secret redaction is on before anything is sent. See the <a href="docs.html#security">security model</a>.</p></div>
+        </details>
+      </div>
+    </section>
+
+    <!-- ───────────────── Notice ───────────────── -->
     <section>
-      <h2>How it works</h2>
-      <ol>
-        <li><strong>Round 1 — independent review.</strong> Every available agent reviews the diff concurrently with the same rubric.</li>
-        <li><strong>Round 2 — debate (adaptive).</strong> Each agent sees the others' reviews and emits agree / dispute / missed; with <code>early_stop</code> a unanimous panel skips it.</li>
-        <li><strong>Verification.</strong> The chair re-judges each finding to drop false positives — and the report shows the <em>evidence</em> behind each one.</li>
-        <li><strong>Synthesis.</strong> The chair consolidates into one verdict plus consensus, disputed, and single-reviewer findings.</li>
-      </ol>
-      <p class="muted">
-        Large diffs are filtered + chunked; runs are bounded by an optional budget with
-        retries; results can be cached; and a review can be incremental (only what changed
-        since the last run).
-      </p>
-    </section>
-
-    <section class="grid">
-      <div>
-        <h3>Free &amp; offline option</h3>
-        <p>Add a local open-weight model (Ollama, llama.cpp, vLLM, LM Studio) as a panel seat — zero cloud cost, fully offline, or mixed with cloud CLIs for more diversity. <a href="https://github.com/berkayturanci/ai-jury/blob/main/README.md#local--open-weight-reviewer-free-offline">Local reviewer →</a></p>
-      </div>
-      <div>
-        <h3>Follow the run live</h3>
-        <p><code>--post-progress</code> keeps a sticky PR comment updated each round/chunk; <code>--post-mode phased</code> posts Round 1 / debate / decision as separate comments. <a href="https://github.com/berkayturanci/ai-jury/blob/main/docs/cookbook.md">Cookbook →</a></p>
-      </div>
-      <div>
-        <h3>Secure by default</h3>
-        <p>Reviewers read attacker-controlled diffs, so they run sandboxed/read-only (Codex <code>-s read-only</code>, Antigravity <code>--sandbox</code>, Claude tool denylist). <code>diff-only</code> context + secret redaction on. <a href="https://github.com/berkayturanci/ai-jury/blob/main/SECURITY.md">Security &amp; data-flow →</a></p>
-      </div>
-      <div>
-        <h3>Cost-aware</h3>
-        <p><code>--auto</code> scales rounds/verify to the diff (docs-only → shallow; security-touching → full); large diffs are chunked; results cached. <a href="https://github.com/berkayturanci/ai-jury/blob/main/docs/configuration.md">Configuration →</a></p>
-      </div>
-      <div>
-        <h3>CI citizen</h3>
-        <p><code>--ci --fail-on</code> gates merges; <code>--format json|sarif</code> for code scanning; inline + summary PR comments; opt-in classification labels.</p>
-      </div>
-      <div>
-        <h3>Drop-in skill</h3>
-        <p>Install as a Claude Code plugin or copy the skill into <code>.claude/skills/</code>. <a href="https://github.com/berkayturanci/ai-jury/blob/main/docs/platforms.md">Platform support →</a></p>
+      <div class="notice reveal">
+        <p><strong>Not a hosted SaaS.</strong> This is a local-first CLI + skill, not a hosted review service or a general multi-agent framework. It reviews and reports; it can emit inspectable suggested patches for verified findings, but never applies them automatically.</p>
       </div>
     </section>
 
-    <section class="notice">
-      <p><strong>Not a hosted SaaS.</strong> This is a local-first CLI + skill, not a hosted review service or a general multi-agent framework. It reviews and reports; it can emit inspectable suggested patches for verified findings, but never applies them automatically.</p>
+    <!-- ───────────────── CTA band ───────────────── -->
+    <section>
+      <div class="cta-band reveal">
+        <h2>Convene the jury on your next PR.</h2>
+        <p class="muted" style="max-width:48ch;margin:0 auto">One command installs it. Bring your own agents, or run it free and fully offline.</p>
+        <div class="copyline">
+          <span class="prompt mono">$</span>
+          <code id="install-cmd">pipx install ai-jury</code>
+          <button class="copy-btn" id="copy-install" type="button">copy</button>
+        </div>
+      </div>
     </section>
   </main>
 
+  <!-- ───────────────────────── Footer ───────────────────────── -->
   <footer>
-    <p>
-      <a href="https://github.com/berkayturanci/ai-jury">GitHub</a> ·
-      <a href="https://github.com/berkayturanci/ai-jury/blob/main/docs/architecture.md">Architecture</a> ·
-      <a href="https://github.com/berkayturanci/ai-jury/blob/main/docs/feasibility.md">Feasibility</a> ·
-      MIT License
-    </p>
+    <div class="wrap foot-inner">
+      <span class="foot-brand"><img src="assets/logos/mark-convergence.svg" alt="" /> ai-jury</span>
+      <div class="foot-links">
+        <a href="https://github.com/berkayturanci/ai-jury">GitHub</a>
+        <a href="docs.html">Docs</a>
+        <a href="coverage.html">Coverage</a>
+        <a href="docs.html#architecture">Architecture</a>
+        <a href="docs.html#feasibility">Feasibility</a>
+      </div>
+    </div>
+    <div class="wrap foot-base">
+      <span>Cross-vendor multi-agent code review · stdlib-only Python · local-first</span>
+      <span>MIT License · © Berkay Turancı</span>
+    </div>
+    <div class="wrap foot-legal">
+      <span>Claude Code, Codex, and Antigravity are trademarks of their respective owners. ai-jury is an independent, open-source project and is not affiliated with, endorsed by, or sponsored by Anthropic, OpenAI, or Google.</span>
+    </div>
   </footer>
 
-  <script>
-  // Interactive demo: build a config from the controls and reflect it live in the
-  // flow diagram + a generated jury.toml. Pure client-side; nothing runs.
-  (function () {
-    var AGENTS = {
-      claude: { vendor: "anthropic", command: "claude",
-        extra: ['"--output-format"', '"text"', '"--disallowed-tools"', '"Edit,Write,NotebookEdit,Bash"', '"--dangerously-skip-permissions"'] },
-      codex:  { vendor: "openai", command: "codex", extra: ['"-s"', '"read-only"'] },
-      agy:    { vendor: "google", command: "agy", extra: ['"--dangerously-skip-permissions"', '"--sandbox"'] },
-      qwen:   { vendor: "local", model: "qwen2.5-coder:7b", endpoint: "http://localhost:11434/v1" }
-    };
-    var $ = function (id) { return document.getElementById(id); };
-    var q = function (sel) { return document.querySelector(sel); };
-    var ctrls = document.querySelector(".demo-controls");
-
-    function selectedAgents() {
-      return ["claude", "codex", "agy", "qwen"].filter(function (n) { return $("ag-" + n).checked; });
-    }
-    function rounds() { return q('input[name="rounds"]:checked').value; }
-    function postmode() { return q('input[name="postmode"]:checked').value; }
-
-    function setDim(el, dim) { if (el) el.classList.toggle("dim", dim); }
-
-    function render() {
-      var ags = selectedAgents();
-      var auto = $("auto").checked;
-      var r = parseInt(rounds(), 10);
-      var verify = $("verify").checked;
-      var pm = postmode();
-      var progress = $("progress").checked;
-
-      // Auto-depth owns rounds/verify: disable + visually note it.
-      $("verify").disabled = auto;
-      document.querySelectorAll('input[name="rounds"]').forEach(function (el) { el.disabled = auto; });
-
-      var debate = !auto && r === 2 && ags.length >= 2;
-      var verifyOn = auto ? true : verify; // auto uses full for risky diffs; show as "varies"
-
-      // Flow: dim unselected reviewers + toggle debate/verify nodes.
-      ["claude", "codex", "agy", "qwen"].forEach(function (n) {
-        setDim(q('.rev[data-rev="' + n + '"]'), ags.indexOf(n) === -1);
-      });
-      setDim($("n-debate"), auto ? false : !debate);
-      setDim($("arr-debate"), auto ? false : !debate);
-      setDim($("n-verify"), auto ? false : !verifyOn);
-      $("n-debate").textContent = auto ? "debate*" : "debate";
-      $("n-verify").textContent = auto ? "verify*" : "verify";
-      $("n-out").textContent = pm === "phased" ? "3 comments" : "verdict";
-
-      // Flow note.
-      var note;
-      if (ags.length === 0) {
-        note = "Pick at least one reviewer.";
-      } else if (auto) {
-        note = "Auto-depth decides rounds & verify per diff (* docs-only → shallow; security/large → full). Panel never trimmed.";
-      } else {
-        var bits = [ags.length + " reviewer" + (ags.length > 1 ? "s" : "")];
-        bits.push(r === 2 && ags.length >= 2 ? "debate" : "no debate");
-        bits.push(verify ? "verify on" : "verify off");
-        bits.push(pm === "phased" ? "phased PR comments" : "one PR comment");
-        if (progress) bits.push("live progress");
-        note = bits.join(" · ");
-      }
-      $("flow-note").textContent = note;
-
-      // Generate jury.toml.
-      var lines = ["[jury]", "rounds = " + r, 'chair = "' + (ags[0] || "claude") + '"',
-                   "verify = " + (verify ? "true" : "false")];
-      if (auto) lines.push("auto_depth = true");
-      lines.push("");
-      ags.forEach(function (n) {
-        var a = AGENTS[n];
-        lines.push("[[agent]]");
-        lines.push('name = "' + n + '"');
-        lines.push('vendor = "' + a.vendor + '"');
-        if (a.command) lines.push('command = "' + a.command + '"');
-        if (a.endpoint) lines.push('endpoint = "' + a.endpoint + '"');
-        if (a.model) lines.push('model = "' + a.model + '"');
-        if (a.extra) lines.push("extra_args = [" + a.extra.join(", ") + "]");
-        lines.push("");
-      });
-      $("toml-out").textContent = lines.join("\n").trim() + "\n";
-    }
-
-    ctrls.addEventListener("change", function () { render(); syncRun(); });
-    render();
-
-    // ---- Scripted "Run review" demo -------------------------------------
-    // A deterministic, canned run over a fixed sample diff. Nothing executes;
-    // the staged console output and the GitHub-style comments simply react to
-    // the panel/depth chosen above, so the difference each option makes is
-    // visible as *output*, not just config.
-    var LABEL = { claude: "Claude Code", codex: "Codex", agy: "Antigravity", qwen: "Local" };
-    var SEV_RANK = { high: 3, medium: 2, low: 1 };
-
-    // Planted issues in the sample diff. `by` = which agents independently
-    // raise each; `refuted` marks the false positive that debate/verify kills.
-    var FINDINGS = [
-      { id: "sqli", sev: "high", file: "db.py:42",
-        title: "Query built with an f-string — SQL injection",
-        by: ["codex", "claude"], evidence: "user_id flows from the request into the SQL string unescaped" },
-      { id: "null", sev: "medium", file: "auth.py:88",
-        title: "token can be None before .expires_at",
-        by: ["claude", "qwen"], evidence: "the cache-miss early return leaves token unbound" },
-      { id: "nplus1", sev: "low", file: "db.py:51",
-        title: "N+1 query inside the per-user loop",
-        by: ["agy"], evidence: "a separate fetch per row instead of one batched query" },
-      { id: "race", sev: "medium", file: "auth.py:12",
-        title: "Possible race on the shared cache dict",
-        by: ["qwen"], evidence: "two requests could write the same key", refuted: true }
-    ];
-
-    function esc(s) {
-      return String(s).replace(/[&<>"]/g, function (c) {
-        return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
-      });
-    }
-    function bySev(a, b) { return SEV_RANK[b.sev] - SEV_RANK[a.sev]; }
-
-    function buildRun() {
-      var ags = selectedAgents();
-      var auto = $("auto").checked;
-      var r = parseInt(rounds(), 10);
-      var verify = $("verify").checked;
-      var pm = postmode();
-      var progress = $("progress").checked;
-
-      var debate = auto ? true : (r === 2 && ags.length >= 2);
-      var verifyOn = auto ? true : verify;
-      var chair = ags[0];
-      var resolved = debate || verifyOn; // can the false positive be caught?
-
-      var surfaced = FINDINGS.filter(function (f) {
-        return f.by.some(function (a) { return ags.indexOf(a) !== -1; });
-      });
-      var dropped = surfaced.filter(function (f) { return f.refuted && resolved; });
-      var finalF = surfaced.filter(function (f) { return !(f.refuted && resolved); });
-      var verdict = finalF.some(function (f) { return f.sev === "high"; })
-        ? "REQUEST CHANGES" : (finalF.length ? "COMMENT" : "APPROVE");
-
-      // --- console lines (text, optional css class) ---
-      var con = [];
-      con.push(["$ jury --pr 123" + (auto ? " --auto" : "") +
-        (pm === "phased" ? " --post --post-mode phased" : " --post") +
-        (progress ? " --post-progress" : ""), "cmd"]);
-      con.push(["→ diff: auth.py, db.py  (+58 −12) · security-sensitive path", "dim"]);
-      if (auto) con.push(["[auto-depth] risk=high → rounds=2, verify=on", "warn"]);
-      con.push(["round 1: " + ags.length + " agent" + (ags.length > 1 ? "s" : "") + " reviewing", "head"]);
-      ags.forEach(function (a) {
-        var n = surfaced.filter(function (f) { return f.by.indexOf(a) !== -1; }).length;
-        con.push(["  • " + LABEL[a] + " → " + n + " finding" + (n === 1 ? "" : "s"), ""]);
-      });
-      if (debate) {
-        con.push(["round 2: cross-examination", "head"]);
-        if (dropped.length) {
-          con.push(["  • DISPUTE " + dropped[0].file + " — refuted by the panel (false positive)", "bad"]);
-        }
-        con.push(["  • AGREE on the remaining findings", ""]);
-      } else if (r === 1) {
-        con.push(["round 2: skipped (1 round) — a false positive may survive", "dim"]);
-      }
-      if (verifyOn) {
-        con.push(["verify: chair '" + LABEL[chair] + "' judging " + surfaced.length + " candidate findings", "head"]);
-        finalF.slice().sort(bySev).forEach(function (f) {
-          con.push(["  ✓ " + f.file + " confirmed (" + f.sev + ")", "ok"]);
-        });
-        dropped.forEach(function (f) { con.push(["  ✗ " + f.file + " dropped (unsupported)", "bad"]); });
-      }
-      con.push(["synthesis: chair '" + LABEL[chair] + "' → " + verdict, "head"]);
-      con.push(["done in 1m12s", "dim"]);
-
-      return { ags: ags, debate: debate, verifyOn: verifyOn, pm: pm, progress: progress,
-        chair: chair, surfaced: surfaced, dropped: dropped, finalF: finalF,
-        verdict: verdict, con: con, r: r, auto: auto };
-    }
-
-    function verdictClass(v) {
-      return v === "REQUEST CHANGES" ? "v-bad" : (v === "COMMENT" ? "v-warn" : "v-ok");
-    }
-    function findingRow(f) {
-      return '<li class="gh-finding"><span class="sev sev-' + f.sev + '">' + f.sev +
-        '</span> <code>' + esc(f.file) + '</code> — ' + esc(f.title) +
-        '<span class="why">why: ' + esc(f.evidence) + "</span></li>";
-    }
-    function commentCard(title, who, inner) {
-      return '<div class="gh-comment"><div class="gh-head"><span class="gh-bot">🏛️ ' +
-        esc(who) + '</span><span class="gh-meta">' + esc(title) + "</span></div>" +
-        '<div class="gh-body">' + inner + "</div></div>";
-    }
-
-    function renderComments(run) {
-      var html = "";
-      if (run.progress) {
-        html += '<div class="gh-comment sticky"><div class="gh-head"><span class="gh-bot">🏛️ AI Jury</span>' +
-          '<span class="gh-meta">live status · edited</span></div><div class="gh-body">' +
-          "✅ synthesis complete — round 1 → " + (run.debate ? "debate → " : "") +
-          (run.verifyOn ? "verify → " : "") + "verdict</div></div>";
-      }
-      var panel = run.ags.map(function (a) { return LABEL[a]; }).join(", ");
-      if (run.pm === "phased") {
-        var r1 = "<ul class='gh-list'>" + run.ags.map(function (a) {
-          var fs = run.surfaced.filter(function (f) { return f.by.indexOf(a) !== -1; });
-          return "<li><b>" + esc(LABEL[a]) + "</b>: " + (fs.length
-            ? fs.map(function (f) { return esc(f.file); }).join(", ") : "no findings") + "</li>";
-        }).join("") + "</ul>";
-        html += commentCard("Round 1 · independent review", "AI Jury", r1);
-
-        var dbody = run.debate
-          ? (run.dropped.length
-              ? "Refuted <code>" + esc(run.dropped[0].file) + "</code> as a false positive; agreed on the rest."
-              : "Reviewers cross-examined and agreed on the findings.")
-          : "Skipped (1 round). With debate, the panel cross-examines and filters false positives.";
-        html += commentCard("Round 2 · debate", "AI Jury", dbody);
-
-        var dec = '<div class="gh-verdict ' + verdictClass(run.verdict) + '">' + esc(run.verdict) + "</div>" +
-          (run.finalF.length ? "<ul class='gh-findings'>" +
-            run.finalF.slice().sort(bySev).map(findingRow).join("") + "</ul>"
-            : "<p>No blocking findings.</p>");
-        html += commentCard("Decision · " + panel, "AI Jury", dec);
-      } else {
-        var body = '<div class="gh-verdict ' + verdictClass(run.verdict) + '">' + esc(run.verdict) + "</div>" +
-          (run.finalF.length ? "<ul class='gh-findings'>" +
-            run.finalF.slice().sort(bySev).map(findingRow).join("") + "</ul>"
-            : "<p>No blocking findings — looks good.</p>") +
-          '<div class="gh-foot">panel: ' + esc(panel) + " · rounds: " + (run.auto ? "auto" : run.r) +
-          (run.verifyOn ? " · verified" : "") + "</div>";
-        html += commentCard(run.ags.length + "-reviewer jury", "AI Jury", body);
-      }
-      $("gh-comments").innerHTML = html;
-    }
-
-    function consoleLine(line) {
-      var span = document.createElement("span");
-      span.className = "cl " + (line[1] || "");
-      span.textContent = line[0] + "\n";
-      return span;
-    }
-
-    var runTimer = null;
-    function runDemo() {
-      if (selectedAgents().length === 0) { $("flow-note").textContent = "Pick at least one reviewer to run."; return; }
-      var run = buildRun();
-      var btn = $("run-btn");
-      $("run-out").hidden = false;
-      $("console-body").innerHTML = "";
-      $("gh-comments").innerHTML = "";
-      if (runTimer) { clearTimeout(runTimer); runTimer = null; }
-
-      var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      if (reduce) {
-        run.con.forEach(function (l) { $("console-body").appendChild(consoleLine(l)); });
-        renderComments(run);
-        return;
-      }
-      btn.disabled = true;
-      var i = 0;
-      (function step() {
-        if (i < run.con.length) {
-          $("console-body").appendChild(consoleLine(run.con[i++]));
-          $("console-body").scrollTop = $("console-body").scrollHeight;
-          runTimer = setTimeout(step, 230);
-        } else {
-          runTimer = null;
-          renderComments(run);
-          btn.disabled = false;
-        }
-      })();
-    }
-
-    // Once a run is on screen, keep it in sync with the controls — re-paint it
-    // instantly (no replay) on any change so the output always matches the panel
-    // and depth selected above. A pending animation is cancelled first.
-    function syncRun() {
-      if ($("run-out").hidden) return;
-      if (runTimer) { clearTimeout(runTimer); runTimer = null; }
-      $("run-btn").disabled = false;
-      if (selectedAgents().length === 0) {
-        $("console-body").innerHTML = "";
-        $("gh-comments").innerHTML = '<p class="muted">Pick at least one reviewer.</p>';
-        return;
-      }
-      var run = buildRun();
-      $("console-body").innerHTML = "";
-      run.con.forEach(function (l) { $("console-body").appendChild(consoleLine(l)); });
-      renderComments(run);
-    }
-
-    $("run-btn").addEventListener("click", runDemo);
-
-    // Theme toggle: flip light/dark, persist the choice, update the icon. The
-    // initial theme is applied by the inline <head> script (no flash).
-    (function () {
-      var btn = $("theme-toggle");
-      if (!btn) return;
-      function isLight() { return document.documentElement.getAttribute("data-theme") === "light"; }
-      function setIcon() { btn.textContent = isLight() ? "☀️" : "🌙"; }
-      setIcon();
-      btn.addEventListener("click", function () {
-        var next = isLight() ? "dark" : "light";
-        if (next === "light") document.documentElement.setAttribute("data-theme", "light");
-        else document.documentElement.removeAttribute("data-theme");
-        try { localStorage.setItem("theme", next); } catch (e) {}
-        setIcon();
-      });
-    })();
-
-    // Keep the version pill in sync with the latest published release; the
-    // server-rendered number is the fallback if the API is unreachable.
-    (function () {
-      var el = $("site-version");
-      if (!el || !window.fetch) return;
-      fetch("https://api.github.com/repos/berkayturanci/ai-jury/releases/latest",
-        { headers: { Accept: "application/vnd.github+json" } })
-        .then(function (r) { return r.ok ? r.json() : null; })
-        .then(function (d) { if (d && d.tag_name) el.textContent = d.tag_name; })
-        .catch(function () { /* keep the rendered version */ });
-    })();
-  })();
-  </script>
+  <script src="app.js"></script>
 </body>
 </html>

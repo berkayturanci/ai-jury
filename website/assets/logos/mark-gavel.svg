@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="ai-jury">
+  <defs>
+    <linearGradient id="gv-g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#818cf8"></stop>
+      <stop offset="1" stop-color="#4f46e5"></stop>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="15" fill="url(#gv-g)"></rect>
+  
+  <g transform="rotate(-38 33 27)" fill="#fff">
+    <rect x="20" y="13.5" width="26" height="11.5" rx="5.5"></rect>
+    <rect x="31.2" y="11" width="3.6" height="16.5" rx="1.4"></rect>
+    <rect x="29.2" y="25.5" width="7.6" height="20.5" rx="3.6"></rect>
+  </g>
+  
+  <rect x="13" y="49.5" width="38" height="6.4" rx="3.2" fill="#fff"></rect>
+</svg>

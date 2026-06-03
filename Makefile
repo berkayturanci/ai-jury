@@ -55,16 +55,21 @@ build:
 	python3 -m build --sdist --wheel --outdir dist/
 
 # Re-render the committed raster assets from their SVG sources so the PNGs can
-# never drift from the vector originals (the hero/banner/favicon are authored as
-# SVG). Requires librsvg: `brew install librsvg` (provides rsvg-convert).
-# hero.png is rendered at 2x (2400x1040) for crisp display; the social banner is
-# the canonical 1200x630 OG card.
+# never drift from the vector originals (favicons/banner are authored as SVG).
+# Requires librsvg: `brew install librsvg` / `apt install librsvg2-bin`
+# (provides rsvg-convert). The OG banner is the canonical 1200x630 social card;
+# if an `assets/og-banner.svg` is present it is re-rendered, otherwise the
+# committed PNG is left untouched (the designer produced it one-shot).
 assets:
-	rsvg-convert -w 2400 -h 1040 docs/assets/hero.svg        -o docs/assets/hero.png
-	cp docs/assets/hero.png website/assets/hero.png
-	rsvg-convert -w 1200 -h 630  website/assets/og-banner.svg -o website/assets/og-banner.png
-	rsvg-convert -w 180  -h 180  website/favicon.svg          -o website/apple-touch-icon.png
-	rsvg-convert -w 32   -h 32   website/favicon.svg          -o website/favicon-32.png
+	rsvg-convert -w 180 -h 180 website/favicon.svg -o website/apple-touch-icon.png
+	rsvg-convert -w 180 -h 180 website/favicon.svg -o website/favicon-180.png
+	rsvg-convert -w 32  -h 32  website/favicon.svg -o website/favicon-32.png
+	rsvg-convert -w 16  -h 16  website/favicon.svg -o website/favicon-16.png
+	@if [ -f website/assets/og-banner.svg ]; then \
+		rsvg-convert -w 1200 -h 630 website/assets/og-banner.svg -o website/assets/og-banner.png; \
+	else \
+		echo "skip: website/assets/og-banner.svg not present; keeping committed og-banner.png"; \
+	fi
 
 clean:
 	rm -rf build/ dist/ *.egg-info/ src/*.egg-info/ .ruff_cache/

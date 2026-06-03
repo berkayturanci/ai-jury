@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script>
+    (function () {
+      try { var t = localStorage.getItem("theme"); if (!t) t = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"; document.documentElement.setAttribute("data-theme", t); }
+      catch (e) { document.documentElement.setAttribute("data-theme", "dark"); }
+    })();
+  </script>
+  <title>Test coverage — ai-jury</title>
+  <meta name="description" content="Test coverage for ai-jury — branch coverage measured with coverage.py, gated at a minimum 80% in CI. Browse the full line-by-line report." />
+  <meta name="theme-color" content="#6366f1" />
+  <link rel="canonical" href="https://berkayturanci.github.io/ai-jury/coverage.html" />
+  <meta name="robots" content="index, follow" />
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  <link rel="icon" href="favicon.ico" sizes="48x48" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" sizes="180x180" />
+
+  <meta property="og:type" content="article" />
+  <meta property="og:site_name" content="ai-jury" />
+  <meta property="og:url" content="https://berkayturanci.github.io/ai-jury/coverage.html" />
+  <meta property="og:title" content="Test coverage — ai-jury" />
+  <meta property="og:description" content="Branch coverage measured with coverage.py, gated at a minimum 80% in CI. Browse the full report." />
+  <meta property="og:image" content="assets/og-banner.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Test coverage — ai-jury" />
+  <meta name="twitter:description" content="Branch coverage measured with coverage.py, gated at a minimum 80% in CI." />
+  <meta name="twitter:image" content="assets/og-banner.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="docs.css" />
+</head>
+<body class="docs">
+  <!-- Nav -->
+  <nav class="nav" id="nav">
+    <div class="wrap nav-inner">
+      <div class="brand">
+        <a class="brand-link" href="index.html"><img src="assets/logos/mark-convergence.svg" alt="" /> ai-jury</a>
+        <span class="ver">docs</span>
+      </div>
+      <div class="nav-links">
+        <a class="nav-link" href="index.html">← Back to site</a>
+        <a class="nav-link hide-sm" href="https://github.com/berkayturanci/ai-jury">GitHub</a>
+        <button class="icon-btn theme-track" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" title="Toggle light / dark">
+          <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <div class="docs-shell wrap">
+    <!-- Sidebar / table of contents -->
+    <aside class="docs-side">
+      <p class="ds-label">Docs</p>
+      <nav class="ds-nav">
+        <a class="ds-link" href="docs.html">All documentation</a>
+        <a class="ds-link active" href="coverage.html">Test coverage</a>
+        <a class="ds-link" href="docs.html#architecture">Architecture</a>
+        <a class="ds-link" href="docs.html#configuration">Configuration</a>
+        <a class="ds-link" href="docs.html#comparison">Comparison</a>
+        <a class="ds-link" href="docs.html#security">Security</a>
+      </nav>
+      <p class="ds-label">On this page</p>
+      <nav class="ds-nav">
+        <a class="ds-sub" href="#summary">Summary</a>
+        <a class="ds-sub" href="#threshold">Threshold &amp; gate</a>
+        <a class="ds-sub" href="#measured">What's measured</a>
+        <a class="ds-sub" href="#exclusions">Exclusions</a>
+        <a class="ds-sub" href="#run">Run it locally</a>
+      </nav>
+    </aside>
+
+    <!-- Content -->
+    <main class="docs-main">
+      <p class="docs-kicker">Quality</p>
+      <h1 class="docs-h1">Test coverage</h1>
+      <p class="docs-lede">Branch coverage is measured with <a href="https://coverage.readthedocs.io/">coverage.py</a> — a dev-only dependency. The runtime stays standard-library-only.</p>
+
+      <!-- Summary card with live gauge -->
+      <section id="summary" class="cov-summary">
+        <div class="cov-gauge">
+          <svg viewBox="0 0 120 120" class="cov-ring" aria-hidden="true">
+            <circle class="cov-track" cx="60" cy="60" r="52" />
+            <circle class="cov-fill" id="cov-arc" cx="60" cy="60" r="52" transform="rotate(-90 60 60)" />
+          </svg>
+          <div class="cov-pct"><span id="cov-value">—</span></div>
+        </div>
+        <div class="cov-meta">
+          <div class="cov-badge-row">
+            <span class="cov-state" id="cov-state">Loading…</span>
+            <img src="https://img.shields.io/endpoint?url=https://berkayturanci.github.io/ai-jury/coverage-badge.json" alt="Coverage badge" class="cov-shield" loading="lazy" />
+          </div>
+          <p class="cov-note" id="cov-note">Fetching the latest published coverage…</p>
+          <div class="cov-actions">
+            <a class="btn primary" href="coverage-report.html">Open full report →</a>
+            <a class="btn ghost" href="coverage/index.html">Line-by-line ↗</a>
+          </div>
+          <p class="cov-updated mono" id="cov-updated"></p>
+        </div>
+      </section>
+
+      <section id="threshold" class="docs-block">
+        <h2>Threshold &amp; gate</h2>
+        <p>The minimum total coverage is <strong>80%</strong>, configured once in <code>pyproject.toml</code> under <code>[tool.coverage.report] fail_under</code> and enforced by a dedicated <code>coverage</code> job in CI (Ubuntu / Python 3.13). CI fails if total coverage drops below that floor. The gate runs in a single job rather than across the whole matrix to keep CI cheap and free of cross-OS path noise.</p>
+      </section>
+
+      <section id="measured" class="docs-block">
+        <h2>What's measured</h2>
+        <p>Branch coverage is enabled (<code>branch = true</code>) and the package is measured by import name (<code>source = ["ai_jury"]</code>). The number you see above is the total reported by <code>coverage report</code> on the latest run published to GitHub Pages.</p>
+      </section>
+
+      <section id="exclusions" class="docs-block">
+        <h2>Exclusions</h2>
+        <p>Intentionally-untested paths are excluded so the number stays honest:</p>
+        <ul class="docs-list">
+          <li><code>src/ai_jury/__main__.py</code> is omitted (a thin <code>python -m</code> entry shim).</li>
+          <li>Lines matching these patterns are excluded from the count: <code>pragma: no cover</code>, <code>if __name__ == "__main__":</code>, <code>raise NotImplementedError</code>, <code>if TYPE_CHECKING:</code>, and abstract-method decorators.</li>
+        </ul>
+        <p>Add <code># pragma: no cover</code> to any new line that is genuinely not worth testing.</p>
+      </section>
+
+      <section id="run" class="docs-block">
+        <h2>Run it locally</h2>
+        <p>Measure coverage with one command:</p>
+        <pre class="code"><code><span class="cm"># run the suite under coverage, print the report, write htmlcov/</span>
+make coverage
+<span class="cm"># or, without make:</span>
+./scripts/coverage.sh</code></pre>
+        <p>Either entry point runs:</p>
+        <pre class="code"><code>python3 <span class="k">-m</span> coverage run <span class="k">-m</span> unittest discover <span class="k">-s</span> tests
+python3 <span class="k">-m</span> coverage report</code></pre>
+      </section>
+
+      <p class="docs-foot">Source: <a href="https://github.com/berkayturanci/ai-jury/blob/main/README.md#coverage">README → Coverage</a> · <a href="https://github.com/berkayturanci/ai-jury">ai-jury on GitHub</a></p>
+    </main>
+  </div>
+
+  <script>
+    (function () {
+      // theme + nav
+      var btn = document.getElementById("theme-toggle");
+      btn.addEventListener("click", function () {
+        var light = document.documentElement.getAttribute("data-theme") === "light";
+        var next = light ? "dark" : "light";
+        document.documentElement.setAttribute("data-theme", next);
+        try { localStorage.setItem("theme", next); } catch (e) {}
+      });
+      var nav = document.getElementById("nav");
+      var onScroll = function () { nav.classList.toggle("scrolled", window.scrollY > 8); };
+      onScroll(); window.addEventListener("scroll", onScroll, { passive: true });
+
+      // gauge geometry
+      var R = 52, C = 2 * Math.PI * R;
+      var arc = document.getElementById("cov-arc");
+      arc.style.strokeDasharray = C;
+      arc.style.strokeDashoffset = C;
+
+      function color(pct) {
+        if (pct >= 90) return getComputedStyle(document.documentElement).getPropertyValue("--green-2") || "#34d399";
+        if (pct >= 80) return getComputedStyle(document.documentElement).getPropertyValue("--green") || "#10b981";
+        if (pct >= 60) return getComputedStyle(document.documentElement).getPropertyValue("--amber") || "#f59e0b";
+        return getComputedStyle(document.documentElement).getPropertyValue("--red") || "#ef4444";
+      }
+      function paint(pct, message) {
+        var clamped = Math.max(0, Math.min(100, pct));
+        document.getElementById("cov-value").textContent = (message || (pct + "%"));
+        var c = color(pct).trim();
+        arc.style.stroke = c;
+        requestAnimationFrame(function () {
+          arc.style.transition = "stroke-dashoffset 1.1s cubic-bezier(.2,.7,.2,1)";
+          arc.style.strokeDashoffset = C * (1 - clamped / 100);
+        });
+        var state = document.getElementById("cov-state");
+        if (pct >= 80) { state.textContent = "Above the 80% gate"; state.className = "cov-state ok"; }
+        else { state.textContent = "Below the 80% gate"; state.className = "cov-state warn"; }
+      }
+
+      // fetch the published shields-endpoint JSON (relative on Pages; absolute fallback elsewhere)
+      var FALLBACK = 86;
+      var SOURCES = ["coverage-badge.json", "https://berkayturanci.github.io/ai-jury/coverage-badge.json"];
+      function num(s) { var m = String(s).match(/(\d+(?:\.\d+)?)/); return m ? parseFloat(m[1]) : null; }
+      function tryFetch(i) {
+        if (!window.fetch || i >= SOURCES.length) {
+          paint(FALLBACK);
+          document.getElementById("cov-note").textContent = "Showing the last known value — the live badge couldn't be fetched in this context (it resolves on the published site).";
+          document.getElementById("cov-updated").textContent = "fallback value";
+          return;
+        }
+        fetch(SOURCES[i], { cache: "no-store" })
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (d) {
+            if (d && d.message != null) {
+              var p = num(d.message);
+              paint(p != null ? p : FALLBACK, d.message);
+              document.getElementById("cov-note").textContent = "Latest published total coverage for the ai_jury package (branch coverage).";
+              document.getElementById("cov-updated").textContent = "live · from coverage-badge.json";
+            } else { throw new Error("no data"); }
+          })
+          .catch(function () { tryFetch(i + 1); });
+      }
+      tryFetch(0);
+    })();
+  </script>
+</body>
+</html>

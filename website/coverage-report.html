@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script>
+    (function () {
+      try { var t = localStorage.getItem("theme"); if (!t) t = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"; document.documentElement.setAttribute("data-theme", t); }
+      catch (e) { document.documentElement.setAttribute("data-theme", "dark"); }
+    })();
+  </script>
+  <title>Coverage report — ai-jury</title>
+  <meta name="description" content="Per-file test coverage for ai-jury, rendered in-site from the coverage.py report." />
+  <meta name="theme-color" content="#6366f1" />
+  <link rel="canonical" href="https://berkayturanci.github.io/ai-jury/coverage-report.html" />
+  <meta name="robots" content="index, follow" />
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  <link rel="icon" href="favicon.ico" sizes="48x48" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" sizes="180x180" />
+  <meta property="og:type" content="article" />
+  <meta property="og:site_name" content="ai-jury" />
+  <meta property="og:url" content="https://berkayturanci.github.io/ai-jury/coverage-report.html" />
+  <meta property="og:title" content="Coverage report — ai-jury" />
+  <meta property="og:description" content="Per-file test coverage for ai-jury, rendered in-site from the coverage.py report." />
+  <meta property="og:image" content="assets/og-banner.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:image" content="assets/og-banner.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="docs.css" />
+  <style>
+    .cov-report { max-width: 920px; }
+    .crumbs { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; white-space: nowrap; font-family: var(--font-mono); font-size: .8rem; color: var(--faint); margin-bottom: 1.4rem; }
+    .crumbs a { color: var(--muted); }
+    .crumbs a:hover { color: var(--accent-2); }
+
+    .cr-summary {
+      display: flex; align-items: center; gap: 1.4rem; flex-wrap: wrap;
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 1.3rem 1.5rem; box-shadow: var(--shadow-md); margin-bottom: 1.4rem;
+    }
+    .cr-big { font-family: var(--font-display); font-weight: 700; font-size: 2.4rem; letter-spacing: -0.02em; line-height: 1; }
+    .cr-big small { font-size: .9rem; font-weight: 500; color: var(--muted); margin-left: .3rem; }
+    .cr-sumbar { flex: 1; min-width: 200px; }
+    .cr-track { height: 12px; border-radius: 999px; background: var(--surface-3); overflow: hidden; }
+    .cr-track > span { display: block; height: 100%; border-radius: 999px; transition: width 1s cubic-bezier(.2,.7,.2,1); }
+    .cr-sublabel { display: flex; justify-content: space-between; gap: 1rem; font-size: .82rem; color: var(--muted); margin-top: .5rem; font-family: var(--font-mono); }
+    .cr-actions { display: flex; gap: .6rem; flex-wrap: wrap; }
+    .cr-actions .btn { font-size: .86rem; padding: .55rem 1rem; }
+
+    .cr-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: .7rem; }
+    .cr-toolbar h2 { font-size: 1.2rem; margin: 0; }
+    .cr-sort { display: flex; gap: .4rem; }
+    .cr-sort button {
+      font-family: var(--font-mono); font-size: .76rem; cursor: pointer;
+      background: var(--surface-2); border: 1px solid var(--border); color: var(--muted);
+      border-radius: 8px; padding: .35rem .65rem; transition: color .2s, border-color .2s, background .2s;
+    }
+    .cr-sort button:hover { color: var(--text); border-color: var(--accent-line); }
+    .cr-sort button.on { color: var(--accent-2); border-color: var(--accent-line); background: var(--accent-soft); }
+
+    .cr-table-wrap { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--surface); }
+    table.cr { width: 100%; border-collapse: collapse; font-size: .9rem; }
+    table.cr thead th { background: var(--surface-2); font-family: var(--font-display); font-weight: 600; font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); text-align: left; padding: .7rem .9rem; }
+    table.cr thead th.num { text-align: right; }
+    table.cr td { padding: .6rem .9rem; border-top: 1px solid var(--border-soft); vertical-align: middle; }
+    table.cr td.num { text-align: right; font-family: var(--font-mono); font-size: .82rem; color: var(--muted); }
+    table.cr tbody tr:hover { background: color-mix(in srgb, var(--accent) 5%, transparent); }
+    .cr-file { font-family: var(--font-mono); font-size: .82rem; color: var(--text); display: inline-flex; align-items: center; gap: .5rem; }
+    .cr-file a { color: var(--text); border-bottom: 1px solid transparent; }
+    .cr-file a:hover { color: var(--accent-2); border-bottom-color: var(--accent-line); }
+    .cr-covcell { display: flex; align-items: center; gap: .7rem; min-width: 160px; }
+    .cr-mini { flex: 1; height: 8px; border-radius: 999px; background: var(--surface-3); overflow: hidden; min-width: 60px; }
+    .cr-mini > span { display: block; height: 100%; border-radius: 999px; }
+    .cr-pct { font-family: var(--font-mono); font-size: .82rem; font-weight: 600; width: 3.2rem; text-align: right; flex: none; }
+    .pc-hi { color: var(--green-2); } .pc-mid { color: var(--amber); } .pc-lo { color: #f87171; }
+    :root[data-theme="light"] .pc-lo { color: #dc2626; }
+    .bg-hi { background: var(--green); } .bg-mid { background: var(--amber); } .bg-lo { background: var(--red); }
+
+    .cr-foot { font-family: var(--font-mono); font-size: .78rem; color: var(--faint); margin-top: 1rem; }
+    .cr-note { font-size: .82rem; color: var(--faint); }
+  </style>
+</head>
+<body class="docs">
+  <nav class="nav" id="nav">
+    <div class="wrap nav-inner">
+      <div class="brand">
+        <a class="brand-link" href="index.html"><img src="assets/logos/mark-convergence.svg" alt="" /> ai-jury</a>
+        <span class="ver">coverage</span>
+      </div>
+      <div class="nav-links">
+        <a class="nav-link" href="coverage.html">← Coverage</a>
+        <a class="nav-link hide-sm" href="docs.html">Docs</a>
+        <button class="icon-btn theme-track" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" title="Toggle light / dark">
+          <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <div class="wrap" style="padding-top:2rem;padding-bottom:4rem">
+    <div class="docs-main cov-report" style="margin:0 auto">
+      <div class="crumbs"><a href="coverage.html">Test coverage</a> <span>/</span> <span>Full report</span></div>
+      <p class="docs-kicker" style="margin-top:.2rem">Quality</p>
+      <h1 class="docs-h1">Coverage report</h1>
+      <p class="docs-lede">Per-file branch coverage for the <code>ai_jury</code> package, read live from the published <code>coverage.py</code> report.</p>
+
+      <div id="cr-root">
+        <div class="doc-loading"><div class="doc-spinner"></div>Loading coverage data…</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  (function () {
+    "use strict";
+    var $ = function (id) { return document.getElementById(id); };
+    // theme + nav
+    $("theme-toggle").addEventListener("click", function () {
+      var light = document.documentElement.getAttribute("data-theme") === "light";
+      document.documentElement.setAttribute("data-theme", light ? "dark" : "light");
+      try { localStorage.setItem("theme", light ? "dark" : "light"); } catch (e) {}
+    });
+    var nav = $("nav");
+    var onScroll = function () { nav.classList.toggle("scrolled", window.scrollY > 8); };
+    onScroll(); window.addEventListener("scroll", onScroll, { passive: true });
+
+    var REPORT_BASES = ["coverage/", "https://berkayturanci.github.io/ai-jury/coverage/"];
+    var root = $("cr-root");
+
+    function cls(p) { return p >= 90 ? "hi" : (p >= 75 ? "mid" : "lo"); }
+    function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+
+    // Parse coverage.py htmlcov status.json into per-file rows.
+    function parse(status) {
+      var files = status.files || {};
+      var rows = [];
+      Object.keys(files).forEach(function (k) {
+        var f = files[k];
+        var idx = f.index || {};
+        var nums = idx.nums || f.nums || {};
+        var nStmt = nums.n_statements || 0;
+        var nMiss = nums.n_missing || 0;
+        var nBr = nums.n_branches || 0;
+        var nMissBr = nums.n_missing_branches || 0;
+        var total = nStmt + nBr;
+        var covered = (nStmt - nMiss) + (nBr - nMissBr);
+        var pct = total > 0 ? (covered / total) * 100 : 100;
+        rows.push({
+          file: idx.file || idx.relative_filename || k,
+          url: idx.url || (k + ".html"),
+          pct: pct,
+          covered: covered,
+          total: total,
+          missing: nMiss + nMissBr
+        });
+      });
+      return rows;
+    }
+
+    function render(rows, base, sortMode) {
+      var totalAll = rows.reduce(function (a, r) { return a + r.total; }, 0);
+      var covAll = rows.reduce(function (a, r) { return a + r.covered; }, 0);
+      var overall = totalAll > 0 ? (covAll / totalAll) * 100 : 0;
+
+      var sorted = rows.slice();
+      if (sortMode === "file") sorted.sort(function (a, b) { return a.file.localeCompare(b.file); });
+      else if (sortMode === "best") sorted.sort(function (a, b) { return b.pct - a.pct; });
+      else sorted.sort(function (a, b) { return a.pct - b.pct; }); // worst first (default)
+
+      var html = "";
+      // summary
+      html += '<div class="cr-summary">'
+        + '<div class="cr-big pc-' + cls(overall) + '">' + overall.toFixed(0) + '%<small>overall</small></div>'
+        + '<div class="cr-sumbar"><div class="cr-track"><span class="bg-' + cls(overall) + '" style="width:' + overall.toFixed(1) + '%"></span></div>'
+        + '<div class="cr-sublabel"><span>' + covAll + ' / ' + totalAll + ' covered</span><span>' + rows.length + ' files</span></div></div>'
+        + '<div class="cr-actions"><a class="btn ghost" href="' + base + 'index.html" target="_blank" rel="noopener">Line-by-line ↗</a></div>'
+        + "</div>";
+
+      // toolbar
+      html += '<div class="cr-toolbar"><h2>Per-file coverage</h2>'
+        + '<div class="cr-sort">'
+        + '<button data-sort="worst" class="' + (sortMode === "worst" || !sortMode ? "on" : "") + '">Worst first</button>'
+        + '<button data-sort="best" class="' + (sortMode === "best" ? "on" : "") + '">Best first</button>'
+        + '<button data-sort="file" class="' + (sortMode === "file" ? "on" : "") + '">By file</button>'
+        + "</div></div>";
+
+      // table
+      html += '<div class="cr-table-wrap"><table class="cr"><thead><tr>'
+        + '<th>File</th><th>Coverage</th><th class="num">Lines</th><th class="num">Missing</th>'
+        + "</tr></thead><tbody>";
+      sorted.forEach(function (r) {
+        var c = cls(r.pct);
+        html += "<tr>"
+          + '<td><span class="cr-file"><a href="' + base + esc(r.url) + '" target="_blank" rel="noopener">' + esc(r.file) + "</a></span></td>"
+          + '<td><div class="cr-covcell"><div class="cr-mini"><span class="bg-' + c + '" style="width:' + r.pct.toFixed(1) + '%"></span></div>'
+          + '<span class="cr-pct pc-' + c + '">' + r.pct.toFixed(0) + '%</span></div></td>'
+          + '<td class="num">' + r.covered + "/" + r.total + "</td>"
+          + '<td class="num">' + (r.missing || 0) + "</td>"
+          + "</tr>";
+      });
+      html += "</tbody></table></div>";
+      html += '<p class="cr-foot">Source: <code>' + base + 'status.json</code> · generated by coverage.py</p>';
+
+      root.innerHTML = html;
+      // wire sort
+      Array.prototype.forEach.call(root.querySelectorAll(".cr-sort button"), function (b) {
+        b.addEventListener("click", function () { render(rows, base, b.getAttribute("data-sort")); window.scrollTo({ top: 0, behavior: "smooth" }); });
+      });
+      // animate bars
+      requestAnimationFrame(function () {});
+    }
+
+    function fail() {
+      root.innerHTML = '<div class="doc-error"><p><strong>Couldn\u2019t load the per-file coverage data.</strong></p>'
+        + '<p class="cr-note">The detailed <code>status.json</code> resolves on the published site once the coverage workflow has run.</p>'
+        + '<p><a class="btn primary" href="coverage/index.html" target="_blank" rel="noopener">Open the raw report ↗</a></p></div>';
+    }
+
+    function tryBase(i) {
+      if (i >= REPORT_BASES.length || !window.fetch) { fail(); return; }
+      var base = REPORT_BASES[i];
+      fetch(base + "status.json", { cache: "no-store" })
+        .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+        .then(function (status) {
+          var rows = parse(status);
+          if (!rows.length) throw new Error("no files");
+          render(rows, base, "worst");
+        })
+        .catch(function () { tryBase(i + 1); });
+    }
+    tryBase(0);
+  })();
+  </script>
+</body>
+</html>

@@ -1,4 +1,14 @@
+# ai-jury — https://berkayturanci.github.io/ai-jury/
+# Cross-vendor multi-agent code review jury (stdlib-only Python CLI).
+
 User-agent: *
+Allow: /
+
+# Allow well-behaved AI/search crawlers explicitly
+User-agent: Googlebot
+Allow: /
+
+User-agent: Bingbot
 Allow: /
 
 Sitemap: https://berkayturanci.github.io/ai-jury/sitemap.xml
