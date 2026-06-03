@@ -22,18 +22,20 @@ def _gh(*args: str) -> str:
 
 
 def pr_diff(pr: str, repo: str | None = None) -> str:
-    args = ["pr", "diff", str(pr)]
+    args = ["pr", "diff"]
     if repo:
         args += ["--repo", repo]
+    args += ["--", str(pr)]
     return _gh(*args)
 
 
 def pr_context(pr: str, repo: str | None = None) -> str:
     """Return 'title\\n\\nbody' for a PR, best-effort."""
-    args = ["pr", "view", str(pr), "--json", "title,body",
+    args = ["pr", "view", "--json", "title,body",
             "--jq", '.title + "\\n\\n" + (.body // "")']
     if repo:
         args += ["--repo", repo]
+    args += ["--", str(pr)]
     try:
         return _gh(*args).strip()
     except RuntimeError:
@@ -41,17 +43,19 @@ def pr_context(pr: str, repo: str | None = None) -> str:
 
 
 def post_pr_comment(pr: str, body: str, repo: str | None = None) -> None:
-    args = ["pr", "comment", str(pr), "--body", body]
+    args = ["pr", "comment", "--body", body]
     if repo:
         args += ["--repo", repo]
+    args += ["--", str(pr)]
     _gh(*args)
 
 
 def pr_head_sha(pr: str, repo: str | None = None) -> str:
     """Return the current head commit SHA of a PR (best-effort, '' on failure)."""
-    args = ["pr", "view", str(pr), "--json", "headRefOid", "--jq", ".headRefOid"]
+    args = ["pr", "view", "--json", "headRefOid", "--jq", ".headRefOid"]
     if repo:
         args += ["--repo", repo]
+    args += ["--", str(pr)]
     try:
         return _gh(*args).strip()
     except RuntimeError:
@@ -65,9 +69,10 @@ def pr_comment_bodies(pr: str, repo: str | None = None) -> list[str]:
     reviewed-SHA marker. Network errors degrade to an empty list so the caller
     safely falls back to a full review.
     """
-    args = ["pr", "view", str(pr), "--json", "comments", "--jq", ".comments[].body"]
+    args = ["pr", "view", "--json", "comments", "--jq", ".comments[].body"]
     if repo:
         args += ["--repo", repo]
+    args += ["--", str(pr)]
     try:
         out = _gh(*args)
     except RuntimeError:
@@ -103,11 +108,12 @@ def build_label_args(pr: str, labels, repo: str | None = None) -> list[str]:
     clean = [str(label) for label in (labels or []) if str(label).strip()]
     if not clean:
         return []
-    args = ["pr", "edit", str(pr)]
+    args = ["pr", "edit"]
     for label in clean:
         args += ["--add-label", label]
     if repo:
         args += ["--repo", repo]
+    args += ["--", str(pr)]
     return args
 
 
