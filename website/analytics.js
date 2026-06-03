@@ -1,40 +1,24 @@
-// Firebase Analytics (GA4) for the ai-jury website.
+// Google Analytics 4 (gtag.js) for the ai-jury website.
 //
 // Scope note: this measures **the website only** — anonymous pageviews and
 // the GA4 default events (scroll, outbound click, etc.). The `ai-jury` CLI
 // itself sends no telemetry; the two are different surfaces.
 //
-// Setup:
-//   1. Firebase Console → create / open the project for this site.
-//   2. Project Settings → "Your apps" → add a Web app (or open the existing
-//      one) → copy the `firebaseConfig` object shown there.
-//   3. Replace the placeholder values below with the real config and commit.
-//      The `measurementId` (`G-…`) is what wires up GA4.
-//   4. Make sure "Google Analytics" is enabled for the Firebase project so
-//      `getAnalytics()` has somewhere to send events.
-//
-// No other code changes are required — every page loads this module from
-// its `<head>`.
+// To rotate the GA4 property, change `MEASUREMENT_ID` and commit. To disable
+// tracking entirely (e.g. for a fork or local preview), leave it as the
+// placeholder string starting with `G-REPLACE_ME` — the loader short-circuits.
 
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getAnalytics, isSupported } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-analytics.js";
+const MEASUREMENT_ID = "G-72JDED64T7";
 
-const firebaseConfig = {
-  apiKey:            "REPLACE_ME_API_KEY",
-  authDomain:        "REPLACE_ME.firebaseapp.com",
-  projectId:         "REPLACE_ME_PROJECT_ID",
-  storageBucket:     "REPLACE_ME.appspot.com",
-  messagingSenderId: "REPLACE_ME_SENDER_ID",
-  appId:             "REPLACE_ME_APP_ID",
-  measurementId:     "G-REPLACE_ME",
-};
+if (!MEASUREMENT_ID.startsWith("G-REPLACE_ME")) {
+  const s = document.createElement("script");
+  s.async = true;
+  s.src = "https://www.googletagmanager.com/gtag/js?id=" + MEASUREMENT_ID;
+  document.head.appendChild(s);
 
-// Skip init while the placeholder config is still in place so local previews
-// and CI artifacts don't try to reach Firebase with bogus credentials.
-if (!firebaseConfig.measurementId.includes("REPLACE_ME")) {
-  isSupported().then((ok) => {
-    if (!ok) return;
-    const app = initializeApp(firebaseConfig);
-    getAnalytics(app);
-  });
+  window.dataLayer = window.dataLayer || [];
+  function gtag() { window.dataLayer.push(arguments); }
+  window.gtag = gtag;
+  gtag("js", new Date());
+  gtag("config", MEASUREMENT_ID);
 }

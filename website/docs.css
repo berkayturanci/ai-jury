@@ -57,8 +57,12 @@
 }
 .docs-h1 { font-size: clamp(1.9rem, 4vw, 2.6rem); margin: 0 0 .7rem; font-weight: 700; letter-spacing: -0.02em; }
 .docs-lede { font-size: 1.08rem; color: var(--muted); margin: 0 0 2rem; text-wrap: pretty; }
-.docs-block { margin: 2.2rem 0; }
-.docs-block h2 { font-size: 1.3rem; margin: 0 0 .6rem; }
+.docs-block { margin: 2.4rem 0; padding: 0; }
+.docs-block h2 {
+  font-size: 1.5rem; margin: 2.4rem 0 .8rem; padding-bottom: .35rem;
+  border-bottom: 1px solid var(--border-soft); scroll-margin-top: 84px;
+}
+.docs-block:first-of-type h2 { margin-top: 0; }
 .docs-block p { margin: 0 0 .8rem; }
 .docs-list { margin: 0 0 .8rem; padding-left: 1.1rem; color: var(--muted); }
 .docs-list li { margin: .35rem 0; }
@@ -75,7 +79,7 @@
 .cov-summary {
   display: grid; grid-template-columns: auto 1fr; gap: 2rem; align-items: center;
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
-  padding: 1.8rem; box-shadow: var(--shadow-md); margin-bottom: 1rem;
+  padding: 1.8rem; box-shadow: var(--shadow-md); margin: 0 0 1rem;
 }
 @media (max-width: 560px) { .cov-summary { grid-template-columns: 1fr; justify-items: center; text-align: center; } }
 .cov-gauge { position: relative; width: 150px; height: 150px; }
