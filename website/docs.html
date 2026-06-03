@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script>
+    (function () {
+      try { var t = localStorage.getItem("theme"); if (!t) t = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"; document.documentElement.setAttribute("data-theme", t); }
+      catch (e) { document.documentElement.setAttribute("data-theme", "dark"); }
+    })();
+  </script>
+  <title>Documentation — ai-jury</title>
+  <meta name="description" content="ai-jury documentation — architecture, configuration, security, comparison, cookbook and more, rendered from the repository docs." />
+  <meta name="theme-color" content="#6366f1" />
+  <link rel="canonical" href="https://berkayturanci.github.io/ai-jury/docs.html" />
+  <meta name="robots" content="index, follow" />
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  <link rel="icon" href="favicon.ico" sizes="48x48" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" sizes="180x180" />
+
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="ai-jury" />
+  <meta property="og:url" content="https://berkayturanci.github.io/ai-jury/docs.html" />
+  <meta property="og:title" content="Documentation — ai-jury" />
+  <meta property="og:description" content="Architecture, configuration, security, comparison, cookbook and more — the full ai-jury documentation." />
+  <meta property="og:image" content="assets/og-banner.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Documentation — ai-jury" />
+  <meta name="twitter:description" content="The full ai-jury documentation — architecture, configuration, security, and more." />
+  <meta name="twitter:image" content="assets/og-banner.png" />
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    "headline": "ai-jury documentation",
+    "description": "Architecture, configuration, security, comparison, cookbook and more for ai-jury — a cross-vendor multi-agent code review jury.",
+    "url": "https://berkayturanci.github.io/ai-jury/docs.html",
+    "image": "https://berkayturanci.github.io/ai-jury/assets/og-banner.png",
+    "author": { "@type": "Person", "name": "Berkay Turancı" },
+    "publisher": { "@type": "Organization", "name": "ai-jury" },
+    "isPartOf": { "@type": "WebSite", "name": "ai-jury", "url": "https://berkayturanci.github.io/ai-jury/" }
+  }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="docs.css" />
+  <script type="module" src="analytics.js"></script>
+</head>
+<body class="docs">
+  <nav class="nav" id="nav">
+    <div class="wrap nav-inner">
+      <div class="brand">
+        <a class="brand-link" href="index.html"><img src="assets/logos/mark-convergence.svg" alt="" /> ai-jury</a>
+        <span class="ver">docs</span>
+      </div>
+      <div class="nav-links">
+        <a class="nav-link" href="index.html">← Back to site</a>
+        <a class="nav-link hide-sm" href="https://github.com/berkayturanci/ai-jury">GitHub</a>
+        <button class="icon-btn theme-track" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" title="Toggle light / dark">
+          <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <div class="docs-shell wrap">
+    <aside class="docs-side collapsed" id="docs-side"><!-- sidebar injected --></aside>
+    <main class="docs-main" id="docs-main">
+      <div class="docs-mobilebar">
+        <button class="docs-menu-btn" id="menu-btn" type="button">☰ Docs menu</button>
+      </div>
+      <div id="doc-content"><div class="doc-loading"><div class="doc-spinner"></div>Loading…</div></div>
+    </main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.10.0/highlight.min.js"></script>
+  <script>
+  (function () {
+    "use strict";
+
+    var OWNER = "berkayturanci", REPO = "ai-jury", BRANCH = "main";
+    var RAW_ROOT = "https://raw.githubusercontent.com/" + OWNER + "/" + REPO + "/" + BRANCH + "/";
+    var RAW_DOCS = RAW_ROOT + "docs/";
+    var BLOB_ROOT = "https://github.com/" + OWNER + "/" + REPO + "/blob/" + BRANCH + "/";
+
+    // Registry — grouped docs. slug -> file under docs/
+    var GROUPS = [
+      { title: "Overview", items: [
+        { slug: "positioning", file: "positioning.md", title: "Positioning" },
+        { slug: "architecture", file: "architecture.md", title: "Architecture" },
+        { slug: "feasibility", file: "feasibility.md", title: "Feasibility & prior art" },
+        { slug: "comparison", file: "comparison.md", title: "Ecosystem comparison" }
+      ]},
+      { title: "Guides", items: [
+        { slug: "configuration", file: "configuration.md", title: "Configuration" },
+        { slug: "cookbook", file: "cookbook.md", title: "Cookbook" },
+        { slug: "platforms", file: "platforms.md", title: "Platform support" },
+        { slug: "skill", file: "skill.md", title: "Skill packaging" },
+        { slug: "security", file: "security.md", title: "Security" }
+      ]},
+      { title: "Examples", items: [
+        { slug: "example-run", file: "example-run.md", title: "Example run" },
+        { slug: "example-live-review", file: "example-live-review.md", title: "Live review" }
+      ]},
+      { title: "Reference", items: [
+        { slug: "report-format", file: "report-format.md", title: "Report format" }
+      ]},
+      { title: "Project", items: [
+        { slug: "releasing", file: "releasing.md", title: "Releasing" },
+        { slug: "release-checklist", file: "release-checklist.md", title: "Release checklist" }
+      ]}
+    ];
+    var BY_SLUG = {};
+    GROUPS.forEach(function (g) { g.items.forEach(function (it) { BY_SLUG[it.slug] = it; }); });
+    // map "docs/<file>" -> slug for link rewriting
+    var FILE_TO_SLUG = {};
+    GROUPS.forEach(function (g) { g.items.forEach(function (it) { FILE_TO_SLUG["docs/" + it.file] = it.slug; }); });
+
+    var $ = function (id) { return document.getElementById(id); };
+    var sideEl = $("docs-side"), contentEl = $("doc-content");
+
+    /* ---- theme + nav + mobile menu ---- */
+    $("theme-toggle").addEventListener("click", function () {
+      var light = document.documentElement.getAttribute("data-theme") === "light";
+      var next = light ? "dark" : "light";
+      document.documentElement.setAttribute("data-theme", next);
+      try { localStorage.setItem("theme", next); } catch (e) {}
+    });
+    var nav = $("nav");
+    var onScroll = function () { nav.classList.toggle("scrolled", window.scrollY > 8); };
+    onScroll(); window.addEventListener("scroll", onScroll, { passive: true });
+    $("menu-btn").addEventListener("click", function () { sideEl.classList.toggle("collapsed"); });
+
+    /* ---- sidebar ---- */
+    function buildSidebar(activeSlug) {
+      var html = '<p class="ds-label">Documentation</p><nav class="ds-nav">';
+      html += '<a class="ds-link' + (!activeSlug ? " active" : "") + '" href="#">Home</a>';
+      html += '<a class="ds-link" href="coverage.html">Test coverage</a>';
+      html += "</nav>";
+      GROUPS.forEach(function (g) {
+        html += '<p class="ds-label">' + g.title + "</p><nav class=\"ds-nav\">";
+        g.items.forEach(function (it) {
+          html += '<a class="ds-link' + (it.slug === activeSlug ? " active" : "") + '" href="#' + it.slug + '">' + it.title + "</a>";
+        });
+        html += "</nav>";
+      });
+      html += '<p class="ds-label">On this page</p><nav class="ds-nav" id="toc"></nav>';
+      sideEl.innerHTML = html;
+    }
+
+    function slugify(s) {
+      return String(s).toLowerCase().replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-").replace(/-+/g, "-");
+    }
+
+    /* ---- link / image rewriting ---- */
+    function resolveRel(href) {
+      // resolve a relative path against docs/ using URL semantics
+      try { return new URL(href, "https://x/docs/").pathname.replace(/^\//, ""); }
+      catch (e) { return href; }
+    }
+    function rewrite(container) {
+      // links
+      Array.prototype.forEach.call(container.querySelectorAll("a[href]"), function (a) {
+        var href = a.getAttribute("href");
+        if (!href) return;
+        if (/^(https?:)?\/\//i.test(href) || /^(mailto:|#)/i.test(href)) {
+          if (/^https?:\/\//i.test(href)) { a.target = "_blank"; a.rel = "noopener"; }
+          return;
+        }
+        var frag = "";
+        var hashIdx = href.indexOf("#");
+        if (hashIdx >= 0) { frag = href.slice(hashIdx); href = href.slice(0, hashIdx); }
+        if (!href) { return; } // pure fragment handled above
+        var path = resolveRel(href);
+        if (FILE_TO_SLUG[path]) { a.setAttribute("href", "#" + FILE_TO_SLUG[path] + (frag && frag !== "#" ? "" : "")); a.removeAttribute("target"); return; }
+        // other repo file → blob (or raw for assets handled by img)
+        a.setAttribute("href", BLOB_ROOT + path + frag);
+        a.target = "_blank"; a.rel = "noopener";
+      });
+      // images
+      Array.prototype.forEach.call(container.querySelectorAll("img[src]"), function (img) {
+        var src = img.getAttribute("src");
+        if (!src || /^(https?:)?\/\//i.test(src) || /^data:/i.test(src)) return;
+        img.setAttribute("src", RAW_ROOT + resolveRel(src));
+        img.loading = "lazy";
+      });
+      // wrap tables for horizontal scroll
+      Array.prototype.forEach.call(container.querySelectorAll("table"), function (t) {
+        if (t.parentNode && t.parentNode.classList && t.parentNode.classList.contains("md-table-wrap")) return;
+        var w = document.createElement("div"); w.className = "md-table-wrap";
+        t.parentNode.insertBefore(w, t); w.appendChild(t);
+      });
+    }
+
+    function buildTOC(container) {
+      var toc = $("toc");
+      if (!toc) return;
+      var heads = container.querySelectorAll("h2, h3");
+      var html = "";
+      Array.prototype.forEach.call(heads, function (h) {
+        var id = h.id || slugify(h.textContent);
+        h.id = id;
+        html += '<a class="ds-sub" data-id="' + id + '" href="#' + (location.hash.replace("#","").split("/")[0] || "") + '" style="' + (h.tagName === "H3" ? "padding-left:1.4rem" : "") + '">' + h.textContent + "</a>";
+      });
+      toc.innerHTML = html;
+      // clicking a TOC item scrolls to heading without changing the doc hash
+      Array.prototype.forEach.call(toc.querySelectorAll(".ds-sub"), function (link) {
+        link.addEventListener("click", function (e) {
+          e.preventDefault();
+          var el = document.getElementById(link.getAttribute("data-id"));
+          if (el) { window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 76, behavior: "smooth" }); }
+        });
+      });
+    }
+
+    /* ---- home (index) view ---- */
+    function renderHome() {
+      buildSidebar(null);
+      var html = '<p class="docs-kicker">Reference</p><h1 class="docs-h1">Documentation</h1>';
+      html += '<p class="docs-lede">Everything about ai-jury, rendered live from the repository\u2019s <code>docs/</code>. Pick a topic.</p>';
+      GROUPS.forEach(function (g) {
+        html += '<div class="docs-block"><h2>' + g.title + "</h2><div class=\"dh-grid\">";
+        g.items.forEach(function (it) {
+          html += '<a class="dh-card" href="#' + it.slug + '"><span class="dh-t">' + it.title + '</span><span class="dh-f mono">docs/' + it.file + "</span></a>";
+        });
+        html += "</div></div>";
+      });
+      html += '<div class="docs-block"><h2>More</h2><div class="dh-grid">'
+        + '<a class="dh-card" href="coverage.html"><span class="dh-t">Test coverage</span><span class="dh-f mono">live gauge + report</span></a>'
+        + '<a class="dh-card" href="https://github.com/' + OWNER + "/" + REPO + '/blob/' + BRANCH + '/README.md"><span class="dh-t">README</span><span class="dh-f mono">on GitHub</span></a>'
+        + "</div></div>";
+      contentEl.innerHTML = html;
+      document.title = "Documentation — ai-jury";
+      window.scrollTo(0, 0);
+    }
+
+    /* ---- doc view ---- */
+    function renderDoc(slug) {
+      var item = BY_SLUG[slug];
+      if (!item) { renderHome(); return; }
+      buildSidebar(slug);
+      contentEl.innerHTML = '<div class="doc-loading"><div class="doc-spinner"></div>Loading ' + item.title + "…</div>";
+      window.scrollTo(0, 0);
+      fetch(RAW_DOCS + item.file, { cache: "no-store" })
+        .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
+        .then(function (md) {
+          var raw = marked.parse(md, { gfm: true, breaks: false });
+          var clean = window.DOMPurify ? DOMPurify.sanitize(raw, { ADD_ATTR: ["target"] }) : raw;
+          var wrap = document.createElement("div");
+          wrap.className = "md-body";
+          wrap.innerHTML = clean;
+          // meta row
+          var meta = document.createElement("div");
+          meta.className = "doc-meta";
+          meta.innerHTML = '<span class="doc-source">docs/' + item.file + '</span>'
+            + '<a class="doc-edit" href="' + BLOB_ROOT + "docs/" + item.file + '" target="_blank" rel="noopener">View source on GitHub →</a>';
+          rewrite(wrap);
+          // syntax highlight code blocks
+          if (window.hljs) {
+            Array.prototype.forEach.call(wrap.querySelectorAll("pre code"), function (block) {
+              try { hljs.highlightElement(block); } catch (e) {}
+            });
+          }
+          contentEl.innerHTML = "";
+          contentEl.appendChild(meta);
+          contentEl.appendChild(wrap);
+          buildTOC(wrap);
+          document.title = item.title + " — ai-jury";
+          // jump to in-page anchor if present (slug#anchor not used; we keep simple)
+        })
+        .catch(function (err) {
+          contentEl.innerHTML = '<div class="doc-error"><p><strong>Couldn\u2019t load this doc.</strong></p><p class="mono">' + (err && err.message ? err.message : "fetch failed") + '</p><p><a href="' + BLOB_ROOT + "docs/" + item.file + '" target="_blank" rel="noopener">Read it on GitHub →</a></p></div>';
+        });
+    }
+
+    function route() {
+      var slug = (location.hash || "").replace(/^#/, "").trim();
+      if (!slug) { renderHome(); }
+      else { renderDoc(slug); }
+      // collapse mobile menu after navigation
+      if (window.innerWidth <= 860) sideEl.classList.add("collapsed");
+    }
+    window.addEventListener("hashchange", route);
+    route();
+  })();
+  </script>
+
+  <style>
+    /* home grid cards (scoped here to keep docs.css generic) */
+    .dh-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: .8rem; }
+    @media (max-width: 600px) { .dh-grid { grid-template-columns: 1fr; } }
+    .dh-card {
+      display: flex; flex-direction: column; gap: .25rem; padding: 1rem 1.1rem;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+      transition: transform .25s, border-color .25s, box-shadow .25s; color: var(--text);
+    }
+    .dh-card:hover { transform: translateY(-2px); border-color: var(--accent-line); box-shadow: var(--shadow-md); color: var(--text); }
+    .dh-t { font-family: var(--font-display); font-weight: 600; font-size: 1rem; }
+    .dh-f { font-size: .76rem; color: var(--faint); }
+  </style>
+</body>
+</html>

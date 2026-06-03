@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Rebuilt the project website from a fresh design direction** (closes #159).
+  New landing page plus dedicated `docs.html`, `coverage.html`,
+  `coverage-report.html`, and `404.html`; refreshed favicon set, OG banner, and
+  convergence logo mark. `make assets` now also regenerates the favicon set
+  from `website/favicon.svg`.
+- Wired **Firebase Analytics (GA4)** into the website via `website/analytics.js`
+  (loaded as a module from every page's `<head>`). Ships with a placeholder
+  config that is a no-op until the Firebase Console values are filled in.
+  Scope is website-only — the `ai-jury` CLI itself remains telemetry-free.
+
 ## [1.0.0] - 2026-06-03
 
 First public release. `ai-jury` orchestrates native coding-agent CLIs (Claude
