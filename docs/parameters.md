@@ -9,6 +9,70 @@ the default shown below.
 
 ---
 
+## Common recipes
+
+Copy-pasteable commands for the everyday jobs. Each line says what it does.
+
+```bash
+# Review a GitHub PR (uses `gh` to fetch the diff)
+jury --pr 123
+#   → run the panel on PR #123 and print the verdict to stdout
+
+# Review a PR and post the verdict back as one summary comment
+jury --pr 123 --post
+#   → same review, plus a single summary comment on the PR (`--post` ⇔ `--post-summary`)
+
+# Review the current branch against the base, from a piped diff
+git diff origin/HEAD... | jury --diff-file -
+#   → review your local commits without touching GitHub (`-` reads stdin)
+
+# Single round — review only, no debate (fast, cheap)
+jury --pr 123 --rounds 1
+#   → each agent reviews once; skips the debate round (a fixed value disables early-stop)
+
+# Offline demo with deterministic mock agents (no CLIs, no network)
+jury --mock --diff-file examples/sample.diff
+#   → exercise the full pipeline locally; byte-identical output every run
+
+# CI gate — fail the build on blocking findings
+jury --pr 123 --ci --fail-on critical,major
+#   → exit non-zero if any confirmed critical/major finding remains
+
+# Full play-by-play transcript instead of the consensus-first summary
+jury --pr 123 --transcript
+#   → render every agent's review, the debate, and the chair's reasoning
+
+# Summary report followed by the full transcript, in one document
+jury --pr 123 --verbose
+#   → consensus summary first, then the chronological transcript below it
+
+# Live, streamed play-by-play to the terminal as each step lands
+jury --pr 123 --live
+#   → print each review/debate turn/verdict the moment it completes
+
+# Live AND post each step as its own PR comment (posting is opt-in)
+jury --pr 123 --live --post
+#   → stream locally and mirror each step to the PR as a separate comment
+
+# Incremental — review only what changed since the last jury run on the PR
+jury --pr 123 --incremental --post
+#   → narrow to the new range when a prior marker exists, else full review
+
+# Suggested patches for verified findings (read-only; written to a file)
+jury --pr 123 --suggest-patches --patches-out fixes.patch
+#   → emit an opt-in patch section for VERIFIED findings; never auto-applied
+
+# Machine-readable output for tooling
+jury --pr 123 --format json -o review.json     # JSON document to a file
+jury --pr 123 --format sarif -o review.sarif   # SARIF for code-scanning upload
+
+# Phased posting — Round 1 / debate / decision as separate comments
+jury --pr 123 --post --post-mode phased
+#   → post the flow as readable, round-by-round comments (requires `--post`)
+```
+
+---
+
 ## CLI flags
 
 ### Input (choose one)
@@ -18,6 +82,14 @@ the default shown below.
 | `--pr` | PR number or URL | Review a GitHub PR (uses `gh`). |
 | `--repo` | `owner/name` | Repository for `--pr` (defaults to the current repo). |
 | `--diff-file` | path, or `-` for stdin | Review a diff file (or piped stdin). |
+
+Exactly one input source is required. `--repo` only modifies `--pr`; all
+posting flags (`--post-summary`/`--post`, `--post-inline`, `--post-progress`,
+`--label`) and `--incremental` require `--pr`.
+
+**Example:** `jury --pr 123 --repo octocat/hello` reviews PR #123 in
+`octocat/hello`; `git diff origin/HEAD... | jury --diff-file -` reviews the
+current branch from stdin.
 
 ### Rounds & depth
 
@@ -31,6 +103,14 @@ the default shown below.
 | `--chair` | agent name, or `rotate` | from config (`claude`) | Which agent synthesizes the verdict (and runs verification). Must be an enabled agent. |
 | `--seed` | integer | from config (unset) | Reproducible orchestration; identical mock runs + seed ⇒ byte-identical reports. |
 
+A fixed `--rounds N` is a hard override: it also disables adaptive early-stop
+(for reproducible fixed-N runs) unless you pass `--early-stop` explicitly.
+`--chair` accepts an **enabled agent name** or the literal `rotate`.
+
+**Example:** `jury --pr 123 --rounds 1` runs review only (no debate);
+`jury --pr 123 --early-stop --max-rounds 3 --chair rotate` debates only on
+disagreement, up to 3 rounds, rotating the synthesizing chair per run.
+
 ### Execution budget & reliability
 
 | Flag | Value | Default | Description |
@@ -39,6 +119,10 @@ the default shown below.
 | `--phase-timeout` | seconds | unset | Per-phase wall-clock budget. |
 | `--retries` | integer ≥ 0 | `0` | Extra attempts for *transient* failures (timeout / rate-limit / spawn). |
 | `--strict` | flag | off | Fail the run if any configured agent CLI is missing. |
+
+**Example:** `jury --pr 123 --total-timeout 900 --phase-timeout 240 --retries 1`
+caps the whole run at 15 min, each phase at 4 min, and retries transient
+failures once.
 
 ### Large-diff handling
 
@@ -49,6 +133,12 @@ the default shown below.
 | `--exclude` | path glob (repeatable) | from config (`[]`) | Exclude files matching this glob. |
 | `--include` | path glob (repeatable) | from config (`[]`) | Only review files matching this glob. |
 
+`--exclude` / `--include` are repeatable and are **added on top of** the config
+lists. When any `--include` is set, only matching files are reviewed.
+
+**Example:** `jury --pr 123 --chunk --max-diff-bytes 400000 --exclude 'docs/**'
+--exclude '*.lock'` chunks an over-budget diff by file and skips docs/lockfiles.
+
 ### Context & privacy
 
 | Flag | Value | Default | Description |
@@ -56,6 +146,12 @@ the default shown below.
 | `--context-mode` | `diff-only` \| `expanded` | from config (`diff-only`) | `diff-only` sends only the diff; `expanded` adds PR context. |
 | `--redact` / `--no-redact` | flag | from config (`true`) | Redact recognized secrets from prompt text before sending. |
 | `--policy` | path | auto-discover `.jury/policy.toml` / `jury-policy.toml` | Optional repository review policy; missing files are allowed. |
+
+`--context-mode` accepts `diff-only` (just the diff) or `expanded` (adds PR
+context). Redaction is on by default; `--no-redact` disables it.
+
+**Example:** `jury --pr 123 --context-mode expanded --policy .jury/policy.toml`
+sends the PR description/context alongside the diff and applies a repo policy.
 
 ### Output & format
 
@@ -73,6 +169,15 @@ the default shown below.
 report. Phased posting (`--post-mode phased`) always posts the per-round
 sections regardless, since it is already a round-by-round layout.
 
+`--format` accepts `markdown` | `json` | `sarif`. `--transcript` and `--verbose`
+apply to **markdown only**; `--live` streams markdown steps to stdout (and, with
+`--pr --post`, posts each step). `--no-transcript` forces the summary even when
+`[jury] transcript = true`.
+
+**Example:** `jury --pr 123 --format sarif -o review.sarif` writes a SARIF
+document for code-scanning; `jury --pr 123 --transcript -o review.md` writes the
+full transcript to a file; `jury --pr 123 -q` silences the stderr progress logs.
+
 ### GitHub posting (require `--pr`)
 
 | Flag | Value | Default | Description |
@@ -84,12 +189,29 @@ sections regardless, since it is already a round-by-round layout.
 | `--dry-run` | flag | off | With `--post-inline`, print the payload without calling GitHub. |
 | `--label` | flag | off | Apply classification labels (review-effort / risk / security) to the PR. |
 
+**Depends on / conflicts:** every flag in this group requires `--pr` (bare
+`--pr` only selects the source — it never posts). `--post-mode` requires
+`--post-summary`/`--post`; `--post-mode` accepts `single` | `phased`.
+`--dry-run` only affects `--post-inline`.
+
+**Example:** `jury --pr 123 --post --post-inline --label` posts the summary,
+adds inline comments on located findings, and applies classification labels;
+`jury --pr 123 --post-inline --dry-run` previews the inline payload without
+calling GitHub.
+
 ### CI gating
 
 | Flag | Value | Default | Description |
 | --- | --- | --- | --- |
 | `--ci` | flag | off | CI mode: exit non-zero when blocking findings remain. |
 | `--fail-on` | comma-separated severities | from config (`critical,major`) | Severities that fail CI. See [severities](#severities). |
+
+`--fail-on` takes a comma-separated list drawn from the [severities](#severities)
+(`critical`, `major`, `minor`, `nit`, `info`; `blocker` aliases `critical`).
+Without `--ci`, `--fail-on` has no effect on the exit code.
+
+**Example:** `jury --pr 123 --ci --fail-on critical,major` exits non-zero when a
+confirmed critical or major finding remains — the canonical CI gate.
 
 ### Result cache
 
@@ -99,6 +221,12 @@ sections regardless, since it is already a round-by-round layout.
 | `--cache-dir` | path | `$JURY_CACHE_DIR` or `~/.cache/ai-jury` | Override the cache directory. |
 | `--clear-cache` | flag | — | Delete all cache entries and exit (alias: `jury cache clear`). |
 
+The cache key covers the diff, effective config, prompt version, package
+version, context policy, and seed — change any and the next run is a miss.
+
+**Example:** `jury --pr 123 --cache` reuses a stored verdict for an unchanged
+diff+config; `jury --clear-cache` (or `jury cache clear`) wipes all entries.
+
 ### Suggested patches & incremental
 
 | Flag | Value | Default | Description |
@@ -106,6 +234,14 @@ sections regardless, since it is already a round-by-round layout.
 | `--suggest-patches` | flag | off | Emit an opt-in suggested-patches section for **verified** findings (read-only; never applied). |
 | `--patches-out` | path | — | With `--suggest-patches`, write patches to this file instead of appending. |
 | `--incremental` | flag | off | Review only the diff since the last jury run on `--pr` (falls back to full review). |
+
+**Depends on / conflicts:** `--patches-out` requires `--suggest-patches`;
+`--incremental` requires `--pr`. Suggested patches cover **verified** findings
+only and are never applied automatically.
+
+**Example:** `jury --pr 123 --suggest-patches --patches-out fixes.patch` writes
+patches for verified findings to a file; `jury --pr 123 --incremental --post`
+reviews only the new range since the last posted run, then posts.
 
 ### Utility
 
@@ -119,6 +255,13 @@ sections regardless, since it is already a round-by-round layout.
 | `--write` | path | With `--doctor`, also write diagnostics as JSON (secrets redacted). |
 | `--version` | flag | Print the version and exit. |
 | `-h`, `--help` | flag | Show help and exit. |
+
+**Depends on / conflicts:** `--write` only applies with `--doctor`.
+`--config-validate` and `--doctor` short-circuit the run (they print and exit).
+
+**Example:** `jury --config-validate --config jury.toml` validates and exits
+(`0` valid, `2` invalid); `jury --doctor --write doctor.json` prints readiness
+diagnostics and also writes them as redacted JSON.
 
 ---
 
@@ -140,6 +283,10 @@ sections regardless, since it is already a round-by-round layout.
 | `--interactive` | flag | Force interactive prompts. |
 | `--list-agents` | flag | List known agents + availability and exit. |
 | `--list-models` | flag | List local models on the server and exit. |
+
+**Example:** `jury init --preset balanced -o jury.toml` scaffolds a debate +
+early-stop config; `jury init --agents claude,codex,qwen --chair rotate
+--local-model qwen2.5-coder:7b` scaffolds a specific panel with a local model.
 
 ### Other subcommands
 
@@ -173,6 +320,20 @@ sections regardless, since it is already a round-by-round layout.
 | `early_stop` | bool | `false` | Adaptive rounds. |
 | `auto_depth` | bool | `false` | Risk-aware auto-depth (CLI `--auto`). |
 | `transcript` | bool | `false` | Default the markdown report to the full play-by-play transcript (CLI `--transcript` / `--no-transcript`). Rendering-only — not part of the config hash or cache key. |
+
+**Example:**
+
+```toml
+[jury]
+rounds = 2
+chair = "rotate"
+early_stop = true
+max_rounds = 3
+transcript = true   # default the markdown report to the full play-by-play
+```
+
+(With `transcript = true`, every run renders the transcript unless you pass
+`--no-transcript`.)
 
 ### `[jury.ci]`
 

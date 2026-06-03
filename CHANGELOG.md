@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Example-rich parameter reference, surfaced on the site** (#209): `docs/parameters.md`
+  now opens with a **Common recipes** block (copy-pasteable commands for the everyday
+  jobs) and carries a worked **Example** for every flag group, with enum values and
+  depends-on/conflicts notes spelled out. The docs portal (`website/docs.html`) now
+  lists it first under a **Reference** group ("Parameter reference — start here") and
+  leads with the practical Reference/Guides over the Overview material, so the flag
+  reference is the obvious entry point instead of being invisible.
 - The **skill** (`skill/ai-jury/SKILL.md`) now includes a curated **Parameters**
   section (#213) — the common flags grouped by intent (what to review, depth,
   output incl. `--transcript`/`--verbose`/`--live`, PR posting, CI gating, scope)
