@@ -301,6 +301,55 @@ class LiveModeGuardTest(unittest.TestCase):
         self.assertEqual(d["evidence"], "here")
 
 
+
+class FormatTableTest(unittest.TestCase):
+    """format_table produces the expected fixed-width layout."""
+
+    def test_format_table_exact_output(self):
+        from ai_jury.benchmark import FixtureScore, format_table
+        scores = [
+            FixtureScore(
+                id="test-fixture-1",
+                passed=True,
+                matched=2,
+                missed=0,
+                false_positives=0,
+                expected_count=2,
+                precision=1.0,
+                recall=1.0,
+            ),
+            FixtureScore(
+                id="test-fixture-2",
+                passed=False,
+                matched=1,
+                missed=1,
+                false_positives=2,
+                expected_count=2,
+                precision=0.3333,
+                recall=0.5,
+            )
+        ]
+        summary = {
+            "fixtures": 2,
+            "passed": 1,
+            "matched": 3,
+            "missed": 1,
+            "false_positives": 2,
+            "precision": 0.6,
+            "recall": 0.75,
+        }
+        actual = format_table(scores, summary)
+        expected = (
+            "fixture                  pass  match  miss  fp   prec  recall\n"
+            "-------------------------------------------------------------\n"
+            "test-fixture-1           yes   2      0     0    1.00  1.00  \n"
+            "test-fixture-2           NO    1      1     2    0.33  0.50  \n"
+            "-------------------------------------------------------------\n"
+            "TOTAL                    1/2   3      1     2    0.60  0.75  "
+        )
+        self.assertEqual(actual, expected)
+
+
 class MainEntryTest(unittest.TestCase):
     """The module entry point runs offline without live CLIs."""
 
