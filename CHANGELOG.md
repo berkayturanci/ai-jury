@@ -7,13 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
-- Published **test-coverage report + badge** on the project site (no external
-  service): the Pages deploy now runs the suite under coverage, publishes a
-  browsable HTML report at `/coverage/`, and writes a shields-endpoint badge
-  (`coverage-badge.json`) shown in the README and site badge row.
-
 ### Changed
 
 - **Rebuilt the project website from a fresh design direction** (closes #159).
@@ -104,6 +97,11 @@ by default, project-agnostic.
 
 ### Added
 
+- Published **test-coverage report + badge** on the project site (no external
+  service): the Pages deploy runs the suite under coverage, publishes a
+  browsable HTML report at `/coverage/`, and writes a shields-endpoint badge
+  (`coverage-badge.json`) shown in the README and site badge row. Statement+branch
+  coverage is **95%**, with every module ≥90%.
 - The consensus section now shows each finding's supporting **evidence** (the
   reviewer's "why"), so a verdict is auditable rather than just asserted.
 - `--post-mode {single,phased}` (#127): with `--post-summary`, post the review as
