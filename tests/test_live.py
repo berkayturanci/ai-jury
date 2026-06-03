@@ -131,7 +131,9 @@ class CliLiveTests(unittest.TestCase):
                              "--live", "-o", str(outp)])
         self.assertEqual(code, 0)
         self.assertIn("Round 1 review", out)  # streamed to stdout
-        self.assertIn("Run metadata", outp.read_text())  # consolidated report on disk
+        # Read as UTF-8 explicitly: the report contains 🏛️ and Windows' default
+        # cp1252 codec can't decode it.
+        self.assertIn("Run metadata", outp.read_text(encoding="utf-8"))  # report on disk
 
     def test_live_format_json_still_emits_json(self):
         # --live streams markdown, but a json/sarif document must still reach stdout.

@@ -81,9 +81,9 @@ options:
                         set
   --verbose             summary report followed by the full transcript, in one
                         document
-  --live                stream each step (review, debate, verdict) as it
-                        happens; with --pr, also post each step as its own PR
-                        comment
+  --live                stream each step (review, debate, verdict) to stdout
+                        as it happens; add --pr --post to also post each step
+                        as its own PR comment
   --post-summary, --post
                         post the report as a single summary comment on --pr
   --post-inline         post inline review comments for located findings on
