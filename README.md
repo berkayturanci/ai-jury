@@ -7,7 +7,6 @@
 [![CI](https://github.com/berkayturanci/ai-jury/actions/workflows/ci.yml/badge.svg)](https://github.com/berkayturanci/ai-jury/actions/workflows/ci.yml)
 [![coverage](https://img.shields.io/endpoint?url=https://berkayturanci.github.io/ai-jury/coverage-badge.json)](https://berkayturanci.github.io/ai-jury/coverage/)
 [![CodeQL](https://github.com/berkayturanci/ai-jury/actions/workflows/codeql.yml/badge.svg)](https://github.com/berkayturanci/ai-jury/actions/workflows/codeql.yml)
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/berkayturanci/ai-jury/badge)](https://scorecard.dev/viewer/?uri=github.com/berkayturanci/ai-jury)
 [![GitHub release](https://img.shields.io/github/v/release/berkayturanci/ai-jury)](https://github.com/berkayturanci/ai-jury/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 

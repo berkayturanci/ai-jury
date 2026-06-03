@@ -37,7 +37,7 @@ true to announce/publish) and **Nice-to-have** (improves polish, not a blocker).
 - [ ] LICENSE present (MIT) and referenced.
 - [ ] Issue templates and PR template present.
 - [ ] `CODE_OF_CONDUCT.md`, `CONTRIBUTING.md`, `SUPPORT.md` present and accurate.
-- [ ] CI / CodeQL / Scorecard badges resolve in the README.
+- [ ] CI / CodeQL / coverage badges resolve in the README.
 - [ ] Dependabot configured.
 
 ## Nice-to-have
