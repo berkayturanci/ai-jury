@@ -105,9 +105,9 @@ def build_label_args(pr: str, labels, repo: str | None = None) -> list[str]:
         return []
     args = ["pr", "edit", str(pr)]
     for label in clean:
-        args += ["--add-label", label]
+        args.extend(("--add-label", label))
     if repo:
-        args += ["--repo", repo]
+        args.extend(("--repo", repo))
     return args
 
 
