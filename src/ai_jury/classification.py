@@ -87,7 +87,7 @@ def _severity_rank(severity: str) -> int:
     return SEVERITY_ORDER.get(severity, len(SEVERITY_ORDER))
 
 
-def _resolved_findings(outcome: Any, findings: Any) -> list:
+def _resolved_findings(outcome: Any, findings: Any, groups: Any) -> list:
     """Pick the finding list to classify on.
 
     Prefers an explicit ``findings`` argument, then ``outcome.findings``. The
@@ -116,10 +116,13 @@ def diff_lines_changed(diff: str | None) -> int:
     """
     if not diff:
         return 0
-    return sum(
-        1 for line in diff.splitlines()
-        if line.startswith(("+", "-")) and not line.startswith(("+++", "---"))
-    )
+    changed = 0
+    for line in diff.splitlines():
+        if line.startswith("+++") or line.startswith("---"):
+            continue
+        if line.startswith("+") or line.startswith("-"):
+            changed += 1
+    return changed
 
 
 def _text_blob(finding: Any) -> str:
@@ -257,7 +260,7 @@ def classify(
     Determinism: the result is a pure function of the inputs — same findings,
     groups, and diff always yield the same dict.
     """
-    fs = _resolved_findings(outcome, findings)
+    fs = _resolved_findings(outcome, findings, groups)
     gs = _resolved_groups(outcome, groups)
     lines_changed = diff_lines_changed(diff)
 

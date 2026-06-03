@@ -45,26 +45,19 @@ def _group_line(g) -> str:
     if f.line is not None:
         loc = f"{loc}:{f.line}"
     reviewers = ", ".join(g.reviewers) if g.reviewers else "(unknown)"
-
-    parts = [f"- [{g.severity}] {loc} — {f.claim} (reviewers: {reviewers})"]
-
+    out = f"- [{g.severity}] {loc} — {f.claim} (reviewers: {reviewers})"
     # Surface the reviewer's supporting evidence — the "why" behind the claim —
     # so the verdict is auditable, not just asserted (issue: evidence surfacing).
     if getattr(f, "evidence", ""):
-        parts.append(f"\n  - _evidence:_ {f.evidence}")
-
+        out += f"\n  - _evidence:_ {f.evidence}"
     status = getattr(g, "status", "")
     if status:
-        reasoning = getattr(g, "status_reasoning", "")
-        if reasoning:
-            parts.append(f"\n  - _verification:_ {_STATUS_LABELS.get(status, status)} — {reasoning}")
-        else:
-            parts.append(f"\n  - _verification:_ {_STATUS_LABELS.get(status, status)}")
-
+        out += f"\n  - _verification:_ {_STATUS_LABELS.get(status, status)}"
+        if getattr(g, "status_reasoning", ""):
+            out += f" — {g.status_reasoning}"
     if f.suggested_fix:
-        parts.append(f"\n  - _fix:_ {f.suggested_fix}")
-
-    return "".join(parts) if len(parts) > 1 else parts[0]
+        out += f"\n  - _fix:_ {f.suggested_fix}"
+    return out
 
 
 def _metadata_block(metadata: dict) -> list[str]:
