@@ -507,10 +507,13 @@ it differs from hosted, API-level, and other native-CLI tools, and
 Active (v1.1.0). The full pipeline runs end-to-end with the real CLIs and the offline
 `--mock` path is covered by tests. **Shipped:** structured findings + tiered consensus
 (consensus / majority / single-reviewer), a verification pass that drops false positives,
-anonymized rebuttal, adaptive early-stop, severity-gated CI exit codes, secure-by-default
-sandboxing, run budget/retries, large-diff filtering + chunking, an optional result
-cache, incremental review, suggested patches, comment-command triggering, a **local /
-open-weight adapter** (free, offline), and **`jury init`** config scaffolding. See
+**chair verdict or panel vote** (`--decision vote`), **PR / diff / issue review**
+(`--issue`, with READY / NEEDS-INFO / UNCLEAR verdicts), **live play-by-play** (`--live`)
+and **full-transcript / verbose** output, anonymized debate, adaptive early-stop,
+severity-gated CI exit codes, secure-by-default sandboxing, run budget/retries, large-diff
+filtering + chunking, an optional result cache, incremental review, suggested patches,
+comment-command triggering, a **local / open-weight adapter** (free, offline), and
+**`jury init`** scaffolding (with an opt-in **`--wizard`**). See
 [`docs/architecture.md`](docs/architecture.md) and the
 [milestones](https://github.com/berkayturanci/ai-jury/milestones).
 
@@ -532,14 +535,28 @@ The `jury` command is this project's public API. The surfaces below are
 width/color-pinned snapshot of `jury --help` under `tests/golden/`) so
 accidental changes are caught in review.
 
-**Stable flags** (names, short aliases, and semantics):
-`--pr`, `--repo`, `--diff-file`, `--config`, `--policy`,
-`--context-mode {diff-only,expanded}`, `--redact` / `--no-redact`, `--rounds`,
-`--chair`, `--mock`, `--strict`, `--verify` / `--no-verify`, `--doctor`,
-`--write`, `-o` / `--output`, `--metadata-json`,
-`--format {markdown,json,sarif}`, `--post-summary` / `--post`, `--post-inline`,
-`--dry-run`, `--ci`, `--fail-on`, `-q` / `--quiet`, `--config-validate`,
-`--strict-config`, `--version`, `-h` / `--help`.
+**Stable flags** (names, short aliases, and semantics), grouped by intent:
+
+- *Input:* `--pr`, `--issue`, `--repo`, `--diff-file`
+- *Depth:* `--rounds`, `--max-rounds`, `--early-stop` / `--no-early-stop`,
+  `--auto` / `--no-auto`, `--verify` / `--no-verify`
+- *Budget / reliability:* `--total-timeout`, `--phase-timeout`, `--retries`
+- *Large diffs:* `--max-diff-bytes`, `--chunk` / `--no-chunk`, `--exclude`,
+  `--include`
+- *Context & privacy:* `--context-mode {diff-only,expanded}`,
+  `--redact` / `--no-redact`
+- *Config / policy:* `--config`, `--policy`, `--chair`, `--seed`, `--mock`,
+  `--strict`, `--config-validate`, `--strict-config`
+- *Output:* `-o` / `--output`, `--write`, `--metadata-json`,
+  `--format {markdown,json,sarif}`, `--decision {chair,vote}`,
+  `--transcript` / `--no-transcript`, `--verbose`, `--live`, `-q` / `--quiet`
+- *GitHub posting:* `--post-summary` / `--post`, `--post-inline`,
+  `--post-progress`, `--post-mode {single,phased}`, `--dry-run`, `--label`
+- *CI gating:* `--ci`, `--fail-on`
+- *Cache & incremental:* `--cache`, `--clear-cache`, `--cache-dir`,
+  `--incremental`
+- *Patches:* `--suggest-patches`, `--patches-out`
+- *Misc:* `--doctor`, `--version`, `-h` / `--help`
 
 A version-independent test (`test_documented_flags_match_parser_exactly`)
 asserts the documented flag set and the parser's actual long options stay
@@ -552,8 +569,8 @@ documented and a documented flag can't silently disappear.
 | --- | --- |
 | No input source given | exits non-zero with `error: provide one of --pr, --issue, --diff-file (or --diff-file - for stdin)` |
 | Empty diff | exits non-zero with `error: empty diff — nothing to review` |
-| `--post-summary` without `--pr` | exits non-zero with `error: --post-summary requires --pr` |
-| `--post-inline` without `--pr` | exits non-zero with `error: --post-inline requires --pr` |
+| `--post-summary` with no postable target (e.g. `--diff-file`; it works with `--pr` **or** `--issue`) | exits non-zero with `error: --post-summary requires --pr` |
+| `--post-inline` without `--pr` (PR-only; also `--post-progress`, `--label`, `--incremental`) | exits non-zero with `error: --post-inline requires --pr` |
 | Unknown flag / bad arguments | argparse exits with code `2` |
 | `--version` | prints `jury <version>` and exits `0` |
 | Successful review (no `--ci`) | exits `0` |
