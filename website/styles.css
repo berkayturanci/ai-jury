@@ -260,6 +260,12 @@ body::before {
 
 /* ---- Pipeline (animated hero diagram) -------------------------------- */
 .pipe-shell { margin: clamp(2rem, 5vw, 3.4rem) 0 0; }
+/* PR / Issue mode tabs above the hero pipeline */
+.pipe-tabs { display: inline-flex; gap: .3rem; margin-bottom: .9rem; padding: .25rem; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--border); }
+.pipe-tab { font-family: var(--font-display); font-weight: 600; font-size: .82rem; color: var(--muted); background: transparent; border: 0; padding: .35rem .9rem; border-radius: 9px; cursor: pointer; transition: color .2s, background .2s, box-shadow .2s; }
+.pipe-tab:hover { color: var(--text); }
+.pipe-tab.on { color: var(--text); background: var(--surface); box-shadow: 0 1px 3px rgba(0,0,0,.18); }
+.pipe-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .pipe {
   position: relative; border-radius: 22px; padding: 2rem 1.5rem 1.6rem;
   background:
@@ -321,6 +327,11 @@ body::before {
 .verdict-badge.approve { color: var(--green-2); background: color-mix(in srgb, var(--green) 16%, transparent); }
 .verdict-badge.changes { color: #fca5a5; background: rgba(239,68,68,.15); }
 :root[data-theme="light"] .verdict-badge.changes { color: #b91c1c; }
+/* issue-mode verdicts: READY (green) · NEEDS-INFO (red) · UNCLEAR (amber) */
+.verdict-badge.ready { color: var(--green-2); background: color-mix(in srgb, var(--green) 16%, transparent); }
+.verdict-badge.needsinfo { color: #fca5a5; background: rgba(239,68,68,.15); }
+:root[data-theme="light"] .verdict-badge.needsinfo { color: #b91c1c; }
+.verdict-badge.unclear { color: var(--amber); background: color-mix(in srgb, var(--amber) 16%, transparent); }
 .v-findings { font-size: .68rem; color: var(--muted); margin-top: .25rem; font-family: var(--font-mono); }
 .v-findings .sev-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--red); margin-right: .3rem; vertical-align: middle; }
 

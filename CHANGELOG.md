@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Website hero pipeline: PR / Issue mode tabs.** The animated hero pipeline now
+  has a `Pull request` / `Issue` tablist — switching modes restarts the loop with
+  mode-appropriate scenarios and verdicts (PR: `--pr 123/124/125` →
+  APPROVE / REQUEST CHANGES / APPROVE · issue: `--issue 42/43/44` →
+  READY / NEEDS-INFO / UNCLEAR), and the input label (`diff / PR` ↔ `issue`) and
+  synthesis stage (`chair` ↔ `vote ✓`) follow the active scenario. Adds the
+  `.pipe-tabs`/`.pipe-tab` styles and the issue verdict colours
+  (`ready`/`needsinfo`/`unclear`) to `styles.css`.
 - **Website interactive demo: panel vote now works for issues.** The "Build your
   jury" demo (`website/app.js`) used to force the chair and disable the vote
   option whenever the target was an issue ("n/a for issues") — stale since #230
