@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Docs: dropped the stale "MVP" framing.** `feasibility.md` (research grounding) still called the now-shipped v1.1.0 project an "MVP" in the present tense ("this MVP", "MVP run observations", "running the MVP"). Reworded to "first version / v1 / ai-jury" and retitled the run notes "Live-run observations"; the historical research context is unchanged.
 - **Docs: broadened the ecosystem comparison & prior art.** Added two categories to `comparison.md` — *host-assistant plugins* (e.g. open-code-review: multi-persona debate inside one host/vendor) and *per-rule CI checks* (e.g. Continue: no cross-agent debate) — and noted Calimero (Anthropic-only consensus) under API-level. README prior-art now cites VulTrial (ICSE 2026), the academic prosecutor/defense/judge/jury approach. Framing verified against each project's own docs.
 - **Website: refreshed hero + OG banner art.** Updated `website/assets/` (`hero.svg`/`hero-light.svg`, `hero.png` 2400×1260, `og-banner.png` 1200×630) to the new design and bumped `sitemap.xml` lastmod to 2026-06-05.
 - **Taglines now reflect the full scope.** The one-line descriptions in the README, the skill (`SKILL.md`), the plugin manifest, and `positioning.md` said only "review a PR/diff → a chair synthesizes one verdict"; they now read "review a diff, PR, or issue → cross-examine → verify → one verdict, a chair's synthesis **or a panel vote**", matching the shipped feature set.
