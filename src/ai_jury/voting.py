@@ -31,11 +31,14 @@ UNCLEAR = "UNCLEAR"
 _MODES = {
     "code": {
         "blocking": REQUEST_CHANGES, "middling": COMMENT, "clear": APPROVE,
-        "order": {APPROVE: 0, COMMENT: 1, REQUEST_CHANGES: 2},
+        # Keys are listed strictest-first so the rendered tally reads
+        # "request changes · comment · approve"; the integer values (not key
+        # order) drive the tie-break, so display order is free to be intuitive.
+        "order": {REQUEST_CHANGES: 2, COMMENT: 1, APPROVE: 0},
     },
     "issue": {
         "blocking": NEEDS_INFO, "middling": UNCLEAR, "clear": READY,
-        "order": {READY: 0, UNCLEAR: 1, NEEDS_INFO: 2},
+        "order": {NEEDS_INFO: 2, UNCLEAR: 1, READY: 0},
     },
 }
 
