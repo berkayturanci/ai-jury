@@ -150,6 +150,21 @@ def _consensus_block(groups) -> list[str]:
     return lines
 
 
+def _vote_block(vote) -> list[str]:
+    """Render the panel-vote verdict + tally + per-reviewer ballots (issue #220)."""
+    lines = ["## Verdict — panel vote\n"]
+    lines.append(
+        f"**{vote.verdict}** — "
+        f"{vote.tally.get('REQUEST CHANGES', 0)} request changes · "
+        f"{vote.tally.get('COMMENT', 0)} comment · "
+        f"{vote.tally.get('APPROVE', 0)} approve\n"
+    )
+    for b in vote.ballots:
+        lines.append(f"- `{b.reviewer}`: **{b.vote}** ({b.reason})")
+    lines.append("")
+    return lines
+
+
 def render(
     reviews: list[AgentResult],
     debate: list[AgentResult],
@@ -166,6 +181,7 @@ def render(
     metadata: dict | None = None,
     classification: dict | None = None,
     review_scope: str | None = None,
+    vote=None,
 ) -> str:
     findings = findings or []
     warnings = warnings or []
@@ -202,6 +218,12 @@ def render(
         lines.extend(_consensus_block(groups))
         lines.append("---\n")
 
+    # Panel-vote verdict (issue #220): when voting, the tally is the headline
+    # verdict and the chair's synthesis becomes supporting reasoning.
+    if vote is not None:
+        lines.extend(_vote_block(vote))
+        lines.append("---\n")
+
     if verify is not None:
         lines.append("## Verification\n")
         lines.append(f"> Verified by `{chair}`\n")
@@ -211,12 +233,13 @@ def render(
             lines.append(f"_Verification failed: {verify.error}_\n")
         lines.append("---\n")
 
+    chair_heading = "Chair's reasoning" if vote is not None else "Chair verdict"
     if synthesis and synthesis.ok:
-        lines.append("## Chair verdict\n")
+        lines.append(f"## {chair_heading}\n")
         lines.append(f"> Synthesized by `{chair}`\n")
         lines.append(synthesis.output.strip() + "\n")
     elif synthesis and not synthesis.ok:
-        lines.append("## Chair verdict\n")
+        lines.append(f"## {chair_heading}\n")
         lines.append(f"_Synthesis failed: {synthesis.error}_\n")
 
     lines.append("---\n")
@@ -332,9 +355,12 @@ def _summary_blocks(
     warnings: list[str],
     groups: list,
     classification: dict,
+    vote=None,
 ) -> list[str]:
     """Consensus + structured-findings recap (the auditable at-a-glance summary)."""
     lines = list(_classification_block(classification))
+    if vote is not None:
+        lines.extend(_vote_block(vote))
     if groups:
         lines.extend(_consensus_block(groups))
     lines.append("## Structured findings\n")
@@ -371,6 +397,7 @@ def render_transcript(
     classification: dict | None = None,
     review_scope: str | None = None,
     lead_with_summary: bool = False,
+    vote=None,
 ) -> str:
     """Render the full play-by-play transcript (issue: full transcript / --verbose).
 
@@ -415,14 +442,14 @@ def render_transcript(
         lines.append("")
 
     if lead_with_summary:
-        lines.extend(_summary_blocks(findings, warnings, groups, classification))
+        lines.extend(_summary_blocks(findings, warnings, groups, classification, vote=vote))
         lines.append("---\n")
         lines.append("# Full transcript\n")
         lines.extend(_conversation_blocks(reviews, debate, synthesis, verify, chair=chair))
     else:
         lines.extend(_conversation_blocks(reviews, debate, synthesis, verify, chair=chair))
         lines.append("---\n")
-        lines.extend(_summary_blocks(findings, warnings, groups, classification))
+        lines.extend(_summary_blocks(findings, warnings, groups, classification, vote=vote))
 
     if metadata is not None:
         lines.append("---\n")
@@ -448,6 +475,7 @@ def render_sections(
     groups: list | None = None,
     verify: AgentResult | None = None,
     classification: dict | None = None,
+    vote=None,
 ) -> list[tuple[str, str]]:
     """Split the report into ordered ``(title, body)`` sections for phased posting.
 
@@ -482,18 +510,21 @@ def render_sections(
     if classification is None:
         classification = _classification.classify(findings=findings, groups=groups)
     dec.extend(_classification_block(classification))
+    if vote is not None:
+        dec.extend(_vote_block(vote))
     if groups:
         dec.extend(_consensus_block(groups))
     if verify is not None:
         dec.append("## Verification\n")
         dec.append(f"> Verified by `{chair}`\n")
         dec.append(verify.output.strip() + "\n" if verify.ok else f"_Verification failed: {verify.error}_\n")
+    chair_heading = "Chair's reasoning" if vote is not None else "Chair verdict"
     if synthesis and synthesis.ok:
-        dec.append("## Chair verdict\n")
+        dec.append(f"## {chair_heading}\n")
         dec.append(f"> Synthesized by `{chair}`\n")
         dec.append(synthesis.output.strip() + "\n")
     elif synthesis and not synthesis.ok:
-        dec.append(f"## Chair verdict\n\n_Synthesis failed: {synthesis.error}_\n")
+        dec.append(f"## {chair_heading}\n\n_Synthesis failed: {synthesis.error}_\n")
     if findings:
         dec.append("## Structured findings\n")
         ranked = sorted(

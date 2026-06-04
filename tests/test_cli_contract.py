@@ -86,6 +86,7 @@ DOCUMENTED_FLAGS = [
     "--output",
     "--metadata-json",
     "--format",
+    "--decision",
     "--transcript",
     "--no-transcript",
     "--verbose",

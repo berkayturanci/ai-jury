@@ -22,7 +22,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 
 # v2 (issue #30/#40) added: stop_reason, skipped, retried, budget_exhausted,
 # execution{...}, and per-agent ``attempts``.
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 def _agent_entry(result) -> dict:
@@ -55,7 +55,7 @@ def _rounds_executed(outcome: JuryOutcome) -> int:
     return rounds
 
 
-def build_run_metadata(outcome: JuryOutcome, config: JuryConfig) -> dict:
+def build_run_metadata(outcome: JuryOutcome, config: JuryConfig, *, decision=None, vote=None) -> dict:
     """Return a machine-readable metadata dict for a jury run.
 
     The dict is safe to serialize as JSON and contains no diff text, prompt
@@ -94,8 +94,24 @@ def build_run_metadata(outcome: JuryOutcome, config: JuryConfig) -> dict:
     ]
     retried = [a["name"] for a in agents if a["attempts"] > 1]
 
+    # Final-verdict mode (issue #220). ``decision`` is the effective mode (CLI
+    # override else config); ``vote`` is the tally dict when voting, else None.
+    decision = decision or config.decision
+    vote_meta = None
+    if vote is not None:
+        vote_meta = {
+            "verdict": vote.verdict,
+            "tally": vote.tally,
+            "ballots": [
+                {"reviewer": b.reviewer, "vote": b.vote, "reason": b.reason}
+                for b in vote.ballots
+            ],
+        }
+
     return {
         "schema_version": SCHEMA_VERSION,
+        "decision": decision,
+        "vote": vote_meta,
         "agents": agents,
         "rounds_executed": _rounds_executed(outcome),
         "from_cache": bool(getattr(outcome, "from_cache", False)),
