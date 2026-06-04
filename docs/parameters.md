@@ -22,6 +22,15 @@ jury --pr 123
 jury --pr 123 --post
 #   → same review, plus a single summary comment on the PR (`--post` ⇔ `--post-summary`)
 
+# Review a GitHub issue for completeness/clarity (not code — the issue's prose)
+jury --issue 42
+#   → run the full jury with an issue-quality rubric (repro, expected/actual,
+#     scope, missing context); verdict is READY / NEEDS-INFO / UNCLEAR
+
+# Review an issue and post the verdict back as a comment on that issue
+jury --issue 42 --post
+#   → posts via `gh issue comment` (PR-only flags like --post-inline are rejected)
+
 # Review the current branch against the base, from a piped diff
 git diff origin/HEAD... | jury --diff-file -
 #   → review your local commits without touching GitHub (`-` reads stdin)
@@ -80,12 +89,15 @@ jury --pr 123 --post --post-mode phased
 | Flag | Value | Description |
 | --- | --- | --- |
 | `--pr` | PR number or URL | Review a GitHub PR (uses `gh`). |
-| `--repo` | `owner/name` | Repository for `--pr` (defaults to the current repo). |
+| `--issue` | issue number or URL | Review a GitHub **issue** for completeness/clarity (uses `gh`). Runs the full jury with an issue-quality rubric (repro, expected/actual, scope, missing context); the verdict vocabulary is READY / NEEDS-INFO / UNCLEAR. |
+| `--repo` | `owner/name` | Repository for `--pr`/`--issue` (defaults to the current repo). |
 | `--diff-file` | path, or `-` for stdin | Review a diff file (or piped stdin). |
 
-Exactly one input source is required. `--repo` only modifies `--pr`; all
+Exactly one input source is required. `--repo` modifies `--pr`/`--issue`; all
 posting flags (`--post-summary`/`--post`, `--post-inline`, `--post-progress`,
-`--label`) and `--incremental` require `--pr`.
+`--label`) and `--incremental` require `--pr`. With `--issue`, `--post`/`--post-summary`
+posts the verdict back via `gh issue comment`; the PR/diff-only flags
+(`--post-inline`, `--post-progress`, `--label`, `--incremental`) are rejected.
 
 **Example:** `jury --pr 123 --repo octocat/hello` reviews PR #123 in
 `octocat/hello`; `git diff origin/HEAD... | jury --diff-file -` reviews the

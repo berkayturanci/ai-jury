@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Issue review** (#221): `jury --issue N` reviews a GitHub **issue** for
+  completeness and clarity (reproduction steps, expected vs actual, scope /
+  acceptance criteria, missing context, actionability) using the same
+  multi-agent jury machinery (panel → debate → verify → synthesis) with an
+  issue-quality rubric. The verdict vocabulary is **READY / NEEDS-INFO /
+  UNCLEAR**. `--post`/`--post-summary` comments back via `gh issue comment`;
+  PR/diff-only flags (`--post-inline`, `--post-progress`, `--label`,
+  `--incremental`) are rejected for `--issue`.
 - **Panel voting verdict** (#220): `--decision vote` (or `[jury] decision = "vote"`)
   derives the final verdict by **tallying the reviewers** instead of letting a single
   chair decide — each reviewer votes from the worst finding they raised

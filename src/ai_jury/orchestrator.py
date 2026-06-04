@@ -239,6 +239,7 @@ def _debate_round(
     retries: int,
     log,
     round_no: int,
+    template: str = prompts.DEBATE,
 ) -> list[AgentResult]:
     """Run one debate round and return its results in stable agent order.
 
@@ -263,7 +264,7 @@ def _debate_round(
             other_reviews, _label_map = _anonymize_peers(reviews, a.name, peer_rng)
         else:
             other_reviews = _others(reviews, a.name)
-        text = prompts.DEBATE.format(
+        text = template.format(
             name=a.name,
             diff=diff,
             own_review=own.get(a.name, "_(your review was unavailable)_"),
@@ -298,7 +299,15 @@ def run_jury(
     log=lambda _msg: None,
     budget: RunBudget | None = None,
     on_event=None,
+    mode: str = "code",
 ) -> JuryOutcome:
+    # Jury mode (issue #221): "code" (default) reviews a diff with the code-review
+    # rubric; "issue" reviews a GitHub issue's prose for completeness/clarity.
+    # Only the prompt TEMPLATES differ — the round structure, consensus, voting,
+    # verification, ordering, and determinism are identical. ``tmpl`` selects the
+    # four phase templates; each is threaded into the phase that uses it so the
+    # call sites are otherwise unchanged.
+    tmpl = prompts.for_mode(mode)
     # Live play-by-play hook (issue #210): an optional callback fired after each
     # phase result is produced — ``on_event(kind, result, round_no=None)`` with
     # kind in {"review", "debate", "verify", "synthesis"}. It lets a caller stream
@@ -399,7 +408,7 @@ def run_jury(
     # Round 1: independent reviews.
     log(f"round 1: {len(usable)} agents reviewing")
     review_prompt = {
-        a.name: prompts.REVIEW.format(
+        a.name: tmpl["review"].format(
             name=a.name,
             context=context or "_(none)_",
             diff=diff,
@@ -491,6 +500,7 @@ def run_jury(
                     debate = _debate_round(
                         debaters, reviews, diff, config, run_rng, agent_order,
                         prior, budget, retries, log, round_no,
+                        template=tmpl["debate"],
                     )
                     rounds_executed = round_no
                     for r in debate:
@@ -517,6 +527,7 @@ def run_jury(
                 debate = _debate_round(
                     debaters, reviews, diff, config, run_rng, agent_order,
                     [], budget, retries, log, 2,
+                    template=tmpl["debate"],
                 )
                 rounds_executed = 2
                 for r in debate:
@@ -540,7 +551,8 @@ def run_jury(
             all_warnings.append(msg)
         else:
             verify_result, verdicts, verify_warnings = _verify(
-                chair_name, usable, all_findings, diff, context, budget, retries, log
+                chair_name, usable, all_findings, diff, context, budget, retries, log,
+                template=tmpl["verify"],
             )
             all_warnings.extend(verify_warnings)
             _apply_verdicts(groups, verdicts)
@@ -574,6 +586,7 @@ def run_jury(
             verdicts=verdicts,
             anonymize_reviews=anonymize_synthesis,
             rng=run_rng,
+            template=tmpl["synthesis"],
         )
         if synthesis is not None:
             emit("synthesis", synthesis)
@@ -673,13 +686,14 @@ def _format_verdicts(verdicts: list[Verdict]) -> str:
 
 
 def _verify(
-    chair_name, usable, findings, diff, context, budget, retries, log
+    chair_name, usable, findings, diff, context, budget, retries, log,
+    template=prompts.VERIFY,
 ) -> tuple[AgentResult | None, list[Verdict], list[str]]:
     chair = next((a for a in usable if a.name == chair_name), None)
     if chair is None:
         return None, [], []
     log(f"verification: chair '{chair_name}' judging {len(findings)} candidate findings")
-    prompt = prompts.VERIFY.format(
+    prompt = template.format(
         diff=diff,
         findings=_format_findings_for_verify(findings),
         context=context or "_(none)_",
@@ -746,6 +760,7 @@ def _synthesize(
     verdicts=None,
     anonymize_reviews=False,
     rng=None,
+    template=prompts.SYNTHESIS,
 ) -> AgentResult | None:
     chair = next((a for a in usable if a.name == chair_name), None)
     if chair is None:
@@ -766,7 +781,7 @@ def _synthesize(
     debate_txt = "\n\n".join(
         f"### {r.agent}\n{r.output}" for r in debate if r.ok and r.output
     ) or "_(no debate round)_"
-    prompt = prompts.SYNTHESIS.format(
+    prompt = template.format(
         diff=diff,
         reviews=reviews_txt,
         debate=debate_txt,

@@ -50,6 +50,40 @@ def post_pr_comment(pr: str, body: str, repo: str | None = None) -> None:
     _gh(*args)
 
 
+def issue_body(number: str, repo: str | None = None) -> str:
+    """Return a reviewable text rendering of a GitHub issue, best-effort.
+
+    Formats the issue as ``"# <title>\\n\\n_labels: a, b_\\n\\n<body>"`` so the
+    reviewer sees the title, labels, and description as one prose block. Mirrors
+    :func:`pr_context`'s error handling: any ``gh`` failure degrades to a minimal
+    string (the bare number) rather than crashing the run.
+    """
+    args = ["issue", "view", "--json", "title,body,labels",
+            "--jq",
+            '"# " + .title + "\\n\\n_labels: " '
+            '+ ((.labels | map(.name)) | join(", ")) + "_\\n\\n" + (.body // "")']
+    if repo:
+        args += ["--repo", repo]
+    args += ["--", str(number)]
+    try:
+        return _gh(*args).strip()
+    except RuntimeError:
+        return f"# issue #{number}"
+
+
+def post_issue_comment(number: str, body: str, repo: str | None = None) -> None:
+    """Post a comment on a plain GitHub issue.
+
+    A separate function from :func:`post_pr_comment` because ``gh pr comment``
+    only works for pull requests; ``gh issue comment`` is the issue-side command.
+    """
+    args = ["issue", "comment", "--body", body]
+    if repo:
+        args += ["--repo", repo]
+    args += ["--", str(number)]
+    _gh(*args)
+
+
 def pr_head_sha(pr: str, repo: str | None = None) -> str:
     """Return the current head commit SHA of a PR (best-effort, '' on failure)."""
     args = ["pr", "view", "--json", "headRefOid", "--jq", ".headRefOid"]

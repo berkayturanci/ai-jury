@@ -1,5 +1,5 @@
-usage: jury [-h] [--pr PR] [--repo REPO] [--diff-file DIFF_FILE]
-            [--config CONFIG] [--policy POLICY]
+usage: jury [-h] [--pr PR] [--issue ISSUE] [--repo REPO]
+            [--diff-file DIFF_FILE] [--config CONFIG] [--policy POLICY]
             [--context-mode {diff-only,expanded}] [--redact] [--no-redact]
             [--rounds ROUNDS] [--max-rounds MAX_ROUNDS] [--early-stop]
             [--no-early-stop] [--auto] [--no-auto]
@@ -128,6 +128,9 @@ options:
 
 input:
   --pr PR               GitHub PR number/URL to review (uses `gh`)
-  --repo REPO           owner/name for --pr (defaults to current repo)
+  --issue ISSUE         GitHub issue number/URL to review for
+                        completeness/clarity (uses `gh`); runs the full jury
+                        with an issue-quality rubric
+  --repo REPO           owner/name for --pr/--issue (defaults to current repo)
   --diff-file DIFF_FILE
                         path to a diff file, or '-' for stdin
