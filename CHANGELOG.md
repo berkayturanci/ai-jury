@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-06-04
+
 ### Added
 
 - **Guided init wizard** (#231): `jury init --wizard` runs an opt-in,
@@ -42,6 +44,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reasoning; the tally is also written to `--metadata-json`. Pure/deterministic and
   rendering-only — it doesn't change orchestration, the cache key, or the
   severity-based `--ci` gate (which stays the independent hard safety check).
+- **Live play-by-play** (#210): `--live` streams the deliberation as it happens —
+  each reviewer's output, each debate turn, the verification, and the chair's
+  decision are emitted the moment they land, instead of only at the end. With
+  `--pr` each step is also posted as its own PR comment ("post after post", as if
+  watching the jury live). The orchestrator stays pure: it fires an optional
+  `on_event(kind, result, round_no)` callback in deterministic per-phase order;
+  the CLI does the I/O. PR posting is best-effort and never aborts the run.
+- **Full-transcript / verbose output** (#208): `--transcript` renders the whole
+  play-by-play — each agent's raw review, the debate exchanges, and the chair's
+  decision *and its reasoning* — instead of the consensus-first summary;
+  `--verbose` shows the summary followed by the transcript in one document; and
+  `[jury] transcript = true` makes the transcript the default (`--no-transcript`
+  overrides). It works with `-o FILE` (a shareable Markdown artifact) and posts to
+  a PR via the existing `--post` flow. Rendering-only: the orchestration, outcome,
+  and cache key are unchanged.
 
 ### Changed
 
@@ -61,28 +78,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `jury --help` text and the docs pages no longer cite this repo's issue tracker,
   which means nothing to a reader. The `CHANGELOG` and source-code comments keep
   their references for history/developer context.
-
-### Added
-
-- **Live play-by-play** (#210): `--live` streams the deliberation as it happens —
-  each reviewer's output, each debate turn, the verification, and the chair's
-  decision are emitted the moment they land, instead of only at the end. With
-  `--pr` each step is also posted as its own PR comment ("post after post", as if
-  watching the jury live). The orchestrator stays pure: it fires an optional
-  `on_event(kind, result, round_no)` callback in deterministic per-phase order;
-  the CLI does the I/O. PR posting is best-effort and never aborts the run.
-
-- **Full-transcript / verbose output** (#208): `--transcript` renders the whole
-  play-by-play — each agent's raw review, the debate exchanges, and the chair's
-  decision *and its reasoning* — instead of the consensus-first summary;
-  `--verbose` shows the summary followed by the transcript in one document; and
-  `[jury] transcript = true` makes the transcript the default (`--no-transcript`
-  overrides). It works with `-o FILE` (a shareable Markdown artifact) and posts to
-  a PR via the existing `--post` flow. Rendering-only: the orchestration, outcome,
-  and cache key are unchanged.
-
-### Changed
-
 - **Rebuilt the project website from a fresh design direction** (closes #159).
   New landing page plus dedicated `docs.html`, `coverage.html`,
   `coverage-report.html`, and `404.html`; refreshed favicon set, OG banner, and

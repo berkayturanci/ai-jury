@@ -164,8 +164,10 @@ expected/recorded schema, and the match/scoring rules.
 
 ```bash
 jury init                              # scaffold jury.toml (detects agents + local models)
+jury init --wizard                     # guided setup: numbered questions, every one skippable
 jury init --preset balanced            # one-command setup from a preset (offline|fast|balanced|thorough)
 jury --pr 123                          # review a GitHub PR
+jury --issue 42 --decision vote        # issue review, verdict by panel vote (READY/NEEDS-INFO/UNCLEAR)
 jury --issue 42                        # review an ISSUE for completeness/clarity (READY/NEEDS-INFO)
 jury --pr 123 --auto                   # auto-depth: scale rounds/verify to the diff
 jury --pr 123 --post                   # ...and post the verdict as a comment
@@ -295,6 +297,7 @@ detects your installed agents and writes a valid config:
 
 ```bash
 jury init                              # interactive: pick agents, rounds, chair
+jury init --wizard                     # guided: numbered questions for the most-used settings (skippable)
 jury init --preset balanced            # one-command preset: offline | fast | balanced | thorough
 jury init --list-agents                # show known agents + availability
 jury init --list-models                # list local (Ollama) models you can pick
