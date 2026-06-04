@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Guided init wizard** (#231): `jury init --wizard` runs an opt-in,
+  numbered-option setup for the most-used settings (reviewers, depth,
+  chair-vs-vote decision, verification, context policy + secret redaction, CI
+  gate). Every question is skippable — pressing Enter keeps the built-in
+  default — and the wizard writes only the keys you explicitly chose, so the
+  generated `jury.toml` stays minimal. Plain `jury init` is unchanged.
 - **Live per-step posting for issues** (#229): `jury --issue N --live --post` now
   posts each step to the issue thread as it happens (via `gh issue comment`),
   symmetric with the PR flow. Opt-in (requires `--post`); `--issue --live` alone

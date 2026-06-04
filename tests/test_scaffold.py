@@ -68,6 +68,41 @@ class RenderTomlTest(unittest.TestCase):
         loaded = _from_dict(parsed)
         self.assertEqual([a.name for a in loaded.agents], ["claude", "codex", "qwen"])
 
+    def test_wizard_keys_emit_sections(self):
+        cfg = build_config(
+            ["claude", "codex"],
+            decision="vote",
+            auto_depth=True,
+            context_mode="expanded",
+            redact_secrets=False,
+            ci_fail_on=["critical"],
+        )
+        text = render_toml(cfg)
+        parsed = tomllib.loads(text)
+        self.assertEqual(parsed["jury"]["decision"], "vote")
+        self.assertTrue(parsed["jury"]["auto_depth"])
+        self.assertEqual(parsed["jury"]["context"]["mode"], "expanded")
+        self.assertFalse(parsed["jury"]["context"]["redact_secrets"])
+        self.assertEqual(parsed["jury"]["ci"]["fail_on"], ["critical"])
+        validate_config(parsed)  # no ConfigError
+        # Sections render under [jury].
+        self.assertIn("[jury.context]", text)
+        self.assertIn("[jury.ci]", text)
+
+    def test_no_wizard_keys_byte_identical(self):
+        # Omitting the new kwargs must produce output with none of the new sections.
+        text = render_toml(build_config(["claude", "codex"], rounds=2))
+        self.assertNotIn("[jury.ci]", text)
+        self.assertNotIn("[jury.context]", text)
+        self.assertNotIn("decision", text)
+
+    def test_redact_only_context_section(self):
+        # redact_secrets set WITHOUT context_mode still emits [jury.context].
+        cfg = build_config(["claude"], redact_secrets=False)
+        parsed = tomllib.loads(render_toml(cfg))
+        self.assertFalse(parsed["jury"]["context"]["redact_secrets"])
+        self.assertNotIn("mode", parsed["jury"]["context"])
+
     def test_local_agent_has_no_empty_command(self):
         text = render_toml(build_config(["qwen"]))
         self.assertNotIn('command = ""', text)

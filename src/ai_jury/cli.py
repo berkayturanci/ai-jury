@@ -414,6 +414,144 @@ def _init_interactive(available: dict, input_fn=input, local_endpoint=None, mode
     }
 
 
+def _init_wizard(available: dict, input_fn=input, local_endpoint=None, models_fn=None) -> dict:
+    """Guided, numbered-option setup for ``jury init --wizard`` (issue #231).
+
+    Mirrors :func:`_init_interactive`'s injectable params for offline testing.
+    Every question is SKIPPABLE: pressing Enter leaves the setting unset, so it
+    falls back to the built-in default and is NOT written to ``jury.toml`` (which
+    keeps the generated file minimal). Returns kwargs for ``scaffold.build_config``
+    containing only the values the user explicitly chose.
+    """
+    from .scaffold import KNOWN_AGENTS
+
+    if models_fn is None:
+        from .adapters import list_local_models as models_fn
+
+    def ask(prompt: str) -> str:
+        return input_fn(prompt).strip()
+
+    def choose(prompt: str, options: list[str], default_idx: int) -> int | None:
+        """Print numbered options and read a 1-based pick. Enter -> None (skip)."""
+        print(prompt, file=sys.stderr)
+        for i, label in enumerate(options, 1):
+            star = " (default)" if i - 1 == default_idx else ""
+            print(f"  {i}. {label}{star}", file=sys.stderr)
+        raw = ask("Pick a number [Enter to keep default]: ")
+        if not raw:
+            return None
+        if raw.isdigit() and 1 <= int(raw) <= len(options):
+            return int(raw) - 1
+        return None
+
+    print(
+        "jury init --wizard — guided setup (writes jury.toml).\n"
+        "Every question is optional: press Enter to keep the default and skip it;\n"
+        "skipped settings are left at their built-in defaults (not written).\n",
+        file=sys.stderr,
+    )
+
+    # Reviewers (always written — like plain init).
+    for name in KNOWN_AGENTS:
+        mark = "available" if available.get(name) else "not found"
+        print(f"  - {name}: {_AGENT_BLURB[name]} [{mark}]", file=sys.stderr)
+    default_agents = [n for n in KNOWN_AGENTS if available.get(n)] or list(KNOWN_AGENTS)
+    raw_agents = ask(f"\nReviewers to include [default: {','.join(default_agents)}]: ")
+    agents = [a.strip() for a in raw_agents.split(",") if a.strip()] or default_agents
+
+    kwargs: dict = {"agents": agents}
+
+    # Depth -> rounds / early_stop / auto_depth.
+    depth = choose(
+        "\nDepth:",
+        [
+            "1 round (review only)",
+            "2 rounds + debate",
+            "adaptive (early-stop)",
+            "auto-depth (scale to the diff)",
+        ],
+        default_idx=1,
+    )
+    if depth == 0:
+        kwargs["rounds"] = 1
+    elif depth == 1:
+        kwargs["rounds"] = 2
+    elif depth == 2:
+        kwargs["rounds"] = 2
+        kwargs["early_stop"] = True
+    elif depth == 3:
+        kwargs["auto_depth"] = True
+
+    # Decision: chair (default) or panel vote. Only written on a non-default.
+    decision = choose(
+        "\nDecision:", ["chair synthesis", "panel vote"], default_idx=0
+    )
+    if decision == 1:
+        kwargs["decision"] = "vote"
+
+    # Verification (always written — like plain init).
+    verify_raw = ask("\nRun verification round? [Y/n]: ").lower()
+    if verify_raw:
+        kwargs["verify"] = verify_raw != "n"
+
+    # Context: diff-only (default) or expanded; redact secrets Y/n.
+    ctx = choose(
+        "\nContext sent to reviewers:",
+        ["diff-only", "expanded (include PR context)"],
+        default_idx=0,
+    )
+    if ctx == 1:
+        kwargs["context_mode"] = "expanded"
+    redact_raw = ask("Redact secrets before sending? [Y/n]: ").lower()
+    if redact_raw == "n":
+        kwargs["redact_secrets"] = False
+
+    # CI gate fail-on. Only write [jury.ci] on a non-default pick.
+    gate = choose(
+        "\nCI gate — fail on which severities?",
+        ["critical,major", "critical only", "skip (never fail CI)"],
+        default_idx=0,
+    )
+    if gate == 1:
+        kwargs["ci_fail_on"] = ["critical"]
+    elif gate == 2:
+        kwargs["ci_fail_on"] = []
+
+    # Chair (always written — like plain init; default = first reviewer).
+    chair_default = agents[0] if agents else "claude"
+    chair = ask(f"\nChair agent [{chair_default}]: ") or chair_default
+    kwargs["chair"] = chair
+
+    # Local model pick when a local reviewer is chosen (reuse init's logic).
+    if any(a in agents for a in ("qwen", "local")):
+        from .scaffold import pick_default_model
+
+        models = models_fn(local_endpoint or "http://localhost:11434/v1")
+        if models:
+            default = pick_default_model(models)
+            print("\nLocal models available on the server:", file=sys.stderr)
+            for i, m in enumerate(models, 1):
+                star = " (default)" if m == default else ""
+                print(f"  {i}. {m}{star}", file=sys.stderr)
+            raw = ask(f"Pick a local model [number or name, default: {default}]: ")
+            if raw.isdigit() and 1 <= int(raw) <= len(models):
+                kwargs["local_model"] = models[int(raw) - 1]
+            elif raw:
+                kwargs["local_model"] = raw
+            else:
+                kwargs["local_model"] = default
+        else:
+            print(
+                "\n(could not reach the local server to list models; using the default)",
+                file=sys.stderr,
+            )
+            typed = ask("Local model name [qwen2.5-coder:7b]: ")
+            if typed:
+                kwargs["local_model"] = typed
+
+    return kwargs
+
+
 def _run_init(rest: list[str]) -> int:
     """Handle ``jury init`` (issue #107): scaffold a jury.toml."""
     from .config import ConfigError, validate_config
@@ -435,6 +573,11 @@ def _run_init(rest: list[str]) -> int:
     sub.add_argument("-o", "--output", default="jury.toml")
     sub.add_argument("--force", action="store_true", help="overwrite an existing file")
     sub.add_argument("--interactive", action="store_true", help="force interactive prompts")
+    sub.add_argument(
+        "--wizard", action="store_true",
+        help="guided, numbered-option setup; every question is skippable (Enter "
+             "keeps the built-in default) and only chosen keys are written",
+    )
     sub.add_argument("--list-agents", action="store_true", help="list known agents + availability and exit")
     sub.add_argument("--list-models", action="store_true", help="list local models on the server and exit")
     ns = sub.parse_args(rest)
@@ -482,9 +625,17 @@ def _run_init(rest: list[str]) -> int:
     verify = ns.verify if ns.verify is not None else preset.get("verify", True)
     early_stop = preset.get("early_stop")
 
+    # Guided wizard (issue #231): opt-in via --wizard. A numbered-option flow
+    # where every question is skippable; only explicitly-chosen settings are
+    # written, so the file stays minimal. Runs regardless of TTY (it is explicit).
+    if ns.wizard:
+        kwargs = _init_wizard(available, local_endpoint=ns.local_endpoint)
+        kwargs["local_endpoint"] = ns.local_endpoint
+        if ns.local_model:
+            kwargs["local_model"] = ns.local_model
     # Interactive only when neither --agents nor --preset was given and we're on a
     # TTY (or --interactive). Presets/flags are non-interactive by design.
-    if not ns.agents and not ns.preset and (ns.interactive or sys.stdin.isatty()):
+    elif not ns.agents and not ns.preset and (ns.interactive or sys.stdin.isatty()):
         kwargs = _init_interactive(available, local_endpoint=ns.local_endpoint)
         kwargs["local_endpoint"] = ns.local_endpoint
         if ns.local_model:
