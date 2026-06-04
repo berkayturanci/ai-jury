@@ -99,6 +99,21 @@ Live (opt-in; runs the real agent CLIs per fixture diff; never in CI):
 JURY_BENCH_LIVE=1 PYTHONPATH=src python3 -m ai_jury.benchmark
 ```
 
+### Lift sweep (single vs. panel vs. jury)
+
+To measure *what the panel adds over one model*, `sweep.py` runs the same
+fixtures under three configs (chair-only · all reviewers · all reviewers + debate
++ verify) and prints a comparison:
+
+```bash
+PYTHONPATH=src python3 benchmark/sweep.py --config jury.toml   # live (real CLIs)
+PYTHONPATH=src python3 benchmark/sweep.py --mock               # mechanics only, free
+```
+
+The latest published result is in
+[`docs/benchmark-results.md`](../docs/benchmark-results.md) — diversity lifts
+recall, the verification round lifts precision.
+
 The live path mirrors the `JURY_LIVE=1` gate used by the live smoke tests
 (`tests/live/`). There is also an opt-in live benchmark test:
 
