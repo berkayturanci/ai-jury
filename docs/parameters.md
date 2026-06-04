@@ -429,7 +429,9 @@ ties resolve to the **stricter** stance.
 ### Vendors
 `anthropic` · `openai` · `google` · `local` (OpenAI-compatible: Ollama, llama.cpp, vLLM, LM Studio).
 
-### Presets (`jury init --preset`)
+### Presets
+Set with `jury init --preset`.
+
 | Preset | Panel / depth |
 | --- | --- |
 | `offline` | Local-only ($0), no cloud CLIs. |
@@ -446,8 +448,8 @@ ties resolve to the **stricter** stance.
 ### Post modes (`--post-mode`)
 `single` (default, one comment) · `phased` (Round 1 / debate / decision as separate comments).
 
-### Comment actions (`jury comment`)
-`review` (full review) · `summary` (fast single-round pass).
+### Comment actions
+Used by `jury comment`: `review` (full review) · `summary` (fast single-round pass).
 
 ---
 

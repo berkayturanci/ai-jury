@@ -32,10 +32,11 @@ All GitHub Actions are pinned to full commit SHAs (see
 ### PyPI trusted publishing
 
 Publishing uses [PyPI trusted publishing](https://docs.pypi.org/trusted-publishers/)
-(OIDC) instead of a long-lived API token. This requires a **one-time** setup on
-PyPI: add a trusted publisher for this repository and the `publish.yml` workflow.
-Until that is configured, the publish step is non-fatal (`continue-on-error`) so
-a release still produces verifiable GitHub artifacts.
+(OIDC) instead of a long-lived API token. This required a **one-time** setup on
+PyPI — a trusted publisher for this repository and the `publish.yml` workflow — which
+is now configured (v1.0.0 and v1.1.0 were published this way). The publish step is
+**not** `continue-on-error`: a failed upload fails the release loudly so a broken
+publish can't pass silently. `skip-existing` keeps re-runs idempotent.
 
 ## How to verify a release
 

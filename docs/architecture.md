@@ -43,9 +43,10 @@ agent* (adapters), so new vendors are a ~20-line addition.
    (`verified` / `unsupported` / `needs_human_decision`) to drop false positives
    before synthesis; verdicts attach to the consensus groups.
 4. **Synthesis.** The configured `chair` agent consolidates all rounds into a single
-   verdict (`APPROVE` / `COMMENT` / `REQUEST CHANGES`) plus consensus, disputed, and
+   verdict (`APPROVE` / `COMMENT` / `REQUEST CHANGES` for a PR or diff; `READY` /
+   `NEEDS-INFO` / `UNCLEAR` for an `--issue`) plus consensus, disputed, and
    notable single-reviewer findings. If the chair is unavailable, the first available
-   agent chairs.
+   agent chairs. With `decision = "vote"` the verdict is a panel tally instead.
 
 The whole run is bounded by an optional **budget** (`total_timeout` / `phase_timeout`)
 with opt-in **retries** for transient failures, and can be served from / stored in an
@@ -70,7 +71,7 @@ content. Verified headless invocations (early 2026):
 | Vendor | Adapter | Invocation |
 |:--|:--|:--|
 | Anthropic | `ClaudeAdapter` | `claude -p "<prompt>" --output-format text` |
-| OpenAI | `CodexAdapter` | `codex exec "<prompt>"` (prompt on stdin) |
+| OpenAI | `CodexAdapter` | `codex exec` (prompt piped on stdin, not argv) |
 | Google | `AgyAdapter` | `agy --print "<prompt>"` |
 | local / open-weight | `LocalAdapter` | HTTP `POST {endpoint}/v1/chat/completions` (Ollama, llama.cpp, vLLM, LM Studio) — stdlib `urllib`, no subprocess |
 | — (tests) | `MockAdapter` | deterministic, phase-aware output; no subprocess |

@@ -54,7 +54,9 @@ Originating pattern: Karpathy's [llm-jury](https://github.com/karpathy/llm-jury)
 
 **Design implications baked into this MVP:** heterogeneous vendors by default; debate is
 one extra round (opt-out via `--rounds 1`); chair synthesis rather than naive voting.
-Anonymized rebuttal, convergence-based early stop, and a verify pass are roadmap items.
+Convergence-based early stop, a verify pass, anonymized peer feedback, and an optional
+panel vote (`--decision vote`) all shipped since; a rotating anonymized-rebuttal turn
+order remains a roadmap item.
 
 ## A2A protocol — not for the MVP
 
@@ -67,7 +69,7 @@ remote third-party agents.
 ## Parsing: don't parse the prose
 
 Prompt-only "respond in JSON" fails 5–20% of the time (fences, preamble, wrappers). The
-robust pattern (Magpie's, and our roadmap):
+robust pattern (Magpie's, and the one we implement):
 
 1. Reviewer produces prose (ideally with tool access to read real files, not diff-only).
 2. A separate **structurizer** step converts prose → JSON `{severity, file, line, category}`

@@ -30,6 +30,8 @@ Legend: ✅ yes · ➖ partial / optional · ❌ no · — not applicable.
 | Multiple vendors / models | ✅ | ✅ | ✅ | ➖ |
 | Consensus / debate rounds | ✅ | ✅ (Magpie, agent-jury) | ➖ (`--debate`) | ➖ |
 | Verification pass (re-read code) | ✅ | ➖ | ❌ | ➖ |
+| Panel voting verdict (tally vs. single chair) | ✅ (`--decision vote`) | ❌ | ❌ | ❌ |
+| Issue-quality review (completeness, not diffs) | ✅ (`--issue`) | ❌ | ❌ | ❌ |
 | Structured findings (severity/file/line) | ✅ | ➖ | ➖ | ✅ |
 | Inline PR comments | ✅ (`--post-inline`) | ➖ | ❌ | ✅ |
 | CI gating (non-zero on blocking) | ✅ (`--ci`, `--fail-on`) | ➖ | ❌ | ✅ |
@@ -39,7 +41,7 @@ Legend: ✅ yes · ➖ partial / optional · ❌ no · — not applicable.
 | Live progress on the PR (sticky / phased comments) | ✅ (`--post-progress`, `--post-mode phased`) | ❌ | ❌ | ➖ |
 | Comment-triggered runs (`/jury …`) | ➖ (`jury comment` + workflow recipe) | ➖ | ❌ | ✅ |
 | Offline / local open-weight reviewer | ✅ (`vendor = "local"`, Ollama/etc., $0) | ➖ | ➖ | ❌ |
-| Guided config setup | ✅ (`jury init`) | ❌ | ❌ | n/a (hosted) |
+| Guided config setup | ✅ (`jury init`, `--wizard`) | ❌ | ❌ | n/a (hosted) |
 | Hosted dashboard | ❌ | ❌ | ❌ | ✅ |
 | Local-first (no data leaves to a SaaS) | ✅ | ✅ | ➖ | ❌ |
 | Secret redaction before send | ✅ | ➖ | ➖ | n/a (hosted) |

@@ -359,7 +359,7 @@ jury) and **zero marginal cost**, not parity. The sweet spot is mixing one
 local panelist with one or two cloud CLIs: more vendor heterogeneity, lower spend.
 An unreachable server fails fast with a typed `connection_error` (the run
 continues with the other agents). See the
-[benchmark note](benchmark/README.md#local-open-weight-reviewer-issue-43) for the
+[benchmark note](benchmark/README.md#local--open-weight-reviewer-issue-43) for the
 measured diversity contribution.
 
 ## Repository review policy (optional)
@@ -504,7 +504,7 @@ it differs from hosted, API-level, and other native-CLI tools, and
 
 ## Status
 
-Active (v1.0.0). The full pipeline runs end-to-end with the real CLIs and the offline
+Active (v1.1.0). The full pipeline runs end-to-end with the real CLIs and the offline
 `--mock` path is covered by tests. **Shipped:** structured findings + tiered consensus
 (consensus / majority / single-reviewer), a verification pass that drops false positives,
 anonymized rebuttal, adaptive early-stop, severity-gated CI exit codes, secure-by-default
@@ -550,7 +550,7 @@ documented and a documented flag can't silently disappear.
 
 | Condition | Behavior |
 | --- | --- |
-| No input source given | exits non-zero with `error: provide one of --pr, --diff-file (or --diff-file - for stdin)` |
+| No input source given | exits non-zero with `error: provide one of --pr, --issue, --diff-file (or --diff-file - for stdin)` |
 | Empty diff | exits non-zero with `error: empty diff — nothing to review` |
 | `--post-summary` without `--pr` | exits non-zero with `error: --post-summary requires --pr` |
 | `--post-inline` without `--pr` | exits non-zero with `error: --post-inline requires --pr` |
