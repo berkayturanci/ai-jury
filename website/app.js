@@ -158,6 +158,11 @@
     var findings = $("hero-findings");
     var ttl = $("pipe-ttl");
     var debateMark = q("#debate-mark", pipe);
+    var inMain = $("stage-in-main");
+    var inSub = $("stage-in-sub");
+    var synthMain = $("stage-synth-main");
+    var tabPr = $("tab-pr");
+    var tabIssue = $("tab-issue");
 
     function clearAll() {
       qa(".lit", pipe).forEach(function (el) { el.classList.remove("lit"); });
@@ -169,15 +174,38 @@
     }
     function lit(stage) { if (stages[stage]) stages[stage].classList.add("lit"); }
 
-    // Looping scenarios — different panels & outcomes; the last runs in issue mode.
-    var SCENARIOS = [
-      { pr: "123", reviewers: ["claude", "codex", "agy", "qwen"], debate: true,  changes: false },
-      { pr: "124", reviewers: ["claude", "codex"],               debate: true,  changes: true, findings: "2 blocking" },
-      { pr: "125", reviewers: ["codex", "agy", "qwen"],          debate: false, changes: false }
-    ];
+    // Two review modes, each cycling a few scenarios with mode-appropriate
+    // verdicts (PR: APPROVE / REQUEST CHANGES · issue: READY / NEEDS-INFO /
+    // UNCLEAR) and a chair-or-vote synthesis — matching the real CLI.
+    var MODES = {
+      pr: {
+        cmd: "--pr", inMain: "diff / PR", inSub: "redact · chunk",
+        scenarios: [
+          { n: "123", reviewers: ["claude", "codex", "agy", "qwen"], debate: true,  vote: false, vClass: "approve",   vLabel: "✓ APPROVE" },
+          { n: "124", reviewers: ["claude", "codex"],                debate: true,  vote: false, vClass: "changes",   vLabel: "✕ REQUEST CHANGES", findings: "2 blocking" },
+          { n: "125", reviewers: ["codex", "agy", "qwen"],           debate: false, vote: true,  vClass: "approve",   vLabel: "✓ APPROVE" }
+        ]
+      },
+      issue: {
+        cmd: "--issue", inMain: "issue", inSub: "redact",
+        scenarios: [
+          { n: "42", reviewers: ["claude", "codex", "agy", "qwen"], debate: true,  vote: false, vClass: "ready",     vLabel: "✓ READY" },
+          { n: "43", reviewers: ["claude", "codex"],                debate: true,  vote: false, vClass: "needsinfo", vLabel: "✕ NEEDS-INFO", findings: "missing repro" },
+          { n: "44", reviewers: ["codex", "qwen"],                  debate: false, vote: true,  vClass: "unclear",   vLabel: "◐ UNCLEAR", findings: "scope unclear" }
+        ]
+      }
+    };
+    var mode = "pr";
+    function scenarios() { return MODES[mode].scenarios; }
+
     function setScenario(s) {
-      if (ttl) ttl.textContent = "$ jury --pr " + s.pr;
-      // panel: fade reviewers not on this PR's jury
+      var m = MODES[mode];
+      if (ttl) ttl.textContent = "$ jury " + m.cmd + " " + s.n;
+      if (inMain) inMain.textContent = m.inMain;
+      if (inSub) inSub.textContent = m.inSub;
+      // synthesis: chair synthesis, or a panel vote (the ✓ marks the tally)
+      if (synthMain) synthMain.textContent = s.vote ? "vote ✓" : "chair";
+      // panel: fade reviewers not on this scenario's jury
       chips.forEach(function (c) { c.classList.toggle("muted", s.reviewers.indexOf(c.getAttribute("data-rev")) === -1); });
       // round 2: shown only when the panel actually debates
       if (stages[2]) stages[2].classList.toggle("skipped", !s.debate);
@@ -192,33 +220,35 @@
     }
     function revealVerdict(s) {
       if (verdict) {
-        verdict.className = "verdict-badge " + (s.changes ? "changes" : "approve") + " pop";
-        verdict.textContent = s.changes ? "✕ REQUEST CHANGES" : "✓ APPROVE";
+        verdict.className = "verdict-badge " + s.vClass + " pop";
+        verdict.textContent = s.vLabel;
       }
-      if (stages[5]) stages[5].classList.toggle("changed", !!s.changes);
+      // a blocking verdict (REQUEST CHANGES / NEEDS-INFO) flips the verdict stage red
+      var blocking = s.vClass === "changes" || s.vClass === "needsinfo";
+      if (stages[5]) stages[5].classList.toggle("changed", blocking);
       if (findings) {
-        if (s.changes) { findings.hidden = false; findings.innerHTML = '<span class="sev-dot"></span>' + s.findings; }
+        if (s.findings) { findings.hidden = false; findings.innerHTML = '<span class="sev-dot"></span>' + s.findings; }
         else { findings.hidden = true; findings.innerHTML = ""; }
       }
     }
 
-    if (reduce) {
-      setScenario(SCENARIOS[0]);
-      revealVerdict(SCENARIOS[0]);
-      Object.keys(stages).forEach(lit);
-      chips.forEach(function (c) { c.classList.add("lit"); });
-      return;
-    }
-
     var timers = [];
     function at(ms, fn) { timers.push(setTimeout(fn, ms)); }
-
+    function stop() { timers.forEach(clearTimeout); timers = []; }
     var idx = 0;
 
+    function applyStatic() {
+      stop(); clearAll();
+      var s = scenarios()[0];
+      setScenario(s); revealVerdict(s);
+      Object.keys(stages).forEach(lit);
+      chips.forEach(function (c) { if (s.reviewers.indexOf(c.getAttribute("data-rev")) !== -1) c.classList.add("lit"); });
+    }
+
     function play() {
-      timers.forEach(clearTimeout); timers = [];
+      stop();
       clearAll();
-      var s = SCENARIOS[idx % SCENARIOS.length];
+      var s = scenarios()[idx % scenarios().length];
       setScenario(s);
 
       // motion preset scales the whole sequence (and the spark CSS duration)
@@ -234,7 +264,7 @@
       at(t, function () { spark(0); });
       at(t + D, function () { lit(1); });
       t += D + g(240);
-      // reviewers light up one by one (only this PR's panel)
+      // reviewers light up one by one (only this scenario's panel)
       var active = chips.filter(function (c) { return s.reviewers.indexOf(c.getAttribute("data-rev")) !== -1; });
       active.forEach(function (c, i) { at(t + i * g(200), function () { c.classList.add("lit"); }); });
       t += active.length * g(200) + g(260);
@@ -257,6 +287,24 @@
       // hold on the verdict, then advance to the next scenario
       t += g(2800);
       at(t, function () { idx++; play(); });
+    }
+
+    function restart() { idx = 0; if (reduce) applyStatic(); else play(); }
+
+    // PR / Issue tab switching — swap the mode and restart the loop.
+    function selectMode(newMode) {
+      if (newMode === mode || !MODES[newMode]) return;
+      mode = newMode;
+      if (tabPr) { tabPr.classList.toggle("on", mode === "pr"); tabPr.setAttribute("aria-selected", mode === "pr" ? "true" : "false"); }
+      if (tabIssue) { tabIssue.classList.toggle("on", mode === "issue"); tabIssue.setAttribute("aria-selected", mode === "issue" ? "true" : "false"); }
+      restart();
+    }
+    if (tabPr) tabPr.addEventListener("click", function () { selectMode("pr"); });
+    if (tabIssue) tabIssue.addEventListener("click", function () { selectMode("issue"); });
+
+    if (reduce) {
+      applyStatic();
+      return;
     }
 
     // Start when the pipe is in view (rect-based); loop while it stays mounted.

@@ -219,6 +219,10 @@
 
       <!-- Animated pipeline -->
       <div class="pipe-shell reveal" data-d="5">
+        <div class="pipe-tabs" role="tablist" aria-label="What the jury reviews">
+          <button class="pipe-tab on" id="tab-pr" role="tab" aria-selected="true" type="button">Pull request</button>
+          <button class="pipe-tab" id="tab-issue" role="tab" aria-selected="false" type="button">Issue</button>
+        </div>
         <div class="pipe" id="pipe">
           <div class="pipe-cap">
             <span class="ttl" id="pipe-ttl">$ jury --pr 123</span>
@@ -233,8 +237,8 @@
           <div class="pipe-flow">
             <div class="stage stage-in" data-stage="0">
               <div class="s-label">input</div>
-              <div class="s-main">diff / PR</div>
-              <div class="s-sub">redact · chunk</div>
+              <div class="s-main" id="stage-in-main">diff / PR</div>
+              <div class="s-sub" id="stage-in-sub">redact · chunk</div>
             </div>
 
             <div class="conn" data-conn="0"><span class="spark"></span></div>
@@ -263,8 +267,8 @@
             <div class="conn" data-conn="3"><span class="spark"></span></div>
 
             <div class="stage stage-chair chair" data-stage="4">
-              <div class="s-label">synthesis</div>
-              <div class="s-main">chair</div>
+              <div class="s-label" id="stage-synth-label">synthesis</div>
+              <div class="s-main" id="stage-synth-main">chair</div>
             </div>
 
             <div class="conn" data-conn="4"><span class="spark"></span></div>
@@ -438,7 +442,7 @@ jury <span class="k">--pr</span> 123 <span class="k">--auto</span>              
 
 jury <span class="k">--issue</span> 42                       <span class="cm"># review an ISSUE for completeness (READY/NEEDS-INFO/UNCLEAR)</span>
 jury <span class="k">--issue</span> 42 <span class="k">--decision</span> vote       <span class="cm"># issue verdict by panel vote (NEEDS-INFO &gt; UNCLEAR &gt; READY)</span>
-jury <span class="k">--issue</span> 42 <span class="k">--post</span>               <span class="cm"># post the verdict back to the issue thread</span>
+jury <span class="k">--issue</span> 42 <span class="k">--post</span>                <span class="cm"># post the verdict back to the issue thread</span>
 jury <span class="k">--issue</span> 42 <span class="k">--live --post</span>         <span class="cm"># stream + post each step to the issue as it lands</span>
 
 jury <span class="k">--ci --fail-on</span> critical,major    <span class="cm"># gate CI on blocking findings</span></code></pre>
