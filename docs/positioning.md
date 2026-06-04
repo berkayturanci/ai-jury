@@ -12,8 +12,9 @@ SaaS or a general-purpose multi-agent framework.
 
 Make a diff better before it merges by convening **native coding-agent CLIs from
 different vendors** as an adversarial review panel: each reviews the same change
-independently, they cross-examine each other, and a chair synthesizes one
-verified verdict. The whole thing should drop into any repository, run locally,
+— a diff, PR, or issue — independently, they cross-examine each other, and the
+verdict is a chair's verified synthesis or a panel vote. The whole thing should
+drop into any repository, run locally,
 and depend on nothing but the Python standard library and the agent CLIs you
 already have installed.
 

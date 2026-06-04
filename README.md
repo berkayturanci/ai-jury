@@ -1,8 +1,8 @@
 # <img src="website/favicon.svg" alt="" height="30" align="top"> ai-jury
 
 > Convene a **cross-vendor multi-agent review jury**: native coding-agent CLIs from
-> different vendors review the *same* pull request, cross-examine each other, and a
-> chair synthesizes one verdict.
+> different vendors review the *same* diff, PR, or issue, cross-examine each other,
+> verify, and reach **one verdict** — a chair's synthesis or a **panel vote**.
 
 [![CI](https://github.com/berkayturanci/ai-jury/actions/workflows/ci.yml/badge.svg)](https://github.com/berkayturanci/ai-jury/actions/workflows/ci.yml)
 [![coverage](https://img.shields.io/endpoint?url=https://berkayturanci.github.io/ai-jury/coverage-badge.json)](https://berkayturanci.github.io/ai-jury/coverage/)
