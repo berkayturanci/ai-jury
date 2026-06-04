@@ -184,8 +184,8 @@
         A small, <strong>stdlib-only</strong> Python CLI that drives each vendor's
         <strong>native coding-agent CLI</strong> — Claude Code, OpenAI Codex, Google
         Antigravity — plus an optional <strong>free, offline local</strong> model, to review the
-        <em>same</em> diff or PR, cross-examine each other, and synthesize
-        <strong>one chair verdict</strong>. Not API calls.
+        <em>same</em> diff, PR, or issue, cross-examine each other, and reach
+        <strong>one verdict</strong> — a chair's synthesis or a <strong>panel vote</strong>. Not API calls.
       </p>
       <div class="hero-install reveal" data-d="3">
         <span class="hi-prompt mono">$</span>
@@ -334,6 +334,16 @@
       <div class="demo-grid reveal">
         <form class="panel demo-controls" aria-label="jury configuration">
           <div class="fieldset">
+            <div class="legend">Target</div>
+            <label class="opt"><input type="radio" name="target" value="pr" checked /> Pull request</label>
+            <label class="opt"><input type="radio" name="target" value="issue" /> Issue (completeness)</label>
+          </div>
+          <div class="fieldset" id="fs-verdict">
+            <div class="legend">Verdict</div>
+            <label class="opt"><input type="radio" name="verdict-mode" value="chair" checked /> Chair synthesizes</label>
+            <label class="opt" id="opt-vote"><input type="radio" name="verdict-mode" value="vote" /> Panel vote <span class="tag">majority</span></label>
+          </div>
+          <div class="fieldset">
             <div class="legend">Reviewers</div>
             <label class="opt"><input type="checkbox" id="ag-claude" checked /> <span class="dot d-claude"></span> Claude Code</label>
             <label class="opt"><input type="checkbox" id="ag-codex" checked /> <span class="dot d-codex"></span> Codex</label>
@@ -347,7 +357,7 @@
             <label class="opt"><input type="checkbox" id="verify" checked /> Verification pass</label>
             <label class="opt" id="opt-auto"><input type="checkbox" id="auto" /> Auto-depth <span class="tag accent">⚡ scales to diff</span></label>
           </div>
-          <div class="fieldset">
+          <div class="fieldset" id="fs-postmode">
             <div class="legend">PR output</div>
             <label class="opt"><input type="radio" name="postmode" value="single" checked /> Single comment</label>
             <label class="opt"><input type="radio" name="postmode" value="phased" /> Phased (R1 / debate / decision)</label>
@@ -410,9 +420,12 @@ jury init                             <span class="cm"># scaffold jury.toml (det
 jury init <span class="k">--preset</span> offline            <span class="cm"># free, local-only ($0); also: fast / balanced / thorough</span>
 jury config show                      <span class="cm"># see the effective config that will run</span>
 jury <span class="k">--pr</span> 123                         <span class="cm"># review a GitHub PR</span>
+jury <span class="k">--issue</span> 42                       <span class="cm"># review an ISSUE for completeness (READY/NEEDS-INFO)</span>
 jury <span class="k">--pr</span> 123 <span class="k">--post --post-progress</span>  <span class="cm"># live: a sticky PR comment updated each round</span>
+jury <span class="k">--pr</span> 123 <span class="k">--live</span>                  <span class="cm"># stream each step to the terminal as it lands</span>
+jury <span class="k">--pr</span> 123 <span class="k">--decision</span> vote         <span class="cm"># verdict by panel vote instead of a single chair</span>
 jury <span class="k">--pr</span> 123 <span class="k">--auto</span>                  <span class="cm"># auto-depth: scale rounds/verify to the diff</span>
-jury <span class="k">--ci --fail-on</span> high,critical     <span class="cm"># gate CI on blocking findings</span></code></pre>
+jury <span class="k">--ci --fail-on</span> critical,major    <span class="cm"># gate CI on blocking findings</span></code></pre>
       <p class="muted reveal" style="margin-top:1rem">
         Requires Python 3.11+ and at least one reviewer — an agent CLI (<code class="mono" style="color:var(--accent-2)">claude</code>,
         <code class="mono" style="color:var(--accent-2)">codex</code>, <code class="mono" style="color:var(--accent-2)">agy</code>)
@@ -539,6 +552,8 @@ endpoint = <span class="s">"http://localhost:11434/v1"</span></code></pre>
             <tr><th scope="row">Native CLI execution (per-vendor agent)</th><td class="me"><span class="y">✓</span></td><td><span class="y">✓</span></td><td><span class="n">✕</span></td><td><span class="n">✕</span></td></tr>
             <tr><th scope="row">Multiple vendors / models</th><td class="me"><span class="y">✓</span></td><td><span class="y">✓</span></td><td><span class="y">✓</span></td><td><span class="p">◐</span></td></tr>
             <tr><th scope="row">Consensus / debate rounds</th><td class="me"><span class="y">✓</span></td><td><span class="y">✓</span></td><td><span class="p">◐</span></td><td><span class="p">◐</span></td></tr>
+            <tr><th scope="row">Review an issue for completeness (not just diffs)</th><td class="me"><span class="y">✓</span></td><td><span class="n">✕</span></td><td><span class="n">✕</span></td><td><span class="n">✕</span></td></tr>
+            <tr><th scope="row">Verdict by panel vote or single chair</th><td class="me"><span class="y">✓</span></td><td><span class="n">✕</span></td><td><span class="n">✕</span></td><td><span class="n">✕</span></td></tr>
             <tr><th scope="row">Verification pass (re-reads code)</th><td class="me"><span class="y">✓</span></td><td><span class="p">◐</span></td><td><span class="n">✕</span></td><td><span class="p">◐</span></td></tr>
             <tr><th scope="row">CI gating (non-zero on blocking)</th><td class="me"><span class="y">✓</span></td><td><span class="p">◐</span></td><td><span class="n">✕</span></td><td><span class="y">✓</span></td></tr>
             <tr><th scope="row">Risk-aware auto-depth</th><td class="me"><span class="y">✓</span></td><td><span class="n">✕</span></td><td><span class="n">✕</span></td><td><span class="p">◐</span></td></tr>
