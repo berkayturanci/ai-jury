@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Website + docs: refreshed the "Real run" with a current v1.1.0 review.** Re-ran the four-vendor panel (Claude, Codex, Antigravity + a free local Qwen) over the whole repo on v1.1.0 (2026-06-04): 8 chunks, 25 verified findings, 6 of the panel's own false positives rejected, 22 secrets redacted. Updated the homepage "Real run" card (date + version + fresh stats/quote) and rewrote `docs/example-live-review.md` with the new findings — including the jury excluding a reviewer that refused to answer rather than scoring the non-answer as a pass.
 - **Website hero: distinct issue-verdict colours.** Issue verdicts now read green / amber / indigo (READY / NEEDS-INFO / UNCLEAR) instead of reusing the PR red for NEEDS-INFO — the verdict badge and the animated verdict-stage glow both follow the new palette. Visual-only.
 - **Website hero pipeline: PR / Issue mode tabs.** The animated hero pipeline now
   has a `Pull request` / `Issue` tablist — switching modes restarts the loop with

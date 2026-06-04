@@ -660,17 +660,17 @@ endpoint = <span class="s">"http://localhost:11434/v1"</span></code></pre>
 
       <a class="liveref reveal" href="docs.html#example-live-review">
         <div class="lr-left">
-          <span class="lr-tag">Real run</span>
+          <span class="lr-tag">Real run · v1.1.0 · Jun 2026</span>
           <h3>The jury reviewing its own repository</h3>
-          <p>A four-vendor panel (Claude, Codex, Antigravity + a free local model) reviewed the whole repo as one diff — and the verification round caught real defects <em>and</em> the panel's own false positives.</p>
-          <blockquote class="lr-quote">"the redaction is lossy enough to fabricate phantom syntax errors" <span>— the jury, rejecting its own false positive</span></blockquote>
+          <p>A four-vendor panel (Claude, Codex, Antigravity + a free local Qwen) reviewed the whole repo as one diff — the verification round confirmed real defects, threw out the panel's own false positives, and even excluded a reviewer that refused to answer instead of scoring it as a pass.</p>
+          <blockquote class="lr-quote">"one reviewer returned only 'I can't assist with that request' — an abdication, not a review" <span>— the chair, excluding a non-answer instead of counting it as a clean pass</span></blockquote>
           <span class="lr-link">Read the full live review →</span>
         </div>
         <div class="lr-stats">
           <div class="lr-stat"><span class="lr-num">4</span><span class="lr-lbl">vendors</span></div>
-          <div class="lr-stat"><span class="lr-num">10</span><span class="lr-lbl">chunks</span></div>
-          <div class="lr-stat"><span class="lr-num">2</span><span class="lr-lbl">critical caught</span></div>
-          <div class="lr-stat"><span class="lr-num">63</span><span class="lr-lbl">secrets redacted</span></div>
+          <div class="lr-stat"><span class="lr-num">8</span><span class="lr-lbl">chunks</span></div>
+          <div class="lr-stat"><span class="lr-num">25</span><span class="lr-lbl">verified findings</span></div>
+          <div class="lr-stat"><span class="lr-num">6</span><span class="lr-lbl">false positives caught</span></div>
         </div>
       </a>
     </section>
