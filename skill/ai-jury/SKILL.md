@@ -1,6 +1,6 @@
 ---
 name: ai-jury
-description: Convene a cross-vendor multi-agent review jury on a PR or diff and produce one report — Claude Code, Codex, Antigravity, and/or a free local/open-weight model each review independently, cross-examine each other, and a chair synthesizes a verdict. Handles the whole flow end to end (scaffold config if needed → review → report → summarize). Use when the user wants a multi-model review of a pull request, a diff, or the current branch, or says "review jury", "convene the jury", or "cross-model review".
+description: Convene a cross-vendor multi-agent review jury on a diff, PR, or issue and produce one report — Claude Code, Codex, Antigravity, and/or a free local/open-weight model each review independently, cross-examine each other, verify, and reach one verdict — a chair's synthesis or a panel vote. Handles the whole flow end to end (scaffold config if needed → review → report → summarize). Use when the user wants a multi-model review of a pull request, a diff, an issue, or the current branch, or says "review jury", "convene the jury", or "cross-model review".
 ---
 
 # AI Jury
