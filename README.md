@@ -158,13 +158,13 @@ JURY_BENCH_LIVE=1 PYTHONPATH=src python3 -m ai_jury.benchmark  # live (opt-in)
 ```
 
 **The lift, measured.** A config-sweep (`benchmark/sweep.py`) runs the same
-labeled fixtures as *single model* vs *panel* vs *full jury* — isolating what the
-panel adds. On a live four-vendor run (v1.1.0): a single model caught **67%** of
-the seeded bugs at 100% precision; the **panel** caught **100%** (diversity found
-what one model missed) but added false positives; the **full jury** (debate +
-verification) kept **100% recall *and* 100% precision** — the only config to pass
-all five. Diversity lifts detection; verification removes the noise. Small N (5),
-directional — full table + method in
+labeled fixtures with *each model solo* vs the *panel* vs the *full jury* —
+isolating what the panel adds, without the result hinging on which single model
+you'd pick. On a live four-vendor run (v1.1.0): **every** model missed seeded
+bugs run alone (best: Claude/Qwen **67%**; Codex/Agy 33%, all at 100% precision),
+while the four-vendor **panel caught 100%** of them. Vendor **diversity** is the
+robust lever (recall); the precision/verification effect is **within noise at
+N=5** and not claimed. Directional, reproducible — full table + method in
 [**docs/benchmark-results.md**](docs/benchmark-results.md).
 
 See [`benchmark/README.md`](benchmark/README.md) for the fixture list, the

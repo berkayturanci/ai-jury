@@ -38,17 +38,23 @@ from ai_jury.orchestrator import run_jury
 
 
 def build_configs(base):
-    """single / panel / jury variants derived from a loaded JuryConfig."""
+    """Per-model singles + panel + jury, derived from a loaded JuryConfig.
+
+    Each enabled reviewer is run *solo* (1 round, no verify) so the panel's lift
+    is measured against **every** single model — not just one hand-picked baseline,
+    which would make the result depend on which model you chose.
+    """
     enabled = [a for a in base.agents if getattr(a, "enabled", True)]
-    chair = [a for a in enabled if a.name == base.chair] or enabled[:1]
-    return [
-        ("single (chair only, 1 round)",
-         dataclasses.replace(base, agents=chair, rounds=1, verify=False, early_stop=False)),
-        ("panel (all reviewers, 1 round)",
-         dataclasses.replace(base, agents=enabled, rounds=1, verify=False, early_stop=False)),
-        ("jury (all reviewers, 2r + verify)",
-         dataclasses.replace(base, agents=enabled, rounds=2, verify=True, early_stop=False)),
+    configs = [
+        (f"single: {a.name}",
+         dataclasses.replace(base, agents=[a], chair=a.name, rounds=1, verify=False, early_stop=False))
+        for a in enabled
     ]
+    configs.append(("panel (all reviewers, 1 round)",
+                    dataclasses.replace(base, agents=enabled, rounds=1, verify=False, early_stop=False)))
+    configs.append(("jury (all reviewers, 2r + verify)",
+                    dataclasses.replace(base, agents=enabled, rounds=2, verify=True, early_stop=False)))
+    return configs
 
 
 def main(argv: list[str] | None = None) -> int:

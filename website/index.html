@@ -298,11 +298,12 @@
           marginal cost, and each reviewer runs in its own native CLI — not a raw model API call.
         </p>
         <p class="muted" style="margin-top:1rem">
-          <strong style="color:var(--text)">Measured on a small labeled benchmark:</strong> one model alone
-          caught <strong style="color:var(--text)">67%</strong> of the seeded bugs; the four-vendor
-          <strong style="color:var(--text)">panel caught 100%</strong> (diversity found what it missed), and the
-          full jury — debate + verification — held <strong style="color:var(--text)">100% recall <em>and</em> precision</strong>,
-          the only config to pass every fixture. <a href="docs.html#benchmark-results">See the benchmark →</a>
+          <strong style="color:var(--text)">Measured on a small labeled benchmark:</strong> run solo,
+          <em>every</em> model missed seeded bugs — the best (Claude, Qwen) caught
+          <strong style="color:var(--text)">67%</strong>, Codex and Agy 33%. The four-vendor
+          <strong style="color:var(--text)">panel caught 100%</strong> — the lift holds whichever single
+          model you'd have picked. (Small N=5, directional; the precision/verification effect is within noise.)
+          <a href="docs.html#benchmark-results">See the benchmark →</a>
         </p>
       </div>
     </section>
