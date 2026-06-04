@@ -435,6 +435,8 @@ section[id], [id="top"] { scroll-margin-top: 84px; }
   padding: .12rem .5rem; box-shadow: 0 4px 12px -4px rgba(99,102,241,.6);
 }
 .opt.disabled { opacity: .6; pointer-events: none; }
+.fieldset.disabled { opacity: .5; }
+.fieldset.disabled .opt { pointer-events: none; }
 #opt-auto { white-space: nowrap; }
 
 .stage-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.2rem; }
@@ -521,6 +523,7 @@ section[id], [id="top"] { scroll-margin-top: 84px; }
 .gh-verdict.v-ok { background: color-mix(in srgb, var(--green) 14%, transparent); color: var(--green-2); border: 1px solid color-mix(in srgb, var(--green) 50%, transparent); }
 :root[data-theme="light"] .gh-verdict.v-bad { color: #b91c1c; }
 :root[data-theme="light"] .gh-verdict.v-warn { color: #b45309; }
+.gh-verdict .v-note { font-weight: 600; opacity: .8; font-size: .92em; }
 .gh-findings, .gh-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .55rem; }
 .gh-list { font-size: .85rem; color: var(--muted); }
 .gh-finding code { color: var(--text); font-size: .8rem; }
