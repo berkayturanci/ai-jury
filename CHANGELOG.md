@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Website hero: distinct issue-verdict colours.** Issue verdicts now read green / amber / indigo (READY / NEEDS-INFO / UNCLEAR) instead of reusing the PR red for NEEDS-INFO — the verdict badge and the animated verdict-stage glow both follow the new palette. Visual-only.
 - **Website hero pipeline: PR / Issue mode tabs.** The animated hero pipeline now
   has a `Pull request` / `Issue` tablist — switching modes restarts the loop with
   mode-appropriate scenarios and verdicts (PR: `--pr 123/124/125` →

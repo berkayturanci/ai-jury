@@ -310,6 +310,8 @@ body::before {
 .stage.skipped .s-label { opacity: .7; }
 .stage-verdict.lit { border-color: color-mix(in srgb, var(--green) 60%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--green) 40%, transparent), 0 18px 50px -18px color-mix(in srgb, var(--green) 55%, transparent); }
 .stage-verdict.changed.lit { border-color: color-mix(in srgb, var(--red) 60%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--red) 40%, transparent), 0 18px 50px -18px color-mix(in srgb, var(--red) 55%, transparent); }
+.stage-verdict.needsinfo.lit { border-color: color-mix(in srgb, var(--amber) 60%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--amber) 40%, transparent), 0 18px 50px -18px color-mix(in srgb, var(--amber) 55%, transparent); }
+.stage-verdict.unclear.lit { border-color: var(--accent-line); box-shadow: var(--shadow-glow); }
 
 .stage-in .s-main { color: var(--text); }
 .stage-chair { border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
@@ -329,9 +331,9 @@ body::before {
 :root[data-theme="light"] .verdict-badge.changes { color: #b91c1c; }
 /* issue-mode verdicts: READY (green) · NEEDS-INFO (red) · UNCLEAR (amber) */
 .verdict-badge.ready { color: var(--green-2); background: color-mix(in srgb, var(--green) 16%, transparent); }
-.verdict-badge.needsinfo { color: #fca5a5; background: rgba(239,68,68,.15); }
-:root[data-theme="light"] .verdict-badge.needsinfo { color: #b91c1c; }
-.verdict-badge.unclear { color: var(--amber); background: color-mix(in srgb, var(--amber) 16%, transparent); }
+.verdict-badge.needsinfo { color: var(--amber); background: color-mix(in srgb, var(--amber) 16%, transparent); }
+:root[data-theme="light"] .verdict-badge.needsinfo { color: #b45309; }
+.verdict-badge.unclear { color: var(--accent-2); background: var(--accent-soft); }
 .v-findings { font-size: .68rem; color: var(--muted); margin-top: .25rem; font-family: var(--font-mono); }
 .v-findings .sev-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--red); margin-right: .3rem; vertical-align: middle; }
 
