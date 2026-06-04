@@ -496,6 +496,9 @@ showing debate lifts bug detection to ~80%); see also
 [agent-jury](https://github.com/yogirk/agent-jury),
 [the-jury](https://github.com/DantesPeak85/the-jury), and Mozilla.ai's
 [Star Chamber](https://blog.mozilla.ai/the-star-chamber-multi-llm-consensus-for-code-quality/).
+The jury/courtroom metaphor shows up in research too — e.g.
+**[VulTrial](https://arxiv.org/abs/2505.10961)** (ICSE 2026), which casts
+prosecutor / defense / judge / jury LLM agents at vulnerability detection.
 `ai-jury` aims to be the **smallest drop-in** version: stdlib-only Python, a
 single `jury.toml`, and a Claude Code skill that snaps into an existing repo's review
 workflow. See the [ecosystem comparison & capability matrix](docs/comparison.md) for how
