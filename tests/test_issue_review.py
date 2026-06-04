@@ -170,6 +170,24 @@ class CliIssueTests(unittest.TestCase):
         self.assertEqual(args[0], "5")
         self.assertIn("AI Jury", args[1])
 
+    def test_live_post_streams_per_step_to_issue(self):
+        # --issue --live --post posts each step to the issue (symmetric with PRs).
+        with mock.patch.object(cli, "issue_body", return_value=self.ISSUE_TEXT), \
+             mock.patch.object(cli, "post_issue_comment") as pic, \
+             mock.patch.object(cli, "post_pr_comment") as ppc:
+            code, _, _ = _run_cli(["--mock", "--issue", "5", "--live", "--post", "-q", "--seed", "1"])
+        self.assertEqual(code, 0)
+        self.assertGreaterEqual(pic.call_count, 4)  # per-step + final summary
+        ppc.assert_not_called()
+
+    def test_live_without_post_does_not_post_to_issue(self):
+        # Posting is opt-in: bare --issue --live streams locally, never comments.
+        with mock.patch.object(cli, "issue_body", return_value=self.ISSUE_TEXT), \
+             mock.patch.object(cli, "post_issue_comment") as pic:
+            code, out, _ = _run_cli(["--mock", "--issue", "5", "--live", "-q", "--seed", "1"])
+        self.assertEqual(code, 0)
+        pic.assert_not_called()
+
     def test_pr_only_flags_rejected_with_issue(self):
         for flag in ("--post-inline", "--post-progress", "--label", "--incremental"):
             with mock.patch.object(cli, "issue_body", return_value=self.ISSUE_TEXT):
