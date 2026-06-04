@@ -42,10 +42,10 @@ true to announce/publish) and **Nice-to-have** (improves polish, not a blocker).
 
 ## Nice-to-have
 
-- [ ] Public website / landing page (roadmap [#14](https://github.com/berkayturanci/ai-jury/issues/14)).
-- [ ] Polished README hero visual (roadmap [#46](https://github.com/berkayturanci/ai-jury/issues/46)).
-- [ ] Plugin manifests + platform support matrix (roadmap [#45](https://github.com/berkayturanci/ai-jury/issues/45)).
-- [ ] OpenSSF Scorecard score reviewed and low-hanging items addressed.
+- [x] Public website / landing page ([#14](https://github.com/berkayturanci/ai-jury/issues/14)) — shipped, live on GitHub Pages (`pages.yml`).
+- [x] Polished README hero visual ([#46](https://github.com/berkayturanci/ai-jury/issues/46)) — `docs/assets/hero.png` + refreshed favicon/OG set.
+- [x] Plugin manifests + platform support matrix ([#45](https://github.com/berkayturanci/ai-jury/issues/45)) — `.claude-plugin/{marketplace,plugin}.json` + `docs/platforms.md`.
+- [ ] OpenSSF Scorecard score reviewed and low-hanging items addressed (workflow runs per commit).
 - [ ] Asciinema/GIF demo of a real run.
 
 ## Versioning policy

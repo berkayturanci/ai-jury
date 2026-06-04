@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Docs accuracy sweep across every doc.** Full pass over `docs/`, `README.md`,
+  and the checklists fixing stale/incorrect content: README status bumped to
+  v1.1.0 and the "no input" error example now lists `--issue`; `feasibility.md`
+  no longer calls early-stop / verify / anonymized feedback "roadmap" (all
+  shipped); `releasing.md` corrected — trusted publishing is configured and the
+  publish step is **not** `continue-on-error`; `release-checklist.md` marks the
+  shipped website / hero visual / plugin-matrix items done; `architecture.md`
+  clarifies Codex is fed on stdin and that the verdict vocabulary is mode-aware
+  (issue verdicts + panel vote); `comparison.md` gains panel-voting and
+  issue-review rows; fixed broken in-doc anchors (`#presets`, `#comment-actions`,
+  and a benchmark cross-link). No behaviour change.
 - **Docs & website: complete the issue / voting / wizard coverage** (#236).
   Corrected PR-only phrasing now that `--post`/`--post-summary` post to issues
   too (via `gh issue comment`): the parameter-reference "GitHub posting" section,
