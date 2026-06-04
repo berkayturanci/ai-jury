@@ -47,6 +47,8 @@ class MetadataShapeTest(unittest.TestCase):
 
         expected_keys = {
             "schema_version",
+            "decision",
+            "vote",
             "agents",
             "rounds_executed",
             "from_cache",
@@ -69,6 +71,9 @@ class MetadataShapeTest(unittest.TestCase):
         self.assertEqual(set(meta.keys()), expected_keys)
 
         self.assertIsInstance(meta["schema_version"], int)
+        # decision defaults to "chair"; vote is None unless voting (issue #220).
+        self.assertEqual(meta["decision"], "chair")
+        self.assertIsNone(meta["vote"])
         self.assertIsInstance(meta["agents"], list)
         self.assertIsInstance(meta["rounds_executed"], int)
         self.assertIsInstance(meta["verify_enabled"], bool)

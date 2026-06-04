@@ -84,6 +84,8 @@ KNOWN_JURY_KEYS = (
     "auto_depth",
     # Full-transcript / verbose rendering (rendering-only; not in config_hash).
     "transcript",
+    # Final-verdict mode: "chair" synthesis or panel "vote" (rendering-only).
+    "decision",
     # Large-diff handling (issue #31).
     "diff",
 )
@@ -172,6 +174,13 @@ def validate_config(data: dict, strict: bool = False) -> list:
     if not isinstance(retries, int) or isinstance(retries, bool) or retries < 0:
         errors.append(
             f"jury.retries must be an integer >= 0 (got {retries!r})."
+        )
+
+    # Final-verdict mode (issue #220): "chair" or "vote".
+    decision = jury.get("decision")
+    if decision is not None and str(decision).strip().lower() not in ("chair", "vote"):
+        errors.append(
+            f"jury.decision must be 'chair' or 'vote' (got {decision!r})."
         )
 
     # Adaptive rounds (issue #40): max_rounds >= 1 (hard); early_stop is a bool.
@@ -397,6 +406,13 @@ class JuryConfig:
     # ``--transcript``/``--no-transcript`` override it; ``--verbose`` is summary +
     # transcript in one document.
     transcript: bool = False
+    # Final-verdict mode (issue #220): "chair" = the chair's synthesis is the
+    # verdict (default, historical); "vote" = the panel verdict is a tally of the
+    # reviewers (each votes from the worst finding they raised). Rendering-only —
+    # it does not change orchestration, so it is excluded from ``config_hash`` and
+    # the cache key. The chair still runs (its reasoning is shown as supporting
+    # narrative), and the severity-based CI gate is unaffected. CLI: ``--decision``.
+    decision: str = "chair"
 
     @property
     def effective_max_rounds(self) -> int:
@@ -519,6 +535,7 @@ def _from_dict(data: dict) -> JuryConfig:
         early_stop=bool(jury.get("early_stop", False)),
         auto_depth=bool(jury.get("auto_depth", False)),
         transcript=bool(jury.get("transcript", False)),
+        decision=(str(jury.get("decision", "chair")).strip().lower() or "chair"),
     )
 
 

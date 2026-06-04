@@ -8,10 +8,11 @@ usage: jury [-h] [--pr PR] [--repo REPO] [--diff-file DIFF_FILE]
             [--no-chunk] [--exclude GLOB] [--include GLOB] [--seed SEED]
             [--chair CHAIR] [--mock] [--strict] [--verify] [--no-verify]
             [--doctor] [--write WRITE] [-o OUTPUT] [--metadata-json PATH]
-            [--format {markdown,json,sarif}] [--transcript] [--no-transcript]
-            [--verbose] [--live] [--post-summary] [--post-inline]
-            [--post-progress] [--post-mode {single,phased}] [--dry-run]
-            [--label] [--ci] [--fail-on FAIL_ON] [--cache] [--clear-cache]
+            [--format {markdown,json,sarif}] [--decision {chair,vote}]
+            [--transcript] [--no-transcript] [--verbose] [--live]
+            [--post-summary] [--post-inline] [--post-progress]
+            [--post-mode {single,phased}] [--dry-run] [--label] [--ci]
+            [--fail-on FAIL_ON] [--cache] [--clear-cache]
             [--cache-dir CACHE_DIR] [--suggest-patches] [--patches-out PATH]
             [--incremental] [-q] [--config-validate] [--strict-config]
             [--version]
@@ -71,6 +72,10 @@ options:
                         status, rounds) as JSON
   --format {markdown,json,sarif}
                         output format for stdout/--output (default: markdown)
+  --decision {chair,vote}
+                        final verdict: 'chair' synthesis (default) or panel
+                        'vote' (tally the reviewers); overrides [jury]
+                        decision
   --transcript          render the full play-by-play transcript (each agent's
                         review, the debate, and the chair's reasoning) instead
                         of the summary report

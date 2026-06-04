@@ -169,6 +169,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="output format for stdout/--output (default: markdown)",
     )
     p.add_argument(
+        "--decision", choices=["chair", "vote"], default=None,
+        help="final verdict: 'chair' synthesis (default) or panel 'vote' (tally "
+             "the reviewers); overrides [jury] decision",
+    )
+    p.add_argument(
         "--transcript", dest="transcript", action="store_true", default=None,
         help="render the full play-by-play transcript (each agent's review, the "
              "debate, and the chair's reasoning) instead of the summary report",
@@ -894,7 +899,16 @@ def main(argv: list[str] | None = None) -> int:
             cache.store(cache_k, outcome)
             log(f"cached outcome ({cache_k[:12]}…)")
 
-    metadata = build_run_metadata(outcome, config)
+    # Final-verdict mode (issue #220): a panel vote (tally the reviewers) vs the
+    # chair's synthesis. Rendering-only — the outcome is identical; the severity-
+    # based CI gate below is unaffected. Effective = CLI flag else config.
+    decision = args.decision or config.decision
+    vote = None
+    if decision == "vote":
+        from .voting import tally_votes
+        vote = tally_votes(outcome.groups, [r.agent for r in outcome.reviews if r.ok])
+
+    metadata = build_run_metadata(outcome, config, decision=decision, vote=vote)
 
     if args.format == "json":
         from .formats import to_json
@@ -924,6 +938,7 @@ def main(argv: list[str] | None = None) -> int:
                 metadata=metadata,
                 review_scope=review_scope,
                 lead_with_summary=bool(args.verbose),
+                vote=vote,
             )
         else:
             report = render(
@@ -940,6 +955,7 @@ def main(argv: list[str] | None = None) -> int:
                 redaction_count=outcome.redaction_count,
                 metadata=metadata,
                 review_scope=review_scope,
+                vote=vote,
             )
 
     if args.metadata_json:
@@ -1013,6 +1029,7 @@ def main(argv: list[str] | None = None) -> int:
                 outcome.reviews, outcome.debate, outcome.synthesis,
                 chair=outcome.chair, findings=outcome.findings,
                 warnings=outcome.warnings, groups=outcome.groups, verify=outcome.verify,
+                vote=vote,
             )
             for i, (title, body) in enumerate(sections):
                 tail = marker if i == len(sections) - 1 else ""

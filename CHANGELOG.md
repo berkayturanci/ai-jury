@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Panel voting verdict** (#220): `--decision vote` (or `[jury] decision = "vote"`)
+  derives the final verdict by **tallying the reviewers** instead of letting a single
+  chair decide — each reviewer votes from the worst finding they raised
+  (critical/major → REQUEST CHANGES, minor/nit → COMMENT, none → APPROVE), majority
+  wins, ties resolve to the stricter stance. The report shows the tally + per-reviewer
+  ballots as the headline verdict and keeps the chair's synthesis as supporting
+  reasoning; the tally is also written to `--metadata-json`. Pure/deterministic and
+  rendering-only — it doesn't change orchestration, the cache key, or the
+  severity-based `--ci` gate (which stays the independent hard safety check).
+
 ### Changed
 
 - **Example-rich parameter reference, surfaced on the site** (#209): `docs/parameters.md`
