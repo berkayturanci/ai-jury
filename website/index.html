@@ -146,7 +146,7 @@
     <div class="wrap nav-inner">
       <div class="brand">
         <a class="brand-link" href="#top"><img src="assets/logos/mark-convergence.svg" alt="" /> ai-jury</a>
-        <a class="ver" id="site-version" href="https://github.com/berkayturanci/ai-jury/releases/latest">v1.0.0</a>
+        <a class="ver" id="site-version" href="https://github.com/berkayturanci/ai-jury/releases/latest">v1.1.0</a>
       </div>
       <div class="nav-links">
         <a class="nav-link hide-sm" href="#how">How it works</a>
@@ -420,6 +420,7 @@
 pipx install ai-jury
 
 jury init                             <span class="cm"># scaffold jury.toml (detects agents + local models)</span>
+jury init <span class="k">--wizard</span>                    <span class="cm"># guided setup: numbered questions, every one skippable</span>
 jury init <span class="k">--preset</span> offline            <span class="cm"># free, local-only ($0); also: fast / balanced / thorough</span>
 jury config show                      <span class="cm"># see the effective config that will run</span>
 jury <span class="k">--pr</span> 123                         <span class="cm"># review a GitHub PR</span>
@@ -447,6 +448,7 @@ jury <span class="k">--ci --fail-on</span> critical,major    <span class="cm"># 
         <div>
           <h3>Set up &amp; inspect</h3>
           <pre class="code"><code>jury init                   <span class="cm"># scaffold</span>
+jury init <span class="k">--wizard</span>          <span class="cm"># guided (skippable)</span>
 jury init <span class="k">--preset</span> balanced <span class="cm"># or fast/offline/thorough</span>
 jury init <span class="k">--list-agents</span>     <span class="cm"># CLIs available</span>
 jury init <span class="k">--list-models</span>     <span class="cm"># local Ollama models</span>
