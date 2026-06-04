@@ -182,28 +182,59 @@ class CliIssueTests(unittest.TestCase):
         self.assertIsInstance(code, str)
         self.assertIn("--issue", code)
 
-    def test_decision_vote_falls_back_to_chair_for_issue(self):
-        # The panel-vote vocabulary (APPROVE/REQUEST CHANGES) doesn't fit an issue;
-        # --decision vote is downgraded to the chair synthesis, with a note.
+    def test_decision_vote_uses_issue_vocabulary(self):
+        # --issue --decision vote now tallies the panel over READY/NEEDS-INFO/
+        # UNCLEAR (issue #230) — no more chair fallback, no PR vocabulary.
         with mock.patch.object(cli, "issue_body", return_value=self.ISSUE_TEXT):
-            code, out, err = _run_cli(["--mock", "--issue", "5", "--decision", "vote", "--seed", "1"])
+            code, out, _ = _run_cli(["--mock", "--issue", "5", "--decision", "vote", "--seed", "1"])
         self.assertEqual(code, 0)
-        self.assertNotIn("panel vote", out)
-        self.assertIn("not applicable to --issue", err)
+        # The vote block's headline uses the issue vocabulary, not the PR one.
+        vote_line = next(ln for ln in out.splitlines() if ln.startswith("**") and "·" in ln)
+        self.assertRegex(vote_line, r"\*\*(READY|NEEDS-INFO|UNCLEAR)\*\*")
+        self.assertNotIn("request changes", vote_line.lower())
+        self.assertNotIn("approve", vote_line.lower())
 
-    def test_config_vote_silently_falls_back_for_issue(self):
-        # [jury] decision = "vote" (not the flag) is downgraded silently — no note,
-        # since the user didn't explicitly ask on this run.
+    def test_config_vote_issue_vocabulary(self):
         import tempfile
         from pathlib import Path
         cfg = Path(tempfile.mkdtemp()) / "jury.toml"
         cfg.write_text('[jury]\nrounds = 1\nchair = "claude"\ndecision = "vote"\n'
                        '\n[[agent]]\nname = "claude"\nvendor = "anthropic"\ncommand = "x"\n')
         with mock.patch.object(cli, "issue_body", return_value=self.ISSUE_TEXT):
-            code, out, err = _run_cli(["--mock", "--issue", "5", "--config", str(cfg), "--seed", "1"])
+            code, out, _ = _run_cli(["--mock", "--issue", "5", "--config", str(cfg), "--seed", "1"])
         self.assertEqual(code, 0)
-        self.assertNotIn("panel vote", out)
-        self.assertNotIn("not applicable", err)
+        self.assertIn("panel vote", out)
+
+
+class IssueVotingTallyTests(unittest.TestCase):
+    def _grp(self, severity, reviewers):
+        from ai_jury.consensus import FindingGroup
+        from ai_jury.findings import Finding
+        f = Finding(severity=severity, file="", claim="gap", reviewer=reviewers[0])
+        return FindingGroup(representative=f, reviewers=list(reviewers), severity=severity)
+
+    def test_blocking_gap_needs_info(self):
+        from ai_jury import voting
+        r = voting.tally_votes([self._grp("major", ["claude", "codex"])],
+                               ["claude", "codex"], mode="issue")
+        self.assertEqual(r.verdict, voting.NEEDS_INFO)
+
+    def test_minor_gap_unclear(self):
+        from ai_jury import voting
+        r = voting.tally_votes([self._grp("minor", ["claude"])], ["claude"], mode="issue")
+        self.assertEqual(r.verdict, voting.UNCLEAR)
+
+    def test_no_gaps_ready(self):
+        from ai_jury import voting
+        r = voting.tally_votes([], ["claude", "codex"], mode="issue")
+        self.assertEqual(r.verdict, voting.READY)
+
+    def test_tie_breaks_to_strictest(self):
+        from ai_jury import voting
+        # claude: blocking (NEEDS-INFO) vs codex: clean (READY) -> tie -> NEEDS-INFO.
+        r = voting.tally_votes([self._grp("critical", ["claude"])],
+                               ["claude", "codex"], mode="issue")
+        self.assertEqual(r.verdict, voting.NEEDS_INFO)
 
 
 if __name__ == "__main__":

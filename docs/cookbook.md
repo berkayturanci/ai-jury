@@ -428,7 +428,8 @@ jury --pr 123 --decision vote
 
 The report shows the tally and each reviewer's ballot as the headline verdict and
 keeps the chair's synthesis as supporting reasoning; the tally is also written to
-`--metadata-json`. It's a rendering choice — it doesn't change the cache key, and
+`--metadata-json`. It works with `--issue` too — there the panel votes over the
+issue vocabulary (**NEEDS-INFO > UNCLEAR > READY**) instead. It's a rendering choice — it doesn't change the cache key, and
 the severity-based `--ci` gate is unaffected (a lone critical still fails CI even
 on a majority APPROVE).
 

@@ -942,17 +942,13 @@ def main(argv: list[str] | None = None) -> int:
     # chair's synthesis. Rendering-only — the outcome is identical; the severity-
     # based CI gate below is unaffected. Effective = CLI flag else config.
     decision = args.decision or config.decision
-    # Issue review (#221) uses a READY/NEEDS-INFO verdict from the chair synthesis;
-    # the panel-vote vocabulary (APPROVE/REQUEST CHANGES) doesn't fit, so force
-    # chair decision for issues (note it if the user explicitly asked to vote).
-    if args.issue and decision == "vote":
-        if args.decision == "vote":
-            log("note: --decision vote is not applicable to --issue; using chair synthesis")
-        decision = "chair"
     vote = None
     if decision == "vote":
         from .voting import tally_votes
-        vote = tally_votes(outcome.groups, [r.agent for r in outcome.reviews if r.ok])
+        vote = tally_votes(
+            outcome.groups, [r.agent for r in outcome.reviews if r.ok],
+            mode=("issue" if args.issue else "code"),
+        )
 
     metadata = build_run_metadata(outcome, config, decision=decision, vote=vote)
 

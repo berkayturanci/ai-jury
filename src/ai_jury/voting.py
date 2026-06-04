@@ -19,21 +19,40 @@ APPROVE = "APPROVE"
 COMMENT = "COMMENT"
 REQUEST_CHANGES = "REQUEST CHANGES"
 NO_QUORUM = "NO QUORUM"
+# Issue-review verdict vocabulary (issue #230): the panel votes over an issue's
+# completeness instead of a diff's correctness.
+READY = "READY"
+NEEDS_INFO = "NEEDS-INFO"
+UNCLEAR = "UNCLEAR"
 
-# Conservatism order for tie-breaking: a tie resolves to the stricter stance.
-_ORDER = {APPROVE: 0, COMMENT: 1, REQUEST_CHANGES: 2}
+# Per-mode vocabulary: the worst gap/finding a reviewer raised maps to a stance
+# (blocking severity → strict, middling → soft, none → clear), and ties resolve
+# to the strictest stance via the ``order`` (higher = stricter).
+_MODES = {
+    "code": {
+        "blocking": REQUEST_CHANGES, "middling": COMMENT, "clear": APPROVE,
+        # Keys are listed strictest-first so the rendered tally reads
+        # "request changes · comment · approve"; the integer values (not key
+        # order) drive the tie-break, so display order is free to be intuitive.
+        "order": {REQUEST_CHANGES: 2, COMMENT: 1, APPROVE: 0},
+    },
+    "issue": {
+        "blocking": NEEDS_INFO, "middling": UNCLEAR, "clear": READY,
+        "order": {NEEDS_INFO: 2, UNCLEAR: 1, READY: 0},
+    },
+}
 
-# Worst-severity → vote. critical/major are blocking; minor/nit are comments.
+# Worst-severity thresholds. critical/major are blocking; minor/nit are middling.
 _MAJOR_RANK = SEVERITY_ORDER["major"]
 _NIT_RANK = SEVERITY_ORDER["nit"]
 
 
-def _severity_to_vote(rank: int) -> str:
+def _severity_to_vote(rank: int, vocab: dict) -> str:
     if rank <= _MAJOR_RANK:
-        return REQUEST_CHANGES
+        return vocab["blocking"]
     if rank <= _NIT_RANK:
-        return COMMENT
-    return APPROVE
+        return vocab["middling"]
+    return vocab["clear"]
 
 
 @dataclass
@@ -50,15 +69,18 @@ class VoteResult:
     ballots: list[Ballot] = field(default_factory=list)
 
 
-def tally_votes(groups, reviewers) -> VoteResult:
+def tally_votes(groups, reviewers, *, mode: str = "code") -> VoteResult:
     """Tally a panel verdict from the consensus ``groups`` and ``reviewers``.
 
     Each reviewer votes from the worst-severity group they contributed to that was
-    not marked ``unsupported`` by the verifier. The panel verdict is whichever vote
-    has the most ballots; a tie resolves toward the more conservative stance
-    (REQUEST CHANGES > COMMENT > APPROVE). With no reviewers the verdict is
-    ``NO QUORUM``.
+    not marked ``unsupported`` by the verifier. The verdict is whichever stance has
+    the most ballots; a tie resolves toward the strictest stance. The vocabulary is
+    mode-aware (issue #230): ``code`` → REQUEST CHANGES > COMMENT > APPROVE;
+    ``issue`` → NEEDS-INFO > UNCLEAR > READY (the panel judges completeness, not
+    correctness). With no reviewers the verdict is ``NO QUORUM``.
     """
+    vocab = _MODES.get(mode, _MODES["code"])
+    order = vocab["order"]
     ballots: list[Ballot] = []
     for rv in reviewers:
         worst_rank: int | None = None
@@ -71,18 +93,18 @@ def tally_votes(groups, reviewers) -> VoteResult:
             if worst_rank is None or rank < worst_rank:
                 worst_rank = rank
         if worst_rank is None:
-            ballots.append(Ballot(rv, APPROVE, "no supported findings raised"))
+            ballots.append(Ballot(rv, vocab["clear"], "no supported findings raised"))
         else:
             sev = SEVERITIES[worst_rank]
-            ballots.append(Ballot(rv, _severity_to_vote(worst_rank), f"worst finding: {sev}"))
+            ballots.append(Ballot(rv, _severity_to_vote(worst_rank, vocab), f"worst finding: {sev}"))
 
-    tally = {APPROVE: 0, COMMENT: 0, REQUEST_CHANGES: 0}
+    tally = dict.fromkeys(order, 0)
     for b in ballots:
         tally[b.vote] += 1
 
     if not ballots:
         return VoteResult(NO_QUORUM, tally, ballots)
 
-    # Most votes wins; tie-break toward the more conservative stance.
-    verdict = max(tally, key=lambda v: (tally[v], _ORDER[v]))
+    # Most votes wins; tie-break toward the strictest stance.
+    verdict = max(tally, key=lambda v: (tally[v], order[v]))
     return VoteResult(verdict, tally, ballots)

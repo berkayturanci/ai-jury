@@ -100,6 +100,22 @@ class TallyVotesTests(unittest.TestCase):
         self.assertEqual(r.ballots, [])
 
 
+class VoteRenderOrderTests(unittest.TestCase):
+    def test_tally_renders_strictest_first(self):
+        # The tally headline lists the strictest stance first (caught as a
+        # regression by the dogfood jury on #230).
+        from ai_jury import report
+        vote = voting.tally_votes([_grp("major", ["a"]), _grp("minor", ["b"])], ["a", "b"])
+        line = next(ln for ln in report._vote_block(vote) if ln.startswith("**"))
+        self.assertLess(line.index("request changes"), line.index("approve"))
+
+    def test_issue_tally_renders_strictest_first(self):
+        from ai_jury import report
+        vote = voting.tally_votes([_grp("major", ["a"])], ["a"], mode="issue")
+        line = next(ln for ln in report._vote_block(vote) if ln.startswith("**"))
+        self.assertLess(line.index("needs-info"), line.index("ready"))
+
+
 class CliDecisionTests(unittest.TestCase):
     def test_default_is_chair(self):
         code, out, _ = _run(["--mock", "--diff-file", "-", "-q", "--seed", "1"])
