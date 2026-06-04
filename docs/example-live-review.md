@@ -85,7 +85,8 @@ across CI/release plumbing, docs contracts, and the orchestrator itself.
 - **An abdication is not a clean pass.** On one chunk a cloud reviewer returned
   only *"I can't assist with that request."* The jury **excluded it from
   consensus** — "an abdication, not a review" — instead of silently counting the
-  non-answer as an APPROVE. A single chair would have had no such guard.
+  non-answer as an APPROVE. A single-reviewer tool has no such guard. →
+  [Full case study](case-study-abdication.md).
 - **The local model is a cheaper, useful seat.** Free, offline `qwen` was the
   *fastest* panelist (≈253 s vs. 660–850 s for the cloud CLIs) and adds vendor
   diversity at zero marginal cost — diversity, not frontier parity. Mix it with
