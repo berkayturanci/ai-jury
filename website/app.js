@@ -215,7 +215,7 @@
         verdict.className = "verdict-badge pending";
         verdict.textContent = "judging…";
       }
-      if (stages[5]) stages[5].classList.remove("changed");
+      if (stages[5]) stages[5].classList.remove("changed", "needsinfo", "unclear");
       if (findings) { findings.hidden = true; findings.innerHTML = ""; }
     }
     function revealVerdict(s) {
@@ -223,9 +223,13 @@
         verdict.className = "verdict-badge " + s.vClass + " pop";
         verdict.textContent = s.vLabel;
       }
-      // a blocking verdict (REQUEST CHANGES / NEEDS-INFO) flips the verdict stage red
-      var blocking = s.vClass === "changes" || s.vClass === "needsinfo";
-      if (stages[5]) stages[5].classList.toggle("changed", blocking);
+      // verdict-stage glow matches the verdict: changes→red, needsinfo→amber, unclear→indigo
+      if (stages[5]) {
+        stages[5].classList.remove("changed", "needsinfo", "unclear");
+        if (s.vClass === "changes") stages[5].classList.add("changed");
+        else if (s.vClass === "needsinfo") stages[5].classList.add("needsinfo");
+        else if (s.vClass === "unclear") stages[5].classList.add("unclear");
+      }
       if (findings) {
         if (s.findings) { findings.hidden = false; findings.innerHTML = '<span class="sev-dot"></span>' + s.findings; }
         else { findings.hidden = true; findings.innerHTML = ""; }
