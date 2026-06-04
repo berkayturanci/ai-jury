@@ -14,7 +14,14 @@ against their current docs before deciding.
   (`claude`, `codex`, `agy`/`gemini`, `qwen`, …) as a subprocess. Each reviewer runs in
   its native environment. *This project, Magpie, agent-jury, the-jury.*
 - **API-level multi-model** — calls models through provider/aggregator APIs rather than
-  their CLIs. *Star Chamber (Mozilla.ai).*
+  their CLIs. *Star Chamber (Mozilla.ai); Calimero ai-code-reviewer (parallel specialized
+  agents + consensus scoring, but Anthropic-only).*
+- **Host-assistant plugins** — install multi-persona reviewers as subagents *inside* one
+  coding assistant (Claude Code, Cursor, …) and let them debate, but within that single
+  host/vendor rather than across separate vendor CLIs. *e.g. open-code-review.*
+- **Per-rule CI checks** — run markdown-defined checks against a PR diff in CI and post
+  each as its own pass/fail status check; no cross-agent debate or consensus. *e.g.
+  Continue's AI checks.*
 - **Hosted PR reviewers** — managed SaaS that reviews PRs in your repo with a dashboard,
   policies, and inline comments. *e.g. CodeRabbit, Greptile, GitHub Copilot code review.*
 - **Single-reviewer CLI** — one model reviews a PR, no debate. *e.g. reviewd.*
