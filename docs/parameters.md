@@ -14,6 +14,12 @@ the default shown below.
 Copy-pasteable commands for the everyday jobs. Each line says what it does.
 
 ```bash
+# Scaffold a jury.toml with a guided, skippable wizard
+jury init --wizard
+#   → numbered questions for the most-used settings (reviewers, depth, chair vs.
+#     vote, verify, context, CI gate); Enter keeps each default. Plain `jury init`
+#     (or `--preset`) still works for a one-shot scaffold.
+
 # Review a GitHub PR (uses `gh` to fetch the diff)
 jury --pr 123
 #   → run the panel on PR #123 and print the verdict to stdout
@@ -30,6 +36,14 @@ jury --issue 42
 # Review an issue and post the verdict back as a comment on that issue
 jury --issue 42 --post
 #   → posts via `gh issue comment` (PR-only flags like --post-inline are rejected)
+
+# Decide an issue by panel vote instead of a single chair
+jury --issue 42 --decision vote
+#   → each reviewer votes; tally is NEEDS-INFO > UNCLEAR > READY, ties go stricter
+
+# Stream an issue review live AND mirror each step to the issue thread
+jury --issue 42 --live --post
+#   → terminal play-by-play, with each step posted to the issue as it lands
 
 # Review the current branch against the base, from a piped diff
 git diff origin/HEAD... | jury --diff-file -
@@ -191,19 +205,21 @@ apply to **markdown only**; `--live` streams markdown steps to stdout (and, with
 document for code-scanning; `jury --pr 123 --transcript -o review.md` writes the
 full transcript to a file; `jury --pr 123 -q` silences the stderr progress logs.
 
-### GitHub posting (require `--pr`)
+### GitHub posting
 
 | Flag | Value | Default | Description |
 | --- | --- | --- | --- |
-| `--post-summary`, `--post` | flag | off | Post the report as a single summary comment. |
-| `--post-inline` | flag | off | Post inline review comments on located findings. |
-| `--post-progress` | flag | off | Keep a live, sticky status comment updated per round/chunk. |
-| `--post-mode` | `single` \| `phased` | `single` | With `--post-summary`: one comment, or separate Round 1 / debate / decision comments. |
+| `--post-summary`, `--post` | flag | off | Post the report as a single summary comment. Works with **`--pr`** (via `gh pr comment`) **and `--issue`** (via `gh issue comment`). |
+| `--post-inline` | flag | off | Post inline review comments on located findings. **`--pr` only.** |
+| `--post-progress` | flag | off | Keep a live, sticky status comment updated per round/chunk. **`--pr` only.** |
+| `--post-mode` | `single` \| `phased` | `single` | With `--post-summary`: one comment, or separate Round 1 / debate / decision comments. **`--pr` only.** |
 | `--dry-run` | flag | off | With `--post-inline`, print the payload without calling GitHub. |
-| `--label` | flag | off | Apply classification labels (review-effort / risk / security) to the PR. |
+| `--label` | flag | off | Apply classification labels (review-effort / risk / security) to the PR. **`--pr` only.** |
 
-**Depends on / conflicts:** every flag in this group requires `--pr` (bare
-`--pr` only selects the source — it never posts). `--post-mode` requires
+**Depends on / conflicts:** `--post`/`--post-summary` work with `--pr` **or**
+`--issue` (bare `--pr`/`--issue` only selects the source — it never posts). The
+other flags here — `--post-inline`, `--post-progress`, `--post-mode`, `--label` —
+require `--pr` and are rejected with `--issue`. `--post-mode` requires
 `--post-summary`/`--post`; `--post-mode` accepts `single` | `phased`.
 `--dry-run` only affects `--post-inline`.
 
@@ -395,6 +411,20 @@ transcript = true   # default the markdown report to the full play-by-play
 ### Severities
 Ordered most → least severe: **`critical`**, **`major`**, **`minor`**, **`nit`**, **`info`**.
 Alias: `blocker` → `critical`. Used by `--fail-on` / `[jury.ci] fail_on`.
+
+### Verdicts
+The final verdict vocabulary is **mode-aware** (the rubric differs for code vs. an issue):
+
+| Mode | Strictest → most permissive |
+| --- | --- |
+| **PR / diff** (`--pr`, `--diff-file`) | **`REQUEST CHANGES`** > **`COMMENT`** > **`APPROVE`** |
+| **Issue** (`--issue`) | **`NEEDS-INFO`** > **`UNCLEAR`** > **`READY`** |
+
+A panel vote (`--decision vote`) tallies along the same order — majority wins,
+ties resolve to the **stricter** stance.
+
+### Decision modes (`--decision` / `[jury] decision`)
+`chair` (default — the chair synthesizes the verdict) · `vote` (panel vote; the chair's synthesis becomes supporting reasoning). Rendering-only — not part of the config hash, cache key, or the `--ci` gate.
 
 ### Vendors
 `anthropic` · `openai` · `google` · `local` (OpenAI-compatible: Ollama, llama.cpp, vLLM, LM Studio).

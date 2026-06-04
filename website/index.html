@@ -93,6 +93,11 @@
       },
       {
         "@type": "Question",
+        "name": "Can ai-jury review issues, not just pull requests?",
+        "acceptedAnswer": { "@type": "Answer", "text": "Yes. jury --issue 42 convenes the same panel on a GitHub issue and judges it for completeness and clarity — reproduction steps, expected vs actual, scope/acceptance criteria, missing context — with a READY / NEEDS-INFO / UNCLEAR verdict instead of the PR's APPROVE / REQUEST-CHANGES / COMMENT. Panel voting (--decision vote), live streaming (--live), and posting the verdict back (--post, via gh issue comment) all work for issues too." }
+      },
+      {
+        "@type": "Question",
         "name": "Can ai-jury run completely offline and free?",
         "acceptedAnswer": { "@type": "Answer", "text": "Yes. Add a local open-weight model as a panel seat (vendor = \"local\" via Ollama, llama.cpp, vLLM, or LM Studio) and run with --preset offline for a $0, fully-offline review, or mix one local seat with cloud CLIs for more vendor diversity." }
       },
@@ -104,7 +109,7 @@
       {
         "@type": "Question",
         "name": "What do I need installed to use ai-jury?",
-        "acceptedAnswer": { "@type": "Answer", "text": "Python 3.11+ and at least one reviewer — an agent CLI (claude, codex, agy) or a local model via Ollama. The gh CLI is needed for --pr. The tool itself is stdlib-only, with no third-party Python dependencies." }
+        "acceptedAnswer": { "@type": "Answer", "text": "Python 3.11+ and at least one reviewer — an agent CLI (claude, codex, agy) or a local model via Ollama. The gh CLI is needed for --pr / --issue and for posting comments. The tool itself is stdlib-only, with no third-party Python dependencies." }
       },
       {
         "@type": "Question",
@@ -412,7 +417,9 @@
           <div class="s3-n">3</div>
           <div class="s3-k">review</div>
           <code class="s3-cmd">jury --pr 123</code>
-          <p>Convene the panel on a PR — debate, verify, and one synthesized verdict.</p>
+          <p><strong>3a</strong> — convene the panel on a PR: debate, verify, one synthesized verdict.</p>
+          <code class="s3-cmd" style="margin-top:.6rem">jury --issue 42</code>
+          <p><strong>3b</strong> — or review an <strong>issue</strong> for completeness &amp; clarity (READY / NEEDS-INFO / UNCLEAR).</p>
         </div>
       </div>
 
@@ -424,16 +431,21 @@ jury init <span class="k">--wizard</span>                    <span class="cm"># 
 jury init <span class="k">--preset</span> offline            <span class="cm"># free, local-only ($0); also: fast / balanced / thorough</span>
 jury config show                      <span class="cm"># see the effective config that will run</span>
 jury <span class="k">--pr</span> 123                         <span class="cm"># review a GitHub PR</span>
-jury <span class="k">--issue</span> 42                       <span class="cm"># review an ISSUE for completeness (READY/NEEDS-INFO)</span>
 jury <span class="k">--pr</span> 123 <span class="k">--post --post-progress</span>  <span class="cm"># live: a sticky PR comment updated each round</span>
 jury <span class="k">--pr</span> 123 <span class="k">--live</span>                  <span class="cm"># stream each step to the terminal as it lands</span>
 jury <span class="k">--pr</span> 123 <span class="k">--decision</span> vote         <span class="cm"># verdict by panel vote instead of a single chair</span>
 jury <span class="k">--pr</span> 123 <span class="k">--auto</span>                  <span class="cm"># auto-depth: scale rounds/verify to the diff</span>
+
+jury <span class="k">--issue</span> 42                       <span class="cm"># review an ISSUE for completeness (READY/NEEDS-INFO/UNCLEAR)</span>
+jury <span class="k">--issue</span> 42 <span class="k">--decision</span> vote       <span class="cm"># issue verdict by panel vote (NEEDS-INFO &gt; UNCLEAR &gt; READY)</span>
+jury <span class="k">--issue</span> 42 <span class="k">--post</span>               <span class="cm"># post the verdict back to the issue thread</span>
+jury <span class="k">--issue</span> 42 <span class="k">--live --post</span>         <span class="cm"># stream + post each step to the issue as it lands</span>
+
 jury <span class="k">--ci --fail-on</span> critical,major    <span class="cm"># gate CI on blocking findings</span></code></pre>
       <p class="muted reveal" style="margin-top:1rem">
         Requires Python 3.11+ and at least one reviewer — an agent CLI (<code class="mono" style="color:var(--accent-2)">claude</code>,
         <code class="mono" style="color:var(--accent-2)">codex</code>, <code class="mono" style="color:var(--accent-2)">agy</code>)
-        or a free local model via Ollama. <code class="mono" style="color:var(--accent-2)">gh</code> is needed for <code class="mono" style="color:var(--accent-2)">--pr</code>.
+        or a free local model via Ollama. <code class="mono" style="color:var(--accent-2)">gh</code> is needed for <code class="mono" style="color:var(--accent-2)">--pr</code> / <code class="mono" style="color:var(--accent-2)">--issue</code> and for posting comments.
       </p>
     </section>
 
@@ -448,7 +460,7 @@ jury <span class="k">--ci --fail-on</span> critical,major    <span class="cm"># 
         <div>
           <h3>Set up &amp; inspect</h3>
           <pre class="code"><code>jury init                   <span class="cm"># scaffold</span>
-jury init <span class="k">--wizard</span>          <span class="cm"># guided (skippable)</span>
+jury init <span class="k">--wizard</span>          <span class="cm"># guided Q&amp;A (skippable)</span>
 jury init <span class="k">--preset</span> balanced <span class="cm"># or fast/offline/thorough</span>
 jury init <span class="k">--list-agents</span>     <span class="cm"># CLIs available</span>
 jury init <span class="k">--list-models</span>     <span class="cm"># local Ollama models</span>
@@ -478,6 +490,7 @@ endpoint = <span class="s">"http://localhost:11434/v1"</span></code></pre>
       <div class="cfg-keys reveal">
         <div class="cfg-key"><code>rounds</code><span><code>1</code> = independent review only · <code>2</code> = + a debate round. With <code>early_stop</code> / <code>max_rounds</code>, a unanimous panel stops early.</span></div>
         <div class="cfg-key"><code>chair</code><span>Which reviewer synthesizes the final verdict and writes the report. Defaults to the first available agent.</span></div>
+        <div class="cfg-key"><code>decision</code><span><code>chair</code> (default) lets the chair decide, or <code>vote</code> tallies the panel — majority wins, ties resolve to the stricter stance. The <code>--decision</code> flag. Works for PRs <em>and</em> issues.</span></div>
         <div class="cfg-key"><code>verify</code><span>The chair re-judges each candidate finding against the code to drop false positives — evidence is kept in the report.</span></div>
         <div class="cfg-key"><code>auto_depth</code><span>Scales rounds &amp; verify to the diff — docs-only → shallow, security-touching → full. The <code>--auto</code> flag.</span></div>
         <div class="cfg-key"><code>[[agent]]</code><span>Per reviewer: <code>vendor</code>, <code>command</code>, <code>extra_args</code>; for a local seat use <code>vendor = "local"</code> + <code>endpoint</code> + <code>model</code>.</span></div>
@@ -488,7 +501,7 @@ endpoint = <span class="s">"http://localhost:11434/v1"</span></code></pre>
 
       <p class="muted reveal cfg-note">
         Start from a <strong style="color:var(--text)">preset</strong> — <code class="mono">jury init --preset fast|balanced|thorough|offline</code> — then tweak. CLI flags
-        override the file per run (<code class="mono">--rounds</code>, <code class="mono">--verify</code>, <code class="mono">--auto</code>, <code class="mono">--chair</code>). Validate with
+        override the file per run (<code class="mono">--rounds</code>, <code class="mono">--verify</code>, <code class="mono">--auto</code>, <code class="mono">--chair</code>, <code class="mono">--decision</code>). Validate with
         <code class="mono">jury --config-validate</code>; <code class="mono">--strict-config</code> turns warnings into errors. An optional, trusted
         <code class="mono">.jury/policy.toml</code> adds high-risk paths, focus areas, and severity overrides — kept separate from <code class="mono">jury.toml</code>.
       </p>
@@ -674,6 +687,10 @@ endpoint = <span class="s">"http://localhost:11434/v1"</span></code></pre>
           <div class="qa-body"><p>Never automatically. By design it reviews and reports. With <code class="mono">--suggest-patches</code> it can emit <em>inspectable</em> suggested patches for <strong>verified</strong> findings only — you review and apply them yourself.</p></div>
         </details>
         <details class="qa">
+          <summary>Can it review issues, not just PRs?<span class="chev"></span></summary>
+          <div class="qa-body"><p>Yes. <code class="mono">jury --issue 42</code> convenes the same panel on a GitHub <strong>issue</strong> and judges it for completeness &amp; clarity — reproduction steps, expected vs actual, scope/acceptance criteria, missing context — with a <code class="mono">READY / NEEDS-INFO / UNCLEAR</code> verdict instead of the PR's APPROVE / REQUEST-CHANGES / COMMENT. Panel voting (<code class="mono">--decision vote</code>), live streaming (<code class="mono">--live</code>), and posting the verdict back (<code class="mono">--post</code>, via <code class="mono">gh issue comment</code>) all work for issues too.</p></div>
+        </details>
+        <details class="qa">
           <summary>Can it run completely offline and free?<span class="chev"></span></summary>
           <div class="qa-body"><p>Yes. Add a local open-weight model as a panel seat (<code class="mono">vendor = "local"</code> via Ollama, llama.cpp, vLLM, or LM Studio) and run with <code class="mono">--preset offline</code> for a $0, fully-offline review — or mix one local seat with cloud CLIs for more vendor diversity.</p></div>
         </details>
@@ -683,7 +700,7 @@ endpoint = <span class="s">"http://localhost:11434/v1"</span></code></pre>
         </details>
         <details class="qa">
           <summary>What do I need installed?<span class="chev"></span></summary>
-          <div class="qa-body"><p>Python 3.11+ and at least one reviewer — an agent CLI (<code class="mono">claude</code>, <code class="mono">codex</code>, <code class="mono">agy</code>) or a local model via Ollama. The <code class="mono">gh</code> CLI is needed for <code class="mono">--pr</code>. The tool itself is <strong>stdlib-only</strong> — no third-party Python dependencies.</p></div>
+          <div class="qa-body"><p>Python 3.11+ and at least one reviewer — an agent CLI (<code class="mono">claude</code>, <code class="mono">codex</code>, <code class="mono">agy</code>) or a local model via Ollama. The <code class="mono">gh</code> CLI is needed for <code class="mono">--pr</code> / <code class="mono">--issue</code> and for posting comments. The tool itself is <strong>stdlib-only</strong> — no third-party Python dependencies.</p></div>
         </details>
         <details class="qa">
           <summary>How does it keep secrets and untrusted diffs safe?<span class="chev"></span></summary>

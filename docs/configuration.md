@@ -25,7 +25,8 @@ errors (exit `2`).
 
 - **Hard errors** (always fail): `rounds < 1`, non-positive `timeout` (jury or
   per-agent), duplicate agent names, missing/empty agent `name` or `command`, no
-  `[[agent]]` entries at all, malformed tables.
+  `[[agent]]` entries at all, `decision` other than `"chair"` / `"vote"`,
+  malformed tables.
 - **Warnings** (fail only under `--strict-config`): unknown vendor, `chair` not
   matching an enabled agent, unknown top-level/section/agent keys.
 
@@ -52,6 +53,17 @@ chosen rounds and the reason are recorded in the run metadata. A fixed `--rounds
 benchmarking. Risk-aware `auto_depth` (`--auto`) instead derives depth from a
 pre-review diff profile. CLI overrides: `--early-stop` / `--no-early-stop`,
 `--max-rounds`, `--auto`.
+
+## Verdict source (`decision` = `chair` | `vote`)
+
+By default (`decision = "chair"`) the chair synthesizes the final verdict. With
+`decision = "vote"` (CLI `--decision vote`) the verdict is a **panel tally**: each
+reviewer votes from the worst finding they raised, majority wins, and ties resolve
+to the **stricter** stance; the chair's synthesis is kept as supporting reasoning.
+The tally is **mode-aware** — a PR/diff votes `REQUEST CHANGES > COMMENT > APPROVE`,
+an `--issue` votes `NEEDS-INFO > UNCLEAR > READY`. Voting is **rendering-only**: it
+does not change orchestration, the config hash / cache key, or the severity-based
+`--ci` gate, which stays the independent hard safety check.
 
 ## Large-diff handling (`[jury.diff]`)
 
