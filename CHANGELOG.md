@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Panel voting for issues** (#230): `--decision vote` now works with `--issue`
+  too. The vote is mode-aware — a diff/PR tallies REQUEST CHANGES > COMMENT >
+  APPROVE, an issue tallies **NEEDS-INFO > UNCLEAR > READY** (each reviewer votes
+  from the worst gap they raised; majority wins, ties resolve to the stricter
+  stance, the chair stays the default). Replaces the previous chair-only fallback.
 - **Issue review** (#221): `jury --issue N` reviews a GitHub **issue** for
   completeness and clarity (reproduction steps, expected vs actual, scope /
   acceptance criteria, missing context, actionability) using the same

@@ -151,14 +151,14 @@ def _consensus_block(groups) -> list[str]:
 
 
 def _vote_block(vote) -> list[str]:
-    """Render the panel-vote verdict + tally + per-reviewer ballots (issue #220)."""
+    """Render the panel-vote verdict + tally + per-reviewer ballots (issue #220).
+
+    Vocabulary-agnostic: the tally renders whatever stances the vote carries
+    (code: REQUEST CHANGES/COMMENT/APPROVE; issue: NEEDS-INFO/UNCLEAR/READY).
+    """
     lines = ["## Verdict — panel vote\n"]
-    lines.append(
-        f"**{vote.verdict}** — "
-        f"{vote.tally.get('REQUEST CHANGES', 0)} request changes · "
-        f"{vote.tally.get('COMMENT', 0)} comment · "
-        f"{vote.tally.get('APPROVE', 0)} approve\n"
-    )
+    tally = " · ".join(f"{n} {label.lower()}" for label, n in vote.tally.items())
+    lines.append(f"**{vote.verdict}** — {tally}\n")
     for b in vote.ballots:
         lines.append(f"- `{b.reviewer}`: **{b.vote}** ({b.reason})")
     lines.append("")
