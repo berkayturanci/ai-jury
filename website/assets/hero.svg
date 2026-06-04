@@ -50,7 +50,7 @@
   <text x="64" y="186" fill="#f3f6fc" font-size="52" font-weight="700" letter-spacing="-1.5">Install once. Run a</text>
   <text x="64" y="246" fill="url(#title)" font-size="52" font-weight="700" letter-spacing="-1.5">cross-vendor review jury</text>
   <text x="64" y="306" fill="#f3f6fc" font-size="52" font-weight="700" letter-spacing="-1.5">anywhere.</text>
-  <text x="66" y="350" fill="#9aa8c4" font-size="20" font-weight="400" font-family="&#39;IBM Plex Sans&#39;, sans-serif">Native coding-agent CLIs + a free local model review the same diff, debate, and synthesize one verdict.</text>
+  <text x="66" y="350" fill="#9aa8c4" font-size="20" font-weight="400" font-family="&#39;IBM Plex Sans&#39;, sans-serif">Native coding-agent CLIs + a free local model review the same PR or issue, debate, and reach a verdict.</text>
 
   
   <g transform="translate(66,408) scale(0.925)">
@@ -68,7 +68,7 @@
     
     <rect x="0" y="48" width="150" height="72" rx="14" fill="#0f1526" stroke="#25304b"></rect>
     <text x="75" y="80" fill="#5d6b89" font-size="11" font-weight="600" letter-spacing="1" text-anchor="middle" font-family="&#39;JetBrains Mono&#39;, monospace">INPUT</text>
-    <text x="75" y="102" fill="#f3f6fc" font-size="18" font-weight="600" text-anchor="middle">diff / PR</text>
+    <text x="75" y="102" fill="#f3f6fc" font-size="18" font-weight="600" text-anchor="middle">PR · issue</text>
 
     
     <g>
@@ -94,7 +94,7 @@
     
     <rect x="856" y="48" width="124" height="72" rx="14" fill="#0f1526" stroke="#3a3f8a"></rect>
     <text x="918" y="80" fill="#5d6b89" font-size="11" font-weight="600" letter-spacing="1" text-anchor="middle" font-family="&#39;JetBrains Mono&#39;, monospace">SYNTHESIS</text>
-    <text x="918" y="102" fill="#818cf8" font-size="18" font-weight="700" text-anchor="middle">chair</text>
+    <text x="918" y="102" fill="#818cf8" font-size="15" font-weight="700" text-anchor="middle">chair · vote</text>
 
     
     <rect x="996" y="48" width="156" height="72" rx="14" fill="#0f1526" stroke="#10b981"></rect>

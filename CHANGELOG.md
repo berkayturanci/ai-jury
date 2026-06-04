@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Website: refreshed hero + OG banner art.** Updated `website/assets/` (`hero.svg`/`hero-light.svg`, `hero.png` 2400×1260, `og-banner.png` 1200×630) to the new design and bumped `sitemap.xml` lastmod to 2026-06-05.
 - **Taglines now reflect the full scope.** The one-line descriptions in the README, the skill (`SKILL.md`), the plugin manifest, and `positioning.md` said only "review a PR/diff → a chair synthesizes one verdict"; they now read "review a diff, PR, or issue → cross-examine → verify → one verdict, a chair's synthesis **or a panel vote**", matching the shipped feature set.
 - **Docs/site: published the full live-run report.** The verbatim Markdown report from the v1.1.0 four-vendor run is now a docs page (`docs/live-review-report.md`, dated *v1.1.0 · 2026-06-04*), registered in the portal and linked from the live-review page and the homepage "Real run" card — every finding/verification/verdict exactly as the tool wrote it. Future re-runs (after fixes) can be added as their own dated reports.
 - **README refresh** (closes #255). The **Status** "Shipped" list now includes issue review, chair-or-panel-vote, live play-by-play, full-transcript/verbose, and the `jury init --wizard`; the **CLI compatibility contract** "Stable flags" list was expanded to the full current parser surface (grouped by intent); and the error-message table no longer implies `--post-summary` is PR-only (it posts to `--issue` too).
