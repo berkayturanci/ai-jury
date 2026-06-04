@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Docs & website: complete the issue / voting / wizard coverage** (#236).
+  Corrected PR-only phrasing now that `--post`/`--post-summary` post to issues
+  too (via `gh issue comment`): the parameter-reference "GitHub posting" section,
+  the cookbook, and the skill doc no longer imply posting requires `--pr`. Added
+  the guided wizard (`jury init --wizard`) to the Common recipes and cookbook
+  setup; documented `decision = chair|vote` and the mode-aware verdict
+  vocabulary (PR `REQUEST CHANGES > COMMENT > APPROVE`; issue `NEEDS-INFO >
+  UNCLEAR > READY`) in the Enumerations and configuration behaviour sections. The
+  website gains an issue step in the Quickstart, more `--issue` examples under
+  "More commands", a `decision` key in the Configuration list, and an
+  issue-review FAQ entry (visible + structured-data).
+
 ## [1.1.0] - 2026-06-04
 
 ### Added

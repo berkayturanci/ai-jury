@@ -80,7 +80,7 @@ must have:
 - **`jury`** — required. The CLI entry point on `PATH`
   (`pipx install ai-jury`). The skill is inert without it.
 - **`gh`** — required only for GitHub-sourced or GitHub-posted runs (`--pr`,
-  `--post-summary` / `--post-inline`). Must be authenticated.
+  `--issue`, `--post-summary` / `--post-inline`). Must be authenticated.
 - **`claude` / `codex` / `agy`** — optional native agent CLIs. At least **one** must be
   installed for a live review; missing CLIs are skipped automatically (unless `--strict`).
   The jury runs with whoever is available.
@@ -120,10 +120,23 @@ Review a GitHub pull request and report the verdict:
 jury --pr 123
 ```
 
-Post the chair verdict back as a PR comment (requires authenticated `gh`):
+Post the verdict back as a comment (requires authenticated `gh`) — works for a
+PR (`gh pr comment`) or an issue (`gh issue comment`):
 
 ```bash
 jury --pr 123 --post
+```
+
+### Issue review
+
+Point the same jury at a GitHub **issue** to judge it for completeness and
+clarity (reproduction steps, expected vs actual, scope, missing context). The
+verdict vocabulary is **READY / NEEDS-INFO / UNCLEAR**:
+
+```bash
+jury --issue 42                 # print the completeness verdict
+jury --issue 42 --post          # comment it back on the issue
+jury --issue 42 --decision vote # decide by panel vote (NEEDS-INFO > UNCLEAR > READY)
 ```
 
 ### Diff-file review
@@ -147,7 +160,8 @@ reviewers (or a ship gate) act on them.
 git diff origin/HEAD... | jury --diff-file - -o jury-report.md
 ```
 
-The skill reports the chair verdict (APPROVE / COMMENT / REQUEST CHANGES), the consensus
+The skill reports the chair verdict (APPROVE / COMMENT / REQUEST CHANGES for a PR
+or diff; READY / NEEDS-INFO / UNCLEAR for an `--issue`), the consensus
 findings (issues 2+ agents agreed on, with `path:line`), and any disputed findings worth
 a human decision — leaving the actual ship/block decision to the host workflow.
 

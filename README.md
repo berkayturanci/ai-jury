@@ -167,11 +167,12 @@ jury init                              # scaffold jury.toml (detects agents + lo
 jury init --wizard                     # guided setup: numbered questions, every one skippable
 jury init --preset balanced            # one-command setup from a preset (offline|fast|balanced|thorough)
 jury --pr 123                          # review a GitHub PR
-jury --issue 42 --decision vote        # issue review, verdict by panel vote (READY/NEEDS-INFO/UNCLEAR)
-jury --issue 42                        # review an ISSUE for completeness/clarity (READY/NEEDS-INFO)
 jury --pr 123 --auto                   # auto-depth: scale rounds/verify to the diff
 jury --pr 123 --post                   # ...and post the verdict as a comment
 jury --pr 123 --decision vote          # verdict by panel vote instead of a single chair
+jury --issue 42                        # review an ISSUE for completeness/clarity (READY/NEEDS-INFO/UNCLEAR)
+jury --issue 42 --decision vote        # issue verdict by panel vote (NEEDS-INFO > UNCLEAR > READY)
+jury --issue 42 --live --post          # stream + post each step to the issue thread
 jury --pr 123 --transcript             # full play-by-play (every review, debate, the reasoning)
 jury --pr 123 --live                   # stream each step to the terminal as it happens
 jury --pr 123 --post-progress             # live: a sticky PR comment updated each round/chunk

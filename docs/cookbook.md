@@ -26,11 +26,19 @@ compatible server:
 
 ```bash
 jury init                      # interactive: pick agents, rounds, chair, local model
+jury init --wizard             # guided Q&A: numbered options for the most-used settings
 jury init --preset offline     # free, local-only ($0); also: fast / balanced / thorough
 jury init --list-agents        # show known agents + availability
 jury init --list-models        # list local (Ollama) models you can pick
 jury init --agents claude,codex,qwen --rounds 2   # non-interactive / scriptable
 ```
+
+> **Guided setup:** `jury init --wizard` walks through the most-used settings as
+> numbered questions — reviewers, depth (1-round / debate / adaptive / auto),
+> chair vs. **panel vote**, verification, context mode + secret redaction, and the
+> CI fail-on gate. Every question is skippable (press Enter to keep the built-in
+> default), and only the keys you explicitly choose are written, so the generated
+> file stays minimal. Plain `jury init` is unchanged.
 
 > **Cost-aware depth:** add `--auto` (or `[jury] auto_depth = true`) and the jury
 > scales to the diff — a docs-only or few-line change runs shallow (1 round, no
@@ -135,7 +143,8 @@ jury --pr 123 --post-summary -o report.md
 ```
 
 **Outcome:** with `--post-summary`/`--post-inline`, the jury's feedback lands
-on the PR as advisory comments (`--post-*` require `--pr`). With `--dry-run`, you
+on the PR as advisory comments (`--post`/`--post-summary` also post to an
+`--issue`; `--post-inline` is `--pr`-only). With `--dry-run`, you
 see what *would* be posted and the network is never touched. These are advisory
 by design — they comment, they don't block a merge; gating is the separate `--ci`
 concern (see recipe 5).
@@ -445,10 +454,14 @@ vs actual, scope/acceptance criteria, missing context) and returns a
 ```bash
 jury --issue 42                 # print the completeness verdict
 jury --issue 42 --post          # comment it back on the issue (gh issue comment)
+jury --issue 42 --decision vote # decide by panel vote: NEEDS-INFO > UNCLEAR > READY
+jury --issue 42 --live --post   # stream each step AND post it to the issue as it lands
 ```
 
-PR/diff-only flags (`--post-inline`, `--label`, `--incremental`, `--post-progress`)
-don't apply to issues and are rejected. `--repo owner/name` targets another repo.
+`--post`/`--post-summary`, `--decision vote`, and `--live` all work for issues
+(posting goes through `gh issue comment`). Only PR/diff-only flags — `--post-inline`,
+`--label`, `--incremental`, `--post-progress` — don't apply to issues and are
+rejected. `--repo owner/name` targets another repo.
 
 ---
 
