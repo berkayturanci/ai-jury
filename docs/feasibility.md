@@ -1,7 +1,7 @@
 # Feasibility & Prior Art
 
-Research grounding for `ai-jury`, gathered before/while building the MVP
-(2026). Two questions: **does cross-vendor multi-agent code review actually work**, and
+Research grounding for `ai-jury`, gathered before/while building the first
+version (2026). Two questions: **does cross-vendor multi-agent code review actually work**, and
 **has someone already built this?**
 
 ## TL;DR
@@ -13,7 +13,7 @@ Research grounding for `ai-jury`, gathered before/while building the MVP
   **[Magpie](https://github.com/liliu-z/magpie)** — plus several adjacent tools. This
   project differentiates on simplicity (stdlib-only, drop-in skill) and on integrating
   with an existing repo's review workflow, not on inventing the concept.
-- **Use plain subprocess orchestration; skip A2A for the MVP.** Every shipping tool in
+- **Use plain subprocess orchestration; skip A2A for v1.** Every shipping tool in
   this space shells out to vendor CLIs directly.
 
 ## All three vendor CLIs run headless (verified locally, early 2026)
@@ -52,13 +52,13 @@ Originating pattern: Karpathy's [llm-jury](https://github.com/karpathy/llm-jury)
   feedback (Chatham House), strip ordering.
 - **Rounds plateau at 2–3; cost ~15× a single chat.** Stop early on convergence.
 
-**Design implications baked into this MVP:** heterogeneous vendors by default; debate is
+**Design implications baked into ai-jury:** heterogeneous vendors by default; debate is
 one extra round (opt-out via `--rounds 1`); chair synthesis rather than naive voting.
 Convergence-based early stop, a verify pass, anonymized peer feedback, and an optional
 panel vote (`--decision vote`) all shipped since; a rotating anonymized-rebuttal turn
 order remains a roadmap item.
 
-## A2A protocol — not for the MVP
+## A2A protocol — out of scope
 
 A2A is mature (Linux Foundation, `a2a-python` SDK, samples) but **no reference impl wraps
 a CLI agent as an A2A server** — you'd hand-write the executor, agent card, and an ASGI
@@ -81,9 +81,9 @@ robust pattern (Magpie's, and the one we implement):
 4. Aggregate by structured fields (severity+location) into consensus / majority /
    individual tiers — not fuzzy text matching.
 
-## MVP run observations (this environment)
+## Live-run observations (this environment)
 
-Building and running the MVP locally with the three real CLIs:
+Building and running ai-jury locally with the three cloud CLIs:
 
 - ✅ Round 1 (independent review) and Round 2 (cross-examination) completed across all
   three vendors in parallel — the **core cross-vendor orchestration works**.
