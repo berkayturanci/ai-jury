@@ -294,6 +294,7 @@ diagnostics and also writes them as redacted JSON.
 | `-o`, `--output` | path | Output path (default `jury.toml`). |
 | `--force` | flag | Overwrite an existing file. |
 | `--interactive` | flag | Force interactive prompts. |
+| `--wizard` | flag | Guided, numbered-option setup for the most-used settings (reviewers, depth, decision, verification, context, CI gate). Every question is skippable (Enter keeps the built-in default); only the keys you choose are written, so the file stays minimal. |
 | `--list-agents` | flag | List known agents + availability and exit. |
 | `--list-models` | flag | List local models on the server and exit. |
 

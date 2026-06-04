@@ -82,12 +82,22 @@ def build_config(
     early_stop: bool | None = None,
     local_model: str | None = None,
     local_endpoint: str | None = None,
+    decision: str | None = None,
+    auto_depth: bool | None = None,
+    context_mode: str | None = None,
+    redact_secrets: bool | None = None,
+    ci_fail_on: list[str] | None = None,
 ) -> dict:
     """Build a jury config dict from selected agent names.
 
     Raises ``ValueError`` on an unknown agent name or an empty selection. The
     chair defaults to the first selected agent. Local agents pick up the
     optional model/endpoint overrides.
+
+    The optional ``decision``/``auto_depth``/``context_mode``/``redact_secrets``/
+    ``ci_fail_on`` knobs (used by ``jury init --wizard``) are written ONLY when
+    not ``None`` — callers that omit them produce byte-identical output to before,
+    keeping the scaffolded file free of redundant built-in defaults.
     """
     templates = agent_templates()
     chosen: list[dict] = []
@@ -118,6 +128,19 @@ def build_config(
     jury: dict = {"rounds": int(rounds), "chair": chair, "verify": bool(verify)}
     if early_stop:
         jury["early_stop"] = True
+    if auto_depth is not None:
+        jury["auto_depth"] = bool(auto_depth)
+    if decision is not None:
+        jury["decision"] = decision
+    if context_mode is not None or redact_secrets is not None:
+        context: dict = {}
+        if context_mode is not None:
+            context["mode"] = context_mode
+        if redact_secrets is not None:
+            context["redact_secrets"] = bool(redact_secrets)
+        jury["context"] = context
+    if ci_fail_on is not None:
+        jury["ci"] = {"fail_on": list(ci_fail_on)}
     return {"jury": jury, "agent": chosen}
 
 
@@ -155,10 +178,27 @@ def render_toml(config: dict) -> str:
         "",
         "[jury]",
     ]
-    for key in ("rounds", "chair", "verify", "early_stop", "max_rounds"):
-        if key in config["jury"]:
-            lines.append(f"{key} = {_render_value(config['jury'][key])}")
+    jury = config["jury"]
+    # Scalar [jury] keys in a stable, readable order. ``decision``/``auto_depth``
+    # are emitted here only when present (the wizard sets them on a non-default).
+    for key in ("rounds", "chair", "verify", "decision", "auto_depth", "early_stop", "max_rounds"):
+        if key in jury:
+            lines.append(f"{key} = {_render_value(jury[key])}")
     lines.append("")
+
+    # Optional nested tables, written only when the wizard captured a non-default.
+    context = jury.get("context")
+    if context:
+        lines.append("[jury.context]")
+        for key in ("mode", "redact_secrets"):
+            if key in context:
+                lines.append(f"{key} = {_render_value(context[key])}")
+        lines.append("")
+    ci = jury.get("ci")
+    if ci and "fail_on" in ci:
+        lines.append("[jury.ci]")
+        lines.append(f"fail_on = {_render_value(ci['fail_on'])}")
+        lines.append("")
 
     for agent in config["agent"]:
         lines.append("[[agent]]")
