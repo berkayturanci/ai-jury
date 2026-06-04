@@ -7,9 +7,12 @@
   <script>
     (function () {
       try {
-        var t = localStorage.getItem("theme");
-        if (!t) t = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
-        document.documentElement.setAttribute("data-theme", t);
+        var mq = matchMedia("(prefers-color-scheme: dark)");
+        // Honor a saved choice; otherwise follow the OS (and keep following it live).
+        document.documentElement.setAttribute("data-theme", localStorage.getItem("theme") || (mq.matches ? "dark" : "light"));
+        mq.addEventListener("change", function (e) {
+          if (!localStorage.getItem("theme")) document.documentElement.setAttribute("data-theme", e.matches ? "dark" : "light");
+        });
       } catch (e) { document.documentElement.setAttribute("data-theme", "dark"); }
     })();
   </script>

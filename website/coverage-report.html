@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <script>
     (function () {
-      try { var t = localStorage.getItem("theme"); if (!t) t = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"; document.documentElement.setAttribute("data-theme", t); }
+      try { var __mq = matchMedia("(prefers-color-scheme: dark)"); document.documentElement.setAttribute("data-theme", localStorage.getItem("theme") || (__mq.matches ? "dark" : "light")); __mq.addEventListener("change", function (e) { if (!localStorage.getItem("theme")) document.documentElement.setAttribute("data-theme", e.matches ? "dark" : "light"); }); }
       catch (e) { document.documentElement.setAttribute("data-theme", "dark"); }
     })();
   </script>
@@ -160,8 +160,9 @@
     // theme + nav
     $("theme-toggle").addEventListener("click", function () {
       var light = document.documentElement.getAttribute("data-theme") === "light";
-      document.documentElement.setAttribute("data-theme", light ? "dark" : "light");
-      try { localStorage.setItem("theme", light ? "dark" : "light"); } catch (e) {}
+      var next = light ? "dark" : "light";
+      document.documentElement.setAttribute("data-theme", next);
+      try { if (next === (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")) localStorage.removeItem("theme"); else localStorage.setItem("theme", next); } catch (e) {}
     });
     var nav = $("nav");
     var __lastY = window.scrollY; var onScroll = function () { var y = window.scrollY; nav.classList.toggle("scrolled", y > 8); if (y > 200 && y > __lastY + 6) nav.classList.add("nav-hidden"); else if (y < __lastY - 6 || y <= 200) nav.classList.remove("nav-hidden"); document.body.classList.toggle("nav-up", nav.classList.contains("nav-hidden")); __lastY = y; };

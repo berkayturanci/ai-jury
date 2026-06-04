@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <script>
     (function () {
-      try { var t = localStorage.getItem("theme"); if (!t) t = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"; document.documentElement.setAttribute("data-theme", t); }
+      try { var __mq = matchMedia("(prefers-color-scheme: dark)"); document.documentElement.setAttribute("data-theme", localStorage.getItem("theme") || (__mq.matches ? "dark" : "light")); __mq.addEventListener("change", function (e) { if (!localStorage.getItem("theme")) document.documentElement.setAttribute("data-theme", e.matches ? "dark" : "light"); }); }
       catch (e) { document.documentElement.setAttribute("data-theme", "dark"); }
     })();
   </script>
