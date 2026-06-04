@@ -17,7 +17,7 @@
     btn.addEventListener("click", function () {
       var next = isLight() ? "dark" : "light";
       document.documentElement.setAttribute("data-theme", next);
-      try { localStorage.setItem("theme", next); } catch (e) {}
+      try { if (next === (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")) localStorage.removeItem("theme"); else localStorage.setItem("theme", next); } catch (e) {}
     });
   })();
 
