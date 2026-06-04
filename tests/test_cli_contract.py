@@ -48,6 +48,7 @@ SAMPLE_DIFF = (
 # version-independent structural check on the help text.
 DOCUMENTED_FLAGS = [
     "--pr",
+    "--issue",
     "--repo",
     "--diff-file",
     "--config",
@@ -241,7 +242,7 @@ class ErrorContractTests(unittest.TestCase):
         code, _, _ = _run_cli(["--mock"], stdin="")
         self.assertEqual(
             code,
-            "error: provide one of --pr, --diff-file (or --diff-file - for stdin)",
+            "error: provide one of --pr, --issue, --diff-file (or --diff-file - for stdin)",
         )
 
     def test_empty_diff(self):

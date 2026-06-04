@@ -44,6 +44,7 @@ reference (every flag + `jury.toml` key, with values and examples) is
 
 **Choose what to review** (one of):
 - `--pr <n>` — a GitHub PR (via `gh`); `--repo owner/name` to target another repo.
+- `--issue <n>` — a GitHub issue, reviewed for completeness/clarity with an issue-quality rubric (verdict READY / NEEDS-INFO / UNCLEAR); `--post` comments back via `gh issue comment`.
 - `--diff-file <path>` / `--diff-file -` — a diff file, or stdin.
 
 **Depth** (how hard to look):

@@ -24,13 +24,15 @@ from .classification import classify, label_strings
 from .config import ConfigError, load_config, load_raw_config, validate_config
 from .github import (
     apply_labels,
+    issue_body,
     post_inline_comments,
+    post_issue_comment,
     post_pr_comment,
     pr_context,
     pr_diff,
 )
 from .metadata import build_run_metadata
-from .orchestrator import review_diff
+from .orchestrator import review_diff, run_jury
 from .policy import PolicyError, load_policy
 from .report import render, render_live_step, render_transcript
 
@@ -39,12 +41,18 @@ def _read_diff(args) -> tuple[str, str]:
     """Return (diff, context)."""
     if args.pr:
         return pr_diff(args.pr, args.repo), pr_context(args.pr, args.repo)
+    if args.issue:
+        # Issue mode (issue #221): the issue's rendered text takes the diff slot;
+        # there is no separate context block (title/labels are folded into it).
+        return issue_body(args.issue, args.repo), ""
     if args.diff_file:
         if args.diff_file == "-":
             return sys.stdin.read(), ""
         with Path(args.diff_file).open(encoding="utf-8") as fh:
             return fh.read(), ""
-    raise SystemExit("error: provide one of --pr, --diff-file (or --diff-file - for stdin)")
+    raise SystemExit(
+        "error: provide one of --pr, --issue, --diff-file (or --diff-file - for stdin)"
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -54,7 +62,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     src = p.add_argument_group("input")
     src.add_argument("--pr", help="GitHub PR number/URL to review (uses `gh`)")
-    src.add_argument("--repo", help="owner/name for --pr (defaults to current repo)")
+    src.add_argument(
+        "--issue",
+        help="GitHub issue number/URL to review for completeness/clarity (uses "
+             "`gh`); runs the full jury with an issue-quality rubric",
+    )
+    src.add_argument("--repo", help="owner/name for --pr/--issue (defaults to current repo)")
     src.add_argument("--diff-file", help="path to a diff file, or '-' for stdin")
 
     p.add_argument("--config", help="path to jury.toml (default: ./jury.toml or built-in)")
@@ -771,6 +784,21 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
+    # Issue mode (issue #221) reviews prose, not a diff, so the PR/diff-only
+    # concepts below have no meaning. Reject them up front with a clear message
+    # rather than silently ignoring them.
+    if args.issue and (args.pr or args.diff_file):
+        raise SystemExit("error: --issue cannot be combined with --pr or --diff-file")
+    if args.issue:
+        for flag, on in (
+            ("--post-inline", args.post_inline),
+            ("--post-progress", args.post_progress),
+            ("--label", args.label),
+            ("--incremental", args.incremental),
+        ):
+            if on:
+                raise SystemExit(f"error: {flag} is not supported with --issue (it is a PR/diff concept)")
+
     # Live progress on the PR (issue #125): a single sticky comment updated at
     # each round/chunk milestone. Opt-in and requires --pr.
     progress = None
@@ -848,7 +876,8 @@ def main(argv: list[str] | None = None) -> int:
         from .cache import Cache, cache_key
 
         cache = Cache(args.cache_dir)
-        cache_k = cache_key(config, diff, mock=args.mock, policy=policy)
+        cache_k = cache_key(config, diff, mock=args.mock, policy=policy,
+                            mode=("issue" if args.issue else "code"))
         outcome = cache.load(cache_k)
         if outcome is not None:
             log(f"cache hit ({cache_k[:12]}…) — reusing stored outcome")
@@ -878,10 +907,20 @@ def main(argv: list[str] | None = None) -> int:
 
     if outcome is None:
         try:
-            outcome, _plan = review_diff(
-                config, diff, context=context, mock=args.mock, strict=args.strict,
-                policy=policy, log=log, on_event=on_event,
-            )
+            if args.issue:
+                # Issue prose bypasses large-diff planning (filter/size/chunk is
+                # meaningless for an issue body); run the jury directly with the
+                # issue-quality rubric. ``_plan`` stays None — there is no diff plan.
+                _plan = None
+                outcome = run_jury(
+                    config, diff, context=context, mock=args.mock, strict=args.strict,
+                    policy=policy, log=log, on_event=on_event, mode="issue",
+                )
+            else:
+                outcome, _plan = review_diff(
+                    config, diff, context=context, mock=args.mock, strict=args.strict,
+                    policy=policy, log=log, on_event=on_event,
+                )
         except KeyboardInterrupt:
             # Graceful cancellation (issue #30): a jury run can be long, so
             # Ctrl-C should exit cleanly with the conventional 130 rather than
@@ -903,6 +942,13 @@ def main(argv: list[str] | None = None) -> int:
     # chair's synthesis. Rendering-only — the outcome is identical; the severity-
     # based CI gate below is unaffected. Effective = CLI flag else config.
     decision = args.decision or config.decision
+    # Issue review (#221) uses a READY/NEEDS-INFO verdict from the chair synthesis;
+    # the panel-vote vocabulary (APPROVE/REQUEST CHANGES) doesn't fit, so force
+    # chair decision for issues (note it if the user explicitly asked to vote).
+    if args.issue and decision == "vote":
+        if args.decision == "vote":
+            log("note: --decision vote is not applicable to --issue; using chair synthesis")
+        decision = "chair"
     vote = None
     if decision == "vote":
         from .voting import tally_votes
@@ -1010,6 +1056,12 @@ def main(argv: list[str] | None = None) -> int:
         print(report)
 
     if args.post_summary:
+        if args.issue:
+            # Plain issues use `gh issue comment`; phased/SHA-marker posting is
+            # PR-only, so the issue path posts the single rendered report.
+            post_issue_comment(args.issue, report, args.repo)
+            log(f"posted verdict to issue #{args.issue}")
+            return ci_exit
         if not args.pr:
             raise SystemExit("error: --post-summary requires --pr")
         # Record the reviewed head SHA as a hidden marker so a later

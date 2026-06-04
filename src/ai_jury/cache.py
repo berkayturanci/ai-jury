@@ -66,6 +66,7 @@ def cache_key(
     seed: int | None = None,
     mock: bool = False,
     policy=None,
+    mode: str = "code",
 ) -> str:
     """Stable cache key for a run.
 
@@ -89,6 +90,9 @@ def cache_key(
         "seed": seed if seed is not None else config.seed,
         "mock": bool(mock),
         "policy": _policy_fingerprint(policy),
+        # Review mode (issue #221): "code" vs "issue" select different prompt
+        # rubrics, so the same text must never be served across modes.
+        "mode": mode,
     }
     blob = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
