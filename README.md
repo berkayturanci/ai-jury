@@ -32,9 +32,10 @@ diff ──▶ claude codex agy qwen (review) ▶ each rebuts the      ▶ chair
 ```
 
 Highlights: **free/offline** local reviews · **secure by default** (reviewers run
-sandboxed/read-only) · `jury init` setup · debate + verification · CI gating ·
-incremental review · suggested patches · large-diff chunking. Configure once in
-`jury.toml`; mix cloud CLIs and a local model however you like.
+sandboxed/read-only) · `jury init` setup · debate + verification · **chair verdict
+or a panel vote** · **review a PR, a diff, or an issue** · **live / full-transcript
+output** · CI gating · incremental review · suggested patches · large-diff chunking.
+Configure once in `jury.toml`; mix cloud CLIs and a local model however you like.
 
 ## Why
 
@@ -165,8 +166,12 @@ expected/recorded schema, and the match/scoring rules.
 jury init                              # scaffold jury.toml (detects agents + local models)
 jury init --preset balanced            # one-command setup from a preset (offline|fast|balanced|thorough)
 jury --pr 123                          # review a GitHub PR
+jury --issue 42                        # review an ISSUE for completeness/clarity (READY/NEEDS-INFO)
 jury --pr 123 --auto                   # auto-depth: scale rounds/verify to the diff
 jury --pr 123 --post                   # ...and post the verdict as a comment
+jury --pr 123 --decision vote          # verdict by panel vote instead of a single chair
+jury --pr 123 --transcript             # full play-by-play (every review, debate, the reasoning)
+jury --pr 123 --live                   # stream each step to the terminal as it happens
 jury --pr 123 --post-progress             # live: a sticky PR comment updated each round/chunk
 jury --pr 123 --post --post-mode phased   # post Round 1 / debate / decision as separate comments
 jury --pr 123 --incremental            # review only changes since the last run

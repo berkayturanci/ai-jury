@@ -415,6 +415,42 @@ jobs:
 
 ---
 
+## 11. Decide by a panel vote instead of a single chair
+
+By default the chair synthesizes the verdict. `--decision vote` (or
+`[jury] decision = "vote"`) instead **tallies the reviewers**: each votes from the
+worst finding they raised (critical/major → REQUEST CHANGES, minor/nit → COMMENT,
+none → APPROVE), majority wins, ties resolve to the stricter stance.
+
+```bash
+jury --pr 123 --decision vote
+```
+
+The report shows the tally and each reviewer's ballot as the headline verdict and
+keeps the chair's synthesis as supporting reasoning; the tally is also written to
+`--metadata-json`. It's a rendering choice — it doesn't change the cache key, and
+the severity-based `--ci` gate is unaffected (a lone critical still fails CI even
+on a majority APPROVE).
+
+---
+
+## 12. Review an issue for completeness, not just code
+
+`--issue N` points the same jury at a GitHub **issue** instead of a diff. The
+panel evaluates it against an issue-quality rubric (reproduction steps, expected
+vs actual, scope/acceptance criteria, missing context) and returns a
+**READY / NEEDS-INFO / UNCLEAR** verdict with a checklist of gaps.
+
+```bash
+jury --issue 42                 # print the completeness verdict
+jury --issue 42 --post          # comment it back on the issue (gh issue comment)
+```
+
+PR/diff-only flags (`--post-inline`, `--label`, `--incremental`, `--post-progress`)
+don't apply to issues and are rejected. `--repo owner/name` targets another repo.
+
+---
+
 ## See also
 
 - [Architecture](architecture.md) — components, round structure, adapters.
