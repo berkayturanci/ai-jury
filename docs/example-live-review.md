@@ -10,6 +10,10 @@ reviewed its **own repository** end to end on **v1.1.0 (2026-06-04)**. It's the
 most honest demo we have: a heterogeneous panel, a full codebase, real findings
 (and real false positives the panel caught itself).
 
+> 📄 Want the raw output? The complete, un-edited report is published verbatim at
+> [**Full report (live run)**](live-review-report.md) — every finding,
+> verification, and per-chunk verdict, exactly as the tool wrote it.
+
 ## Setup
 
 - **Panel (4 vendors):** `claude` (Anthropic), `codex` (OpenAI), `agy` (Google),
