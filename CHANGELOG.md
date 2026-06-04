@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Live per-step posting for issues** (#229): `jury --issue N --live --post` now
+  posts each step to the issue thread as it happens (via `gh issue comment`),
+  symmetric with the PR flow. Opt-in (requires `--post`); `--issue --live` alone
+  still just streams to the terminal, and `--issue --post` alone still posts one
+  summary comment.
 - **Panel voting for issues** (#230): `--decision vote` now works with `--issue`
   too. The vote is mode-aware — a diff/PR tallies REQUEST CHANGES > COMMENT >
   APPROVE, an issue tallies **NEEDS-INFO > UNCLEAR > READY** (each reviewer votes

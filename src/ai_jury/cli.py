@@ -884,12 +884,15 @@ def main(argv: list[str] | None = None) -> int:
         else:
             log(f"cache miss ({cache_k[:12]}…) — running jury")
 
-    # Live play-by-play (issue #210): stream each step as it happens. Prints a
-    # titled block to stdout the moment a phase result lands. Posting each step to
-    # the PR is OPT-IN — it requires BOTH --pr and --post (bare --pr only selects
-    # the diff source, never auto-posts), so `--live` alone just streams locally.
-    # Posting is best-effort: a GitHub hiccup is logged and never aborts the run.
-    live_posts = bool(args.live and args.post_summary and args.pr)
+    # Live play-by-play (issue #210, #229): stream each step as it happens. Prints
+    # a titled block to stdout the moment a phase result lands. Posting each step to
+    # the PR/issue is OPT-IN — it requires BOTH a target (--pr or --issue) AND
+    # --post (a bare target only selects the source, never auto-posts), so `--live`
+    # alone just streams locally. Posting is best-effort: a GitHub hiccup is logged
+    # and never aborts the run.
+    live_target = args.pr or args.issue
+    live_posts = bool(args.live and args.post_summary and live_target)
+    live_post = post_issue_comment if args.issue else post_pr_comment
     on_event = None
     if args.live:
         def on_event(kind, result, round_no=None):
@@ -897,9 +900,9 @@ def main(argv: list[str] | None = None) -> int:
             print(f"## {title}\n\n{body}\n", flush=True)
             if live_posts:
                 try:
-                    post_pr_comment(args.pr, f"## {title}\n\n{body}", args.repo)
+                    live_post(live_target, f"## {title}\n\n{body}", args.repo)
                 except Exception as exc:  # noqa: BLE001 - best-effort, never crash
-                    log(f"live: failed to post step to PR #{args.pr}: {exc}")
+                    log(f"live: failed to post step to #{live_target}: {exc}")
 
     # We stream live only when actually running the jury; a cache hit has nothing
     # to replay, so the consolidated report is still printed in that case.
