@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Website interactive demo: panel vote now works for issues.** The "Build your
+  jury" demo (`website/app.js`) used to force the chair and disable the vote
+  option whenever the target was an issue ("n/a for issues") — stale since #230
+  shipped issue voting, and contradicting the site's own FAQ. The demo now offers
+  panel vote for issues with the mode-aware tally (`NEEDS-INFO > UNCLEAR > READY`,
+  majority wins, ties to the stricter stance), emits `--decision vote` in the
+  generated command, and shows the per-reviewer ballots + vote footer — matching
+  the real CLI. PR-only output toggles (phased / live progress) stay issue-disabled.
 - **Docs accuracy sweep across every doc.** Full pass over `docs/`, `README.md`,
   and the checklists fixing stale/incorrect content: README status bumped to
   v1.1.0 and the "no input" error example now lists `--issue`; `feasibility.md`
