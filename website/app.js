@@ -296,8 +296,7 @@
     function postmode() { return q('input[name="postmode"]:checked').value; }
     function target() { return q('input[name="target"]:checked').value; }
     function verdictMode() {
-      // issue review always falls back to chair (matches the real CLI)
-      if (target() === "issue") return "chair";
+      // chair or panel vote — works for both PR and issue review (mode-aware vocab)
       return q('input[name="verdict-mode"]:checked').value;
     }
 
@@ -311,20 +310,7 @@
       var vm = verdictMode();
       var isIssue = tgt === "issue";
 
-      // issue review forces chair: disable the vote radio and PR-only output options
-      var voteRadio = q('input[name="verdict-mode"][value="vote"]');
-      if (voteRadio) {
-        voteRadio.disabled = isIssue;
-        var optVote = $("opt-vote");
-        if (optVote) {
-          optVote.classList.toggle("disabled", isIssue);
-          var voteHint = optVote.querySelector(".opt-hint");
-          if (isIssue) {
-            if (!voteHint) { voteHint = document.createElement("span"); voteHint.className = "tag opt-hint"; optVote.appendChild(voteHint); }
-            voteHint.textContent = "n/a for issues";
-          } else if (voteHint) { voteHint.remove(); }
-        }
-      }
+      // Panel vote works for both PR and issue review (#230) — no longer disabled.
       // PR output (post-mode / progress) is PR-only
       var fsPost = $("fs-postmode");
       if (fsPost) {
@@ -371,7 +357,7 @@
         bits.push(verify ? "verify on" : "verify off");
         if (isIssue) {
           bits.unshift("issue completeness");
-          bits.push("chair decides (vote n/a)");
+          bits.push(vm === "vote" ? "panel vote" : "chair decides");
         } else {
           bits.push(vm === "vote" ? "panel vote" : "chair decides");
           bits.push(pm === "phased" ? "phased comments" : "one comment");
@@ -431,22 +417,31 @@
     function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
     function bySev(a, b) { return SEV_RANK[b.sev] - SEV_RANK[a.sev]; }
 
-    // Each reviewer votes from the worst severity among the findings they raised:
-    //   any high → REQUEST CHANGES · any finding → COMMENT · none → APPROVE.
-    var VOTE_RANK = { "REQUEST CHANGES": 3, "COMMENT": 2, "APPROVE": 1 };
-    function agentVote(a, finalF) {
-      var mine = finalF.filter(function (f) { return f.by.indexOf(a) !== -1; });
-      if (mine.some(function (f) { return f.sev === "high"; })) return "REQUEST CHANGES";
-      return mine.length ? "COMMENT" : "APPROVE";
+    // Each reviewer votes from the worst severity among the items they raised; the
+    // vocabulary is mode-aware (matches the real CLI, #230):
+    //   PR:    any high → REQUEST CHANGES · any → COMMENT  · none → APPROVE
+    //   issue: any high → NEEDS-INFO      · any → UNCLEAR  · none → READY
+    var VOTE_VOCAB = {
+      pr:    { blocking: "REQUEST CHANGES", middling: "COMMENT", clear: "APPROVE" },
+      issue: { blocking: "NEEDS-INFO",      middling: "UNCLEAR", clear: "READY" }
+    };
+    // rank within each vocabulary (strictest first) for majority tie-breaks
+    var VOTE_RANK = { "REQUEST CHANGES": 3, "COMMENT": 2, "APPROVE": 1, "NEEDS-INFO": 3, "UNCLEAR": 2, "READY": 1 };
+    function agentVote(a, items, mode) {
+      var v = VOTE_VOCAB[mode];
+      var mine = items.filter(function (f) { return f.by.indexOf(a) !== -1; });
+      if (mine.some(function (f) { return f.sev === "high"; })) return v.blocking;
+      return mine.length ? v.middling : v.clear;
     }
-    function tallyVote(ags, finalF) {
-      var counts = { "REQUEST CHANGES": 0, "COMMENT": 0, "APPROVE": 0 };
+    function tallyVote(ags, items, mode) {
+      var v = VOTE_VOCAB[mode], counts = {};
+      counts[v.blocking] = 0; counts[v.middling] = 0; counts[v.clear] = 0;
       var votes = {};
-      ags.forEach(function (a) { var v = agentVote(a, finalF); votes[a] = v; counts[v]++; });
+      ags.forEach(function (a) { var vv = agentVote(a, items, mode); votes[a] = vv; counts[vv]++; });
       // majority wins; tie → stricter (higher VOTE_RANK)
-      var winner = "APPROVE", best = -1;
-      Object.keys(counts).forEach(function (v) {
-        if (counts[v] > best || (counts[v] === best && VOTE_RANK[v] > VOTE_RANK[winner])) { best = counts[v]; winner = v; }
+      var winner = v.clear, best = -1;
+      Object.keys(counts).forEach(function (k) {
+        if (counts[k] > best || (counts[k] === best && VOTE_RANK[k] > VOTE_RANK[winner])) { best = counts[k]; winner = k; }
       });
       return { verdict: winner, counts: counts, votes: votes, for: counts[winner], total: ags.length };
     }
@@ -471,7 +466,7 @@
       var dropped = surfaced.filter(function (f) { return f.refuted && resolved; });
       var finalF = surfaced.filter(function (f) { return !(f.refuted && resolved); });
       var chairVerdict = finalF.some(function (f) { return f.sev === "high"; }) ? "REQUEST CHANGES" : (finalF.length ? "COMMENT" : "APPROVE");
-      var tally = vm === "vote" ? tallyVote(ags, finalF) : null;
+      var tally = vm === "vote" ? tallyVote(ags, finalF, "pr") : null;
       var verdict = tally ? tally.verdict : chairVerdict;
       var verdictNote = tally ? (tally.for + " of " + tally.total + " voted") : null;
 
@@ -513,6 +508,7 @@
       var auto = $("auto").checked;
       var r = parseInt(rounds(), 10);
       var verify = $("verify").checked;
+      var vm = verdictMode();
       var debate = auto ? true : (r === 2 && ags.length >= 2);
       var verifyOn = auto ? true : verify;
       var chair = ags[0];
@@ -520,10 +516,13 @@
       var gaps = ISSUE_GAPS.filter(function (g) { return g.by.some(function (a) { return ags.indexOf(a) !== -1; }); });
       var blocking = gaps.filter(function (g) { return g.sev === "high"; });
       // READY when no gaps · NEEDS-INFO when a blocking gap exists · UNCLEAR otherwise
-      var verdict = blocking.length ? "NEEDS-INFO" : (gaps.length ? "UNCLEAR" : "READY");
+      var chairVerdict = blocking.length ? "NEEDS-INFO" : (gaps.length ? "UNCLEAR" : "READY");
+      var tally = vm === "vote" ? tallyVote(ags, gaps, "issue") : null;
+      var verdict = tally ? tally.verdict : chairVerdict;
+      var verdictNote = tally ? (tally.for + " of " + tally.total + " voted") : null;
 
       var con = [];
-      con.push(["$ jury --issue 42" + (auto ? " --auto" : ""), "cmd"]);
+      con.push(["$ jury --issue 42" + (auto ? " --auto" : "") + (vm === "vote" ? " --decision vote" : ""), "cmd"]);
       con.push(["→ issue #42: \"Login times out intermittently\"  · checking completeness", "dim"]);
       if (auto) con.push(["[auto-depth] scaling rounds/verify to the issue", "warn"]);
       con.push(["round 1: " + ags.length + " agent" + (ags.length > 1 ? "s" : "") + " checking the issue", "head"]);
@@ -541,10 +540,16 @@
         con.push(["verify: chair '" + LABEL[chair] + "' confirming " + gaps.length + " gap" + (gaps.length === 1 ? "" : "s"), "head"]);
         gaps.slice().sort(bySev).forEach(function (g) { con.push(["  • " + g.aspect + " — " + g.status + " (" + g.sev + ")", g.sev === "high" ? "bad" : ""]); });
       }
-      con.push(["synthesis: chair '" + LABEL[chair] + "' → " + verdict, "head"]);
+      if (tally) {
+        con.push(["vote: tallying " + ags.length + " reviewer" + (ags.length > 1 ? "s" : ""), "head"]);
+        ags.forEach(function (a) { con.push(["  • " + LABEL[a] + " → " + tally.votes[a], ""]); });
+        con.push(["decision: panel vote → " + verdict + " · " + verdictNote, "head"]);
+      } else {
+        con.push(["synthesis: chair '" + LABEL[chair] + "' → " + verdict, "head"]);
+      }
       con.push(["done in 48s", "dim"]);
 
-      return { mode: "issue", ags: ags, debate: debate, verifyOn: verifyOn, chair: chair, gaps: gaps, blocking: blocking, verdict: verdict, con: con, r: r, auto: auto };
+      return { mode: "issue", ags: ags, debate: debate, verifyOn: verifyOn, vm: vm, chair: chair, gaps: gaps, blocking: blocking, verdict: verdict, verdictNote: verdictNote, tally: tally, con: con, r: r, auto: auto };
     }
 
     function verdictClass(v) {
@@ -573,7 +578,7 @@
         var body = verdictBadge(run)
           + (run.gaps.length ? "<ul class='gh-findings'>" + run.gaps.slice().sort(bySev).map(gapRow).join("") + "</ul>"
                              : "<p>Complete — repro, expected/actual, and scope are all present.</p>")
-          + '<div class="gh-foot">issue #42 · panel: ' + esc(panel) + " · rounds: " + (run.auto ? "auto" : run.r) + (run.verifyOn ? " · verified" : "") + " · chair decides</div>";
+          + '<div class="gh-foot">issue #42 · panel: ' + esc(panel) + " · rounds: " + (run.auto ? "auto" : run.r) + (run.verifyOn ? " · verified" : "") + (run.vm === "vote" ? " · panel vote" : " · chair decides") + "</div>";
         html += commentCard(run.ags.length + "-reviewer completeness check", body);
         $("gh-comments").innerHTML = html;
         return;
