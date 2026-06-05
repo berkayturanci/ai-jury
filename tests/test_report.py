@@ -133,3 +133,13 @@ class TldrHeadlineTest(unittest.TestCase):
         self.assertIn("> ⚡ **TL;DR · APPROVE — no blocking issues.**", out)
         # The callout precedes the panel line.
         self.assertLess(out.index("TL;DR"), out.index("Structured findings"))
+
+    def test_callout_also_in_transcript_and_verbose_renderers(self):
+        # Parity with render() — the jury (codex) flagged the transcript renderer
+        # building its own header without the headline. Both modes must show it.
+        from ai_jury.report import render_transcript
+        synth = self._synth("## Verdict\nREQUEST CHANGES — one confirmed issue.")
+        for lead in (False, True):
+            out = render_transcript([], [], synth, chair="codex", lead_with_summary=lead)
+            self.assertIn("> ⚡ **TL;DR · REQUEST CHANGES — one confirmed issue.**", out)
+            self.assertLess(out.index("TL;DR"), out.index("**Panel:**"))

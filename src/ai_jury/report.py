@@ -461,6 +461,11 @@ def render_transcript(
         "# 🏛️ AI Jury — verbose report\n" if lead_with_summary
         else "# 🏛️ AI Jury — full transcript\n"
     )
+    # TL;DR callout (parity with render()): the verdict headline leads the
+    # verbose/transcript report too, so every renderer surfaces the outcome first.
+    headline = _verdict_headline(synthesis, vote)
+    if headline:
+        lines.append(f"> ⚡ **TL;DR · {headline}**\n")
     panel = ", ".join(f"`{r.agent}` ({r.vendor})" for r in reviews)
     lines.append(f"**Panel:** {panel}\n")
     if review_scope:
