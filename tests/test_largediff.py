@@ -149,6 +149,48 @@ class ChunkedPipelineTest(unittest.TestCase):
         self.assertIn("chunk", outcome.reviews[0].output)
         self.assertIn("part(s)", outcome.stop_reason)
 
+    def test_context_redactions_counted_once_across_chunks(self):
+        # #249: the SAME expanded context is reviewed against every chunk, so its
+        # secrets must be counted ONCE — not once per chunk (which summed in
+        # _merge_chunk_outcomes and inflated redaction_count).
+        cfg = _from_dict(
+            {
+                "jury": {
+                    "rounds": 1, "verify": False,
+                    "context": {"mode": "expanded", "redact_secrets": True},
+                    "diff": {"max_bytes": 10, "chunk": True, "chunk_max_bytes": 200},
+                },
+                "agent": [{"name": "claude", "vendor": "anthropic", "command": "claude"}],
+            }
+        )
+        # The diff carries no secrets, so every redaction comes from the context.
+        diff = _file_segment("src/a.py", 20) + _file_segment("src/b.py", 20)
+        context = "deploy key AKIAABCDEFGHIJKLMNOP used here"
+        outcome, plan = review_diff(cfg, diff, context=context, mock=True)
+        self.assertEqual(plan.mode, MODE_CHUNKED)
+        self.assertGreaterEqual(len(plan.chunks), 2)
+        # One secret in the context → counted once, independent of chunk count.
+        self.assertEqual(outcome.redaction_count, 1)
+
+    def test_context_redaction_count_preserved_in_full_mode(self):
+        # The pre-redact-once path must not LOSE the context count for non-chunked
+        # reviews (full mode pre-redacts too, then adds the one-time count back).
+        cfg = _from_dict(
+            {
+                "jury": {
+                    "rounds": 1, "verify": False,
+                    "context": {"mode": "expanded", "redact_secrets": True},
+                },
+                "agent": [{"name": "claude", "vendor": "anthropic", "command": "claude"}],
+            }
+        )
+        outcome, plan = review_diff(
+            cfg, _file_segment("src/a.py", 2),
+            context="token AKIAABCDEFGHIJKLMNOP here", mock=True,
+        )
+        self.assertEqual(plan.mode, MODE_FULL)
+        self.assertEqual(outcome.redaction_count, 1)
+
     def test_total_timeout_budget_shared_across_chunks(self):
         # Regression: total_timeout must bound the WHOLE chunked review, not reset
         # per chunk. Verify review_diff passes the SAME budget object to every
