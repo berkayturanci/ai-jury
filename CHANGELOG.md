@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Friendly first-impression CLI surface** (#265). Running bare `jury` with no arguments **in a terminal** now prints a compact overview — one line on what it does plus the handful of commands most people use — and exits 0, instead of the argparse error. Non-interactive use (piped/CI) keeps the strict `provide one of --pr/--issue/--diff-file` error + non-zero exit. Adds two argv-intercept subcommands: `jury examples` (common example commands) and `jury guide` (a short end-to-end walkthrough).
 - **TL;DR verdict callout at the top of every report.** The report now opens with a one-line `> ⚡ **TL;DR · <verdict>**` callout so the outcome is the first thing a reader sees — above the panel and the full breakdown. The headline is the panel vote's verdict when voting, otherwise the chair's `## Verdict` line lifted verbatim from the synthesis (works for both PR review — APPROVE/COMMENT/REQUEST CHANGES — and issue triage — READY/NEEDS-INFO/UNCLEAR). Purely additive and deterministic: omitted when no verdict is available (failed/absent synthesis), never replacing a section. Report goldens regenerated.
 
 ## [1.1.1] - 2026-06-05

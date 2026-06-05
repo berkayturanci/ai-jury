@@ -813,9 +813,103 @@ def _force_utf8_output() -> None:
                 reconfigure(encoding="utf-8")
 
 
+_OVERVIEW = """\
+🏛️  ai-jury — a cross-vendor multi-agent review jury.
+
+It runs several coding-agent CLIs (Claude, Codex, Antigravity) plus an optional
+local model over the same diff, PR, or issue; they cross-examine and verify each
+other, and a chair (or a panel vote) synthesizes one verdict.
+
+Common commands:
+  jury init --wizard              guided setup — writes a jury.toml (skippable)
+  jury --pr 123                   review a pull request
+  jury --issue 42                 review an issue for completeness
+  git diff | jury --diff-file -   review the current branch's diff
+  jury examples                   more example commands
+  jury guide                      a short end-to-end walkthrough
+  jury --help                     every option
+
+Docs: https://github.com/berkayturanci/ai-jury"""
+
+_EXAMPLES = """\
+ai-jury — example commands
+
+Setup
+  jury init --wizard                 guided setup (writes jury.toml)
+  jury init --preset thorough        non-interactive preset
+  jury config show                   print the effective, resolved config
+  jury doctor                        check which agents/CLIs are available
+
+Review
+  jury --pr 123                      review a pull request
+  jury --issue 42                    review an issue for completeness
+  git diff | jury --diff-file -      review the current branch's diff
+  jury --diff-file changes.patch     review a saved patch
+  jury --pr 123 --verbose            full play-by-play (rounds + transcript)
+
+Decide & gate
+  jury --pr 123 --decision vote      verdict by panel vote (not a single chair)
+  jury --pr 123 --ci                 exit non-zero on a blocking finding (CI gate)
+
+Post results back to GitHub
+  jury --pr 123 --post-summary       post one rollup comment
+  jury --pr 123 --post-inline        post line-level review comments
+  jury --issue 42 --post-summary     post the triage verdict on the issue
+
+Run `jury guide` for a walkthrough, or `jury --help` for every option."""
+
+_GUIDE = """\
+ai-jury — a short walkthrough
+
+1. Install the agent CLIs you have (any subset works): Claude Code, Codex,
+   Antigravity. Optionally run a local model via Ollama for a free panelist.
+   Check what's available:
+       jury doctor
+
+2. Create a config (picks reviewers, rounds, chair/vote, verify):
+       jury init --wizard
+   Every question is skippable — Enter keeps the built-in default.
+
+3. Run your first review:
+       jury --pr 123                  # a pull request
+       jury --issue 42                # an issue's completeness
+       git diff | jury --diff-file -  # the current branch
+
+   The panel reviews independently, cross-examines (debate), the chair verifies
+   candidate findings to cut false positives, then synthesizes one verdict.
+
+4. Post the verdict back to GitHub (optional):
+       jury --pr 123 --post-summary   # one rollup comment
+       jury --pr 123 --post-inline    # line-level comments
+
+5. Gate CI on blocking findings (optional):
+       jury --pr 123 --ci             # non-zero exit on critical/major
+
+Reviewers run sandboxed/read-only over attacker-controlled diffs by default.
+See `jury examples` for more, or `jury --help` for every option.
+Docs: https://github.com/berkayturanci/ai-jury"""
+
+
 def main(argv: list[str] | None = None) -> int:
     _force_utf8_output()
     raw = list(sys.argv[1:] if argv is None else argv)
+
+    # First-impression UX (#265): a newcomer running bare `jury` in a terminal
+    # gets a friendly overview and exits 0 — not the argparse error. The strict
+    # "provide one of --pr/--issue/--diff-file" error + non-zero exit is kept for
+    # non-interactive use (piped/CI), so scripts that forget an input still fail.
+    if not raw and sys.stdin.isatty():
+        print(_OVERVIEW)
+        return 0
+
+    # Plain-language command overview / walkthrough (#265), argv-intercepts like
+    # the other subcommands so the main flag surface stays flat.
+    if raw[:1] == ["examples"]:
+        print(_EXAMPLES)
+        return 0
+    if raw[:1] == ["guide"]:
+        print(_GUIDE)
+        return 0
     # Documented `jury cache clear` UX (issue #33): handled before argparse so
     # the rest of the CLI keeps its flat flag surface (no subcommands).
     if raw[:2] == ["cache", "clear"]:

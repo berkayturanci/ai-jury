@@ -326,6 +326,14 @@ early-stop config; `jury init --agents claude,codex,qwen --chair rotate
 | `jury config path` | Print the resolved config path. |
 | `jury cache clear` | Delete all local cache entries (alias of `--clear-cache`). |
 | `jury comment --text "/jury review" --pr N` | Run from an allowlisted PR comment. Actions: `review`, `summary` (see [comment actions](#comment-actions)). Flags: `--print-args`, `--no-post`. |
+| `jury examples` | Print a plain-language list of common example commands. |
+| `jury guide` | Print a short end-to-end walkthrough (install → init → review → post → CI). |
+
+Running bare `jury` with no arguments **in a terminal** prints a compact overview
+(what it does + the handful of commands most people use) and exits 0. In a
+non-interactive context (piped/CI) it still errors with `provide one of
+--pr, --issue, --diff-file` and a non-zero exit, so a script that forgot an input
+fails loudly.
 
 ---
 

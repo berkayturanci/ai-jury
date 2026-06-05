@@ -124,5 +124,43 @@ class CliMockTests(unittest.TestCase):
         self.assertIn("AI Jury", out)
 
 
+class CliOverviewTests(unittest.TestCase):
+    """#265: friendly first-impression surface."""
+
+    def test_examples_subcommand(self):
+        code, out, _ = run(["examples"])
+        self.assertEqual(code, 0)
+        self.assertIn("example commands", out)
+        self.assertIn("jury --pr 123", out)
+
+    def test_guide_subcommand(self):
+        code, out, _ = run(["guide"])
+        self.assertEqual(code, 0)
+        self.assertIn("walkthrough", out)
+        self.assertIn("jury init --wizard", out)
+
+    def test_bare_jury_in_tty_prints_overview_and_exits_zero(self):
+        import unittest.mock as m
+        fake = m.MagicMock()
+        fake.isatty.return_value = True
+        with m.patch.object(sys, "stdin", fake):
+            code, out, _ = run([])
+        self.assertEqual(code, 0)
+        self.assertIn("ai-jury", out)
+        self.assertIn("Common commands", out)
+
+    def test_bare_jury_non_interactive_still_errors(self):
+        # Piped/CI (no TTY) must keep the strict error + non-zero exit so a script
+        # that forgot an input fails loudly instead of printing a welcome.
+        import unittest.mock as m
+        fake = m.MagicMock()
+        fake.isatty.return_value = False
+        fake.read.return_value = ""
+        with m.patch.object(sys, "stdin", fake):
+            code, out, _ = run([])
+        self.assertNotEqual(code, 0)
+        self.assertNotIn("Common commands", out)
+
+
 if __name__ == "__main__":
     unittest.main()
