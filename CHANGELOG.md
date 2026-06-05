@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **TL;DR verdict callout at the top of every report.** The report now opens with a one-line `> ⚡ **TL;DR · <verdict>**` callout so the outcome is the first thing a reader sees — above the panel and the full breakdown. The headline is the panel vote's verdict when voting, otherwise the chair's `## Verdict` line lifted verbatim from the synthesis (works for both PR review — APPROVE/COMMENT/REQUEST CHANGES — and issue triage — READY/NEEDS-INFO/UNCLEAR). Purely additive and deterministic: omitted when no verdict is available (failed/absent synthesis), never replacing a section. Report goldens regenerated.
+
 ## [1.1.1] - 2026-06-05
 
 ### Fixed

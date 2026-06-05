@@ -80,3 +80,56 @@ class EvidenceSurfacingTest(unittest.TestCase):
         groups = group_findings([f], reviewer_count=1)
         out = render([], [], None, chair="claude", findings=[f], groups=groups)
         self.assertNotIn("_evidence:_", out)
+
+
+class TldrHeadlineTest(unittest.TestCase):
+    """The TL;DR callout hoists the verdict to the top of the report."""
+
+    def _synth(self, text, ok=True):
+        from ai_jury.adapters import AgentResult
+        return AgentResult("codex", "openai", ok, text, 0.0)
+
+    def test_lifts_verdict_line_from_synthesis(self):
+        from ai_jury.report import _verdict_headline
+        synth = self._synth("## Verdict\nREADY — the defect is clearly located.\n\n## Consensus gaps\n- none")
+        self.assertEqual(_verdict_headline(synth, None),
+                         "READY — the defect is clearly located.")
+
+    def test_joins_a_wrapped_verdict_sentence(self):
+        from ai_jury.report import _verdict_headline
+        synth = self._synth("## Verdict\nNEEDS-INFO — the bug is clear\nbut lacks repro steps.\n\n## Gaps")
+        self.assertEqual(_verdict_headline(synth, None),
+                         "NEEDS-INFO — the bug is clear but lacks repro steps.")
+
+    def test_header_directly_after_verdict_terminates_collection(self):
+        from ai_jury.report import _verdict_headline
+        synth = self._synth("## Verdict\nREADY — go.\n## Consensus gaps\n- none")
+        self.assertEqual(_verdict_headline(synth, None), "READY — go.")
+
+    def test_blank_lines_before_verdict_text_are_skipped(self):
+        from ai_jury.report import _verdict_headline
+        synth = self._synth("## Verdict\n\n\nNEEDS-INFO — missing repro.\n\n## Gaps")
+        self.assertEqual(_verdict_headline(synth, None), "NEEDS-INFO — missing repro.")
+
+    def test_vote_verdict_takes_precedence(self):
+        from ai_jury.report import _verdict_headline
+        from ai_jury.voting import VoteResult
+        synth = self._synth("## Verdict\nAPPROVE — looks good.")
+        self.assertEqual(_verdict_headline(synth, VoteResult("REQUEST CHANGES")),
+                         "REQUEST CHANGES")
+
+    def test_none_when_synthesis_failed_or_absent(self):
+        from ai_jury.report import _verdict_headline
+        self.assertIsNone(_verdict_headline(None, None))
+        self.assertIsNone(_verdict_headline(self._synth("## Verdict\nX", ok=False), None))
+
+    def test_none_when_no_verdict_section(self):
+        from ai_jury.report import _verdict_headline
+        self.assertIsNone(_verdict_headline(self._synth("## Summary\nno verdict here"), None))
+
+    def test_callout_rendered_at_top_of_report(self):
+        out = render([], [], self._synth("## Verdict\nAPPROVE — no blocking issues."),
+                     chair="codex")
+        self.assertIn("> ⚡ **TL;DR · APPROVE — no blocking issues.**", out)
+        # The callout precedes the panel line.
+        self.assertLess(out.index("TL;DR"), out.index("Structured findings"))
