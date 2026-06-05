@@ -168,7 +168,11 @@ def _risk_level(findings: list, groups: list) -> str:
         # A confirmed (consensus/majority, not rejected) major finding is high
         # risk; an isolated or rejected one is medium.
         for g in groups:
-            if g.severity == "major" and g.bucket in ("consensus", "majority"):
+            if (
+                g.severity == "major"
+                and g.bucket in ("consensus", "majority")
+                and (getattr(g, "status", "") or "") != "unsupported"
+            ):
                 return RISK_HIGH
         return RISK_MEDIUM
 

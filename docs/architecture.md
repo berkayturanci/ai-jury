@@ -184,7 +184,7 @@ minutes there is no reason to keep it. Security scanning runs per-commit too:
 | CI (cross-OS matrix + coverage) | GitHub-hosted | push + PR — **authoritative** |
 | CodeQL | GitHub-hosted | push + PR + weekly `schedule` |
 | OpenSSF Scorecard | GitHub-hosted | push to `main` + weekly `schedule` |
-| Deploy website (Pages) | GitHub-hosted | push to `website/**` |
+| Deploy website (Pages) | GitHub-hosted | push to `main` (+ manual dispatch) |
 | Publish to PyPI + Release | GitHub-hosted | `v*` tag (OIDC trusted publishing) |
 
 ## Implemented capabilities

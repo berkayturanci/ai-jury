@@ -42,6 +42,31 @@ _MODES = {
     },
 }
 
+# A reviewer that did not actually review (an empty reply, or a short refusal /
+# safety-decline like "I can't assist with that request") must NOT be counted as
+# a "clear" vote — a non-answer is not an approval (issue #251). Such reviewers
+# abstain and are dropped from the tally entirely. Kept conservative: a genuine
+# clean review has substantive prose and won't match.
+_ABSTENTION_MARKERS = (
+    "i can't assist", "i cannot assist", "i can't help", "i cannot help",
+    "i'm unable to", "i am unable to", "i won't be able to", "unable to assist",
+    "can't help with that", "cannot comply",
+)
+
+
+def is_abstention(output) -> bool:
+    """True when a review is empty or a recognizable non-review (refusal).
+
+    Empty/whitespace output always abstains. A short reply (no real review body)
+    that contains a refusal marker also abstains; longer substantive reviews do
+    not, even if they happen to quote one of these phrases.
+    """
+    text = (output or "").strip().lower()
+    if not text:
+        return True
+    return len(text) < 400 and any(m in text for m in _ABSTENTION_MARKERS)
+
+
 # Worst-severity thresholds. critical/major are blocking; minor/nit are middling.
 _MAJOR_RANK = SEVERITY_ORDER["major"]
 _NIT_RANK = SEVERITY_ORDER["nit"]

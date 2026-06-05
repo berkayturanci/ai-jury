@@ -18,6 +18,11 @@ def evaluate_ci(groups_with_status, fail_on, ignore_unverified: bool) -> tuple[i
     verified (empty status) do not fail CI; only explicitly verified ones can.
     """
     fail_set = {str(s).strip().lower() for s in (fail_on or [])}
+    # `blocker` is a documented alias for `critical` (group severities are only
+    # ever critical/major/minor/nit/info), so a `--fail-on blocker` gate must
+    # match `critical` groups instead of silently never firing.
+    if "blocker" in fail_set:
+        fail_set.add("critical")
     blocking = []
     for g in groups_with_status:
         severity = getattr(g, "severity", "")

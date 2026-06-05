@@ -83,5 +83,6 @@ Live agent tests are opt-in: `JURY_LIVE=1` (CLIs) / `JURY_LOCAL_LIVE=1`
 - The **authoritative CI** is the hosted `ci.yml` (cross-OS × Python matrix +
   coverage gate), run per push/PR on free public-repo minutes. CodeQL + Scorecard
   also run per-commit. There is no self-hosted runner. A `v*` tag triggers
-  `publish.yml` (PyPI trusted publishing); pushes under `website/**` deploy Pages.
+  `publish.yml` (PyPI trusted publishing); any push to `main` (plus on-demand)
+  deploys Pages via `pages.yml`.
 - Keep changes focused; one concern per PR. Reference the issue (`Closes #N`).

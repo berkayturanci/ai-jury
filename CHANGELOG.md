@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Credibility-cluster bugs the jury found reviewing its own repo** (toward v1.1.1):
+  - #245 — `--fail-on blocker` now fires: `blocker` is normalized to its documented `critical` alias instead of a gate that silently never triggers.
+  - #247 — a verifier-**rejected** (`unsupported`) major finding no longer drives a `high` risk level.
+  - #248 — the **JSON** report's metadata now reflects an effective `--decision vote` (the JSON path threads `decision`/`vote`, not just markdown).
+  - #251 — a reviewer that **abstained** (empty reply or a short refusal) is dropped from a panel vote instead of counting as a 'clear' (APPROVE/READY) vote.
+  - #252 — docs (`architecture.md`, `CLAUDE.md`) now match the actual Pages deploy trigger (push to `main`).
+  - #253 — corrected the stale `CodexAdapter` comment (shipped default is `-s read-only`).
+  - #254 — the release **SBOM** is generated from `pyproject.toml` (the package + its declared, empty deps), not `cyclonedx-py environment` over the whole runner.
+
 ### Changed
 
 - **Benchmark: measured the panel's lift over each model, published honestly.** Added `benchmark/sweep.py` — runs each reviewer **solo** vs the **panel** vs the **full jury** over the labeled fixtures (`benchmark/`) — and `docs/benchmark-results.md`. Live v1.1.0 (2026-06-05, 4 vendors: claude/codex/agy + local `qwen2.5-coder:7b`; each cloud reviewer used its CLI's default model at run time, not pinned): run alone, **every** model missed seeded bugs (best 67%, worst 33%, all at 100% precision); the **panel caught 100%** — so **vendor diversity robustly lifts recall**, whichever single you'd have picked. The precision/verification effect is **within noise at N=5** (jury precision varied 1.00↔0.60 between runs) and is **not** claimed. Surfaced on the homepage "Why a panel" section + the README benchmark section; Magpie stays credited in the prior-art/comparison docs (not re-stated on the results page). No sitemap/robots change — docs pages are `docs.html` fragments, not separate URLs.
