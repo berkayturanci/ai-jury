@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-06-05
+
 ### Fixed
 
 - **`gh` calls are now time-bounded** (#246). `_gh` and `_gh_with_input` ran `subprocess.run` without a `timeout=`, so a stalled network call or an interactive auth/2FA prompt could hang the whole jury run indefinitely. Both now pass a 90 s ceiling and convert `TimeoutExpired` into a clear, fail-soft `RuntimeError` (`gh … timed out after 90s`), consistent with other gh failures.
