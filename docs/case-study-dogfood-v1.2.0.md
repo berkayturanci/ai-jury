@@ -69,9 +69,17 @@ incorrect** — the failure mode worth being honest about.
   the flattened `[jury]` path the existing code already uses) and, on the re-run,
   that a test used a `[REDACTED:…]` placeholder instead of a real secret (it uses
   a real fake AWS key; the tests pass). The chair marked both **verified**.
-- **#277 / #249 re-run:** after the three real bugs were fixed, `codex`
+- **#277 / #271 re-run:** after the three real bugs were fixed, `codex`
   **re-asserted** the (now-closed) placeholder bypass, and the chair verified it
   again — even though executing the exact claimed input fails the check.
+
+> **Postscript — the panel reviewed this page too.** On its dogfood run of the
+> PR that added this case study, `agy` flagged a wrong issue number in the
+> paragraph above (it originally read "#277 / #249"; #277 was issue #271). The
+> chair happened to mark it *unsupported* — another verifier miss — but the
+> finding was right, and it's fixed here. A fitting illustration of the whole
+> lesson: the panel surfaces real things the author missed, and the verifier's
+> verdict is not the last word.
 
 In every case the verdict was overridden **with executed evidence** (run the
 code, show the output), and the override was recorded on the PR.
