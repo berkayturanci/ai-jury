@@ -898,16 +898,20 @@ def main(argv: list[str] | None = None) -> int:
     # gets a friendly overview and exits 0 — not the argparse error. The strict
     # "provide one of --pr/--issue/--diff-file" error + non-zero exit is kept for
     # non-interactive use (piped/CI), so scripts that forget an input still fail.
-    if not raw and sys.stdin.isatty():
+    # `sys.stdin` can be None when stdin is detached (e.g. a background process),
+    # so guard before calling isatty().
+    if not raw and sys.stdin is not None and sys.stdin.isatty():
         print(_OVERVIEW)
         return 0
 
     # Plain-language command overview / walkthrough (#265), argv-intercepts like
-    # the other subcommands so the main flag surface stays flat.
-    if raw[:1] == ["examples"]:
+    # the other subcommands so the main flag surface stays flat. Match exactly so
+    # trailing junk (`jury examples foo`) falls through to argparse and errors
+    # rather than being silently ignored.
+    if raw == ["examples"]:
         print(_EXAMPLES)
         return 0
-    if raw[:1] == ["guide"]:
+    if raw == ["guide"]:
         print(_GUIDE)
         return 0
     # Documented `jury cache clear` UX (issue #33): handled before argparse so

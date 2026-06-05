@@ -149,6 +149,21 @@ class CliOverviewTests(unittest.TestCase):
         self.assertIn("ai-jury", out)
         self.assertIn("Common commands", out)
 
+    def test_examples_with_trailing_args_is_not_silently_ignored(self):
+        # `jury examples foo` must NOT print the overview-and-exit-0; it falls
+        # through to argparse and errors (no silent arg-swallowing).
+        code, out, _ = run(["examples", "foo"])
+        self.assertNotEqual(code, 0)
+        self.assertNotIn("example commands", out)
+
+    def test_bare_jury_with_none_stdin_does_not_crash(self):
+        # sys.stdin can be None under detached I/O; the isatty() guard must not
+        # raise AttributeError — it falls through to the normal missing-input path.
+        import unittest.mock as m
+        with m.patch.object(sys, "stdin", None):
+            code, _, _ = run([])
+        self.assertNotEqual(code, 0)  # missing-input error, not a crash
+
     def test_bare_jury_non_interactive_still_errors(self):
         # Piped/CI (no TTY) must keep the strict error + non-zero exit so a script
         # that forgot an input fails loudly instead of printing a welcome.
