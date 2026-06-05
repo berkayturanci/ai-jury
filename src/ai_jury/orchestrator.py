@@ -662,6 +662,12 @@ def resolve_chair(
 
 
 def _format_findings_for_verify(findings: list[Finding]) -> str:
+    """Render candidate findings for the chair's verification prompt.
+
+    Reviewer identity is omitted (#250) so the chair can't favour its own
+    findings while judging them — parity with the #37/#38 anonymization.
+    Verdicts match back by file/line/claim, so dropping it is safe.
+    """
     if not findings:
         return "_(no candidate findings)_"
     lines = []
@@ -669,7 +675,7 @@ def _format_findings_for_verify(findings: list[Finding]) -> str:
         loc = f.file or "?"
         if f.line is not None:
             loc = f"{loc}:{f.line}"
-        lines.append(f"- [{f.severity}] {loc} — {f.claim} (by {f.reviewer})")
+        lines.append(f"- [{f.severity}] {loc} — {f.claim}")
     return "\n".join(lines)
 
 
