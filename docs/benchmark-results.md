@@ -55,10 +55,9 @@ no single model — local or frontier — caught everything, and the panel did.
 - **N = 5**, one run per config, and LLM output is **nondeterministic** — so
   per-config numbers (precision especially) move run to run. This is a smoke
   signal and a regression guard, not a universal quality claim.
-- Magpie's [published benchmark](https://milvus.io/blog/ai-code-review-gets-better-when-models-debate-claude-vs-gemini-vs-codex-vs-qwen-vs-minimax.md)
-  (15 real bug-shipping PRs, ~80% detection after debate) is larger; ours
-  **reproduces the same direction** on a smaller, reproducible set — it is not a
-  head-to-head ranking.
+- It measures **direction**, not an absolute score: read the numbers as a
+  comparison *between configs on this fixture set*, not a leaderboard. For where
+  ai-jury sits among similar tools, see the [ecosystem comparison](comparison.md).
 
 ## Reproduce it
 
