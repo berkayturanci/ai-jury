@@ -165,6 +165,37 @@ def _vote_block(vote) -> list[str]:
     return lines
 
 
+def _verdict_headline(synthesis, vote) -> str | None:
+    """One-line verdict for the report's TL;DR callout (pure, deterministic).
+
+    Prefers the panel vote's verdict when voting; otherwise lifts the opening
+    ``## Verdict`` line out of the chair's synthesis prose — both the code and
+    issue synthesis prompts mandate a ``## Verdict\\n<LABEL> — <one sentence>``
+    first section, so the lift is reliable. The verdict sentence may wrap across
+    lines; they are joined into one. Returns ``None`` when neither source is
+    available (failed/absent synthesis, deviating output) so the caller simply
+    omits the callout — it is purely additive, never replacing a section.
+    """
+    if vote is not None and getattr(vote, "verdict", None):
+        return vote.verdict
+    if synthesis is None or not getattr(synthesis, "ok", False):
+        return None
+    rows = (synthesis.output or "").splitlines()
+    for i, row in enumerate(rows):
+        if row.strip().lower().lstrip("#").strip() == "verdict":
+            collected: list[str] = []
+            for nxt in rows[i + 1:]:
+                if nxt.strip().startswith("#"):
+                    break
+                if not nxt.strip():
+                    if collected:
+                        break
+                    continue
+                collected.append(nxt.strip())
+            return " ".join(collected) or None
+    return None
+
+
 def render(
     reviews: list[AgentResult],
     debate: list[AgentResult],
@@ -188,6 +219,13 @@ def render(
     groups = groups or []
     lines: list[str] = []
     lines.append("# 🏛️ AI Jury\n")
+
+    # TL;DR callout (issue: scannable headline): hoist the verdict to the very
+    # top so the outcome is the first thing a reader sees, before the panel and
+    # the full report. Purely additive — omitted when no verdict is available.
+    headline = _verdict_headline(synthesis, vote)
+    if headline:
+        lines.append(f"> ⚡ **TL;DR · {headline}**\n")
 
     panel = ", ".join(f"`{r.agent}` ({r.vendor})" for r in reviews)
     lines.append(f"**Panel:** {panel}\n")
@@ -423,6 +461,11 @@ def render_transcript(
         "# 🏛️ AI Jury — verbose report\n" if lead_with_summary
         else "# 🏛️ AI Jury — full transcript\n"
     )
+    # TL;DR callout (parity with render()): the verdict headline leads the
+    # verbose/transcript report too, so every renderer surfaces the outcome first.
+    headline = _verdict_headline(synthesis, vote)
+    if headline:
+        lines.append(f"> ⚡ **TL;DR · {headline}**\n")
     panel = ", ".join(f"`{r.agent}` ({r.vendor})" for r in reviews)
     lines.append(f"**Panel:** {panel}\n")
     if review_scope:

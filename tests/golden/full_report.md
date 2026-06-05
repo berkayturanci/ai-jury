@@ -1,5 +1,7 @@
 # 🏛️ AI Jury
 
+> ⚡ **TL;DR · REQUEST CHANGES — one confirmed major issue.**
+
 **Panel:** `claude` (anthropic), `codex` (openai), `agy` (google)
 
 ## Classification

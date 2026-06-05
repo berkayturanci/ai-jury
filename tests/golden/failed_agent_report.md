@@ -1,5 +1,7 @@
 # 🏛️ AI Jury
 
+> ⚡ **TL;DR · APPROVE.**
+
 **Panel:** `claude` (anthropic), `codex` (openai), `agy` (google)
 
 ## Classification
