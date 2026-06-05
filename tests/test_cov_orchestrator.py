@@ -382,6 +382,16 @@ class Formatters(unittest.TestCase):
         self.assertIn("a.py:10", out)
         self.assertIn("b.py — ", out)  # no ":line" when line is None
 
+    def test_verify_prompt_omits_reviewer_identity(self):
+        # #250 anti-bias: the chair must not see WHO raised a candidate finding
+        # during verification (parity with #37/#38 anonymization).
+        out = _format_findings_for_verify([
+            Finding(severity="major", file="a.py", claim="leak", line=10, reviewer="claude"),
+        ])
+        self.assertNotIn("by claude", out)
+        self.assertNotIn("(by ", out)
+        self.assertIn("leak", out)  # the claim itself is still shown
+
     def test_format_verdicts_empty(self):
         self.assertEqual(_format_verdicts([]), "_(no verification verdicts)_")
 

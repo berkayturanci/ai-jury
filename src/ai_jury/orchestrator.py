@@ -662,6 +662,16 @@ def resolve_chair(
 
 
 def _format_findings_for_verify(findings: list[Finding]) -> str:
+    """Render candidate findings for the chair's verification prompt.
+
+    Reviewer identity is deliberately omitted (#250): the chair judges whether
+    each claim is supported by the diff, and exposing which agent raised it —
+    especially when the chair is itself a round-1 reviewer — invites a
+    self-preference bias, the same one #37 (debate) and #38 (synthesis) already
+    anonymize. Verdicts are matched back to findings by ``file``/``line``/
+    ``claim``, not by reviewer, so dropping the attribution is safe; the rendered
+    report still attributes every finding by real agent name.
+    """
     if not findings:
         return "_(no candidate findings)_"
     lines = []
@@ -669,7 +679,7 @@ def _format_findings_for_verify(findings: list[Finding]) -> str:
         loc = f.file or "?"
         if f.line is not None:
             loc = f"{loc}:{f.line}"
-        lines.append(f"- [{f.severity}] {loc} — {f.claim} (by {f.reviewer})")
+        lines.append(f"- [{f.severity}] {loc} — {f.claim}")
     return "\n".join(lines)
 
 
