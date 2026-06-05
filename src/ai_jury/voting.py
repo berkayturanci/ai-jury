@@ -46,12 +46,25 @@ _MODES = {
 # safety-decline like "I can't assist with that request") must NOT be counted as
 # a "clear" vote — a non-answer is not an approval (issue #251). Such reviewers
 # abstain and are dropped from the tally entirely. Kept conservative: a genuine
-# clean review has substantive prose and won't match.
+# clean review has substantive prose and won't match. Markers are written in the
+# *normalized* (expanded-contraction) form below.
 _ABSTENTION_MARKERS = (
-    "i can't assist", "i cannot assist", "i can't help", "i cannot help",
-    "i'm unable to", "i am unable to", "i won't be able to", "unable to assist",
-    "can't help with that", "cannot comply",
+    "i cannot assist", "i cannot help", "cannot help with that", "cannot comply",
+    "cannot do that", "i am unable to", "i will not be able to",
+    "unable to assist", "unable to help",
 )
+
+
+def _normalize_refusal(text: str) -> str:
+    """Fold contraction/apostrophe variants so "can't X" and "cannot X" match the
+    same marker (issue #251 follow-up: the jury caught "can't comply" slipping
+    past a "cannot comply"-only list)."""
+    t = text.replace("’", "'")  # smart apostrophe → ascii
+    return (
+        t.replace("can't", "cannot")
+        .replace("won't", "will not")
+        .replace("i'm ", "i am ")
+    )
 
 
 def is_abstention(output) -> bool:
@@ -59,12 +72,14 @@ def is_abstention(output) -> bool:
 
     Empty/whitespace output always abstains. A short reply (no real review body)
     that contains a refusal marker also abstains; longer substantive reviews do
-    not, even if they happen to quote one of these phrases.
+    not, even if they happen to quote one of these phrases. Contraction variants
+    (``can't``/``cannot``, ``won't``/``will not``, ``i'm``/``i am``) are folded so
+    a marker need only be listed once.
     """
     text = (output or "").strip().lower()
     if not text:
         return True
-    return len(text) < 400 and any(m in text for m in _ABSTENTION_MARKERS)
+    return len(text) < 400 and any(m in _normalize_refusal(text) for m in _ABSTENTION_MARKERS)
 
 
 # Worst-severity thresholds. critical/major are blocking; minor/nit are middling.

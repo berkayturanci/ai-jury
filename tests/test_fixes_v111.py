@@ -85,6 +85,13 @@ class AbstentionNotCounted(unittest.TestCase):  # issue #251
         self.assertTrue(voting.is_abstention("I can't assist with that request."))
         self.assertTrue(voting.is_abstention("Sorry, I'm unable to help here."))
 
+    def test_contraction_variants_abstain(self):
+        # The 3-vendor jury (codex/agy) caught "can't comply" slipping past a
+        # "cannot comply"-only list — contraction folding must cover it.
+        self.assertTrue(voting.is_abstention("I can't comply with that request."))
+        self.assertTrue(voting.is_abstention("I won't be able to help with this."))
+        self.assertTrue(voting.is_abstention("I can’t assist with that."))  # smart apostrophe
+
     def test_substantive_review_does_not_abstain(self):
         review = ("After reviewing the diff I found no blocking issues; the change "
                   "looks correct and the error handling is adequate. " * 6)
