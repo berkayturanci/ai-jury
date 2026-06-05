@@ -86,3 +86,7 @@ Live agent tests are opt-in: `JURY_LIVE=1` (CLIs) / `JURY_LOCAL_LIVE=1`
   `publish.yml` (PyPI trusted publishing); any push to `main` (plus on-demand)
   deploys Pages via `pages.yml`.
 - Keep changes focused; one concern per PR. Reference the issue (`Closes #N`).
+- Every PR needs a real description + a linked issue: the `pr-lint` workflow
+  (`.github/workflows/pr-lint.yml`) fails an empty/near-empty body or one with no
+  `#N` reference (write `no issue` to opt out). Fill the PR template's
+  `Related issues` section.
