@@ -74,13 +74,17 @@ def _group_dict(g: Any) -> dict[str, Any]:
     }
 
 
-def to_json(outcome: Any, config: Any) -> str:
+def to_json(outcome: Any, config: Any, *, decision=None, vote=None) -> str:
     """Render the jury outcome as a structured, pretty-printed JSON report.
 
     Top-level keys: ``schema_version``, ``metadata`` (from
     :func:`build_run_metadata`), ``findings``, ``consensus``, ``verdicts`` and
     ``verdict`` (the chair synthesis text, if any). The result is deterministic
     for a deterministic outcome and contains only legitimate finding fields.
+
+    ``decision``/``vote`` are threaded into the metadata so the JSON report
+    reflects an effective ``--decision vote`` override (issue #248); when omitted
+    the metadata falls back to ``config.decision`` as before.
     """
     synthesis = getattr(outcome, "synthesis", None)
     verdict_text = ""
@@ -89,7 +93,7 @@ def to_json(outcome: Any, config: Any) -> str:
 
     # Drop the wall-clock timestamp so the report is deterministic for a
     # deterministic run (matching report.py, which omits generated_at too).
-    metadata = build_run_metadata(outcome, config)
+    metadata = build_run_metadata(outcome, config, decision=decision, vote=vote)
     metadata.pop("generated_at", None)
 
     # Surface the deterministic PR-level classification (issue #7) at the top

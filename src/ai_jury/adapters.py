@@ -310,8 +310,9 @@ class ClaudeAdapter(Adapter):
 
 class CodexAdapter(Adapter):
     # Pipe the prompt on stdin (not positionally) so ``codex exec`` never blocks
-    # waiting for input in non-interactive runs. Sandbox flags live in extra_args
-    # (default ``-s danger-full-access`` so the sandbox doesn't block ``gh``).
+    # waiting for input in non-interactive runs. Sandbox flags live in extra_args;
+    # the shipped default is ``-s read-only`` (secure by default, #100) — the
+    # reviewer only reads its prompt, since the jury fetches the diff via ``gh``.
     def build_argv(self, prompt: str) -> list[str]:
         del prompt
         argv = [self.spec.command, "exec"]

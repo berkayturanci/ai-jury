@@ -1098,9 +1098,15 @@ def main(argv: list[str] | None = None) -> int:
     decision = args.decision or config.decision
     vote = None
     if decision == "vote":
-        from .voting import tally_votes
+        from .voting import is_abstention, tally_votes
+        # A reviewer that abstained (empty reply or a refusal) is excluded from
+        # the tally — a non-answer must not count as a "clear" vote (issue #251).
+        voters = [
+            r.agent for r in outcome.reviews
+            if r.ok and not is_abstention(getattr(r, "output", ""))
+        ]
         vote = tally_votes(
-            outcome.groups, [r.agent for r in outcome.reviews if r.ok],
+            outcome.groups, voters,
             mode=("issue" if args.issue else "code"),
         )
 
@@ -1108,7 +1114,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.format == "json":
         from .formats import to_json
-        report = to_json(outcome, config)
+        report = to_json(outcome, config, decision=decision, vote=vote)
     elif args.format == "sarif":
         from .formats import to_sarif
         report = to_sarif(outcome, config)
