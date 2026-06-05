@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **README: the version badge now reads from PyPI** (#281). The `github/v/release` shields.io badge frequently rendered "Unable to select next GitHub token from pool" (a transient failure of shields.io's shared GitHub token pool); swapped for `pypi/v/ai-jury`, which uses a different, more reliable source and shows the actually-installable version.
+
 ### Added
 
 - **Docs: a live dogfood case study** (`docs/case-study-dogfood-v1.2.0.md`, in the docs portal). Logs the jury (codex + agy + qwen, no Claude) reviewing the five PRs that became v1.2.0: 5 real bugs caught before merge (incl. a crash and a check-disabling bypass) **and** 3 false positives the chair wrongly "verified" — with the honest lesson that a non-executing verifier confirms plausible-but-wrong findings, so a panel is a high-recall finder that still needs executed verification.
