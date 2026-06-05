@@ -35,18 +35,28 @@ jobs:
         run: python -m build --sdist --wheel --outdir dist/
 
       # SBOM (issue #25): a CycloneDX software bill of materials for the built
-      # package. Generated from pyproject.toml so it reflects the PACKAGE and its
-      # declared runtime dependencies (none — stdlib-only), NOT the whole runner
-      # environment (#254: `cyclonedx-py environment` after a wheel install also
-      # captured cyclonedx-bom + preinstalled runner packages, misrepresenting a
-      # zero-dependency project). Written into release/ (NOT dist/) so the PyPI
+      # package. We install ONLY the freshly-built wheel (--no-deps) into a
+      # pip-less venv, then point `cyclonedx-py environment` at that isolated
+      # venv. The result reflects the PACKAGE and its runtime dependencies (none
+      # — stdlib-only) and nothing else: the venv has no pip/setuptools and the
+      # runner's own packages are out of scope (#254: running `environment`
+      # against the build env captured cyclonedx-bom + preinstalled runner
+      # packages, misrepresenting a zero-dependency project; `pyproject` is not a
+      # valid cyclonedx-py subcommand). `--pyproject` enriches the root component
+      # with the project metadata. Written into release/ (NOT dist/) so the PyPI
       # upload sees only the wheel + sdist — twine rejects non-distribution files
       # in the upload dir. The SBOM still ships with the GitHub Release.
       - name: Generate CycloneDX SBOM
         run: |
           python -m pip install cyclonedx-bom
           mkdir -p release
-          cyclonedx-py pyproject pyproject.toml --output-format JSON --output-file release/sbom.cdx.json
+          python -m venv --without-pip sbom-venv
+          python -m pip --python sbom-venv/bin/python install --no-deps dist/*.whl
+          cyclonedx-py environment sbom-venv \
+            --pyproject pyproject.toml \
+            --mc-type application \
+            --output-format JSON \
+            --output-file release/sbom.cdx.json
 
       # Checksums (issue #25): a single SHA256SUMS over every release artifact so
       # downloaders can verify integrity with `sha256sum -c SHA256SUMS`. Staged in
