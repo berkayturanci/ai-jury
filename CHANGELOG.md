@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`gh` calls are now time-bounded** (#246). `_gh` and `_gh_with_input` ran `subprocess.run` without a `timeout=`, so a stalled network call or an interactive auth/2FA prompt could hang the whole jury run indefinitely. Both now pass a 90 s ceiling and convert `TimeoutExpired` into a clear, fail-soft `RuntimeError` (`gh … timed out after 90s`), consistent with other gh failures.
 - **`redaction_count` no longer inflated for a chunked review with expanded context** (#249). The same context is reviewed against every chunk, so redacting it inside each per-chunk `run_jury` counted its secrets once per chunk and `_merge_chunk_outcomes` summed them (a 1-secret context over 8 chunks reported 8). The context is now redacted **once** in `review_diff` before fan-out and its count added back a single time; per-chunk diff redactions are still counted per chunk (correct, each diff is distinct). Full (non-chunked) reviews are unaffected.
 - **Anti-bias: the verification prompt no longer exposes reviewer identities** (#250). `_format_findings_for_verify` emitted `(by {reviewer})`, so the chair could see which agent raised each candidate finding while judging it — a self-preference gap the debate (#37) and synthesis (#38) anonymization already closed, but the verify phase never did. Reviewer attribution is dropped from the verify input (verdicts match back by `file`/`line`/`claim`); the rendered report still attributes every finding by real agent name.
 

@@ -42,7 +42,30 @@ class TestGithubSubprocess(unittest.TestCase):
 
         result = github._gh("pr", "view")
         self.assertEqual(result, "gh output\n")
-        mock_run.assert_called_once_with(["gh", "pr", "view"], capture_output=True, text=True)
+        mock_run.assert_called_once_with(
+            ["gh", "pr", "view"], capture_output=True, text=True,
+            timeout=github._GH_TIMEOUT_S,
+        )
+
+    @mock.patch("shutil.which")
+    @mock.patch("subprocess.run")
+    def test_gh_timeout_raises_clear_error(self, mock_run, mock_which):
+        # #246: a hung gh call must not block forever — it's bounded and surfaces
+        # an actionable timeout error rather than raising raw TimeoutExpired.
+        import subprocess as _sp
+        mock_which.return_value = "/usr/bin/gh"
+        mock_run.side_effect = _sp.TimeoutExpired(cmd="gh", timeout=github._GH_TIMEOUT_S)
+        with self.assertRaisesRegex(RuntimeError, r"gh pr diff timed out after \d+s"):
+            github._gh("pr", "diff")
+
+    @mock.patch("shutil.which")
+    @mock.patch("subprocess.run")
+    def test_gh_with_input_timeout_raises_clear_error(self, mock_run, mock_which):
+        import subprocess as _sp
+        mock_which.return_value = "/usr/bin/gh"
+        mock_run.side_effect = _sp.TimeoutExpired(cmd="gh", timeout=github._GH_TIMEOUT_S)
+        with self.assertRaisesRegex(RuntimeError, r"timed out after \d+s"):
+            github._gh_with_input(["api", "-X", "POST"], '{"body": "x"}')
 
 
 class TestGithubFunctions(unittest.TestCase):
@@ -136,7 +159,10 @@ class TestGithubWithInput(unittest.TestCase):
 
         result = github._gh_with_input(["pr", "comment"], "data")
         self.assertEqual(result, "success\n")
-        mock_run.assert_called_once_with(["gh", "pr", "comment"], input="data", capture_output=True, text=True)
+        mock_run.assert_called_once_with(
+            ["gh", "pr", "comment"], input="data", capture_output=True, text=True,
+            timeout=github._GH_TIMEOUT_S,
+        )
 
 
 if __name__ == "__main__":

@@ -11,11 +11,24 @@ import re
 import shutil
 import subprocess
 
+# Every `gh` invocation is bounded (#246): a stalled network call or an
+# interactive auth/2FA prompt would otherwise block `subprocess.run` forever and
+# hang the whole jury run with no per-call ceiling. On timeout we fail soft with
+# a clear, actionable error like any other gh failure.
+_GH_TIMEOUT_S = 90
+
 
 def _gh(*args: str) -> str:
     if shutil.which("gh") is None:
         raise RuntimeError("the GitHub CLI `gh` is not installed or not on PATH")
-    proc = subprocess.run(["gh", *args], capture_output=True, text=True)
+    try:
+        proc = subprocess.run(
+            ["gh", *args], capture_output=True, text=True, timeout=_GH_TIMEOUT_S
+        )
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(
+            f"gh {' '.join(args)} timed out after {_GH_TIMEOUT_S}s"
+        ) from None
     if proc.returncode != 0:
         raise RuntimeError(f"gh {' '.join(args)} failed: {proc.stderr.strip()}")
     return proc.stdout
@@ -285,7 +298,15 @@ def _existing_inline_keys(pr: str, repo: str) -> set:
 def _gh_with_input(args: list[str], stdin_data: str) -> str:
     if shutil.which("gh") is None:
         raise RuntimeError("the GitHub CLI `gh` is not installed or not on PATH")
-    proc = subprocess.run(["gh", *args], input=stdin_data, capture_output=True, text=True)
+    try:
+        proc = subprocess.run(
+            ["gh", *args], input=stdin_data, capture_output=True, text=True,
+            timeout=_GH_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(
+            f"gh {' '.join(args)} timed out after {_GH_TIMEOUT_S}s"
+        ) from None
     if proc.returncode != 0:
         raise RuntimeError(f"gh {' '.join(args)} failed: {proc.stderr.strip()}")
     return proc.stdout
