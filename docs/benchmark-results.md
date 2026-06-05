@@ -19,6 +19,10 @@ is also run solo**.
 
 - **Panel:** `claude` (Anthropic), `codex` (OpenAI), `agy` (Google), and a free
   local `qwen2.5-coder:7b` (Ollama). Each is also run **alone**.
+- **Models:** the run did **not pin** model versions, so each cloud reviewer used
+  its CLI's **default model on 2026-06-05** (whatever `claude` / `codex` / `agy`
+  resolve to by default); the local seat is the pinned `qwen2.5-coder:7b`. To
+  benchmark specific versions, pin `model = …` per agent in `jury.toml` and re-run.
 - **Fixtures:** 5 labeled diffs (obvious logic bug · subtle boolean-guard ·
   missing error handling · a false-positive trap · a docs-only no-op).
 - **When:** v1.1.0, 2026-06-05, run live on a 16 GB M1 Pro.
