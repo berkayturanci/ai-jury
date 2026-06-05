@@ -2,10 +2,10 @@ name: PR description lint
 
 # Enforce that every PR carries a real description AND declares the issues it
 # touches (#271). A GitHub PR template only pre-fills the body — it cannot stop
-# a PR from being opened/merged empty (which happened on #270). This check makes
-# that a hard, required signal. Pure stdlib Python, no dependencies; reads the PR
-# body from the event payload via an env var (never interpolated into the shell,
-# to avoid script injection from PR text).
+# a PR being opened/merged empty (which happened on #270). This check makes that
+# a hard, required signal. Pure stdlib Python, no dependencies; reads the PR body
+# from the event payload via an env var (never interpolated into the shell, to
+# avoid script injection from PR text).
 on:
   pull_request:
     types: [opened, edited, reopened, synchronize]
@@ -18,41 +18,64 @@ jobs:
     name: PR has a real description + linked issue
     runs-on: ubuntu-latest
     steps:
+      # Checkout so the check can read the PR template and discount any line the
+      # author left verbatim (placeholders, checklists) — comparing against the
+      # template is more robust than hard-coding placeholder strings.
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
       - name: Check PR description
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
         run: |
           python3 - <<'PY'
-          import os, re, sys
+          import os, re, sys, pathlib
+
+          def strip_comments(text):
+              return re.sub(r"<!--.*?-->", "", text, flags=re.S)
 
           body = os.environ.get("PR_BODY", "") or ""
+          # Strip the template's HTML guidance FIRST: the issue-reference and
+          # opt-out checks must look at AUTHORED text only, otherwise the comment's
+          # own "#N"/"no issue" guidance would satisfy them for every default PR.
+          authored = strip_comments(body)
 
-          # Ignore the template's HTML guidance comments before measuring.
-          stripped = re.sub(r"<!--.*?-->", "", body, flags=re.S)
+          # Lines the author left exactly as the template shipped them (the prose
+          # placeholder, checklist rows, headings) don't count as a real summary.
+          tpl = pathlib.Path(".github/pull_request_template.md")
+          boilerplate = set()
+          if tpl.exists():
+              boilerplate = {
+                  ln.strip()
+                  for ln in strip_comments(tpl.read_text(encoding="utf-8")).splitlines()
+                  if ln.strip()
+              }
 
-          # "Prose" = non-blank lines that are not markdown headings and not bare
-          # checkbox items (the template's checklists don't count as a summary).
           prose = []
-          for line in stripped.splitlines():
+          for line in authored.splitlines():
               s = line.strip()
-              if not s or s.startswith("#"):
+              if not s:
+                  continue
+              if re.match(r"#{1,6}\s", s):           # markdown heading (not "#123")
                   continue
               if re.match(r"^[-*]\s*\[[ xX]\]", s):   # "- [ ] ..." checklist row
+                  continue
+              if s in boilerplate:                    # unchanged template line
                   continue
               prose.append(s)
           summary = " ".join(prose).strip()
 
-          # Issue reference: a real "#<number>", or the explicit "no issue" opt-out.
-          has_ref = bool(re.search(r"#\d+", body)) or bool(
-              re.search(r"\bno[ -]?issue\b", body, re.I)
+          # Issue reference: a real "#<number>", or the explicit "no issue" opt-out
+          # — searched in the authored (comment-stripped) text only.
+          has_ref = bool(re.search(r"#\d+", authored)) or bool(
+              re.search(r"\bno[ -]?issue\b", authored, re.I)
           )
 
           MIN_PROSE = 20
           errors = []
           if len(summary) < MIN_PROSE:
               errors.append(
-                  f"description is empty or too short — write a real summary "
-                  f"(>= {MIN_PROSE} chars of prose, excluding headings/checklists)."
+                  f"description is empty, unchanged from the template, or too short "
+                  f"— write a real summary (>= {MIN_PROSE} chars of your own prose)."
               )
           if not has_ref:
               errors.append(
