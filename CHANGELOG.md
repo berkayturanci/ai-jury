@@ -7,16 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-06-05
+
 ### Fixed
 
-- **Credibility-cluster bugs the jury found reviewing its own repo** (toward v1.1.1):
+- **Credibility-cluster bugs the jury found reviewing its own repo**:
   - #245 — `--fail-on blocker` now fires: `blocker` is normalized to its documented `critical` alias instead of a gate that silently never triggers.
   - #247 — a verifier-**rejected** (`unsupported`) major finding no longer drives a `high` risk level.
   - #248 — the **JSON** report's metadata now reflects an effective `--decision vote` (the JSON path threads `decision`/`vote`, not just markdown).
   - #251 — a reviewer that **abstained** (empty reply or a short refusal) is dropped from a panel vote instead of counting as a 'clear' (APPROVE/READY) vote.
   - #252 — docs (`architecture.md`, `CLAUDE.md`) now match the actual Pages deploy trigger (push to `main`).
   - #253 — corrected the stale `CodexAdapter` comment (shipped default is `-s read-only`).
-  - #254 — the release **SBOM** is generated from `pyproject.toml` (the package + its declared, empty deps), not `cyclonedx-py environment` over the whole runner.
+  - #254 — the release **SBOM** is built from an isolated wheel-only venv (the package + its declared, empty runtime deps), not `cyclonedx-py environment` over the whole runner (`pyproject` is not a valid `cyclonedx-py` subcommand, which would have failed the publish).
 
 ### Changed
 
