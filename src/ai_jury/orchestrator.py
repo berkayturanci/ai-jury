@@ -10,7 +10,7 @@ import random
 import string
 import time
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from . import convergence, injection, largediff, prompts
 from .adapters import RETRYABLE_ERROR_CODES, Adapter, AgentResult, make_adapter
@@ -958,6 +958,21 @@ def review_diff(
     # per-agent timeouts still apply per call via the same budget.
     shared_budget = RunBudget(config.total_timeout, config.phase_timeout)
 
+    # Redact the shared context ONCE here, before fan-out (#249). The same context
+    # is reviewed against every chunk; letting each per-chunk ``run_jury`` redact
+    # it would count its secrets once per chunk and ``_merge_chunk_outcomes`` would
+    # sum them, inflating ``redaction_count`` (e.g. a 1-secret context over 8
+    # chunks reported 8). Pre-redacting makes each chunk's re-redaction a no-op —
+    # the ``[REDACTED:…]`` placeholders no longer match — so we add the one-time
+    # context count back at the end. Diff/chunk redactions are still counted
+    # per chunk and summed, which is correct (each chunk's diff is distinct).
+    ctx_cfg = getattr(config, "context", None)
+    ctx_mode = getattr(ctx_cfg, "mode", "diff-only") if ctx_cfg else "diff-only"
+    redact_on = getattr(ctx_cfg, "redact_secrets", True) if ctx_cfg else True
+    context_redactions = 0
+    if redact_on and ctx_mode != "diff-only" and context:
+        context, context_redactions = redact(context)
+
     def _run(chunk: str) -> JuryOutcome:
         return run_jury(
             config, chunk, context=context, mock=mock, strict=strict,
@@ -965,11 +980,18 @@ def review_diff(
             on_event=on_event,
         )
 
+    def _finalize(outcome: JuryOutcome) -> JuryOutcome:
+        # Add the one-time context redaction count (per-chunk runs saw an already-
+        # redacted context and counted 0 for it).
+        if not context_redactions:
+            return outcome
+        return replace(outcome, redaction_count=outcome.redaction_count + context_redactions)
+
     if plan.mode == largediff.MODE_FULL:
-        return _run(plan.chunks[0]), plan
+        return _finalize(_run(plan.chunks[0])), plan
 
     outcomes = []
     for i, chunk in enumerate(plan.chunks, 1):
         log(f"reviewing chunk {i}/{len(plan.chunks)}")
         outcomes.append(_run(chunk))
-    return _merge_chunk_outcomes(outcomes), plan
+    return _finalize(_merge_chunk_outcomes(outcomes)), plan
