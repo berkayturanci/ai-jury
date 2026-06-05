@@ -966,6 +966,10 @@ def review_diff(
     # the ``[REDACTED:…]`` placeholders no longer match — so we add the one-time
     # context count back at the end. Diff/chunk redactions are still counted
     # per chunk and summed, which is correct (each chunk's diff is distinct).
+    # `config.context` is the right path: `_from_dict` flattens the `[jury]`
+    # table onto JuryConfig, so the `[jury.context]` sub-table is `config.context`
+    # (a ContextConfig), NOT `config.jury.context` — there is no `config.jury`.
+    # This mirrors how run_jury() reads it.
     ctx_cfg = getattr(config, "context", None)
     ctx_mode = getattr(ctx_cfg, "mode", "diff-only") if ctx_cfg else "diff-only"
     redact_on = getattr(ctx_cfg, "redact_secrets", True) if ctx_cfg else True
