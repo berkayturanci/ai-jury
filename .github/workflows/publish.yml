@@ -21,6 +21,24 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2 (updated 2026-05-31)
 
+      # Hard guard against version drift across the three release-version
+      # sources of truth (issue #284): the tag we're publishing under
+      # (`v1.2.3` → `1.2.3`), pyproject.toml [project] version, and
+      # .claude-plugin/plugin.json version must all be identical. A mismatch
+      # used to ship a stale plugin manifest (see #283 — manifest sat at
+      # 0.1.0 across v1.0.0 → v1.2.0); fail loudly here instead.
+      - name: Verify tag matches pyproject + plugin manifest
+        run: |
+          set -euo pipefail
+          tag_version="${GITHUB_REF_NAME#v}"
+          pyproject_version="$(python -c 'import tomllib;print(tomllib.load(open("pyproject.toml","rb"))["project"]["version"])')"
+          plugin_version="$(python -c 'import json;print(json.load(open(".claude-plugin/plugin.json"))["version"])')"
+          echo "tag=$tag_version  pyproject=$pyproject_version  plugin=$plugin_version"
+          if [ "$tag_version" != "$pyproject_version" ] || [ "$tag_version" != "$plugin_version" ]; then
+            echo "::error::Version drift — tag ($tag_version) must match pyproject ($pyproject_version) and plugin.json ($plugin_version)."
+            exit 1
+          fi
+
       - name: Set up Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0 (updated 2026-05-31)
         with:
