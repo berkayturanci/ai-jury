@@ -168,6 +168,38 @@ class RedactionTests(unittest.TestCase):
         self.assertLess(_t.monotonic() - start, 1.0)
         self.assertEqual(n, 0)  # no separator/value -> not an assignment
 
+    # Issue #302: basic-auth URLs, Azure AccountKey, GCP JSON keys.
+    def test_basic_auth_url_password_redacted(self):
+        out, n = redact("redis://default:" + "S3cr3tP4ss" * 2 + "@cache:6379")
+        self.assertEqual(n, 1)
+        self.assertIn("[REDACTED:basic_auth]", out)
+        self.assertIn("redis://default:", out)  # prefix preserved
+        self.assertIn("@cache:6379", out)        # suffix preserved
+        self.assertNotIn("S3cr3tP4ss", out)
+
+    def test_url_without_auth_not_matched(self):
+        # A normal host:port with no `@` credentials must not be touched.
+        out, n = redact("https://example.com:8080/v1/models")
+        self.assertEqual(n, 0)
+        self.assertEqual(out, "https://example.com:8080/v1/models")
+
+    def test_azure_account_key_redacted(self):
+        out, n = redact("AccountKey=" + "Ab12Cd34Ef56Gh78" + "+/==")
+        self.assertEqual(n, 1)
+        self.assertIn("[REDACTED:secret_assignment]", out)
+        self.assertIn("AccountKey", out)
+
+    def test_gcp_private_key_id_json_redacted(self):
+        out, n = redact('"private_key_id": "' + "0123456789abcdef" * 2 + '"')
+        self.assertEqual(n, 1)
+        self.assertIn("[REDACTED:secret_assignment]", out)
+        self.assertIn("private_key_id", out)
+
+    def test_gcp_client_email_not_redacted(self):
+        # client_email is an identifier, not a secret; must not be redacted.
+        out, n = redact('"client_email": "svc@proj.iam.gserviceaccount.com"')
+        self.assertEqual(n, 0)
+
 
 class ContextConfigTests(unittest.TestCase):
     def test_defaults(self):
