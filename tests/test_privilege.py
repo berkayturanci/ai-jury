@@ -221,11 +221,21 @@ class EnforceReadOnlyTest(unittest.TestCase):
         out = privilege.enforce_read_only("google", "agy", ["--dangerously-skip-permissions"])
         self.assertEqual(out, ["--sandbox", "--dangerously-skip-permissions"])
 
-    def test_unknown_vendor_is_left_untouched(self):
-        # We don't know the sandbox syntax, so we don't inject an invalid flag;
-        # the audit still warns.
+    def test_unknown_vendor_gets_sandbox(self):
+        # Issue #310 (completes #300): an unknown vendor routes to the generic
+        # AgyAdapter, so --sandbox is injected — fail-closed, never fail-open.
         out = privilege.enforce_read_only("weirdvendor", "x", ["--foo"])
-        self.assertEqual(out, ["--foo"])
+        self.assertEqual(out, ["--sandbox", "--foo"])
+
+    def test_unknown_vendor_existing_sandbox_not_doubled(self):
+        out = privilege.enforce_read_only("weirdvendor", "x", ["--sandbox"])
+        self.assertEqual(out, ["--sandbox"])
+
+    def test_local_vendor_name_substring_not_mishandled(self):
+        # Review of #310: a local agent whose NAME contains "claude"/"codex" must
+        # still be left unchanged (the vendor=="local" fast-path wins).
+        self.assertEqual(privilege.enforce_read_only("local", "local-claude", []), [])
+        self.assertEqual(privilege.enforce_read_only("local", "my-codex", []), [])
 
     def test_local_vendor_is_left_untouched(self):
         self.assertEqual(privilege.enforce_read_only("local", "qwen", []), [])
