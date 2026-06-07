@@ -134,7 +134,11 @@ class CommandPathValidation(unittest.TestCase):
         validate_config(self._agent("claude"))  # resolved on PATH
 
     def test_absolute_path_is_allowed(self):
-        validate_config(self._agent("/usr/local/bin/claude"))
+        # A POSIX path like /usr/... is NOT absolute on Windows (no drive), so use
+        # a platform-appropriate absolute path. The production check correctly
+        # treats a drive-less path as relative on Windows.
+        abs_path = "C:\\bin\\claude" if os.name == "nt" else "/usr/local/bin/claude"
+        validate_config(self._agent(abs_path))
 
 
 class EndpointValidation(unittest.TestCase):
