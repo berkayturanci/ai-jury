@@ -140,6 +140,22 @@ class CommandPathValidation(unittest.TestCase):
         abs_path = "C:\\bin\\claude" if os.name == "nt" else "/usr/local/bin/claude"
         validate_config(self._agent(abs_path))
 
+    # Issue #296: opt-in strict absolute-path mode.
+    def test_strict_mode_rejects_bare_name(self):
+        with mock.patch.dict(
+            os.environ, {"JURY_REQUIRE_ABSOLUTE_COMMAND": "1"}, clear=True
+        ), self.assertRaises(ConfigError):
+            validate_config(self._agent("claude"))
+
+    def test_strict_mode_allows_absolute(self):
+        abs_path = "C:\\bin\\claude" if os.name == "nt" else "/usr/local/bin/claude"
+        with mock.patch.dict(os.environ, {"JURY_REQUIRE_ABSOLUTE_COMMAND": "1"}, clear=True):
+            validate_config(self._agent(abs_path))
+
+    def test_bare_name_allowed_without_strict_mode(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            validate_config(self._agent("claude"))
+
 
 class EndpointValidation(unittest.TestCase):
     """Issue #291: local-agent endpoint scheme/host validation (SSRF defense)."""
@@ -167,9 +183,8 @@ class EndpointValidation(unittest.TestCase):
     def test_non_loopback_host_is_hard_error_by_default(self):
         # Review of #291: an attacker-controlled config must not be able to reach
         # a non-loopback host (incl. IMDS) without an out-of-band opt-in.
-        with mock.patch.dict(os.environ, {}, clear=True):  # no opt-in
-            with self.assertRaises(ConfigError):
-                validate_config(self._local("http://169.254.169.254/latest/meta-data"))
+        with mock.patch.dict(os.environ, {}, clear=True), self.assertRaises(ConfigError):
+            validate_config(self._local("http://169.254.169.254/latest/meta-data"))
 
     def test_non_loopback_allowed_with_env_opt_in_warns(self):
         with mock.patch.dict(os.environ, {"JURY_ALLOW_REMOTE_ENDPOINT": "1"}, clear=True):

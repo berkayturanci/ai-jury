@@ -17,6 +17,7 @@ locally and only written where you explicitly ask (stdout, or ``--write``).
 from __future__ import annotations
 
 import platform
+import shutil
 import sys
 import tomllib
 from pathlib import Path
@@ -73,11 +74,29 @@ def _is_available(spec) -> bool:
         return False
 
 
+def _resolved_command(spec):
+    """Absolute path a CLI agent's command resolves to on PATH (issue #296).
+
+    Lets an operator verify *which* binary will run (a poisoned PATH could
+    resolve a bare name to a shim). None for a local/HTTP agent (no command) or
+    when nothing is found on PATH.
+    """
+    command = getattr(spec, "command", "") or ""
+    vendor = (getattr(spec, "vendor", "") or "").lower()
+    if not command or vendor == "local":
+        return None
+    try:
+        return shutil.which(command)
+    except Exception:  # noqa: BLE001 - diagnostics must never crash
+        return None
+
+
 def _agent_entry(spec):
     caps = _detect_capabilities(spec)
     return {
         "name": _redact_value(spec.name),
         "command": _redact_value(spec.command),
+        "resolved": _resolved_command(spec),
         "vendor": _redact_value(spec.vendor),
         "available": _is_available(spec),
         "version": _redact_value(caps.get("version")),
@@ -255,6 +274,9 @@ def render_report(diagnostics) -> str:
                 f"  [{status:>9}] {agent['name']} "
                 f"(vendor={agent['vendor']}, command={agent['command']})"
             )
+            if agent.get("command") and agent.get("vendor") != "local":
+                resolved = agent.get("resolved") or "(not found on PATH)"
+                lines.append(f"              resolved: {resolved}")
             version = agent.get("version") or "unknown"
             caps = agent.get("capabilities") or {}
             cap_bits = []

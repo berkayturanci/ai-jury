@@ -35,6 +35,12 @@ def _is_relative_path_command(command: str) -> bool:
 # SSRF POST to an internal address — matching the default-secure F-1 posture.
 _ALLOW_REMOTE_ENDPOINT_ENV = "JURY_ALLOW_REMOTE_ENDPOINT"
 
+# Opt-in strict mode (issue #296): when set, every agent ``command`` must be an
+# absolute path — rejecting even a bare name, whose PATH resolution an attacker
+# who controls the CI runner's PATH could hijack with a shim. Off by default so
+# the convenient bare-name (``claude``) keeps working for local use.
+_REQUIRE_ABSOLUTE_COMMAND_ENV = "JURY_REQUIRE_ABSOLUTE_COMMAND"
+
 
 def _endpoint_issues(endpoint: str, label: str) -> tuple[list[str], list[str]]:
     """Validate a local-agent ``endpoint`` URL (issue #291, SSRF defense).
@@ -339,6 +345,17 @@ def validate_config(data: dict, strict: bool = False) -> list:
             errors.append(
                 f"agent '{label}' command '{command}' is a relative path; use a "
                 f"bare name (resolved on PATH) or an absolute path."
+            )
+        elif os.environ.get(_REQUIRE_ABSOLUTE_COMMAND_ENV) and not Path(
+            command
+        ).is_absolute():
+            # Strict opt-in (issue #296): in a hardened/CI context, refuse even a
+            # bare name so a poisoned PATH can't resolve a shim — require an
+            # absolute path for every agent command.
+            errors.append(
+                f"agent '{label}' command '{command}' is not an absolute path; "
+                f"{_REQUIRE_ABSOLUTE_COMMAND_ENV} requires every agent command to "
+                f"be an absolute path."
             )
 
         # Per-agent timeout (hard if present and invalid).

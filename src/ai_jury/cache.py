@@ -16,8 +16,11 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import hmac
 import json
 import os
+import secrets
+import stat
 from dataclasses import asdict
 from pathlib import Path
 
@@ -188,6 +191,70 @@ def outcome_from_dict(data: dict) -> JuryOutcome:
     )
 
 
+_HMAC_KEY_FILE = ".hmac_key"
+
+
+def _dir_is_untrusted(directory: Path) -> bool:
+    """True when ``directory`` is group/other-writable (issue #295).
+
+    A world-/group-writable cache dir lets another local user plant entries (and
+    even swap the HMAC key file), so we fail closed rather than trust it. POSIX
+    only — Windows ACLs are not represented in ``st_mode``, so the check is
+    skipped there.
+    """
+    if os.name == "nt":
+        return False
+    try:
+        mode = directory.stat().st_mode
+    except OSError:
+        return False
+    return bool(mode & (stat.S_IWGRP | stat.S_IWOTH))
+
+
+def _hmac_key(directory: Path) -> bytes | None:
+    """Return the per-user cache MAC secret, creating it 0o600 on first use.
+
+    The key lives in ``<cache_dir>/.hmac_key`` readable only by the owner, so a
+    forged entry can't carry a valid MAC unless the attacker can read the secret
+    (blocked by 0o600) or replace it (blocked by ``_dir_is_untrusted``). Returns
+    None if the secret can't be read/created, in which case callers skip MACing.
+    """
+    key_path = directory / _HMAC_KEY_FILE
+    with contextlib.suppress(OSError):
+        return key_path.read_bytes()
+    # Not present (or unreadable) — try to create it atomically, owner-only.
+    try:
+        fd = os.open(str(key_path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        # Lost a race with a concurrent writer; read what they wrote.
+        try:
+            return key_path.read_bytes()
+        except OSError:
+            return None
+    except OSError:
+        return None
+    try:
+        key = secrets.token_bytes(32)
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(key)
+        return key
+    except OSError:
+        return None
+
+
+def _canonical(entry: dict) -> str:
+    """Deterministic serialization of an entry (minus its ``mac``) for MACing."""
+    return json.dumps(
+        {k: v for k, v in entry.items() if k != "mac"},
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+
+
+def _compute_mac(key: bytes, entry: dict) -> str:
+    return hmac.new(key, _canonical(entry).encode("utf-8"), hashlib.sha256).hexdigest()
+
+
 class Cache:
     """A simple on-disk JSON cache of jury outcomes."""
 
@@ -206,6 +273,10 @@ class Cache:
         path = self._path(key)
         if not path.exists():
             return None
+        # Fail closed: never trust an entry read from a world/group-writable dir
+        # (issue #295) — an attacker who can write the dir can forge entries.
+        if _dir_is_untrusted(self.dir):
+            return None
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
@@ -217,6 +288,15 @@ class Cache:
         # (e.g. a forged verdict copied from another key) is treated as a miss.
         if data.get("cache_key") != key:
             return None
+        # Integrity: verify the per-user HMAC (issue #295). An entry with a
+        # missing or wrong MAC (a forgery, or a legacy pre-MAC entry) is a miss.
+        mac_key = _hmac_key(self.dir)
+        if mac_key is not None:
+            stored_mac = data.get("mac")
+            if not isinstance(stored_mac, str) or not hmac.compare_digest(
+                stored_mac, _compute_mac(mac_key, data)
+            ):
+                return None
         outcome = outcome_from_dict(data.get("outcome", {}))
         outcome.from_cache = True
         return outcome
@@ -229,11 +309,20 @@ class Cache:
             self.dir.mkdir(parents=True, exist_ok=True, mode=0o700)
             with contextlib.suppress(OSError):
                 self.dir.chmod(0o700)
+            # Fail closed (#295): we just tried to tighten the dir to 0700. If it
+            # is STILL group/other-writable, the chmod failed (we don't own it) —
+            # an attacker could swap entries or the MAC key, so refuse to write
+            # rather than trust it (the audit's "don't suppress and continue").
+            if _dir_is_untrusted(self.dir):
+                return
             payload = {
                 "cache_schema": CACHE_SCHEMA,
                 "cache_key": key,
                 "outcome": outcome_to_dict(outcome),
             }
+            mac_key = _hmac_key(self.dir)
+            if mac_key is not None:
+                payload["mac"] = _compute_mac(mac_key, payload)
             self._path(key).write_text(
                 json.dumps(payload, separators=(",", ":")) + "\n", encoding="utf-8"
             )
