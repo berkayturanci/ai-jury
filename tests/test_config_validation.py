@@ -1,9 +1,11 @@
 """Coverage for config.validate_config branches (hard errors vs warnings)."""
 from __future__ import annotations
 
+import os
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
@@ -154,15 +156,21 @@ class EndpointValidation(unittest.TestCase):
             validate_config(self._local("ftp://internal/host"))
 
     def test_loopback_http_has_no_warning(self):
-        w = validate_config(self._local("http://localhost:11434/v1"))
+        with mock.patch.dict(os.environ, {}, clear=True):
+            w = validate_config(self._local("http://localhost:11434/v1"))
         self.assertFalse(any("endpoint" in x for x in w), w)
 
-    def test_non_loopback_host_warns(self):
-        w = validate_config(self._local("http://169.254.169.254/latest/meta-data"))
-        self.assertTrue(any("not loopback" in x for x in w), w)
+    def test_non_loopback_host_is_hard_error_by_default(self):
+        # Review of #291: an attacker-controlled config must not be able to reach
+        # a non-loopback host (incl. IMDS) without an out-of-band opt-in.
+        with mock.patch.dict(os.environ, {}, clear=True):  # no opt-in
+            with self.assertRaises(ConfigError):
+                validate_config(self._local("http://169.254.169.254/latest/meta-data"))
 
-    def test_non_loopback_http_warns_about_cleartext(self):
-        w = validate_config(self._local("http://gpu-box.internal:8000/v1"))
+    def test_non_loopback_allowed_with_env_opt_in_warns(self):
+        with mock.patch.dict(os.environ, {"JURY_ALLOW_REMOTE_ENDPOINT": "1"}, clear=True):
+            w = validate_config(self._local("http://gpu-box.internal:8000/v1"))
+        self.assertTrue(any("not loopback" in x for x in w), w)
         self.assertTrue(any("cleartext" in x or "plaintext" in x for x in w), w)
 
 

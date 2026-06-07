@@ -27,14 +27,25 @@ def _is_relative_path_command(command: str) -> bool:
     return has_sep and not Path(command).is_absolute()
 
 
+# Env opt-in for a non-loopback local endpoint. It lives in the environment, NOT
+# in jury.toml, on purpose (review of #291): the threat model is an
+# attacker-controlled config, so the opt-in must sit OUTSIDE the surface the
+# attacker controls. Without it, a non-loopback host (incl. cloud-metadata
+# 169.254.169.254) is a hard error so an attacker config cannot drive an
+# SSRF POST to an internal address — matching the default-secure F-1 posture.
+_ALLOW_REMOTE_ENDPOINT_ENV = "JURY_ALLOW_REMOTE_ENDPOINT"
+
+
 def _endpoint_issues(endpoint: str, label: str) -> tuple[list[str], list[str]]:
     """Validate a local-agent ``endpoint`` URL (issue #291, SSRF defense).
 
     Returns ``(errors, warnings)``. A non-``http``/``https`` scheme is a hard
-    error (blocks ``file://``/``ftp://`` and other SSRF primitives — this tool
-    reviews attacker-controlled PRs/configs). A non-loopback host is a soft
-    warning (a remote model server is a legitimate but riskier choice), and
-    plaintext ``http`` to a non-loopback host warns about cleartext exposure.
+    error (blocks ``file://``/``ftp://`` and other SSRF primitives). A non-loopback
+    host is also a hard error UNLESS the operator opts in via the
+    ``JURY_ALLOW_REMOTE_ENDPOINT`` environment variable (a remote model server is
+    a legitimate but riskier choice the attacker-controlled config must not be
+    able to select on its own); when opted in it degrades to a warning, plus a
+    cleartext warning for plaintext ``http``.
     """
     errors: list[str] = []
     warnings: list[str] = []
@@ -47,18 +58,26 @@ def _endpoint_issues(endpoint: str, label: str) -> tuple[list[str], list[str]]:
         )
         return errors, warnings
     host = (parsed.hostname or "").lower()
-    is_loopback = host in _LOOPBACK_HOSTS
-    if not is_loopback:
-        warnings.append(
+    if host in _LOOPBACK_HOSTS:
+        return errors, warnings
+    if not os.environ.get(_ALLOW_REMOTE_ENDPOINT_ENV):
+        errors.append(
             f"agent '{label}' endpoint host '{host or '(none)'}' is not loopback; "
-            f"a remote model server can receive the (redacted) diff — ensure it is "
-            f"trusted and not an internal/metadata address."
+            f"a non-loopback model server (incl. internal/metadata addresses) is "
+            f"refused by default. Set {_ALLOW_REMOTE_ENDPOINT_ENV}=1 in the "
+            f"environment to allow a trusted remote endpoint."
         )
-        if scheme == "http":
-            warnings.append(
-                f"agent '{label}' endpoint uses plaintext http to a non-loopback "
-                f"host; prefer https so the prompt is not sent in cleartext."
-            )
+        return errors, warnings
+    warnings.append(
+        f"agent '{label}' endpoint host '{host or '(none)'}' is not loopback; "
+        f"the (redacted) diff is sent to a remote server — ensure it is trusted "
+        f"and not an internal/metadata address."
+    )
+    if scheme == "http":
+        warnings.append(
+            f"agent '{label}' endpoint uses plaintext http to a non-loopback "
+            f"host; prefer https so the prompt is not sent in cleartext."
+        )
     return errors, warnings
 
 DEFAULT_CONFIG: dict = {

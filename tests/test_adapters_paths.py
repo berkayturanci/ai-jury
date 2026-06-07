@@ -31,14 +31,20 @@ def _proc(returncode=0, stdout="", stderr=""):
 
 class BuildArgvTests(unittest.TestCase):
     def test_claude_argv(self):
-        # No --disallowed-tools configured: the mandatory write-tool denial is
-        # injected at the adapter layer (issue #288 enforcement).
+        # The prompt is delivered on stdin, not argv (issue #287); the mandatory
+        # --disallowed-tools is injected at the adapter layer (issue #288).
         a = adapters.ClaudeAdapter(_spec(model="m", extra_args=["-x"]))
         self.assertEqual(
             a.build_argv("P"),
-            ["claude", "-p", "P", "--model", "m",
+            ["claude", "-p", "--model", "m",
              "--disallowed-tools", "Edit,Write,NotebookEdit,Bash", "-x"],
         )
+
+    def test_claude_prompt_via_stdin_not_argv(self):
+        a = adapters.ClaudeAdapter(_spec())
+        argv = a.build_argv("SENSITIVE PROMPT")
+        self.assertNotIn("SENSITIVE PROMPT", argv)
+        self.assertEqual(a._stdin_for("SENSITIVE PROMPT"), "SENSITIVE PROMPT")
 
     def test_codex_argv_and_stdin(self):
         a = adapters.CodexAdapter(_spec(name="codex", vendor="openai", command="codex", extra_args=["-s", "read-only"]))
@@ -46,9 +52,12 @@ class BuildArgvTests(unittest.TestCase):
         self.assertEqual(a._stdin_for("P"), "P")
 
     def test_agy_argv(self):
-        # No sandbox configured: --sandbox is injected (issue #288 enforcement).
+        # Prompt on stdin, not argv (issue #287); --sandbox is injected (#288).
         a = adapters.AgyAdapter(_spec(name="agy", vendor="google", command="agy"))
-        self.assertEqual(a.build_argv("P"), ["agy", "--print", "P", "--sandbox"])
+        argv = a.build_argv("P")
+        self.assertEqual(argv, ["agy", "--print", "--sandbox"])
+        self.assertNotIn("P", argv)
+        self.assertEqual(a._stdin_for("P"), "P")
 
 
 class AdapterRunTests(unittest.TestCase):
@@ -178,6 +187,16 @@ class HttpOnlyOpenerTests(unittest.TestCase):
     def test_ftp_scheme_rejected(self):
         with self.assertRaises(urllib.error.URLError):
             adapters._open("ftp://localhost/x", timeout=1)
+
+    def test_no_redirect_handler_registered(self):
+        # Review of #291: a 3xx redirect must NOT be followed (an endpoint could
+        # 302 to an internal/metadata host, bypassing the configured-URL check).
+        import urllib.request
+        opener = adapters._http_only_opener()
+        self.assertFalse(
+            any(isinstance(h, urllib.request.HTTPRedirectHandler)
+                for h in opener.handlers)
+        )
 
 
 class MakeAdapterTests(unittest.TestCase):

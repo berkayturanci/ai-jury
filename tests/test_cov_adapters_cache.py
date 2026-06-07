@@ -66,15 +66,16 @@ class _Resp:
 
 class AdaptersCoverageTests(unittest.TestCase):
     def test_agy_argv_with_model(self):
-        # AgyAdapter.build_argv appends --model when a model is set; the mandatory
-        # --sandbox is injected by the read-only enforcement (issue #288).
+        # AgyAdapter.build_argv appends --model when a model is set; the prompt is
+        # on stdin (#287) and the mandatory --sandbox is injected (#288).
         a = adapters.AgyAdapter(
             _spec(name="agy", vendor="google", command="agy", model="gemini-x")
         )
         self.assertEqual(
             a.build_argv("P"),
-            ["agy", "--print", "P", "--model", "gemini-x", "--sandbox"],
+            ["agy", "--print", "--model", "gemini-x", "--sandbox"],
         )
+        self.assertEqual(a._stdin_for("P"), "P")
 
     def test_list_local_models_data_not_list(self):
         # Line 357: a well-formed dict whose "data" is not a list -> [].

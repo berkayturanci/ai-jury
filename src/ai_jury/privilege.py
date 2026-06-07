@@ -81,20 +81,32 @@ def _ensure_claude_disallowed(extra_args: list[str]) -> list[str]:
     the flag when absent. Idempotent: the shipped default already lists all four,
     so it is returned unchanged.
     """
+    def _merged(value: str) -> str:
+        existing = [t.strip() for t in value.split(",") if t.strip()]
+        for tool in _WRITE_TOOLS:
+            if tool not in existing:
+                existing.append(tool)
+        return ",".join(existing)
+
     args = list(extra_args)
     out: list[str] = []
     i = 0
     found = False
     while i < len(args):
         a = args[i]
+        # Space-separated form: --disallowed-tools Edit,Write
         if a == "--disallowed-tools" and i + 1 < len(args):
             found = True
-            existing = [t.strip() for t in args[i + 1].split(",") if t.strip()]
-            for tool in _WRITE_TOOLS:
-                if tool not in existing:
-                    existing.append(tool)
-            out.extend([a, ",".join(existing)])
+            out.extend([a, _merged(args[i + 1])])
             i += 2
+            continue
+        # Equals form: --disallowed-tools=Edit,Write (review of #288 — the
+        # exact-match check missed this, so a narrower =-value could sit after
+        # the injected safe set and, if the CLI is last-wins, narrow the deny set).
+        if a.startswith("--disallowed-tools="):
+            found = True
+            out.append("--disallowed-tools=" + _merged(a.split("=", 1)[1]))
+            i += 1
             continue
         out.append(a)
         i += 1
@@ -112,7 +124,12 @@ def _ensure_value_sandbox(extra_args: list[str], default: list[str]) -> list[str
     which is the actual hole (empty/misconfigured ``extra_args``, issue #288).
     """
     args = list(extra_args)
-    if any(a in ("-s", "--sandbox") for a in args):
+    # Recognize both the space form (-s read-only) and the equals form
+    # (--sandbox=read-only) so an existing sandbox is never double-specified.
+    if any(
+        a in ("-s", "--sandbox") or a.startswith(("-s=", "--sandbox="))
+        for a in args
+    ):
         return args
     return [*default, *args]
 

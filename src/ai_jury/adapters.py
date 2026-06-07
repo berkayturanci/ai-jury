@@ -5,10 +5,12 @@ the agent's response. Adapters are intentionally thin: the orchestrator owns the
 prompt content and the round structure; an adapter only knows how to *invoke its
 CLI*.
 
-Headless invocations (verified against installed CLIs, early 2026):
-  - Claude Code : ``claude -p "<prompt>" --output-format text``
-  - Codex CLI   : ``codex exec <args> < <prompt>``  (prompt piped via stdin)
-  - Antigravity : ``agy --print "<prompt>"``
+Headless invocations (verified against installed CLIs, early 2026). The prompt
+embeds the redacted diff, so it is delivered on STDIN (never argv) for every
+real adapter so it is not exposed in the process list (issue #287):
+  - Claude Code : ``claude -p --output-format text``  (prompt piped via stdin)
+  - Codex CLI   : ``codex exec <args>``               (prompt piped via stdin)
+  - Antigravity : ``agy --print``                     (prompt piped via stdin)
 """
 from __future__ import annotations
 
@@ -355,11 +357,19 @@ class Adapter:
 
 
 class ClaudeAdapter(Adapter):
+    # The prompt embeds the (redacted) diff and PR/issue context; deliver it on
+    # STDIN rather than as a process argument so it is not exposed in `ps` /
+    # /proc/<pid>/cmdline to other local users (issue #287). `claude -p` reads
+    # the prompt from stdin when no positional prompt is given.
     def build_argv(self, prompt: str) -> list[str]:
-        argv = [self.spec.command, "-p", prompt]
+        del prompt
+        argv = [self.spec.command, "-p"]
         if self.spec.model:
             argv += ["--model", self.spec.model]
         return argv + _read_only_extra_args(self.spec)
+
+    def _stdin_for(self, prompt: str) -> str | None:
+        return prompt
 
 
 class CodexAdapter(Adapter):
@@ -379,11 +389,18 @@ class CodexAdapter(Adapter):
 
 
 class AgyAdapter(Adapter):
+    # Prompt on STDIN, not argv (issue #287): `agy --print` reads the prompt from
+    # stdin when no positional prompt is given (verified against agy 1.0.6), so the
+    # redacted diff is not exposed in the process list.
     def build_argv(self, prompt: str) -> list[str]:
-        argv = [self.spec.command, "--print", prompt]
+        del prompt
+        argv = [self.spec.command, "--print"]
         if self.spec.model:
             argv += ["--model", self.spec.model]
         return argv + _read_only_extra_args(self.spec)
+
+    def _stdin_for(self, prompt: str) -> str | None:
+        return prompt
 
 
 _DEFAULT_LOCAL_ENDPOINT = "http://localhost:11434/v1"
@@ -397,6 +414,12 @@ def _http_only_opener():
     schemes. This OpenerDirector registers no ``FileHandler``/``FTPHandler``, so
     any non-http(s) URL raises ``URLError("unknown url type")`` regardless of
     config validation — defense in depth alongside ``config._endpoint_issues``.
+
+    It also registers NO ``HTTPRedirectHandler`` (review of #291): otherwise a
+    malicious/compromised endpoint could 302-redirect to an internal/metadata
+    host (e.g. ``169.254.169.254``) and the opener would follow it, bypassing the
+    configured-URL validation. Without the handler a 3xx surfaces as an
+    ``HTTPError`` (a failed review) and is never followed.
     """
     import urllib.request
 
@@ -405,7 +428,6 @@ def _http_only_opener():
         urllib.request.HTTPHandler,
         urllib.request.HTTPSHandler,
         urllib.request.HTTPDefaultErrorHandler,
-        urllib.request.HTTPRedirectHandler,
         urllib.request.HTTPErrorProcessor,
         # UnknownHandler raises URLError("unknown url type: …") for any scheme
         # without a registered handler — so file://, ftp://, etc. fail loudly
@@ -439,7 +461,7 @@ def list_local_models(endpoint: str = _DEFAULT_LOCAL_ENDPOINT) -> list[str]:
     url = base if base.endswith("/models") else f"{base}/models"
     try:
         with _open(url, _VERSION_PROBE_TIMEOUT) as resp:  # noqa: S310
-            data = _json.loads(resp.read(_MAX_RESPONSE_BYTES).decode("utf-8"))
+            data = _json.loads(resp.read(_MAX_RESPONSE_BYTES).decode("utf-8", errors="replace"))
     except Exception:  # noqa: BLE001 - discovery is best-effort
         return []
     models = data.get("data") if isinstance(data, dict) else None
@@ -560,12 +582,12 @@ class LocalAdapter(Adapter):
         start = time.monotonic()
         try:
             with _open(req, effective_timeout) as resp:  # noqa: S310
-                raw = resp.read(_MAX_RESPONSE_BYTES).decode("utf-8")
+                raw = resp.read(_MAX_RESPONSE_BYTES).decode("utf-8", errors="replace")
             data = _json.loads(raw)
         except urllib.error.HTTPError as exc:
             detail = ""
             try:
-                detail = exc.read(_MAX_RESPONSE_BYTES).decode("utf-8")[:300]
+                detail = exc.read(_MAX_RESPONSE_BYTES).decode("utf-8", errors="replace")[:300]
             except Exception:  # noqa: BLE001
                 detail = exc.reason or ""
             # The body is from a possibly-untrusted endpoint and is surfaced in

@@ -178,9 +178,19 @@ class EnforceReadOnlyTest(unittest.TestCase):
                    "--dangerously-skip-permissions"]
         self.assertEqual(privilege.enforce_read_only("anthropic", "claude", shipped), shipped)
 
+    def test_claude_equals_form_disallowed_is_merged(self):
+        # Review of #288: the =-form must be merged too, not left to sit after the
+        # injected safe set where a last-wins CLI could narrow the deny set.
+        out = privilege.enforce_read_only("anthropic", "claude", ["--disallowed-tools=Edit"])
+        self.assertEqual(out, ["--disallowed-tools=Edit,Write,NotebookEdit,Bash"])
+
     def test_codex_injects_read_only_when_no_sandbox(self):
         out = privilege.enforce_read_only("openai", "codex", [])
         self.assertEqual(out, ["-s", "read-only"])
+
+    def test_codex_equals_form_sandbox_is_respected_not_doubled(self):
+        out = privilege.enforce_read_only("openai", "codex", ["--sandbox=read-only"])
+        self.assertEqual(out, ["--sandbox=read-only"])
 
     def test_codex_respects_operator_widened_sandbox(self):
         # An explicit (audited) opt-in is preserved, never overridden.
