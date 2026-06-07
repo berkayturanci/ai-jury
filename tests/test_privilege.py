@@ -84,6 +84,26 @@ class AuditAgentTest(unittest.TestCase):
         )
         self.assertEqual(privilege.audit_agent(spec), [])
 
+    # Issue #300: an unsandboxed non-claude agent must warn even with no
+    # dangerous flag (closes the audit blind spot).
+    def test_unknown_vendor_unsandboxed_warns(self):
+        spec = AgentSpec(name="x", vendor="acme", command="claude", extra_args=[])
+        warnings = privilege.audit_agent(spec)
+        self.assertTrue(warnings)
+        self.assertIn("sandbox", warnings[0].lower())
+
+    def test_codex_no_sandbox_no_dangerous_flag_warns(self):
+        spec = AgentSpec(name="codex", vendor="openai", command="codex", extra_args=[])
+        self.assertTrue(privilege.audit_agent(spec))
+
+    def test_local_vendor_is_not_audited(self):
+        # A local/HTTP agent runs no subprocess to sandbox — out of scope.
+        spec = AgentSpec(
+            name="qwen", vendor="local", command="", model="m",
+            endpoint="http://localhost:11434/v1",
+        )
+        self.assertEqual(privilege.audit_agent(spec), [])
+
 
 class AuditPrivilegeTest(unittest.TestCase):
     def test_dangerous_config_produces_warnings(self):
