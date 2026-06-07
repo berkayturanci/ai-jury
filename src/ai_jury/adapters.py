@@ -464,10 +464,13 @@ def list_local_models(endpoint: str = _DEFAULT_LOCAL_ENDPOINT) -> list[str]:
     from .config import _endpoint_issues
 
     base = (endpoint or _DEFAULT_LOCAL_ENDPOINT).rstrip("/")
-    if _endpoint_issues(base, "local-endpoint")[0]:  # hard-error issues -> refuse
-        return []
-    url = base if base.endswith("/models") else f"{base}/models"
     try:
+        # SSRF gate INSIDE the try (review of #309): `_endpoint_issues` calls
+        # urlsplit, which raises ValueError on a malformed URL (e.g. `http://[::1`);
+        # keep the best-effort "any failure -> []" contract rather than crashing.
+        if _endpoint_issues(base, "local-endpoint")[0]:  # hard-error issues -> refuse
+            return []
+        url = base if base.endswith("/models") else f"{base}/models"
         with _open(url, _VERSION_PROBE_TIMEOUT) as resp:  # noqa: S310
             data = _json.loads(resp.read(_MAX_RESPONSE_BYTES).decode("utf-8", errors="replace"))
     except Exception:  # noqa: BLE001 - discovery is best-effort

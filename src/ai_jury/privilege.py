@@ -149,13 +149,15 @@ def enforce_read_only(vendor: str, name: str, extra_args: list[str]) -> list[str
     vendor = (vendor or "").lower()
     name = (name or "").lower()
     extra_args = list(extra_args or [])
+    # `local` is checked FIRST (review of #310): a network agent runs no
+    # subprocess, and the name-substring checks below would otherwise mis-handle a
+    # local agent named e.g. "local-claude" / "my-codex".
+    if vendor == "local":
+        return extra_args
     if "claude" in name or vendor == "anthropic":
         return _ensure_claude_disallowed(extra_args)
     if vendor == "openai" or "codex" in name:
         return _ensure_value_sandbox(extra_args, ["-s", "read-only"])
-    if vendor == "local":
-        # Network/HTTP agent: no subprocess to sandbox.
-        return extra_args
     # google / agy / gemini AND any unknown vendor (issue #310, completes #300):
     # an unknown vendor routes to the generic AgyAdapter (--print/--sandbox), so
     # inject --sandbox like agy. An agy-compatible CLI then runs sandboxed; an

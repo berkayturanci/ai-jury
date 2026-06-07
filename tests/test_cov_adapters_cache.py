@@ -117,6 +117,11 @@ class AdaptersCoverageTests(unittest.TestCase):
         with mock.patch("ai_jury.adapters._open", side_effect=AssertionError("network")):
             self.assertEqual(adapters.list_local_models("file:///etc/passwd"), [])
 
+    def test_list_local_models_malformed_url_is_a_miss(self):
+        # Review of #309: a URL that makes urlsplit raise (e.g. `http://[::1`)
+        # must still return [] (best-effort contract), not crash.
+        self.assertEqual(adapters.list_local_models("http://[::1"), [])
+
     def test_available_ok(self):
         a = adapters.LocalAdapter(_local_spec())
         with mock.patch("ai_jury.adapters._open", return_value=_Resp("{}", status=200)):

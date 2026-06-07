@@ -231,6 +231,12 @@ class EnforceReadOnlyTest(unittest.TestCase):
         out = privilege.enforce_read_only("weirdvendor", "x", ["--sandbox"])
         self.assertEqual(out, ["--sandbox"])
 
+    def test_local_vendor_name_substring_not_mishandled(self):
+        # Review of #310: a local agent whose NAME contains "claude"/"codex" must
+        # still be left unchanged (the vendor=="local" fast-path wins).
+        self.assertEqual(privilege.enforce_read_only("local", "local-claude", []), [])
+        self.assertEqual(privilege.enforce_read_only("local", "my-codex", []), [])
+
     def test_local_vendor_is_left_untouched(self):
         self.assertEqual(privilege.enforce_read_only("local", "qwen", []), [])
 
