@@ -113,6 +113,28 @@ class SoftWarnings(unittest.TestCase):
             validate_config(_cfg(bogus=1), strict=True)
 
 
+class CommandPathValidation(unittest.TestCase):
+    """Issue #293/F-6: a relative path command is rejected."""
+
+    def _agent(self, command):
+        return {"jury": {"rounds": 1, "chair": "a"},
+                "agent": [{"name": "a", "vendor": "anthropic", "command": command}]}
+
+    def test_relative_path_command_is_hard_error(self):
+        with self.assertRaises(ConfigError):
+            validate_config(self._agent("./tools/claude"))
+
+    def test_relative_subdir_command_is_hard_error(self):
+        with self.assertRaises(ConfigError):
+            validate_config(self._agent("bin/agy"))
+
+    def test_bare_name_is_allowed(self):
+        validate_config(self._agent("claude"))  # resolved on PATH
+
+    def test_absolute_path_is_allowed(self):
+        validate_config(self._agent("/usr/local/bin/claude"))
+
+
 class EndpointValidation(unittest.TestCase):
     """Issue #291: local-agent endpoint scheme/host validation (SSRF defense)."""
 

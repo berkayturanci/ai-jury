@@ -5,6 +5,7 @@ file falls back to a sensible built-in default so the tool runs out of the box.
 """
 from __future__ import annotations
 
+import os
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -12,6 +13,18 @@ from urllib.parse import urlsplit
 
 # Hosts that are safe to reach over plaintext http and never an SSRF target.
 _LOOPBACK_HOSTS = ("localhost", "127.0.0.1", "::1", "[::1]")
+
+
+def _is_relative_path_command(command: str) -> bool:
+    """True for a relative command that contains a path separator (#293/F-6).
+
+    A bare name (``codex``) is fine — it is resolved on PATH. An absolute path
+    (``/usr/bin/codex``) is fine — it is explicit. A relative path with a
+    separator (``./tools/codex``, ``bin/agy``) is rejected because it resolves a
+    binary from an attacker-influenceable working-directory-relative location.
+    """
+    has_sep = "/" in command or "\\" in command or (os.altsep is not None and os.altsep in command)
+    return has_sep and not Path(command).is_absolute()
 
 
 def _endpoint_issues(endpoint: str, label: str) -> tuple[list[str], list[str]]:
@@ -300,6 +313,14 @@ def validate_config(data: dict, strict: bool = False) -> list:
                 warnings.extend(e_warnings)
         elif not command:
             errors.append(f"agent '{label}' is missing a non-empty 'command'.")
+        elif _is_relative_path_command(command):
+            # A relative path with separators (e.g. ./tools/codex, bin/agy) could
+            # resolve a binary from an attacker-influenced location (#293/F-6).
+            # Require a bare name (resolved on PATH) or an absolute path.
+            errors.append(
+                f"agent '{label}' command '{command}' is a relative path; use a "
+                f"bare name (resolved on PATH) or an absolute path."
+            )
 
         # Per-agent timeout (hard if present and invalid).
         a_timeout = agent.get("timeout", 600)

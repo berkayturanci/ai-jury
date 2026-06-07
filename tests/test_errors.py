@@ -192,19 +192,19 @@ class _MissingAdapter(_FakeAdapter):
 
 
 class _patched:
-    """Context manager that monkeypatches adapters.subprocess.run."""
+    """Context manager that monkeypatches adapters._spawn (the run() seam)."""
 
     def __init__(self, fn):
         self.fn = fn
         self._orig = None
 
     def __enter__(self):
-        self._orig = adapters.subprocess.run
-        adapters.subprocess.run = self.fn
+        self._orig = adapters._spawn
+        adapters._spawn = self.fn
         return self
 
     def __exit__(self, *exc):
-        adapters.subprocess.run = self._orig
+        adapters._spawn = self._orig
         return False
 
 

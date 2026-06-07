@@ -12,14 +12,62 @@ Headless invocations (verified against installed CLIs, early 2026):
 """
 from __future__ import annotations
 
+import contextlib
+import os
 import re
 import shutil
+import signal
 import subprocess
 import time
 from dataclasses import dataclass, field
 
-from . import privilege
+from . import privilege, redaction
 from .config import AgentSpec
+
+# Cap on a single local-model HTTP response body (issue #293/F-9). A chat
+# completion is small; an unbounded read from a malicious/buggy endpoint would
+# let it OOM the process.
+_MAX_RESPONSE_BYTES = 16 * 1024 * 1024
+
+
+def _kill_process_group(proc: subprocess.Popen) -> None:
+    """Best-effort kill of the child's whole process group (issue #293/F-7)."""
+    try:
+        if hasattr(os, "killpg"):
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            return
+    except (ProcessLookupError, PermissionError, OSError):
+        pass
+    with contextlib.suppress(OSError):
+        proc.kill()
+
+
+def _spawn(argv: list[str], stdin: str | None, timeout: int) -> subprocess.CompletedProcess:
+    """Run a CLI with stdout/stderr captured, killing the whole group on timeout.
+
+    ``subprocess.run(timeout=…)`` SIGKILLs only the direct child, so an agent CLI
+    that wraps node/python can leak orphaned grandchildren (issue #293/F-7). The
+    child is started in its own session (process-group leader); on timeout the
+    entire group is killed before re-raising ``TimeoutExpired`` so the caller's
+    handling is unchanged. Returns a ``CompletedProcess``.
+    """
+    popen_kwargs: dict = {
+        "stdin": subprocess.PIPE if stdin is not None else None,
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
+        "text": True,
+    }
+    if hasattr(os, "setsid"):
+        popen_kwargs["start_new_session"] = True
+    proc = subprocess.Popen(argv, **popen_kwargs)
+    try:
+        out, err = proc.communicate(input=stdin, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _kill_process_group(proc)
+        with contextlib.suppress(Exception):
+            proc.communicate()  # reap the killed child
+        raise
+    return subprocess.CompletedProcess(argv, proc.returncode, out, err)
 
 
 def _read_only_extra_args(spec: AgentSpec) -> list[str]:
@@ -267,13 +315,7 @@ class Adapter:
         stdin = self._stdin_for(prompt)
         start = time.monotonic()
         try:
-            proc = subprocess.run(
-                argv,
-                input=stdin,
-                capture_output=True,
-                text=True,
-                timeout=effective_timeout,
-            )
+            proc = _spawn(argv, stdin, effective_timeout)
         except subprocess.TimeoutExpired:
             return AgentResult(
                 self.name, self.spec.vendor, False, "",
@@ -392,13 +434,12 @@ def list_local_models(endpoint: str = _DEFAULT_LOCAL_ENDPOINT) -> list[str]:
     returns ``[]`` so callers can fall back gracefully.
     """
     import json as _json
-    import urllib.request
 
     base = (endpoint or _DEFAULT_LOCAL_ENDPOINT).rstrip("/")
     url = base if base.endswith("/models") else f"{base}/models"
     try:
         with _open(url, _VERSION_PROBE_TIMEOUT) as resp:  # noqa: S310
-            data = _json.loads(resp.read().decode("utf-8"))
+            data = _json.loads(resp.read(_MAX_RESPONSE_BYTES).decode("utf-8"))
     except Exception:  # noqa: BLE001 - discovery is best-effort
         return []
     models = data.get("data") if isinstance(data, dict) else None
@@ -519,14 +560,17 @@ class LocalAdapter(Adapter):
         start = time.monotonic()
         try:
             with _open(req, effective_timeout) as resp:  # noqa: S310
-                raw = resp.read().decode("utf-8")
+                raw = resp.read(_MAX_RESPONSE_BYTES).decode("utf-8")
             data = _json.loads(raw)
         except urllib.error.HTTPError as exc:
             detail = ""
             try:
-                detail = exc.read().decode("utf-8")[:300]
+                detail = exc.read(_MAX_RESPONSE_BYTES).decode("utf-8")[:300]
             except Exception:  # noqa: BLE001
                 detail = exc.reason or ""
+            # The body is from a possibly-untrusted endpoint and is surfaced in
+            # the report; redact recognized secrets before embedding (#293/F-8).
+            detail = redaction.redact(detail)[0]
             return AgentResult(
                 self.name, self.spec.vendor, False, "",
                 time.monotonic() - start, f"HTTP {exc.code}: {detail}",

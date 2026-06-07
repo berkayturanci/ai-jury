@@ -227,7 +227,7 @@ class LocalModelDiscoveryTest(unittest.TestCase):
             def __exit__(self, *a):
                 return False
 
-            def read(self):
+            def read(self, *args):
                 return payload
 
         with mock.patch("ai_jury.adapters._open", return_value=_Resp()):

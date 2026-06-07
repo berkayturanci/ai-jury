@@ -63,35 +63,35 @@ class AdapterRunTests(unittest.TestCase):
 
     def test_success(self):
         with mock.patch("shutil.which", return_value="/usr/bin/claude"), \
-             mock.patch("subprocess.run", return_value=_proc(0, "a review")):
+             mock.patch("ai_jury.adapters._spawn", return_value=_proc(0, "a review")):
             r = self._adapter().run("p", timeout=5)
         self.assertTrue(r.ok)
         self.assertEqual(r.output, "a review")
 
     def test_timeout(self):
         with mock.patch("shutil.which", return_value="/usr/bin/claude"), \
-             mock.patch("subprocess.run", side_effect=subprocess.TimeoutExpired("claude", 1)):
+             mock.patch("ai_jury.adapters._spawn", side_effect=subprocess.TimeoutExpired("claude", 1)):
             r = self._adapter().run("p")
         self.assertFalse(r.ok)
         self.assertEqual(r.error_code, adapters.ERR_TIMEOUT)
 
     def test_spawn_failure(self):
         with mock.patch("shutil.which", return_value="/usr/bin/claude"), \
-             mock.patch("subprocess.run", side_effect=OSError("nope")):
+             mock.patch("ai_jury.adapters._spawn", side_effect=OSError("nope")):
             r = self._adapter().run("p")
         self.assertFalse(r.ok)
         self.assertEqual(r.error_code, adapters.ERR_SPAWN_FAILED)
 
     def test_nonzero_exit(self):
         with mock.patch("shutil.which", return_value="/usr/bin/claude"), \
-             mock.patch("subprocess.run", return_value=_proc(1, "partial", "boom")):
+             mock.patch("ai_jury.adapters._spawn", return_value=_proc(1, "partial", "boom")):
             r = self._adapter().run("p")
         self.assertFalse(r.ok)
         self.assertIn("exit 1", r.error)
 
     def test_empty_output(self):
         with mock.patch("shutil.which", return_value="/usr/bin/claude"), \
-             mock.patch("subprocess.run", return_value=_proc(0, "   ")):
+             mock.patch("ai_jury.adapters._spawn", return_value=_proc(0, "   ")):
             r = self._adapter().run("p")
         self.assertFalse(r.ok)
         self.assertEqual(r.error_code, adapters.ERR_EMPTY_OUTPUT)
@@ -100,7 +100,7 @@ class AdapterRunTests(unittest.TestCase):
 class _Resp:
     def __init__(self, body):
         self._b = body
-    def read(self):
+    def read(self, *args):
         return self._b.encode("utf-8")
     def __enter__(self):
         return self
@@ -143,6 +143,27 @@ class LocalAdapterRunTests(unittest.TestCase):
         with mock.patch("ai_jury.adapters._open", side_effect=ValueError("weird")):
             r = self._adapter().run("p")
         self.assertFalse(r.ok)
+
+
+class SpawnTests(unittest.TestCase):
+    """Issue #293/F-7: _spawn runs in its own group and kills it on timeout."""
+
+    def test_happy_path_returns_completed_process(self):
+        proc = adapters._spawn(["printf", "hi"], None, timeout=10)
+        self.assertEqual(proc.returncode, 0)
+        self.assertEqual(proc.stdout, "hi")
+
+    def test_stdin_is_delivered(self):
+        proc = adapters._spawn(["cat"], "piped-input", timeout=10)
+        self.assertEqual(proc.returncode, 0)
+        self.assertEqual(proc.stdout, "piped-input")
+
+    def test_timeout_raises(self):
+        import subprocess as _sp
+        with self.assertRaises(_sp.TimeoutExpired):
+            adapters._spawn(
+                [sys.executable, "-c", "import time; time.sleep(30)"], None, timeout=1
+            )
 
 
 class HttpOnlyOpenerTests(unittest.TestCase):
