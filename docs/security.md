@@ -27,11 +27,15 @@ in v1.3.0** — prompts are now delivered on stdin). Scan note:
 A whole-codebase **Claude** audit across four attack surfaces
 (subprocess/sandbox, network/SSRF, prompt-injection/redaction, filesystem/cache)
 drove fixes #287–#296, shipped in v1.3.0:
-[Security audit — 2026-06-07](security-audit-2026-06-07.md). A follow-up
+[Security audit — 2026-06-07](security-audit-2026-06-07.md). A
 **re-audit of the released v1.3.0 code**
-([Security re-audit — v1.3.0](security-audit-2026-06-07-v1.3.0.md)) confirms
-every fix holds in source (no Critical/High) and tracks the remaining
-defense-in-depth items.
+([Security re-audit — v1.3.0](security-audit-2026-06-07-v1.3.0.md)) confirmed
+every fix held and tracked the remaining defense-in-depth items as #300–#303,
+which shipped in v1.4.0. A third **re-audit of the released v1.4.0 code**
+([Security re-audit — v1.4.0](security-audit-2026-06-07-v1.4.0.md)) confirms
+every #287–#303 fix holds (no Critical/High) and surfaces two Medium residuals
+(an unknown-vendor fail-open sandbox and a `jury init --local-endpoint` SSRF
+bypass) plus minor hardening items.
 
 ## Codex invocation
 

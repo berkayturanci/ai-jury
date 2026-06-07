@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Post-v1.4.0 security re-audit** (`docs/security-audit-2026-06-07-v1.4.0.md`). A third four-surface re-audit of the released code confirms every #287–#303 fix holds in source (no Critical/High). It surfaces two **Medium** residuals — the unknown-vendor adapter path still runs **fail-open** (no sandbox injected) in default mode even though #300 made the audit warn, and `jury init --local-endpoint` reaches an arbitrary host **without** the `_endpoint_issues` SSRF gate the config path enforces — plus minor items (init endpoint not redacted in stdout, explicit TLS context, `prior_txt` debate slot not neutralized, more secret formats, `cache clear()` glob blast-radius, atomic-write temp via `mkstemp`). Tracked for follow-up.
+
 ## [1.4.0] - 2026-06-07
 
 > Security re-audit follow-up (#300–#303). All #287–#296 fixes re-confirmed in
