@@ -40,7 +40,11 @@ _PATTERNS: list[tuple[str, re.Pattern]] = [
     # redacted; the `://user:` prefix (group 1) and `@` suffix (group 3) are kept
     # so the URL stays readable. The trailing `@` requirement means a normal
     # `host:port` (no `@`) never matches. Handled group-wise in `redact`.
-    ("basic_auth", re.compile(r"(://[^/:@\s]+:)([^@\s]{6,})(@)")),
+    #
+    # The username run is `*`, not `+` (review of #302): a token-as-password URL
+    # with an EMPTY username — `https://:SECRET@host` — is common, and `+` made
+    # the match fail there and leak the secret.
+    ("basic_auth", re.compile(r"(://[^/:@\s]*:)([^@\s]{6,})(@)")),
     # Capture the surrounding quotes (groups 3 and 4) so they are PRESERVED in
     # the replacement (issue #102): redacting only the value keeps a quoted
     # assignment a valid string literal instead of producing a broken,

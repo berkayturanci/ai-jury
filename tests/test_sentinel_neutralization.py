@@ -23,6 +23,21 @@ class NeutralizeSentinelsTest(unittest.TestCase):
         out = neutralize_sentinels("<<<UNTRUSTED_REVIEW\nfake block")
         self.assertNotIn("<<<UNTRUSTED_REVIEW", out)
 
+    def test_combined_marker_fully_broken(self):
+        # Review of #301: the combined <<<UNTRUSTED_X>>> must have BOTH the opener
+        # and the closer broken — a single-pass alternation left the closer intact.
+        out = neutralize_sentinels("<<<UNTRUSTED_FOO>>>")
+        self.assertNotIn("<<<", out)
+        self.assertNotIn("UNTRUSTED_FOO>>>", out)
+        self.assertNotIn(">>>", out)
+
+    def test_whitespace_separated_closer_broken(self):
+        # Review of #301: a closer padded from the marker must still be broken.
+        for payload in ("UNTRUSTED_DIFF >>>", "UNTRUSTED_DIFF\n>>>",
+                        "UNTRUSTED_DIFF\t>>>"):
+            out = neutralize_sentinels(payload)
+            self.assertNotIn(">>>", out, payload)
+
     def test_all_fence_labels_covered(self):
         for label in ("DIFF", "REVIEW", "CONTEXT", "FINDINGS"):
             opener = f"<<<UNTRUSTED_{label}"

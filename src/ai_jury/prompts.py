@@ -32,22 +32,24 @@ PROMPT_VERSION = 3
 # adjacent to an ``UNTRUSTED_`` marker, using a visible middle dot — NOT a
 # zero-width char, which the injection scanner flags. The injection scanner still
 # surfaces the attempt; this restores the fence as a real structural boundary.
-_SENTINEL_RE = re.compile(
-    r"(<<<)(\s*UNTRUSTED_[A-Z]+)|(UNTRUSTED_[A-Z]+)(>>>)", re.IGNORECASE
-)
+#
+# TWO passes, not one alternation (review of #301): a single ``<<<…|…>>>``
+# regex is non-overlapping, so on the COMBINED ``<<<UNTRUSTED_X>>>`` the opener
+# alternative consumes the shared ``UNTRUSTED_X`` core and the trailing ``>>>``
+# is left intact — a surviving closer. The opener pass therefore uses a
+# zero-width lookahead (it does not consume the marker), and the closer pass
+# runs separately; both tolerate ``\s*`` between the marker and the angle run
+# (so ``UNTRUSTED_DIFF >>>`` / ``…\n>>>`` are broken too).
+_OPENER_RE = re.compile(r"<<<(?=\s*UNTRUSTED_[A-Z]+)", re.IGNORECASE)
+_CLOSER_RE = re.compile(r"(UNTRUSTED_[A-Z]+\s*)>>>", re.IGNORECASE)
 
 
 def neutralize_sentinels(text: str) -> str:
     """Break any fence-sentinel run inside untrusted ``text`` (issue #301)."""
     if not text:
         return text
-
-    def _break(m: re.Match) -> str:
-        if m.group(1) is not None:  # opener: <<<UNTRUSTED_X
-            return "<·<·<" + m.group(2)
-        return m.group(3) + ">·>·>"  # closer: UNTRUSTED_X>>>
-
-    return _SENTINEL_RE.sub(_break, text)
+    text = _OPENER_RE.sub("<·<·<", text)
+    return _CLOSER_RE.sub(lambda m: m.group(1) + ">·>·>", text)
 
 # Standing anti-injection preamble, reused across templates. Untrusted blocks
 # below are demarcated with these sentinels.

@@ -177,6 +177,15 @@ class RedactionTests(unittest.TestCase):
         self.assertIn("@cache:6379", out)        # suffix preserved
         self.assertNotIn("S3cr3tP4ss", out)
 
+    def test_basic_auth_empty_username_redacted(self):
+        # Review of #302: a token-as-password URL with no username
+        # (https://:TOKEN@host) must still be redacted (the `+` quantifier leaked).
+        out, n = redact("https://:" + "SuperSecretToken" + "@api.example.com")
+        self.assertEqual(n, 1)
+        self.assertIn("[REDACTED:basic_auth]", out)
+        self.assertNotIn("SuperSecretToken", out)
+        self.assertIn("@api.example.com", out)
+
     def test_url_without_auth_not_matched(self):
         # A normal host:port with no `@` credentials must not be touched.
         out, n = redact("https://example.com:8080/v1/models")
