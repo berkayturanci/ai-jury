@@ -9,7 +9,29 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from ai_jury.config import ConfigError, validate_config  # noqa: E402
+import tempfile  # noqa: E402
+
+from ai_jury.config import (  # noqa: E402
+    ConfigError,
+    load_raw_config,
+    validate_config,
+)
+
+
+class ConfigSizeLimit(unittest.TestCase):
+    """Issue #316/L-5: a config file is size-capped before tomllib parses it."""
+
+    def test_oversized_config_is_rejected(self):
+        with tempfile.NamedTemporaryFile(
+            "w", suffix=".toml", delete=False, encoding="utf-8"
+        ) as fh:
+            fh.write("x = 1\n# " + "a" * (5 * 1024 * 1024))  # > 4 MiB
+            name = fh.name
+        try:
+            with self.assertRaises(ConfigError):
+                load_raw_config(name)
+        finally:
+            Path(name).unlink()
 
 
 def _cfg(**jury_over):

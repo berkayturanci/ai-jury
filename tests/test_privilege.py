@@ -178,6 +178,22 @@ class IsSandboxedVendorAwareTest(unittest.TestCase):
     def test_codex_read_only_value_is_sandboxed(self):
         self.assertTrue(privilege._is_sandboxed(["-s", "read-only"], vendor="openai"))
 
+    def test_equals_form_sandbox_recognized(self):
+        # Issue #316/L-6: the audit must recognize the =-form the enforcement
+        # already accepts, or it false-positives a safe config under --strict.
+        self.assertTrue(privilege._is_sandboxed(["--sandbox=read-only"], vendor="openai"))
+        self.assertTrue(privilege._is_sandboxed(["-s=read-only"], vendor="openai"))
+        self.assertFalse(
+            privilege._is_sandboxed(["--sandbox=workspace-write"], vendor="openai")
+        )
+
+    def test_codex_equals_read_only_has_no_audit_warning(self):
+        spec = AgentSpec(
+            name="codex", vendor="openai", command="codex",
+            extra_args=["--sandbox=read-only"],
+        )
+        self.assertEqual(privilege.audit_agent(spec), [])
+
 
 class EnforceReadOnlyTest(unittest.TestCase):
     """Issue #288: the sandbox is guaranteed at the adapter layer, not config."""

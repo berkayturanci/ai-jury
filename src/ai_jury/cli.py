@@ -583,15 +583,19 @@ def _run_init(rest: list[str]) -> int:
     ns = sub.parse_args(rest)
 
     from .adapters import list_local_models
+    from .redaction import redact
 
     endpoint = ns.local_endpoint or "http://localhost:11434/v1"
+    # Redact any userinfo credentials before echoing the endpoint to stdout/CI
+    # logs (issue #316/L-7), mirroring doctor.py.
+    endpoint_disp = redact(endpoint)[0]
 
     if ns.list_models:
         models = list_local_models(endpoint)
         if not models:
-            print(f"No local models found (is a server reachable at {endpoint}?).")
+            print(f"No local models found (is a server reachable at {endpoint_disp}?).")
             return 0
-        print(f"Local models at {endpoint}:")
+        print(f"Local models at {endpoint_disp}:")
         for m in models:
             print(f"  - {m}")
         return 0
@@ -605,7 +609,7 @@ def _run_init(rest: list[str]) -> int:
         # Show discovered local models so the user sees what they can pick.
         models = list_local_models(endpoint)
         if models:
-            print(f"\nlocal models at {endpoint}: {', '.join(models)}")
+            print(f"\nlocal models at {endpoint_disp}: {', '.join(models)}")
         return 0
 
     preset = PRESETS.get(ns.preset, {})

@@ -26,6 +26,9 @@ from pathlib import Path
 # Standard discovery locations, searched in order when no explicit path is given.
 DEFAULT_POLICY_NAMES = (".jury/policy.toml", "jury-policy.toml")
 
+# Upper bound on a policy TOML file (issue #316/L-5); a real policy is a few KB.
+_MAX_POLICY_BYTES = 4 * 1024 * 1024
+
 
 class PolicyError(Exception):
     """Raised when a policy file exists but cannot be parsed or is malformed."""
@@ -85,8 +88,15 @@ def load_policy(path: Path | None = None) -> ReviewPolicy | None:
         return None
 
     try:
+        # Size-cap the read (issue #316/L-5): a real policy is a few KB; refuse a
+        # multi-MB / pathological file rather than feed it whole to tomllib.
         with policy_path.open("rb") as handle:
-            data = tomllib.load(handle)
+            raw = handle.read(_MAX_POLICY_BYTES + 1)
+        if len(raw) > _MAX_POLICY_BYTES:
+            raise PolicyError(
+                f"policy file {policy_path} exceeds the {_MAX_POLICY_BYTES}-byte limit."
+            )
+        data = tomllib.loads(raw.decode("utf-8"))
     except OSError as exc:
         raise PolicyError(f"could not read policy file {policy_path}: {exc}") from exc
     except tomllib.TOMLDecodeError as exc:

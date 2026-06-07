@@ -19,8 +19,10 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
 import stat
+import tempfile
 from dataclasses import asdict
 from pathlib import Path
 
@@ -34,6 +36,12 @@ from .orchestrator import JuryOutcome
 
 CACHE_SCHEMA = 1
 _ENV_DIR = "JURY_CACHE_DIR"
+
+# Cache files are named `<64-hex sha256>.json` (entries) or
+# `<64-hex>.json.<rand>.tmp` (in-flight atomic writes). `clear()` only touches
+# files matching this shape (issue #316/L-3) so it never deletes unrelated files
+# when JURY_CACHE_DIR points at a shared/populated directory.
+_CACHE_NAME_RE = re.compile(r"^[0-9a-f]{64}\.json")
 
 
 def default_cache_dir() -> Path:
@@ -343,18 +351,25 @@ class Cache:
             if mac_key is None:
                 return
             payload["mac"] = _compute_mac(mac_key, payload)
-            # Atomic write (issue #303/L-4): write a temp file then replace, so a
-            # crash mid-write can't leave a truncated entry and a reader never
-            # sees a partial file. The temp name is pid-tagged (review of #303) so
-            # two concurrent same-user store() calls for the same key don't write
-            # the identical temp path. (The 0700 dir gate above already blocks
-            # another local user from pre-planting a symlink at the target.)
+            # Atomic write (issue #303/L-4, hardened in #316/L-4): mkstemp gives a
+            # UNIQUE name created with O_EXCL and no symlink-follow — safe against
+            # same-PID/thread concurrency and a pre-planted temp symlink — then an
+            # atomic replace. A crash mid-write can't leave a truncated entry and
+            # a reader never sees a partial file.
             path = self._path(key)
-            tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
-            tmp.write_text(
-                json.dumps(payload, separators=(",", ":")) + "\n", encoding="utf-8"
+            blob = json.dumps(payload, separators=(",", ":")) + "\n"
+            fd, tmp_name = tempfile.mkstemp(
+                dir=self.dir, prefix=f"{path.name}.", suffix=".tmp"
             )
-            tmp.replace(path)
+            tmp = Path(tmp_name)
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                    handle.write(blob)
+                tmp.replace(path)
+            except OSError:
+                with contextlib.suppress(OSError):
+                    tmp.unlink()
+                raise  # caught by the outer contextlib.suppress(OSError)
 
     def clear(self) -> int:
         """Remove all cache entries; return the number deleted.
@@ -366,15 +381,19 @@ class Cache:
         if not self.dir.exists():
             return 0
         removed = 0
+        # Only touch files matching the cache-name shape (#316/L-3) so a clear on
+        # a shared JURY_CACHE_DIR never deletes unrelated files. Entries
+        # (`<hex>.json`) count; leftover atomic-write temps (`<hex>.json.*.tmp`)
+        # are reaped but not counted.
         for path in self.dir.glob("*.json"):
-            with contextlib.suppress(OSError):
-                path.unlink()
-                removed += 1
-        # Reap any leftover atomic-write temp files (review of #303/L-4) and
-        # rotate the MAC key; neither counts toward the entry total.
+            if _CACHE_NAME_RE.match(path.name):
+                with contextlib.suppress(OSError):
+                    path.unlink()
+                    removed += 1
         for tmp in self.dir.glob("*.tmp"):
-            with contextlib.suppress(OSError):
-                tmp.unlink()
+            if _CACHE_NAME_RE.match(tmp.name):
+                with contextlib.suppress(OSError):
+                    tmp.unlink()
         with contextlib.suppress(OSError):
             (self.dir / _HMAC_KEY_FILE).unlink()
         return removed

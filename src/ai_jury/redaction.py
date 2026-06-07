@@ -35,6 +35,14 @@ _PATTERNS: list[tuple[str, re.Pattern]] = [
     ("stripe_key", re.compile(r"(?:sk|rk|pk)_(?:live|test)_[0-9A-Za-z]{16,}")),
     ("github_pat", re.compile(r"github_pat_[0-9A-Za-z_]{20,}")),
     ("jwt", re.compile(r"eyJ[0-9A-Za-z_\-]+\.[0-9A-Za-z_\-]+\.[0-9A-Za-z_\-]+")),
+    # More provider formats (issue #316/L-2), each anchored on a distinctive
+    # prefix to avoid false positives. (Twilio Account SIDs and bare hex are
+    # deliberately NOT added — a SID is an identifier, and a broad hex rule would
+    # over-match commit SHAs.)
+    ("sendgrid_key", re.compile(r"SG\.[A-Za-z0-9_\-]{22}\.[A-Za-z0-9_\-]{43}")),
+    ("pypi_token", re.compile(r"pypi-[A-Za-z0-9_\-]{16,}")),
+    ("npm_token", re.compile(r"npm_[A-Za-z0-9]{36}")),
+    ("slack_webhook", re.compile(r"https://hooks\.slack\.com/services/[A-Za-z0-9/]+")),
     # Basic-auth credentials in a URL (issue #302): `scheme://user:password@host`
     # (e.g. `redis://default:s3cr3t…@cache:6379`). Only the password (group 2) is
     # redacted; the `://user:` prefix (group 1) and `@` suffix (group 3) are kept

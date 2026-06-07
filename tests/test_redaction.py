@@ -179,6 +179,20 @@ class RedactionTests(unittest.TestCase):
         self.assertIn("@cache:6379", out)        # suffix preserved
         self.assertNotIn("S3cr3tP4ss", out)
 
+    # Issue #316/L-2: more provider token formats.
+    def test_more_provider_formats_redacted(self):
+        cases = {
+            "sendgrid_key": "SG." + "A" * 22 + "." + "B" * 43,
+            "pypi_token": "pypi-" + "AgEIcHlwaS5vcmcCJ" + "x" * 12,
+            "npm_token": "npm_" + "a" * 36,
+            "slack_webhook": "https://hooks.slack.com/services/T00000/B00000/"
+            + "abcd1234efgh5678",
+        }
+        for kind, value in cases.items():
+            out, n = redact(value)
+            self.assertEqual(n, 1, kind)
+            self.assertIn(f"[REDACTED:{kind}]", out, kind)
+
     def test_basic_auth_empty_username_redacted(self):
         # Review of #302: a token-as-password URL with no username
         # (https://:TOKEN@host) must still be redacted (the `+` quantifier leaked).

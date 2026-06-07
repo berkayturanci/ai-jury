@@ -251,8 +251,11 @@ def _debate_round(
     """
     log(f"round {round_no}: {len(debaters)} agents cross-examining")
     own = {r.agent: r.output for r in reviews if r.ok}
-    prior_txt = "\n\n".join(
-        f"### {r.agent}\n{r.output}" for r in prior if r.ok and r.output
+    # Prior-round debate output quotes attacker-controlled diff text, so it is
+    # untrusted: neutralize sentinels (issue #316/L-1) before it is fenced and
+    # appended below, matching every other peer-output slot.
+    prior_txt = prompts.neutralize_sentinels(
+        "\n\n".join(f"### {r.agent}\n{r.output}" for r in prior if r.ok and r.output)
     )
     debate_prompt: dict[str, str] = {}
     for a in debaters:
@@ -277,7 +280,8 @@ def _debate_round(
             text += (
                 "\n\n=== PRIOR DEBATE (earlier round) ===\n"
                 "Build on this; do not just repeat it. Only keep a DISPUTE or "
-                "MISSED item if it is still unresolved.\n\n" + prior_txt + "\n"
+                "MISSED item if it is still unresolved.\n\n"
+                "<<<UNTRUSTED_REVIEW\n" + prior_txt + "\nUNTRUSTED_REVIEW>>>\n"
             )
         debate_prompt[a.name] = text
     results = _run_phase(
