@@ -266,9 +266,11 @@ def _debate_round(
             other_reviews = _others(reviews, a.name)
         text = template.format(
             name=a.name,
-            diff=diff,
-            own_review=own.get(a.name, "_(your review was unavailable)_"),
-            other_reviews=other_reviews,
+            diff=prompts.neutralize_sentinels(diff),
+            own_review=prompts.neutralize_sentinels(
+                own.get(a.name, "_(your review was unavailable)_")
+            ),
+            other_reviews=prompts.neutralize_sentinels(other_reviews),
             notice=prompts._UNTRUSTED_NOTICE,
         )
         if prior_txt:
@@ -410,8 +412,8 @@ def run_jury(
     review_prompt = {
         a.name: tmpl["review"].format(
             name=a.name,
-            context=context or "_(none)_",
-            diff=diff,
+            context=prompts.neutralize_sentinels(context or "_(none)_"),
+            diff=prompts.neutralize_sentinels(diff),
             policy=policy_section,
             notice=prompts._UNTRUSTED_NOTICE,
         )
@@ -700,9 +702,9 @@ def _verify(
         return None, [], []
     log(f"verification: chair '{chair_name}' judging {len(findings)} candidate findings")
     prompt = template.format(
-        diff=diff,
-        findings=_format_findings_for_verify(findings),
-        context=context or "_(none)_",
+        diff=prompts.neutralize_sentinels(diff),
+        findings=prompts.neutralize_sentinels(_format_findings_for_verify(findings)),
+        context=prompts.neutralize_sentinels(context or "_(none)_"),
         notice=prompts._UNTRUSTED_NOTICE,
     )
     result = _run_with_retry(chair, prompt, "verify", budget, retries, log)
@@ -788,9 +790,9 @@ def _synthesize(
         f"### {r.agent}\n{r.output}" for r in debate if r.ok and r.output
     ) or "_(no debate round)_"
     prompt = template.format(
-        diff=diff,
-        reviews=reviews_txt,
-        debate=debate_txt,
+        diff=prompts.neutralize_sentinels(diff),
+        reviews=prompts.neutralize_sentinels(reviews_txt),
+        debate=prompts.neutralize_sentinels(debate_txt),
         notice=prompts._UNTRUSTED_NOTICE,
     )
     if verdicts:

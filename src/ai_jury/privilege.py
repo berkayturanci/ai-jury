@@ -176,6 +176,11 @@ def audit_agent(spec) -> list[str]:
     args_text = _args_str(extra_args)
     label = getattr(spec, "name", "agent")
 
+    # Local/HTTP agents (issue #43) run no subprocess to sandbox — there is no
+    # write/tool/network surface to flag, so they are out of scope for this audit.
+    if vendor == "local":
+        return warnings
+
     is_claude = "claude" in name or vendor == "anthropic"
 
     if is_claude:
@@ -190,11 +195,10 @@ def audit_agent(spec) -> list[str]:
         # tools are disallowed, so we don't warn separately when locked down.
         return warnings
 
-    # Non-claude agents: a broad-powers flag is a least-privilege concern UNLESS
-    # the agent is also run under a restricting sandbox (issue #100), which
-    # neutralizes it.
+    # Non-claude agents must run under a restricting sandbox (issue #100).
     if _is_sandboxed(extra_args, vendor=vendor, name=name):
         return warnings
+    # Not sandboxed. A broad-powers flag gets a specific message…
     for flag in _DANGEROUS_FLAGS:
         if flag in extra_args or flag in args_text:
             warnings.append(
@@ -203,8 +207,16 @@ def audit_agent(spec) -> list[str]:
                 f"prefer a read-only sandbox (e.g. codex `-s read-only` or agy "
                 f"`--sandbox`)."
             )
-            break
-
+            return warnings
+    # …otherwise warn that it simply isn't sandboxed. This closes the audit
+    # blind spot (issue #300): an unknown-vendor or no-flag agent previously
+    # produced ZERO warnings and ran via the generic adapter without the
+    # read-only guarantee — and so `--strict` could not fail it on this basis.
+    warnings.append(
+        f"agent '{label}' is not running under a recognized read-only sandbox "
+        f"(no `-s read-only` / `--sandbox`); a prompt injection in the diff could "
+        f"reach write/tool/network. Add a sandbox, or run with `--strict` to fail."
+    )
     return warnings
 
 
