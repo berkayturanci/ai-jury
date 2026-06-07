@@ -266,12 +266,10 @@ class Adapter:
             return caps
 
         try:
-            proc = subprocess.run(
-                self._version_argv(),
-                capture_output=True,
-                text=True,
-                timeout=_VERSION_PROBE_TIMEOUT,
-            )
+            # Via _spawn so the probe also runs in its own process group and the
+            # whole group is killed on timeout (issue #303/L-1) — matching the
+            # main run path; a bare subprocess.run would orphan grandchildren.
+            proc = _spawn(self._version_argv(), None, _VERSION_PROBE_TIMEOUT)
         except subprocess.TimeoutExpired:
             caps["status"] = CAP_UNKNOWN_VERSION
             caps["warnings"].append(

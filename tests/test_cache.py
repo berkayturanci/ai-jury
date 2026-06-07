@@ -145,6 +145,34 @@ class CacheHitMissTest(unittest.TestCase):
             self.assertEqual(cache.clear(), 1)
             self.assertIsNone(cache.load(cache_key(cfg, SAMPLE_DIFF)))
 
+    def test_clear_rotates_hmac_key(self):
+        # Issue #303/L-3: clear() also removes the per-user MAC key.
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Cache(tmp)
+            cfg = _config()
+            cache.store(cache_key(cfg, SAMPLE_DIFF), run_jury(cfg, SAMPLE_DIFF, mock=True))
+            self.assertTrue((cache.dir / ".hmac_key").exists())
+            cache.clear()
+            self.assertFalse((cache.dir / ".hmac_key").exists())
+
+    def test_store_leaves_no_tmp_file(self):
+        # Issue #303/L-4: the atomic temp file is replaced into place, not left.
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Cache(tmp)
+            cfg = _config()
+            cache.store(cache_key(cfg, SAMPLE_DIFF), run_jury(cfg, SAMPLE_DIFF, mock=True))
+            self.assertEqual(list(cache.dir.glob("*.tmp")), [])
+            self.assertIsNotNone(cache.load(cache_key(cfg, SAMPLE_DIFF)))  # round-trips
+
+    def test_oversized_entry_is_a_miss(self):
+        # Issue #303/L-5: a giant entry is rejected before parsing.
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Cache(tmp)
+            key = "deadbeef"
+            cache.dir.mkdir(parents=True, exist_ok=True)
+            (cache.dir / f"{key}.json").write_text("{}" + " " * (9 * 1024 * 1024))
+            self.assertIsNone(cache.load(key))
+
     def test_corrupt_entry_is_a_miss(self):
         with tempfile.TemporaryDirectory() as tmp:
             cache = Cache(tmp)
