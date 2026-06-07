@@ -452,10 +452,20 @@ def list_local_models(endpoint: str = _DEFAULT_LOCAL_ENDPOINT) -> list[str]:
     vLLM, LM Studio, etc. expose) and returns the model ids in their reported
     order. Best-effort and stdlib-only: any failure (server down, bad JSON)
     returns ``[]`` so callers can fall back gracefully.
+
+    The endpoint is validated here at the seam (issue #309) so EVERY caller —
+    including the un-gated ``jury init --local-endpoint`` discovery path — gets
+    the same SSRF gate that ``config._endpoint_issues`` enforces for config-file
+    endpoints: a non-``http(s)`` scheme or a non-loopback host (without the
+    ``JURY_ALLOW_REMOTE_ENDPOINT`` opt-in) yields ``[]`` without any network call.
     """
     import json as _json
 
+    from .config import _endpoint_issues
+
     base = (endpoint or _DEFAULT_LOCAL_ENDPOINT).rstrip("/")
+    if _endpoint_issues(base, "local-endpoint")[0]:  # hard-error issues -> refuse
+        return []
     url = base if base.endswith("/models") else f"{base}/models"
     try:
         with _open(url, _VERSION_PROBE_TIMEOUT) as resp:  # noqa: S310

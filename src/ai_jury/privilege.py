@@ -141,9 +141,10 @@ def enforce_read_only(vendor: str, name: str, extra_args: list[str]) -> list[str
     empty or misconfigured ``extra_args`` cannot produce a write-capable reviewer
     of an attacker-controlled diff. Config may still WIDEN a codex sandbox
     (``-s workspace-write``) — an explicit opt-in the audit warns about — but it
-    can never REMOVE the restriction. Only vendors whose sandbox syntax is known
-    are touched; a ``local`` (network) agent or an unknown vendor is returned
-    unchanged (the audit still warns).
+    can never REMOVE the restriction. A ``local`` (network) agent runs no
+    subprocess and is returned unchanged. An **unknown vendor** routes to the
+    generic ``AgyAdapter``, so it is treated like agy and gets ``--sandbox``
+    injected (issue #310, completes #300) — fail-closed, never fail-open.
     """
     vendor = (vendor or "").lower()
     name = (name or "").lower()
@@ -152,9 +153,15 @@ def enforce_read_only(vendor: str, name: str, extra_args: list[str]) -> list[str
         return _ensure_claude_disallowed(extra_args)
     if vendor == "openai" or "codex" in name:
         return _ensure_value_sandbox(extra_args, ["-s", "read-only"])
-    if vendor == "google" or "agy" in name or "gemini" in name:
-        return _ensure_value_sandbox(extra_args, ["--sandbox"])
-    return extra_args
+    if vendor == "local":
+        # Network/HTTP agent: no subprocess to sandbox.
+        return extra_args
+    # google / agy / gemini AND any unknown vendor (issue #310, completes #300):
+    # an unknown vendor routes to the generic AgyAdapter (--print/--sandbox), so
+    # inject --sandbox like agy. An agy-compatible CLI then runs sandboxed; an
+    # incompatible one fails on the unknown flag rather than running UNSANDBOXED
+    # — fail-closed either way, never fail-open.
+    return _ensure_value_sandbox(extra_args, ["--sandbox"])
 
 
 def _claude_is_locked_down(extra_args: list[str]) -> bool:

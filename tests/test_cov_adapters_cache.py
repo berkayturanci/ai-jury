@@ -81,13 +81,13 @@ class AdaptersCoverageTests(unittest.TestCase):
         # Line 357: a well-formed dict whose "data" is not a list -> [].
         body = json.dumps({"data": {"not": "a list"}})
         with mock.patch("ai_jury.adapters._open", return_value=_Resp(body)):
-            self.assertEqual(adapters.list_local_models("http://x/v1"), [])
+            self.assertEqual(adapters.list_local_models("http://localhost:11434/v1"), [])
 
     def test_list_local_models_missing_data_key(self):
         # Same branch (357): dict with no "data" key at all -> [].
         body = json.dumps({"object": "list"})
         with mock.patch("ai_jury.adapters._open", return_value=_Resp(body)):
-            self.assertEqual(adapters.list_local_models("http://x/v1"), [])
+            self.assertEqual(adapters.list_local_models("http://localhost:11434/v1"), [])
 
     def test_list_local_models_happy_path(self):
         body = json.dumps(
@@ -95,7 +95,7 @@ class AdaptersCoverageTests(unittest.TestCase):
         )
         with mock.patch("ai_jury.adapters._open", return_value=_Resp(body)):
             self.assertEqual(
-                adapters.list_local_models("http://x/v1"), ["m1", "m2"]
+                adapters.list_local_models("http://localhost:11434/v1"), ["m1", "m2"]
             )
 
     def test_list_local_models_unreachable(self):
@@ -103,7 +103,19 @@ class AdaptersCoverageTests(unittest.TestCase):
             "ai_jury.adapters._open",
             side_effect=urllib.error.URLError("refused"),
         ):
-            self.assertEqual(adapters.list_local_models("http://x/v1"), [])
+            self.assertEqual(adapters.list_local_models("http://localhost:11434/v1"), [])
+
+    def test_list_local_models_non_loopback_refused_without_network(self):
+        # Issue #309: a non-loopback host is gated before any network call (the
+        # _open mock raises if it is ever reached).
+        with mock.patch("ai_jury.adapters._open", side_effect=AssertionError("network")):
+            self.assertEqual(
+                adapters.list_local_models("http://169.254.169.254/latest"), []
+            )
+
+    def test_list_local_models_file_scheme_refused_without_network(self):
+        with mock.patch("ai_jury.adapters._open", side_effect=AssertionError("network")):
+            self.assertEqual(adapters.list_local_models("file:///etc/passwd"), [])
 
     def test_available_ok(self):
         a = adapters.LocalAdapter(_local_spec())
