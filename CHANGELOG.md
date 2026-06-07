@@ -7,11 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-06-07
+
+> Closes the two Medium residuals the post-v1.4.0 re-audit surfaced (#309, #310),
+> each cross-vendor jury-reviewed. No config/flag changes.
+
 ### Security
 
 - **The read-only sandbox is now fail-closed for an unknown vendor** (#310, completes #300). #300 made the audit *warn* for an unsandboxed non-claude reviewer, but `privilege.enforce_read_only` still injected **no** sandbox for an unknown vendor, so in default (non-strict) mode it ran fail-open. An unknown vendor routes to the generic `AgyAdapter`, so it now gets `--sandbox` injected like agy — an agy-compatible CLI runs sandboxed, an incompatible one fails on the flag rather than running unsandboxed. `local` (network) agents stay out of scope.
 - **`jury init --local-endpoint` is gated by the SSRF endpoint validation** (#309). The config-file path was validated by `_endpoint_issues`, but the `init --list-models`/`--list-agents` discovery path called `list_local_models()` directly, so it could GET an arbitrary host. The gate now lives inside `list_local_models` itself, so **every** caller is covered: a non-`http(s)` scheme or a non-loopback host (without `JURY_ALLOW_REMOTE_ENDPOINT`) returns `[]` with no network call.
-- **Post-v1.4.0 security re-audit** (`docs/security-audit-2026-06-07-v1.4.0.md`). A third four-surface re-audit of the released code confirms every #287–#303 fix holds in source (no Critical/High). It surfaces two **Medium** residuals — the unknown-vendor adapter path still runs **fail-open** (no sandbox injected) in default mode even though #300 made the audit warn, and `jury init --local-endpoint` reaches an arbitrary host **without** the `_endpoint_issues` SSRF gate the config path enforces — plus minor items (init endpoint not redacted in stdout, explicit TLS context, `prior_txt` debate slot not neutralized, more secret formats, `cache clear()` glob blast-radius, atomic-write temp via `mkstemp`). Tracked for follow-up.
+- **Post-v1.4.0 security re-audit** (`docs/security-audit-2026-06-07-v1.4.0.md`). A third four-surface re-audit of the released code confirms every #287–#303 fix holds in source (no Critical/High). It surfaces two **Medium** residuals — the unknown-vendor adapter path still runs **fail-open** (no sandbox injected) in default mode even though #300 made the audit warn, and `jury init --local-endpoint` reaches an arbitrary host **without** the `_endpoint_issues` SSRF gate the config path enforces. **Both Mediums are fixed in this release (#310, #309).** The minor items it noted (init endpoint not redacted in stdout, explicit TLS context, `prior_txt` debate slot not neutralized, more secret formats, `cache clear()` glob blast-radius, atomic-write temp via `mkstemp`) remain tracked for follow-up.
 
 ## [1.4.0] - 2026-06-07
 
