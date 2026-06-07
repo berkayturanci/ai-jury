@@ -8,14 +8,30 @@ read-only posture while keeping non-interactive runs from hanging or failing.
 
 For vulnerability reporting, see [SECURITY.md](../SECURITY.md).
 
-## Recent security scan follow-up
+## Security analyses
 
-A repository-wide Codex Security scan on 2026-06-07 found one reportable
-medium-severity local confidentiality issue: Claude and Antigravity/Gemini
-prompt delivery currently places the full review prompt in process arguments.
-The tracking issue is
-[#287](https://github.com/berkayturanci/ai-jury/issues/287), and the scan note is
-recorded in [Codex Security Scan - 2026-06-07](security-scan-2026-06-07.md).
+This project has been reviewed by two independent, model-driven security
+analyses, both recorded under `docs/`:
+
+### Codex security analizi (Codex security analysis)
+
+A repository-wide **Codex** Security scan on 2026-06-07 (commit `a358fdc`) found
+one reportable medium-severity local-confidentiality issue — the Claude and
+Antigravity/Gemini adapters placed the full review prompt in process arguments
+(tracked as [#287](https://github.com/berkayturanci/ai-jury/issues/287); **fixed
+in v1.3.0** — prompts are now delivered on stdin). Scan note:
+[Codex Security Scan — 2026-06-07](security-scan-2026-06-07.md).
+
+### Claude security analizi (Claude security analysis)
+
+A whole-codebase **Claude** audit across four attack surfaces
+(subprocess/sandbox, network/SSRF, prompt-injection/redaction, filesystem/cache)
+drove fixes #287–#296, shipped in v1.3.0:
+[Security audit — 2026-06-07](security-audit-2026-06-07.md). A follow-up
+**re-audit of the released v1.3.0 code**
+([Security re-audit — v1.3.0](security-audit-2026-06-07-v1.3.0.md)) confirms
+every fix holds in source (no Critical/High) and tracks the remaining
+defense-in-depth items.
 
 ## Codex invocation
 
