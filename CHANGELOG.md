@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-06-07
+
+> Security-hardening release (audit + fixes for #287–#296). A few defaults are
+> tightened and may require action: a **non-loopback local-model `endpoint`** is
+> now rejected unless you set `JURY_ALLOW_REMOTE_ENDPOINT=1`, a **relative-path
+> agent `command`** (e.g. `./bin/x`) is rejected (use a bare name or absolute
+> path), and the **read-only sandbox is always enforced** for reviewers.
+
 ### Changed
 
 - **README: the version badge now reads from PyPI** (#281). The `github/v/release` shields.io badge frequently rendered "Unable to select next GitHub token from pool" (a transient failure of shields.io's shared GitHub token pool); swapped for `pypi/v/ai-jury`, which uses a different, more reliable source and shows the actually-installable version.
