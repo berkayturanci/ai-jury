@@ -4,6 +4,8 @@ Offline: mock pipeline + a temp cache dir; no live CLIs, no network.
 """
 from __future__ import annotations
 
+import json
+import os
 import sys
 import tempfile
 import unittest
@@ -12,6 +14,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from ai_jury.cache import (  # noqa: E402
+    CACHE_SCHEMA,
     Cache,
     cache_key,
     outcome_from_dict,
@@ -169,14 +172,105 @@ class CacheHitMissTest(unittest.TestCase):
 
     def test_store_embeds_cache_key(self):
         with tempfile.TemporaryDirectory() as tmp:
-            import json
-
             cache = Cache(tmp)
             cfg = _config()
             key = cache_key(cfg, SAMPLE_DIFF)
             cache.store(key, run_jury(cfg, SAMPLE_DIFF, mock=True))
             data = json.loads((cache.dir / f"{key}.json").read_text(encoding="utf-8"))
             self.assertEqual(data["cache_key"], key)
+
+    # Issue #295: per-user HMAC integrity.
+    def test_store_writes_mac(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Cache(tmp)
+            cfg = _config()
+            key = cache_key(cfg, SAMPLE_DIFF)
+            cache.store(key, run_jury(cfg, SAMPLE_DIFF, mock=True))
+            data = json.loads((cache.dir / f"{key}.json").read_text(encoding="utf-8"))
+            self.assertIn("mac", data)
+            self.assertEqual(len(data["mac"]), 64)  # sha256 hexdigest
+
+    def test_tampered_entry_fails_mac(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Cache(tmp)
+            cfg = _config()
+            key = cache_key(cfg, SAMPLE_DIFF)
+            cache.store(key, run_jury(cfg, SAMPLE_DIFF, mock=True))
+            path = cache.dir / f"{key}.json"
+            data = json.loads(path.read_text(encoding="utf-8"))
+            # Forge the verdict but keep the (now-stale) MAC.
+            data["outcome"]["verdict"] = "FORGED APPROVE"
+            path.write_text(json.dumps(data), encoding="utf-8")
+            self.assertIsNone(cache.load(key))
+
+    def test_load_fails_closed_when_hmac_key_unavailable(self):
+        # Issue #295: if the MAC key can't be read/created, load() must NOT fall
+        # back to accepting an unsigned/unverified entry — it must miss.
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Cache(tmp)
+            cfg = _config()
+            key = cache_key(cfg, SAMPLE_DIFF)
+            cache.store(key, run_jury(cfg, SAMPLE_DIFF, mock=True))
+            self.assertIsNotNone(cache.load(key))  # sanity: signed entry hits
+            with mock.patch("ai_jury.cache._hmac_key", return_value=None):
+                self.assertIsNone(cache.load(key))  # key unavailable -> fail closed
+
+    def test_store_fails_closed_when_hmac_key_unavailable(self):
+        # Issue #295: if the MAC key can't be obtained, store() must NOT write an
+        # unsigned entry.
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Cache(tmp)
+            cfg = _config()
+            key = cache_key(cfg, SAMPLE_DIFF)
+            with mock.patch("ai_jury.cache._hmac_key", return_value=None):
+                cache.store(key, run_jury(cfg, SAMPLE_DIFF, mock=True))
+            self.assertFalse((cache.dir / f"{key}.json").exists())  # nothing written
+
+    def test_legacy_entry_without_mac_is_a_miss(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Cache(tmp)
+            cfg = _config()
+            key = cache_key(cfg, SAMPLE_DIFF)
+            cache.dir.mkdir(parents=True, exist_ok=True)
+            entry = {
+                "cache_schema": CACHE_SCHEMA,
+                "cache_key": key,
+                "outcome": outcome_to_dict(run_jury(cfg, SAMPLE_DIFF, mock=True)),
+            }  # no "mac" — a pre-#295 entry
+            (cache.dir / f"{key}.json").write_text(json.dumps(entry), encoding="utf-8")
+            self.assertIsNone(cache.load(key))
+
+    @unittest.skipIf(os.name == "nt", "POSIX permission semantics")
+    def test_world_writable_dir_load_is_a_miss(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Cache(tmp)
+            cfg = _config()
+            key = cache_key(cfg, SAMPLE_DIFF)
+            cache.store(key, run_jury(cfg, SAMPLE_DIFF, mock=True))
+            self.assertIsNotNone(cache.load(key))  # trusted dir -> hit
+            cache.dir.chmod(0o777)  # loosened out from under us
+            self.assertIsNone(cache.load(key))  # untrusted -> miss (load never chmods)
+
+    @unittest.skipIf(os.name == "nt", "POSIX permission semantics")
+    def test_store_refuses_dir_it_cannot_tighten(self):
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp) / "shared-cache"
+            d.mkdir()
+            d.chmod(0o777)  # attacker-owned, world-writable
+            cache = Cache(d)
+            cfg = _config()
+            key = cache_key(cfg, SAMPLE_DIFF)
+            # Simulate "we don't own it": the tighten chmod fails, so the dir
+            # stays world-writable and store must fail closed.
+            with mock.patch.object(Path, "chmod", side_effect=PermissionError):
+                cache.store(key, run_jury(cfg, SAMPLE_DIFF, mock=True))
+            self.assertFalse((d / f"{key}.json").exists())  # store was a no-op
 
 
 if __name__ == "__main__":
