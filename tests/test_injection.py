@@ -65,6 +65,17 @@ class ScanTest(unittest.TestCase):
     def test_zero_width_char(self):
         self.assertIn("zero-width-char", _kinds("hi​there"))
 
+    def test_extended_invisible_chars_flagged(self):
+        # Issue #303/L-2: direction marks, invisible math ops, soft hyphen, CGJ,
+        # Mongolian vowel separator, and Hangul fillers are all caught.
+        for ch in ("‎", "‏", "؜", "⁡", "­",
+                   "͏", "᠎", "ㅤ"):
+            self.assertIn("zero-width-char", _kinds("hi" + ch + "there"), repr(ch))
+
+    def test_urlsafe_base64_blob_flagged(self):
+        # Issue #303/L-2: URL-safe base64 (-_) is caught, not only +/.
+        self.assertIn("base64-blob", _kinds("A" * 60 + "-_" + "B" * 60))
+
     def test_benign_text_has_no_hits(self):
         self.assertEqual(injection.scan("def add(a, b):\n    return a + b"), [])
 

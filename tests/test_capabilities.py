@@ -36,16 +36,16 @@ class CapabilityDetectionTests(unittest.TestCase):
     def setUp(self):
         # By default pretend the CLI is on PATH; individual tests override.
         self._orig_which = adapters.shutil.which
-        self._orig_run = adapters.subprocess.run
+        self._orig_run = adapters._spawn
         adapters.shutil.which = lambda cmd: "/usr/bin/" + cmd
         self.addCleanup(self._restore)
 
     def _restore(self):
         adapters.shutil.which = self._orig_which
-        adapters.subprocess.run = self._orig_run
+        adapters._spawn = self._orig_run
 
     def _patch_run(self, fn):
-        adapters.subprocess.run = fn
+        adapters._spawn = fn
 
     def test_parses_version_from_stdout(self):
         self._patch_run(
@@ -148,18 +148,18 @@ class MockAdapterCapabilityTests(unittest.TestCase):
 
     def test_mock_does_not_spawn(self):
         # Even with subprocess.run rigged to explode, the mock never calls it.
-        orig = adapters.subprocess.run
+        orig = adapters._spawn
 
         def _boom(*a, **k):  # pragma: no cover
             raise AssertionError("mock must not spawn a subprocess")
 
-        adapters.subprocess.run = _boom
+        adapters._spawn = _boom
         try:
             caps = adapters.MockAdapter(
                 _spec(name="mock", vendor="anthropic", command="mock")
             ).detect_capabilities()
         finally:
-            adapters.subprocess.run = orig
+            adapters._spawn = orig
         self.assertEqual(caps["status"], adapters.CAP_OK)
 
 

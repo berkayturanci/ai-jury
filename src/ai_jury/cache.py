@@ -193,6 +193,11 @@ def outcome_from_dict(data: dict) -> JuryOutcome:
 
 _HMAC_KEY_FILE = ".hmac_key"
 
+# Upper bound on a cache entry read before MAC verification (issue #303/L-5). A
+# jury outcome is small (a few KB); reject a multi-MB file so an attacker-planted
+# giant entry can't be fully parsed into memory before the MAC rejects it.
+_MAX_CACHE_BYTES = 8 * 1024 * 1024
+
 
 def _dir_is_untrusted(directory: Path) -> bool:
     """True when ``directory`` is group/other-writable (issue #295).
@@ -278,6 +283,10 @@ class Cache:
         if _dir_is_untrusted(self.dir):
             return None
         try:
+            # Size-cap before parsing (issue #303/L-5): don't read a giant
+            # attacker-planted entry into memory just to reject its MAC later.
+            if path.stat().st_size > _MAX_CACHE_BYTES:
+                return None
             data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return None
@@ -330,12 +339,24 @@ class Cache:
             if mac_key is None:
                 return
             payload["mac"] = _compute_mac(mac_key, payload)
-            self._path(key).write_text(
+            # Atomic write (issue #303/L-4): write a temp file then os.replace, so
+            # a crash mid-write can't leave a truncated entry and a reader never
+            # sees a partial file. (The 0700 dir gate above already blocks another
+            # local user from pre-planting a symlink at the target.)
+            path = self._path(key)
+            tmp = path.with_name(path.name + ".tmp")
+            tmp.write_text(
                 json.dumps(payload, separators=(",", ":")) + "\n", encoding="utf-8"
             )
+            tmp.replace(path)
 
     def clear(self) -> int:
-        """Remove all cache entries; return the number deleted."""
+        """Remove all cache entries; return the number deleted.
+
+        Also rotates (deletes) the per-user MAC key (issue #303/L-3) so a clear
+        after a suspected compromise starts fresh; the count covers only the
+        ``*.json`` entries.
+        """
         if not self.dir.exists():
             return 0
         removed = 0
@@ -343,4 +364,6 @@ class Cache:
             with contextlib.suppress(OSError):
                 path.unlink()
                 removed += 1
+        with contextlib.suppress(OSError):
+            (self.dir / _HMAC_KEY_FILE).unlink()
         return removed

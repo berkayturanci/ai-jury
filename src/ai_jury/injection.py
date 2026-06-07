@@ -15,14 +15,24 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-# Zero-width / bidi control characters often used to smuggle hidden text.
+# Zero-width / bidi / invisible control characters often used to smuggle hidden
+# text. Written as \u escapes (not literals) so the set is readable and
+# verifiable. Extended in issue #303/L-2 to cover direction marks, invisible math
+# operators, soft hyphen, CGJ, Mongolian vowel separator, and Hangul fillers.
 _ZERO_WIDTH = (
-    "​"  # zero-width space
-    "‌"  # zero-width non-joiner
-    "‍"  # zero-width joiner
-    "⁠"  # word joiner
-    "﻿"  # zero-width no-break space / BOM
+    "​"              # zero-width space
+    "‌"              # zero-width non-joiner
+    "‍"              # zero-width joiner
+    "⁠"              # word joiner
+    "﻿"              # zero-width no-break space / BOM
     "‪‫‬‭‮"  # bidi embedding/override controls
+    "‎‏"        # LRM / RLM (left/right-to-left marks)
+    "؜"              # Arabic letter mark
+    "⁡⁢⁣⁤"  # invisible math operators
+    "­"              # soft hyphen
+    "͏"              # combining grapheme joiner
+    "᠎"              # Mongolian vowel separator
+    "ᅟᅠㅤﾠ"  # Hangul fillers (render as invisible)
 )
 _ZERO_WIDTH_RE = re.compile("[" + _ZERO_WIDTH + "]")
 
@@ -48,8 +58,9 @@ _PHRASE_PATTERNS: tuple[tuple[str, re.Pattern], ...] = (
     )),
 )
 
-# A long run of base64-ish characters can hide an encoded payload.
-_BASE64_RE = re.compile(r"[A-Za-z0-9+/]{120,}={0,2}")
+# A long run of base64-ish characters can hide an encoded payload. The class
+# includes URL-safe base64 (`-_`) as well as standard `+/` (issue #303/L-2).
+_BASE64_RE = re.compile(r"[A-Za-z0-9+/_-]{120,}={0,2}")
 
 
 @dataclass
