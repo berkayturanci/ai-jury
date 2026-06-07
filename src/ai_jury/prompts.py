@@ -16,10 +16,38 @@ verbatim in source diffs.
 """
 from __future__ import annotations
 
+import re
+
 # Prompt template version. Bump whenever a template below changes in a way that
 # could alter agent output, so the result cache (issue #33) invalidates stale
 # entries instead of serving results produced under different prompts.
-PROMPT_VERSION = 2
+# v3: untrusted content is sentinel-neutralized before interpolation (issue #301).
+PROMPT_VERSION = 3
+
+
+# Neutralize sentinel fences inside untrusted content (issue #301). Every fence
+# marker contains the literal ``UNTRUSTED_`` core, with a ``<<<`` opener or a
+# ``>>>`` closer. If attacker-controlled content embeds one verbatim it could
+# break out of (or forge) a fence. We break the ``<<<``/``>>>`` run that sits
+# adjacent to an ``UNTRUSTED_`` marker, using a visible middle dot — NOT a
+# zero-width char, which the injection scanner flags. The injection scanner still
+# surfaces the attempt; this restores the fence as a real structural boundary.
+_SENTINEL_RE = re.compile(
+    r"(<<<)(\s*UNTRUSTED_[A-Z]+)|(UNTRUSTED_[A-Z]+)(>>>)", re.IGNORECASE
+)
+
+
+def neutralize_sentinels(text: str) -> str:
+    """Break any fence-sentinel run inside untrusted ``text`` (issue #301)."""
+    if not text:
+        return text
+
+    def _break(m: re.Match) -> str:
+        if m.group(1) is not None:  # opener: <<<UNTRUSTED_X
+            return "<·<·<" + m.group(2)
+        return m.group(3) + ">·>·>"  # closer: UNTRUSTED_X>>>
+
+    return _SENTINEL_RE.sub(_break, text)
 
 # Standing anti-injection preamble, reused across templates. Untrusted blocks
 # below are demarcated with these sentinels.
