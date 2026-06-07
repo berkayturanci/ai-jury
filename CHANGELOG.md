@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-06-07
+
+> Closes the four post-v1.5.0 re-audit findings (#321, #322), each cross-vendor
+> jury-reviewed. The one untrusted slot left raw — the synthesis verdicts
+> addendum — is now fenced + neutralized; endpoint userinfo is stripped
+> structurally; two long-standing matcher bugs (classification keyword stems,
+> nested redaction) are fixed.
+
 ### Security
 
 - **Synthesis verdicts addendum is now fenced + neutralized** (#321, completes #316/L-1). The `VERIFICATION VERDICTS` block appended to the synthesis prompt was the one untrusted slot left un-fenced and un-neutralized — a verdict's `claim`/`reasoning` transitively quote attacker diff text, so it could forge a fence closer or a fake `SYSTEM:` directive in the chair's prompt. It is now wrapped in an `UNTRUSTED_FINDINGS` fence and run through `neutralize_sentinels`, matching every other untrusted slot. (The CI gate stays consensus-derived, so this only ever affected the human-facing synthesis text.)
