@@ -12,15 +12,17 @@
 
 **Önceki tur (#287–#296) tüm fix'leri kaynak kodda doğrulandı ve tutuyor.** Bu re-audit'te **Critical veya High bulgu yok**. Saldırı yüzeyinin temeli sağlam: komut enjeksiyonu yok, `shell=True`/`eval`/`pickle`/`yaml.load`/zip-slip yok, TLS doğrulaması kapatılmıyor, path traversal sink'i yok, cache HMAC tasarımında collision/smuggling açığı yok, redaction ReDoS-safe (lineer).
 
-Kalan iş çoğunlukla **derinlemesine-savunma tamlığı**: en dikkat çekeni, #288'in "read-only garantisi koşulsuz" hedefinin **bilinmeyen-vendor yolunda** delinmesi.
+Kalan iş çoğunlukla **derinlemesine-savunma tamlığı**: net Medium olan tek madde **M-3 (redaction format boşlukları)**; M-2 (sentinel fence) defense-in-depth, M-1 (unknown-vendor) ise yalnızca default modda — `--strict` zaten yakalıyor.
 
 | Önem | Adet | Bulgular |
 |------|------|----------|
 | Critical | 0 | — |
 | High | 0 | — |
-| Medium | 3 | M-1 (unknown-vendor sandbox bypass), M-2 (sentinel fence escape), M-3 (redaction format boşlukları) |
-| Low | 5 | L-1…L-5 |
+| Medium | 2 | M-2 (sentinel fence escape — defense-in-depth), M-3 (redaction format boşlukları) |
+| Low | 6 | M-1 (unknown-vendor — yalnızca default modda; `--strict` yakalıyor), L-1…L-5 |
 | Info | birkaç | aşağıda |
+
+> **Düzeltme notu (PR review, 2026-06-07):** İlk taslakta M-1 "Medium" ve "`--strict` bile yakalamaz" denmişti — bu **yanlış**. `validate_config(strict=True)` unknown-vendor uyarısını `ConfigError`'a çeviriyor (`config.py:382-383`, fonksiyonel olarak doğrulandı), yani `--strict` mevcut bir hafifletme; residual yalnızca **default (non-strict)** modda kalıyor → M-1 **Low hardening**'e indirildi. Ayrıca M-3'te `SharedAccessKey=` **zaten** redakte oluyor (`access_key` keyword'ü üzerinden); gerçek boşluklar `AccountKey=`, basic-auth URL'leri ve GCP `private_key_id`/`client_email`. Takip: #300 (M-1, Low), #301 (M-2), #302 (M-3), #303 (L-1…L-5).
 
 ---
 
@@ -41,10 +43,10 @@ Kaynak kodda doğrulandı:
 
 ## Orta Önem (yeni / residual)
 
-### M-1 (Medium) — Bilinmeyen-vendor agent'ı sandbox enforcement'ı VE privilege audit'i atlıyor
-- **Konum:** `privilege.py` `enforce_read_only` (vendor anthropic/openai/google ve name claude/codex/agy/gemini değilse `extra_args` **değişmeden** dönüyor); `config.py` `KNOWN_VENDORS` kontrolü bilinmeyen vendor'ı yalnızca **uyarı** yapıyor (hard-error değil); `adapters.make_adapter` bilinmeyen vendor'ı generic `AgyAdapter`'a yönlendiriyor; `privilege.audit_agent` non-claude için yalnızca bir `_DANGEROUS_FLAGS` token'ı **varsa** uyarıyor.
-- **Açıklama:** `vendor="acme"`, `command="claude"`, `extra_args=[]` olan bir agent: enforce_read_only sandbox enjekte etmez, config yalnızca uyarır (çalışmaya devam), ve audit sıfır uyarı üretir (dangerous flag yok) — yani `--strict` bile yakalamaz. #288'in "read-only garantisi koşulsuz" amacı bu yolda tutmuyor.
-- **Senaryo:** Yanlış/kötücül `jury.toml` bilinmeyen bir vendor tanımlar; reviewer, attacker-controlled diff'i sandbox'sız işler.
+### M-1 (Low — yalnızca default modda) — Bilinmeyen-vendor agent'ı default modda sandbox enforcement'ı atlıyor
+- **Konum:** `privilege.py` `enforce_read_only` (vendor anthropic/openai/google ve name claude/codex/agy/gemini değilse `extra_args` **değişmeden** dönüyor); `config.py` `KNOWN_VENDORS` kontrolü bilinmeyen vendor'ı **default modda** yalnızca uyarı yapıyor; `adapters.make_adapter` bilinmeyen vendor'ı generic `AgyAdapter`'a yönlendiriyor; `privilege.audit_agent` non-claude için yalnızca bir `_DANGEROUS_FLAGS` token'ı **varsa** uyarıyor.
+- **Açıklama:** `vendor="acme"`, `command="claude"`, `extra_args=[]` olan bir agent **default (non-strict)** modda: enforce_read_only sandbox enjekte etmez, config yalnızca uyarır, audit sıfır uyarı üretir → reviewer sandbox'sız çalışır. **Ancak `--strict` bunu yakalıyor:** `validate_config(strict=True)` unknown-vendor uyarısını `ConfigError`'a çeviriyor (`config.py:382-383`). Yani #288'in garantisi `--strict` altında tutuyor; boşluk yalnızca default modda.
+- **Senaryo:** Yanlış/kötücül `jury.toml` bilinmeyen bir vendor tanımlar ve `--strict` kullanılmaz; reviewer attacker-controlled diff'i sandbox'sız işler.
 - **Düzeltme:** `enforce_read_only`'da tanınmayan vendor'ı konservatif ele al (çalıştırmayı reddet ya da bir deny-all default enjekte et) **ve/veya** bilinmeyen vendor'ı hard `ConfigError` yap. En azından `audit_agent`, restricting sandbox tanınmayan her non-claude agent için (yalnızca dangerous flag varken değil) uyarsın.
 
 ### M-2 (Medium) — Sentinel fence escape: untrusted içerik fence token'ları nötralize edilmeden interpolate ediliyor
@@ -55,9 +57,9 @@ Kaynak kodda doğrulandı:
 
 ### M-3 (Medium) — Redaction hâlâ bazı yaygın secret formatlarını kaçırıyor
 - **Konum:** `redaction.py` `_PATTERNS`.
-- **Kaçanlar:** Azure connection string / `AccountKey=…` / `SharedAccessKey=…`; GCP service-account JSON alanları (`private_key_id`, `client_email`, vb. — PEM gövdesi yakalanıyor ama çevresi değil); **basic-auth URL'leri** `scheme://user:password@host` (örn. `redis://default:S3cr3t...@cache:6379`) hiç yakalanmıyor; bilinen keyword öncesinde olmayan generic yüksek-entropi değerler.
+- **Kaçanlar:** Azure `AccountKey=…` connection string'leri (NOT: `SharedAccessKey=…` **zaten** redakte oluyor — generic `access_key` keyword'ü üzerinden, fonksiyonel olarak doğrulandı); GCP service-account JSON alanları (`private_key_id`, `client_email`, vb. — PEM gövdesi yakalanıyor ama çevresi değil); **basic-auth URL'leri** `scheme://user:password@host` (örn. `redis://default:S3cr3t...@cache:6379`) hiç yakalanmıyor; bilinen keyword öncesinde olmayan generic yüksek-entropi değerler.
 - **Senaryo:** Diff'e eklenen bir basic-auth URL'i ya da Azure connection string'i her dış agent'a maskelenmeden gider.
-- **Düzeltme:** Basic-auth URL (`://[^/:@\s]+:[^/@\s]{6,}@`), Azure `AccountKey=`/`SharedAccessKey=`, GCP JSON alan adları için pattern ekle; opsiyonel bounded yüksek-entropi fallback. Her pattern'i anchored/bounded tutarak lineerliği koru.
+- **Düzeltme:** Basic-auth URL (`://[^/:@\s]+:[^/@\s]{6,}@`), Azure `AccountKey=`, GCP JSON alan adları için pattern ekle (`SharedAccessKey=` zaten kapsanıyor); opsiyonel bounded yüksek-entropi fallback. Her pattern'i anchored/bounded tutarak lineerliği koru.
 
 ---
 
@@ -93,9 +95,9 @@ Kaynak kodda doğrulandı:
 
 ## Önceliklendirilmiş Düzeltme Sırası
 
-1. **M-1** — Bilinmeyen-vendor yolunu kapat (enforce_read_only + audit_agent + config hard-error). #288'in garantisini gerçekten koşulsuz yapar.
-2. **M-3** — Redaction'a basic-auth URL + Azure/GCP pattern'leri ekle (secret sızıntısını azaltır).
-3. **M-2** — Sentinel nötralizasyonu (fence derinlemesine-savunmasını geri kazanır).
+1. **M-3** — Redaction'a basic-auth URL + Azure `AccountKey=` + GCP pattern'leri ekle (net Medium; secret sızıntısını azaltır).
+2. **M-2** — Sentinel nötralizasyonu (fence derinlemesine-savunmasını geri kazanır).
+3. **M-1** (Low) — Bilinmeyen-vendor yolunu default modda da kapat (enforce_read_only konservatif + audit_agent unsandboxed uyarısı + config hard-error). `--strict` zaten kapatıyor; bu default modu da güvenli yapar.
 4. **L-1** — Version probe'u `_spawn`'dan geçir (F-7'yi probe yolunda tamamlar).
 5. **L-2…L-5** — Injection code point/base64 genişletme, `clear()` key rotasyonu, atomik cache yazımı, MAC-öncesi boyut sınırı.
 
