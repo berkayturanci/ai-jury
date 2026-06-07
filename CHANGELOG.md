@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Post-v1.3.0 security re-audit** (`docs/security-audit-2026-06-07-v1.3.0.md`). A four-surface re-audit of the released code confirms every #287–#296 fix holds in source (no Critical/High) and documents the remaining defense-in-depth gaps: the read-only sandbox guarantee is not yet unconditional for an **unknown vendor** (no sandbox injected, no privilege warning), the **untrusted-content sentinel fences aren't neutralized** against an embedded closing token, redaction still misses **basic-auth URLs / Azure / GCP** secret formats, and the `detect_capabilities` version probe doesn't kill its process group on timeout. Tracked for follow-up.
+
 ## [1.3.0] - 2026-06-07
 
 > Security-hardening release (audit + fixes for #287–#296). A few defaults are
