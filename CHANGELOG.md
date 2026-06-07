@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Post-v1.5.0 security re-audit** (`docs/security-audit-2026-06-07-v1.5.0.md`). A fifth four-surface re-audit confirms every #287–#316 fix holds in source (no Critical/High; filesystem/cache surface fully clean). It surfaces one **Medium** — the `VERIFICATION VERDICTS` addendum appended to the synthesis prompt is the one untrusted slot left **un-fenced and un-neutralized** (an incomplete-coverage gap in the #316/L-1 prior-debate fix; it can quote attacker diff text via a verifier verdict) — plus Low items: the init-endpoint redaction misses short (<6-char) and bare-token (no-colon) userinfo (residual of #316/L-7), and the `vulnerab`/`exploit` classification keyword stems are compiled with `\b…\b` so they never match `vulnerability`/`exploitable`, mis-classifying such findings as non-security. Tracked for follow-up.
+
 ## [1.5.0] - 2026-06-07
 
 > Closes the post-v1.4.1 re-audit findings (#314, #315, #316), each cross-vendor
