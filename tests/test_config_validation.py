@@ -33,6 +33,18 @@ class ConfigSizeLimit(unittest.TestCase):
         finally:
             Path(name).unlink()
 
+    def test_invalid_utf8_config_is_a_clean_error(self):
+        # Review of #316: a non-UTF-8 config is a ConfigError, not a raw
+        # UnicodeDecodeError stack trace.
+        with tempfile.NamedTemporaryFile("wb", suffix=".toml", delete=False) as fh:
+            fh.write(b"\xff\xfe not valid utf-8")
+            name = fh.name
+        try:
+            with self.assertRaises(ConfigError):
+                load_raw_config(name)
+        finally:
+            Path(name).unlink()
+
 
 def _cfg(**jury_over):
     jury = {"rounds": 2, "chair": "a"}

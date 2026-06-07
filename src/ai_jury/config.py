@@ -29,7 +29,14 @@ def _read_toml_bounded(path: Path) -> dict:
         raise ConfigError(
             f"config file '{path}' exceeds the {_MAX_CONFIG_BYTES}-byte limit."
         )
-    return tomllib.loads(raw.decode("utf-8"))
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        # TOML is UTF-8 by spec; surface a clean error instead of a raw
+        # UnicodeDecodeError (review of #316 — the prior tomllib.load crashed the
+        # same way on bad bytes; now it's a ConfigError).
+        raise ConfigError(f"config file '{path}' is not valid UTF-8.") from exc
+    return tomllib.loads(text)
 
 
 def _is_relative_path_command(command: str) -> bool:
