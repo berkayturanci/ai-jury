@@ -32,10 +32,15 @@ drove fixes #287–#296, shipped in v1.3.0:
 ([Security re-audit — v1.3.0](security-audit-2026-06-07-v1.3.0.md)) confirmed
 every fix held and tracked the remaining defense-in-depth items as #300–#303,
 which shipped in v1.4.0. A third **re-audit of the released v1.4.0 code**
-([Security re-audit — v1.4.0](security-audit-2026-06-07-v1.4.0.md)) confirms
-every #287–#303 fix holds (no Critical/High) and surfaces two Medium residuals
-(an unknown-vendor fail-open sandbox and a `jury init --local-endpoint` SSRF
-bypass) plus minor hardening items.
+([Security re-audit — v1.4.0](security-audit-2026-06-07-v1.4.0.md)) surfaced two
+Medium residuals (an unknown-vendor fail-open sandbox and a `jury init
+--local-endpoint` SSRF bypass), both fixed in v1.4.1 (#310, #309). A fourth
+**re-audit of the released v1.4.1 code**
+([Security re-audit — v1.4.1](security-audit-2026-06-07-v1.4.1.md)) confirms
+every #287–#310 fix holds (no Critical/High) and surfaces two new Medium
+**robustness/DoS** items — an O(N²) cost in the injection scanner's line
+attribution and an uncaught `ValueError` from a malformed endpoint in config
+validation — plus the previously-tracked minor items.
 
 ## Codex invocation
 
