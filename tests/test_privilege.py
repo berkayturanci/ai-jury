@@ -127,5 +127,89 @@ class AuditPrivilegeTest(unittest.TestCase):
         self.assertEqual(privilege.audit_privilege(cfg.enabled_agents), [])
 
 
+class IsSandboxedVendorAwareTest(unittest.TestCase):
+    """Issue #292: a bare --sandbox token must not give false assurance."""
+
+    def test_bare_sandbox_with_dangerous_flags_not_trusted_for_non_agy(self):
+        # The F-5 example: --sandbox followed by broad-powers flags on a vendor
+        # whose --sandbox is NOT a boolean restricting sandbox is no longer
+        # accepted, so the dangerous flags are surfaced.
+        spec = AgentSpec(
+            name="custom", vendor="openai", command="x",
+            extra_args=["--sandbox", "--dangerously-skip-permissions", "--yolo"],
+        )
+        warnings = privilege.audit_agent(spec)
+        self.assertTrue(warnings)
+
+    def test_codex_wide_value_sandbox_is_not_sandboxed(self):
+        # --sandbox workspace-write takes a non-restricting value -> not a sandbox.
+        self.assertFalse(
+            privilege._is_sandboxed(["--sandbox", "workspace-write"], vendor="openai")
+        )
+
+    def test_agy_bare_sandbox_still_trusted(self):
+        # The shipped agy default must keep passing (issue #100 not regressed).
+        self.assertTrue(
+            privilege._is_sandboxed(
+                ["--dangerously-skip-permissions", "--sandbox"], vendor="google"
+            )
+        )
+
+    def test_codex_read_only_value_is_sandboxed(self):
+        self.assertTrue(privilege._is_sandboxed(["-s", "read-only"], vendor="openai"))
+
+
+class EnforceReadOnlyTest(unittest.TestCase):
+    """Issue #288: the sandbox is guaranteed at the adapter layer, not config."""
+
+    def test_claude_injects_disallowed_tools_when_absent(self):
+        out = privilege.enforce_read_only("anthropic", "claude", [])
+        self.assertEqual(out, ["--disallowed-tools", "Edit,Write,NotebookEdit,Bash"])
+
+    def test_claude_merges_missing_write_tools_into_existing(self):
+        out = privilege.enforce_read_only(
+            "anthropic", "claude", ["--disallowed-tools", "Edit,Write"]
+        )
+        self.assertEqual(out, ["--disallowed-tools", "Edit,Write,NotebookEdit,Bash"])
+
+    def test_claude_shipped_default_is_unchanged(self):
+        shipped = ["--output-format", "text",
+                   "--disallowed-tools", "Edit,Write,NotebookEdit,Bash",
+                   "--dangerously-skip-permissions"]
+        self.assertEqual(privilege.enforce_read_only("anthropic", "claude", shipped), shipped)
+
+    def test_claude_equals_form_disallowed_is_merged(self):
+        # Review of #288: the =-form must be merged too, not left to sit after the
+        # injected safe set where a last-wins CLI could narrow the deny set.
+        out = privilege.enforce_read_only("anthropic", "claude", ["--disallowed-tools=Edit"])
+        self.assertEqual(out, ["--disallowed-tools=Edit,Write,NotebookEdit,Bash"])
+
+    def test_codex_injects_read_only_when_no_sandbox(self):
+        out = privilege.enforce_read_only("openai", "codex", [])
+        self.assertEqual(out, ["-s", "read-only"])
+
+    def test_codex_equals_form_sandbox_is_respected_not_doubled(self):
+        out = privilege.enforce_read_only("openai", "codex", ["--sandbox=read-only"])
+        self.assertEqual(out, ["--sandbox=read-only"])
+
+    def test_codex_respects_operator_widened_sandbox(self):
+        # An explicit (audited) opt-in is preserved, never overridden.
+        out = privilege.enforce_read_only("openai", "codex", ["-s", "workspace-write"])
+        self.assertEqual(out, ["-s", "workspace-write"])
+
+    def test_agy_injects_sandbox_when_absent(self):
+        out = privilege.enforce_read_only("google", "agy", ["--dangerously-skip-permissions"])
+        self.assertEqual(out, ["--sandbox", "--dangerously-skip-permissions"])
+
+    def test_unknown_vendor_is_left_untouched(self):
+        # We don't know the sandbox syntax, so we don't inject an invalid flag;
+        # the audit still warns.
+        out = privilege.enforce_read_only("weirdvendor", "x", ["--foo"])
+        self.assertEqual(out, ["--foo"])
+
+    def test_local_vendor_is_left_untouched(self):
+        self.assertEqual(privilege.enforce_read_only("local", "qwen", []), [])
+
+
 if __name__ == "__main__":
     unittest.main()

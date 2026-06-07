@@ -212,6 +212,11 @@ class Cache:
             return None
         if data.get("cache_schema") != CACHE_SCHEMA:
             return None
+        # Integrity: the entry must name the key it was written for (issue
+        # #293/F-10). A file dropped at <digest>.json with mismatched content
+        # (e.g. a forged verdict copied from another key) is treated as a miss.
+        if data.get("cache_key") != key:
+            return None
         outcome = outcome_from_dict(data.get("outcome", {}))
         outcome.from_cache = True
         return outcome
@@ -219,8 +224,16 @@ class Cache:
     def store(self, key: str, outcome: JuryOutcome) -> None:
         """Persist ``outcome`` under ``key`` (best-effort; ignores write errors)."""
         with contextlib.suppress(OSError):
-            self.dir.mkdir(parents=True, exist_ok=True)
-            payload = {"cache_schema": CACHE_SCHEMA, "outcome": outcome_to_dict(outcome)}
+            # Owner-only cache dir so another local user cannot plant entries
+            # (issue #293/F-10); best-effort tighten if it already exists.
+            self.dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+            with contextlib.suppress(OSError):
+                self.dir.chmod(0o700)
+            payload = {
+                "cache_schema": CACHE_SCHEMA,
+                "cache_key": key,
+                "outcome": outcome_to_dict(outcome),
+            }
             self._path(key).write_text(
                 json.dumps(payload, separators=(",", ":")) + "\n", encoding="utf-8"
             )

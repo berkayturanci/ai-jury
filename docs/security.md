@@ -8,6 +8,15 @@ read-only posture while keeping non-interactive runs from hanging or failing.
 
 For vulnerability reporting, see [SECURITY.md](../SECURITY.md).
 
+## Recent security scan follow-up
+
+A repository-wide Codex Security scan on 2026-06-07 found one reportable
+medium-severity local confidentiality issue: Claude and Antigravity/Gemini
+prompt delivery currently places the full review prompt in process arguments.
+The tracking issue is
+[#287](https://github.com/berkayturanci/ai-jury/issues/287), and the scan note is
+recorded in [Codex Security Scan - 2026-06-07](security-scan-2026-06-07.md).
+
 ## Codex invocation
 
 The Codex adapter runs:

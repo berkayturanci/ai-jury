@@ -5,20 +5,82 @@ the agent's response. Adapters are intentionally thin: the orchestrator owns the
 prompt content and the round structure; an adapter only knows how to *invoke its
 CLI*.
 
-Headless invocations (verified against installed CLIs, early 2026):
-  - Claude Code : ``claude -p "<prompt>" --output-format text``
-  - Codex CLI   : ``codex exec <args> < <prompt>``  (prompt piped via stdin)
-  - Antigravity : ``agy --print "<prompt>"``
+Headless invocations (verified against installed CLIs, early 2026). The prompt
+embeds the redacted diff, so it is delivered on STDIN (never argv) for every
+real adapter so it is not exposed in the process list (issue #287):
+  - Claude Code : ``claude -p --output-format text``  (prompt piped via stdin)
+  - Codex CLI   : ``codex exec <args>``               (prompt piped via stdin)
+  - Antigravity : ``agy --print``                     (prompt piped via stdin)
 """
 from __future__ import annotations
 
+import contextlib
+import os
 import re
 import shutil
+import signal
 import subprocess
 import time
 from dataclasses import dataclass, field
 
+from . import privilege, redaction
 from .config import AgentSpec
+
+# Cap on a single local-model HTTP response body (issue #293/F-9). A chat
+# completion is small; an unbounded read from a malicious/buggy endpoint would
+# let it OOM the process.
+_MAX_RESPONSE_BYTES = 16 * 1024 * 1024
+
+
+def _kill_process_group(proc: subprocess.Popen) -> None:
+    """Best-effort kill of the child's whole process group (issue #293/F-7)."""
+    try:
+        if hasattr(os, "killpg"):
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            return
+    except (ProcessLookupError, PermissionError, OSError):
+        pass
+    with contextlib.suppress(OSError):
+        proc.kill()
+
+
+def _spawn(argv: list[str], stdin: str | None, timeout: int) -> subprocess.CompletedProcess:
+    """Run a CLI with stdout/stderr captured, killing the whole group on timeout.
+
+    ``subprocess.run(timeout=…)`` SIGKILLs only the direct child, so an agent CLI
+    that wraps node/python can leak orphaned grandchildren (issue #293/F-7). The
+    child is started in its own session (process-group leader); on timeout the
+    entire group is killed before re-raising ``TimeoutExpired`` so the caller's
+    handling is unchanged. Returns a ``CompletedProcess``.
+    """
+    popen_kwargs: dict = {
+        "stdin": subprocess.PIPE if stdin is not None else None,
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
+        "text": True,
+    }
+    if hasattr(os, "setsid"):
+        popen_kwargs["start_new_session"] = True
+    proc = subprocess.Popen(argv, **popen_kwargs)
+    try:
+        out, err = proc.communicate(input=stdin, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _kill_process_group(proc)
+        with contextlib.suppress(Exception):
+            proc.communicate()  # reap the killed child
+        raise
+    return subprocess.CompletedProcess(argv, proc.returncode, out, err)
+
+
+def _read_only_extra_args(spec: AgentSpec) -> list[str]:
+    """The agent's ``extra_args`` with its mandatory read-only sandbox guaranteed.
+
+    Enforced at the adapter layer (issue #288) so a missing/misconfigured
+    ``extra_args`` cannot strip the sandbox: a reviewer of an attacker-controlled
+    diff is never write/tool-capable. Config may widen a codex sandbox knowingly,
+    but never remove the restriction.
+    """
+    return privilege.enforce_read_only(spec.vendor, spec.name, spec.extra_args)
 
 # Short timeout for capability/version probes. Detection is best-effort and must
 # never slow down or block a normal run, so probes are deliberately snappy.
@@ -255,13 +317,7 @@ class Adapter:
         stdin = self._stdin_for(prompt)
         start = time.monotonic()
         try:
-            proc = subprocess.run(
-                argv,
-                input=stdin,
-                capture_output=True,
-                text=True,
-                timeout=effective_timeout,
-            )
+            proc = _spawn(argv, stdin, effective_timeout)
         except subprocess.TimeoutExpired:
             return AgentResult(
                 self.name, self.spec.vendor, False, "",
@@ -301,11 +357,19 @@ class Adapter:
 
 
 class ClaudeAdapter(Adapter):
+    # The prompt embeds the (redacted) diff and PR/issue context; deliver it on
+    # STDIN rather than as a process argument so it is not exposed in `ps` /
+    # /proc/<pid>/cmdline to other local users (issue #287). `claude -p` reads
+    # the prompt from stdin when no positional prompt is given.
     def build_argv(self, prompt: str) -> list[str]:
-        argv = [self.spec.command, "-p", prompt]
+        del prompt
+        argv = [self.spec.command, "-p"]
         if self.spec.model:
             argv += ["--model", self.spec.model]
-        return argv + self.spec.extra_args
+        return argv + _read_only_extra_args(self.spec)
+
+    def _stdin_for(self, prompt: str) -> str | None:
+        return prompt
 
 
 class CodexAdapter(Adapter):
@@ -318,21 +382,69 @@ class CodexAdapter(Adapter):
         argv = [self.spec.command, "exec"]
         if self.spec.model:
             argv += ["-m", self.spec.model]
-        return argv + self.spec.extra_args
+        return argv + _read_only_extra_args(self.spec)
 
     def _stdin_for(self, prompt: str) -> str | None:
         return prompt
 
 
 class AgyAdapter(Adapter):
+    # Prompt on STDIN, not argv (issue #287): `agy --print` reads the prompt from
+    # stdin when no positional prompt is given (verified against agy 1.0.6), so the
+    # redacted diff is not exposed in the process list.
     def build_argv(self, prompt: str) -> list[str]:
-        argv = [self.spec.command, "--print", prompt]
+        del prompt
+        argv = [self.spec.command, "--print"]
         if self.spec.model:
             argv += ["--model", self.spec.model]
-        return argv + self.spec.extra_args
+        return argv + _read_only_extra_args(self.spec)
+
+    def _stdin_for(self, prompt: str) -> str | None:
+        return prompt
 
 
 _DEFAULT_LOCAL_ENDPOINT = "http://localhost:11434/v1"
+
+
+def _http_only_opener():
+    """An opener that handles ONLY http/https (issue #291, SSRF defense).
+
+    The default ``urllib`` opener honors ``file://`` and ``ftp://``, so an
+    attacker-influenced ``endpoint`` could read local files or reach other
+    schemes. This OpenerDirector registers no ``FileHandler``/``FTPHandler``, so
+    any non-http(s) URL raises ``URLError("unknown url type")`` regardless of
+    config validation — defense in depth alongside ``config._endpoint_issues``.
+
+    It also registers NO ``HTTPRedirectHandler`` (review of #291): otherwise a
+    malicious/compromised endpoint could 302-redirect to an internal/metadata
+    host (e.g. ``169.254.169.254``) and the opener would follow it, bypassing the
+    configured-URL validation. Without the handler a 3xx surfaces as an
+    ``HTTPError`` (a failed review) and is never followed.
+    """
+    import urllib.request
+
+    opener = urllib.request.OpenerDirector()
+    for handler in (
+        urllib.request.HTTPHandler,
+        urllib.request.HTTPSHandler,
+        urllib.request.HTTPDefaultErrorHandler,
+        urllib.request.HTTPErrorProcessor,
+        # UnknownHandler raises URLError("unknown url type: …") for any scheme
+        # without a registered handler — so file://, ftp://, etc. fail loudly
+        # instead of silently resolving to None.
+        urllib.request.UnknownHandler,
+    ):
+        opener.add_handler(handler())
+    return opener
+
+
+def _open(target, timeout):
+    """Open an http/https URL or Request via the restricted opener (issue #291).
+
+    Single seam for every local-adapter HTTP call so the SSRF-safe opener (no
+    file/ftp handlers) is always used.
+    """
+    return _http_only_opener().open(target, timeout=timeout)
 
 
 def list_local_models(endpoint: str = _DEFAULT_LOCAL_ENDPOINT) -> list[str]:
@@ -344,13 +456,12 @@ def list_local_models(endpoint: str = _DEFAULT_LOCAL_ENDPOINT) -> list[str]:
     returns ``[]`` so callers can fall back gracefully.
     """
     import json as _json
-    import urllib.request
 
     base = (endpoint or _DEFAULT_LOCAL_ENDPOINT).rstrip("/")
     url = base if base.endswith("/models") else f"{base}/models"
     try:
-        with urllib.request.urlopen(url, timeout=_VERSION_PROBE_TIMEOUT) as resp:  # noqa: S310
-            data = _json.loads(resp.read().decode("utf-8"))
+        with _open(url, _VERSION_PROBE_TIMEOUT) as resp:  # noqa: S310
+            data = _json.loads(resp.read(_MAX_RESPONSE_BYTES).decode("utf-8", errors="replace"))
     except Exception:  # noqa: BLE001 - discovery is best-effort
         return []
     models = data.get("data") if isinstance(data, dict) else None
@@ -431,7 +542,7 @@ class LocalAdapter(Adapter):
 
         url = f"{self.endpoint}/models"
         try:
-            with urllib.request.urlopen(url, timeout=_VERSION_PROBE_TIMEOUT) as resp:  # noqa: S310
+            with _open(url, _VERSION_PROBE_TIMEOUT) as resp:  # noqa: S310
                 return 200 <= resp.status < 500
         except urllib.error.HTTPError as exc:
             # A 4xx (e.g. 404 on /models) still means the server is up.
@@ -470,15 +581,18 @@ class LocalAdapter(Adapter):
         )
         start = time.monotonic()
         try:
-            with urllib.request.urlopen(req, timeout=effective_timeout) as resp:  # noqa: S310
-                raw = resp.read().decode("utf-8")
+            with _open(req, effective_timeout) as resp:  # noqa: S310
+                raw = resp.read(_MAX_RESPONSE_BYTES).decode("utf-8", errors="replace")
             data = _json.loads(raw)
         except urllib.error.HTTPError as exc:
             detail = ""
             try:
-                detail = exc.read().decode("utf-8")[:300]
+                detail = exc.read(_MAX_RESPONSE_BYTES).decode("utf-8", errors="replace")[:300]
             except Exception:  # noqa: BLE001
                 detail = exc.reason or ""
+            # The body is from a possibly-untrusted endpoint and is surfaced in
+            # the report; redact recognized secrets before embedding (#293/F-8).
+            detail = redaction.redact(detail)[0]
             return AgentResult(
                 self.name, self.spec.vendor, False, "",
                 time.monotonic() - start, f"HTTP {exc.code}: {detail}",

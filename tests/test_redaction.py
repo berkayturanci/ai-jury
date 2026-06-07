@@ -109,6 +109,65 @@ class RedactionTests(unittest.TestCase):
         _out, n = redact(text)
         self.assertEqual(n, 2)
 
+    # Issue #289: key names the old anchored pattern missed.
+    def test_password_assignment_redacted(self):
+        out, n = redact('password = "hunter2hunter2hunter2"')
+        self.assertEqual(n, 1)
+        self.assertIn("[REDACTED:secret_assignment]", out)
+        self.assertNotIn("hunter2hunter2hunter2", out)
+        self.assertIn("password", out)  # key name preserved
+
+    def test_aws_secret_access_key_redacted(self):
+        # The canonical AWS secret-key variable name: `secret` is followed by
+        # `_access_key`, so the old `(secret)(=)` anchor never matched it.
+        secret = "wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY"
+        out, n = redact(f"aws_secret_access_key={secret}")
+        self.assertEqual(n, 1)
+        self.assertIn("[REDACTED:secret_assignment]", out)
+        self.assertNotIn(secret, out)
+        self.assertIn("aws_secret_access_key", out)
+
+    # Issue #290: common provider token formats.
+    def test_slack_token_redacted(self):
+        # Synthetic and assembled at runtime so no realistic token literal is
+        # committed (GitHub push protection flags Slack-shaped literals).
+        token = "xox" + "b-" + "EXAMPLE" + "0" * 12 + "NOTAREALTOKEN"
+        out, n = redact(token)
+        self.assertEqual(n, 1)
+        self.assertIn("[REDACTED:slack_token]", out)
+
+    def test_google_api_key_redacted(self):
+        out, n = redact("AIza" + "A" * 35)
+        self.assertEqual(n, 1)
+        self.assertIn("[REDACTED:google_api_key]", out)
+
+    def test_stripe_key_redacted(self):
+        out, n = redact("sk_live_" + "a" * 24)
+        self.assertEqual(n, 1)
+        self.assertIn("[REDACTED:stripe_key]", out)
+
+    def test_github_pat_redacted(self):
+        out, n = redact("github_pat_" + "A1b2" * 8)
+        self.assertEqual(n, 1)
+        self.assertIn("[REDACTED:github_pat]", out)
+
+    def test_jwt_redacted(self):
+        jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NSJ9.dBjftJeZ4CVP_mB92K27u"
+        out, n = redact(f"the value is {jwt}")
+        self.assertEqual(n, 1)
+        self.assertIn("[REDACTED:jwt]", out)
+        self.assertNotIn(jwt, out)
+
+    def test_no_redos_on_long_key_like_input(self):
+        # The two `[A-Za-z0-9_]*` are split by a literal keyword anchor; a long
+        # adversarial identifier without a trailing `=` must not hang.
+        import time as _t
+        text = "secret_" + "a" * 200_000
+        start = _t.monotonic()
+        _out, n = redact(text)
+        self.assertLess(_t.monotonic() - start, 1.0)
+        self.assertEqual(n, 0)  # no separator/value -> not an assignment
+
 
 class ContextConfigTests(unittest.TestCase):
     def test_defaults(self):
