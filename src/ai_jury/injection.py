@@ -16,25 +16,28 @@ import re
 from dataclasses import dataclass
 
 # Zero-width / bidi / invisible control characters often used to smuggle hidden
-# text. Written as \u escapes (not literals) so the set is readable and
-# verifiable. Extended in issue #303/L-2 to cover direction marks, invisible math
-# operators, soft hyphen, CGJ, Mongolian vowel separator, and Hangul fillers.
-_ZERO_WIDTH = (
-    "​"              # zero-width space
-    "‌"              # zero-width non-joiner
-    "‍"              # zero-width joiner
-    "⁠"              # word joiner
-    "﻿"              # zero-width no-break space / BOM
-    "‪‫‬‭‮"  # bidi embedding/override controls
-    "‎‏"        # LRM / RLM (left/right-to-left marks)
-    "؜"              # Arabic letter mark
-    "⁡⁢⁣⁤"  # invisible math operators
-    "­"              # soft hyphen
-    "͏"              # combining grapheme joiner
-    "᠎"              # Mongolian vowel separator
-    "ᅟᅠㅤﾠ"  # Hangul fillers (render as invisible)
+# text. Built from explicit code points (NOT invisible string literals) so the
+# set is readable, verifiable, and can't be silently stripped by an editor or a
+# whitespace normalizer (review of #303/L-2). Extended to cover direction marks,
+# invisible math operators, soft hyphen, CGJ, Mongolian vowel separator, and
+# Hangul fillers.
+_ZERO_WIDTH_CODEPOINTS = (
+    0x200B,  # zero-width space
+    0x200C,  # zero-width non-joiner
+    0x200D,  # zero-width joiner
+    0x2060,  # word joiner
+    0xFEFF,  # zero-width no-break space / BOM
+    0x202A, 0x202B, 0x202C, 0x202D, 0x202E,  # bidi embedding/override controls
+    0x200E, 0x200F,  # LRM / RLM (left/right-to-left marks)
+    0x061C,  # Arabic letter mark
+    0x2061, 0x2062, 0x2063, 0x2064,  # invisible math operators
+    0x00AD,  # soft hyphen
+    0x034F,  # combining grapheme joiner
+    0x180E,  # Mongolian vowel separator
+    0x115F, 0x1160, 0x3164, 0xFFA0,  # Hangul fillers (render as invisible)
 )
-_ZERO_WIDTH_RE = re.compile("[" + _ZERO_WIDTH + "]")
+_ZERO_WIDTH = "".join(chr(c) for c in _ZERO_WIDTH_CODEPOINTS)
+_ZERO_WIDTH_RE = re.compile("[" + re.escape(_ZERO_WIDTH) + "]")
 
 # Imperative phrases that try to override the system/developer instructions.
 _PHRASE_PATTERNS: tuple[tuple[str, re.Pattern], ...] = (

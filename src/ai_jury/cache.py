@@ -283,11 +283,15 @@ class Cache:
         if _dir_is_untrusted(self.dir):
             return None
         try:
-            # Size-cap before parsing (issue #303/L-5): don't read a giant
-            # attacker-planted entry into memory just to reject its MAC later.
-            if path.stat().st_size > _MAX_CACHE_BYTES:
+            # Size-cap the READ itself (issue #303/L-5, review): read at most
+            # _MAX_CACHE_BYTES+1 chars rather than stat-then-read (which is a
+            # TOCTOU and still reads the whole file). A giant attacker-planted
+            # entry is rejected without being pulled into memory.
+            with path.open("r", encoding="utf-8") as fh:
+                raw = fh.read(_MAX_CACHE_BYTES + 1)
+            if len(raw) > _MAX_CACHE_BYTES:
                 return None
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data = json.loads(raw)
         except (OSError, ValueError):
             return None
         if data.get("cache_schema") != CACHE_SCHEMA:
@@ -339,12 +343,14 @@ class Cache:
             if mac_key is None:
                 return
             payload["mac"] = _compute_mac(mac_key, payload)
-            # Atomic write (issue #303/L-4): write a temp file then os.replace, so
-            # a crash mid-write can't leave a truncated entry and a reader never
-            # sees a partial file. (The 0700 dir gate above already blocks another
-            # local user from pre-planting a symlink at the target.)
+            # Atomic write (issue #303/L-4): write a temp file then replace, so a
+            # crash mid-write can't leave a truncated entry and a reader never
+            # sees a partial file. The temp name is pid-tagged (review of #303) so
+            # two concurrent same-user store() calls for the same key don't write
+            # the identical temp path. (The 0700 dir gate above already blocks
+            # another local user from pre-planting a symlink at the target.)
             path = self._path(key)
-            tmp = path.with_name(path.name + ".tmp")
+            tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
             tmp.write_text(
                 json.dumps(payload, separators=(",", ":")) + "\n", encoding="utf-8"
             )
@@ -364,6 +370,11 @@ class Cache:
             with contextlib.suppress(OSError):
                 path.unlink()
                 removed += 1
+        # Reap any leftover atomic-write temp files (review of #303/L-4) and
+        # rotate the MAC key; neither counts toward the entry total.
+        for tmp in self.dir.glob("*.tmp"):
+            with contextlib.suppress(OSError):
+                tmp.unlink()
         with contextlib.suppress(OSError):
             (self.dir / _HMAC_KEY_FILE).unlink()
         return removed
