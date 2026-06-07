@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Docs: a live dogfood case study** (`docs/case-study-dogfood-v1.2.0.md`, in the docs portal). Logs the jury (codex + agy + qwen, no Claude) reviewing the five PRs that became v1.2.0: 5 real bugs caught before merge (incl. a crash and a check-disabling bypass) **and** 3 false positives the chair wrongly "verified" — with the honest lesson that a non-executing verifier confirms plausible-but-wrong findings, so a panel is a high-recall finder that still needs executed verification.
 
+### Security
+
+- **A whole-codebase security audit** (`docs/security-audit-2026-06-07.md`) — static review across four attack surfaces (subprocess/sandbox, network/SSRF, prompt-injection/redaction, filesystem/parsing) with the High findings verified in source. Tracked as #288–#293.
+- **Redaction now covers `password=`, `aws_secret_access_key=`, and common provider tokens** (#289, #290). The `secret_assignment` pattern only recognized `api_key`/`secret`/`token` *anchored* at the start of the key, so `password = "…"` was missed entirely and `aws_secret_access_key=…` slipped through (the required `=` followed `_access_key`, not `secret`). The key side now allows surrounding identifier chars (so a keyword embedded mid-name still matches) and includes `password`/`passwd`/`access_key`/`private_key`/`client_secret`/`credential`. Added explicit patterns for Slack (`xox…`), Google (`AIza…`), Stripe (`sk_live_…`/`rk_live_…`), GitHub fine-grained PATs (`github_pat_…`), and JWTs. These ran verbatim into agent prompts and the rendered report before.
+
 ## [1.2.0] - 2026-06-05
 
 ### Fixed
