@@ -39,14 +39,17 @@ issues **#287–#316** across **v1.3.0 → v1.5.0**:
 - **v1.5.0** — a re-audit of v1.4.1 surfaced two Medium robustness/DoS items (an
   O(N²) injection scan and a malformed-endpoint crash), fixed via #314, #315,
   #316.
+- **v1.6.0** — a re-audit of v1.5.0 surfaced one Medium (the synthesis
+  `VERIFICATION VERDICTS` addendum was left un-fenced/un-neutralized — an
+  incomplete-coverage gap in the #316/L-1 fix) plus three Lows (init-endpoint
+  redaction missing short/bare-token userinfo, two broken classification keyword
+  stems, nested redaction), fixed via #321, #322.
 
-The current Claude analysis is the **re-audit of the released v1.5.0 code**:
-[Security re-audit — v1.5.0](security-audit-2026-06-07-v1.5.0.md). It confirms
-every #287–#316 fix holds (no Critical/High) and surfaces one Medium — the
-`VERIFICATION VERDICTS` synthesis addendum was left un-neutralized (an
-incomplete-coverage gap in the #316/L-1 fix) — plus minor items (init-endpoint
-redaction missing short/bare-token userinfo, two broken classification keyword
-stems).
+The current Claude analysis is the **re-audit of the released v1.6.0 code**:
+[Security re-audit — v1.6.0](security-audit-2026-06-07-v1.6.0.md). It is the
+first round with **no Critical, High, or Medium finding**: every #287–#322 fix
+holds in source and only optional, non-attacker-reachable defense-in-depth notes
+remain.
 
 ## Codex invocation
 
