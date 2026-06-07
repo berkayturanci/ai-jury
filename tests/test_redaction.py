@@ -8,7 +8,7 @@ from ai_jury.config import (
     _from_dict,
 )
 from ai_jury.orchestrator import run_jury
-from ai_jury.redaction import redact
+from ai_jury.redaction import redact, redact_url_userinfo
 
 
 class RedactionTests(unittest.TestCase):
@@ -207,6 +207,69 @@ class RedactionTests(unittest.TestCase):
         out, n = redact("https://example.com:8080/v1/models")
         self.assertEqual(n, 0)
         self.assertEqual(out, "https://example.com:8080/v1/models")
+
+    def test_basic_auth_short_password_redacted(self):
+        # Issue v1.5.0/L-1: a short (<6 char) password is still a credential and
+        # was leaking past the old `{6,}` quantifier.
+        out, n = redact("http://user:pass@host")
+        self.assertEqual(n, 1)
+        self.assertIn("[REDACTED:basic_auth]", out)
+        self.assertNotIn("pass@", out)
+        self.assertIn("http://user:", out)
+        self.assertIn("@host", out)
+
+    def test_basic_auth_colonless_token_redacted(self):
+        # Issue v1.5.0/L-1: a bare token in the userinfo position (no `:`) was
+        # not matched by the colon-form pattern and leaked in cleartext.
+        out, n = redact("http://apitoken12345@host:11434/v1")
+        self.assertEqual(n, 1)
+        self.assertIn("[REDACTED:basic_auth]", out)
+        self.assertNotIn("apitoken12345", out)
+        self.assertIn("http://", out)
+        self.assertIn("@host:11434/v1", out)
+
+    def test_nested_redaction_keeps_informative_kind(self):
+        # Issue v1.5.0/L-3: a secret inside a basic-auth URL is redacted by its
+        # specific pattern; the resulting marker must NOT be re-redacted by
+        # basic_auth (which would lose the kind and inflate the count).
+        out, n = redact("https://user:AKIAIOSFODNN7EXAMPLE@host")
+        self.assertEqual(n, 1)
+        self.assertIn("[REDACTED:aws_access_key]", out)
+        self.assertNotIn("[REDACTED:basic_auth]", out)
+
+
+class RedactUrlUserinfoTests(unittest.TestCase):
+    """Issue v1.5.0/L-1: structural userinfo strip for endpoint display."""
+
+    def test_strips_colonless_token(self):
+        self.assertEqual(
+            redact_url_userinfo("http://apitoken12345@host:11434/v1"),
+            "http://[REDACTED]@host:11434/v1",
+        )
+
+    def test_strips_user_password(self):
+        self.assertEqual(
+            redact_url_userinfo("http://user:pw@host/v1"),
+            "http://[REDACTED]@host/v1",
+        )
+
+    def test_no_userinfo_unchanged(self):
+        url = "http://localhost:11434/v1"
+        self.assertEqual(redact_url_userinfo(url), url)
+
+    def test_ipv6_host_preserved(self):
+        self.assertEqual(
+            redact_url_userinfo("http://user:pw@[::1]:11434/v1"),
+            "http://[REDACTED]@[::1]:11434/v1",
+        )
+
+    def test_empty_unchanged(self):
+        self.assertEqual(redact_url_userinfo(""), "")
+
+    def test_malformed_url_falls_back_to_redact(self):
+        # urlsplit raises on this; the helper must not crash.
+        out = redact_url_userinfo("http://[::1")
+        self.assertIsInstance(out, str)
 
     def test_azure_account_key_redacted(self):
         out, n = redact("AccountKey=" + "Ab12Cd34Ef56Gh78" + "+/==")

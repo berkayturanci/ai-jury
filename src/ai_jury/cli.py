@@ -583,12 +583,13 @@ def _run_init(rest: list[str]) -> int:
     ns = sub.parse_args(rest)
 
     from .adapters import list_local_models
-    from .redaction import redact
+    from .redaction import redact_url_userinfo
 
     endpoint = ns.local_endpoint or "http://localhost:11434/v1"
-    # Redact any userinfo credentials before echoing the endpoint to stdout/CI
-    # logs (issue #316/L-7), mirroring doctor.py.
-    endpoint_disp = redact(endpoint)[0]
+    # Strip any userinfo credentials before echoing the endpoint to stdout/CI
+    # logs (issue #316/L-7, completed in v1.5.0/L-1: structural strip catches
+    # short and colon-less userinfo the regex missed), mirroring doctor.py.
+    endpoint_disp = redact_url_userinfo(endpoint)
 
     if ns.list_models:
         models = list_local_models(endpoint)
