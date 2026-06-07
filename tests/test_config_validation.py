@@ -186,6 +186,12 @@ class EndpointValidation(unittest.TestCase):
         with mock.patch.dict(os.environ, {}, clear=True), self.assertRaises(ConfigError):
             validate_config(self._local("http://169.254.169.254/latest/meta-data"))
 
+    def test_malformed_endpoint_is_a_clean_hard_error(self):
+        # Issue #315: a URL that makes urlsplit raise (e.g. `http://[::1`) must be
+        # a ConfigError, not an uncaught ValueError stack trace.
+        with self.assertRaises(ConfigError):
+            validate_config(self._local("http://[::1"))
+
     def test_non_loopback_allowed_with_env_opt_in_warns(self):
         with mock.patch.dict(os.environ, {"JURY_ALLOW_REMOTE_ENDPOINT": "1"}, clear=True):
             w = validate_config(self._local("http://gpu-box.internal:8000/v1"))

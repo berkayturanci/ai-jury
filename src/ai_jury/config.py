@@ -55,7 +55,16 @@ def _endpoint_issues(endpoint: str, label: str) -> tuple[list[str], list[str]]:
     """
     errors: list[str] = []
     warnings: list[str] = []
-    parsed = urlsplit(endpoint)
+    # `urlsplit` raises ValueError on a malformed URL (e.g. `http://[::1`,
+    # "Invalid IPv6 URL"). Convert that to a hard config error (issue #315) so
+    # `validate_config` reports it cleanly instead of crashing with a stack trace
+    # — the malformed string is, by definition, not a usable endpoint.
+    try:
+        parsed = urlsplit(endpoint)
+        parsed.hostname  # noqa: B018 - also raises ValueError on a bad IPv6 host
+    except ValueError:
+        errors.append(f"agent '{label}' endpoint '{endpoint}' is not a valid URL.")
+        return errors, warnings
     scheme = (parsed.scheme or "").lower()
     if scheme not in ("http", "https"):
         errors.append(
