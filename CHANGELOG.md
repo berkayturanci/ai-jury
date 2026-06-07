@@ -7,9 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-06-07
+
+> Closes the post-v1.4.1 re-audit findings (#314, #315, #316), each cross-vendor
+> jury-reviewed. New behavior: the injection scanner caps hits per kind, config /
+> policy TOML files are size-capped (4 MiB), and redaction covers a few more
+> token formats.
+
 ### Security
 
-- **Post-v1.4.1 security re-audit** (`docs/security-audit-2026-06-07-v1.4.1.md`). A fourth four-surface re-audit confirms every #287–#310 fix holds in source (no Critical/High) and stress-tests #309/#310 (alternate loopback encodings all fail closed; unknown-vendor sandbox fail-closed). It surfaces two new **Medium robustness/DoS** items — an O(N²) cost in `injection.scan` line attribution (a long zero-width run is a CPU-exhaustion DoS) and an uncaught `ValueError` from a malformed endpoint in `config._endpoint_issues`/`validate_config` (the same class #309 fixed at the `list_local_models` seam, still open in config validation) — plus the previously-tracked minor items (`prior_txt` neutralization, more secret formats, `cache clear()` glob, atomic-write `mkstemp`, `tomllib` size cap, `_is_sandboxed` `=`-form, init endpoint redaction). Tracked for follow-up.
+- **`injection.scan` is now O(N), not O(N²)** (#314). It recomputed each hit's line via `text.count(...)` (O(index)) and emitted one hit per matched char, so a long run of zero-width characters cost quadratic time — 200k zero-width chars ≈ 6.6 s, a CPU-exhaustion DoS since `scan_inputs` runs on the full per-chunk diff before fan-out. Now newline offsets are computed once and the line is found by binary search, and hits are capped per kind; 200k ≈ 86 ms, linear.
+- **Config validation returns a clean error on a malformed endpoint** (#315, completes #309). `config._endpoint_issues` called `urlsplit` unguarded, which raises `ValueError` on a malformed URL (`http://[::1`), so `validate_config` crashed with a stack trace instead of a `ConfigError`. The `urlsplit`/hostname access is now guarded; a non-UTF-8 config/policy file is likewise a clean `ConfigError`/`PolicyError`.
+- **Re-audit low-severity bundle** (#316). The prior-round debate addendum (`prior_txt`) is now fenced and run through `neutralize_sentinels` like every other untrusted slot (L-1). Redaction adds SendGrid / PyPI / npm tokens and Slack webhook URLs (L-2). `cache clear()` only touches files matching the 64-hex cache-name shape, so it can't delete unrelated files in a shared `JURY_CACHE_DIR` (L-3). Cache entries are written via `tempfile.mkstemp` (O_EXCL, no symlink-follow) instead of a predictable pid-tagged temp (L-4). Config/policy TOML reads are size-capped at 4 MiB (L-5). The privilege audit recognizes the `=`-form sandbox (`-s=`/`--sandbox=`) the enforcement already accepts, so a safe config no longer false-positives under `--strict` (L-6). The `jury init --local-endpoint` value is redacted before being echoed to stdout (L-7).
+- **Post-v1.4.1 security re-audit** (`docs/security-audit-2026-06-07-v1.4.1.md`) confirmed every #287–#310 fix holds (no Critical/High) and stress-tested #309/#310 (alternate loopback encodings all fail closed; unknown-vendor sandbox fail-closed). The two Mediums and seven Lows it surfaced are all fixed in this release (#314, #315, #316).
 
 ## [1.4.1] - 2026-06-07
 
