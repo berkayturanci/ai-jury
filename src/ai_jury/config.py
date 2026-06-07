@@ -14,6 +14,30 @@ from urllib.parse import urlsplit
 # Hosts that are safe to reach over plaintext http and never an SSRF target.
 _LOOPBACK_HOSTS = ("localhost", "127.0.0.1", "::1", "[::1]")
 
+# Upper bound on a config/policy TOML file (issue #316/L-5). A real config is a
+# few KB; refuse a multi-MB / pathological file so `tomllib` can't be driven to
+# exhaust memory (the file may be attacker-supplied when jury runs from a PR
+# checkout). Mirrors the cache's _MAX_CACHE_BYTES.
+_MAX_CONFIG_BYTES = 4 * 1024 * 1024
+
+
+def _read_toml_bounded(path: Path) -> dict:
+    """Parse a TOML file with a size cap (issue #316/L-5)."""
+    with path.open("rb") as fh:
+        raw = fh.read(_MAX_CONFIG_BYTES + 1)
+    if len(raw) > _MAX_CONFIG_BYTES:
+        raise ConfigError(
+            f"config file '{path}' exceeds the {_MAX_CONFIG_BYTES}-byte limit."
+        )
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        # TOML is UTF-8 by spec; surface a clean error instead of a raw
+        # UnicodeDecodeError (review of #316 — the prior tomllib.load crashed the
+        # same way on bad bytes; now it's a ConfigError).
+        raise ConfigError(f"config file '{path}' is not valid UTF-8.") from exc
+    return tomllib.loads(text)
+
 
 def _is_relative_path_command(command: str) -> bool:
     """True for a relative command that contains a path separator (#293/F-6).
@@ -55,7 +79,16 @@ def _endpoint_issues(endpoint: str, label: str) -> tuple[list[str], list[str]]:
     """
     errors: list[str] = []
     warnings: list[str] = []
-    parsed = urlsplit(endpoint)
+    # `urlsplit` raises ValueError on a malformed URL (e.g. `http://[::1`,
+    # "Invalid IPv6 URL"). Convert that to a hard config error (issue #315) so
+    # `validate_config` reports it cleanly instead of crashing with a stack trace
+    # — the malformed string is, by definition, not a usable endpoint.
+    try:
+        parsed = urlsplit(endpoint)
+        parsed.hostname  # noqa: B018 - also raises ValueError on a bad IPv6 host
+    except ValueError:
+        errors.append(f"agent '{label}' endpoint '{endpoint}' is not a valid URL.")
+        return errors, warnings
     scheme = (parsed.scheme or "").lower()
     if scheme not in ("http", "https"):
         errors.append(
@@ -722,8 +755,7 @@ def load_raw_config(path: str | Path | None = None) -> dict:
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(f"Config not found: {path}")
-    with path.open("rb") as fh:
-        return tomllib.load(fh)
+    return _read_toml_bounded(path)
 
 
 def load_config(

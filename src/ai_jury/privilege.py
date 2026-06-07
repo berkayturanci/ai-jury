@@ -62,6 +62,17 @@ def _is_sandboxed(extra_args: list[str], vendor: str = "", name: str = "") -> bo
     is_agy = vendor == "google" or "agy" in name or "gemini" in name
     args = list(extra_args)
     for i, a in enumerate(args):
+        # Equals form (issue #316/L-6): `-s=read-only` / `--sandbox=read-only`,
+        # which `enforce_read_only._ensure_value_sandbox` already recognizes — so
+        # the audit must too, or it false-positives a genuinely-safe config under
+        # `--strict`.
+        if a.startswith(("-s=", "--sandbox=")):
+            value = a.split("=", 1)[1]
+            if value in _RESTRICTING_SANDBOX_VALUES:
+                return True
+            if a.startswith("--sandbox=") and is_agy and value == "":
+                return True
+            continue
         if a in ("-s", "--sandbox"):
             nxt = args[i + 1] if i + 1 < len(args) else ""
             # Codex (and any vendor): an explicit read-only sandbox value.

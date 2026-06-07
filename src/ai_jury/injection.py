@@ -12,8 +12,14 @@ it cannot flip a verdict.
 """
 from __future__ import annotations
 
+import bisect
 import re
 from dataclasses import dataclass
+
+# The scanner is advisory (it surfaces hits, never changes the gate). Cap hits
+# per kind so a pathological input — e.g. a long run of zero-width chars — yields
+# a bounded number of hits instead of one per char (issue #314).
+_MAX_HITS_PER_KIND = 25
 
 # Zero-width / bidi / invisible control characters often used to smuggle hidden
 # text. Built from explicit code points (NOT invisible string literals) so the
@@ -91,8 +97,16 @@ def _snippet(text: str, start: int, end: int, width: int = 60) -> str:
     return frag.strip()
 
 
-def _line_of(text: str, index: int) -> int:
-    return text.count("\n", 0, index) + 1
+def _newline_offsets(text: str) -> list[int]:
+    """Sorted positions of every ``\\n`` in *text* (built once per scan)."""
+    offsets: list[int] = []
+    start = 0
+    while True:
+        idx = text.find("\n", start)
+        if idx == -1:
+            return offsets
+        offsets.append(idx)
+        start = idx + 1
 
 
 def scan(text: str, source: str = "diff") -> list[InjectionHit]:
@@ -100,42 +114,40 @@ def scan(text: str, source: str = "diff") -> list[InjectionHit]:
 
     Returns a (possibly empty) list of :class:`InjectionHit`. Never raises.
     *source* labels where the text came from ("diff" or "context").
+
+    Line numbers are resolved against newline offsets computed ONCE (binary
+    search per hit), and hits are capped per kind, so the scan is linear even on
+    a pathological high-hit input (issue #314) rather than the old quadratic
+    per-hit ``text.count`` line lookup.
     """
     if not text:
         return []
 
+    newlines = _newline_offsets(text)
+
+    def line_of(index: int) -> int:
+        return bisect.bisect_left(newlines, index) + 1
+
     hits: list[InjectionHit] = []
+    counts: dict[str, int] = {}
+
+    def add(kind: str, index: int, snippet: str) -> None:
+        seen = counts.get(kind, 0)
+        counts[kind] = seen + 1
+        if seen < _MAX_HITS_PER_KIND:
+            hits.append(
+                InjectionHit(kind=kind, source=source, line=line_of(index), snippet=snippet)
+            )
 
     for kind, pat in _PHRASE_PATTERNS:
         for m in pat.finditer(text):
-            hits.append(
-                InjectionHit(
-                    kind=kind,
-                    source=source,
-                    line=_line_of(text, m.start()),
-                    snippet=_snippet(text, m.start(), m.end()),
-                )
-            )
+            add(kind, m.start(), _snippet(text, m.start(), m.end()))
 
     for m in _BASE64_RE.finditer(text):
-        hits.append(
-            InjectionHit(
-                kind="base64-blob",
-                source=source,
-                line=_line_of(text, m.start()),
-                snippet=f"{len(m.group(0))}-char base64-like blob",
-            )
-        )
+        add("base64-blob", m.start(), f"{len(m.group(0))}-char base64-like blob")
 
     for m in _ZERO_WIDTH_RE.finditer(text):
-        hits.append(
-            InjectionHit(
-                kind="zero-width-char",
-                source=source,
-                line=_line_of(text, m.start()),
-                snippet=f"hidden control char U+{ord(m.group(0)):04X}",
-            )
-        )
+        add("zero-width-char", m.start(), f"hidden control char U+{ord(m.group(0)):04X}")
 
     return hits
 

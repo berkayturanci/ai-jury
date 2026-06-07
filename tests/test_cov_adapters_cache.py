@@ -268,10 +268,23 @@ class CacheCoverageTests(unittest.TestCase):
     def test_clear_removes_entries(self):
         with tempfile.TemporaryDirectory() as d:
             c = cache_mod.Cache(d)
-            c._path("k1").write_text("{}", encoding="utf-8")
-            c._path("k2").write_text("{}", encoding="utf-8")
+            # Real cache keys are 64-hex sha256 digests; clear() only touches
+            # files of that shape (issue #316/L-3).
+            c._path("a" * 64).write_text("{}", encoding="utf-8")
+            c._path("b" * 64).write_text("{}", encoding="utf-8")
             self.assertEqual(c.clear(), 2)
             self.assertEqual(c.clear(), 0)
+
+    def test_clear_leaves_unrelated_files(self):
+        # Issue #316/L-3: clear() must not delete non-cache files in a shared dir.
+        with tempfile.TemporaryDirectory() as d:
+            c = cache_mod.Cache(d)
+            c._path("c" * 64).write_text("{}", encoding="utf-8")
+            (c.dir / "notes.json").write_text("keep me", encoding="utf-8")
+            (c.dir / "data.tmp").write_text("keep me", encoding="utf-8")
+            self.assertEqual(c.clear(), 1)
+            self.assertTrue((c.dir / "notes.json").exists())
+            self.assertTrue((c.dir / "data.tmp").exists())
 
     def test_default_cache_dir_env_override(self):
         with mock.patch.dict("os.environ", {cache_mod._ENV_DIR: "/tmp/jc"}, clear=False):

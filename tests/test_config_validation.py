@@ -9,7 +9,41 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from ai_jury.config import ConfigError, validate_config  # noqa: E402
+import tempfile  # noqa: E402
+
+from ai_jury.config import (  # noqa: E402
+    ConfigError,
+    load_raw_config,
+    validate_config,
+)
+
+
+class ConfigSizeLimit(unittest.TestCase):
+    """Issue #316/L-5: a config file is size-capped before tomllib parses it."""
+
+    def test_oversized_config_is_rejected(self):
+        with tempfile.NamedTemporaryFile(
+            "w", suffix=".toml", delete=False, encoding="utf-8"
+        ) as fh:
+            fh.write("x = 1\n# " + "a" * (5 * 1024 * 1024))  # > 4 MiB
+            name = fh.name
+        try:
+            with self.assertRaises(ConfigError):
+                load_raw_config(name)
+        finally:
+            Path(name).unlink()
+
+    def test_invalid_utf8_config_is_a_clean_error(self):
+        # Review of #316: a non-UTF-8 config is a ConfigError, not a raw
+        # UnicodeDecodeError stack trace.
+        with tempfile.NamedTemporaryFile("wb", suffix=".toml", delete=False) as fh:
+            fh.write(b"\xff\xfe not valid utf-8")
+            name = fh.name
+        try:
+            with self.assertRaises(ConfigError):
+                load_raw_config(name)
+        finally:
+            Path(name).unlink()
 
 
 def _cfg(**jury_over):
@@ -185,6 +219,12 @@ class EndpointValidation(unittest.TestCase):
         # a non-loopback host (incl. IMDS) without an out-of-band opt-in.
         with mock.patch.dict(os.environ, {}, clear=True), self.assertRaises(ConfigError):
             validate_config(self._local("http://169.254.169.254/latest/meta-data"))
+
+    def test_malformed_endpoint_is_a_clean_hard_error(self):
+        # Issue #315: a URL that makes urlsplit raise (e.g. `http://[::1`) must be
+        # a ConfigError, not an uncaught ValueError stack trace.
+        with self.assertRaises(ConfigError):
+            validate_config(self._local("http://[::1"))
 
     def test_non_loopback_allowed_with_env_opt_in_warns(self):
         with mock.patch.dict(os.environ, {"JURY_ALLOW_REMOTE_ENDPOINT": "1"}, clear=True):
