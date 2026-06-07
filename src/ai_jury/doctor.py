@@ -25,7 +25,7 @@ from pathlib import Path
 from . import __version__
 from .adapters import make_adapter
 from .config import load_config
-from .redaction import redact
+from .redaction import redact, redact_url_userinfo
 
 
 def _redact_value(value):
@@ -138,7 +138,7 @@ def _detect_warnings(cfg) -> list[str]:
         if agent.vendor == "local":
             warnings.append(
                 f"agent '{_redact_value(agent.name)}' (local) endpoint "
-                f"'{_redact_value(agent.endpoint or 'http://localhost:11434/v1')}' "
+                f"'{redact_url_userinfo(agent.endpoint or 'http://localhost:11434/v1')}' "
                 f"is not reachable"
             )
         else:

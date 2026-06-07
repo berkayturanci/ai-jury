@@ -72,10 +72,23 @@ SECURITY_KEYWORDS: tuple[str, ...] = (
     "sandbox escape",
 )
 
+# Prefix stems: entries that should match any word starting with them (e.g.
+# "vulnerab" -> vulnerability/vulnerable/vulnerabilities; "exploit" ->
+# exploit/exploitable/exploited). Issue v1.5.0/L-2: these were anchored with a
+# trailing ``\b`` like full words, so ``\bvulnerab\b`` never matched
+# "vulnerability" (the ``\b`` fails before the following letter). Compile them
+# with a trailing ``\w*`` instead.
+_PREFIX_STEMS: frozenset[str] = frozenset({"vulnerab", "exploit"})
+
 # Pre-compiled, word-boundary anchored matchers for each keyword. Multi-word
 # phrases match on a relaxed boundary (spaces inside the phrase are literal).
+# Prefix stems use a trailing ``\w*`` so they match the whole word family.
 _KEYWORD_RES: tuple[re.Pattern[str], ...] = tuple(
-    re.compile(r"\b" + re.escape(kw) + r"\b", re.IGNORECASE) for kw in SECURITY_KEYWORDS
+    re.compile(
+        r"\b" + re.escape(kw) + (r"\w*" if kw in _PREFIX_STEMS else r"\b"),
+        re.IGNORECASE,
+    )
+    for kw in SECURITY_KEYWORDS
 )
 
 

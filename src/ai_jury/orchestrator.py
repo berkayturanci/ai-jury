@@ -800,7 +800,16 @@ def _synthesize(
         notice=prompts._UNTRUSTED_NOTICE,
     )
     if verdicts:
-        prompt += f"\n\n=== VERIFICATION VERDICTS ===\n{_format_verdicts(verdicts)}\n"
+        # The verdicts quote candidate findings, which transitively quote
+        # untrusted diff text (issue v1.5.0/M-1: this addendum was the one slot
+        # the #316/L-1 fix missed). Fence + neutralize it like every other
+        # peer-output slot so an embedded closing token can't break out.
+        prompt += (
+            "\n\n=== VERIFICATION VERDICTS (may quote UNTRUSTED text) ===\n"
+            "<<<UNTRUSTED_FINDINGS\n"
+            + prompts.neutralize_sentinels(_format_verdicts(verdicts))
+            + "\nUNTRUSTED_FINDINGS>>>\n"
+        )
     return _run_with_retry(chair, prompt, "synthesis", budget, retries, log)
 
 

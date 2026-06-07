@@ -6,6 +6,15 @@ Each match is replaced with ``[REDACTED:<kind>]``.
 from __future__ import annotations
 
 import re
+from urllib.parse import urlsplit, urlunsplit
+
+# An already-emitted redaction marker (`[REDACTED:<kind>]`). Used to avoid
+# re-redacting a value an earlier, more-specific pattern already replaced
+# (issue v1.5.0/L-3): without this guard a secret inside a basic-auth URL —
+# `https://user:AKIA…@host` — is redacted by `aws_access_key`, then the
+# resulting `[REDACTED:aws_access_key]` token is re-redacted by `basic_auth`,
+# losing the informative kind and double-counting.
+_REDACTED_MARKER = re.compile(r"^\[REDACTED:[a-z_]+\]$")
 
 # Ordered list of (kind, compiled pattern). Order matters: more specific
 # patterns run before the generic key=value catch-all so secrets are labeled
@@ -52,7 +61,22 @@ _PATTERNS: list[tuple[str, re.Pattern]] = [
     # The username run is `*`, not `+` (review of #302): a token-as-password URL
     # with an EMPTY username — `https://:SECRET@host` — is common, and `+` made
     # the match fail there and leak the secret.
-    ("basic_auth", re.compile(r"(://[^/:@\s]*:)([^@\s]{6,})(@)")),
+    #
+    # The password run is `{1,}`, not `{6,}` (issue v1.5.0/L-1): a short password
+    # (`http://user:pass@host`, 4 chars) is still a leaked credential.
+    ("basic_auth", re.compile(r"(://[^/:@\s]*:)([^@\s]+)(@)")),
+    # Colon-less userinfo — a bare token in the userinfo position with no
+    # password colon (`http://apitoken12345@host/v1`) (issue v1.5.0/L-1). The
+    # colon form above never matches this (it requires a `:`), so the token would
+    # otherwise reach an external agent in cleartext. Group 1 (`://`) and group 3
+    # (`@`) are kept; group 2 (the token) is redacted. Disjoint from the colon
+    # form: `[^/:@\s]+` stops at a `:`, so a `user:pass@` URL is handled above.
+    #
+    # Note: this also redacts a bare, non-secret username (`https://user@host` ->
+    # `https://[REDACTED:basic_auth]@host`). That is deliberate safe-by-default
+    # over-redaction — userinfo in a reviewed diff is rare and a credential more
+    # often than not, and over-masking a username never leaks anything.
+    ("basic_auth", re.compile(r"(://)([^/:@\s]+)(@)")),
     # Capture the surrounding quotes (groups 3 and 4) so they are PRESERVED in
     # the replacement (issue #102): redacting only the value keeps a quoted
     # assignment a valid string literal instead of producing a broken,
@@ -109,9 +133,14 @@ def redact(text: str) -> tuple[str, int]:
         elif kind == "basic_auth":
             def _sub_basic_auth(m, _kind=kind):
                 nonlocal count
+                # Don't re-redact a value an earlier pattern already replaced
+                # (issue v1.5.0/L-3): keep the more-informative kind and the
+                # accurate count.
+                if _REDACTED_MARKER.match(m.group(2)):
+                    return m.group(0)
                 count += 1
-                # Keep the `://user:` prefix (group 1) and `@` suffix (group 3);
-                # redact only the password so the URL stays readable.
+                # Keep the prefix (group 1: `://user:` or `://`) and `@` suffix
+                # (group 3); redact only the credential so the URL stays readable.
                 return f"{m.group(1)}[REDACTED:{_kind}]{m.group(3)}"
             result = pattern.sub(_sub_basic_auth, result)
         else:
@@ -121,3 +150,29 @@ def redact(text: str) -> tuple[str, int]:
                 return f"[REDACTED:{_kind}]"
             result = pattern.sub(_sub, result)
     return result, count
+
+
+def redact_url_userinfo(url: str) -> str:
+    """Strip any userinfo (``user[:password]``) from a URL before display.
+
+    Structural counterpart to :func:`redact` for the one place a base endpoint
+    URL can carry a credential (issue v1.5.0/L-1). Rather than relying on the
+    `basic_auth` regex — which can miss short or colon-less userinfo — this
+    parses the URL and replaces the whole ``userinfo@`` run with
+    ``[REDACTED]@``, keeping the scheme, host, port, path, and query verbatim
+    (so an IPv6 literal or non-default port is preserved exactly). A URL that
+    `urlsplit` cannot parse falls back to the regex-based :func:`redact`.
+    """
+    if not url:
+        return url
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return redact(url)[0]
+    netloc = parts.netloc
+    if "@" not in netloc:
+        return url
+    # The host part has no unencoded '@'; split on the last one so a userinfo
+    # that contains a percent-encoded '@' is still handled correctly.
+    hostport = netloc[netloc.rfind("@") + 1:]
+    return urlunsplit(parts._replace(netloc=f"[REDACTED]@{hostport}"))

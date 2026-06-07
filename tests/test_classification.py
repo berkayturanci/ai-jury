@@ -143,6 +143,19 @@ class SecuritySensitiveTests(unittest.TestCase):
                 kw,
             )
 
+    def test_prefix_stem_keywords_match_word_family(self):
+        # Issue v1.5.0/L-2: the "vulnerab"/"exploit" prefix stems were anchored
+        # with a trailing \b, so they never matched the words they target.
+        for claim in (
+            "this is a vulnerability",
+            "a vulnerable code path",
+            "an exploitable bug",
+            "exploited in production",
+        ):
+            self.assertTrue(
+                C.is_security_finding(_f("nit", claim=claim)), claim
+            )
+
 
 class NeedsHumanAttentionTests(unittest.TestCase):
     def test_empty_no_human_attention(self):
