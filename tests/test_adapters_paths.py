@@ -31,8 +31,14 @@ def _proc(returncode=0, stdout="", stderr=""):
 
 class BuildArgvTests(unittest.TestCase):
     def test_claude_argv(self):
+        # No --disallowed-tools configured: the mandatory write-tool denial is
+        # injected at the adapter layer (issue #288 enforcement).
         a = adapters.ClaudeAdapter(_spec(model="m", extra_args=["-x"]))
-        self.assertEqual(a.build_argv("P"), ["claude", "-p", "P", "--model", "m", "-x"])
+        self.assertEqual(
+            a.build_argv("P"),
+            ["claude", "-p", "P", "--model", "m",
+             "--disallowed-tools", "Edit,Write,NotebookEdit,Bash", "-x"],
+        )
 
     def test_codex_argv_and_stdin(self):
         a = adapters.CodexAdapter(_spec(name="codex", vendor="openai", command="codex", extra_args=["-s", "read-only"]))
@@ -40,8 +46,9 @@ class BuildArgvTests(unittest.TestCase):
         self.assertEqual(a._stdin_for("P"), "P")
 
     def test_agy_argv(self):
+        # No sandbox configured: --sandbox is injected (issue #288 enforcement).
         a = adapters.AgyAdapter(_spec(name="agy", vendor="google", command="agy"))
-        self.assertEqual(a.build_argv("P"), ["agy", "--print", "P"])
+        self.assertEqual(a.build_argv("P"), ["agy", "--print", "P", "--sandbox"])
 
 
 class AdapterRunTests(unittest.TestCase):

@@ -18,7 +18,19 @@ import subprocess
 import time
 from dataclasses import dataclass, field
 
+from . import privilege
 from .config import AgentSpec
+
+
+def _read_only_extra_args(spec: AgentSpec) -> list[str]:
+    """The agent's ``extra_args`` with its mandatory read-only sandbox guaranteed.
+
+    Enforced at the adapter layer (issue #288) so a missing/misconfigured
+    ``extra_args`` cannot strip the sandbox: a reviewer of an attacker-controlled
+    diff is never write/tool-capable. Config may widen a codex sandbox knowingly,
+    but never remove the restriction.
+    """
+    return privilege.enforce_read_only(spec.vendor, spec.name, spec.extra_args)
 
 # Short timeout for capability/version probes. Detection is best-effort and must
 # never slow down or block a normal run, so probes are deliberately snappy.
@@ -305,7 +317,7 @@ class ClaudeAdapter(Adapter):
         argv = [self.spec.command, "-p", prompt]
         if self.spec.model:
             argv += ["--model", self.spec.model]
-        return argv + self.spec.extra_args
+        return argv + _read_only_extra_args(self.spec)
 
 
 class CodexAdapter(Adapter):
@@ -318,7 +330,7 @@ class CodexAdapter(Adapter):
         argv = [self.spec.command, "exec"]
         if self.spec.model:
             argv += ["-m", self.spec.model]
-        return argv + self.spec.extra_args
+        return argv + _read_only_extra_args(self.spec)
 
     def _stdin_for(self, prompt: str) -> str | None:
         return prompt
@@ -329,7 +341,7 @@ class AgyAdapter(Adapter):
         argv = [self.spec.command, "--print", prompt]
         if self.spec.model:
             argv += ["--model", self.spec.model]
-        return argv + self.spec.extra_args
+        return argv + _read_only_extra_args(self.spec)
 
 
 _DEFAULT_LOCAL_ENDPOINT = "http://localhost:11434/v1"
