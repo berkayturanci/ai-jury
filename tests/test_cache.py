@@ -203,6 +203,33 @@ class CacheHitMissTest(unittest.TestCase):
             path.write_text(json.dumps(data), encoding="utf-8")
             self.assertIsNone(cache.load(key))
 
+    def test_load_fails_closed_when_hmac_key_unavailable(self):
+        # Issue #295: if the MAC key can't be read/created, load() must NOT fall
+        # back to accepting an unsigned/unverified entry — it must miss.
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Cache(tmp)
+            cfg = _config()
+            key = cache_key(cfg, SAMPLE_DIFF)
+            cache.store(key, run_jury(cfg, SAMPLE_DIFF, mock=True))
+            self.assertIsNotNone(cache.load(key))  # sanity: signed entry hits
+            with mock.patch("ai_jury.cache._hmac_key", return_value=None):
+                self.assertIsNone(cache.load(key))  # key unavailable -> fail closed
+
+    def test_store_fails_closed_when_hmac_key_unavailable(self):
+        # Issue #295: if the MAC key can't be obtained, store() must NOT write an
+        # unsigned entry.
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Cache(tmp)
+            cfg = _config()
+            key = cache_key(cfg, SAMPLE_DIFF)
+            with mock.patch("ai_jury.cache._hmac_key", return_value=None):
+                cache.store(key, run_jury(cfg, SAMPLE_DIFF, mock=True))
+            self.assertFalse((cache.dir / f"{key}.json").exists())  # nothing written
+
     def test_legacy_entry_without_mac_is_a_miss(self):
         with tempfile.TemporaryDirectory() as tmp:
             cache = Cache(tmp)

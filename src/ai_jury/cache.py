@@ -288,15 +288,18 @@ class Cache:
         # (e.g. a forged verdict copied from another key) is treated as a miss.
         if data.get("cache_key") != key:
             return None
-        # Integrity: verify the per-user HMAC (issue #295). An entry with a
-        # missing or wrong MAC (a forgery, or a legacy pre-MAC entry) is a miss.
+        # Integrity: verify the per-user HMAC (issue #295). Fail closed — if the
+        # key can't be read/created we cannot authenticate the entry, so treat it
+        # as a miss rather than trusting an unsigned blob. A missing or wrong MAC
+        # (a forgery, or a legacy pre-MAC entry) is likewise a miss.
         mac_key = _hmac_key(self.dir)
-        if mac_key is not None:
-            stored_mac = data.get("mac")
-            if not isinstance(stored_mac, str) or not hmac.compare_digest(
-                stored_mac, _compute_mac(mac_key, data)
-            ):
-                return None
+        if mac_key is None:
+            return None
+        stored_mac = data.get("mac")
+        if not isinstance(stored_mac, str) or not hmac.compare_digest(
+            stored_mac, _compute_mac(mac_key, data)
+        ):
+            return None
         outcome = outcome_from_dict(data.get("outcome", {}))
         outcome.from_cache = True
         return outcome
@@ -320,9 +323,13 @@ class Cache:
                 "cache_key": key,
                 "outcome": outcome_to_dict(outcome),
             }
+            # Fail closed (#295): if we can't obtain the MAC key, do NOT write an
+            # unsigned entry — an unsigned blob would be accepted as trusted only
+            # if MACing were optional, which it is not. Skip caching instead.
             mac_key = _hmac_key(self.dir)
-            if mac_key is not None:
-                payload["mac"] = _compute_mac(mac_key, payload)
+            if mac_key is None:
+                return
+            payload["mac"] = _compute_mac(mac_key, payload)
             self._path(key).write_text(
                 json.dumps(payload, separators=(",", ":")) + "\n", encoding="utf-8"
             )
