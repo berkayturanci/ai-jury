@@ -83,7 +83,7 @@ class _FakeResp:
     def __exit__(self, *a):
         return False
 
-    def read(self):
+    def read(self, *args):
         return self._payload
 
 
@@ -97,7 +97,7 @@ class RunHttpTest(unittest.TestCase):
         payload = json.dumps(
             {"choices": [{"message": {"content": "a review with a finding"}}]}
         ).encode()
-        with mock.patch("urllib.request.urlopen", return_value=_FakeResp(payload)):
+        with mock.patch("ai_jury.adapters._open", return_value=_FakeResp(payload)):
             result = LocalAdapter(_spec()).run("prompt")
         self.assertTrue(result.ok)
         self.assertEqual(result.output, "a review with a finding")
@@ -107,7 +107,7 @@ class RunHttpTest(unittest.TestCase):
         from unittest import mock
 
         payload = json.dumps({"choices": [{"message": {"content": "   "}}]}).encode()
-        with mock.patch("urllib.request.urlopen", return_value=_FakeResp(payload)):
+        with mock.patch("ai_jury.adapters._open", return_value=_FakeResp(payload)):
             result = LocalAdapter(_spec()).run("prompt")
         self.assertFalse(result.ok)
         self.assertEqual(result.error_code, "empty_output")
@@ -117,7 +117,7 @@ class RunHttpTest(unittest.TestCase):
         from unittest import mock
 
         with mock.patch(
-            "urllib.request.urlopen", side_effect=urllib.error.URLError("refused")
+            "ai_jury.adapters._open", side_effect=urllib.error.URLError("refused")
         ):
             result = LocalAdapter(_spec()).run("prompt")
         self.assertFalse(result.ok)
@@ -131,7 +131,7 @@ class RunHttpTest(unittest.TestCase):
         err = urllib.error.HTTPError(
             url="x", code=429, msg="Too Many Requests", hdrs=None, fp=io.BytesIO(b"slow down")
         )
-        with mock.patch("urllib.request.urlopen", side_effect=err):
+        with mock.patch("ai_jury.adapters._open", side_effect=err):
             result = LocalAdapter(_spec()).run("prompt")
         self.assertFalse(result.ok)
         self.assertEqual(result.error_code, ERR_RATE_LIMITED)

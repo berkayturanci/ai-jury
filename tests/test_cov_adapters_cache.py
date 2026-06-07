@@ -51,7 +51,7 @@ class _Resp:
         self._b = body
         self.status = status
 
-    def read(self):
+    def read(self, *args):
         return self._b.encode("utf-8")
 
     def close(self):
@@ -66,45 +66,48 @@ class _Resp:
 
 class AdaptersCoverageTests(unittest.TestCase):
     def test_agy_argv_with_model(self):
-        # Line 330: AgyAdapter.build_argv appends --model when a model is set.
+        # AgyAdapter.build_argv appends --model when a model is set; the prompt is
+        # on stdin (#287) and the mandatory --sandbox is injected (#288).
         a = adapters.AgyAdapter(
             _spec(name="agy", vendor="google", command="agy", model="gemini-x")
         )
         self.assertEqual(
-            a.build_argv("P"), ["agy", "--print", "P", "--model", "gemini-x"]
+            a.build_argv("P"),
+            ["agy", "--print", "--model", "gemini-x", "--sandbox"],
         )
+        self.assertEqual(a._stdin_for("P"), "P")
 
     def test_list_local_models_data_not_list(self):
         # Line 357: a well-formed dict whose "data" is not a list -> [].
         body = json.dumps({"data": {"not": "a list"}})
-        with mock.patch("urllib.request.urlopen", return_value=_Resp(body)):
+        with mock.patch("ai_jury.adapters._open", return_value=_Resp(body)):
             self.assertEqual(adapters.list_local_models("http://x/v1"), [])
 
     def test_list_local_models_missing_data_key(self):
         # Same branch (357): dict with no "data" key at all -> [].
         body = json.dumps({"object": "list"})
-        with mock.patch("urllib.request.urlopen", return_value=_Resp(body)):
+        with mock.patch("ai_jury.adapters._open", return_value=_Resp(body)):
             self.assertEqual(adapters.list_local_models("http://x/v1"), [])
 
     def test_list_local_models_happy_path(self):
         body = json.dumps(
             {"data": [{"id": "m1"}, {"no": "id"}, {"id": "m2"}, "junk"]}
         )
-        with mock.patch("urllib.request.urlopen", return_value=_Resp(body)):
+        with mock.patch("ai_jury.adapters._open", return_value=_Resp(body)):
             self.assertEqual(
                 adapters.list_local_models("http://x/v1"), ["m1", "m2"]
             )
 
     def test_list_local_models_unreachable(self):
         with mock.patch(
-            "urllib.request.urlopen",
+            "ai_jury.adapters._open",
             side_effect=urllib.error.URLError("refused"),
         ):
             self.assertEqual(adapters.list_local_models("http://x/v1"), [])
 
     def test_available_ok(self):
         a = adapters.LocalAdapter(_local_spec())
-        with mock.patch("urllib.request.urlopen", return_value=_Resp("{}", status=200)):
+        with mock.patch("ai_jury.adapters._open", return_value=_Resp("{}", status=200)):
             self.assertTrue(a.available())
 
     def test_available_http_error_4xx_means_up(self):
@@ -112,7 +115,7 @@ class AdaptersCoverageTests(unittest.TestCase):
         err = urllib.error.HTTPError("u", 404, "not found", {}, None)
         self.addCleanup(err.close)
         a = adapters.LocalAdapter(_local_spec())
-        with mock.patch("urllib.request.urlopen", side_effect=err):
+        with mock.patch("ai_jury.adapters._open", side_effect=err):
             self.assertTrue(a.available())
 
     def test_available_http_error_5xx_means_down(self):
@@ -120,14 +123,14 @@ class AdaptersCoverageTests(unittest.TestCase):
         err = urllib.error.HTTPError("u", 503, "down", {}, None)
         self.addCleanup(err.close)
         a = adapters.LocalAdapter(_local_spec())
-        with mock.patch("urllib.request.urlopen", side_effect=err):
+        with mock.patch("ai_jury.adapters._open", side_effect=err):
             self.assertFalse(a.available())
 
     def test_available_unreachable(self):
         # Lines 438-439: any other failure -> not available.
         a = adapters.LocalAdapter(_local_spec())
         with mock.patch(
-            "urllib.request.urlopen",
+            "ai_jury.adapters._open",
             side_effect=urllib.error.URLError("refused"),
         ):
             self.assertFalse(a.available())
@@ -158,7 +161,7 @@ class AdaptersCoverageTests(unittest.TestCase):
         err = _BadHTTPError("u", 500, "kaput", {}, None)
         self.addCleanup(err.close)
         a = adapters.LocalAdapter(_local_spec())
-        with mock.patch("urllib.request.urlopen", side_effect=err):
+        with mock.patch("ai_jury.adapters._open", side_effect=err):
             r = a.run("p")
         self.assertFalse(r.ok)
         self.assertIn("HTTP 500", r.error)
@@ -173,7 +176,7 @@ class AdaptersCoverageTests(unittest.TestCase):
         )
         self.addCleanup(err.close)
         a = adapters.LocalAdapter(_local_spec())
-        with mock.patch("urllib.request.urlopen", side_effect=err):
+        with mock.patch("ai_jury.adapters._open", side_effect=err):
             r = a.run("p")
         self.assertFalse(r.ok)
         self.assertEqual(r.error_code, adapters.ERR_AUTH_REQUIRED)

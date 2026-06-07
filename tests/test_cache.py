@@ -150,6 +150,34 @@ class CacheHitMissTest(unittest.TestCase):
             (cache.dir / f"{key}.json").write_text("{not json", encoding="utf-8")
             self.assertIsNone(cache.load(key))
 
+    def test_key_mismatch_is_a_miss(self):
+        # Issue #293/F-10: an entry whose embedded cache_key doesn't match the
+        # filename/key (e.g. a forged verdict copied from another key) is a miss.
+        import json
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Cache(tmp)
+            cfg = _config()
+            key = cache_key(cfg, SAMPLE_DIFF)
+            cache.store(key, run_jury(cfg, SAMPLE_DIFF, mock=True))
+            # Tamper: rewrite the entry to claim a different cache_key.
+            path = cache.dir / f"{key}.json"
+            data = json.loads(path.read_text(encoding="utf-8"))
+            data["cache_key"] = "someone-elses-key"
+            path.write_text(json.dumps(data), encoding="utf-8")
+            self.assertIsNone(cache.load(key))
+
+    def test_store_embeds_cache_key(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            import json
+
+            cache = Cache(tmp)
+            cfg = _config()
+            key = cache_key(cfg, SAMPLE_DIFF)
+            cache.store(key, run_jury(cfg, SAMPLE_DIFF, mock=True))
+            data = json.loads((cache.dir / f"{key}.json").read_text(encoding="utf-8"))
+            self.assertEqual(data["cache_key"], key)
+
 
 if __name__ == "__main__":
     unittest.main()

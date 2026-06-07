@@ -227,10 +227,10 @@ class LocalModelDiscoveryTest(unittest.TestCase):
             def __exit__(self, *a):
                 return False
 
-            def read(self):
+            def read(self, *args):
                 return payload
 
-        with mock.patch("urllib.request.urlopen", return_value=_Resp()):
+        with mock.patch("ai_jury.adapters._open", return_value=_Resp()):
             models = list_local_models("http://localhost:11434/v1")
         self.assertEqual(models, ["gemma:2b", "qwen2.5-coder:7b"])
 
@@ -241,7 +241,7 @@ class LocalModelDiscoveryTest(unittest.TestCase):
         from ai_jury.adapters import list_local_models
 
         with mock.patch(
-            "urllib.request.urlopen", side_effect=urllib.error.URLError("down")
+            "ai_jury.adapters._open", side_effect=urllib.error.URLError("down")
         ):
             self.assertEqual(list_local_models("http://localhost:11434/v1"), [])
 

@@ -5,9 +5,80 @@ file falls back to a sensible built-in default so the tool runs out of the box.
 """
 from __future__ import annotations
 
+import os
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import urlsplit
+
+# Hosts that are safe to reach over plaintext http and never an SSRF target.
+_LOOPBACK_HOSTS = ("localhost", "127.0.0.1", "::1", "[::1]")
+
+
+def _is_relative_path_command(command: str) -> bool:
+    """True for a relative command that contains a path separator (#293/F-6).
+
+    A bare name (``codex``) is fine — it is resolved on PATH. An absolute path
+    (``/usr/bin/codex``) is fine — it is explicit. A relative path with a
+    separator (``./tools/codex``, ``bin/agy``) is rejected because it resolves a
+    binary from an attacker-influenceable working-directory-relative location.
+    """
+    has_sep = "/" in command or "\\" in command or (os.altsep is not None and os.altsep in command)
+    return has_sep and not Path(command).is_absolute()
+
+
+# Env opt-in for a non-loopback local endpoint. It lives in the environment, NOT
+# in jury.toml, on purpose (review of #291): the threat model is an
+# attacker-controlled config, so the opt-in must sit OUTSIDE the surface the
+# attacker controls. Without it, a non-loopback host (incl. cloud-metadata
+# 169.254.169.254) is a hard error so an attacker config cannot drive an
+# SSRF POST to an internal address — matching the default-secure F-1 posture.
+_ALLOW_REMOTE_ENDPOINT_ENV = "JURY_ALLOW_REMOTE_ENDPOINT"
+
+
+def _endpoint_issues(endpoint: str, label: str) -> tuple[list[str], list[str]]:
+    """Validate a local-agent ``endpoint`` URL (issue #291, SSRF defense).
+
+    Returns ``(errors, warnings)``. A non-``http``/``https`` scheme is a hard
+    error (blocks ``file://``/``ftp://`` and other SSRF primitives). A non-loopback
+    host is also a hard error UNLESS the operator opts in via the
+    ``JURY_ALLOW_REMOTE_ENDPOINT`` environment variable (a remote model server is
+    a legitimate but riskier choice the attacker-controlled config must not be
+    able to select on its own); when opted in it degrades to a warning, plus a
+    cleartext warning for plaintext ``http``.
+    """
+    errors: list[str] = []
+    warnings: list[str] = []
+    parsed = urlsplit(endpoint)
+    scheme = (parsed.scheme or "").lower()
+    if scheme not in ("http", "https"):
+        errors.append(
+            f"agent '{label}' endpoint scheme '{parsed.scheme or '(none)'}' is "
+            f"not allowed; use http or https."
+        )
+        return errors, warnings
+    host = (parsed.hostname or "").lower()
+    if host in _LOOPBACK_HOSTS:
+        return errors, warnings
+    if not os.environ.get(_ALLOW_REMOTE_ENDPOINT_ENV):
+        errors.append(
+            f"agent '{label}' endpoint host '{host or '(none)'}' is not loopback; "
+            f"a non-loopback model server (incl. internal/metadata addresses) is "
+            f"refused by default. Set {_ALLOW_REMOTE_ENDPOINT_ENV}=1 in the "
+            f"environment to allow a trusted remote endpoint."
+        )
+        return errors, warnings
+    warnings.append(
+        f"agent '{label}' endpoint host '{host or '(none)'}' is not loopback; "
+        f"the (redacted) diff is sent to a remote server — ensure it is trusted "
+        f"and not an internal/metadata address."
+    )
+    if scheme == "http":
+        warnings.append(
+            f"agent '{label}' endpoint uses plaintext http to a non-loopback "
+            f"host; prefer https so the prompt is not sent in cleartext."
+        )
+    return errors, warnings
 
 DEFAULT_CONFIG: dict = {
     "jury": {
@@ -254,8 +325,21 @@ def validate_config(data: dict, strict: bool = False) -> list:
                     f"agent '{label}' (vendor 'local') has no 'model'; the local "
                     f"server will likely reject the request."
                 )
+            endpoint = agent.get("endpoint")
+            if endpoint:
+                e_errors, e_warnings = _endpoint_issues(endpoint, label)
+                errors.extend(e_errors)
+                warnings.extend(e_warnings)
         elif not command:
             errors.append(f"agent '{label}' is missing a non-empty 'command'.")
+        elif _is_relative_path_command(command):
+            # A relative path with separators (e.g. ./tools/codex, bin/agy) could
+            # resolve a binary from an attacker-influenced location (#293/F-6).
+            # Require a bare name (resolved on PATH) or an absolute path.
+            errors.append(
+                f"agent '{label}' command '{command}' is a relative path; use a "
+                f"bare name (resolved on PATH) or an absolute path."
+            )
 
         # Per-agent timeout (hard if present and invalid).
         a_timeout = agent.get("timeout", 600)

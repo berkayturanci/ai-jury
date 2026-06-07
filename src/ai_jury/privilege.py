@@ -39,25 +39,122 @@ def _args_str(extra_args: list[str]) -> str:
     return " ".join(extra_args)
 
 
-def _is_sandboxed(extra_args: list[str]) -> bool:
-    """True when a non-claude agent runs under a restricting sandbox.
+# Codex sandbox VALUES that actually restrict the agent. A value sandbox like
+# ``workspace-write`` / ``danger-full-access`` does NOT (issue #292): the audit
+# must not treat the mere presence of a ``-s``/``--sandbox`` token as proof of a
+# read-only run when its value grants write/tool powers.
+_RESTRICTING_SANDBOX_VALUES: tuple[str, ...] = ("read-only",)
 
-    Recognizes ``--sandbox`` (agy/gemini terminal-restricted sandbox) and a
-    read-only codex sandbox (``-s read-only`` / ``--sandbox read-only``). When a
-    sandbox is active, an otherwise-broad flag like ``--dangerously-skip-
-    permissions`` no longer grants real write/tool/network powers, so it is not
-    flagged (issue #100).
+
+def _is_sandboxed(extra_args: list[str], vendor: str = "", name: str = "") -> bool:
+    """True when a non-claude agent runs under a *restricting* sandbox.
+
+    Vendor-aware (issue #292) so a bare ``--sandbox`` token cannot give false
+    assurance: only the agy/gemini terminal sandbox is a genuine boolean
+    ``--sandbox``; for codex the sandbox takes a VALUE and only ``read-only``
+    restricts (``-s read-only`` / ``--sandbox read-only``). A bare ``--sandbox``
+    from any other vendor — e.g. ``["--sandbox", "--dangerously-skip-permissions",
+    "--yolo"]`` — is no longer accepted as a sandbox. When a restricting sandbox
+    is active, an otherwise-broad flag no longer grants real powers (issue #100).
     """
+    vendor = (vendor or "").lower()
+    name = (name or "").lower()
+    is_agy = vendor == "google" or "agy" in name or "gemini" in name
     args = list(extra_args)
     for i, a in enumerate(args):
         if a in ("-s", "--sandbox"):
             nxt = args[i + 1] if i + 1 < len(args) else ""
-            # Bare --sandbox (agy), or an explicit read-only codex sandbox.
-            if a == "--sandbox" and (nxt == "" or nxt.startswith("-") or nxt == "read-only"):
+            # Codex (and any vendor): an explicit read-only sandbox value.
+            if nxt in _RESTRICTING_SANDBOX_VALUES:
                 return True
-            if nxt == "read-only":
+            # agy/gemini: bare boolean --sandbox (no value, or another flag next).
+            if a == "--sandbox" and is_agy and (nxt == "" or nxt.startswith("-")):
                 return True
     return False
+
+
+def _ensure_claude_disallowed(extra_args: list[str]) -> list[str]:
+    """Guarantee ``--disallowed-tools`` covers every write tool (issue #288).
+
+    Merges the mandatory write tools into any existing ``--disallowed-tools``
+    value (config may ADD denials, never REMOVE the mandatory ones), or injects
+    the flag when absent. Idempotent: the shipped default already lists all four,
+    so it is returned unchanged.
+    """
+    def _merged(value: str) -> str:
+        existing = [t.strip() for t in value.split(",") if t.strip()]
+        for tool in _WRITE_TOOLS:
+            if tool not in existing:
+                existing.append(tool)
+        return ",".join(existing)
+
+    args = list(extra_args)
+    out: list[str] = []
+    i = 0
+    found = False
+    while i < len(args):
+        a = args[i]
+        # Space-separated form: --disallowed-tools Edit,Write
+        if a == "--disallowed-tools" and i + 1 < len(args):
+            found = True
+            out.extend([a, _merged(args[i + 1])])
+            i += 2
+            continue
+        # Equals form: --disallowed-tools=Edit,Write (review of #288 — the
+        # exact-match check missed this, so a narrower =-value could sit after
+        # the injected safe set and, if the CLI is last-wins, narrow the deny set).
+        if a.startswith("--disallowed-tools="):
+            found = True
+            out.append("--disallowed-tools=" + _merged(a.split("=", 1)[1]))
+            i += 1
+            continue
+        out.append(a)
+        i += 1
+    if not found:
+        out = ["--disallowed-tools", ",".join(_WRITE_TOOLS), *out]
+    return out
+
+
+def _ensure_value_sandbox(extra_args: list[str], default: list[str]) -> list[str]:
+    """Ensure SOME sandbox flag is present; inject ``default`` only when none is.
+
+    If the operator already specified ``-s``/``--sandbox`` (even a wider value
+    like codex ``workspace-write``), respect it — that is a documented, audited
+    opt-in. We only inject the secure default when no sandbox flag exists at all,
+    which is the actual hole (empty/misconfigured ``extra_args``, issue #288).
+    """
+    args = list(extra_args)
+    # Recognize both the space form (-s read-only) and the equals form
+    # (--sandbox=read-only) so an existing sandbox is never double-specified.
+    if any(
+        a in ("-s", "--sandbox") or a.startswith(("-s=", "--sandbox="))
+        for a in args
+    ):
+        return args
+    return [*default, *args]
+
+
+def enforce_read_only(vendor: str, name: str, extra_args: list[str]) -> list[str]:
+    """Return ``extra_args`` with the mandatory read-only restriction guaranteed.
+
+    The sandbox is enforced here (issue #288) rather than left to config, so an
+    empty or misconfigured ``extra_args`` cannot produce a write-capable reviewer
+    of an attacker-controlled diff. Config may still WIDEN a codex sandbox
+    (``-s workspace-write``) — an explicit opt-in the audit warns about — but it
+    can never REMOVE the restriction. Only vendors whose sandbox syntax is known
+    are touched; a ``local`` (network) agent or an unknown vendor is returned
+    unchanged (the audit still warns).
+    """
+    vendor = (vendor or "").lower()
+    name = (name or "").lower()
+    extra_args = list(extra_args or [])
+    if "claude" in name or vendor == "anthropic":
+        return _ensure_claude_disallowed(extra_args)
+    if vendor == "openai" or "codex" in name:
+        return _ensure_value_sandbox(extra_args, ["-s", "read-only"])
+    if vendor == "google" or "agy" in name or "gemini" in name:
+        return _ensure_value_sandbox(extra_args, ["--sandbox"])
+    return extra_args
 
 
 def _claude_is_locked_down(extra_args: list[str]) -> bool:
@@ -96,7 +193,7 @@ def audit_agent(spec) -> list[str]:
     # Non-claude agents: a broad-powers flag is a least-privilege concern UNLESS
     # the agent is also run under a restricting sandbox (issue #100), which
     # neutralizes it.
-    if _is_sandboxed(extra_args):
+    if _is_sandboxed(extra_args, vendor=vendor, name=name):
         return warnings
     for flag in _DANGEROUS_FLAGS:
         if flag in extra_args or flag in args_text:

@@ -1,9 +1,11 @@
 """Coverage for config.validate_config branches (hard errors vs warnings)."""
 from __future__ import annotations
 
+import os
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
@@ -111,6 +113,69 @@ class SoftWarnings(unittest.TestCase):
     def test_strict_promotes_warnings(self):
         with self.assertRaises(ConfigError):
             validate_config(_cfg(bogus=1), strict=True)
+
+
+class CommandPathValidation(unittest.TestCase):
+    """Issue #293/F-6: a relative path command is rejected."""
+
+    def _agent(self, command):
+        return {"jury": {"rounds": 1, "chair": "a"},
+                "agent": [{"name": "a", "vendor": "anthropic", "command": command}]}
+
+    def test_relative_path_command_is_hard_error(self):
+        with self.assertRaises(ConfigError):
+            validate_config(self._agent("./tools/claude"))
+
+    def test_relative_subdir_command_is_hard_error(self):
+        with self.assertRaises(ConfigError):
+            validate_config(self._agent("bin/agy"))
+
+    def test_bare_name_is_allowed(self):
+        validate_config(self._agent("claude"))  # resolved on PATH
+
+    def test_absolute_path_is_allowed(self):
+        # A POSIX path like /usr/... is NOT absolute on Windows (no drive), so use
+        # a platform-appropriate absolute path. The production check correctly
+        # treats a drive-less path as relative on Windows.
+        abs_path = "C:\\bin\\claude" if os.name == "nt" else "/usr/local/bin/claude"
+        validate_config(self._agent(abs_path))
+
+
+class EndpointValidation(unittest.TestCase):
+    """Issue #291: local-agent endpoint scheme/host validation (SSRF defense)."""
+
+    def _local(self, endpoint):
+        return {
+            "jury": {"rounds": 1, "chair": "q"},
+            "agent": [{"name": "q", "vendor": "local", "model": "m",
+                       "endpoint": endpoint}],
+        }
+
+    def test_file_scheme_is_hard_error(self):
+        with self.assertRaises(ConfigError):
+            validate_config(self._local("file:///etc/passwd"))
+
+    def test_ftp_scheme_is_hard_error(self):
+        with self.assertRaises(ConfigError):
+            validate_config(self._local("ftp://internal/host"))
+
+    def test_loopback_http_has_no_warning(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            w = validate_config(self._local("http://localhost:11434/v1"))
+        self.assertFalse(any("endpoint" in x for x in w), w)
+
+    def test_non_loopback_host_is_hard_error_by_default(self):
+        # Review of #291: an attacker-controlled config must not be able to reach
+        # a non-loopback host (incl. IMDS) without an out-of-band opt-in.
+        with mock.patch.dict(os.environ, {}, clear=True):  # no opt-in
+            with self.assertRaises(ConfigError):
+                validate_config(self._local("http://169.254.169.254/latest/meta-data"))
+
+    def test_non_loopback_allowed_with_env_opt_in_warns(self):
+        with mock.patch.dict(os.environ, {"JURY_ALLOW_REMOTE_ENDPOINT": "1"}, clear=True):
+            w = validate_config(self._local("http://gpu-box.internal:8000/v1"))
+        self.assertTrue(any("not loopback" in x for x in w), w)
+        self.assertTrue(any("cleartext" in x or "plaintext" in x for x in w), w)
 
 
 if __name__ == "__main__":
