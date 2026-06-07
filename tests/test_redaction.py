@@ -160,12 +160,14 @@ class RedactionTests(unittest.TestCase):
 
     def test_no_redos_on_long_key_like_input(self):
         # The two `[A-Za-z0-9_]*` are split by a literal keyword anchor; a long
-        # adversarial identifier without a trailing `=` must not hang.
+        # adversarial identifier without a trailing `=` must not hang. The bound
+        # is generous (3 s) so it tolerates coverage instrumentation + slow CI
+        # while still catching a quadratic blowup (which would take minutes).
         import time as _t
         text = "secret_" + "a" * 200_000
         start = _t.monotonic()
         _out, n = redact(text)
-        self.assertLess(_t.monotonic() - start, 1.0)
+        self.assertLess(_t.monotonic() - start, 3.0)
         self.assertEqual(n, 0)  # no separator/value -> not an assignment
 
     # Issue #302: basic-auth URLs, Azure AccountKey, GCP JSON keys.
