@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Post-v1.4.1 security re-audit** (`docs/security-audit-2026-06-07-v1.4.1.md`). A fourth four-surface re-audit confirms every #287–#310 fix holds in source (no Critical/High) and stress-tests #309/#310 (alternate loopback encodings all fail closed; unknown-vendor sandbox fail-closed). It surfaces two new **Medium robustness/DoS** items — an O(N²) cost in `injection.scan` line attribution (a long zero-width run is a CPU-exhaustion DoS) and an uncaught `ValueError` from a malformed endpoint in `config._endpoint_issues`/`validate_config` (the same class #309 fixed at the `list_local_models` seam, still open in config validation) — plus the previously-tracked minor items (`prior_txt` neutralization, more secret formats, `cache clear()` glob, atomic-write `mkstemp`, `tomllib` size cap, `_is_sandboxed` `=`-form, init endpoint redaction). Tracked for follow-up.
+
 ## [1.4.1] - 2026-06-07
 
 > Closes the two Medium residuals the post-v1.4.0 re-audit surfaced (#309, #310),
