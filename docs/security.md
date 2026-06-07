@@ -13,7 +13,7 @@ For vulnerability reporting, see [SECURITY.md](../SECURITY.md).
 This project has been reviewed by two independent, model-driven security
 analyses, both recorded under `docs/`:
 
-### Codex security analizi (Codex security analysis)
+### Codex security analysis
 
 A repository-wide **Codex** Security scan on 2026-06-07 (commit `a358fdc`) found
 one reportable medium-severity local-confidentiality issue — the Claude and
@@ -22,25 +22,26 @@ Antigravity/Gemini adapters placed the full review prompt in process arguments
 in v1.3.0** — prompts are now delivered on stdin). Scan note:
 [Codex Security Scan — 2026-06-07](security-scan-2026-06-07.md).
 
-### Claude security analizi (Claude security analysis)
+### Claude security analysis
 
 A whole-codebase **Claude** audit across four attack surfaces
 (subprocess/sandbox, network/SSRF, prompt-injection/redaction, filesystem/cache)
-drove fixes #287–#296, shipped in v1.3.0:
-[Security audit — 2026-06-07](security-audit-2026-06-07.md). A
-**re-audit of the released v1.3.0 code**
-([Security re-audit — v1.3.0](security-audit-2026-06-07-v1.3.0.md)) confirmed
-every fix held and tracked the remaining defense-in-depth items as #300–#303,
-which shipped in v1.4.0. A third **re-audit of the released v1.4.0 code**
-([Security re-audit — v1.4.0](security-audit-2026-06-07-v1.4.0.md)) surfaced two
-Medium residuals (an unknown-vendor fail-open sandbox and a `jury init
---local-endpoint` SSRF bypass), both fixed in v1.4.1 (#310, #309). A fourth
-**re-audit of the released v1.4.1 code**
-([Security re-audit — v1.4.1](security-audit-2026-06-07-v1.4.1.md)) surfaced two
-Medium robustness/DoS items (an O(N²) injection scan and a malformed-endpoint
-crash), both fixed in v1.5.0 (#314, #315, #316). A fifth **re-audit of the
-released v1.5.0 code**
-([Security re-audit — v1.5.0](security-audit-2026-06-07-v1.5.0.md)) confirms
+drove the security-hardening campaign that ran across five releases. The original
+audit and each per-release re-audit fed the next round of fixes — shipped as
+issues **#287–#316** across **v1.3.0 → v1.5.0**:
+
+- **v1.3.0** — the initial whole-codebase audit drove #287–#296.
+- **v1.4.0** — a re-audit of the released v1.3.0 code confirmed every fix held
+  and tracked the remaining defense-in-depth items as #300–#303.
+- **v1.4.1** — a re-audit of v1.4.0 surfaced two Medium residuals (an
+  unknown-vendor fail-open sandbox and a `jury init --local-endpoint` SSRF
+  bypass), both fixed via #310, #309.
+- **v1.5.0** — a re-audit of v1.4.1 surfaced two Medium robustness/DoS items (an
+  O(N²) injection scan and a malformed-endpoint crash), fixed via #314, #315,
+  #316.
+
+The current Claude analysis is the **re-audit of the released v1.5.0 code**:
+[Security re-audit — v1.5.0](security-audit-2026-06-07-v1.5.0.md). It confirms
 every #287–#316 fix holds (no Critical/High) and surfaces one Medium — the
 `VERIFICATION VERDICTS` synthesis addendum was left un-neutralized (an
 incomplete-coverage gap in the #316/L-1 fix) — plus minor items (init-endpoint
