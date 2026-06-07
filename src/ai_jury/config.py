@@ -8,6 +8,45 @@ from __future__ import annotations
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import urlsplit
+
+# Hosts that are safe to reach over plaintext http and never an SSRF target.
+_LOOPBACK_HOSTS = ("localhost", "127.0.0.1", "::1", "[::1]")
+
+
+def _endpoint_issues(endpoint: str, label: str) -> tuple[list[str], list[str]]:
+    """Validate a local-agent ``endpoint`` URL (issue #291, SSRF defense).
+
+    Returns ``(errors, warnings)``. A non-``http``/``https`` scheme is a hard
+    error (blocks ``file://``/``ftp://`` and other SSRF primitives — this tool
+    reviews attacker-controlled PRs/configs). A non-loopback host is a soft
+    warning (a remote model server is a legitimate but riskier choice), and
+    plaintext ``http`` to a non-loopback host warns about cleartext exposure.
+    """
+    errors: list[str] = []
+    warnings: list[str] = []
+    parsed = urlsplit(endpoint)
+    scheme = (parsed.scheme or "").lower()
+    if scheme not in ("http", "https"):
+        errors.append(
+            f"agent '{label}' endpoint scheme '{parsed.scheme or '(none)'}' is "
+            f"not allowed; use http or https."
+        )
+        return errors, warnings
+    host = (parsed.hostname or "").lower()
+    is_loopback = host in _LOOPBACK_HOSTS
+    if not is_loopback:
+        warnings.append(
+            f"agent '{label}' endpoint host '{host or '(none)'}' is not loopback; "
+            f"a remote model server can receive the (redacted) diff — ensure it is "
+            f"trusted and not an internal/metadata address."
+        )
+        if scheme == "http":
+            warnings.append(
+                f"agent '{label}' endpoint uses plaintext http to a non-loopback "
+                f"host; prefer https so the prompt is not sent in cleartext."
+            )
+    return errors, warnings
 
 DEFAULT_CONFIG: dict = {
     "jury": {
@@ -254,6 +293,11 @@ def validate_config(data: dict, strict: bool = False) -> list:
                     f"agent '{label}' (vendor 'local') has no 'model'; the local "
                     f"server will likely reject the request."
                 )
+            endpoint = agent.get("endpoint")
+            if endpoint:
+                e_errors, e_warnings = _endpoint_issues(endpoint, label)
+                errors.extend(e_errors)
+                warnings.extend(e_warnings)
         elif not command:
             errors.append(f"agent '{label}' is missing a non-empty 'command'.")
 

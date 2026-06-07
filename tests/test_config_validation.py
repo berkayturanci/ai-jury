@@ -113,5 +113,36 @@ class SoftWarnings(unittest.TestCase):
             validate_config(_cfg(bogus=1), strict=True)
 
 
+class EndpointValidation(unittest.TestCase):
+    """Issue #291: local-agent endpoint scheme/host validation (SSRF defense)."""
+
+    def _local(self, endpoint):
+        return {
+            "jury": {"rounds": 1, "chair": "q"},
+            "agent": [{"name": "q", "vendor": "local", "model": "m",
+                       "endpoint": endpoint}],
+        }
+
+    def test_file_scheme_is_hard_error(self):
+        with self.assertRaises(ConfigError):
+            validate_config(self._local("file:///etc/passwd"))
+
+    def test_ftp_scheme_is_hard_error(self):
+        with self.assertRaises(ConfigError):
+            validate_config(self._local("ftp://internal/host"))
+
+    def test_loopback_http_has_no_warning(self):
+        w = validate_config(self._local("http://localhost:11434/v1"))
+        self.assertFalse(any("endpoint" in x for x in w), w)
+
+    def test_non_loopback_host_warns(self):
+        w = validate_config(self._local("http://169.254.169.254/latest/meta-data"))
+        self.assertTrue(any("not loopback" in x for x in w), w)
+
+    def test_non_loopback_http_warns_about_cleartext(self):
+        w = validate_config(self._local("http://gpu-box.internal:8000/v1"))
+        self.assertTrue(any("cleartext" in x or "plaintext" in x for x in w), w)
+
+
 if __name__ == "__main__":
     unittest.main()

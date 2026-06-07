@@ -347,6 +347,42 @@ class AgyAdapter(Adapter):
 _DEFAULT_LOCAL_ENDPOINT = "http://localhost:11434/v1"
 
 
+def _http_only_opener():
+    """An opener that handles ONLY http/https (issue #291, SSRF defense).
+
+    The default ``urllib`` opener honors ``file://`` and ``ftp://``, so an
+    attacker-influenced ``endpoint`` could read local files or reach other
+    schemes. This OpenerDirector registers no ``FileHandler``/``FTPHandler``, so
+    any non-http(s) URL raises ``URLError("unknown url type")`` regardless of
+    config validation — defense in depth alongside ``config._endpoint_issues``.
+    """
+    import urllib.request
+
+    opener = urllib.request.OpenerDirector()
+    for handler in (
+        urllib.request.HTTPHandler,
+        urllib.request.HTTPSHandler,
+        urllib.request.HTTPDefaultErrorHandler,
+        urllib.request.HTTPRedirectHandler,
+        urllib.request.HTTPErrorProcessor,
+        # UnknownHandler raises URLError("unknown url type: …") for any scheme
+        # without a registered handler — so file://, ftp://, etc. fail loudly
+        # instead of silently resolving to None.
+        urllib.request.UnknownHandler,
+    ):
+        opener.add_handler(handler())
+    return opener
+
+
+def _open(target, timeout):
+    """Open an http/https URL or Request via the restricted opener (issue #291).
+
+    Single seam for every local-adapter HTTP call so the SSRF-safe opener (no
+    file/ftp handlers) is always used.
+    """
+    return _http_only_opener().open(target, timeout=timeout)
+
+
 def list_local_models(endpoint: str = _DEFAULT_LOCAL_ENDPOINT) -> list[str]:
     """List model ids from a local OpenAI-compatible server (issue #109).
 
@@ -361,7 +397,7 @@ def list_local_models(endpoint: str = _DEFAULT_LOCAL_ENDPOINT) -> list[str]:
     base = (endpoint or _DEFAULT_LOCAL_ENDPOINT).rstrip("/")
     url = base if base.endswith("/models") else f"{base}/models"
     try:
-        with urllib.request.urlopen(url, timeout=_VERSION_PROBE_TIMEOUT) as resp:  # noqa: S310
+        with _open(url, _VERSION_PROBE_TIMEOUT) as resp:  # noqa: S310
             data = _json.loads(resp.read().decode("utf-8"))
     except Exception:  # noqa: BLE001 - discovery is best-effort
         return []
@@ -443,7 +479,7 @@ class LocalAdapter(Adapter):
 
         url = f"{self.endpoint}/models"
         try:
-            with urllib.request.urlopen(url, timeout=_VERSION_PROBE_TIMEOUT) as resp:  # noqa: S310
+            with _open(url, _VERSION_PROBE_TIMEOUT) as resp:  # noqa: S310
                 return 200 <= resp.status < 500
         except urllib.error.HTTPError as exc:
             # A 4xx (e.g. 404 on /models) still means the server is up.
@@ -482,7 +518,7 @@ class LocalAdapter(Adapter):
         )
         start = time.monotonic()
         try:
-            with urllib.request.urlopen(req, timeout=effective_timeout) as resp:  # noqa: S310
+            with _open(req, effective_timeout) as resp:  # noqa: S310
                 raw = resp.read().decode("utf-8")
             data = _json.loads(raw)
         except urllib.error.HTTPError as exc:

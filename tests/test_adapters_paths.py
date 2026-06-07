@@ -115,34 +115,48 @@ class LocalAdapterRunTests(unittest.TestCase):
 
     def test_success(self):
         body = '{"choices": [{"message": {"content": "local review"}}]}'
-        with mock.patch("urllib.request.urlopen", return_value=_Resp(body)):
+        with mock.patch("ai_jury.adapters._open", return_value=_Resp(body)):
             r = self._adapter().run("p", timeout=10)
         self.assertTrue(r.ok)
         self.assertIn("local review", r.output)
 
     def test_http_error(self):
         err = urllib.error.HTTPError("u", 500, "err", {}, None)
-        with mock.patch("urllib.request.urlopen", side_effect=err):
+        with mock.patch("ai_jury.adapters._open", side_effect=err):
             r = self._adapter().run("p")
         self.assertFalse(r.ok)
         self.assertIn("HTTP 500", r.error)
 
     def test_timeout(self):
-        with mock.patch("urllib.request.urlopen", side_effect=TimeoutError()):
+        with mock.patch("ai_jury.adapters._open", side_effect=TimeoutError()):
             r = self._adapter().run("p")
         self.assertFalse(r.ok)
         self.assertEqual(r.error_code, adapters.ERR_TIMEOUT)
 
     def test_url_error_connection(self):
-        with mock.patch("urllib.request.urlopen", side_effect=urllib.error.URLError("refused")):
+        with mock.patch("ai_jury.adapters._open", side_effect=urllib.error.URLError("refused")):
             r = self._adapter().run("p")
         self.assertFalse(r.ok)
         self.assertEqual(r.error_code, adapters.ERR_CONNECTION)
 
     def test_generic_error(self):
-        with mock.patch("urllib.request.urlopen", side_effect=ValueError("weird")):
+        with mock.patch("ai_jury.adapters._open", side_effect=ValueError("weird")):
             r = self._adapter().run("p")
         self.assertFalse(r.ok)
+
+
+class HttpOnlyOpenerTests(unittest.TestCase):
+    """Issue #291: the local-adapter opener must refuse non-http(s) schemes."""
+
+    def test_file_scheme_rejected(self):
+        # No FileHandler is registered, so file:// raises rather than reading
+        # a local file — defense in depth behind config endpoint validation.
+        with self.assertRaises(urllib.error.URLError):
+            adapters._open("file:///etc/passwd", timeout=1)
+
+    def test_ftp_scheme_rejected(self):
+        with self.assertRaises(urllib.error.URLError):
+            adapters._open("ftp://localhost/x", timeout=1)
 
 
 class MakeAdapterTests(unittest.TestCase):
