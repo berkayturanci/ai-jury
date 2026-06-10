@@ -61,7 +61,8 @@ def _jaccard(a: set[str], b: set[str]) -> float:
     if not a or not b:
         return 0.0
     inter = len(a & b)
-    union = len(a | b)
+    # Bolt ⚡: calculate union size without allocating a new set
+    union = len(a) + len(b) - inter
     return inter / union if union else 0.0
 
 
