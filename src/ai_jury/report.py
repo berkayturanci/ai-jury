@@ -92,7 +92,8 @@ def _metadata_block(metadata: dict) -> list[str]:
         lines.append("- ⚠️ run budget exhausted: some phases were skipped")
     skipped = metadata.get("skipped") or []
     if skipped:
-        names = ", ".join(f"{s['name']} ({s['reason']})" for s in skipped)
+        # bolt: CPython optimization — list comprehension inside join avoids generator overhead
+        names = ", ".join([f"{s['name']} ({s['reason']})" for s in skipped])
         lines.append(f"- skipped agents (never ran): {names}")
     retried = metadata.get("retried") or []
     if retried:
@@ -157,7 +158,8 @@ def _vote_block(vote) -> list[str]:
     (code: REQUEST CHANGES/COMMENT/APPROVE; issue: NEEDS-INFO/UNCLEAR/READY).
     """
     lines = ["## Verdict — panel vote\n"]
-    tally = " · ".join(f"{n} {label.lower()}" for label, n in vote.tally.items())
+    # bolt: CPython optimization — list comprehension avoids generator expression overhead
+    tally = " · ".join([f"{n} {label.lower()}" for label, n in vote.tally.items()])
     lines.append(f"**{vote.verdict}** — {tally}\n")
     for b in vote.ballots:
         lines.append(f"- `{b.reviewer}`: **{b.vote}** ({b.reason})")
@@ -227,7 +229,8 @@ def render(
     if headline:
         lines.append(f"> ⚡ **TL;DR · {headline}**\n")
 
-    panel = ", ".join(f"`{r.agent}` ({r.vendor})" for r in reviews)
+    # bolt: Explicit list materialization lets join evaluate iteratively in C
+    panel = ", ".join([f"`{r.agent}` ({r.vendor})" for r in reviews])
     lines.append(f"**Panel:** {panel}\n")
 
     # Review-scope note (issue #9): only rendered when the caller supplies it
@@ -407,13 +410,14 @@ def _summary_blocks(
             findings,
             key=lambda f: (SEVERITY_ORDER.get(f.severity, 99), f.file or "", f.line or 0),
         )
-        lines.extend(_finding_line(f) for f in ranked)
+        # bolt: CPython optimization — list comprehension instead of generator expressions in extend()
+        lines.extend([_finding_line(f) for f in ranked])
         lines.append("")
     else:
         lines.append("_(no structured findings parsed)_\n")
     if warnings:
         lines.append("> ⚠️ agent output warnings\n")
-        lines.extend(f"- {w}" for w in warnings)
+        lines.extend([f"- {w}" for w in warnings])
         lines.append("")
     return lines
 
@@ -466,7 +470,8 @@ def render_transcript(
     headline = _verdict_headline(synthesis, vote)
     if headline:
         lines.append(f"> ⚡ **TL;DR · {headline}**\n")
-    panel = ", ".join(f"`{r.agent}` ({r.vendor})" for r in reviews)
+    # bolt: explicit list enables optimized string join bypassing generator loop overhead
+    panel = ", ".join([f"`{r.agent}` ({r.vendor})" for r in reviews])
     lines.append(f"**Panel:** {panel}\n")
     if review_scope:
         lines.append(f"{review_scope}\n")
@@ -534,7 +539,8 @@ def render_sections(
     sections: list[tuple[str, str]] = []
 
     # Round 1 — independent reviews.
-    r1 = [f"**Panel:** {', '.join(f'`{r.agent}` ({r.vendor})' for r in reviews)}\n"]
+    # bolt: Explicitly evaluating as a list allows C-level optimizations in join
+    r1 = [f"**Panel:** {', '.join([f'`{r.agent}` ({r.vendor})' for r in reviews])}\n"]
     for r in reviews:
         status = f"{r.duration_s:.0f}s" if r.ok else _fail_status(r)
         r1.append(_block(f"`{r.agent}` ({r.vendor}) — {status}", r.output if r.ok else ""))
@@ -574,10 +580,11 @@ def render_sections(
             findings,
             key=lambda f: (SEVERITY_ORDER.get(f.severity, 99), f.file or "", f.line or 0),
         )
-        dec.extend(_finding_line(f) for f in ranked)
+        # bolt: Optimizes speed by allowing Python C implementations of extend()
+        dec.extend([_finding_line(f) for f in ranked])
     if warnings:
         dec.append("\n> ⚠️ agent output warnings\n")
-        dec.extend(f"- {w}" for w in warnings)
+        dec.extend([f"- {w}" for w in warnings])
     sections.append(("🏛️ AI Jury — Decision: verdict & consensus", "\n".join(dec).strip()))
 
     return sections
