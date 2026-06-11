@@ -193,6 +193,9 @@ body::before {
 :root[data-theme="light"] .theme-track .sun { display: block; }
 :root[data-theme="light"] .theme-track .moon { display: none; }
 
+/* ---- Keyboard Accessibility Global ------------------------------------- */
+a:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
 /* ---- Buttons --------------------------------------------------------- */
 .btn {
   display: inline-flex; align-items: center; gap: .5rem;
@@ -201,13 +204,14 @@ body::before {
   transition: transform .2s, border-color .2s, background .2s, box-shadow .2s;
   font-family: var(--font-body);
 }
-.btn:hover { transform: translateY(-2px); border-color: var(--accent-line); }
+.btn:not(:disabled):hover { transform: translateY(-2px); border-color: var(--accent-line); }
+.btn:disabled { opacity: 0.6; cursor: not-allowed; }
 .btn.primary {
   background: linear-gradient(180deg, var(--accent-2), var(--accent));
   border-color: transparent; color: #fff;
   box-shadow: 0 10px 30px -10px rgba(99,102,241,.6);
 }
-.btn.primary:hover { box-shadow: 0 16px 40px -10px rgba(99,102,241,.75); }
+.btn.primary:not(:disabled):hover { box-shadow: 0 16px 40px -10px rgba(99,102,241,.75); }
 .btn.ghost { background: var(--surface-2); }
 .btn svg { width: 17px; height: 17px; }
 
