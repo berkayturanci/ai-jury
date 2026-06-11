@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .classification import _KEYWORD_RES, diff_lines_changed
+from .classification import _COMBINED_RX, diff_lines_changed
 from .largediff import DEFAULT_GENERATED_GLOBS, _matches_any, split_diff
 
 # Paths that are low-risk to review at full depth (docs/text/config notes).
@@ -46,7 +46,8 @@ def _is_doc_or_generated(path: str) -> bool:
 
 
 def _path_is_security_sensitive(path: str) -> bool:
-    return any(rx.search(path) for rx in _KEYWORD_RES)
+    # bolt: Evaluate multiple regexes at once via the C engine instead of sequential looping.
+    return bool(_COMBINED_RX.search(path))
 
 
 def profile_diff(diff: str) -> DiffProfile:
