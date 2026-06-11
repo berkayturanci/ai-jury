@@ -353,36 +353,36 @@
 
       <div class="demo-grid reveal">
         <form class="panel demo-controls" aria-label="jury configuration">
-          <div class="fieldset">
-            <div class="legend">Target</div>
+          <fieldset class="fieldset">
+            <legend class="legend">Target</legend>
             <label class="opt"><input type="radio" name="target" value="pr" checked /> Pull request</label>
             <label class="opt"><input type="radio" name="target" value="issue" /> Issue (completeness)</label>
-          </div>
-          <div class="fieldset" id="fs-verdict">
-            <div class="legend">Verdict</div>
+          </fieldset>
+          <fieldset class="fieldset" id="fs-verdict">
+            <legend class="legend">Verdict</legend>
             <label class="opt"><input type="radio" name="verdict-mode" value="chair" checked /> Chair synthesizes</label>
             <label class="opt" id="opt-vote"><input type="radio" name="verdict-mode" value="vote" /> Panel vote <span class="tag">majority</span></label>
-          </div>
-          <div class="fieldset">
-            <div class="legend">Reviewers</div>
+          </fieldset>
+          <fieldset class="fieldset">
+            <legend class="legend">Reviewers</legend>
             <label class="opt"><input type="checkbox" id="ag-claude" checked /> <span class="dot d-claude"></span> Claude Code</label>
             <label class="opt"><input type="checkbox" id="ag-codex" checked /> <span class="dot d-codex"></span> Codex</label>
             <label class="opt"><input type="checkbox" id="ag-agy" /> <span class="dot d-agy"></span> Antigravity</label>
             <label class="opt"><input type="checkbox" id="ag-qwen" checked /> <span class="dot d-qwen"></span> Local / open-weight <span class="tag">free</span></label>
-          </div>
-          <div class="fieldset">
-            <div class="legend">Depth</div>
+          </fieldset>
+          <fieldset class="fieldset">
+            <legend class="legend">Depth</legend>
             <label class="opt"><input type="radio" name="rounds" value="1" /> 1 round (review only)</label>
             <label class="opt"><input type="radio" name="rounds" value="2" checked /> 2 rounds (+ debate)</label>
             <label class="opt"><input type="checkbox" id="verify" checked /> Verification pass</label>
             <label class="opt" id="opt-auto"><input type="checkbox" id="auto" /> Auto-depth <span class="tag accent">⚡ scales to diff</span></label>
-          </div>
-          <div class="fieldset" id="fs-postmode">
-            <div class="legend">PR output</div>
+          </fieldset>
+          <fieldset class="fieldset" id="fs-postmode">
+            <legend class="legend">PR output</legend>
             <label class="opt"><input type="radio" name="postmode" value="single" checked /> Single comment</label>
             <label class="opt"><input type="radio" name="postmode" value="phased" /> Phased (R1 / debate / decision)</label>
             <label class="opt"><input type="checkbox" id="progress" /> Live progress comment</label>
-          </div>
+          </fieldset>
         </form>
 
         <div class="stage-card">
