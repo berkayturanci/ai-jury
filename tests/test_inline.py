@@ -1,4 +1,5 @@
 """Tests for inline GitHub review comments (issue #5)."""
+
 import io
 import json
 import unittest

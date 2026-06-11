@@ -5,6 +5,7 @@ local-fallback helper, cache-clear argv parsing, doctor write errors, the
 
 All offline and deterministic — `gh`/network/subprocess and local-model
 discovery are mocked; agents run via ``--mock`` with a fixed ``--seed``."""
+
 from __future__ import annotations
 
 import contextlib
@@ -51,14 +52,16 @@ def run(args, stdin=None):
 @contextlib.contextmanager
 def gh_mocked(diff=DIFF, head="abc123def456789", comments=None):
     comments = comments or []
-    with mock.patch("ai_jury.cli.pr_diff", return_value=diff), \
-         mock.patch("ai_jury.cli.pr_context", return_value="title\n\nbody"), \
-         mock.patch("ai_jury.cli.post_pr_comment") as ppc, \
-         mock.patch("ai_jury.cli.post_inline_comments") as pic, \
-         mock.patch("ai_jury.cli.apply_labels") as al, \
-         mock.patch("ai_jury.github.pr_head_sha", return_value=head), \
-         mock.patch("ai_jury.github.pr_comment_bodies", return_value=comments), \
-         mock.patch("ai_jury.github.compare_diff", return_value=diff):
+    with (
+        mock.patch("ai_jury.cli.pr_diff", return_value=diff),
+        mock.patch("ai_jury.cli.pr_context", return_value="title\n\nbody"),
+        mock.patch("ai_jury.cli.post_pr_comment") as ppc,
+        mock.patch("ai_jury.cli.post_inline_comments") as pic,
+        mock.patch("ai_jury.cli.apply_labels") as al,
+        mock.patch("ai_jury.github.pr_head_sha", return_value=head),
+        mock.patch("ai_jury.github.pr_comment_bodies", return_value=comments),
+        mock.patch("ai_jury.github.compare_diff", return_value=diff),
+    ):
         yield {"post": ppc, "inline": pic, "labels": al}
 
 
@@ -93,8 +96,7 @@ class CommentCommandDispatch(unittest.TestCase):
 
     def test_print_args_with_repo_no_pr(self):
         # No --pr: skips the pr/post block (280->284), still appends --repo (285).
-        code, out, _ = run(["comment", "--text", "/jury review",
-                            "--repo", "o/r", "--print-args"])
+        code, out, _ = run(["comment", "--text", "/jury review", "--repo", "o/r", "--print-args"])
         self.assertEqual(code, 0)
         self.assertIn("--repo", out)
         self.assertIn("o/r", out)
@@ -102,15 +104,13 @@ class CommentCommandDispatch(unittest.TestCase):
     def test_dispatch_runs_main(self):
         # Without --print-args the comment command dispatches into main(inner).
         with gh_mocked() as m, offline_review():
-            code, _, _ = run(["comment", "--text", "/jury review",
-                             "--pr", "5", "--repo", "o/r"])
+            code, _, _ = run(["comment", "--text", "/jury review", "--pr", "5", "--repo", "o/r"])
         self.assertEqual(code, 0)
         m["post"].assert_called()  # --post-summary was added because --pr given
 
     def test_dispatch_no_post(self):
         with gh_mocked() as m, offline_review():
-            code, _, _ = run(["comment", "--text", "/jury review",
-                             "--pr", "5", "--no-post"])
+            code, _, _ = run(["comment", "--text", "/jury review", "--pr", "5", "--no-post"])
         self.assertEqual(code, 0)
         m["post"].assert_not_called()
 
@@ -132,24 +132,39 @@ class InitDetectionPaths(unittest.TestCase):
 
     def test_list_agents_shows_local_models(self):
         # _run_init --list-agents with discoverable models (429->431 true branch).
-        with mock.patch("ai_jury.adapters.list_local_models", return_value=["gemma:2b"]), \
-             mock.patch("ai_jury.cli._init_available", return_value=dict.fromkeys(("claude", "codex", "agy", "qwen"), False)):
+        with (
+            mock.patch("ai_jury.adapters.list_local_models", return_value=["gemma:2b"]),
+            mock.patch(
+                "ai_jury.cli._init_available",
+                return_value=dict.fromkeys(("claude", "codex", "agy", "qwen"), False),
+            ),
+        ):
             code, out, _ = run(["init", "--list-agents"])
         self.assertEqual(code, 0)
         self.assertIn("gemma:2b", out)
 
     def test_list_agents_no_local_models(self):
         # --list-agents with no discoverable models (429->431 false branch).
-        with mock.patch("ai_jury.adapters.list_local_models", return_value=[]), \
-             mock.patch("ai_jury.cli._init_available", return_value=dict.fromkeys(("claude", "codex", "agy", "qwen"), False)):
+        with (
+            mock.patch("ai_jury.adapters.list_local_models", return_value=[]),
+            mock.patch(
+                "ai_jury.cli._init_available",
+                return_value=dict.fromkeys(("claude", "codex", "agy", "qwen"), False),
+            ),
+        ):
             code, out, _ = run(["init", "--list-agents"])
         self.assertEqual(code, 0)
         self.assertNotIn("local models at", out)
 
     def test_no_agents_detected_errors(self):
         # Non-interactive, no --agents/--preset, nothing detected (463-470).
-        with mock.patch("ai_jury.cli._init_available", return_value=dict.fromkeys(("claude", "codex", "agy", "qwen"), False)), \
-             mock.patch("ai_jury.cli.sys.stdin") as stdin:
+        with (
+            mock.patch(
+                "ai_jury.cli._init_available",
+                return_value=dict.fromkeys(("claude", "codex", "agy", "qwen"), False),
+            ),
+            mock.patch("ai_jury.cli.sys.stdin") as stdin,
+        ):
             stdin.isatty.return_value = False
             code, _, err = run(["init", "-o", str(self.d / "x.toml")])
         self.assertEqual(code, 2)
@@ -159,10 +174,13 @@ class InitDetectionPaths(unittest.TestCase):
         # validate_config raising inside _run_init (486-488). Force a bad chair so
         # build_config succeeds but validation fails.
         from ai_jury.config import ConfigError
-        with mock.patch("ai_jury.config.validate_config",
-                        side_effect=ConfigError("template drift")):
-            code, _, err = run(["init", "--agents", "claude", "-o",
-                               str(self.d / "y.toml"), "--force"])
+
+        with mock.patch(
+            "ai_jury.config.validate_config", side_effect=ConfigError("template drift")
+        ):
+            code, _, err = run(
+                ["init", "--agents", "claude", "-o", str(self.d / "y.toml"), "--force"]
+            )
         self.assertEqual(code, 2)
         self.assertIn("generated config is invalid", err)
 
@@ -179,8 +197,9 @@ class InitInteractive(unittest.TestCase):
         def fake_input(_prompt):
             return next(answers)
 
-        with mock.patch("ai_jury.adapters.list_local_models",
-                        return_value=["qwen2.5-coder:7b", "gemma:2b"]):
+        with mock.patch(
+            "ai_jury.adapters.list_local_models", return_value=["qwen2.5-coder:7b", "gemma:2b"]
+        ):
             buf = io.StringIO()
             with contextlib.redirect_stderr(buf):
                 kwargs = cli._init_interactive({"qwen": True}, input_fn=fake_input)
@@ -194,15 +213,25 @@ class InitInteractive(unittest.TestCase):
         # and assert --local-model overrides the returned kwargs.
         d = Path(tempfile.mkdtemp())
         out = d / "i.toml"
-        with mock.patch("ai_jury.cli._init_available",
-                        return_value={"claude": True, "codex": False,
-                                      "agy": False, "qwen": False}), \
-             mock.patch("ai_jury.cli._init_interactive",
-                        return_value={"agents": ["claude"], "rounds": 2,
-                                      "chair": "claude", "verify": True,
-                                      "local_model": None}) as ii:
-            code, _, _ = run(["init", "--interactive", "--local-model", "x:1b",
-                             "-o", str(out), "--force"])
+        with (
+            mock.patch(
+                "ai_jury.cli._init_available",
+                return_value={"claude": True, "codex": False, "agy": False, "qwen": False},
+            ),
+            mock.patch(
+                "ai_jury.cli._init_interactive",
+                return_value={
+                    "agents": ["claude"],
+                    "rounds": 2,
+                    "chair": "claude",
+                    "verify": True,
+                    "local_model": None,
+                },
+            ) as ii,
+        ):
+            code, _, _ = run(
+                ["init", "--interactive", "--local-model", "x:1b", "-o", str(out), "--force"]
+            )
         self.assertEqual(code, 0)
         self.assertTrue(out.exists())
         ii.assert_called_once()
@@ -211,13 +240,22 @@ class InitInteractive(unittest.TestCase):
         # Interactive branch, no --local-model (455->477 false branch).
         d = Path(tempfile.mkdtemp())
         out = d / "j.toml"
-        with mock.patch("ai_jury.cli._init_available",
-                        return_value={"claude": True, "codex": False,
-                                      "agy": False, "qwen": False}), \
-             mock.patch("ai_jury.cli._init_interactive",
-                        return_value={"agents": ["claude"], "rounds": 2,
-                                      "chair": "claude", "verify": True,
-                                      "local_model": None}):
+        with (
+            mock.patch(
+                "ai_jury.cli._init_available",
+                return_value={"claude": True, "codex": False, "agy": False, "qwen": False},
+            ),
+            mock.patch(
+                "ai_jury.cli._init_interactive",
+                return_value={
+                    "agents": ["claude"],
+                    "rounds": 2,
+                    "chair": "claude",
+                    "verify": True,
+                    "local_model": None,
+                },
+            ),
+        ):
             code, _, _ = run(["init", "--interactive", "-o", str(out), "--force"])
         self.assertEqual(code, 0)
         self.assertTrue(out.exists())
@@ -231,31 +269,42 @@ class LocalFallbackHelper(unittest.TestCase):
 
     def test_returns_when_an_agent_is_available(self):
         from ai_jury.config import load_config
+
         cfg = load_config(None, validate=True)
-        with tempfile.TemporaryDirectory() as tmp, chdir(tmp), \
-             mock.patch("ai_jury.adapters.make_adapter") as ma, \
-             mock.patch("ai_jury.adapters.list_local_models") as llm:
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            chdir(tmp),
+            mock.patch("ai_jury.adapters.make_adapter") as ma,
+            mock.patch("ai_jury.adapters.list_local_models") as llm,
+        ):
             ma.return_value.available.return_value = True  # 598-599 -> return
             cli._maybe_add_local_fallback(cfg, self._args(), lambda _m: None)
             llm.assert_not_called()
 
     def test_returns_when_availability_probe_raises(self):
         from ai_jury.config import load_config
+
         cfg = load_config(None, validate=True)
         n_before = len(cfg.agents)
-        with tempfile.TemporaryDirectory() as tmp, chdir(tmp), \
-             mock.patch("ai_jury.adapters.make_adapter",
-                        side_effect=RuntimeError("probe failed")):  # 600-601
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            chdir(tmp),
+            mock.patch("ai_jury.adapters.make_adapter", side_effect=RuntimeError("probe failed")),
+        ):  # 600-601
             cli._maybe_add_local_fallback(cfg, self._args(), lambda _m: None)
         self.assertEqual(len(cfg.agents), n_before)
 
     def test_returns_when_no_local_model(self):
         from ai_jury.config import load_config
+
         cfg = load_config(None, validate=True)
         n_before = len(cfg.agents)
-        with tempfile.TemporaryDirectory() as tmp, chdir(tmp), \
-             mock.patch("ai_jury.adapters.make_adapter") as ma, \
-             mock.patch("ai_jury.adapters.list_local_models", return_value=[]):
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            chdir(tmp),
+            mock.patch("ai_jury.adapters.make_adapter") as ma,
+            mock.patch("ai_jury.adapters.list_local_models", return_value=[]),
+        ):
             ma.return_value.available.return_value = False
             cli._maybe_add_local_fallback(cfg, self._args(), lambda _m: None)  # 605
         self.assertEqual(len(cfg.agents), n_before)
@@ -264,13 +313,16 @@ class LocalFallbackHelper(unittest.TestCase):
         # Success path (606-611): no CLI available + a discoverable model -> a
         # local agent is appended and the chair is pointed at it.
         from ai_jury.config import load_config
+
         cfg = load_config(None, validate=True)
         n_before = len(cfg.agents)
         logged = []
-        with tempfile.TemporaryDirectory() as tmp, chdir(tmp), \
-             mock.patch("ai_jury.adapters.make_adapter") as ma, \
-             mock.patch("ai_jury.adapters.list_local_models",
-                        return_value=["qwen2.5-coder:7b"]):
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            chdir(tmp),
+            mock.patch("ai_jury.adapters.make_adapter") as ma,
+            mock.patch("ai_jury.adapters.list_local_models", return_value=["qwen2.5-coder:7b"]),
+        ):
             ma.return_value.available.return_value = False
             cli._maybe_add_local_fallback(cfg, self._args(), logged.append)
         self.assertEqual(len(cfg.agents), n_before + 1)
@@ -333,19 +385,25 @@ class IncrementalAndGuards(unittest.TestCase):
     def test_incremental_narrows_diff(self):
         # MODE_INCREMENTAL with a usable narrowed diff (792-794).
         from ai_jury import incremental as inc
+
         marker = inc.reviewed_sha_marker("deadbeefcafe1234")
         narrowed = DIFF.replace("# added", "# narrowed")
-        with gh_mocked(head="abc123def456789", comments=[marker]), \
-             mock.patch("ai_jury.github.compare_diff", return_value=narrowed):
+        with (
+            gh_mocked(head="abc123def456789", comments=[marker]),
+            mock.patch("ai_jury.github.compare_diff", return_value=narrowed),
+        ):
             code, _, _ = run(["--mock", "--pr", "9", "--incremental", "-q", "--seed", "1"])
         self.assertEqual(code, 0)
 
     def test_incremental_empty_range_falls_back(self):
         # MODE_INCREMENTAL but compare_diff is empty -> MODE_FULL fallback (795-796).
         from ai_jury import incremental as inc
+
         marker = inc.reviewed_sha_marker("deadbeefcafe1234")
-        with gh_mocked(head="abc123def456789", comments=[marker]), \
-             mock.patch("ai_jury.github.compare_diff", return_value="   \n"):
+        with (
+            gh_mocked(head="abc123def456789", comments=[marker]),
+            mock.patch("ai_jury.github.compare_diff", return_value="   \n"),
+        ):
             code, _, _ = run(["--mock", "--pr", "9", "--incremental", "-q", "--seed", "1"])
         self.assertEqual(code, 0)
 
@@ -367,16 +425,29 @@ class AutoDepthBranches(unittest.TestCase):
     def test_auto_with_explicit_rounds_and_verify(self):
         # --rounds given -> skip the rounds override (813->815 false);
         # --verify given -> skip the verify override (815->817 false).
-        code, out, _ = run(["--mock", "--diff-file", str(self.diff), "--auto",
-                           "--rounds", "2", "--verify", "--seed", "1", "-q"])
+        code, out, _ = run(
+            [
+                "--mock",
+                "--diff-file",
+                str(self.diff),
+                "--auto",
+                "--rounds",
+                "2",
+                "--verify",
+                "--seed",
+                "1",
+                "-q",
+            ]
+        )
         self.assertEqual(code, 0)
         self.assertIn("AI Jury", out)
 
     def test_auto_with_explicit_early_stop(self):
         # --auto without --rounds but WITH --early-stop: rounds override runs but
         # the inner early_stop override is skipped (813->815 true, inner false).
-        code, out, _ = run(["--mock", "--diff-file", str(self.diff), "--auto",
-                           "--early-stop", "--seed", "1", "-q"])
+        code, out, _ = run(
+            ["--mock", "--diff-file", str(self.diff), "--auto", "--early-stop", "--seed", "1", "-q"]
+        )
         self.assertEqual(code, 0)
 
 
@@ -389,8 +460,19 @@ class CiAndPatchesBranches(unittest.TestCase):
     def test_ci_json_skips_gate_section(self):
         # --ci with non-markdown format: the CI gate section is not appended
         # (899->905 false branch); exit code still reflects the gate.
-        code, out, _ = run(["--mock", "--diff-file", str(self.diff), "-q",
-                           "--seed", "1", "--ci", "--format", "json"])
+        code, out, _ = run(
+            [
+                "--mock",
+                "--diff-file",
+                str(self.diff),
+                "-q",
+                "--seed",
+                "1",
+                "--ci",
+                "--format",
+                "json",
+            ]
+        )
         self.assertIn(code, (0, 1, 2))
         self.assertNotIn("## CI gate", out)
 
@@ -398,8 +480,9 @@ class CiAndPatchesBranches(unittest.TestCase):
         # When no verified finding carries a fix, render_patch_suggestions is
         # empty and the helper logs "no patches" (line 910). Force the empty case.
         with mock.patch("ai_jury.patches.render_patch_suggestions", return_value=""):
-            code, _, err = run(["--mock", "--diff-file", str(self.diff),
-                               "--suggest-patches", "--seed", "1"])
+            code, _, err = run(
+                ["--mock", "--diff-file", str(self.diff), "--suggest-patches", "--seed", "1"]
+            )
         self.assertEqual(code, 0)
         self.assertIn("no patches emitted", err)
 
@@ -414,8 +497,10 @@ class InitInteractiveModelPicks(unittest.TestCase):
         def fake_input(_prompt):
             return next(answers)
 
-        with mock.patch("ai_jury.adapters.list_local_models",
-                        return_value=["a:1b", "b:2b"]), contextlib.redirect_stderr(io.StringIO()):
+        with (
+            mock.patch("ai_jury.adapters.list_local_models", return_value=["a:1b", "b:2b"]),
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
             kwargs = cli._init_interactive({"qwen": True}, input_fn=fake_input)
         self.assertEqual(kwargs["local_model"], "b:2b")
 
@@ -425,8 +510,10 @@ class InitInteractiveModelPicks(unittest.TestCase):
         def fake_input(_prompt):
             return next(answers)
 
-        with mock.patch("ai_jury.adapters.list_local_models",
-                        return_value=["a:1b", "b:2b"]), contextlib.redirect_stderr(io.StringIO()):
+        with (
+            mock.patch("ai_jury.adapters.list_local_models", return_value=["a:1b", "b:2b"]),
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
             kwargs = cli._init_interactive({"qwen": True}, input_fn=fake_input)
         self.assertEqual(kwargs["local_model"], "custom:3b")
 
@@ -437,8 +524,10 @@ class InitInteractiveModelPicks(unittest.TestCase):
         def fake_input(_prompt):
             return next(answers)
 
-        with mock.patch("ai_jury.adapters.list_local_models", return_value=[]), \
-             contextlib.redirect_stderr(io.StringIO()):
+        with (
+            mock.patch("ai_jury.adapters.list_local_models", return_value=[]),
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
             kwargs = cli._init_interactive({"qwen": True}, input_fn=fake_input)
         self.assertEqual(kwargs["local_model"], "mymodel:1b")
 
@@ -452,9 +541,13 @@ class InitPresetAgentSpecs(unittest.TestCase):
     def test_preset_thorough_all_agents(self):
         # 'thorough' preset uses spec 'all' (440).
         out = self.d / "t.toml"
-        with mock.patch("ai_jury.cli._init_available", return_value=dict.fromkeys(("claude", "codex", "agy", "qwen"), True)), \
-             mock.patch("ai_jury.adapters.list_local_models",
-                        return_value=["qwen2.5-coder:7b"]):
+        with (
+            mock.patch(
+                "ai_jury.cli._init_available",
+                return_value=dict.fromkeys(("claude", "codex", "agy", "qwen"), True),
+            ),
+            mock.patch("ai_jury.adapters.list_local_models", return_value=["qwen2.5-coder:7b"]),
+        ):
             code, _, _ = run(["init", "--preset", "thorough", "-o", str(out), "--force"])
         self.assertEqual(code, 0)
         self.assertTrue(out.exists())
@@ -462,8 +555,10 @@ class InitPresetAgentSpecs(unittest.TestCase):
     def test_preset_balanced_detected_agents(self):
         # 'balanced' preset uses spec 'detected' (442).
         out = self.d / "b.toml"
-        with mock.patch("ai_jury.cli._init_available", return_value={
-                "claude": True, "codex": True, "agy": False, "qwen": False}):
+        with mock.patch(
+            "ai_jury.cli._init_available",
+            return_value={"claude": True, "codex": True, "agy": False, "qwen": False},
+        ):
             code, _, _ = run(["init", "--preset", "balanced", "-o", str(out), "--force"])
         self.assertEqual(code, 0)
         self.assertTrue(out.exists())
@@ -473,7 +568,7 @@ class ConfigShowError(unittest.TestCase):
     def test_config_show_invalid_file(self):
         # _run_config load error (564-566).
         cfg = Path(tempfile.mkdtemp()) / "bad.toml"
-        cfg.write_text('[jury]\nrounds = 0\n')
+        cfg.write_text("[jury]\nrounds = 0\n")
         code, _, err = run(["config", "show", "--config", str(cfg)])
         self.assertEqual(code, 2)
         self.assertIn("error:", err)
@@ -488,9 +583,11 @@ class PolicyAndPostGuards(unittest.TestCase):
     def test_policy_load_error(self):
         # load_policy raising PolicyError -> exit 2 (748-750).
         from ai_jury.policy import PolicyError
+
         with mock.patch("ai_jury.cli.load_policy", side_effect=PolicyError("bad policy")):
-            code, _, err = run(["--mock", "--diff-file", str(self.diff),
-                               "--policy", "p.toml", "-q"])
+            code, _, err = run(
+                ["--mock", "--diff-file", str(self.diff), "--policy", "p.toml", "-q"]
+            )
         self.assertEqual(code, 2)
         self.assertIn("bad policy", err)
 
@@ -513,10 +610,22 @@ class PolicyAndPostGuards(unittest.TestCase):
         # --patches-out writes the section to a file (912-913). Force a non-empty
         # section so the write branch runs.
         outp = self.d / "patches.md"
-        with mock.patch("ai_jury.patches.render_patch_suggestions",
-                        return_value="## Suggested patches\n\nfix\n"):
-            code, _, _ = run(["--mock", "--diff-file", str(self.diff), "--seed", "1",
-                             "--suggest-patches", "--patches-out", str(outp), "-q"])
+        with mock.patch(
+            "ai_jury.patches.render_patch_suggestions", return_value="## Suggested patches\n\nfix\n"
+        ):
+            code, _, _ = run(
+                [
+                    "--mock",
+                    "--diff-file",
+                    str(self.diff),
+                    "--seed",
+                    "1",
+                    "--suggest-patches",
+                    "--patches-out",
+                    str(outp),
+                    "-q",
+                ]
+            )
         self.assertEqual(code, 0)
         self.assertTrue(outp.exists())
         self.assertIn("Suggested patches", outp.read_text())

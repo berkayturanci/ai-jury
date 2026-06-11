@@ -10,6 +10,7 @@ Pure and deterministic: building the config dict and rendering it to TOML are
 side-effect-free, so they are fully unit-testable; the CLI layer owns prompting,
 availability detection, and writing the file.
 """
+
 from __future__ import annotations
 
 from .config import DEFAULT_CONFIG
@@ -66,8 +67,8 @@ def pick_default_model(models: list[str]) -> str | None:
 # `agents` value ("detected" = the agents available right now, "all" = every
 # known agent). Resolved by the CLI, which knows availability.
 PRESETS: dict[str, dict] = {
-    "offline":  {"agents": ["qwen"], "rounds": 1, "verify": False},
-    "fast":     {"agents": "detected", "rounds": 1, "verify": False},
+    "offline": {"agents": ["qwen"], "rounds": 1, "verify": False},
+    "fast": {"agents": "detected", "rounds": 1, "verify": False},
     "balanced": {"agents": "detected", "rounds": 2, "verify": True, "early_stop": True},
     "thorough": {"agents": "all", "rounds": 2, "verify": True},
 }
@@ -107,9 +108,7 @@ def build_config(
             continue
         tmpl = templates.get(name)
         if tmpl is None:
-            raise ValueError(
-                f"unknown agent '{name}'; choose from {', '.join(KNOWN_AGENTS)}"
-            )
+            raise ValueError(f"unknown agent '{name}'; choose from {', '.join(KNOWN_AGENTS)}")
         entry = dict(tmpl)
         if entry.get("vendor") == "local":
             if local_model:

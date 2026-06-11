@@ -5,6 +5,7 @@ defaults to a legacy code page (cp1252) that cannot encode those characters, so
 `print(report)` raised `UnicodeEncodeError`. `cli._force_utf8_output()`
 reconfigures the real streams to UTF-8; this test locks that in. Network-free.
 """
+
 from __future__ import annotations
 
 import io

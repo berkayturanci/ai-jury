@@ -14,6 +14,7 @@ follow*. This is the cheapest defense-in-depth layer against prompt injection
 authoritative protection. Sentinels intentionally use a form unlikely to appear
 verbatim in source diffs.
 """
+
 from __future__ import annotations
 
 import re
@@ -50,6 +51,7 @@ def neutralize_sentinels(text: str) -> str:
         return text
     text = _OPENER_RE.sub("<·<·<", text)
     return _CLOSER_RE.sub(lambda m: m.group(1) + ">·>·>", text)
+
 
 # Standing anti-injection preamble, reused across templates. Untrusted blocks
 # below are demarcated with these sentinels.

@@ -7,6 +7,7 @@ These tests exercise the scorer math deterministically, validate every shipped
 fixture's schema, and confirm the offline runner is deterministic. They never
 require live agents (live mode is gated behind JURY_BENCH_LIVE=1).
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -92,7 +93,9 @@ class MatchRuleTest(unittest.TestCase):
 
     def test_entry_without_file_or_line_keyword_only(self):
         entry = {"keywords": ["off-by-one"]}
-        self.assertTrue(finding_matches_expected(self._finding(file="src/other.py", line=999), entry))
+        self.assertTrue(
+            finding_matches_expected(self._finding(file="src/other.py", line=999), entry)
+        )
 
 
 class ScoreMathTest(unittest.TestCase):
@@ -100,8 +103,20 @@ class ScoreMathTest(unittest.TestCase):
 
     def test_all_matched_pass(self):
         findings = [
-            {"severity": "major", "file": "a.py", "line": 5, "claim": "off-by-one here", "evidence": ""},
-            {"severity": "critical", "file": "b.py", "line": 8, "claim": "null deref", "evidence": ""},
+            {
+                "severity": "major",
+                "file": "a.py",
+                "line": 5,
+                "claim": "off-by-one here",
+                "evidence": "",
+            },
+            {
+                "severity": "critical",
+                "file": "b.py",
+                "line": 8,
+                "claim": "null deref",
+                "evidence": "",
+            },
         ]
         expected = {
             "must_match": [
@@ -121,7 +136,13 @@ class ScoreMathTest(unittest.TestCase):
 
     def test_one_missed_fail(self):
         findings = [
-            {"severity": "major", "file": "a.py", "line": 5, "claim": "off-by-one here", "evidence": ""},
+            {
+                "severity": "major",
+                "file": "a.py",
+                "line": 5,
+                "claim": "off-by-one here",
+                "evidence": "",
+            },
         ]
         expected = {
             "must_match": [
@@ -140,7 +161,13 @@ class ScoreMathTest(unittest.TestCase):
 
     def test_false_positive_counted(self):
         findings = [
-            {"severity": "major", "file": "c.py", "line": 3, "claim": "timing attack vulnerable ==", "evidence": ""},
+            {
+                "severity": "major",
+                "file": "c.py",
+                "line": 3,
+                "claim": "timing attack vulnerable ==",
+                "evidence": "",
+            },
         ]
         expected = {
             "must_match": [],
@@ -184,8 +211,21 @@ class ScoreMathTest(unittest.TestCase):
 
     def test_aggregate(self):
         s1 = score_fixture(
-            [{"severity": "major", "file": "a.py", "line": 5, "claim": "off-by-one", "evidence": ""}],
-            {"must_match": [{"file": "a.py", "line": 5, "severity": "major", "keywords": ["off-by-one"]}], "must_not_flag": []},
+            [
+                {
+                    "severity": "major",
+                    "file": "a.py",
+                    "line": 5,
+                    "claim": "off-by-one",
+                    "evidence": "",
+                }
+            ],
+            {
+                "must_match": [
+                    {"file": "a.py", "line": 5, "severity": "major", "keywords": ["off-by-one"]}
+                ],
+                "must_not_flag": [],
+            },
         )
         s2 = score_fixture([], {"max_blocking": 0, "must_match": [], "must_not_flag": []})
         summary = aggregate([s1, s2])
@@ -301,12 +341,12 @@ class LiveModeGuardTest(unittest.TestCase):
         self.assertEqual(d["evidence"], "here")
 
 
-
 class FormatTableTest(unittest.TestCase):
     """format_table produces the expected fixed-width layout."""
 
     def test_format_table_exact_output(self):
         from ai_jury.benchmark import FixtureScore, format_table
+
         scores = [
             FixtureScore(
                 id="test-fixture-1",
@@ -327,7 +367,7 @@ class FormatTableTest(unittest.TestCase):
                 expected_count=2,
                 precision=0.3333,
                 recall=0.5,
-            )
+            ),
         ]
         summary = {
             "fixtures": 2,

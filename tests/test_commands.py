@@ -1,4 +1,5 @@
 """Tests for GitHub comment-command parsing (issue #11). Network-free."""
+
 from __future__ import annotations
 
 import sys
@@ -72,8 +73,9 @@ class CommentCliModeTest(unittest.TestCase):
 
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            code = main(["comment", "--text", "/jury review --rounds 1",
-                         "--pr", "123", "--print-args"])
+            code = main(
+                ["comment", "--text", "/jury review --rounds 1", "--pr", "123", "--print-args"]
+            )
         self.assertEqual(code, 0)
         printed = out.getvalue().strip()
         self.assertIn("--rounds 1", printed)
@@ -96,8 +98,7 @@ class CommentCliModeTest(unittest.TestCase):
 
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            main(["comment", "--text", "/jury review", "--pr", "7",
-                  "--no-post", "--print-args"])
+            main(["comment", "--text", "/jury review", "--pr", "7", "--no-post", "--print-args"])
         self.assertNotIn("--post-summary", out.getvalue())
 
 

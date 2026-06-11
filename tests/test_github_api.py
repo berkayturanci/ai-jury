@@ -1,5 +1,6 @@
 """Coverage for github.py API / label / inline / progress paths. Network-free
 (every `gh` invocation is mocked)."""
+
 from __future__ import annotations
 
 import contextlib
@@ -28,8 +29,11 @@ class CompareDiffTests(unittest.TestCase):
     def test_success(self, mock_gh, _):
         self.assertEqual(github.compare_diff("a", "b", "o/r"), "DIFF")
         mock_gh.assert_called_once_with(
-            "api", "-H", "Accept: application/vnd.github.v3.diff",
-            "--", "repos/o/r/compare/a...b",
+            "api",
+            "-H",
+            "Accept: application/vnd.github.v3.diff",
+            "--",
+            "repos/o/r/compare/a...b",
         )
 
     @mock.patch("ai_jury.github._resolve_repo", return_value="")
@@ -82,12 +86,14 @@ class ExistingInlineKeysTests(unittest.TestCase):
     @mock.patch("ai_jury.github._gh")
     def test_parses_marker_comments(self, mock_gh):
         body = github._comment_body(_finding(file="a.py", line=3))
-        mock_gh.return_value = json.dumps([
-            {"path": "a.py", "line": 3, "body": body},
-            {"path": "b.py", "line": None, "original_line": 9, "body": body},
-            {"path": "c.py", "line": 1, "body": "no marker here"},
-            "not-a-dict",
-        ])
+        mock_gh.return_value = json.dumps(
+            [
+                {"path": "a.py", "line": 3, "body": body},
+                {"path": "b.py", "line": None, "original_line": 9, "body": body},
+                {"path": "c.py", "line": 1, "body": "no marker here"},
+                "not-a-dict",
+            ]
+        )
         keys = github._existing_inline_keys("1", "o/r")
         self.assertEqual(len(keys), 2)  # only the two marker comments
 

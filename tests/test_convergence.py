@@ -3,6 +3,7 @@
 Offline: pure-function fixtures plus a mock pipeline with custom adapters; no
 live CLIs, no network.
 """
+
 from __future__ import annotations
 
 import sys

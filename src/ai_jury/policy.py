@@ -146,9 +146,7 @@ def _from_dict(data: dict, *, source: Path | None = None) -> ReviewPolicy:
         glob = entry.get("glob")
         severity = entry.get("severity")
         if not isinstance(glob, str) or not isinstance(severity, str):
-            raise PolicyError(
-                f"each severity override needs string 'glob' and 'severity'{where}"
-            )
+            raise PolicyError(f"each severity override needs string 'glob' and 'severity'{where}")
         overrides.append(SeverityOverride(glob=glob, severity=severity))
 
     return ReviewPolicy(

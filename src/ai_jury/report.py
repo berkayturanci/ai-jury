@@ -1,4 +1,5 @@
 """Render the jury run into a single markdown report."""
+
 from __future__ import annotations
 
 from . import classification as _classification
@@ -57,7 +58,9 @@ def _group_line(g) -> str:
     if status:
         reasoning = getattr(g, "status_reasoning", "")
         if reasoning:
-            parts.append(f"\n  - _verification:_ {_STATUS_LABELS.get(status, status)} — {reasoning}")
+            parts.append(
+                f"\n  - _verification:_ {_STATUS_LABELS.get(status, status)} — {reasoning}"
+            )
         else:
             parts.append(f"\n  - _verification:_ {_STATUS_LABELS.get(status, status)}")
 
@@ -110,9 +113,7 @@ def _metadata_block(metadata: dict) -> list[str]:
         attempts = a.get("attempts", 1)
         if attempts and attempts > 1:
             status += f", {attempts} attempts"
-        lines.append(
-            f"| {a['name']} | {a['vendor']} | {status} | {a['duration_s']:.0f}s |"
-        )
+        lines.append(f"| {a['name']} | {a['vendor']} | {status} | {a['duration_s']:.0f}s |")
     lines.append("")
     lines.append(
         "_Wall-clock seconds are an approximate cost proxy (no token counts are "
@@ -186,7 +187,7 @@ def _verdict_headline(synthesis, vote) -> str | None:
     for i, row in enumerate(rows):
         if row.strip().lower().lstrip("#").strip() == "verdict":
             collected: list[str] = []
-            for nxt in rows[i + 1:]:
+            for nxt in rows[i + 1 :]:
                 if nxt.strip().startswith("#"):
                     break
                 if not nxt.strip():
@@ -336,7 +337,9 @@ _LIVE_LABELS = {
 }
 
 
-def render_live_step(kind: str, result: AgentResult, round_no: int | None = None) -> tuple[str, str]:
+def render_live_step(
+    kind: str, result: AgentResult, round_no: int | None = None
+) -> tuple[str, str]:
     """Format one streamed step as ``(title, body)`` for live output (issue #210).
 
     Pure — no I/O. The CLI ``--live`` handler prints this to stdout and (with
@@ -379,7 +382,11 @@ def _conversation_blocks(
     if verify is not None:
         lines.append("## Verification\n")
         lines.append(f"> Verified by `{chair}`\n")
-        lines.append(verify.output.strip() + "\n" if verify.ok else f"_Verification failed: {verify.error}_\n")
+        lines.append(
+            verify.output.strip() + "\n"
+            if verify.ok
+            else f"_Verification failed: {verify.error}_\n"
+        )
     lines.append("## Decision — verdict & reasoning\n")
     if synthesis and synthesis.ok:
         lines.append(f"> Decided by `{chair}`\n")
@@ -462,8 +469,7 @@ def render_transcript(
 
     lines: list[str] = []
     lines.append(
-        "# 🏛️ AI Jury — verbose report\n" if lead_with_summary
-        else "# 🏛️ AI Jury — full transcript\n"
+        "# 🏛️ AI Jury — verbose report\n" if lead_with_summary else "# 🏛️ AI Jury — full transcript\n"
     )
     # TL;DR callout (parity with render()): the verdict headline leads the
     # verbose/transcript report too, so every renderer surfaces the outcome first.
@@ -566,7 +572,11 @@ def render_sections(
     if verify is not None:
         dec.append("## Verification\n")
         dec.append(f"> Verified by `{chair}`\n")
-        dec.append(verify.output.strip() + "\n" if verify.ok else f"_Verification failed: {verify.error}_\n")
+        dec.append(
+            verify.output.strip() + "\n"
+            if verify.ok
+            else f"_Verification failed: {verify.error}_\n"
+        )
     chair_heading = "Chair's reasoning" if vote is not None else "Chair verdict"
     if synthesis and synthesis.ok:
         dec.append(f"## {chair_heading}\n")

@@ -11,6 +11,7 @@ It never trims the *panel* (vendor diversity is the load-bearing advantage) —
 only how many rounds run and whether the verification pass runs. Pure and
 deterministic; the CLI owns applying it (opt-in) and logging it.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -101,7 +102,4 @@ def describe(profile: DiffProfile) -> str:
         bits.append("docs/generated-only")
     if profile.security_sensitive:
         bits.append("security-sensitive paths")
-    return (
-        f"auto-depth: {', '.join(bits)} → rounds={rounds}, "
-        f"verify={'on' if verify else 'off'}"
-    )
+    return f"auto-depth: {', '.join(bits)} → rounds={rounds}, verify={'on' if verify else 'off'}"

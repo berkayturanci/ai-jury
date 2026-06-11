@@ -4,6 +4,7 @@ Covers the pure voting.tally_votes logic, the CLI --decision / [jury] decision
 wiring, and the invariant that the decision mode is rendering-only (does not
 change config_hash). Offline and deterministic.
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -26,7 +27,9 @@ DIFF = "diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n@@ -1 +1 @@\n-x\n+y\n"
 
 def _grp(severity, reviewers, status=""):
     f = Finding(severity=severity, file="a.py", claim="c", reviewer=reviewers[0])
-    return FindingGroup(representative=f, reviewers=list(reviewers), severity=severity, status=status)
+    return FindingGroup(
+        representative=f, reviewers=list(reviewers), severity=severity, status=status
+    )
 
 
 def _run(args, stdin=DIFF):
@@ -105,12 +108,14 @@ class VoteRenderOrderTests(unittest.TestCase):
         # The tally headline lists the strictest stance first (caught as a
         # regression by the dogfood jury on #230).
         from ai_jury import report
+
         vote = voting.tally_votes([_grp("major", ["a"]), _grp("minor", ["b"])], ["a", "b"])
         line = next(ln for ln in report._vote_block(vote) if ln.startswith("**"))
         self.assertLess(line.index("request changes"), line.index("approve"))
 
     def test_issue_tally_renders_strictest_first(self):
         from ai_jury import report
+
         vote = voting.tally_votes([_grp("major", ["a"])], ["a"], mode="issue")
         line = next(ln for ln in report._vote_block(vote) if ln.startswith("**"))
         self.assertLess(line.index("needs-info"), line.index("ready"))
@@ -124,7 +129,9 @@ class CliDecisionTests(unittest.TestCase):
         self.assertIn("Chair verdict", out)
 
     def test_decision_vote_renders_tally_and_relabels_chair(self):
-        code, out, _ = _run(["--mock", "--diff-file", "-", "-q", "--seed", "1", "--decision", "vote"])
+        code, out, _ = _run(
+            ["--mock", "--diff-file", "-", "-q", "--seed", "1", "--decision", "vote"]
+        )
         self.assertEqual(code, 0)
         self.assertIn("## Verdict — panel vote", out)
         self.assertIn("Chair's reasoning", out)  # synthesis relabelled
@@ -133,8 +140,20 @@ class CliDecisionTests(unittest.TestCase):
     def test_decision_vote_in_metadata_json(self):
         d = Path(tempfile.mkdtemp())
         mp = d / "m.json"
-        code, _, _ = _run(["--mock", "--diff-file", "-", "-q", "--seed", "1",
-                           "--decision", "vote", "--metadata-json", str(mp)])
+        code, _, _ = _run(
+            [
+                "--mock",
+                "--diff-file",
+                "-",
+                "-q",
+                "--seed",
+                "1",
+                "--decision",
+                "vote",
+                "--metadata-json",
+                str(mp),
+            ]
+        )
         self.assertEqual(code, 0)
         meta = json.loads(mp.read_text(encoding="utf-8"))
         self.assertEqual(meta["decision"], "vote")
@@ -144,25 +163,44 @@ class CliDecisionTests(unittest.TestCase):
     def test_config_decision_vote(self):
         d = Path(tempfile.mkdtemp())
         cfg = d / "jury.toml"
-        cfg.write_text('[jury]\nrounds = 1\nchair = "claude"\ndecision = "vote"\n'
-                       '\n[[agent]]\nname = "claude"\nvendor = "anthropic"\ncommand = "x"\n')
-        code, out, _ = _run(["--mock", "--diff-file", "-", "-q", "--seed", "1", "--config", str(cfg)])
+        cfg.write_text(
+            '[jury]\nrounds = 1\nchair = "claude"\ndecision = "vote"\n'
+            '\n[[agent]]\nname = "claude"\nvendor = "anthropic"\ncommand = "x"\n'
+        )
+        code, out, _ = _run(
+            ["--mock", "--diff-file", "-", "-q", "--seed", "1", "--config", str(cfg)]
+        )
         self.assertEqual(code, 0)
         self.assertIn("panel vote", out)
 
     def test_vote_in_verbose_transcript(self):
-        code, out, _ = _run(["--mock", "--diff-file", "-", "-q", "--seed", "1",
-                             "--decision", "vote", "--verbose"])
+        code, out, _ = _run(
+            ["--mock", "--diff-file", "-", "-q", "--seed", "1", "--decision", "vote", "--verbose"]
+        )
         self.assertEqual(code, 0)
         self.assertIn("## Verdict — panel vote", out)
 
     def test_flag_overrides_config(self):
         d = Path(tempfile.mkdtemp())
         cfg = d / "jury.toml"
-        cfg.write_text('[jury]\nrounds = 1\nchair = "claude"\ndecision = "vote"\n'
-                       '\n[[agent]]\nname = "claude"\nvendor = "anthropic"\ncommand = "x"\n')
-        code, out, _ = _run(["--mock", "--diff-file", "-", "-q", "--seed", "1",
-                             "--config", str(cfg), "--decision", "chair"])
+        cfg.write_text(
+            '[jury]\nrounds = 1\nchair = "claude"\ndecision = "vote"\n'
+            '\n[[agent]]\nname = "claude"\nvendor = "anthropic"\ncommand = "x"\n'
+        )
+        code, out, _ = _run(
+            [
+                "--mock",
+                "--diff-file",
+                "-",
+                "-q",
+                "--seed",
+                "1",
+                "--config",
+                str(cfg),
+                "--decision",
+                "chair",
+            ]
+        )
         self.assertEqual(code, 0)
         self.assertNotIn("panel vote", out)
 
@@ -171,10 +209,12 @@ class PhasedPostingVoteTests(unittest.TestCase):
     def test_render_sections_includes_vote(self):
         from ai_jury import report
         from ai_jury.adapters import AgentResult
+
         rv = [AgentResult(agent="claude", vendor="anthropic", ok=True, output="x", duration_s=0.0)]
         vote = voting.tally_votes([_grp("major", ["claude"])], ["claude"])
-        sections = report.render_sections(rv, [], None, chair="claude",
-                                          groups=[_grp("major", ["claude"])], vote=vote)
+        sections = report.render_sections(
+            rv, [], None, chair="claude", groups=[_grp("major", ["claude"])], vote=vote
+        )
         decision = sections[-1][1]  # the Decision section body
         self.assertIn("Verdict — panel vote", decision)
         self.assertIn("REQUEST CHANGES", decision)
@@ -182,6 +222,7 @@ class PhasedPostingVoteTests(unittest.TestCase):
     def test_render_sections_without_vote_unchanged(self):
         from ai_jury import report
         from ai_jury.adapters import AgentResult
+
         rv = [AgentResult(agent="claude", vendor="anthropic", ok=True, output="x", duration_s=0.0)]
         sections = report.render_sections(rv, [], None, chair="claude")
         self.assertNotIn("panel vote", sections[-1][1])
@@ -191,8 +232,10 @@ class DecisionConfigInvariantTests(unittest.TestCase):
     def test_decision_parsed(self):
         d = Path(tempfile.mkdtemp())
         cfg = d / "jury.toml"
-        cfg.write_text('[jury]\nrounds = 1\nchair = "a"\ndecision = "vote"\n'
-                       '\n[[agent]]\nname = "a"\nvendor = "anthropic"\ncommand = "x"\n')
+        cfg.write_text(
+            '[jury]\nrounds = 1\nchair = "a"\ndecision = "vote"\n'
+            '\n[[agent]]\nname = "a"\nvendor = "anthropic"\ncommand = "x"\n'
+        )
         self.assertEqual(load_config(str(cfg)).decision, "vote")
 
     def test_rendering_only_not_in_config_hash(self):
@@ -203,8 +246,11 @@ class DecisionConfigInvariantTests(unittest.TestCase):
 
     def test_validate_rejects_bad_decision(self):
         from ai_jury.config import ConfigError, validate_config
-        base = {"jury": {"rounds": 1, "chair": "a"},
-                "agent": [{"name": "a", "vendor": "anthropic", "command": "x"}]}
+
+        base = {
+            "jury": {"rounds": 1, "chair": "a"},
+            "agent": [{"name": "a", "vendor": "anthropic", "command": "x"}],
+        }
         bad = {**base, "jury": {**base["jury"], "decision": "bogus"}}
         with self.assertRaises(ConfigError) as ctx:
             validate_config(bad)

@@ -152,9 +152,7 @@ def to_sarif(outcome: Any, _config: Any) -> str:
         {
             "id": f"jury/{sev}",
             "name": f"jury-{sev}",
-            "shortDescription": {
-                "text": f"{sev} finding reported by the review jury"
-            },
+            "shortDescription": {"text": f"{sev} finding reported by the review jury"},
             "defaultConfiguration": {"level": severity_to_sarif_level(sev)},
         }
         for sev in SEVERITIES

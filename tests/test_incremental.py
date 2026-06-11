@@ -1,4 +1,5 @@
 """Tests for incremental review mode (issue #9). Network-free."""
+
 from __future__ import annotations
 
 import sys

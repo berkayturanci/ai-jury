@@ -5,6 +5,7 @@ verify -> synthesis) over a GitHub issue's prose with an issue-quality rubric
 instead of a code-review one. These tests are deterministic and never touch the
 network: `ai_jury.github._gh` (and the CLI's `gh` access points) are mocked.
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -41,9 +42,7 @@ class IssueBodyTests(unittest.TestCase):
         with mock.patch.object(github, "_gh") as gh:
             gh.return_value = "# Crash on load\n\n_labels: bug, p1_\n\nIt crashes.\n"
             text = github.issue_body("42")
-        self.assertEqual(
-            text, "# Crash on load\n\n_labels: bug, p1_\n\nIt crashes."
-        )
+        self.assertEqual(text, "# Crash on load\n\n_labels: bug, p1_\n\nIt crashes.")
         # The number must be passed after a `--` separator (security).
         args = gh.call_args.args
         self.assertIn("--", args)
@@ -90,6 +89,7 @@ class PostIssueCommentTests(unittest.TestCase):
         # The same text under code vs issue mode must not collide in the cache.
         from ai_jury.cache import cache_key
         from ai_jury.config import load_config
+
         cfg = load_config(None)
         self.assertNotEqual(
             cache_key(cfg, "same text", mode="code"),
@@ -118,9 +118,7 @@ class ForModeTests(unittest.TestCase):
     def test_issue_templates_accept_same_format_params(self):
         # The orchestrator calls these with a fixed set of params; they must not
         # raise KeyError, so the call sites stay unchanged across modes.
-        prompts.REVIEW_ISSUE.format(
-            name="x", context="c", diff="d", policy="p", notice="n"
-        )
+        prompts.REVIEW_ISSUE.format(name="x", context="c", diff="d", policy="p", notice="n")
         prompts.DEBATE_ISSUE.format(
             name="x", diff="d", own_review="o", other_reviews="r", notice="n"
         )
@@ -141,9 +139,7 @@ class RunJuryIssueModeTests(unittest.TestCase):
         body = "# Bug\n\nrepro unclear"
         a = run_jury(_config(), body, mock=True, seed=7, mode="issue")
         b = run_jury(_config(), body, mock=True, seed=7, mode="issue")
-        self.assertEqual(
-            [r.output for r in a.reviews], [r.output for r in b.reviews]
-        )
+        self.assertEqual([r.output for r in a.reviews], [r.output for r in b.reviews])
 
 
 class CliIssueTests(unittest.TestCase):
@@ -156,12 +152,12 @@ class CliIssueTests(unittest.TestCase):
         self.assertIn("AI Jury", out)
 
     def test_post_uses_post_issue_comment(self):
-        with mock.patch.object(cli, "issue_body", return_value=self.ISSUE_TEXT), \
-             mock.patch.object(cli, "post_issue_comment") as post, \
-             mock.patch.object(cli, "post_pr_comment") as pr_post:
-            code, _, _ = _run_cli(
-                ["--mock", "--issue", "5", "--post", "--quiet"]
-            )
+        with (
+            mock.patch.object(cli, "issue_body", return_value=self.ISSUE_TEXT),
+            mock.patch.object(cli, "post_issue_comment") as post,
+            mock.patch.object(cli, "post_pr_comment") as pr_post,
+        ):
+            code, _, _ = _run_cli(["--mock", "--issue", "5", "--post", "--quiet"])
         self.assertEqual(code, 0)
         post.assert_called_once()
         pr_post.assert_not_called()
@@ -172,18 +168,24 @@ class CliIssueTests(unittest.TestCase):
 
     def test_live_post_streams_per_step_to_issue(self):
         # --issue --live --post posts each step to the issue (symmetric with PRs).
-        with mock.patch.object(cli, "issue_body", return_value=self.ISSUE_TEXT), \
-             mock.patch.object(cli, "post_issue_comment") as pic, \
-             mock.patch.object(cli, "post_pr_comment") as ppc:
-            code, _, _ = _run_cli(["--mock", "--issue", "5", "--live", "--post", "-q", "--seed", "1"])
+        with (
+            mock.patch.object(cli, "issue_body", return_value=self.ISSUE_TEXT),
+            mock.patch.object(cli, "post_issue_comment") as pic,
+            mock.patch.object(cli, "post_pr_comment") as ppc,
+        ):
+            code, _, _ = _run_cli(
+                ["--mock", "--issue", "5", "--live", "--post", "-q", "--seed", "1"]
+            )
         self.assertEqual(code, 0)
         self.assertGreaterEqual(pic.call_count, 4)  # per-step + final summary
         ppc.assert_not_called()
 
     def test_live_without_post_does_not_post_to_issue(self):
         # Posting is opt-in: bare --issue --live streams locally, never comments.
-        with mock.patch.object(cli, "issue_body", return_value=self.ISSUE_TEXT), \
-             mock.patch.object(cli, "post_issue_comment") as pic:
+        with (
+            mock.patch.object(cli, "issue_body", return_value=self.ISSUE_TEXT),
+            mock.patch.object(cli, "post_issue_comment") as pic,
+        ):
             code, out, _ = _run_cli(["--mock", "--issue", "5", "--live", "-q", "--seed", "1"])
         self.assertEqual(code, 0)
         pic.assert_not_called()
@@ -215,9 +217,12 @@ class CliIssueTests(unittest.TestCase):
     def test_config_vote_issue_vocabulary(self):
         import tempfile
         from pathlib import Path
+
         cfg = Path(tempfile.mkdtemp()) / "jury.toml"
-        cfg.write_text('[jury]\nrounds = 1\nchair = "claude"\ndecision = "vote"\n'
-                       '\n[[agent]]\nname = "claude"\nvendor = "anthropic"\ncommand = "x"\n')
+        cfg.write_text(
+            '[jury]\nrounds = 1\nchair = "claude"\ndecision = "vote"\n'
+            '\n[[agent]]\nname = "claude"\nvendor = "anthropic"\ncommand = "x"\n'
+        )
         with mock.patch.object(cli, "issue_body", return_value=self.ISSUE_TEXT):
             code, out, _ = _run_cli(["--mock", "--issue", "5", "--config", str(cfg), "--seed", "1"])
         self.assertEqual(code, 0)
@@ -228,30 +233,37 @@ class IssueVotingTallyTests(unittest.TestCase):
     def _grp(self, severity, reviewers):
         from ai_jury.consensus import FindingGroup
         from ai_jury.findings import Finding
+
         f = Finding(severity=severity, file="", claim="gap", reviewer=reviewers[0])
         return FindingGroup(representative=f, reviewers=list(reviewers), severity=severity)
 
     def test_blocking_gap_needs_info(self):
         from ai_jury import voting
-        r = voting.tally_votes([self._grp("major", ["claude", "codex"])],
-                               ["claude", "codex"], mode="issue")
+
+        r = voting.tally_votes(
+            [self._grp("major", ["claude", "codex"])], ["claude", "codex"], mode="issue"
+        )
         self.assertEqual(r.verdict, voting.NEEDS_INFO)
 
     def test_minor_gap_unclear(self):
         from ai_jury import voting
+
         r = voting.tally_votes([self._grp("minor", ["claude"])], ["claude"], mode="issue")
         self.assertEqual(r.verdict, voting.UNCLEAR)
 
     def test_no_gaps_ready(self):
         from ai_jury import voting
+
         r = voting.tally_votes([], ["claude", "codex"], mode="issue")
         self.assertEqual(r.verdict, voting.READY)
 
     def test_tie_breaks_to_strictest(self):
         from ai_jury import voting
+
         # claude: blocking (NEEDS-INFO) vs codex: clean (READY) -> tie -> NEEDS-INFO.
-        r = voting.tally_votes([self._grp("critical", ["claude"])],
-                               ["claude", "codex"], mode="issue")
+        r = voting.tally_votes(
+            [self._grp("critical", ["claude"])], ["claude", "codex"], mode="issue"
+        )
         self.assertEqual(r.verdict, voting.NEEDS_INFO)
 
 

@@ -1,4 +1,5 @@
 """Tests for the severity-gated CI exit policy (issue #4)."""
+
 import unittest
 
 from ai_jury.ci import evaluate_ci
@@ -69,9 +70,7 @@ class CiConfigTests(unittest.TestCase):
         self.assertTrue(cfg.ignore_unverified)
 
     def test_load_from_dict(self):
-        cfg = _from_dict(
-            {"jury": {"ci": {"fail_on": ["critical"], "ignore_unverified": False}}}
-        )
+        cfg = _from_dict({"jury": {"ci": {"fail_on": ["critical"], "ignore_unverified": False}}})
         self.assertEqual(cfg.ci.fail_on, ["critical"])
         self.assertFalse(cfg.ci.ignore_unverified)
 

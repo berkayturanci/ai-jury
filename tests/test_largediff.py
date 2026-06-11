@@ -2,6 +2,7 @@
 
 Offline: pure ``plan_diff`` fixtures plus a mock chunked pipeline run.
 """
+
 from __future__ import annotations
 
 import sys
@@ -42,8 +43,7 @@ class SplitDiffTest(unittest.TestCase):
 class FilterTest(unittest.TestCase):
     def test_binary_file_excluded(self):
         diff = (
-            "diff --git a/img.png b/img.png\n"
-            "Binary files a/img.png and b/img.png differ\n"
+            "diff --git a/img.png b/img.png\nBinary files a/img.png and b/img.png differ\n"
         ) + _file_segment("src/a.py")
         plan = plan_diff(diff, max_bytes=1_000_000, chunk=False)
         self.assertEqual(plan.kept_paths, ["src/a.py"])
@@ -156,7 +156,8 @@ class ChunkedPipelineTest(unittest.TestCase):
         cfg = _from_dict(
             {
                 "jury": {
-                    "rounds": 1, "verify": False,
+                    "rounds": 1,
+                    "verify": False,
                     "context": {"mode": "expanded", "redact_secrets": True},
                     "diff": {"max_bytes": 10, "chunk": True, "chunk_max_bytes": 200},
                 },
@@ -178,15 +179,18 @@ class ChunkedPipelineTest(unittest.TestCase):
         cfg = _from_dict(
             {
                 "jury": {
-                    "rounds": 1, "verify": False,
+                    "rounds": 1,
+                    "verify": False,
                     "context": {"mode": "expanded", "redact_secrets": True},
                 },
                 "agent": [{"name": "claude", "vendor": "anthropic", "command": "claude"}],
             }
         )
         outcome, plan = review_diff(
-            cfg, _file_segment("src/a.py", 2),
-            context="token AKIAABCDEFGHIJKLMNOP here", mock=True,
+            cfg,
+            _file_segment("src/a.py", 2),
+            context="token AKIAABCDEFGHIJKLMNOP here",
+            mock=True,
         )
         self.assertEqual(plan.mode, MODE_FULL)
         self.assertEqual(outcome.redaction_count, 1)
@@ -200,7 +204,9 @@ class ChunkedPipelineTest(unittest.TestCase):
         cfg = _from_dict(
             {
                 "jury": {
-                    "rounds": 1, "verify": False, "total_timeout": 300,
+                    "rounds": 1,
+                    "verify": False,
+                    "total_timeout": 300,
                     "diff": {"max_bytes": 10, "chunk": True, "chunk_max_bytes": 200},
                 },
                 "agent": [{"name": "claude", "vendor": "anthropic", "command": "claude"}],

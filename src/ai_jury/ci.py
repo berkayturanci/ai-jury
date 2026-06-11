@@ -3,6 +3,7 @@
 A pure decision function over the consensus groups: given the configured blocking
 severities and how to treat unverified findings, decide a process exit code.
 """
+
 from __future__ import annotations
 
 

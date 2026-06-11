@@ -2,6 +2,7 @@
 formats, benchmark. Targets the residual uncovered lines/branches not already
 exercised by the dedicated per-module test files (e.g. tests/test_perfile_coverage
 FindingsParseTests). Deterministic and network/subprocess-free."""
+
 from __future__ import annotations
 
 import sys
@@ -59,9 +60,7 @@ class FindingsCovTests(unittest.TestCase):
         self.assertIsNone(findings._coerce_line(object()))
 
     def test_normalize_status_valid_with_dashes_and_spaces(self):
-        self.assertEqual(
-            findings._normalize_status("needs-human decision"), "needs_human_decision"
-        )
+        self.assertEqual(findings._normalize_status("needs-human decision"), "needs_human_decision")
         self.assertEqual(findings._normalize_status("VERIFIED"), "verified")
 
     def test_normalize_status_non_string_falls_back(self):
@@ -171,10 +170,10 @@ class ScaffoldCovTests(unittest.TestCase):
                 {
                     "name": "qwen",
                     "vendor": "local",
-                    "command": "",        # skipped
+                    "command": "",  # skipped
                     "endpoint": "http://localhost:11434/v1",
                     "model": "qwen2.5-coder:7b",
-                    "extra_args": [],     # skipped
+                    "extra_args": [],  # skipped
                 }
             ],
         }
@@ -197,9 +196,12 @@ class FormatsCovTests(unittest.TestCase):
     def test_to_json_synthesis_not_ok_yields_empty_verdict(self):
         # 87->92: synthesis present but ok=False -> verdict_text stays "".
         outcome = self._make_outcome(synthesis=SimpleNamespace(ok=False, output="ignored"))
-        with mock.patch("ai_jury.classification.classify", return_value="trivial"), \
-             mock.patch("ai_jury.formats.build_run_metadata", return_value={}):
+        with (
+            mock.patch("ai_jury.classification.classify", return_value="trivial"),
+            mock.patch("ai_jury.formats.build_run_metadata", return_value={}),
+        ):
             import json
+
             doc = json.loads(formats.to_json(outcome, SimpleNamespace()))
         self.assertEqual(doc["verdict"], "")
 
@@ -208,6 +210,7 @@ class FormatsCovTests(unittest.TestCase):
         f = findings.Finding(severity="major", file="a.py", claim="boom", line=5)
         outcome = self._make_outcome(findings_list=[f], groups=[])
         import json
+
         doc = json.loads(formats.to_sarif(outcome, SimpleNamespace()))
         results = doc["runs"][0]["results"]
         self.assertEqual(len(results), 1)
@@ -220,12 +223,8 @@ class FormatsCovTests(unittest.TestCase):
 class BenchmarkCovTests(unittest.TestCase):
     def test_severity_rank_non_string(self):
         # line 95: a non-string severity -> least-severe rank.
-        self.assertEqual(
-            benchmark._severity_rank(None), len(benchmark.SEVERITIES) - 1
-        )
-        self.assertEqual(
-            benchmark._severity_rank(42), len(benchmark.SEVERITIES) - 1
-        )
+        self.assertEqual(benchmark._severity_rank(None), len(benchmark.SEVERITIES) - 1)
+        self.assertEqual(benchmark._severity_rank(42), len(benchmark.SEVERITIES) - 1)
 
     def test_line_matches_finding_line_none(self):
         # line 113: expected line set but finding line None -> no positional match.

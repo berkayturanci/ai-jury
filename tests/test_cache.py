@@ -2,6 +2,7 @@
 
 Offline: mock pipeline + a temp cache dir; no live CLIs, no network.
 """
+
 from __future__ import annotations
 
 import json
@@ -37,9 +38,7 @@ def _config():
 
 class CacheKeyTest(unittest.TestCase):
     def test_same_inputs_same_key(self):
-        self.assertEqual(
-            cache_key(_config(), SAMPLE_DIFF), cache_key(_config(), SAMPLE_DIFF)
-        )
+        self.assertEqual(cache_key(_config(), SAMPLE_DIFF), cache_key(_config(), SAMPLE_DIFF))
 
     def test_diff_change_changes_key(self):
         self.assertNotEqual(
@@ -101,9 +100,7 @@ class RoundTripTest(unittest.TestCase):
         self.assertEqual(len(restored.reviews), len(outcome.reviews))
         self.assertEqual(len(restored.findings), len(outcome.findings))
         self.assertEqual(restored.chair, outcome.chair)
-        self.assertEqual(
-            [g.bucket for g in restored.groups], [g.bucket for g in outcome.groups]
-        )
+        self.assertEqual([g.bucket for g in restored.groups], [g.bucket for g in outcome.groups])
         self.assertEqual(restored.reviews[0].agent, outcome.reviews[0].agent)
         # Findings keep their reviewer + severity through the round trip.
         self.assertEqual(

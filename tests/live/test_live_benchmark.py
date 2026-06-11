@@ -17,6 +17,7 @@ Run with::
 
     JURY_BENCH_LIVE=1 PYTHONPATH=src python -m unittest discover -s tests -v
 """
+
 from __future__ import annotations
 
 import os

@@ -5,6 +5,7 @@ gate in CI, or turn into inline comments. This module defines a structured
 ``Finding`` schema and a tolerant parser that extracts findings from an agent's
 raw output (a fenced ``json`` code block).
 """
+
 from __future__ import annotations
 
 import json
@@ -186,9 +187,7 @@ def parse_verdicts(text: str, verifier: str = "") -> tuple[list[Verdict], list[s
     warnings: list[str] = []
     for i, obj in enumerate(data):
         if not isinstance(obj, dict):
-            warnings.append(
-                f"{label}: verdict item {i} is {type(obj).__name__}, expected object"
-            )
+            warnings.append(f"{label}: verdict item {i} is {type(obj).__name__}, expected object")
             continue
         verdicts.append(
             Verdict(

@@ -13,6 +13,7 @@ acceptance criteria:
 LLM output is inherently model-variable; only the ORCHESTRATION around it is
 made deterministic, which is exactly what these tests lock.
 """
+
 from __future__ import annotations
 
 import sys

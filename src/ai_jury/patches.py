@@ -12,6 +12,7 @@ suggestions. It is deliberately conservative:
 
 Pure and deterministic: given the same groups it renders the same markdown.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
