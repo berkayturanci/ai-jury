@@ -10,11 +10,11 @@ an injected APPROVE instruction, compute the CI gate from structured consensus
 for both, and assert the gate does not change — while also asserting the
 injection was surfaced as a synthetic finding/warning. Offline + deterministic.
 """
-import os
 import sys
 import unittest
+from pathlib import Path
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from ai_jury.ci import evaluate_ci
 from ai_jury.config import DEFAULT_CONFIG, _from_dict

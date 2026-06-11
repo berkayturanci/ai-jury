@@ -4,11 +4,11 @@ Locks the detector's behaviour against regression: representative injection
 strings must each yield the expected hit kind(s), benign text must yield none,
 and the synthetic finding/warning rendering must be stable. Stdlib + offline.
 """
-import os
 import sys
 import unittest
+from pathlib import Path
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from ai_jury import injection
 from ai_jury.injection import InjectionHit

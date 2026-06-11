@@ -83,7 +83,7 @@ class _FakeResp:
     def __exit__(self, *a):
         return False
 
-    def read(self, *args):
+    def read(self, *_args):
         return self._payload
 
 

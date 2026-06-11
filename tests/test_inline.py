@@ -106,9 +106,9 @@ class InlineDedupTests(unittest.TestCase):
         # Avoid any real `gh` call: capture the JSON body that would be sent.
         self._orig_resolve = github._resolve_repo
         self._orig_with_input = github._gh_with_input
-        github._resolve_repo = lambda repo: "o/r"
+        github._resolve_repo = lambda _repo: "o/r"
 
-        def fake_with_input(args, stdin_data):
+        def fake_with_input(_args, stdin_data):
             posted.append(json.loads(stdin_data))
             return ""
 
@@ -128,7 +128,7 @@ class InlineDedupTests(unittest.TestCase):
         sig1 = github._finding_signature(f1)
 
         self._orig_existing = github._existing_inline_keys
-        github._existing_inline_keys = lambda pr, repo: {("a.py", 10, sig1)}
+        github._existing_inline_keys = lambda _pr, _repo: {("a.py", 10, sig1)}
 
         posted = []
         self._patch_no_network(posted)
@@ -152,7 +152,7 @@ class InlineDedupTests(unittest.TestCase):
             [{"path": "a.py", "line": None, "original_line": 10, "body": body}]
         )
         self._orig_gh = github._gh
-        github._gh = lambda *args: comments_json
+        github._gh = lambda *_args: comments_json
         try:
             keys = github._existing_inline_keys("1", "o/r")
         finally:

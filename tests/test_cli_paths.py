@@ -106,10 +106,10 @@ class PrPostPaths(unittest.TestCase):
         m["labels"].assert_called()
 
     def test_post_progress(self):
-        with gh_mocked(), mock.patch("ai_jury.github.ProgressReporter") as PR:
+        with gh_mocked(), mock.patch("ai_jury.github.ProgressReporter") as progress_reporter:
             code, _, _ = run(["--mock", "--pr", "123", "--post-progress", "-q"])
         self.assertEqual(code, 0)
-        PR.assert_called()
+        progress_reporter.assert_called()
 
     def test_incremental(self):
         marker = "<!-- arc-reviewed-sha: deadbeefcafe -->"
