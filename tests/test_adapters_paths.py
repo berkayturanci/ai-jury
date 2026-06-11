@@ -109,7 +109,7 @@ class AdapterRunTests(unittest.TestCase):
 class _Resp:
     def __init__(self, body):
         self._b = body
-    def read(self, *args):
+    def read(self, *_args):
         return self._b.encode("utf-8")
     def __enter__(self):
         return self

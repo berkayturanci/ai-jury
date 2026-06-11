@@ -144,7 +144,7 @@ def redact(text: str) -> tuple[str, int]:
                 return f"{m.group(1)}[REDACTED:{_kind}]{m.group(3)}"
             result = pattern.sub(_sub_basic_auth, result)
         else:
-            def _sub(m, _kind=kind):
+            def _sub(_m, _kind=kind):
                 nonlocal count
                 count += 1
                 return f"[REDACTED:{_kind}]"

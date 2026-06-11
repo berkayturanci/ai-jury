@@ -134,7 +134,7 @@ def _sarif_result(f: Finding) -> dict[str, Any]:
     }
 
 
-def to_sarif(outcome: Any, config: Any) -> str:
+def to_sarif(outcome: Any, _config: Any) -> str:
     """Render the jury outcome as a SARIF 2.1.0 document.
 
     Consensus group representatives are preferred as the source of results; if

@@ -28,11 +28,10 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
-import json
 import sys
 import time
 
-from ai_jury import benchmark as B
+from ai_jury import benchmark
 from ai_jury.config import load_config
 from ai_jury.orchestrator import run_jury
 
@@ -65,7 +64,7 @@ def main(argv: list[str] | None = None) -> int:
 
     base = load_config(args.config)
     configs = build_configs(base)
-    fixtures = B.load_fixtures()
+    fixtures = benchmark.load_fixtures()
     print(f"mode={'mock' if args.mock else 'live'} · fixtures={len(fixtures)} · "
           f"configs={len(configs)} · chair={base.chair}\n")
 
@@ -75,14 +74,14 @@ def main(argv: list[str] | None = None) -> int:
         scores = []
         for fx in fixtures:
             outcome = run_jury(cfg, fx.diff, mock=args.mock)
-            findings = [B._finding_to_dict(f) for f in outcome.findings]
-            scores.append(B.score_fixture(findings, fx.expected))
-        agg = B.aggregate(scores)
+            findings = [benchmark._finding_to_dict(f) for f in outcome.findings]
+            scores.append(benchmark.score_fixture(findings, fx.expected))
+        agg = benchmark.aggregate(scores)
         results.append({"config": label, "agents": [a.name for a in cfg.agents],
                         "rounds": cfg.rounds, "verify": cfg.verify, "agg": agg,
                         "secs": round(time.time() - t0, 1)})
         print(f"=== {label} ({results[-1]['secs']:.0f}s) ===")
-        print(B.format_table(scores, agg), "\n")
+        print(benchmark.format_table(scores, agg), "\n")
 
     print("===== LIFT COMPARISON =====")
     print(f"{'config':<34} {'pass':<7} {'recall':<7} {'prec':<6} {'miss':<5} {'fp':<4}")

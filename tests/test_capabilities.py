@@ -49,7 +49,7 @@ class CapabilityDetectionTests(unittest.TestCase):
 
     def test_parses_version_from_stdout(self):
         self._patch_run(
-            lambda *a, **k: _FakeCompleted(stdout="claude 1.2.3 (build abc)\n")
+            lambda *_args, **_kwargs: _FakeCompleted(stdout="claude 1.2.3 (build abc)\n")
         )
         caps = adapters.ClaudeAdapter(_spec()).detect_capabilities()
         self.assertEqual(caps["version"], "1.2.3")
@@ -59,7 +59,7 @@ class CapabilityDetectionTests(unittest.TestCase):
         self.assertEqual(caps["warnings"], [])
 
     def test_parses_two_component_version(self):
-        self._patch_run(lambda *a, **k: _FakeCompleted(stdout="v0.45\n"))
+        self._patch_run(lambda *_args, **_kwargs: _FakeCompleted(stdout="v0.45\n"))
         caps = adapters.ClaudeAdapter(_spec()).detect_capabilities()
         self.assertEqual(caps["version"], "0.45")
         self.assertEqual(caps["status"], adapters.CAP_OK)
@@ -67,7 +67,9 @@ class CapabilityDetectionTests(unittest.TestCase):
     def test_parses_version_from_stderr(self):
         # Some CLIs print --version to stderr.
         self._patch_run(
-            lambda *a, **k: _FakeCompleted(returncode=0, stdout="", stderr="codex 2.0.1\n")
+            lambda *_args, **_kwargs: _FakeCompleted(
+                returncode=0, stdout="", stderr="codex 2.0.1\n"
+            )
         )
         caps = adapters.CodexAdapter(
             _spec(name="codex", vendor="openai", command="codex")
@@ -76,9 +78,9 @@ class CapabilityDetectionTests(unittest.TestCase):
         self.assertEqual(caps["status"], adapters.CAP_OK)
 
     def test_unavailable_skips_subprocess(self):
-        adapters.shutil.which = lambda cmd: None
+        adapters.shutil.which = lambda _cmd: None
 
-        def _boom(*a, **k):  # pragma: no cover - must never be called
+        def _boom(*_args, **_kwargs):  # pragma: no cover - must never be called
             raise AssertionError("subprocess.run called for unavailable CLI")
 
         self._patch_run(_boom)
@@ -87,7 +89,7 @@ class CapabilityDetectionTests(unittest.TestCase):
         self.assertIsNone(caps["version"])
 
     def test_timeout_yields_unknown_version_no_raise(self):
-        def _timeout(*a, **k):
+        def _timeout(*_args, **_kwargs):
             raise subprocess.TimeoutExpired(cmd="claude", timeout=10)
 
         self._patch_run(_timeout)
@@ -97,7 +99,7 @@ class CapabilityDetectionTests(unittest.TestCase):
         self.assertTrue(caps["warnings"])
 
     def test_spawn_failure_yields_unknown_version_no_raise(self):
-        def _fnf(*a, **k):
+        def _fnf(*_args, **_kwargs):
             raise FileNotFoundError("no such file")
 
         self._patch_run(_fnf)
@@ -107,7 +109,7 @@ class CapabilityDetectionTests(unittest.TestCase):
 
     def test_nonzero_exit_yields_unknown_version(self):
         self._patch_run(
-            lambda *a, **k: _FakeCompleted(returncode=1, stderr="usage: ...")
+            lambda *_args, **_kwargs: _FakeCompleted(returncode=1, stderr="usage: ...")
         )
         caps = adapters.ClaudeAdapter(_spec()).detect_capabilities()
         self.assertEqual(caps["status"], adapters.CAP_UNKNOWN_VERSION)
@@ -117,7 +119,7 @@ class CapabilityDetectionTests(unittest.TestCase):
     def test_garbage_output_yields_unknown_version(self):
         # Exit 0 but no version-looking token.
         self._patch_run(
-            lambda *a, **k: _FakeCompleted(returncode=0, stdout="hello world\n")
+            lambda *_args, **_kwargs: _FakeCompleted(returncode=0, stdout="hello world\n")
         )
         caps = adapters.ClaudeAdapter(_spec()).detect_capabilities()
         self.assertEqual(caps["status"], adapters.CAP_UNKNOWN_VERSION)
@@ -125,7 +127,7 @@ class CapabilityDetectionTests(unittest.TestCase):
 
     def test_raw_output_is_truncated(self):
         self._patch_run(
-            lambda *a, **k: _FakeCompleted(stdout="1.0 " + "x" * 5000)
+            lambda *_args, **_kwargs: _FakeCompleted(stdout="1.0 " + "x" * 5000)
         )
         caps = adapters.ClaudeAdapter(_spec()).detect_capabilities()
         self.assertLessEqual(len(caps["raw_version_output"]), 200)
@@ -150,7 +152,7 @@ class MockAdapterCapabilityTests(unittest.TestCase):
         # Even with subprocess.run rigged to explode, the mock never calls it.
         orig = adapters._spawn
 
-        def _boom(*a, **k):  # pragma: no cover
+        def _boom(*_args, **_kwargs):  # pragma: no cover
             raise AssertionError("mock must not spawn a subprocess")
 
         adapters._spawn = _boom

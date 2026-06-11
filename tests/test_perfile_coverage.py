@@ -71,9 +71,11 @@ class BenchmarkEdgeTests(unittest.TestCase):
         self.assertEqual(benchmark.discover_fixture_ids(Path("/no/such/dir")), [])
 
     def test_run_live_disabled_raises(self):
-        with mock.patch("ai_jury.benchmark.live_enabled", return_value=False):
-            with self.assertRaises(RuntimeError):
-                benchmark.run_live()
+        with (
+            mock.patch("ai_jury.benchmark.live_enabled", return_value=False),
+            self.assertRaises(RuntimeError),
+        ):
+            benchmark.run_live()
 
     def test_run_live_mocked(self):
         fx = SimpleNamespace(diff="diff --git a/a b/a\n", expected={})

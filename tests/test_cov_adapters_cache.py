@@ -51,7 +51,7 @@ class _Resp:
         self._b = body
         self.status = status
 
-    def read(self, *args):
+    def read(self, *_args):
         return self._b.encode("utf-8")
 
     def close(self):
