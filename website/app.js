@@ -448,7 +448,10 @@
         $("gh-comments").innerHTML = "";
       }
       var btn = $("run-btn");
-      if (btn) btn.disabled = false;
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "▶ Run review (demo)";
+      }
     });
     render();
 
@@ -682,7 +685,7 @@
         renderComments(run);
         return;
       }
-      btn.disabled = true;
+      btn.disabled = true; btn.textContent = "Running review...";
       var i = 0;
       (function step() {
         if (i < run.con.length) {
@@ -692,14 +695,14 @@
         } else {
           runTimer = null;
           renderComments(run);
-          btn.disabled = false;
+          btn.disabled = false; btn.textContent = "▶ Run review (demo)";
         }
       })();
     }
     function syncRun() {
       if ($("run-out").hidden) return;
       if (runTimer) { clearTimeout(runTimer); runTimer = null; }
-      $("run-btn").disabled = false;
+      $("run-btn").disabled = false; $("run-btn").textContent = "▶ Run review (demo)";
       if (selectedAgents().length === 0) {
         $("term-body").innerHTML = "";
         $("gh-comments").innerHTML = '<p class="muted">Pick at least one reviewer.</p>';

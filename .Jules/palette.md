@@ -5,3 +5,7 @@
 ## 2024-06-11 - Missing keyboard focus & async disabled states
 **Learning:** Found that the custom button component (`.btn`) disabled state was missing entirely, which meant the async "Run review" action button looked visually identical and continued to receive hover translation animations even while running (and logically disabled by the script). In addition, interactive elements across the site lacked a globally visible `:focus-visible` ring, hindering keyboard navigation.
 **Action:** When working on small vanilla JS apps or sites without a robust framework, always audit button states (`:disabled`) and ensure a global `:focus-visible` rule exists early on.
+
+## 2026-06-11 - Textual feedback for disabled async buttons
+**Learning:** Even with opacity drops and `:not-allowed` cursors, disabling an asynchronous action button (like a "Run review" button) without changing its text leaves the user guessing whether the application is processing or just stuck. The lack of textual feedback (e.g., changing "Run review" to "Running review...") makes the wait feel longer and the UI feel unresponsive, reducing user confidence.
+**Action:** Whenever a primary action button triggers a long-running async operation, explicitly change its text content to describe the current state (e.g., "Running...", "Saving...", "Submitting...") in addition to disabling it.
