@@ -7,9 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.1] - 2026-06-11
+
+> Patch release for the post-v1.6.0 hardening, performance, accessibility, and
+> repository-quality work. No breaking changes.
+
 ### Security
 
 - **Post-v1.6.0 security re-audit** (`docs/security-audit-2026-06-07-v1.6.0.md`). A sixth re-audit — four independent surface reviews (subprocess/sandbox, network/SSRF, prompt-injection/redaction, filesystem/cache + classification) with the key claims confirmed empirically — verifies every #287–#322 fix holds in the released v1.6.0 source. It is the **first round with no Critical, High, *or* Medium finding**: prompt-injection coverage is now complete (the M-1 verdicts slot is fenced + neutralized), least privilege and SSRF are fail-closed, and cache integrity holds under tamper/forgery. Only optional, non-attacker-reachable defense-in-depth notes remain (scheme-less `redact_url_userinfo` early-return, no hard diff byte cap, `LocalAdapter` runtime SSRF gate, unknown-vendor flag retention, string-based loopback allow-list). The superseded intermediate Claude reports are removed; their history lives in this changelog.
+
+### Changed
+
+- Improved report/rendering performance by reducing repeated list-extension and string-join work in report assembly.
+- Combined security keyword classification regexes so repeated classification passes do less redundant matching.
+- Improved website accessibility with semantic form grouping, visible keyboard focus states, and clearer disabled-button styling.
+- Applied repository-wide Ruff lint and formatting cleanups across source, benchmark helpers, and tests.
 
 ## [1.6.0] - 2026-06-07
 
