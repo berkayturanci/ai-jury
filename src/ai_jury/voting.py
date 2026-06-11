@@ -9,6 +9,7 @@ more conservative stance. This is a rendering/aggregation layer: it never change
 how agents run, and the severity-based CI gate (:func:`ai_jury.ci.evaluate_ci`)
 remains the independent hard safety check.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -30,14 +31,18 @@ UNCLEAR = "UNCLEAR"
 # to the strictest stance via the ``order`` (higher = stricter).
 _MODES = {
     "code": {
-        "blocking": REQUEST_CHANGES, "middling": COMMENT, "clear": APPROVE,
+        "blocking": REQUEST_CHANGES,
+        "middling": COMMENT,
+        "clear": APPROVE,
         # Keys are listed strictest-first so the rendered tally reads
         # "request changes · comment · approve"; the integer values (not key
         # order) drive the tie-break, so display order is free to be intuitive.
         "order": {REQUEST_CHANGES: 2, COMMENT: 1, APPROVE: 0},
     },
     "issue": {
-        "blocking": NEEDS_INFO, "middling": UNCLEAR, "clear": READY,
+        "blocking": NEEDS_INFO,
+        "middling": UNCLEAR,
+        "clear": READY,
         "order": {NEEDS_INFO: 2, UNCLEAR: 1, READY: 0},
     },
 }
@@ -49,9 +54,15 @@ _MODES = {
 # clean review has substantive prose and won't match. Markers are written in the
 # *normalized* (expanded-contraction) form below.
 _ABSTENTION_MARKERS = (
-    "i cannot assist", "i cannot help", "cannot help with that", "cannot comply",
-    "cannot do that", "i am unable to", "i will not be able to",
-    "unable to assist", "unable to help",
+    "i cannot assist",
+    "i cannot help",
+    "cannot help with that",
+    "cannot comply",
+    "cannot do that",
+    "i am unable to",
+    "i will not be able to",
+    "unable to assist",
+    "unable to help",
 )
 
 
@@ -60,11 +71,7 @@ def _normalize_refusal(text: str) -> str:
     same marker (issue #251 follow-up: the jury caught "can't comply" slipping
     past a "cannot comply"-only list)."""
     t = text.replace("’", "'")  # smart apostrophe → ascii
-    return (
-        t.replace("can't", "cannot")
-        .replace("won't", "will not")
-        .replace("i'm ", "i am ")
-    )
+    return t.replace("can't", "cannot").replace("won't", "will not").replace("i'm ", "i am ")
 
 
 def is_abstention(output) -> bool:
@@ -136,7 +143,9 @@ def tally_votes(groups, reviewers, *, mode: str = "code") -> VoteResult:
             ballots.append(Ballot(rv, vocab["clear"], "no supported findings raised"))
         else:
             sev = SEVERITIES[worst_rank]
-            ballots.append(Ballot(rv, _severity_to_vote(worst_rank, vocab), f"worst finding: {sev}"))
+            ballots.append(
+                Ballot(rv, _severity_to_vote(worst_rank, vocab), f"worst finding: {sev}")
+            )
 
     tally = dict.fromkeys(order, 0)
     for b in ballots:

@@ -3,6 +3,7 @@
 Locks the behaviour that dangerous agent invocations are surfaced as warnings
 while a read-only / locked-down config is not. Stdlib + offline.
 """
+
 import sys
 import unittest
 from pathlib import Path
@@ -79,7 +80,9 @@ class AuditAgentTest(unittest.TestCase):
         # Issue #100: --sandbox neutralizes --dangerously-skip-permissions, so the
         # shipped agy default is not flagged.
         spec = AgentSpec(
-            name="agy", vendor="google", command="agy",
+            name="agy",
+            vendor="google",
+            command="agy",
             extra_args=["--dangerously-skip-permissions", "--sandbox"],
         )
         self.assertEqual(privilege.audit_agent(spec), [])
@@ -99,7 +102,10 @@ class AuditAgentTest(unittest.TestCase):
     def test_local_vendor_is_not_audited(self):
         # A local/HTTP agent runs no subprocess to sandbox — out of scope.
         spec = AgentSpec(
-            name="qwen", vendor="local", command="", model="m",
+            name="qwen",
+            vendor="local",
+            command="",
+            model="m",
             endpoint="http://localhost:11434/v1",
         )
         self.assertEqual(privilege.audit_agent(spec), [])
@@ -110,11 +116,15 @@ class AuditPrivilegeTest(unittest.TestCase):
         specs = [
             AgentSpec(name="claude", vendor="anthropic", command="claude", extra_args=[]),
             AgentSpec(
-                name="codex", vendor="openai", command="codex",
+                name="codex",
+                vendor="openai",
+                command="codex",
                 extra_args=["-s", "danger-full-access"],
             ),
             AgentSpec(
-                name="agy", vendor="google", command="agy",
+                name="agy",
+                vendor="google",
+                command="agy",
                 extra_args=["--dangerously-skip-permissions"],
             ),
         ]
@@ -125,11 +135,15 @@ class AuditPrivilegeTest(unittest.TestCase):
     def test_locked_down_config_has_no_warnings(self):
         specs = [
             AgentSpec(
-                name="claude", vendor="anthropic", command="claude",
+                name="claude",
+                vendor="anthropic",
+                command="claude",
                 extra_args=["--disallowed-tools", "Edit,Write,NotebookEdit,Bash"],
             ),
             AgentSpec(
-                name="codex", vendor="openai", command="codex",
+                name="codex",
+                vendor="openai",
+                command="codex",
                 extra_args=["-s", "read-only"],
             ),
         ]
@@ -155,7 +169,9 @@ class IsSandboxedVendorAwareTest(unittest.TestCase):
         # whose --sandbox is NOT a boolean restricting sandbox is no longer
         # accepted, so the dangerous flags are surfaced.
         spec = AgentSpec(
-            name="custom", vendor="openai", command="x",
+            name="custom",
+            vendor="openai",
+            command="x",
             extra_args=["--sandbox", "--dangerously-skip-permissions", "--yolo"],
         )
         warnings = privilege.audit_agent(spec)
@@ -163,9 +179,7 @@ class IsSandboxedVendorAwareTest(unittest.TestCase):
 
     def test_codex_wide_value_sandbox_is_not_sandboxed(self):
         # --sandbox workspace-write takes a non-restricting value -> not a sandbox.
-        self.assertFalse(
-            privilege._is_sandboxed(["--sandbox", "workspace-write"], vendor="openai")
-        )
+        self.assertFalse(privilege._is_sandboxed(["--sandbox", "workspace-write"], vendor="openai"))
 
     def test_agy_bare_sandbox_still_trusted(self):
         # The shipped agy default must keep passing (issue #100 not regressed).
@@ -183,13 +197,13 @@ class IsSandboxedVendorAwareTest(unittest.TestCase):
         # already accepts, or it false-positives a safe config under --strict.
         self.assertTrue(privilege._is_sandboxed(["--sandbox=read-only"], vendor="openai"))
         self.assertTrue(privilege._is_sandboxed(["-s=read-only"], vendor="openai"))
-        self.assertFalse(
-            privilege._is_sandboxed(["--sandbox=workspace-write"], vendor="openai")
-        )
+        self.assertFalse(privilege._is_sandboxed(["--sandbox=workspace-write"], vendor="openai"))
 
     def test_codex_equals_read_only_has_no_audit_warning(self):
         spec = AgentSpec(
-            name="codex", vendor="openai", command="codex",
+            name="codex",
+            vendor="openai",
+            command="codex",
             extra_args=["--sandbox=read-only"],
         )
         self.assertEqual(privilege.audit_agent(spec), [])
@@ -209,9 +223,13 @@ class EnforceReadOnlyTest(unittest.TestCase):
         self.assertEqual(out, ["--disallowed-tools", "Edit,Write,NotebookEdit,Bash"])
 
     def test_claude_shipped_default_is_unchanged(self):
-        shipped = ["--output-format", "text",
-                   "--disallowed-tools", "Edit,Write,NotebookEdit,Bash",
-                   "--dangerously-skip-permissions"]
+        shipped = [
+            "--output-format",
+            "text",
+            "--disallowed-tools",
+            "Edit,Write,NotebookEdit,Bash",
+            "--dangerously-skip-permissions",
+        ]
         self.assertEqual(privilege.enforce_read_only("anthropic", "claude", shipped), shipped)
 
     def test_claude_equals_form_disallowed_is_merged(self):

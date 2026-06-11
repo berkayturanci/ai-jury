@@ -1,4 +1,5 @@
 """Tests for suggested-patch output for verified findings (issue #10)."""
+
 from __future__ import annotations
 
 import sys
@@ -17,8 +18,12 @@ from ai_jury.patches import (  # noqa: E402
 
 def _group(status, fix="add a guard", bucket="consensus", severity="major"):
     f = Finding(
-        severity=severity, file="src/a.py", claim="unchecked return", line=42,
-        suggested_fix=fix, reviewer="claude",
+        severity=severity,
+        file="src/a.py",
+        claim="unchecked return",
+        line=42,
+        suggested_fix=fix,
+        reviewer="claude",
     )
     g = FindingGroup(representative=f, members=[f], severity=severity, bucket=bucket)
     g.status = status

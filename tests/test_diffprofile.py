@@ -1,4 +1,5 @@
 """Tests for risk-aware auto-depth diff profiling (issue #120). Network-free."""
+
 from __future__ import annotations
 
 import sys
@@ -19,8 +20,7 @@ from ai_jury.diffprofile import (  # noqa: E402
 def _seg(path: str, added: int = 1) -> str:
     body = "".join(f"+line {i}\n" for i in range(added))
     return (
-        f"diff --git a/{path} b/{path}\n--- a/{path}\n+++ b/{path}\n"
-        f"@@ -0,0 +1,{added} @@\n{body}"
+        f"diff --git a/{path} b/{path}\n--- a/{path}\n+++ b/{path}\n@@ -0,0 +1,{added} @@\n{body}"
     )
 
 
@@ -91,9 +91,11 @@ class AutoDepthCliTest(unittest.TestCase):
             old = sys.stdin
             sys.stdin = io.StringIO(stdin)
             try:
-                with contextlib.redirect_stdout(io.StringIO()), \
-                     contextlib.redirect_stderr(io.StringIO()), \
-                     contextlib.suppress(SystemExit):
+                with (
+                    contextlib.redirect_stdout(io.StringIO()),
+                    contextlib.redirect_stderr(io.StringIO()),
+                    contextlib.suppress(SystemExit),
+                ):
                     cli.main(argv)
             finally:
                 sys.stdin = old
@@ -101,18 +103,14 @@ class AutoDepthCliTest(unittest.TestCase):
 
     def test_auto_low_diff_goes_shallow(self):
         diff = _seg("src/a.py", 3)
-        cfg = self._run_capture_config(
-            ["--mock", "--diff-file", "-", "--auto"], stdin=diff
-        )
+        cfg = self._run_capture_config(["--mock", "--diff-file", "-", "--auto"], stdin=diff)
         self.assertIsNotNone(cfg)
         self.assertEqual(cfg.rounds, 1)
         self.assertFalse(cfg.verify)
 
     def test_auto_high_diff_goes_full(self):
         diff = _seg("src/auth/login.py", 5)
-        cfg = self._run_capture_config(
-            ["--mock", "--diff-file", "-", "--auto"], stdin=diff
-        )
+        cfg = self._run_capture_config(["--mock", "--diff-file", "-", "--auto"], stdin=diff)
         self.assertEqual(cfg.rounds, 2)
         self.assertTrue(cfg.verify)
 

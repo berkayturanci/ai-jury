@@ -57,9 +57,7 @@ class LoadPolicyTest(unittest.TestCase):
         self.assertIsInstance(loaded, ReviewPolicy)
         assert loaded is not None
         self.assertEqual(loaded.high_risk_paths, ["src/auth/**", "infra/**"])
-        self.assertEqual(
-            loaded.focus_areas, ["Backward compatibility", "Input validation"]
-        )
+        self.assertEqual(loaded.focus_areas, ["Backward compatibility", "Input validation"])
         self.assertEqual(loaded.forbidden_output, ["Do not leak secrets."])
         self.assertEqual(loaded.doc_links, ["docs/architecture.md"])
         self.assertIn("Check error paths.", loaded.checklist)
@@ -119,9 +117,7 @@ class LoadPolicyTest(unittest.TestCase):
     def test_malformed_severity_override_raises(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "policy.toml"
-            path.write_text(
-                "[[severity_overrides]]\nglob = 1\nseverity = 2\n", encoding="utf-8"
-            )
+            path.write_text("[[severity_overrides]]\nglob = 1\nseverity = 2\n", encoding="utf-8")
             with self.assertRaises(PolicyError):
                 load_policy(path)
 
@@ -197,13 +193,9 @@ class PromptInclusionTest(unittest.TestCase):
         ctx_open = prompt.index("<<<UNTRUSTED_CONTEXT\n")
         diff_close = prompt.rindex("UNTRUSTED_DIFF>>>")
         # The policy marker must appear before any untrusted data block begins.
-        self.assertLess(
-            prompt.index("Distinctive focus marker XYZ"), ctx_open
-        )
+        self.assertLess(prompt.index("Distinctive focus marker XYZ"), ctx_open)
         # And, defensively, it must not appear anywhere within the data region.
-        self.assertNotIn(
-            "Distinctive focus marker XYZ", prompt[ctx_open:diff_close]
-        )
+        self.assertNotIn("Distinctive focus marker XYZ", prompt[ctx_open:diff_close])
 
     def test_no_policy_uses_sentinel(self):
         prompt = self._review_prompt(None)

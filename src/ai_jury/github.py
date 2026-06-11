@@ -3,6 +3,7 @@
 Used to pull a PR diff in and to post the jury verdict back as a comment.
 Kept dependency-free; if `gh` is unavailable these raise a clear error.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -22,13 +23,9 @@ def _gh(*args: str) -> str:
     if shutil.which("gh") is None:
         raise RuntimeError("the GitHub CLI `gh` is not installed or not on PATH")
     try:
-        proc = subprocess.run(
-            ["gh", *args], capture_output=True, text=True, timeout=_GH_TIMEOUT_S
-        )
+        proc = subprocess.run(["gh", *args], capture_output=True, text=True, timeout=_GH_TIMEOUT_S)
     except subprocess.TimeoutExpired:
-        raise RuntimeError(
-            f"gh {' '.join(args)} timed out after {_GH_TIMEOUT_S}s"
-        ) from None
+        raise RuntimeError(f"gh {' '.join(args)} timed out after {_GH_TIMEOUT_S}s") from None
     if proc.returncode != 0:
         raise RuntimeError(f"gh {' '.join(args)} failed: {proc.stderr.strip()}")
     return proc.stdout
@@ -44,8 +41,7 @@ def pr_diff(pr: str, repo: str | None = None) -> str:
 
 def pr_context(pr: str, repo: str | None = None) -> str:
     """Return 'title\\n\\nbody' for a PR, best-effort."""
-    args = ["pr", "view", "--json", "title,body",
-            "--jq", '.title + "\\n\\n" + (.body // "")']
+    args = ["pr", "view", "--json", "title,body", "--jq", '.title + "\\n\\n" + (.body // "")']
     if repo:
         args += ["--repo", repo]
     args += ["--", str(pr)]
@@ -71,10 +67,15 @@ def issue_body(number: str, repo: str | None = None) -> str:
     :func:`pr_context`'s error handling: any ``gh`` failure degrades to a minimal
     string (the bare number) rather than crashing the run.
     """
-    args = ["issue", "view", "--json", "title,body,labels",
-            "--jq",
-            '"# " + .title + "\\n\\n_labels: " '
-            '+ ((.labels | map(.name)) | join(", ")) + "_\\n\\n" + (.body // "")']
+    args = [
+        "issue",
+        "view",
+        "--json",
+        "title,body,labels",
+        "--jq",
+        '"# " + .title + "\\n\\n_labels: " '
+        '+ ((.labels | map(.name)) | join(", ")) + "_\\n\\n" + (.body // "")',
+    ]
     if repo:
         args += ["--repo", repo]
     args += ["--", str(number)]
@@ -139,8 +140,10 @@ def compare_diff(base: str, head: str, repo: str | None = None) -> str:
     try:
         return _gh(
             "api",
-            "-H", "Accept: application/vnd.github.v3.diff",
-            "--", f"repos/{resolved}/compare/{base}...{head}",
+            "-H",
+            "Accept: application/vnd.github.v3.diff",
+            "--",
+            f"repos/{resolved}/compare/{base}...{head}",
         )
     except RuntimeError:
         return ""
@@ -300,13 +303,14 @@ def _gh_with_input(args: list[str], stdin_data: str) -> str:
         raise RuntimeError("the GitHub CLI `gh` is not installed or not on PATH")
     try:
         proc = subprocess.run(
-            ["gh", *args], input=stdin_data, capture_output=True, text=True,
+            ["gh", *args],
+            input=stdin_data,
+            capture_output=True,
+            text=True,
             timeout=_GH_TIMEOUT_S,
         )
     except subprocess.TimeoutExpired:
-        raise RuntimeError(
-            f"gh {' '.join(args)} timed out after {_GH_TIMEOUT_S}s"
-        ) from None
+        raise RuntimeError(f"gh {' '.join(args)} timed out after {_GH_TIMEOUT_S}s") from None
     if proc.returncode != 0:
         raise RuntimeError(f"gh {' '.join(args)} failed: {proc.stderr.strip()}")
     return proc.stdout
@@ -336,9 +340,7 @@ def post_inline_comments(
     resolved = _resolve_repo(repo)
     existing = _existing_inline_keys(pr, resolved) if resolved else set()
     deduped = [
-        c
-        for c in comments
-        if (c["path"], c["line"], _sig_from_body(c["body"])) not in existing
+        c for c in comments if (c["path"], c["line"], _sig_from_body(c["body"])) not in existing
     ]
 
     payload = {"event": "COMMENT", "body": _review_body(len(deduped)), "comments": deduped}
@@ -389,7 +391,15 @@ def _create_issue_comment(pr: str, body: str, repo: str) -> int | None:
 def _edit_issue_comment(comment_id: int, body: str, repo: str) -> bool:
     try:
         _gh_with_input(
-            ["api", "--method", "PATCH", "--input", "-", "--", f"repos/{repo}/issues/comments/{comment_id}"],
+            [
+                "api",
+                "--method",
+                "PATCH",
+                "--input",
+                "-",
+                "--",
+                f"repos/{repo}/issues/comments/{comment_id}",
+            ],
             json.dumps({"body": body}),
         )
         return True

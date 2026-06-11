@@ -12,6 +12,7 @@ directory as sensitive (same trust level as the diff itself). The cache is OFF
 by default and only writes when explicitly enabled with ``--cache``; clear it
 with ``--clear-cache`` (or ``jury cache clear``).
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -65,9 +66,7 @@ def _policy_fingerprint(policy) -> str:
     from dataclasses import asdict, is_dataclass
 
     data = asdict(policy) if is_dataclass(policy) else policy
-    return hashlib.sha256(
-        json.dumps(data, sort_keys=True, default=str).encode("utf-8")
-    ).hexdigest()
+    return hashlib.sha256(json.dumps(data, sort_keys=True, default=str).encode("utf-8")).hexdigest()
 
 
 def cache_key(
@@ -358,9 +357,7 @@ class Cache:
             # a reader never sees a partial file.
             path = self._path(key)
             blob = json.dumps(payload, separators=(",", ":")) + "\n"
-            fd, tmp_name = tempfile.mkstemp(
-                dir=self.dir, prefix=f"{path.name}.", suffix=".tmp"
-            )
+            fd, tmp_name = tempfile.mkstemp(dir=self.dir, prefix=f"{path.name}.", suffix=".tmp")
             tmp = Path(tmp_name)
             try:
                 with os.fdopen(fd, "w", encoding="utf-8") as handle:

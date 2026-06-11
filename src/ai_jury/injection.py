@@ -10,6 +10,7 @@ The detector is intentionally conservative and dependency-free (stdlib only).
 False positives are acceptable here because a hit only adds an advisory finding;
 it cannot flip a verdict.
 """
+
 from __future__ import annotations
 
 import bisect
@@ -33,38 +34,59 @@ _ZERO_WIDTH_CODEPOINTS = (
     0x200D,  # zero-width joiner
     0x2060,  # word joiner
     0xFEFF,  # zero-width no-break space / BOM
-    0x202A, 0x202B, 0x202C, 0x202D, 0x202E,  # bidi embedding/override controls
-    0x200E, 0x200F,  # LRM / RLM (left/right-to-left marks)
+    0x202A,
+    0x202B,
+    0x202C,
+    0x202D,
+    0x202E,  # bidi embedding/override controls
+    0x200E,
+    0x200F,  # LRM / RLM (left/right-to-left marks)
     0x061C,  # Arabic letter mark
-    0x2061, 0x2062, 0x2063, 0x2064,  # invisible math operators
+    0x2061,
+    0x2062,
+    0x2063,
+    0x2064,  # invisible math operators
     0x00AD,  # soft hyphen
     0x034F,  # combining grapheme joiner
     0x180E,  # Mongolian vowel separator
-    0x115F, 0x1160, 0x3164, 0xFFA0,  # Hangul fillers (render as invisible)
+    0x115F,
+    0x1160,
+    0x3164,
+    0xFFA0,  # Hangul fillers (render as invisible)
 )
 _ZERO_WIDTH = "".join(chr(c) for c in _ZERO_WIDTH_CODEPOINTS)
 _ZERO_WIDTH_RE = re.compile("[" + re.escape(_ZERO_WIDTH) + "]")
 
 # Imperative phrases that try to override the system/developer instructions.
 _PHRASE_PATTERNS: tuple[tuple[str, re.Pattern], ...] = (
-    ("override-instructions", re.compile(
-        r"(?i)\b(ignore|disregard|forget|override)\b[^.\n]{0,40}"
-        r"\b(previous|prior|above|earlier|all|any|the)\b[^.\n]{0,20}"
-        r"\b(instruction|prompt|message|context|rule|direction)s?\b"
-    )),
-    ("role-reassignment", re.compile(
-        r"(?i)\byou\s+are\s+now\b|\bnew\s+(instructions?|persona|role|system\s+prompt)\b"
-    )),
-    ("fake-system-turn", re.compile(
-        r"(?im)^\s*(system|assistant|developer)\s*:",
-    )),
-    ("verdict-coercion", re.compile(
-        r"(?i)\b(approve|lgtm|pass|merge)\b[^.\n]{0,40}"
-        r"\b(no\s+findings?|no\s+issues?|without\s+(any\s+)?(review|findings?|comment))\b"
-    )),
-    ("instruction-tag", re.compile(
-        r"(?i)<\s*/?\s*(system|instructions?|prompt)\s*>"
-    )),
+    (
+        "override-instructions",
+        re.compile(
+            r"(?i)\b(ignore|disregard|forget|override)\b[^.\n]{0,40}"
+            r"\b(previous|prior|above|earlier|all|any|the)\b[^.\n]{0,20}"
+            r"\b(instruction|prompt|message|context|rule|direction)s?\b"
+        ),
+    ),
+    (
+        "role-reassignment",
+        re.compile(
+            r"(?i)\byou\s+are\s+now\b|\bnew\s+(instructions?|persona|role|system\s+prompt)\b"
+        ),
+    ),
+    (
+        "fake-system-turn",
+        re.compile(
+            r"(?im)^\s*(system|assistant|developer)\s*:",
+        ),
+    ),
+    (
+        "verdict-coercion",
+        re.compile(
+            r"(?i)\b(approve|lgtm|pass|merge)\b[^.\n]{0,40}"
+            r"\b(no\s+findings?|no\s+issues?|without\s+(any\s+)?(review|findings?|comment))\b"
+        ),
+    ),
+    ("instruction-tag", re.compile(r"(?i)<\s*/?\s*(system|instructions?|prompt)\s*>")),
 )
 
 # A long run of base64-ish characters can hide an encoded payload. The class
@@ -164,9 +186,7 @@ def hits_to_warnings(hits: list[InjectionHit]) -> list[str]:
     """Render hits as human-readable warning strings for ``outcome.warnings``."""
     out: list[str] = []
     for h in hits:
-        out.append(
-            f"possible prompt-injection ({h.kind}) in {h.location()}: {h.snippet}"
-        )
+        out.append(f"possible prompt-injection ({h.kind}) in {h.location()}: {h.snippet}")
     return out
 
 
@@ -185,10 +205,7 @@ def hits_to_finding(hits: list[InjectionHit]):
     first = hits[0]
     kinds = sorted({h.kind for h in hits})
     locs = ", ".join(dict.fromkeys(h.location() for h in hits[:5]))
-    claim = (
-        f"possible prompt-injection in untrusted input "
-        f"({len(hits)} hit(s): {', '.join(kinds)})"
-    )
+    claim = f"possible prompt-injection in untrusted input ({len(hits)} hit(s): {', '.join(kinds)})"
     return Finding(
         severity="major",
         file=first.source,

@@ -1,4 +1,5 @@
 """Tests for deterministic consensus grouping."""
+
 import unittest
 
 from ai_jury.consensus import (
@@ -88,8 +89,14 @@ class GroupFindingsTests(unittest.TestCase):
         ga = group_findings(a, reviewer_count=3)
         gb = group_findings(b, reviewer_count=3)
         self.assertEqual(
-            [(g.severity, g.representative.file, g.representative.line, g.reviewers, g.bucket) for g in ga],
-            [(g.severity, g.representative.file, g.representative.line, g.reviewers, g.bucket) for g in gb],
+            [
+                (g.severity, g.representative.file, g.representative.line, g.reviewers, g.bucket)
+                for g in ga
+            ],
+            [
+                (g.severity, g.representative.file, g.representative.line, g.reviewers, g.bucket)
+                for g in gb
+            ],
         )
 
 

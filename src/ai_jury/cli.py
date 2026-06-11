@@ -9,6 +9,7 @@ Examples:
   jury --doctor                        # local readiness diagnostics
   jury --config-validate               # validate jury.toml and exit
 """
+
 from __future__ import annotations
 
 import argparse
@@ -65,7 +66,7 @@ def build_parser() -> argparse.ArgumentParser:
     src.add_argument(
         "--issue",
         help="GitHub issue number/URL to review for completeness/clarity (uses "
-             "`gh`); runs the full jury with an issue-quality rubric",
+        "`gh`); runs the full jury with an issue-quality rubric",
     )
     src.add_argument("--repo", help="owner/name for --pr/--issue (defaults to current repo)")
     src.add_argument("--diff-file", help="path to a diff file, or '-' for stdin")
@@ -76,96 +77,141 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help="path to an optional repository review policy file (default: "
-             "auto-discover .jury/policy.toml or jury-policy.toml); "
-             "missing policy files are allowed",
+        "auto-discover .jury/policy.toml or jury-policy.toml); "
+        "missing policy files are allowed",
     )
     p.add_argument(
-        "--context-mode", choices=["diff-only", "expanded"], default=None,
+        "--context-mode",
+        choices=["diff-only", "expanded"],
+        default=None,
         help="context policy: diff-only sends only the diff; expanded includes PR context",
     )
     p.add_argument(
-        "--redact", dest="redact", action="store_true", default=None,
+        "--redact",
+        dest="redact",
+        action="store_true",
+        default=None,
         help="redact secrets from prompt text before sending (default: from config)",
     )
     p.add_argument(
-        "--no-redact", dest="redact", action="store_false",
+        "--no-redact",
+        dest="redact",
+        action="store_false",
         help="do not redact secrets before sending",
     )
     p.add_argument(
-        "--rounds", type=int,
+        "--rounds",
+        type=int,
         help="override number of rounds (1=review, 2=+debate); a fixed value "
-             "disables early-stop for reproducible benchmarking",
+        "disables early-stop for reproducible benchmarking",
     )
     p.add_argument(
-        "--max-rounds", type=int,
+        "--max-rounds",
+        type=int,
         help="ceiling on adaptive rounds when early-stop is on",
     )
     p.add_argument(
-        "--early-stop", dest="early_stop", action="store_true", default=None,
+        "--early-stop",
+        dest="early_stop",
+        action="store_true",
+        default=None,
         help="stop after round 1 when reviewers agree; debate only on disagreement",
     )
     p.add_argument(
-        "--no-early-stop", dest="early_stop", action="store_false",
+        "--no-early-stop",
+        dest="early_stop",
+        action="store_false",
         help="disable adaptive early-stop (honour a fixed number of rounds)",
     )
     p.add_argument(
-        "--auto", dest="auto", action="store_true", default=None,
+        "--auto",
+        dest="auto",
+        action="store_true",
+        default=None,
         help="risk-aware auto-depth: scale rounds/verify to the diff",
     )
     p.add_argument(
-        "--no-auto", dest="auto", action="store_false",
+        "--no-auto",
+        dest="auto",
+        action="store_false",
         help="disable auto-depth (use configured/fixed rounds)",
     )
     p.add_argument(
-        "--total-timeout", type=int,
+        "--total-timeout",
+        type=int,
         help="overall wall-clock budget (seconds) for the whole run",
     )
     p.add_argument(
-        "--phase-timeout", type=int,
+        "--phase-timeout",
+        type=int,
         help="per-phase wall-clock budget (seconds)",
     )
     p.add_argument(
-        "--retries", type=int,
+        "--retries",
+        type=int,
         help="extra attempts for transient (timeout/rate-limit/spawn) failures",
     )
     p.add_argument(
-        "--max-diff-bytes", type=int,
+        "--max-diff-bytes",
+        type=int,
         help="size budget for the (filtered) diff before chunking/too-large",
     )
     p.add_argument(
-        "--chunk", dest="chunk", action="store_true", default=None,
+        "--chunk",
+        dest="chunk",
+        action="store_true",
+        default=None,
         help="chunk an over-budget diff by file instead of failing",
     )
     p.add_argument(
-        "--no-chunk", dest="chunk", action="store_false",
+        "--no-chunk",
+        dest="chunk",
+        action="store_false",
         help="disable diff chunking (fail clearly when over budget)",
     )
     p.add_argument(
-        "--exclude", action="append", metavar="GLOB", default=None,
+        "--exclude",
+        action="append",
+        metavar="GLOB",
+        default=None,
         help="exclude files matching this path glob (repeatable)",
     )
     p.add_argument(
-        "--include", action="append", metavar="GLOB", default=None,
+        "--include",
+        action="append",
+        metavar="GLOB",
+        default=None,
         help="only review files matching this path glob (repeatable)",
     )
     p.add_argument(
-        "--seed", type=int,
+        "--seed",
+        type=int,
         help="run seed for reproducible orchestration; mock runs with the same seed "
-             "produce byte-identical reports (overrides [jury] seed)",
+        "produce byte-identical reports (overrides [jury] seed)",
     )
     p.add_argument("--chair", help="override the synthesizing chair agent")
-    p.add_argument("--mock", action="store_true", help="offline demo: use deterministic mock agents")
-    p.add_argument("--strict", action="store_true", help="fail if any configured agent CLI is missing")
     p.add_argument(
-        "--verify", dest="verify", action="store_true", default=None,
+        "--mock", action="store_true", help="offline demo: use deterministic mock agents"
+    )
+    p.add_argument(
+        "--strict", action="store_true", help="fail if any configured agent CLI is missing"
+    )
+    p.add_argument(
+        "--verify",
+        dest="verify",
+        action="store_true",
+        default=None,
         help="run the verification round (default: from config)",
     )
     p.add_argument(
-        "--no-verify", dest="verify", action="store_false",
+        "--no-verify",
+        dest="verify",
+        action="store_false",
         help="skip the verification round",
     )
     p.add_argument(
-        "--doctor", action="store_true",
+        "--doctor",
+        action="store_true",
         help="print a local readiness diagnostics report and exit (no telemetry is collected or sent)",
     )
     p.add_argument(
@@ -174,64 +220,92 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("-o", "--output", help="write the report to a file instead of stdout")
     p.add_argument(
-        "--metadata-json", metavar="PATH",
+        "--metadata-json",
+        metavar="PATH",
         help="write machine-readable run metadata (durations, status, rounds) as JSON",
     )
     p.add_argument(
-        "--format", choices=["markdown", "json", "sarif"], default="markdown",
+        "--format",
+        choices=["markdown", "json", "sarif"],
+        default="markdown",
         help="output format for stdout/--output (default: markdown)",
     )
     p.add_argument(
-        "--decision", choices=["chair", "vote"], default=None,
+        "--decision",
+        choices=["chair", "vote"],
+        default=None,
         help="final verdict: 'chair' synthesis (default) or panel 'vote' (tally "
-             "the reviewers); overrides [jury] decision",
+        "the reviewers); overrides [jury] decision",
     )
     p.add_argument(
-        "--transcript", dest="transcript", action="store_true", default=None,
+        "--transcript",
+        dest="transcript",
+        action="store_true",
+        default=None,
         help="render the full play-by-play transcript (each agent's review, the "
-             "debate, and the chair's reasoning) instead of the summary report",
+        "debate, and the chair's reasoning) instead of the summary report",
     )
     p.add_argument(
-        "--no-transcript", dest="transcript", action="store_false",
+        "--no-transcript",
+        dest="transcript",
+        action="store_false",
         help="force the summary report even if [jury] transcript is set",
     )
     p.add_argument(
-        "--verbose", dest="verbose", action="store_true",
+        "--verbose",
+        dest="verbose",
+        action="store_true",
         help="summary report followed by the full transcript, in one document",
     )
     p.add_argument(
-        "--live", dest="live", action="store_true",
+        "--live",
+        dest="live",
+        action="store_true",
         help="stream each step (review, debate, verdict) to stdout as it happens; "
-             "add --pr --post to also post each step as its own PR comment",
+        "add --pr --post to also post each step as its own PR comment",
     )
     p.add_argument(
-        "--post-summary", "--post", dest="post_summary", action="store_true",
+        "--post-summary",
+        "--post",
+        dest="post_summary",
+        action="store_true",
         help="post the report as a single summary comment on --pr",
     )
     p.add_argument(
-        "--post-inline", dest="post_inline", action="store_true",
+        "--post-inline",
+        dest="post_inline",
+        action="store_true",
         help="post inline review comments for located findings on --pr",
     )
     p.add_argument(
-        "--post-progress", dest="post_progress", action="store_true",
+        "--post-progress",
+        dest="post_progress",
+        action="store_true",
         help="keep a live, sticky status comment on --pr updated per round/chunk",
     )
     p.add_argument(
-        "--post-mode", choices=["single", "phased"], default="single",
+        "--post-mode",
+        choices=["single", "phased"],
+        default="single",
         help="with --post-summary: 'single' (one comment) or 'phased' (separate "
-             "Round 1 / debate / decision comments)",
+        "Round 1 / debate / decision comments)",
     )
     p.add_argument(
-        "--dry-run", dest="dry_run", action="store_true",
+        "--dry-run",
+        dest="dry_run",
+        action="store_true",
         help="with --post-inline, print what would be posted without calling GitHub",
     )
     p.add_argument(
-        "--label", dest="label", action="store_true",
+        "--label",
+        dest="label",
+        action="store_true",
         help="apply classification labels (review effort / risk / security) to "
-             "--pr (off by default; never applied automatically)",
+        "--pr (off by default; never applied automatically)",
     )
     p.add_argument(
-        "--ci", action="store_true",
+        "--ci",
+        action="store_true",
         help="CI mode: exit non-zero when blocking findings remain",
     )
     p.add_argument(
@@ -239,41 +313,48 @@ def build_parser() -> argparse.ArgumentParser:
         help="comma-separated severities that fail CI (overrides config)",
     )
     p.add_argument(
-        "--cache", action="store_true",
+        "--cache",
+        action="store_true",
         help="use the local result cache: reuse a cached outcome for an unchanged "
-             "diff+config, else run and store it (off by default)",
+        "diff+config, else run and store it (off by default)",
     )
     p.add_argument(
-        "--clear-cache", action="store_true",
+        "--clear-cache",
+        action="store_true",
         help="delete all local cache entries and exit (also: `jury cache clear`)",
     )
     p.add_argument(
         "--cache-dir",
-        help="override the cache directory (default: $JURY_CACHE_DIR or "
-             "~/.cache/ai-jury)",
+        help="override the cache directory (default: $JURY_CACHE_DIR or ~/.cache/ai-jury)",
     )
     p.add_argument(
-        "--suggest-patches", dest="suggest_patches", action="store_true",
+        "--suggest-patches",
+        dest="suggest_patches",
+        action="store_true",
         help="emit a separate, opt-in suggested-patches section for VERIFIED "
-             "findings (read-only; never applied automatically)",
+        "findings (read-only; never applied automatically)",
     )
     p.add_argument(
-        "--patches-out", metavar="PATH",
+        "--patches-out",
+        metavar="PATH",
         help="with --suggest-patches, write the patches to this file instead of "
-             "appending them after the report",
+        "appending them after the report",
     )
     p.add_argument(
-        "--incremental", action="store_true",
+        "--incremental",
+        action="store_true",
         help="review only the diff since the last jury run on --pr when a prior "
-             "marker exists, else fall back to a full review",
+        "marker exists, else fall back to a full review",
     )
     p.add_argument("-q", "--quiet", action="store_true", help="suppress progress logs on stderr")
     p.add_argument(
-        "--config-validate", action="store_true",
+        "--config-validate",
+        action="store_true",
         help="validate the resolved config and exit (0 valid, 2 invalid)",
     )
     p.add_argument(
-        "--strict-config", action="store_true",
+        "--strict-config",
+        action="store_true",
         help="treat configuration warnings as errors",
     )
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -296,11 +377,15 @@ def _run_comment_command(rest: list[str]) -> int:
     sub.add_argument("--pr", help="PR number/URL to review and post back to")
     sub.add_argument("--repo", help="owner/name (defaults to current repo)")
     sub.add_argument(
-        "--print-args", dest="print_args", action="store_true",
+        "--print-args",
+        dest="print_args",
+        action="store_true",
         help="print the resolved jury args instead of running",
     )
     sub.add_argument(
-        "--no-post", dest="no_post", action="store_true",
+        "--no-post",
+        dest="no_post",
+        action="store_true",
         help="do not post the result back as a summary comment",
     )
     ns = sub.parse_args(rest)
@@ -366,9 +451,7 @@ def _init_interactive(available: dict, input_fn=input, local_endpoint=None, mode
         mark = "available" if available.get(name) else "not found"
         print(f"  - {name}: {_AGENT_BLURB[name]} [{mark}]", file=sys.stderr)
     default_agents = [n for n in KNOWN_AGENTS if available.get(n)] or list(KNOWN_AGENTS)
-    raw_agents = input_fn(
-        f"\nAgents to include [default: {','.join(default_agents)}]: "
-    ).strip()
+    raw_agents = input_fn(f"\nAgents to include [default: {','.join(default_agents)}]: ").strip()
     agents = [a.strip() for a in raw_agents.split(",") if a.strip()] or default_agents
 
     rounds_raw = input_fn("Rounds — 1=review, 2=+debate [2]: ").strip()
@@ -483,9 +566,7 @@ def _init_wizard(available: dict, input_fn=input, local_endpoint=None, models_fn
         kwargs["auto_depth"] = True
 
     # Decision: chair (default) or panel vote. Only written on a non-default.
-    decision = choose(
-        "\nDecision:", ["chair synthesis", "panel vote"], default_idx=0
-    )
+    decision = choose("\nDecision:", ["chair synthesis", "panel vote"], default_idx=0)
     if decision == 1:
         kwargs["decision"] = "vote"
 
@@ -559,9 +640,10 @@ def _run_init(rest: list[str]) -> int:
 
     sub = argparse.ArgumentParser(prog="jury init")
     sub.add_argument(
-        "--preset", choices=sorted(PRESETS),
+        "--preset",
+        choices=sorted(PRESETS),
         help="setup preset: offline (local-only), fast (1 round), balanced "
-             "(debate + early-stop), thorough (all agents + debate + verify)",
+        "(debate + early-stop), thorough (all agents + debate + verify)",
     )
     sub.add_argument("--agents", help="comma-separated: claude,codex,agy,qwen")
     sub.add_argument("--rounds", type=int, default=None)
@@ -574,12 +656,17 @@ def _run_init(rest: list[str]) -> int:
     sub.add_argument("--force", action="store_true", help="overwrite an existing file")
     sub.add_argument("--interactive", action="store_true", help="force interactive prompts")
     sub.add_argument(
-        "--wizard", action="store_true",
+        "--wizard",
+        action="store_true",
         help="guided, numbered-option setup; every question is skippable (Enter "
-             "keeps the built-in default) and only chosen keys are written",
+        "keeps the built-in default) and only chosen keys are written",
     )
-    sub.add_argument("--list-agents", action="store_true", help="list known agents + availability and exit")
-    sub.add_argument("--list-models", action="store_true", help="list local models on the server and exit")
+    sub.add_argument(
+        "--list-agents", action="store_true", help="list known agents + availability and exit"
+    )
+    sub.add_argument(
+        "--list-models", action="store_true", help="list local models on the server and exit"
+    )
     ns = sub.parse_args(rest)
 
     from .adapters import list_local_models
@@ -660,8 +747,12 @@ def _run_init(rest: list[str]) -> int:
                 )
                 return 2
         kwargs = {
-            "agents": agents, "rounds": rounds, "chair": ns.chair, "verify": verify,
-            "early_stop": early_stop, "local_model": ns.local_model,
+            "agents": agents,
+            "rounds": rounds,
+            "chair": ns.chair,
+            "verify": verify,
+            "early_stop": early_stop,
+            "local_model": ns.local_model,
             "local_endpoint": ns.local_endpoint,
         }
 
@@ -714,7 +805,9 @@ def _render_effective_config(cfg) -> str:
         f"total_timeout={cfg.total_timeout or '—'} "
         f"phase_timeout={cfg.phase_timeout or '—'} retries={cfg.retries}"
     )
-    lines.append(f"          {adaptive}  ·  {budget}  ·  seed={cfg.seed if cfg.seed is not None else '—'}")
+    lines.append(
+        f"          {adaptive}  ·  {budget}  ·  seed={cfg.seed if cfg.seed is not None else '—'}"
+    )
     lines.append(
         f"[jury.ci] fail_on={cfg.ci.fail_on} ignore_unverified={on(cfg.ci.ignore_unverified)}"
     )
@@ -761,8 +854,13 @@ def _run_config(rest: list[str]) -> int:
 
 
 _PROGRESS_PREFIXES = (
-    "round ", "reviewing chunk", "verification", "synthesis",
-    "diff size", "early stop", "auto-depth",
+    "round ",
+    "reviewing chunk",
+    "verification",
+    "synthesis",
+    "diff size",
+    "early stop",
+    "auto-depth",
 )
 
 
@@ -795,8 +893,7 @@ def _maybe_add_local_fallback(config, args, log) -> None:
     if not model:
         return
     config.agents.append(
-        AgentSpec(name="local", vendor="local", model=model,
-                  endpoint="http://localhost:11434/v1")
+        AgentSpec(name="local", vendor="local", model=model, endpoint="http://localhost:11434/v1")
     )
     config.chair = "local"
     log(f"no agent CLIs found; using local model '{model}' (offline, $0)")
@@ -1051,7 +1148,9 @@ def main(argv: list[str] | None = None) -> int:
             ("--incremental", args.incremental),
         ):
             if on:
-                raise SystemExit(f"error: {flag} is not supported with --issue (it is a PR/diff concept)")
+                raise SystemExit(
+                    f"error: {flag} is not supported with --issue (it is a PR/diff concept)"
+                )
 
     # Live progress on the PR (issue #125): a single sticky comment updated at
     # each round/chunk milestone. Opt-in and requires --pr.
@@ -1107,7 +1206,7 @@ def main(argv: list[str] | None = None) -> int:
     # Risk-aware auto-depth (issue #120): scale rounds/verify to the diff when
     # enabled. Explicit --rounds/--verify/--early-stop always win; the panel is
     # never trimmed. Off unless --auto or [jury] auto_depth.
-    if (args.auto if args.auto is not None else config.auto_depth):
+    if args.auto if args.auto is not None else config.auto_depth:
         from .diffprofile import depth_for, describe, profile_diff
 
         prof = profile_diff(diff)
@@ -1130,8 +1229,9 @@ def main(argv: list[str] | None = None) -> int:
         from .cache import Cache, cache_key
 
         cache = Cache(args.cache_dir)
-        cache_k = cache_key(config, diff, mock=args.mock, policy=policy,
-                            mode=("issue" if args.issue else "code"))
+        cache_k = cache_key(
+            config, diff, mock=args.mock, policy=policy, mode=("issue" if args.issue else "code")
+        )
         outcome = cache.load(cache_k)
         if outcome is not None:
             log(f"cache hit ({cache_k[:12]}…) — reusing stored outcome")
@@ -1149,6 +1249,7 @@ def main(argv: list[str] | None = None) -> int:
     live_post = post_issue_comment if args.issue else post_pr_comment
     on_event = None
     if args.live:
+
         def on_event(kind, result, round_no=None):
             title, body = render_live_step(kind, result, round_no)
             print(f"## {title}\n\n{body}\n", flush=True)
@@ -1170,13 +1271,26 @@ def main(argv: list[str] | None = None) -> int:
                 # issue-quality rubric. ``_plan`` stays None — there is no diff plan.
                 _plan = None
                 outcome = run_jury(
-                    config, diff, context=context, mock=args.mock, strict=args.strict,
-                    policy=policy, log=log, on_event=on_event, mode="issue",
+                    config,
+                    diff,
+                    context=context,
+                    mock=args.mock,
+                    strict=args.strict,
+                    policy=policy,
+                    log=log,
+                    on_event=on_event,
+                    mode="issue",
                 )
             else:
                 outcome, _plan = review_diff(
-                    config, diff, context=context, mock=args.mock, strict=args.strict,
-                    policy=policy, log=log, on_event=on_event,
+                    config,
+                    diff,
+                    context=context,
+                    mock=args.mock,
+                    strict=args.strict,
+                    policy=policy,
+                    log=log,
+                    on_event=on_event,
                 )
         except KeyboardInterrupt:
             # Graceful cancellation (issue #30): a jury run can be long, so
@@ -1202,14 +1316,15 @@ def main(argv: list[str] | None = None) -> int:
     vote = None
     if decision == "vote":
         from .voting import is_abstention, tally_votes
+
         # A reviewer that abstained (empty reply or a refusal) is excluded from
         # the tally — a non-answer must not count as a "clear" vote (issue #251).
         voters = [
-            r.agent for r in outcome.reviews
-            if r.ok and not is_abstention(getattr(r, "output", ""))
+            r.agent for r in outcome.reviews if r.ok and not is_abstention(getattr(r, "output", ""))
         ]
         vote = tally_votes(
-            outcome.groups, voters,
+            outcome.groups,
+            voters,
             mode=("issue" if args.issue else "code"),
         )
 
@@ -1217,9 +1332,11 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.format == "json":
         from .formats import to_json
+
         report = to_json(outcome, config, decision=decision, vote=vote)
     elif args.format == "sarif":
         from .formats import to_sarif
+
         report = to_sarif(outcome, config)
     else:
         # Output mode (issue: full transcript). --verbose => summary + transcript;
@@ -1273,9 +1390,7 @@ def main(argv: list[str] | None = None) -> int:
         fail_on = config.ci.fail_on
         if args.fail_on:
             fail_on = [s.strip().lower() for s in args.fail_on.split(",") if s.strip()]
-        ci_exit, ci_reason = evaluate_ci(
-            outcome.groups, fail_on, config.ci.ignore_unverified
-        )
+        ci_exit, ci_reason = evaluate_ci(outcome.groups, fail_on, config.ci.ignore_unverified)
         # Only the markdown report carries the human-readable CI gate section;
         # json/sarif documents stay machine-clean. The exit code is unchanged.
         if args.format == "markdown":
@@ -1337,9 +1452,14 @@ def main(argv: list[str] | None = None) -> int:
             from .report import render_sections
 
             sections = render_sections(
-                outcome.reviews, outcome.debate, outcome.synthesis,
-                chair=outcome.chair, findings=outcome.findings,
-                warnings=outcome.warnings, groups=outcome.groups, verify=outcome.verify,
+                outcome.reviews,
+                outcome.debate,
+                outcome.synthesis,
+                chair=outcome.chair,
+                findings=outcome.findings,
+                warnings=outcome.warnings,
+                groups=outcome.groups,
+                verify=outcome.verify,
                 vote=vote,
             )
             for i, (title, body) in enumerate(sections):

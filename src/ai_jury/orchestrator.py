@@ -4,6 +4,7 @@ The orchestrator owns the round structure and prompt assembly; adapters only run
 their CLI. Rounds run agents concurrently (thread pool) because each call is an
 independent, IO-bound subprocess.
 """
+
 from __future__ import annotations
 
 import random
@@ -93,13 +94,8 @@ def _run_with_retry(
         and attempts < max_attempts
         and not budget.expired()
     ):
-        log(
-            f"{adapter.name}: {phase} attempt {attempts} failed "
-            f"({result.error_code}); retrying"
-        )
-        result = adapter.run(
-            prompt, phase=phase, timeout=budget.call_timeout()
-        )
+        log(f"{adapter.name}: {phase} attempt {attempts} failed ({result.error_code}); retrying")
+        result = adapter.run(prompt, phase=phase, timeout=budget.call_timeout())
         attempts += 1
     result.attempts = attempts
     return result
@@ -285,8 +281,13 @@ def _debate_round(
             )
         debate_prompt[a.name] = text
     results = _run_phase(
-        debaters, debate_prompt, "debate", config.parallel,
-        budget=budget, retries=retries, log=log,
+        debaters,
+        debate_prompt,
+        "debate",
+        config.parallel,
+        budget=budget,
+        retries=retries,
+        log=log,
     )
     # Same stable-ordering guarantee as round 1: independent of thread-pool
     # completion order.
@@ -385,8 +386,7 @@ def run_jury(
         log(f"least-privilege warning: {w}")
     if strict and privilege_warnings:
         raise RuntimeError(
-            "least-privilege check failed (--strict): "
-            + "; ".join(privilege_warnings)
+            "least-privilege check failed (--strict): " + "; ".join(privilege_warnings)
         )
 
     specs = config.enabled_agents
@@ -424,8 +424,13 @@ def run_jury(
         for a in usable
     }
     reviews = _run_phase(
-        usable, review_prompt, "review", config.parallel,
-        budget=budget, retries=retries, log=log,
+        usable,
+        review_prompt,
+        "review",
+        config.parallel,
+        budget=budget,
+        retries=retries,
+        log=log,
     )
     # Stable ordering: the thread pool can return results in any completion
     # order. Reorder to the enabled-agent order so the report (and every
@@ -504,8 +509,17 @@ def run_jury(
                         break
                     round_no += 1
                     debate = _debate_round(
-                        debaters, reviews, diff, config, run_rng, agent_order,
-                        prior, budget, retries, log, round_no,
+                        debaters,
+                        reviews,
+                        diff,
+                        config,
+                        run_rng,
+                        agent_order,
+                        prior,
+                        budget,
+                        retries,
+                        log,
+                        round_no,
                         template=tmpl["debate"],
                     )
                     rounds_executed = round_no
@@ -531,8 +545,17 @@ def run_jury(
                 log(stop_reason)
             else:
                 debate = _debate_round(
-                    debaters, reviews, diff, config, run_rng, agent_order,
-                    [], budget, retries, log, 2,
+                    debaters,
+                    reviews,
+                    diff,
+                    config,
+                    run_rng,
+                    agent_order,
+                    [],
+                    budget,
+                    retries,
+                    log,
+                    2,
                     template=tmpl["debate"],
                 )
                 rounds_executed = 2
@@ -557,7 +580,14 @@ def run_jury(
             all_warnings.append(msg)
         else:
             verify_result, verdicts, verify_warnings = _verify(
-                chair_name, usable, all_findings, diff, context, budget, retries, log,
+                chair_name,
+                usable,
+                all_findings,
+                diff,
+                context,
+                budget,
+                retries,
+                log,
                 template=tmpl["verify"],
             )
             all_warnings.extend(verify_warnings)
@@ -698,7 +728,14 @@ def _format_verdicts(verdicts: list[Verdict]) -> str:
 
 
 def _verify(
-    chair_name, usable, findings, diff, context, budget, retries, log,
+    chair_name,
+    usable,
+    findings,
+    diff,
+    context,
+    budget,
+    retries,
+    log,
     template=prompts.VERIFY,
 ) -> tuple[AgentResult | None, list[Verdict], list[str]]:
     chair = next((a for a in usable if a.name == chair_name), None)
@@ -787,12 +824,16 @@ def _synthesize(
         peer_rng = random.Random(rng.random()) if rng is not None else random.Random()
         reviews_txt, _label_map = _anonymize_peers(reviews, None, peer_rng)
     else:
-        reviews_txt = "\n\n".join(
-            f"### {r.agent} ({r.vendor})\n{r.output}" for r in reviews if r.ok and r.output
-        ) or "_(no reviews)_"
-    debate_txt = "\n\n".join(
-        f"### {r.agent}\n{r.output}" for r in debate if r.ok and r.output
-    ) or "_(no debate round)_"
+        reviews_txt = (
+            "\n\n".join(
+                f"### {r.agent} ({r.vendor})\n{r.output}" for r in reviews if r.ok and r.output
+            )
+            or "_(no reviews)_"
+        )
+    debate_txt = (
+        "\n\n".join(f"### {r.agent}\n{r.output}" for r in debate if r.ok and r.output)
+        or "_(no debate round)_"
+    )
     prompt = template.format(
         diff=prompts.neutralize_sentinels(diff),
         reviews=prompts.neutralize_sentinels(reviews_txt),
@@ -834,9 +875,7 @@ def _merge_results_by_agent(phase_lists: list[list[AgentResult]]) -> list[AgentR
         parts = by_agent[name]
         ok = any(p.ok for p in parts)
         body = "\n\n".join(
-            f"#### chunk {i}\n{p.output}"
-            for i, p in enumerate(parts, 1)
-            if p.ok and p.output
+            f"#### chunk {i}\n{p.output}" for i, p in enumerate(parts, 1) if p.ok and p.output
         )
         first_err = next((p for p in parts if not p.ok), None)
         merged.append(
@@ -854,20 +893,14 @@ def _merge_results_by_agent(phase_lists: list[list[AgentResult]]) -> list[AgentR
     return merged
 
 
-def _combine_chair_results(
-    results: list[AgentResult], chair: str
-) -> AgentResult | None:
+def _combine_chair_results(results: list[AgentResult], chair: str) -> AgentResult | None:
     """Combine per-chunk chair results (verify/synthesis) into one labelled result."""
     ok_parts = [r for r in results if r.ok and r.output]
     if not ok_parts:
         return results[0] if results else None
     vendor = ok_parts[0].vendor
-    body = "\n\n".join(
-        f"### chunk {i}\n{r.output}" for i, r in enumerate(ok_parts, 1)
-    )
-    return AgentResult(
-        chair, vendor, True, body, round(sum(r.duration_s for r in ok_parts), 3)
-    )
+    body = "\n\n".join(f"### chunk {i}\n{r.output}" for i, r in enumerate(ok_parts, 1))
+    return AgentResult(chair, vendor, True, body, round(sum(r.duration_s for r in ok_parts), 3))
 
 
 def _merge_chunk_outcomes(outcomes: list[JuryOutcome]) -> JuryOutcome:
@@ -994,8 +1027,15 @@ def review_diff(
 
     def _run(chunk: str) -> JuryOutcome:
         return run_jury(
-            config, chunk, context=context, mock=mock, strict=strict,
-            seed=seed, policy=policy, log=log, budget=shared_budget,
+            config,
+            chunk,
+            context=context,
+            mock=mock,
+            strict=strict,
+            seed=seed,
+            policy=policy,
+            log=log,
+            budget=shared_budget,
             on_event=on_event,
         )
 

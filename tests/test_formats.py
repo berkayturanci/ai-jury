@@ -58,8 +58,14 @@ class TestJSON(unittest.TestCase):
         self.assertTrue(doc["findings"])
         for f in doc["findings"]:
             for key in (
-                "severity", "file", "line", "claim",
-                "evidence", "suggested_fix", "confidence", "reviewer",
+                "severity",
+                "file",
+                "line",
+                "claim",
+                "evidence",
+                "suggested_fix",
+                "confidence",
+                "reviewer",
             ):
                 self.assertIn(key, f)
             self.assertTrue(f["severity"])

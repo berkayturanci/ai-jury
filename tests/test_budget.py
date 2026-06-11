@@ -2,6 +2,7 @@
 
 Offline: uses mock adapters and small custom adapters; no live CLIs, no network.
 """
+
 from __future__ import annotations
 
 import sys
@@ -70,8 +71,13 @@ class _FlakyAdapter(MockAdapter):
         self._calls += 1
         if self._calls <= self._fail_times:
             return AgentResult(
-                self.name, self.spec.vendor, False, "", 0.0,
-                error=f"transient {self._calls}", error_code=self._error_code,
+                self.name,
+                self.spec.vendor,
+                False,
+                "",
+                0.0,
+                error=f"transient {self._calls}",
+                error_code=self._error_code,
             )
         return super().run(prompt, phase=phase, timeout=timeout)
 
@@ -166,8 +172,12 @@ class PartialResultTest(unittest.TestCase):
             "retried": ["codex"],
             "agents": [
                 {
-                    "name": "codex", "vendor": "openai", "status": "ok",
-                    "duration_s": 0.0, "error_code": None, "attempts": 2,
+                    "name": "codex",
+                    "vendor": "openai",
+                    "status": "ok",
+                    "duration_s": 0.0,
+                    "error_code": None,
+                    "attempts": 2,
                 },
             ],
         }

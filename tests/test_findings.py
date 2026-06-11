@@ -3,6 +3,7 @@
 Run with: python -m unittest discover -s tests
 No third-party dependencies, no live CLIs, no network.
 """
+
 from __future__ import annotations
 
 import sys
@@ -112,9 +113,7 @@ class ParseFindingsTest(unittest.TestCase):
         self.assertEqual(findings[0].claim, "second")
 
     def test_non_dict_item_warns_but_keeps_others(self):
-        text = (
-            '```json\n[42, {"severity":"major","file":"a","claim":"ok"}]\n```'
-        )
+        text = '```json\n[42, {"severity":"major","file":"a","claim":"ok"}]\n```'
         findings, warnings = parse_findings(text, "claude")
         self.assertEqual(len(findings), 1)
         self.assertEqual(len(warnings), 1)

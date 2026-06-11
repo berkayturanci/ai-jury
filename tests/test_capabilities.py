@@ -4,6 +4,7 @@ Run with: python -m unittest discover -s tests
 No third-party deps, no real agent CLIs, no network. Subprocess calls and
 ``shutil.which`` are monkeypatched so detection runs against FAKE CLIs only.
 """
+
 from __future__ import annotations
 
 import subprocess
@@ -108,9 +109,7 @@ class CapabilityDetectionTests(unittest.TestCase):
         self.assertTrue(caps["warnings"])
 
     def test_nonzero_exit_yields_unknown_version(self):
-        self._patch_run(
-            lambda *_args, **_kwargs: _FakeCompleted(returncode=1, stderr="usage: ...")
-        )
+        self._patch_run(lambda *_args, **_kwargs: _FakeCompleted(returncode=1, stderr="usage: ..."))
         caps = adapters.ClaudeAdapter(_spec()).detect_capabilities()
         self.assertEqual(caps["status"], adapters.CAP_UNKNOWN_VERSION)
         self.assertIsNone(caps["version"])
@@ -126,9 +125,7 @@ class CapabilityDetectionTests(unittest.TestCase):
         self.assertIsNone(caps["version"])
 
     def test_raw_output_is_truncated(self):
-        self._patch_run(
-            lambda *_args, **_kwargs: _FakeCompleted(stdout="1.0 " + "x" * 5000)
-        )
+        self._patch_run(lambda *_args, **_kwargs: _FakeCompleted(stdout="1.0 " + "x" * 5000))
         caps = adapters.ClaudeAdapter(_spec()).detect_capabilities()
         self.assertLessEqual(len(caps["raw_version_output"]), 200)
 

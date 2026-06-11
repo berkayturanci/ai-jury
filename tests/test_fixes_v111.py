@@ -1,6 +1,7 @@
 """Regression tests for the v1.1.1 credibility-cluster fixes (issues #245, #247,
 #248, #251) — the bugs the jury found reviewing its own repo. Offline/deterministic.
 """
+
 from __future__ import annotations
 
 import json
@@ -28,8 +29,14 @@ DIFF = (
 
 def _grp(severity, *, bucket="consensus", status="", reviewers=("claude",)):
     f = Finding(severity=severity, file="src/a.py", line=1, claim="c", reviewer=reviewers[0])
-    return FindingGroup(representative=f, reviewers=list(reviewers),
-                        severity=severity, members=[f], bucket=bucket, status=status)
+    return FindingGroup(
+        representative=f,
+        reviewers=list(reviewers),
+        severity=severity,
+        members=[f],
+        bucket=bucket,
+        status=status,
+    )
 
 
 class FailOnBlockerAlias(unittest.TestCase):  # issue #245
@@ -93,8 +100,10 @@ class AbstentionNotCounted(unittest.TestCase):  # issue #251
         self.assertTrue(voting.is_abstention("I can’t assist with that."))  # smart apostrophe
 
     def test_substantive_review_does_not_abstain(self):
-        review = ("After reviewing the diff I found no blocking issues; the change "
-                  "looks correct and the error handling is adequate. " * 6)
+        review = (
+            "After reviewing the diff I found no blocking issues; the change "
+            "looks correct and the error handling is adequate. " * 6
+        )
         self.assertFalse(voting.is_abstention(review))
 
     def test_long_text_quoting_refusal_does_not_abstain(self):

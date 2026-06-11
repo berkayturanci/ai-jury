@@ -20,6 +20,7 @@ Classifications
 
 See :func:`classify` for the exact, documented formulas.
 """
+
 from __future__ import annotations
 
 import re
@@ -132,7 +133,8 @@ def diff_lines_changed(diff: str | None) -> int:
     if not diff:
         return 0
     return sum(
-        1 for line in diff.splitlines()
+        1
+        for line in diff.splitlines()
         if line.startswith(("+", "-")) and not line.startswith(("+++", "---"))
     )
 
@@ -283,9 +285,7 @@ def classify(
     risk = _risk_level(fs, gs)
     security = any(is_security_finding(f) for f in fs)
     effort = _review_effort(fs, lines_changed)
-    needs_human = (
-        risk == RISK_HIGH or security or _has_unresolved_groups(gs)
-    )
+    needs_human = risk == RISK_HIGH or security or _has_unresolved_groups(gs)
 
     return {
         "review_effort": effort,

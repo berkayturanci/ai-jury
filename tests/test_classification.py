@@ -6,6 +6,7 @@ and that labeling is OFF by default (the *decision*, not any network call). One
 test drives the full mock pipeline and asserts the rendered ``## Classification``
 section is deterministic. No GitHub network access is required anywhere.
 """
+
 from __future__ import annotations
 
 import sys
@@ -120,20 +121,28 @@ class ReviewEffortTests(unittest.TestCase):
 
 class SecuritySensitiveTests(unittest.TestCase):
     def test_sql_injection_claim_is_security(self):
-        cls = classification.classify(findings=[_f("minor", claim="possible SQL injection")], groups=[])
+        cls = classification.classify(
+            findings=[_f("minor", claim="possible SQL injection")], groups=[]
+        )
         self.assertTrue(cls["security_sensitive"])
 
     def test_benign_claim_is_not_security(self):
-        cls = classification.classify(findings=[_f("minor", claim="rename this variable")], groups=[])
+        cls = classification.classify(
+            findings=[_f("minor", claim="rename this variable")], groups=[]
+        )
         self.assertFalse(cls["security_sensitive"])
 
     def test_critical_is_always_security(self):
-        cls = classification.classify(findings=[_f("critical", claim="rename this variable")], groups=[])
+        cls = classification.classify(
+            findings=[_f("critical", claim="rename this variable")], groups=[]
+        )
         self.assertTrue(cls["security_sensitive"])
 
     def test_auth_keyword_word_boundary(self):
         # "author" must NOT match the "auth" keyword.
-        self.assertFalse(classification.is_security_finding(_f("nit", claim="update the author field")))
+        self.assertFalse(
+            classification.is_security_finding(_f("nit", claim="update the author field"))
+        )
         self.assertTrue(classification.is_security_finding(_f("nit", claim="broken auth check")))
 
     def test_various_keywords(self):
@@ -152,9 +161,7 @@ class SecuritySensitiveTests(unittest.TestCase):
             "an exploitable bug",
             "exploited in production",
         ):
-            self.assertTrue(
-                classification.is_security_finding(_f("nit", claim=claim)), claim
-            )
+            self.assertTrue(classification.is_security_finding(_f("nit", claim=claim)), claim)
 
 
 class NeedsHumanAttentionTests(unittest.TestCase):
@@ -249,11 +256,16 @@ class LabelingDefaultOffTests(unittest.TestCase):
         self.assertEqual(
             args,
             [
-                "pr", "edit",
-                "--add-label", "risk: high",
-                "--add-label", "review effort: 3/5",
-                "--repo", "o/r",
-                "--", "42",
+                "pr",
+                "edit",
+                "--add-label",
+                "risk: high",
+                "--add-label",
+                "review effort: 3/5",
+                "--repo",
+                "o/r",
+                "--",
+                "42",
             ],
         )
 

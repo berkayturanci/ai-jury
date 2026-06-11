@@ -10,6 +10,7 @@ deciding the review scope — so it is fully unit-testable. The thin GitHub call
 (fetch head SHA, fetch comment bodies, fetch the range diff) live in
 ``github.py`` and the CLI; this module never touches the network.
 """
+
 from __future__ import annotations
 
 import re

@@ -5,6 +5,7 @@ No third-party dependencies, no live CLIs, no network — the real ``codex``
 binary is never invoked; we only inspect what ``build_argv`` / ``_stdin_for``
 would produce.
 """
+
 from __future__ import annotations
 
 import sys

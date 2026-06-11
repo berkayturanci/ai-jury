@@ -15,6 +15,7 @@ Everything here is PURE and deterministic: parsing, classification, and chunk
 boundaries are a function of the diff text and config only, so the plan is
 reproducible and unit-testable.
 """
+
 from __future__ import annotations
 
 import fnmatch
@@ -89,7 +90,7 @@ class DiffPlan:
 def _strip_ab(path: str) -> str:
     for prefix in ("a/", "b/"):
         if path.startswith(prefix):
-            return path[len(prefix):]
+            return path[len(prefix) :]
     return path
 
 

@@ -4,6 +4,7 @@ Run with: python -m unittest discover -s tests
 No third-party dependencies, no live CLIs, no network. Subprocess is faked or
 monkeypatched so no real agent CLI is ever spawned.
 """
+
 from __future__ import annotations
 
 import subprocess

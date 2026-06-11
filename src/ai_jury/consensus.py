@@ -5,6 +5,7 @@ distinguish issues raised by every reviewer (consensus) from those raised by a
 single reviewer (single_reviewer). Grouping is fully deterministic: identical
 input always produces identical output.
 """
+
 from __future__ import annotations
 
 import re
@@ -83,7 +84,11 @@ def _same_claim(a_norm: str, b_norm: str) -> bool:
 
 
 def _sort_key(f: Finding):
-    return (_normalize_path(f.file), f.line if f.line is not None else -1, _normalize_claim(f.claim))
+    return (
+        _normalize_path(f.file),
+        f.line if f.line is not None else -1,
+        _normalize_claim(f.claim),
+    )
 
 
 def _max_severity(findings) -> str:

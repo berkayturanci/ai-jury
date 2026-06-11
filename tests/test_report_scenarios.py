@@ -1,6 +1,7 @@
 """Coverage for report.render branch shapes not in the golden fixtures:
 cache-hit + budget-exhausted metadata, review-scope note, failed verification,
 the structured-findings fallback (no consensus groups), and agent warnings."""
+
 from __future__ import annotations
 
 import sys
@@ -34,7 +35,9 @@ class ReportScenarioTests(unittest.TestCase):
                 "verify_enabled": True,
                 "context_mode": "diff-only",
                 "total_wall_clock_s": 3.0,
-                "agents": [{"name": "claude", "vendor": "anthropic", "status": "ok", "duration_s": 1.0}],
+                "agents": [
+                    {"name": "claude", "vendor": "anthropic", "status": "ok", "duration_s": 1.0}
+                ],
                 "from_cache": True,
                 "budget_exhausted": True,
             },

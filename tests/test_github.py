@@ -43,7 +43,9 @@ class TestGithubSubprocess(unittest.TestCase):
         result = github._gh("pr", "view")
         self.assertEqual(result, "gh output\n")
         mock_run.assert_called_once_with(
-            ["gh", "pr", "view"], capture_output=True, text=True,
+            ["gh", "pr", "view"],
+            capture_output=True,
+            text=True,
             timeout=github._GH_TIMEOUT_S,
         )
 
@@ -53,6 +55,7 @@ class TestGithubSubprocess(unittest.TestCase):
         # #246: a hung gh call must not block forever — it's bounded and surfaces
         # an actionable timeout error rather than raising raw TimeoutExpired.
         import subprocess as _sp
+
         mock_which.return_value = "/usr/bin/gh"
         mock_run.side_effect = _sp.TimeoutExpired(cmd="gh", timeout=github._GH_TIMEOUT_S)
         with self.assertRaisesRegex(RuntimeError, r"gh pr diff timed out after \d+s"):
@@ -62,6 +65,7 @@ class TestGithubSubprocess(unittest.TestCase):
     @mock.patch("subprocess.run")
     def test_gh_with_input_timeout_raises_clear_error(self, mock_run, mock_which):
         import subprocess as _sp
+
         mock_which.return_value = "/usr/bin/gh"
         mock_run.side_effect = _sp.TimeoutExpired(cmd="gh", timeout=github._GH_TIMEOUT_S)
         with self.assertRaisesRegex(RuntimeError, r"timed out after \d+s"):
@@ -99,7 +103,9 @@ class TestGithubFunctions(unittest.TestCase):
     @mock.patch("ai_jury.github._gh")
     def test_post_pr_comment(self, mock_gh):
         github.post_pr_comment("123", "my comment", repo="org/repo")
-        mock_gh.assert_called_once_with("pr", "comment", "--body", "my comment", "--repo", "org/repo", "--", "123")
+        mock_gh.assert_called_once_with(
+            "pr", "comment", "--body", "my comment", "--repo", "org/repo", "--", "123"
+        )
 
     @mock.patch("ai_jury.github._gh")
     def test_pr_head_sha_success(self, mock_gh):
@@ -160,7 +166,10 @@ class TestGithubWithInput(unittest.TestCase):
         result = github._gh_with_input(["pr", "comment"], "data")
         self.assertEqual(result, "success\n")
         mock_run.assert_called_once_with(
-            ["gh", "pr", "comment"], input="data", capture_output=True, text=True,
+            ["gh", "pr", "comment"],
+            input="data",
+            capture_output=True,
+            text=True,
             timeout=github._GH_TIMEOUT_S,
         )
 

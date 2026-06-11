@@ -1,4 +1,5 @@
 """Tests for secret redaction and context policy (issue #6)."""
+
 import unittest
 
 from ai_jury.config import (
@@ -164,6 +165,7 @@ class RedactionTests(unittest.TestCase):
         # is generous (3 s) so it tolerates coverage instrumentation + slow CI
         # while still catching a quadratic blowup (which would take minutes).
         import time as _t
+
         text = "secret_" + "a" * 200_000
         start = _t.monotonic()
         _out, n = redact(text)
@@ -176,7 +178,7 @@ class RedactionTests(unittest.TestCase):
         self.assertEqual(n, 1)
         self.assertIn("[REDACTED:basic_auth]", out)
         self.assertIn("redis://default:", out)  # prefix preserved
-        self.assertIn("@cache:6379", out)        # suffix preserved
+        self.assertIn("@cache:6379", out)  # suffix preserved
         self.assertNotIn("S3cr3tP4ss", out)
 
     # Issue #316/L-2: more provider token formats.
@@ -185,8 +187,7 @@ class RedactionTests(unittest.TestCase):
             "sendgrid_key": "SG." + "A" * 22 + "." + "B" * 43,
             "pypi_token": "pypi-" + "AgEIcHlwaS5vcmcCJ" + "x" * 12,
             "npm_token": "npm_" + "a" * 36,
-            "slack_webhook": "https://hooks.slack.com/services/T00000/B00000/"
-            + "abcd1234efgh5678",
+            "slack_webhook": "https://hooks.slack.com/services/T00000/B00000/" + "abcd1234efgh5678",
         }
         for kind, value in cases.items():
             out, n = redact(value)
@@ -296,9 +297,7 @@ class ContextConfigTests(unittest.TestCase):
         self.assertTrue(cfg.redact_secrets)
 
     def test_load_expanded(self):
-        cfg = _from_dict(
-            {"jury": {"context": {"mode": "expanded", "redact_secrets": False}}}
-        )
+        cfg = _from_dict({"jury": {"context": {"mode": "expanded", "redact_secrets": False}}})
         self.assertEqual(cfg.context.mode, "expanded")
         self.assertFalse(cfg.context.redact_secrets)
 
@@ -321,15 +320,11 @@ def _cfg(mode="diff-only", redact_secrets=True):
 
 class ContextSelectionTests(unittest.TestCase):
     def test_diff_only_mode_recorded(self):
-        outcome = run_jury(
-            _cfg("diff-only"), "some diff", context="pr body", mock=True
-        )
+        outcome = run_jury(_cfg("diff-only"), "some diff", context="pr body", mock=True)
         self.assertEqual(outcome.context_mode, "diff-only")
 
     def test_expanded_mode_recorded(self):
-        outcome = run_jury(
-            _cfg("expanded"), "some diff", context="pr body", mock=True
-        )
+        outcome = run_jury(_cfg("expanded"), "some diff", context="pr body", mock=True)
         self.assertEqual(outcome.context_mode, "expanded")
 
     def test_redaction_counted_in_outcome(self):

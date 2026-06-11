@@ -32,6 +32,7 @@ measurement requires live mode against real agent CLIs. See ``benchmark/README.m
 This module is stdlib-only and has no import-time dependency on the live
 adapters; ``run_live`` imports the orchestrator lazily.
 """
+
 from __future__ import annotations
 
 import json
@@ -124,9 +125,7 @@ def _keywords_match(finding: dict, keywords: list) -> bool:
     """
     if not keywords:
         return True
-    haystack = (
-        str(finding.get("claim", "")) + " " + str(finding.get("evidence", ""))
-    ).lower()
+    haystack = (str(finding.get("claim", "")) + " " + str(finding.get("evidence", ""))).lower()
     return any(str(kw).lower() in haystack for kw in keywords)
 
 
@@ -161,9 +160,7 @@ def finding_matches_expected(finding: dict, entry: dict, tol: int = LINE_TOLERAN
 # ---------------------------------------------------------------------------
 # Scoring
 # ---------------------------------------------------------------------------
-def score_fixture(
-    findings: list[dict], expected: dict, tol: int = LINE_TOLERANCE
-) -> FixtureScore:
+def score_fixture(findings: list[dict], expected: dict, tol: int = LINE_TOLERANCE) -> FixtureScore:
     """Score a list of finding dicts against a fixture's ``expected`` spec.
 
     The ``expected`` spec is the ``"expect"`` object documented in the fixture
@@ -222,9 +219,7 @@ def score_fixture(
         if blocking > max_blocking:
             passed = False
             false_positives += blocking - max_blocking
-            reasons.append(
-                f"too many blocking findings: got {blocking}, want <= {max_blocking}"
-            )
+            reasons.append(f"too many blocking findings: got {blocking}, want <= {max_blocking}")
 
     recall = matched / len(must_match) if must_match else 1.0
     denom = matched + false_positives
@@ -298,10 +293,7 @@ def discover_fixture_ids(base_dir: Path | None = None) -> list[str]:
     base = base_dir or BENCHMARK_DIR
     if not base.exists():
         return []
-    return sorted(
-        p.name[: -len(".expected.json")]
-        for p in base.glob("*.expected.json")
-    )
+    return sorted(p.name[: -len(".expected.json")] for p in base.glob("*.expected.json"))
 
 
 def load_fixtures(base_dir: Path | None = None) -> list[Fixture]:
@@ -335,9 +327,7 @@ def run_live(base_dir: Path | None = None) -> tuple[list[FixtureScore], dict]:
     real agent CLIs and is never run in CI.
     """
     if not live_enabled():
-        raise RuntimeError(
-            "live benchmark is disabled; set JURY_BENCH_LIVE=1 to enable it"
-        )
+        raise RuntimeError("live benchmark is disabled; set JURY_BENCH_LIVE=1 to enable it")
     # Lazy imports: keep the offline/import path free of live dependencies.
     from .config import DEFAULT_CONFIG, _from_dict
     from .orchestrator import run_jury
@@ -368,7 +358,9 @@ def _finding_to_dict(finding) -> dict:
 # ---------------------------------------------------------------------------
 def format_table(scores: list[FixtureScore], summary: dict) -> str:
     """Render a per-fixture + aggregate score table as plain text."""
-    header = f"{'fixture':<24} {'pass':<5} {'match':<6} {'miss':<5} {'fp':<4} {'prec':<5} {'recall':<6}"
+    header = (
+        f"{'fixture':<24} {'pass':<5} {'match':<6} {'miss':<5} {'fp':<4} {'prec':<5} {'recall':<6}"
+    )
     lines = [header, "-" * len(header)]
     for s in scores:
         lines.append(
