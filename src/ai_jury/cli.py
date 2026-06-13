@@ -37,6 +37,23 @@ from .orchestrator import review_diff, run_jury
 from .policy import PolicyError, load_policy
 from .report import render, render_live_step, render_transcript
 
+# Hard ceiling on raw diff ingestion. The per-run ``diff.max_bytes`` budget is
+# only applied *after* the full diff is read and split, so an unbounded
+# ``stdin``/``--diff-file`` read could OOM the process before that cap engages
+# (security audit 2026-06-13). This ceiling sits far above any realistic review
+# budget; it exists solely to bound memory against a hostile/huge input.
+_MAX_DIFF_INGEST_BYTES = 64 * 1024 * 1024  # 64 MiB
+
+
+def _read_capped(fh, source: str) -> str:
+    """Read text from ``fh`` but refuse inputs above the ingest ceiling."""
+    data = fh.read(_MAX_DIFF_INGEST_BYTES + 1)
+    if len(data) > _MAX_DIFF_INGEST_BYTES:
+        raise SystemExit(
+            f"error: {source} exceeds the {_MAX_DIFF_INGEST_BYTES}-byte ingest limit"
+        )
+    return data
+
 
 def _read_diff(args) -> tuple[str, str]:
     """Return (diff, context)."""
@@ -48,9 +65,9 @@ def _read_diff(args) -> tuple[str, str]:
         return issue_body(args.issue, args.repo), ""
     if args.diff_file:
         if args.diff_file == "-":
-            return sys.stdin.read(), ""
+            return _read_capped(sys.stdin, "stdin"), ""
         with Path(args.diff_file).open(encoding="utf-8") as fh:
-            return fh.read(), ""
+            return _read_capped(fh, args.diff_file), ""
     raise SystemExit(
         "error: provide one of --pr, --issue, --diff-file (or --diff-file - for stdin)"
     )

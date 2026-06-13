@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Seventh security audit** (`docs/security-audit-2026-06-13.md`). Four-surface
+  re-audit of `main`; no Critical/High. Fixed two Medium prompt-injection gaps
+  and two Low issues, all with new tests:
+  - The debater's own round-1 review is now wrapped in an `UNTRUSTED_REVIEW`
+    fence like every other untrusted-derived slot (it was neutralized but not
+    fenced), so injected text surviving into a reviewer's output can no longer
+    land in a region the anti-injection preamble treats as trusted. Bumps
+    `PROMPT_VERSION` to 4 (cache invalidation).
+  - `neutralize_sentinels` now also breaks fences forged from fullwidth/
+    homoglyph angle brackets (e.g. `＜＜＜UNTRUSTED_DIFF`), which previously
+    evaded the ASCII-only matcher while still reading as a real fence to an LLM.
+  - `redact_url_userinfo` now redacts credentials in scheme-less endpoint URLs
+    (`user:pass@host/v1`), which `urlsplit` previously left in the path so the
+    credential slipped through unredacted (continues v1.5.0/L-1).
+  - Raw diff ingestion (`--diff-file`/stdin) is now bounded by a 64 MiB ceiling
+    so a hostile huge input cannot OOM the process before the post-split
+    `diff.max_bytes` budget engages.
+  - The #336 combined classification regex was verified equivalent to the prior
+    per-regex matching and free of catastrophic backtracking.
+
 ### Changed
 
 - Website demo "Run review" button now shows "Running review..." while a run is

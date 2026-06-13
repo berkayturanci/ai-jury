@@ -180,9 +180,23 @@ def redact_url_userinfo(url: str) -> str:
     except ValueError:
         return redact(url)[0]
     netloc = parts.netloc
-    if "@" not in netloc:
-        return url
-    # The host part has no unencoded '@'; split on the last one so a userinfo
-    # that contains a percent-encoded '@' is still handled correctly.
-    hostport = netloc[netloc.rfind("@") + 1 :]
-    return urlunsplit(parts._replace(netloc=f"[REDACTED]@{hostport}"))
+    if "@" in netloc:
+        # The host part has no unencoded '@'; split on the last one so a userinfo
+        # that contains a percent-encoded '@' is still handled correctly.
+        hostport = netloc[netloc.rfind("@") + 1 :]
+        return urlunsplit(parts._replace(netloc=f"[REDACTED]@{hostport}"))
+    # A scheme-less URL ("user:pass@host/p") leaves netloc empty — urlsplit dumps
+    # the authority into the scheme/path, so the userinfo would slip through
+    # unredacted (security audit 2026-06-13; continues v1.5.0/L-1). If the URL
+    # has no "://" authority but still carries an "@", re-parse with a synthetic
+    # "//" authority so netloc is populated, redact, then strip it back off.
+    if "@" in url and "://" not in url:
+        try:
+            reparsed = urlsplit("//" + url)
+        except ValueError:
+            return redact(url)[0]
+        if "@" in reparsed.netloc:
+            hostport = reparsed.netloc[reparsed.netloc.rfind("@") + 1 :]
+            redacted = urlunsplit(reparsed._replace(netloc=f"[REDACTED]@{hostport}"))
+            return redacted[2:] if redacted.startswith("//") else redacted
+    return url

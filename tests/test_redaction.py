@@ -264,6 +264,24 @@ class RedactUrlUserinfoTests(unittest.TestCase):
             "http://[REDACTED]@[::1]:11434/v1",
         )
 
+    def test_scheme_less_user_password_redacted(self):
+        # Security audit 2026-06-13: a scheme-less URL puts the authority in the
+        # path, so urlsplit leaves netloc empty and the credential would leak.
+        self.assertEqual(
+            redact_url_userinfo("user:pass@host/v1"),
+            "[REDACTED]@host/v1",
+        )
+
+    def test_scheme_less_colonless_token_redacted(self):
+        self.assertEqual(
+            redact_url_userinfo(":secret@host:11434"),
+            "[REDACTED]@host:11434",
+        )
+
+    def test_scheme_less_no_userinfo_unchanged(self):
+        # No credential present: must be returned verbatim, not mangled.
+        self.assertEqual(redact_url_userinfo("host:11434/v1"), "host:11434/v1")
+
     def test_empty_unchanged(self):
         self.assertEqual(redact_url_userinfo(""), "")
 
