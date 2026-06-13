@@ -472,6 +472,48 @@ class VerdictMatching(unittest.TestCase):
         v = Verdict(file="a.py", line=10, claim="")  # empty -> treated as match
         self.assertTrue(_verdict_matches_group(v, g))
 
+    def test_line_less_rejecting_verdict_suppresses_nothing(self):
+        # A rejecting verdict with no line is too imprecise to suppress a
+        # finding (file-wide-by-claim wildcard) — audit r9/M.
+        from ai_jury.ci import evaluate_ci
+
+        crit = Finding(
+            severity="critical", file="db.py", line=300,
+            claim="alpha beta gamma delta epsilon kappa", reviewer="r1",
+        )
+        decoy = Finding(
+            severity="info", file="db.py", line=5,
+            claim="alpha beta gamma delta zeta omega", reviewer="r2",
+        )
+        groups = group_findings([crit, decoy], 2)
+        _apply_verdicts(
+            groups,
+            [Verdict(file="db.py", line=None, claim="alpha beta gamma delta", status="unsupported")],
+        )
+        # critical stays un-rejected → strict gate still FAILs.
+        self.assertEqual(evaluate_ci(groups, ["critical"], ignore_unverified=False)[0], 1)
+
+    def test_similarity_tie_rejects_only_least_severe(self):
+        # An exact claim-similarity tie between a critical and a benign decoy at
+        # the same line must reject only the decoy, never drag the critical
+        # down (audit r9/M).
+        from ai_jury.ci import evaluate_ci
+
+        crit = Finding(
+            severity="critical", file="x.py", line=10,
+            claim="alpha beta gamma delta epsilon kappa", reviewer="r1",
+        )
+        decoy = Finding(
+            severity="info", file="x.py", line=10,
+            claim="alpha beta gamma delta zeta omega", reviewer="r2",
+        )
+        groups = group_findings([crit, decoy], 2)
+        _apply_verdicts(
+            groups,
+            [Verdict(file="x.py", line=10, claim="alpha beta gamma delta", status="unsupported")],
+        )
+        self.assertEqual(evaluate_ci(groups, ["critical"], ignore_unverified=False)[0], 1)
+
     def test_verdict_on_lesser_member_does_not_drop_merged_critical(self):
         # A benign minor that consensus merged into a critical group must not be
         # used to reject the whole (critical) group: a verdict naming the minor

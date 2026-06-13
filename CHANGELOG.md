@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Ninth security re-audit** (`docs/security-audit-2026-06-13-round9.md`). A
+  determined final red-team of the verdict-attach layer + an independent
+  convergence pass (which confirmed no new Medium+ and recommended release); no
+  Critical/High. Fixed one more Medium CI-gate bypass, with tests:
+  - A rejecting verdict with `line: null` plus a claim-similarity tie could drop
+    a co-located critical (the claim-ful counterpart of the round-6 line-less
+    wildcard). A rejecting verdict now must pin a concrete line, and on a
+    top-similarity tie only the *least*-severe groups are suppressed — so a tie
+    can never drag a critical down alongside a benign decoy.
 - **Eighth security re-audit** (`docs/security-audit-2026-06-13-round8.md`). A
   red-team of the round-7 verdict-attach fixes + a whole-codebase convergence
   sweep; no Critical/High. Fixed two Medium CI-gate bypasses with a structural
