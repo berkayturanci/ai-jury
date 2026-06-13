@@ -827,20 +827,31 @@ _REJECT_CLAIM_THRESHOLD = 0.5
 def _reject_targets(verdict: Verdict, groups: list[FindingGroup]) -> list[FindingGroup]:
     """Un-statused groups a rejecting verdict may suppress (fail-closed, r7/r8).
 
-    Two defences stop a verdict from collaterally dropping a real critical:
+    Defences (each closes a distinct collateral-rejection vector found across
+    audit rounds 6-9):
 
+    0. **Line required.** A rejecting verdict must pin a concrete line. A
+       line-less verdict is too imprecise to safely suppress a finding and would
+       act as a file-wide-by-claim wildcard (audit r9/M, the claim-ful
+       counterpart of the round-6 line-less-wildcard fix).
     1. **Member-tier guard.** A group may merge findings of different severities
-       (consensus keeps the max). A verdict is "about" the specific member whose
-       claim it best matches; if that best-matched member is *less severe* than
-       the group's max, the verdict is dismissing a lesser co-located finding,
-       so it must NOT suppress the (e.g. critical) group.
-    2. **Best-tier only.** Across the remaining candidate groups, suppress only
-       those at the highest match similarity — a verdict copying a benign
-       neighbour's claim rejects that neighbour (and its duplicate phrasings,
-       which tie) but not a separate, less-similar critical group.
+       (consensus keeps the max). A verdict is "about" the member whose claim it
+       best matches; if that member is *less severe* than the group's max, the
+       verdict is dismissing a lesser co-located finding and must NOT suppress
+       the (e.g. critical) group.
+    2. **Best-tier only.** Across candidate groups, suppress only those at the
+       highest match similarity — a verdict copying a benign neighbour rejects
+       that neighbour (and its duplicate phrasings, which tie) but not a
+       separate, less-similar critical group.
+    3. **Least-severe within a tie.** If the best-similarity tier still spans
+       severities (an exact `_claim_sim` tie between a critical and a benign
+       decoy), suppress only the *least*-severe groups — a tie must never drag a
+       critical down alongside a decoy (audit r9/M).
     """
     from .findings import SEVERITY_ORDER
 
+    if verdict.line is None:
+        return []
     scored: list[tuple[float, FindingGroup]] = []
     for group in groups:
         if group.status:
@@ -862,7 +873,10 @@ def _reject_targets(verdict: Verdict, groups: list[FindingGroup]) -> list[Findin
     if not scored:
         return []
     best = max(sim for sim, _ in scored)
-    return [group for sim, group in scored if sim >= best]
+    tier = [(sim, group) for sim, group in scored if sim >= best]
+    # Within the top-similarity tier, keep only the least-severe groups.
+    least_rank = max(SEVERITY_ORDER.get(g.severity, 99) for _, g in tier)
+    return [g for _, g in tier if SEVERITY_ORDER.get(g.severity, 99) == least_rank]
 
 
 def _apply_verdicts(groups: list[FindingGroup], verdicts: list[Verdict]) -> None:
