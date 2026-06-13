@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Eighth security re-audit** (`docs/security-audit-2026-06-13-round8.md`). A
+  red-team of the round-7 verdict-attach fixes + a whole-codebase convergence
+  sweep; no Critical/High. Fixed two Medium CI-gate bypasses with a structural
+  redesign of verdict→group attachment, all with tests:
+  - A verifier `unsupported` verdict aimed at a co-located *lesser* finding (one
+    consensus merged into a critical group, or a benign decoy / numbered sibling
+    like `parse_v2`/`parse_v3`) could reject the critical and pass the gate.
+    Rejection now uses a **member-tier guard** (a verdict can't suppress a group
+    via a member less severe than the group's max) and attaches only to the
+    **best-similarity tier**, so it dismisses the finding it actually names and
+    never a co-located, less-similar critical.
+  - Contradictory verdicts (`verified` + `unsupported`) on one finding are now
+    resolved in blocking-priority order (verified wins) instead of by the
+    verifier's array order (fail-closed).
 - **Seventh security re-audit** (`docs/security-audit-2026-06-13-round7.md`). Two
   independent passes (exhaustive gate-flow probe + wide net); no Critical/High.
   Fixed three Medium CI-gate / posted-comment integrity issues, all with tests:
