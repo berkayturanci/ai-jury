@@ -132,6 +132,21 @@ def _path_from_marker(line: str) -> str | None:
     return _strip_ab(_unquote_git_path(rest))
 
 
+def _path_from_git_header(line: str) -> str:
+    """Best-effort new-side path from a ``diff --git a/<p> b/<p>`` header.
+
+    ``str.split()[3]`` truncates a space-containing name; split on the last
+    `` b/`` separator instead so the full b-side path is recovered, then unquote
+    git's C-quoting (audit 2026-06-13/L-4, r3 marker-less case).
+    """
+    rest = line[len("diff --git ") :].rstrip("\r\n")
+    idx = rest.rfind(" b/")
+    if idx != -1:
+        return _strip_ab(_unquote_git_path(rest[idx + 1 :]))
+    parts = line.split()
+    return _strip_ab(parts[3]) if len(parts) >= 4 else _strip_ab(parts[-1])
+
+
 def split_diff(diff: str) -> list[DiffFile]:
     """Split a unified diff into per-file segments.
 
@@ -155,19 +170,22 @@ def split_diff(diff: str) -> list[DiffFile]:
         if line.startswith("diff --git "):
             flush()
             cur = [line]
-            parts = line.split()
-            # Best-effort from the header (ambiguous for space-containing names);
-            # refined below from the unambiguous +++/--- marker lines.
-            cur_path = _strip_ab(parts[3]) if len(parts) >= 4 else _strip_ab(parts[-1])
+            # Best-effort from the header (refined below from the unambiguous
+            # +++/--- markers, or rename/copy headers for marker-less segments).
+            cur_path = _path_from_git_header(line)
         else:
             cur.append(line)
-            # Prefer the new-side path; fall back to the old side for deletions
-            # (where ``+++`` is ``/dev/null``). The marker lines are unambiguous
-            # for space/quoted names; the `+++` always wins, `---` only fills a
-            # still-empty path.
+            # Prefer the new-side path; `+++` always wins, `---` only fills a
+            # still-empty path (deletions have ``+++ /dev/null``). For
+            # marker-less segments (pure rename/copy/mode-change) use the
+            # ``rename to``/``copy to`` extended header (audit r3).
             if line.startswith("+++ ") or (line.startswith("--- ") and not cur_path):
                 p = _path_from_marker(line)
                 if p is not None:
+                    cur_path = p
+            elif line.startswith(("rename to ", "copy to ")):
+                p = _strip_ab(_unquote_git_path(line.split(" to ", 1)[1].rstrip("\r\n")))
+                if p:
                     cur_path = p
             if cur_path is None:
                 cur_path = ""

@@ -11,6 +11,9 @@ import json
 import re
 import shutil
 import subprocess
+import threading
+
+from .findings import strip_html_comments
 
 # Every `gh` invocation is bounded (#246): a stalled network call or an
 # interactive auth/2FA prompt would otherwise block `subprocess.run` forever and
@@ -18,17 +21,48 @@ import subprocess
 # a clear, actionable error like any other gh failure.
 _GH_TIMEOUT_S = 90
 
+# Ceiling on `gh` stdout. A hostile/huge PR diff pulled via `--pr`/`--issue`
+# would otherwise be buffered whole by `subprocess.run`, OOMing the process
+# before the diff budget engages (security audit 2026-06-13 r3). We stream the
+# output and stop at the cap; stdout/stderr are drained on separate threads so a
+# full stderr pipe can't deadlock the stdout read.
+_GH_MAX_OUTPUT_BYTES = 64 * 1024 * 1024  # 64 MiB
+
 
 def _gh(*args: str) -> str:
     if shutil.which("gh") is None:
         raise RuntimeError("the GitHub CLI `gh` is not installed or not on PATH")
+    label = " ".join(args)
+    proc = subprocess.Popen(["gh", *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    holder: dict[str, bytes] = {}
+
+    def _drain(stream, key: str) -> None:
+        # read(N+1) is bounded: at most N+1 bytes, never the whole stream if it
+        # is larger.
+        holder[key] = stream.read(_GH_MAX_OUTPUT_BYTES + 1)
+
+    t_out = threading.Thread(target=_drain, args=(proc.stdout, "out"), daemon=True)
+    t_err = threading.Thread(target=_drain, args=(proc.stderr, "err"), daemon=True)
+    t_out.start()
+    t_err.start()
+    t_out.join(_GH_TIMEOUT_S)
+    if t_out.is_alive():
+        proc.kill()
+        raise RuntimeError(f"gh {label} timed out after {_GH_TIMEOUT_S}s")
+    out = holder.get("out", b"")
+    if len(out) > _GH_MAX_OUTPUT_BYTES:
+        proc.kill()
+        raise RuntimeError(f"gh {label} output exceeds the {_GH_MAX_OUTPUT_BYTES}-byte limit")
     try:
-        proc = subprocess.run(["gh", *args], capture_output=True, text=True, timeout=_GH_TIMEOUT_S)
+        proc.wait(timeout=_GH_TIMEOUT_S)
     except subprocess.TimeoutExpired:
-        raise RuntimeError(f"gh {' '.join(args)} timed out after {_GH_TIMEOUT_S}s") from None
+        proc.kill()
+        raise RuntimeError(f"gh {label} timed out after {_GH_TIMEOUT_S}s") from None
+    t_err.join(_GH_TIMEOUT_S)
     if proc.returncode != 0:
-        raise RuntimeError(f"gh {' '.join(args)} failed: {proc.stderr.strip()}")
-    return proc.stdout
+        err = holder.get("err", b"").decode("utf-8", "replace")
+        raise RuntimeError(f"gh {label} failed: {err.strip()}")
+    return out.decode("utf-8", "replace")
 
 
 def pr_diff(pr: str, repo: str | None = None) -> str:
@@ -219,8 +253,11 @@ def _sig_from_body(body: str | None) -> str:
 
 def _comment_body(finding) -> str:
     sev = getattr(finding, "severity", "info")
-    claim = getattr(finding, "claim", "") or ""
-    fix = getattr(finding, "suggested_fix", "") or ""
+    # Strip HTML comments so a finding can't forge the hidden inline markers
+    # (``<!-- arc-inline -->`` / ``<!-- arc-sig:… -->``) and perturb dedup
+    # (audit 2026-06-13 r3/N-3).
+    claim = strip_html_comments(getattr(finding, "claim", "") or "")
+    fix = strip_html_comments(getattr(finding, "suggested_fix", "") or "")
     text = f"[{sev}] {claim}"
     if fix:
         text += f" — {fix}"
@@ -265,7 +302,7 @@ def _resolve_repo(repo: str | None) -> str:
     try:
         out = _gh("repo", "view", "--json", "nameWithOwner")
         return json.loads(out).get("nameWithOwner", "")
-    except (RuntimeError, json.JSONDecodeError):
+    except (RuntimeError, json.JSONDecodeError, RecursionError):
         return ""
 
 
@@ -281,7 +318,7 @@ def _existing_inline_keys(pr: str, repo: str) -> set:
     try:
         out = _gh("api", "--paginate", "--", f"repos/{repo}/pulls/{pr}/comments")
         data = json.loads(out)
-    except (RuntimeError, json.JSONDecodeError):
+    except (RuntimeError, json.JSONDecodeError, RecursionError):
         return keys
     if not isinstance(data, list):
         return keys
@@ -384,7 +421,7 @@ def _create_issue_comment(pr: str, body: str, repo: str) -> int | None:
             json.dumps({"body": body}),
         )
         return json.loads(out).get("id")
-    except (RuntimeError, json.JSONDecodeError):
+    except (RuntimeError, json.JSONDecodeError, RecursionError):
         return None
 
 

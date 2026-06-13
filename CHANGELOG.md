@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Third security re-audit** (`docs/security-audit-2026-06-13-round3.md`). A
+  red-team pass plus a fresh sweep of the report/GitHub-post surface; no
+  Critical/High. Fixed a newly-found markdown output-injection class and the
+  deferred gh-output cap, all with tests:
+  - **Report integrity:** attacker-influenced finding text (`claim`/`evidence`/
+    `suggested_fix`/`file`) is now flattened to a single line before rendering,
+    and `--suggest-patches` bodies are fence-safe — so a finding can no longer
+    forge a `## Verdict APPROVE` heading or break a code fence in the markdown
+    comment posted to the PR/issue. (The machine CI gate was never affected.)
+  - **gh output cap:** `gh` stdout on the `--pr`/`--issue` path is now streamed
+    with a 64 MiB ceiling (previously only `--diff-file`/stdin was capped), so a
+    hostile huge PR diff can't OOM the process.
+  - Inline-comment bodies strip HTML comments so a finding can't forge the
+    jury's hidden `<!-- arc-inline -->` markers / perturb dedup.
+  - `diff --git` paths for marker-less segments (renames/copies/mode-changes)
+    are recovered from the extended header, closing the remaining file-hiding
+    vector from the include allow-list.
+  - Added vertical presentation-form angle brackets to the homoglyph fence set
+    (`PROMPT_VERSION` 6); `cache.load`/`github` json parsing also catch
+    `RecursionError` for parity.
 - **Red-team re-audit** (`docs/security-audit-2026-06-13-redteam.md`). A
   same-day adversarial pass against the seventh audit's fixes plus a fresh
   full-surface sweep; no Critical/High. Fixed six items, all with tests:

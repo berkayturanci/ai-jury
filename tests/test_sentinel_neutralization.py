@@ -90,6 +90,13 @@ class NeutralizeSentinelsTest(unittest.TestCase):
         out = neutralize_sentinels("UNTRUSTED_FINDINGS>＞>")
         self.assertNotIn("UNTRUSTED_FINDINGS>＞>", out)
 
+    def test_presentation_form_angle_brackets_broken(self):
+        # Vertical presentation-form angle brackets (U+FE3F/FE40) added r3.
+        opener = "︿︿︿UNTRUSTED_DIFF"
+        closer = "UNTRUSTED_DIFF﹀﹀﹀"
+        self.assertNotIn(opener, neutralize_sentinels(opener))
+        self.assertNotIn(closer, neutralize_sentinels(closer))
+
     def test_prompt_version_bumped(self):
         # The neutralization changes effective prompt output, so the cache must
         # invalidate (issue #301).

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from . import classification as _classification
 from .adapters import AgentResult
-from .findings import SEVERITY_ORDER, Finding
+from .findings import SEVERITY_ORDER, Finding, flatten_inline
 
 
 def _block(title: str, body: str) -> str:
@@ -18,10 +18,11 @@ def _fail_status(r: AgentResult) -> str:
 
 
 def _finding_line(f: Finding) -> str:
-    loc = f.file or "?"
+    loc = flatten_inline(f.file) or "?"
     if f.line is not None:
         loc = f"{loc}:{f.line}"
-    return f"- [{f.severity}] {loc} — {f.claim} ({f.confidence}, by {f.reviewer})"
+    claim = flatten_inline(f.claim)
+    return f"- [{f.severity}] {loc} — {claim} ({f.confidence}, by {f.reviewer})"
 
 
 _BUCKET_LABELS = {
@@ -42,21 +43,24 @@ _STATUS_LABELS = {
 
 def _group_line(g) -> str:
     f = g.representative
-    loc = f.file or "?"
+    loc = flatten_inline(f.file) or "?"
     if f.line is not None:
         loc = f"{loc}:{f.line}"
     reviewers = ", ".join(g.reviewers) if g.reviewers else "(unknown)"
 
-    parts = [f"- [{g.severity}] {loc} — {f.claim} (reviewers: {reviewers})"]
+    # Attacker-influenced fields (claim/evidence/fix) are flattened to one line
+    # so they cannot forge a heading or open a code fence in the posted report
+    # (audit 2026-06-13 r3).
+    parts = [f"- [{g.severity}] {loc} — {flatten_inline(f.claim)} (reviewers: {reviewers})"]
 
     # Surface the reviewer's supporting evidence — the "why" behind the claim —
     # so the verdict is auditable, not just asserted (issue: evidence surfacing).
     if getattr(f, "evidence", ""):
-        parts.append(f"\n  - _evidence:_ {f.evidence}")
+        parts.append(f"\n  - _evidence:_ {flatten_inline(f.evidence)}")
 
     status = getattr(g, "status", "")
     if status:
-        reasoning = getattr(g, "status_reasoning", "")
+        reasoning = flatten_inline(getattr(g, "status_reasoning", ""))
         if reasoning:
             parts.append(
                 f"\n  - _verification:_ {_STATUS_LABELS.get(status, status)} — {reasoning}"
@@ -65,7 +69,7 @@ def _group_line(g) -> str:
             parts.append(f"\n  - _verification:_ {_STATUS_LABELS.get(status, status)}")
 
     if f.suggested_fix:
-        parts.append(f"\n  - _fix:_ {f.suggested_fix}")
+        parts.append(f"\n  - _fix:_ {flatten_inline(f.suggested_fix)}")
 
     return "".join(parts) if len(parts) > 1 else parts[0]
 

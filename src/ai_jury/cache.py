@@ -299,7 +299,10 @@ class Cache:
             if len(raw) > _MAX_CACHE_BYTES:
                 return None
             data = json.loads(raw)
-        except (OSError, ValueError):
+        except (OSError, ValueError, RecursionError):
+            # RecursionError on deeply nested JSON is not a ValueError; catch it
+            # so a planted entry can't crash the fail-closed read (audit
+            # 2026-06-13 r3, mirrors findings.py).
             return None
         if data.get("cache_schema") != CACHE_SCHEMA:
             return None

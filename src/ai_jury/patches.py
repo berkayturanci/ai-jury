@@ -18,6 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .consensus import BUCKET_REJECTED, FindingGroup
+from .findings import fence_safe, flatten_inline
 
 
 @dataclass
@@ -80,12 +81,17 @@ def render_patch_suggestions(groups: list[FindingGroup]) -> str:
         "",
     ]
     for s in suggestions:
-        lines.append(f"### {s.location()} — [{s.severity}] {s.claim}")
+        # Flatten the heading text and break any fence-closer inside the
+        # suggestion body so attacker-influenced finding text can't inject a
+        # forged verdict/heading into the posted comment (audit 2026-06-13 r3).
+        lines.append(
+            f"### {flatten_inline(s.location())} — [{s.severity}] {flatten_inline(s.claim)}"
+        )
         lines.append("")
         lines.append("> Verified by the jury.")
         lines.append("")
         lines.append("```suggestion")
-        lines.append(s.suggested_fix)
+        lines.append(fence_safe(s.suggested_fix))
         lines.append("```")
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
