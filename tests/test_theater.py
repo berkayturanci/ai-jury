@@ -54,6 +54,13 @@ class ScreenTest(unittest.TestCase):
         s.put(0, 3, "abcdef")  # overflow right edge — must not raise
         self.assertEqual(s.to_plain(), "   ab")
 
+    def test_to_ansi_wraps_styled_runs(self):
+        s = Screen(2, 1)
+        s.put(0, 0, "ab", "31")  # whole row styled → reset emitted at row end
+        out = s.to_ansi()
+        self.assertIn("\033[31m", out)
+        self.assertIn("\033[0m", out)
+
 
 class CourtroomTest(unittest.TestCase):
     def _drive(self, court):
@@ -156,9 +163,90 @@ class CourtroomTest(unittest.TestCase):
                 self.assertIn(name[:6], court.screen.to_plain())
 
 
+_DISPUTE = (
+    "```json\n"
+    '[{"file":"a.py","line":1,"claim":"unclear","status":"needs_human_decision"}]\n```'
+)
+
+
+class AnimateTest(unittest.TestCase):
+    """Exercise the animate=True side (ANSI writes + cursor codes), with sleeps
+    patched out so it stays fast and deterministic."""
+
+    def test_animate_emits_ansi_and_cursor_codes(self):
+        import unittest.mock as mock
+
+        buf = io.StringIO()
+        with mock.patch("ai_jury.theater.time.sleep"):
+            c = Courtroom(_AGENTS, "codex", animate=True, cols=84, rows=28, stream=buf)
+            c.open()
+            c.step("review", _ar("claude", output=_REVIEW))
+            c.step("review", _ar("codex", "openai", output="just prose, no json block"))
+            c.step("debate", _ar("qwen", "local", output=_REVIEW), round_no=2)
+            c.step("verify", _ar("codex", "openai", output=_DISPUTE))
+            c.step("synthesis", _ar("codex", "openai", output="no verdict header at all"))
+            c.close()
+        out = buf.getvalue()
+        self.assertIn("\033[", out)        # styled output written
+        self.assertIn("\033[?25l", out)    # open() hides the cursor
+        self.assertIn("\033[?25h", out)    # close() restores it
+
+    def test_animate_failed_agent(self):
+        import unittest.mock as mock
+
+        buf = io.StringIO()
+        with mock.patch("ai_jury.theater.time.sleep"):
+            c = Courtroom(_AGENTS, "codex", animate=True, stream=buf)
+            c.open()
+            c.step("review", _ar("claude", ok=False, error="kaboom"))
+            c.close()
+        self.assertIn("\033[", buf.getvalue())
+
+
+class HelpersTest(unittest.TestCase):
+    def test_banner_sgr(self):
+        from ai_jury.theater import _banner_sgr
+
+        self.assertEqual(_banner_sgr("REQUEST CHANGES"), "97;41;1")
+        self.assertEqual(_banner_sgr("APPROVE"), "30;42;1")
+        self.assertEqual(_banner_sgr("READY"), "30;42;1")
+        self.assertEqual(_banner_sgr("COMMENT"), "30;43;1")  # neutral
+
+    def test_wrap_and_gist_and_headline(self):
+        from ai_jury.theater import _gist, _verdict_headline, _wrap
+
+        self.assertEqual(_wrap("", 20), [""])
+        self.assertEqual(_wrap("a b c d e f g h", 5)[0], "a b c")  # wraps
+        self.assertEqual(_gist(""), "(no output)")
+        self.assertEqual(_gist("  \n  hello there"), "hello there")
+        self.assertEqual(_verdict_headline("## Verdict\nAPPROVE — ok"), "APPROVE — ok")
+        self.assertEqual(_verdict_headline("no header"), "no header")  # gist fallback
+
+    def test_screen_out_of_bounds_is_safe(self):
+        s = Screen(4, 1)
+        s.put(9, 0, "x")     # row out of range
+        s.put(0, -3, "yy")   # negative col
+        self.assertEqual(s.to_plain(), "")
+
+
 class TtyGateTest(unittest.TestCase):
     def test_supports_scene_false_for_non_tty(self):
         self.assertFalse(supports_scene(io.StringIO()))
+
+    def test_supports_scene_handles_isatty_exception(self):
+        class Bad:
+            def isatty(self):
+                raise RuntimeError("nope")
+
+        self.assertFalse(supports_scene(Bad()))
+
+    def test_supports_scene_true_for_wide_tty(self):
+        class FakeTTY:
+            def isatty(self):
+                return True
+
+        # Real terminal-size fallback is (80, 24) → width 80 ≥ 60 → True.
+        self.assertTrue(supports_scene(FakeTTY()))
 
 
 if __name__ == "__main__":
