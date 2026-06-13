@@ -94,6 +94,16 @@ class SplitDiffTest(unittest.TestCase):
         files = split_diff(seg)
         self.assertEqual(files[0].path, "a b.py")
 
+    def test_modechange_path_with_b_slash_in_name_recovered(self):
+        # A mode-change-only segment (no +++/--- or rename marker) whose path
+        # contains the literal " b/" must not be truncated/hidden (audit r4/L).
+        seg = (
+            "diff --git a/weird b/secret.py b/weird b/secret.py\n"
+            "old mode 100644\nnew mode 100755\n"
+        )
+        files = split_diff(seg)
+        self.assertEqual(files[0].path, "weird b/secret.py")
+
     def test_quoted_unicode_path_unquoted(self):
         seg = _file_segment("src/a.py").replace(
             "+++ b/src/a.py", '+++ "b/src/\\303\\251.py"'

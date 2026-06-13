@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Fourth security re-audit** (`docs/security-audit-2026-06-13-round4.md`). A
+  red-team pass plus a fresh sweep of under-examined modules; no Critical/High.
+  Fixed two Medium issues and one Low, all with tests:
+  - Failed-agent error snippets (`AgentResult.error`, attacker-influenced CLI
+    stderr) are now flattened before rendering — the report-integrity fix from
+    round 3 covered finding fields but missed error strings, so a failed agent
+    could forge a `## Verdict APPROVE` heading in the posted comment.
+  - Incremental mode now trusts the hidden `arc-reviewed-sha` marker only from
+    OWNER/MEMBER/COLLABORATOR comments — an external PR author could otherwise
+    forge it to narrow the reviewed range and skip malicious commits.
+  - `diff --git` mode-change segments whose path contains `" b/"` are recovered
+    correctly (were truncated, hiding the file from an `include` allow-list).
 - **Third security re-audit** (`docs/security-audit-2026-06-13-round3.md`). A
   red-team pass plus a fresh sweep of the report/GitHub-post surface; no
   Critical/High. Fixed a newly-found markdown output-injection class and the

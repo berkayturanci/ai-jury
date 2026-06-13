@@ -140,6 +140,19 @@ def _path_from_git_header(line: str) -> str:
     git's C-quoting (audit 2026-06-13/L-4, r3 marker-less case).
     """
     rest = line[len("diff --git ") :].rstrip("\r\n")
+    # Non-rename headers are symmetric: ``a/<p> b/<p>`` with the SAME <p> on both
+    # sides. Recover <p> by halving, which is robust even when <p> itself
+    # contains `` b/`` (a mode-change-only segment has no +++/--- or rename
+    # marker to fall back on — audit 2026-06-13 r4/L). len(body) = 2*len(p)+3.
+    if rest.startswith("a/"):
+        body = rest[2:]
+        half = (len(body) - 3) // 2
+        if (
+            len(body) >= 3
+            and body[half : half + 3] == " b/"
+            and body[:half] == body[half + 3 :]
+        ):
+            return _unquote_git_path(body[:half])
     idx = rest.rfind(" b/")
     if idx != -1:
         return _strip_ab(_unquote_git_path(rest[idx + 1 :]))

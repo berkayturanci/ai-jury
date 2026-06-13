@@ -145,13 +145,22 @@ def pr_head_sha(pr: str, repo: str | None = None) -> str:
 
 
 def pr_comment_bodies(pr: str, repo: str | None = None) -> list[str]:
-    """Return the bodies of a PR's issue comments (best-effort, [] on failure).
+    """Return bodies of a PR's issue comments from TRUSTED authors only.
 
-    Used by incremental mode (issue #9) to find the jury's prior
-    reviewed-SHA marker. Network errors degrade to an empty list so the caller
-    safely falls back to a full review.
+    Used by incremental mode (issue #9) to find the jury's prior reviewed-SHA
+    marker. The marker is security-sensitive: a forged ``arc-reviewed-sha``
+    marker would let an attacker narrow the reviewed range and skip malicious
+    commits (audit 2026-06-13 r4/M-1). So we only return comments authored by a
+    repo OWNER/MEMBER/COLLABORATOR — an external fork-PR author (CONTRIBUTOR /
+    FIRST_TIME_CONTRIBUTOR / NONE) cannot inject a trusted marker. (Run the jury
+    under such an identity for incremental mode; otherwise it safely falls back
+    to a full review.) Network errors degrade to an empty list.
     """
-    args = ["pr", "view", "--json", "comments", "--jq", ".comments[].body"]
+    jq = (
+        '.comments[] | select(.authorAssociation=="OWNER" or '
+        '.authorAssociation=="MEMBER" or .authorAssociation=="COLLABORATOR") | .body'
+    )
+    args = ["pr", "view", "--json", "comments", "--jq", jq]
     if repo:
         args += ["--repo", repo]
     args += ["--", str(pr)]
