@@ -123,7 +123,7 @@ def _path_from_marker(line: str) -> str | None:
     header, which a ``str.split()`` truncates at the first space, hiding or
     mislabeling the file (security audit 2026-06-13/L-4,N-3).
     """
-    rest = line[4:].rstrip("\n")
+    rest = line[4:].rstrip("\r\n")
     # Some diff formats append a tab + timestamp; the path ends at the tab.
     if "\t" in rest:
         rest = rest.split("\t", 1)[0]

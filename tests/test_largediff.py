@@ -54,6 +54,18 @@ class SplitDiffTest(unittest.TestCase):
         plan = plan_diff(diff, max_bytes=1_000_000, chunk=False, include=["src/*"])
         self.assertEqual(plan.kept_paths, ["src/evil with space.py"])
 
+    def test_crlf_marker_path_has_no_trailing_cr(self):
+        # On Windows a diff read in binary keeps CRLF; the +++/--- path must not
+        # retain a trailing '\r' or it fails glob/include matching (regression).
+        seg = _file_segment("src/a.py").replace("\n", "\r\n")
+        files = split_diff(seg)
+        self.assertEqual(files[0].path, "src/a.py")
+
+    def test_crlf_path_matches_include_filter(self):
+        diff = _file_segment("src/a.py").replace("\n", "\r\n")
+        plan = plan_diff(diff, max_bytes=1_000_000, chunk=False, include=["*.py"])
+        self.assertEqual(plan.kept_paths, ["src/a.py"])
+
     def test_quoted_unicode_path_unquoted(self):
         seg = _file_segment("src/a.py").replace(
             "+++ b/src/a.py", '+++ "b/src/\\303\\251.py"'
