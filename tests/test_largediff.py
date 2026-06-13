@@ -66,6 +66,34 @@ class SplitDiffTest(unittest.TestCase):
         plan = plan_diff(diff, max_bytes=1_000_000, chunk=False, include=["*.py"])
         self.assertEqual(plan.kept_paths, ["src/a.py"])
 
+    def test_markerless_rename_path_from_extended_header(self):
+        # A pure rename (no +++/--- lines) with a space in the name must recover
+        # the full path from the `rename to` header, not truncate at the space
+        # (audit 2026-06-13 r3; #343 fix was incomplete for marker-less segments).
+        seg = (
+            "diff --git a/old.txt b/src/auth handler.py\n"
+            "similarity index 100%\n"
+            "rename from old.txt\n"
+            "rename to src/auth handler.py\n"
+        )
+        files = split_diff(seg)
+        self.assertEqual(files[0].path, "src/auth handler.py")
+
+    def test_markerless_rename_not_hidden_from_include(self):
+        seg = (
+            "diff --git a/old.py b/src/evil thing.py\n"
+            "rename from old.py\n"
+            "rename to src/evil thing.py\n"
+        )
+        plan = plan_diff(seg, max_bytes=1_000_000, chunk=False, include=["src/*"])
+        self.assertEqual(plan.kept_paths, ["src/evil thing.py"])
+
+    def test_space_in_header_recovered_without_markers(self):
+        # Header path with a space, no marker lines: split on " b/" not " ".
+        seg = "diff --git a/a b.py b/a b.py\nold mode 100644\nnew mode 100755\n"
+        files = split_diff(seg)
+        self.assertEqual(files[0].path, "a b.py")
+
     def test_quoted_unicode_path_unquoted(self):
         seg = _file_segment("src/a.py").replace(
             "+++ b/src/a.py", '+++ "b/src/\\303\\251.py"'

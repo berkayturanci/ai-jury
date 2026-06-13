@@ -28,7 +28,9 @@ import re
 # angle brackets (security audit 2026-06-13).
 # v5: broaden the homoglyph angle-bracket set after a red-team pass (small-form,
 # heavy-ornament, much-less/greater, Canadian-syllabic, guillemet forms).
-PROMPT_VERSION = 5
+# v6: add vertical presentation-form angle brackets (U+FE3D-FE40) for parity
+# with the already-covered CJK angle brackets (second red-team pass).
+PROMPT_VERSION = 6
 
 
 # Neutralize sentinel fences inside untrusted content (issue #301). Every fence
@@ -60,10 +62,13 @@ PROMPT_VERSION = 5
 _LANGLE_CPS = (
     0x3C, 0xAB, 0x2039, 0x276E, 0x27E8, 0x3008, 0x2329, 0x276C, 0x2770,
     0x226A, 0x02C2, 0x1438, 0xFF1C, 0xFE64, 0x29FC,
+    # presentation forms for vertical (double-)angle brackets (audit r3)
+    0xFE3D, 0xFE3F,
 )
 _RANGLE_CPS = (
     0x3E, 0xBB, 0x203A, 0x276F, 0x27E9, 0x3009, 0x232A, 0x276D, 0x2771,
     0x226B, 0x02C3, 0x1433, 0xFF1E, 0xFE65, 0x29FD,
+    0xFE3E, 0xFE40,
 )
 _LANGLES = "".join(chr(c) for c in _LANGLE_CPS)
 _RANGLES = "".join(chr(c) for c in _RANGLE_CPS)

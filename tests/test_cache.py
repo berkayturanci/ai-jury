@@ -109,6 +109,17 @@ class RoundTripTest(unittest.TestCase):
         )
 
 
+class CacheRobustnessTest(unittest.TestCase):
+    def test_deeply_nested_planted_entry_is_a_miss_not_a_crash(self):
+        # RecursionError on deeply nested JSON must be caught so the fail-closed
+        # read can't be crashed by a planted entry (audit 2026-06-13 r3).
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Cache(tmp)
+            key = cache_key(_config(), SAMPLE_DIFF)
+            cache._path(key).write_text("[" * 5000, encoding="utf-8")
+            self.assertIsNone(cache.load(key))
+
+
 class CacheHitMissTest(unittest.TestCase):
     def test_miss_then_hit(self):
         with tempfile.TemporaryDirectory() as tmp:

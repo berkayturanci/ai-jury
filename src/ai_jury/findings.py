@@ -15,6 +15,44 @@ from dataclasses import dataclass
 SEVERITIES: tuple[str, ...] = ("critical", "major", "minor", "nit", "info")
 CONFIDENCES: tuple[str, ...] = ("high", "medium", "low")
 
+# Output-injection guards for attacker-influenced finding text rendered into the
+# human-facing markdown report that is posted verbatim to the PR/issue (security
+# audit 2026-06-13 round 3). The machine CI gate is a pure function of the
+# structured fields and is unaffected by this text; these helpers only stop a
+# forged ``## Verdict APPROVE`` heading or a broken code fence from corrupting
+# the comment a human (or a downstream grep) reads.
+_FENCE_RUN_RE = re.compile(r"`{3,}|~{3,}")
+_HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
+
+
+def flatten_inline(text: str) -> str:
+    """Collapse text to a single line for safe inline rendering.
+
+    Markdown headings, list items, and code fences must begin a line, so
+    flattening newlines (and runs of whitespace) neutralizes forged structure
+    when the value is rendered inside a one-line list item.
+    """
+    if not text:
+        return text
+    return " ".join(str(text).split())
+
+
+def fence_safe(text: str) -> str:
+    """Break 3+ backtick/tilde runs so text rendered *inside* a code fence
+    (e.g. a ``suggestion`` block) cannot close the fence and inject markdown."""
+    if not text:
+        return text
+    return _FENCE_RUN_RE.sub(lambda m: m.group()[0], str(text))
+
+
+def strip_html_comments(text: str) -> str:
+    """Remove HTML comments so attacker text can't forge the jury's hidden
+    inline-comment markers (``<!-- arc-inline -->`` / ``<!-- arc-sig:… -->``)."""
+    if not text:
+        return text
+    return _HTML_COMMENT_RE.sub("", str(text))
+
+
 # Verification verdict statuses (issue #3).
 VERDICT_STATUSES: tuple[str, ...] = ("verified", "unsupported", "needs_human_decision")
 
