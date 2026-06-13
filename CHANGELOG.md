@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Sixth security re-audit** (`docs/security-audit-2026-06-13-round6.md`). Two
+  independent gate-integrity passes; no Critical/High. Fixed two Medium CI-gate
+  bypasses and one Low, all with tests:
+  - **Claim-less, line-less verdict was a file-wide CI-gate wildcard:**
+    `orchestrator._verdict_matches_group` treated an empty verdict claim as a
+    location match, but a verdict carrying *neither* a `claim` *nor* a `line`
+    (a normal/plausible verifier output shape — and exactly what an injected
+    diff would coach the verifier to emit) matched **every** finding group in
+    the file. An `unsupported` verdict of that shape rejected unrelated
+    `critical` groups (bucket → `rejected`), flipping the CI gate from FAIL to
+    PASS; under the default `ignore_unverified=True`, mere verdict *ordering*
+    decided the outcome. Now an empty-claim match requires a concrete line on
+    both the verdict and the finding.
+  - **Path case-collapse:** `consensus._normalize_path` lower-cased paths, so on
+    a case-sensitive filesystem (Linux/CI) a verdict on `config.py` could reject
+    a real critical at `Config.py` and pass the gate (the round-5 fix covered the
+    `./` collision but not case). Case-folding is kept for grouping/dedup, but
+    the gate-critical verdict match is now case-exact (`fold_case=False`).
+  - Run-metadata report strings (rounds decision, skipped agent name/reason,
+    agent name/vendor) are now flattened for defense-in-depth (config-controlled
+    today, but keeps them from ever breaking the table / forging structure).
 - **Fifth security re-audit** (`docs/security-audit-2026-06-13-round5.md`). Two
   independent passes (red-team + deterministic-core sweep); no Critical/High.
   Fixed two Medium issues and one Low, all with tests:

@@ -40,20 +40,28 @@ class FindingGroup:
     status_reasoning: str = ""
 
 
-def _normalize_path(path) -> str:
+def _normalize_path(path, *, fold_case: bool = True) -> str:
+    """Normalize a path for comparison.
+
+    Strips only a real leading ``./`` prefix — NOT ``str.lstrip("./")``, which
+    removes a whole leading run of ``.``/``/`` and collides distinct paths
+    (e.g. ``.github/x.yml`` vs ``github/x.yml``, ``../auth.py`` vs ``./auth.py``;
+    audit 2026-06-13 r5/M).
+
+    ``fold_case`` lower-cases the result, which is fine for *grouping/dedup*
+    (a finding's display location) but DANGEROUS for the CI gate: on a
+    case-sensitive filesystem ``Config.py`` and ``config.py`` are different
+    files, so a case-folded match would let a verifier ``unsupported`` verdict on
+    a benign sibling swallow a real critical and pass the gate (audit
+    2026-06-13 r6/M). ``orchestrator._verdict_matches_group`` therefore calls
+    this with ``fold_case=False`` (case-exact, fail-closed).
+    """
     if not path:
         return ""
-    # Strip only a real leading ``./`` prefix — NOT ``str.lstrip("./")``, which
-    # removes a whole leading run of ``.``/``/`` and collides distinct paths
-    # (e.g. ``.github/x.yml`` vs ``github/x.yml``, ``../auth.py`` vs
-    # ``./auth.py``). That collision let a verifier verdict / finding group on a
-    # benign sibling path swallow a real critical finding and pass the CI gate
-    # (security audit 2026-06-13 r5/M). This function also backs
-    # ``orchestrator._verdict_matches_group``, so the fix closes both paths.
     p = str(path).strip().replace("\\", "/")
     while p.startswith("./"):
         p = p[2:]
-    return p.lower()
+    return p.lower() if fold_case else p
 
 
 def _normalize_claim(claim) -> str:

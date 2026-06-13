@@ -31,6 +31,18 @@ class NormalizePathTests(unittest.TestCase):
         groups = group_findings([a, b], reviewer_count=2)
         self.assertEqual(len(groups), 2)
 
+    def test_case_fold_for_grouping_but_not_for_gate_match(self):
+        # fold_case=True (grouping/dedup) folds case; fold_case=False (the
+        # gate-critical verdict match) is case-exact so Config.py != config.py
+        # on a case-sensitive filesystem (audit r6/M).
+        from ai_jury.consensus import _normalize_path
+
+        self.assertEqual(_normalize_path("Config.py"), _normalize_path("config.py"))
+        self.assertNotEqual(
+            _normalize_path("Config.py", fold_case=False),
+            _normalize_path("config.py", fold_case=False),
+        )
+
     def test_leading_dotslash_still_normalized(self):
         # A real "./" prefix is still stripped so genuine duplicates group.
         a = _f("claude", file="./src/a.py")

@@ -759,13 +759,29 @@ def _verdict_matches_group(verdict: Verdict, group: FindingGroup) -> bool:
     from .consensus import _normalize_claim, _normalize_path
 
     rep = group.representative
-    if _normalize_path(verdict.file) != _normalize_path(rep.file):
+    # Case-EXACT path match (fold_case=False): on a case-sensitive filesystem
+    # ``Config.py`` != ``config.py``, so a verdict must not reject a finding it
+    # only case-collapses onto (audit 2026-06-13 r6/M).
+    if _normalize_path(verdict.file, fold_case=False) != _normalize_path(
+        rep.file, fold_case=False
+    ):
         return False
     if verdict.line is not None and rep.line is not None and abs(verdict.line - rep.line) > 3:
         return False
     v_claim = _normalize_claim(verdict.claim)
     r_claim = _normalize_claim(rep.claim)
-    if not v_claim or v_claim == r_claim:
+    if not v_claim:
+        # An empty verdict claim is allowed to match the finding *at this
+        # location* (the verifier may omit the claim and refer to it by
+        # position). But a verdict with NEITHER a claim NOR a line has no
+        # location precision at all: it would otherwise match — and, when
+        # ``unsupported``, REJECT — every finding group in the file, including
+        # unrelated criticals, flipping the CI gate from FAIL to PASS. Such a
+        # claim-less, line-less verdict is a file-wide wildcard and must not
+        # match (security audit 2026-06-13 r6/M). Require a concrete line that
+        # actually pins the finding before honoring an empty-claim match.
+        return verdict.line is not None and rep.line is not None
+    if v_claim == r_claim:
         return True
     v_tokens, r_tokens = set(v_claim.split()), set(r_claim.split())
     if not v_tokens or not r_tokens:

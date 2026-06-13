@@ -93,7 +93,11 @@ def _metadata_block(metadata: dict) -> list[str]:
         lines.append("- ♻️ served from local cache (not re-computed)")
     stop_reason = metadata.get("stop_reason")
     if stop_reason:
-        lines.append(f"- rounds decision: {stop_reason}")
+        # flatten metadata strings too (defense-in-depth, audit r6/L): these are
+        # config/internal-controlled today, but keeping them single-line means a
+        # name/reason can never break the table or forge structure if a future
+        # source carries agent/diff text.
+        lines.append(f"- rounds decision: {flatten_inline(stop_reason)}")
     lines.append(f"- verify: {'on' if metadata['verify_enabled'] else 'off'}")
     lines.append(f"- context mode: {metadata['context_mode']}")
     # Partial-result signals (issue #30): only rendered when relevant so a
@@ -103,7 +107,9 @@ def _metadata_block(metadata: dict) -> list[str]:
     skipped = metadata.get("skipped") or []
     if skipped:
         # bolt: CPython optimization — list comprehension inside join avoids generator overhead
-        names = ", ".join([f"{s['name']} ({s['reason']})" for s in skipped])
+        names = ", ".join(
+            [f"{flatten_inline(s['name'])} ({flatten_inline(s['reason'])})" for s in skipped]
+        )
         lines.append(f"- skipped agents (never ran): {names}")
     retried = metadata.get("retried") or []
     if retried:
@@ -120,7 +126,10 @@ def _metadata_block(metadata: dict) -> list[str]:
         attempts = a.get("attempts", 1)
         if attempts and attempts > 1:
             status += f", {attempts} attempts"
-        lines.append(f"| {a['name']} | {a['vendor']} | {status} | {a['duration_s']:.0f}s |")
+        lines.append(
+            f"| {flatten_inline(a['name'])} | {flatten_inline(a['vendor'])} "
+            f"| {status} | {a['duration_s']:.0f}s |"
+        )
     lines.append("")
     lines.append(
         "_Wall-clock seconds are an approximate cost proxy (no token counts are "
