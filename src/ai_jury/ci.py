@@ -6,6 +6,8 @@ severities and how to treat unverified findings, decide a process exit code.
 
 from __future__ import annotations
 
+from .findings import flatten_inline
+
 
 def evaluate_ci(groups_with_status, fail_on, ignore_unverified: bool) -> tuple[int, str]:
     """Decide a CI exit code from consensus groups.
@@ -42,10 +44,14 @@ def evaluate_ci(groups_with_status, fail_on, ignore_unverified: bool) -> tuple[i
             rep = getattr(g, "representative", None)
             loc = ""
             if rep is not None and getattr(rep, "file", None):
-                loc = rep.file
+                loc = flatten_inline(rep.file)
                 if getattr(rep, "line", None) is not None:
                     loc += f":{rep.line}"
-            claim = getattr(rep, "claim", "") if rep is not None else ""
+            # Flatten the attacker-influenced file/claim: this reason line is
+            # posted to the PR as the CI-gate section, so a multi-line claim could
+            # otherwise forge a heading/marker in the comment (audit 2026-06-13
+            # r7/M). This stays a pure function.
+            claim = flatten_inline(getattr(rep, "claim", "")) if rep is not None else ""
             bits.append(f"[{g.severity}] {loc or '(no location)'} {claim}".strip())
         reason = (
             f"FAIL: {len(blocking)} blocking finding(s) at severities "

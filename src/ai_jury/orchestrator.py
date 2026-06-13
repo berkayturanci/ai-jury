@@ -791,6 +791,36 @@ def _verdict_matches_group(verdict: Verdict, group: FindingGroup) -> bool:
     return (inter / union if union else 0.0) >= 0.5
 
 
+def _verdict_claim_relates(verdict: Verdict, group: FindingGroup) -> bool:
+    """True when the verdict actually references the group's claim.
+
+    The location-only / empty-claim match (used to *verify* a finding by
+    position) is NOT enough to *reject* one: distinct findings share a line, so
+    an empty- or unrelated-claim verdict can collaterally hit a co-located
+    higher-severity finding and drop it from the CI gate (audit 2026-06-13 r7/M).
+    Requiring real claim overlap (exact, or Jaccard >= 0.5) before honouring a
+    rejecting verdict is fail-closed: to dismiss a finding the verifier must name
+    it, not merely point at its line.
+    """
+    from .consensus import _normalize_claim
+
+    v_claim = _normalize_claim(verdict.claim)
+    r_claim = _normalize_claim(group.representative.claim)
+    if not v_claim or not r_claim:
+        return False
+    if v_claim == r_claim:
+        return True
+    v_tokens, r_tokens = set(v_claim.split()), set(r_claim.split())
+    if not v_tokens or not r_tokens:
+        return False
+    union = len(v_tokens | r_tokens)
+    return (len(v_tokens & r_tokens) / union if union else 0.0) >= 0.5
+
+
+# Verdict statuses that move a finding into a non-blocking bucket (suppress it).
+_REJECTING_STATUSES = frozenset({"unsupported", "needs_human_decision"})
+
+
 def _apply_verdicts(groups: list[FindingGroup], verdicts: list[Verdict]) -> None:
     """Attach verification statuses to consensus groups.
 
@@ -798,19 +828,26 @@ def _apply_verdicts(groups: list[FindingGroup], verdicts: list[Verdict]) -> None
     verified -> status recorded, bucket unchanged.
     """
     for verdict in verdicts:
+        rejecting = verdict.status in _REJECTING_STATUSES
         # Apply to every matching group: when reviewers phrase the same issue
         # slightly differently it can land in more than one group, and all of
         # them should carry the verifier's judgement.
         for group in groups:
             if group.status:
                 continue
-            if _verdict_matches_group(verdict, group):
-                group.status = verdict.status
-                group.status_reasoning = verdict.reasoning
-                if verdict.status == "unsupported":
-                    group.bucket = "rejected"
-                elif verdict.status == "needs_human_decision":
-                    group.bucket = "disputed"
+            if not _verdict_matches_group(verdict, group):
+                continue
+            # A rejecting verdict may only suppress a finding it actually names
+            # (fail-closed, audit r7/M): a location-only/empty-claim verdict can
+            # verify by position but must not reject a co-located finding.
+            if rejecting and not _verdict_claim_relates(verdict, group):
+                continue
+            group.status = verdict.status
+            group.status_reasoning = verdict.reasoning
+            if verdict.status == "unsupported":
+                group.bucket = "rejected"
+            elif verdict.status == "needs_human_decision":
+                group.bucket = "disputed"
 
 
 def _synthesize(
@@ -939,7 +976,25 @@ def _merge_chunk_outcomes(outcomes: list[JuryOutcome]) -> JuryOutcome:
     findings = [f for o in outcomes for f in o.findings]
     groups = group_findings(findings, len(reviews))
     verdicts = [v for o in outcomes for v in o.verdicts]
-    _apply_verdicts(groups, verdicts)
+    # Scope each chunk's verdicts to that chunk's own findings. A verdict is
+    # produced while verifying ONE chunk (whose prompt held only that chunk's
+    # findings, but whose attacker-controlled diff text could steer it); after
+    # the global merge an unscoped verdict could reject a *different* chunk's
+    # structured critical and flip the CI gate (audit 2026-06-13 r7/M). Chunks
+    # are file-disjoint, so apply each chunk's verdicts only to groups whose
+    # location is one of that chunk's files.
+    from .consensus import _normalize_path
+
+    for o in outcomes:
+        chunk_files = {
+            _normalize_path(f.file, fold_case=False) for f in o.findings if f.file
+        }
+        chunk_groups = [
+            g
+            for g in groups
+            if _normalize_path(g.representative.file, fold_case=False) in chunk_files
+        ]
+        _apply_verdicts(chunk_groups, o.verdicts)
     warnings = [w for o in outcomes for w in o.warnings]
 
     synthesis = _combine_chair_results([o.synthesis for o in outcomes if o.synthesis], base.chair)

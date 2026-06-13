@@ -495,6 +495,58 @@ class VerdictMatching(unittest.TestCase):
         code, _ = evaluate_ci(groups, ["critical", "major"], ignore_unverified=False)
         self.assertEqual(code, 1)
 
+    def test_empty_claim_verdict_does_not_reject_colocated_critical(self):
+        # A line-ful but claim-LESS `unsupported` verdict (meant for a benign
+        # finding) must not collaterally reject a critical on the same line
+        # (audit 2026-06-13 r7/M). Observable under the strict gate.
+        from ai_jury.ci import evaluate_ci
+
+        crit = Finding(
+            severity="critical", file="pay.py", line=42,
+            claim="auth bypass token check skipped", reviewer="r1",
+        )
+        nit = Finding(severity="nit", file="pay.py", line=42, claim="unused import", reviewer="r2")
+        groups = group_findings([crit, nit], 2)
+        _apply_verdicts(groups, [Verdict(file="pay.py", line=42, claim="", status="unsupported")])
+        code, _ = evaluate_ci(groups, ["critical", "major"], ignore_unverified=False)
+        self.assertEqual(code, 1)
+
+    def test_claim_matching_unsupported_still_rejects(self):
+        # Legit path: an `unsupported` verdict that NAMES the finding still
+        # rejects it (the fix only blocks empty/unrelated-claim rejections).
+        nit = Finding(severity="nit", file="a.py", line=5, claim="unused import os", reviewer="r")
+        groups = group_findings([nit], 1)
+        _apply_verdicts(
+            groups, [Verdict(file="a.py", line=5, claim="unused import os", status="unsupported")]
+        )
+        self.assertEqual(groups[0].bucket, "rejected")
+
+    def test_cross_chunk_verdict_does_not_reject_other_chunks_critical(self):
+        # A verdict generated while verifying chunk B must not reject a critical
+        # that lives in chunk A after the global merge (audit 2026-06-13 r7/M).
+        # The verdict's claim MATCHES the critical (so the r7 claim-relatedness
+        # rule alone wouldn't save it) — only chunk-scoping does.
+        from ai_jury.ci import evaluate_ci
+        from ai_jury.orchestrator import JuryOutcome, _merge_chunk_outcomes
+
+        rev = AgentResult("r", "v", True, "ok", 0.0)
+        crit = Finding(
+            severity="critical", file="auth.py", line=10,
+            claim="auth bypass token check skipped", reviewer="r",
+        )
+        nit = Finding(severity="nit", file="other.py", line=10, claim="unused import", reviewer="r")
+        chunk_a = JuryOutcome(reviews=[rev], debate=[], synthesis=None, chair="c", findings=[crit])
+        chunk_b = JuryOutcome(
+            reviews=[rev], debate=[], synthesis=None, chair="c", findings=[nit],
+            verdicts=[Verdict(
+                file="auth.py", line=10,
+                claim="auth bypass token check skipped", status="unsupported",
+            )],
+        )
+        merged = _merge_chunk_outcomes([chunk_a, chunk_b])
+        code, _ = evaluate_ci(merged.groups, ["critical"], ignore_unverified=False)
+        self.assertEqual(code, 1)
+
     def test_case_collapsed_verdict_does_not_drop_critical_from_gate(self):
         # On a case-sensitive FS, an `unsupported` verdict on `config.py` must
         # not reject a critical at `Config.py` (audit 2026-06-13 r6/M).

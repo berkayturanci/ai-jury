@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Seventh security re-audit** (`docs/security-audit-2026-06-13-round7.md`). Two
+  independent passes (exhaustive gate-flow probe + wide net); no Critical/High.
+  Fixed three Medium CI-gate / posted-comment integrity issues, all with tests:
+  - **Empty-/unrelated-claim verdict could collaterally reject a co-located
+    finding:** a line-ful but claim-less `unsupported` verdict (meant for a
+    benign finding sharing a line) also rejected a `critical`, flipping the
+    strict gate to PASS. A *rejecting* verdict now requires real claim
+    relatedness (exact or Jaccard ≥ 0.5) — it can verify by position but not
+    reject what it doesn't name (fail-closed).
+  - **Cross-chunk verdict cross-attachment:** on a chunked review, a verdict
+    produced for one chunk could reject a real critical in another chunk after
+    the global merge. Verdicts are now scoped to their own chunk's files.
+  - **CI gate reason line** (posted to the PR) now flattens the blocking
+    finding's `file`/`claim`, closing the last markdown-injection sink.
 - **Sixth security re-audit** (`docs/security-audit-2026-06-13-round6.md`). Two
   independent gate-integrity passes; no Critical/High. Fixed two Medium CI-gate
   bypasses and one Low, all with tests:
