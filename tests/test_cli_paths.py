@@ -218,5 +218,20 @@ class DoctorAndCommentPaths(unittest.TestCase):
         self.assertEqual(code, 0)
 
 
+class DiffIngestCapTests(unittest.TestCase):
+    """Security audit 2026-06-13: the raw diff read must be bounded so a hostile
+    huge input cannot OOM the process before diff.max_bytes engages."""
+
+    def test_within_cap_returned(self):
+        payload = "x" * 1000
+        self.assertEqual(cli._read_capped(io.StringIO(payload), "stdin"), payload)
+
+    def test_over_cap_rejected(self):
+        big = io.StringIO("y" * (cli._MAX_DIFF_INGEST_BYTES + 10))
+        with self.assertRaises(SystemExit) as ctx:
+            cli._read_capped(big, "stdin")
+        self.assertIn("ingest limit", str(ctx.exception))
+
+
 if __name__ == "__main__":
     unittest.main()
