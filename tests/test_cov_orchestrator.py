@@ -472,6 +472,50 @@ class VerdictMatching(unittest.TestCase):
         v = Verdict(file="a.py", line=10, claim="")  # empty -> treated as match
         self.assertTrue(_verdict_matches_group(v, g))
 
+    def test_empty_claim_no_line_is_not_a_file_wildcard(self):
+        # A verdict with NEITHER claim NOR line has no location precision; it
+        # must not match (and therefore cannot reject) an unrelated finding in
+        # the same file (security audit 2026-06-13 r7/M).
+        g = self._group(line=88)
+        v = Verdict(file="a.py", line=None, claim="", status="unsupported")
+        self.assertFalse(_verdict_matches_group(v, g))
+
+    def test_empty_claim_no_line_does_not_drop_critical_from_gate(self):
+        from ai_jury.ci import evaluate_ci
+
+        crit = Finding(
+            severity="critical", file="a.py", line=88,
+            claim="auth bypass token signature never checked", reviewer="r",
+        )
+        groups = group_findings([crit], 1)
+        _apply_verdicts(
+            groups,
+            [Verdict(file="a.py", line=None, claim="", status="unsupported")],
+        )
+        code, _ = evaluate_ci(groups, ["critical", "major"], ignore_unverified=False)
+        self.assertEqual(code, 1)
+
+    def test_case_collapsed_verdict_does_not_drop_critical_from_gate(self):
+        # On a case-sensitive FS, an `unsupported` verdict on `config.py` must
+        # not reject a critical at `Config.py` (audit 2026-06-13 r6/M).
+        from ai_jury.ci import evaluate_ci
+
+        crit = Finding(
+            severity="critical", file="Config.py", line=10,
+            claim="auth bypass token signature never checked", reviewer="r",
+        )
+        groups = group_findings([crit], 1)
+        _apply_verdicts(
+            groups,
+            [Verdict(
+                file="config.py", line=10,
+                claim="auth bypass token signature never checked",
+                status="unsupported",
+            )],
+        )
+        code, _ = evaluate_ci(groups, ["critical", "major"], ignore_unverified=False)
+        self.assertEqual(code, 1)
+
     def test_token_overlap_below_threshold(self):
         g = self._group(claim="alpha beta gamma delta epsilon")
         v = Verdict(file="a.py", line=10, claim="totally unrelated wording")
