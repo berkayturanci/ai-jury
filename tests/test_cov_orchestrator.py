@@ -472,6 +472,74 @@ class VerdictMatching(unittest.TestCase):
         v = Verdict(file="a.py", line=10, claim="")  # empty -> treated as match
         self.assertTrue(_verdict_matches_group(v, g))
 
+    def test_verdict_on_lesser_member_does_not_drop_merged_critical(self):
+        # A benign minor that consensus merged into a critical group must not be
+        # used to reject the whole (critical) group: a verdict naming the minor
+        # best-matches the lesser member, so the member-tier guard refuses it
+        # (audit 2026-06-13 r8/M).
+        from ai_jury.ci import evaluate_ci
+
+        crit = Finding(
+            severity="critical", file="h.py", line=42,
+            claim="missing authentication check on admin endpoint", reviewer="r1",
+        )
+        crit2 = Finding(
+            severity="critical", file="h.py", line=42,
+            claim="missing authentication check on admin endpoint", reviewer="r2",
+        )
+        nit = Finding(
+            severity="minor", file="h.py", line=44,
+            claim="missing check on admin endpoint logging", reviewer="r3",
+        )
+        groups = group_findings([crit, crit2, nit], 3)
+        _apply_verdicts(
+            groups,
+            [Verdict(
+                file="h.py", line=44,
+                claim="missing check on admin endpoint logging", status="unsupported",
+            )],
+        )
+        self.assertEqual(evaluate_ci(groups, ["critical"], ignore_unverified=False)[0], 1)
+
+    def test_verdict_on_decoy_does_not_drop_separate_critical(self):
+        # A verdict copying a benign decoy's claim rejects the decoy (best-tier),
+        # not a separate, less-similar critical group (audit r8/M).
+        from ai_jury.ci import evaluate_ci
+
+        crit = Finding(
+            severity="critical", file="p.py", line=10,
+            claim="buffer overflow in parse_v2", reviewer="r1",
+        )
+        decoy = Finding(
+            severity="minor", file="p.py", line=10,
+            claim="buffer overflow in parse_v3", reviewer="r2",
+        )
+        groups = group_findings([crit, decoy], 2)
+        _apply_verdicts(
+            groups,
+            [Verdict(file="p.py", line=10, claim="buffer overflow in parse_v3", status="unsupported")],
+        )
+        self.assertEqual(evaluate_ci(groups, ["critical"], ignore_unverified=False)[0], 1)
+
+    def test_contradictory_verdicts_resolve_fail_closed(self):
+        # verified + unsupported on the same critical → verified wins regardless
+        # of array order, so the gate stays FAIL (audit r8/M).
+        from ai_jury.ci import evaluate_ci
+
+        c = Finding(
+            severity="critical", file="a.py", line=5,
+            claim="sql injection in query builder", reviewer="r",
+        )
+        for order in (("unsupported", "verified"), ("verified", "unsupported")):
+            groups = group_findings([c], 1)
+            _apply_verdicts(
+                groups,
+                [Verdict(file="a.py", line=5, claim="sql injection in query builder", status=s)
+                 for s in order],
+            )
+            self.assertEqual(groups[0].status, "verified")
+            self.assertEqual(evaluate_ci(groups, ["critical"], ignore_unverified=True)[0], 1)
+
     def test_empty_claim_no_line_is_not_a_file_wildcard(self):
         # A verdict with NEITHER claim NOR line has no location precision; it
         # must not match (and therefore cannot reject) an unrelated finding in

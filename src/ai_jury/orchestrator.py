@@ -791,34 +791,78 @@ def _verdict_matches_group(verdict: Verdict, group: FindingGroup) -> bool:
     return (inter / union if union else 0.0) >= 0.5
 
 
-def _verdict_claim_relates(verdict: Verdict, group: FindingGroup) -> bool:
-    """True when the verdict actually references the group's claim.
-
-    The location-only / empty-claim match (used to *verify* a finding by
-    position) is NOT enough to *reject* one: distinct findings share a line, so
-    an empty- or unrelated-claim verdict can collaterally hit a co-located
-    higher-severity finding and drop it from the CI gate (audit 2026-06-13 r7/M).
-    Requiring real claim overlap (exact, or Jaccard >= 0.5) before honouring a
-    rejecting verdict is fail-closed: to dismiss a finding the verifier must name
-    it, not merely point at its line.
-    """
+def _claim_sim(a_claim: str, b_claim: str) -> float:
+    """Token-set similarity between two claims: 1.0 exact, else Jaccard, 0.0 if
+    either side is empty."""
     from .consensus import _normalize_claim
 
-    v_claim = _normalize_claim(verdict.claim)
-    r_claim = _normalize_claim(group.representative.claim)
-    if not v_claim or not r_claim:
-        return False
-    if v_claim == r_claim:
-        return True
-    v_tokens, r_tokens = set(v_claim.split()), set(r_claim.split())
-    if not v_tokens or not r_tokens:
-        return False
-    union = len(v_tokens | r_tokens)
-    return (len(v_tokens & r_tokens) / union if union else 0.0) >= 0.5
+    a = _normalize_claim(a_claim)
+    b = _normalize_claim(b_claim)
+    if not a or not b:
+        return 0.0
+    if a == b:
+        return 1.0
+    at, bt = set(a.split()), set(b.split())
+    union = len(at | bt)
+    return (len(at & bt) / union) if union else 0.0
 
 
 # Verdict statuses that move a finding into a non-blocking bucket (suppress it).
 _REJECTING_STATUSES = frozenset({"unsupported", "needs_human_decision"})
+# Apply most-blocking statuses first so a contradictory verdict pair on one
+# finding is fail-closed: a `verified` (blocking) judgement is recorded before
+# any `unsupported`/`needs_human_decision` and cannot then be flipped to
+# non-blocking by verdict array ordering (audit 2026-06-13 r8/M).
+_STATUS_PRIORITY = {"verified": 0, "needs_human_decision": 1, "unsupported": 2}
+# Minimum claim similarity for a verdict to be considered "about" a finding at
+# all. The PRIMARY defence against a verdict dismissing a co-located *distinct*
+# finding is that a rejection attaches to AT MOST the single best-matching group
+# (`_best_reject_target`), so a verdict whose claim copies a benign neighbour
+# routes to that neighbour, not to the co-located critical (audit 2026-06-13
+# r8/M). The threshold stays moderate so the verifier's legitimate paraphrased
+# rejections (it drops the reviewer-name prefix etc.) still apply.
+_REJECT_CLAIM_THRESHOLD = 0.5
+
+
+def _reject_targets(verdict: Verdict, groups: list[FindingGroup]) -> list[FindingGroup]:
+    """Un-statused groups a rejecting verdict may suppress (fail-closed, r7/r8).
+
+    Two defences stop a verdict from collaterally dropping a real critical:
+
+    1. **Member-tier guard.** A group may merge findings of different severities
+       (consensus keeps the max). A verdict is "about" the specific member whose
+       claim it best matches; if that best-matched member is *less severe* than
+       the group's max, the verdict is dismissing a lesser co-located finding,
+       so it must NOT suppress the (e.g. critical) group.
+    2. **Best-tier only.** Across the remaining candidate groups, suppress only
+       those at the highest match similarity — a verdict copying a benign
+       neighbour's claim rejects that neighbour (and its duplicate phrasings,
+       which tie) but not a separate, less-similar critical group.
+    """
+    from .findings import SEVERITY_ORDER
+
+    scored: list[tuple[float, FindingGroup]] = []
+    for group in groups:
+        if group.status:
+            continue
+        if not _verdict_matches_group(verdict, group):
+            continue
+        members = getattr(group, "members", None) or [group.representative]
+        best_sim, best_member = max(
+            ((_claim_sim(verdict.claim, m.claim), m) for m in members),
+            key=lambda t: t[0],
+        )
+        if best_sim < _REJECT_CLAIM_THRESHOLD:
+            continue
+        # Member-tier guard: refuse if the verdict best-names a member less
+        # severe than the group's max severity (lower rank = more severe).
+        if SEVERITY_ORDER.get(best_member.severity, 99) > SEVERITY_ORDER.get(group.severity, 99):
+            continue
+        scored.append((best_sim, group))
+    if not scored:
+        return []
+    best = max(sim for sim, _ in scored)
+    return [group for sim, group in scored if sim >= best]
 
 
 def _apply_verdicts(groups: list[FindingGroup], verdicts: list[Verdict]) -> None:
@@ -827,27 +871,26 @@ def _apply_verdicts(groups: list[FindingGroup], verdicts: list[Verdict]) -> None
     unsupported -> bucket 'rejected'; needs_human_decision -> bucket 'disputed';
     verified -> status recorded, bucket unchanged.
     """
-    for verdict in verdicts:
-        rejecting = verdict.status in _REJECTING_STATUSES
-        # Apply to every matching group: when reviewers phrase the same issue
-        # slightly differently it can land in more than one group, and all of
-        # them should carry the verifier's judgement.
+    # Stable-sort by blocking priority so contradictions resolve fail-closed.
+    for verdict in sorted(verdicts, key=lambda v: _STATUS_PRIORITY.get(v.status, 3)):
+        if verdict.status in _REJECTING_STATUSES:
+            # Suppress only the best-similarity tier this verdict names — never
+            # collaterally a co-located, less-similar distinct finding.
+            bucket = "rejected" if verdict.status == "unsupported" else "disputed"
+            for target in _reject_targets(verdict, groups):
+                target.status = verdict.status
+                target.status_reasoning = verdict.reasoning
+                target.bucket = bucket
+            continue
+        # A verifying (non-suppressing) verdict may attach to every matching
+        # group: when reviewers phrase the same issue differently it can land in
+        # more than one group, and all should carry the judgement.
         for group in groups:
             if group.status:
                 continue
-            if not _verdict_matches_group(verdict, group):
-                continue
-            # A rejecting verdict may only suppress a finding it actually names
-            # (fail-closed, audit r7/M): a location-only/empty-claim verdict can
-            # verify by position but must not reject a co-located finding.
-            if rejecting and not _verdict_claim_relates(verdict, group):
-                continue
-            group.status = verdict.status
-            group.status_reasoning = verdict.reasoning
-            if verdict.status == "unsupported":
-                group.bucket = "rejected"
-            elif verdict.status == "needs_human_decision":
-                group.bucket = "disputed"
+            if _verdict_matches_group(verdict, group):
+                group.status = verdict.status
+                group.status_reasoning = verdict.reasoning
 
 
 def _synthesize(
