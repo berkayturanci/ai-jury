@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Website demo "Run review" button now shows "Running review..." while a run is
+  in progress, making the loading state explicit.
+- Added an `aria-label` to the install-command copy button so screen readers
+  announce what it copies.
+- Reduced redundant work in security-path classification and PR-level risk
+  scoring (combined-regex path matching in `diffprofile`, single-pass
+  `_risk_level`).
+
 ## [1.6.1] - 2026-06-11
 
 > Patch release for the post-v1.6.0 hardening, performance, accessibility, and
