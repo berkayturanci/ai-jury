@@ -179,11 +179,17 @@ def _risk_level(findings: list, groups: list) -> str:
     if not findings:
         return RISK_LOW
 
-    has_critical = any(f.severity == "critical" for f in findings)
-    if has_critical:
-        return RISK_HIGH
+    has_major = False
+    has_minor = False
 
-    has_major = any(f.severity == "major" for f in findings)
+    for f in findings:
+        if f.severity == "critical":
+            return RISK_HIGH
+        if f.severity == "major":
+            has_major = True
+        elif f.severity == "minor":
+            has_minor = True
+
     if has_major:
         # A confirmed (consensus/majority, not rejected) major finding is high
         # risk; an isolated or rejected one is medium.
@@ -196,7 +202,6 @@ def _risk_level(findings: list, groups: list) -> str:
                 return RISK_HIGH
         return RISK_MEDIUM
 
-    has_minor = any(f.severity == "minor" for f in findings)
     if has_minor:
         return RISK_MEDIUM
 
