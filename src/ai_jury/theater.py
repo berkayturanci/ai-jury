@@ -28,7 +28,6 @@ from .findings import SEVERITY_ORDER, flatten_inline, parse_findings, parse_verd
 # ---- styling ---------------------------------------------------------------
 _RESET = "\033[0m"
 _VENDOR_SGR = {"anthropic": "33", "openai": "32", "google": "34", "local": "35"}
-_SEV_SGR = {"critical": "97;41;1", "major": "91;1", "minor": "33", "nit": "36", "info": "2;37"}
 _PHASES = (("review", "REVIEW"), ("debate", "DEBATE"), ("verify", "VERIFY"),
            ("synthesis", "VERDICT"))
 _W = 11  # seat sprite width

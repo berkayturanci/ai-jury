@@ -67,8 +67,7 @@ options:
                         (no telemetry is collected or sent)
   --write WRITE         with --doctor, also write the diagnostics as JSON to
                         this path (secrets redacted)
-  -o OUTPUT, --output OUTPUT
-                        write the report to a file instead of stdout
+  -o, --output OUTPUT   write the report to a file instead of stdout
   --metadata-json PATH  write machine-readable run metadata (durations,
                         status, rounds) as JSON
   --format {markdown,json,sarif}
