@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Fifth security re-audit** (`docs/security-audit-2026-06-13-round5.md`). Two
+  independent passes (red-team + deterministic-core sweep); no Critical/High.
+  Fixed two Medium issues and one Low, all with tests:
+  - **CI-gate path collision:** `consensus._normalize_path` used
+    `str.lstrip("./")`, which strips a whole leading run of `.`/`/` and collided
+    distinct paths (`.github/x.yml` vs `github/x.yml`, `../auth.py` vs
+    `./auth.py`). An attacker could make a verifier "unsupported" verdict on a
+    benign sibling path swallow a real critical finding's group and pass the
+    gate. Now only a true leading `./` is stripped. (Also backs
+    `orchestrator._verdict_matches_group`.)
+  - SARIF output (`--format sarif`) drops an invalid `region.startLine`: a
+    finding's `line` is parsed from attacker-influenceable reviewer JSON, and a
+    forged `"line": 0`/negative value emitted an invalid SARIF region, which
+    makes GitHub code-scanning reject the *entire* upload — suppressing every
+    finding (denial-of-evidence). Non-positive lines now drop the region so the
+    finding still surfaces at file level.
+  - `diff --git` mode-change segments with a git-quoted spaced path
+    (`"a/x y.py" "b/x y.py"`) are recovered, closing the last path-truncation
+    file-hiding vector from an `include` allow-list.
 - **Fourth security re-audit** (`docs/security-audit-2026-06-13-round4.md`). A
   red-team pass plus a fresh sweep of under-examined modules; no Critical/High.
   Fixed two Medium issues and one Low, all with tests:

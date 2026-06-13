@@ -156,6 +156,11 @@ def _path_from_git_header(line: str) -> str:
     idx = rest.rfind(" b/")
     if idx != -1:
         return _strip_ab(_unquote_git_path(rest[idx + 1 :]))
+    # Quoted b-side: git C-quotes special/spaced paths as `"a/<p>" "b/<p>"`, so
+    # the separator is `` "b/`` not `` b/`` (audit 2026-06-13 r5/L).
+    qidx = rest.rfind(' "b/')
+    if qidx != -1:
+        return _strip_ab(_unquote_git_path(rest[qidx + 1 :]))
     parts = line.split()
     return _strip_ab(parts[3]) if len(parts) >= 4 else _strip_ab(parts[-1])
 

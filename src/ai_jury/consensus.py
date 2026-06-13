@@ -43,7 +43,17 @@ class FindingGroup:
 def _normalize_path(path) -> str:
     if not path:
         return ""
-    return str(path).strip().replace("\\", "/").lstrip("./").lower()
+    # Strip only a real leading ``./`` prefix — NOT ``str.lstrip("./")``, which
+    # removes a whole leading run of ``.``/``/`` and collides distinct paths
+    # (e.g. ``.github/x.yml`` vs ``github/x.yml``, ``../auth.py`` vs
+    # ``./auth.py``). That collision let a verifier verdict / finding group on a
+    # benign sibling path swallow a real critical finding and pass the CI gate
+    # (security audit 2026-06-13 r5/M). This function also backs
+    # ``orchestrator._verdict_matches_group``, so the fix closes both paths.
+    p = str(path).strip().replace("\\", "/")
+    while p.startswith("./"):
+        p = p[2:]
+    return p.lower()
 
 
 def _normalize_claim(claim) -> str:
