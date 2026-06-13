@@ -14,7 +14,10 @@ def _block(title: str, body: str) -> str:
 def _fail_status(r: AgentResult) -> str:
     """Failed-agent status line with a concise typed-error-code prefix."""
     prefix = f"[{r.error_code}] " if getattr(r, "error_code", None) else ""
-    return f"⚠️ {prefix}{r.error}"
+    # The error snippet quotes the agent CLI's stderr (attacker-influenced) and
+    # is posted to the PR, so flatten it like every other untrusted field so it
+    # can't forge a heading/fence in the comment (audit 2026-06-13 r4).
+    return f"⚠️ {prefix}{flatten_inline(r.error)}"
 
 
 def _finding_line(f: Finding) -> str:
@@ -276,7 +279,7 @@ def render(
         if verify.ok:
             lines.append(verify.output.strip() + "\n")
         else:
-            lines.append(f"_Verification failed: {verify.error}_\n")
+            lines.append(f"_Verification failed: {flatten_inline(verify.error)}_\n")
         lines.append("---\n")
 
     chair_heading = "Chair's reasoning" if vote is not None else "Chair verdict"
@@ -286,7 +289,7 @@ def render(
         lines.append(synthesis.output.strip() + "\n")
     elif synthesis and not synthesis.ok:
         lines.append(f"## {chair_heading}\n")
-        lines.append(f"_Synthesis failed: {synthesis.error}_\n")
+        lines.append(f"_Synthesis failed: {flatten_inline(synthesis.error)}_\n")
 
     lines.append("---\n")
     lines.append("## Structured findings\n")
@@ -389,14 +392,14 @@ def _conversation_blocks(
         lines.append(
             verify.output.strip() + "\n"
             if verify.ok
-            else f"_Verification failed: {verify.error}_\n"
+            else f"_Verification failed: {flatten_inline(verify.error)}_\n"
         )
     lines.append("## Decision — verdict & reasoning\n")
     if synthesis and synthesis.ok:
         lines.append(f"> Decided by `{chair}`\n")
         lines.append(synthesis.output.strip() + "\n")
     elif synthesis and not synthesis.ok:
-        lines.append(f"_Synthesis failed: {synthesis.error}_\n")
+        lines.append(f"_Synthesis failed: {flatten_inline(synthesis.error)}_\n")
     else:
         lines.append("_(no synthesis produced)_\n")
     return lines
@@ -579,7 +582,7 @@ def render_sections(
         dec.append(
             verify.output.strip() + "\n"
             if verify.ok
-            else f"_Verification failed: {verify.error}_\n"
+            else f"_Verification failed: {flatten_inline(verify.error)}_\n"
         )
     chair_heading = "Chair's reasoning" if vote is not None else "Chair verdict"
     if synthesis and synthesis.ok:
@@ -587,7 +590,7 @@ def render_sections(
         dec.append(f"> Synthesized by `{chair}`\n")
         dec.append(synthesis.output.strip() + "\n")
     elif synthesis and not synthesis.ok:
-        dec.append(f"## {chair_heading}\n\n_Synthesis failed: {synthesis.error}_\n")
+        dec.append(f"## {chair_heading}\n\n_Synthesis failed: {flatten_inline(synthesis.error)}_\n")
     if findings:
         dec.append("## Structured findings\n")
         ranked = sorted(

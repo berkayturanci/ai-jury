@@ -124,6 +124,22 @@ class CommentBodyTest(unittest.TestCase):
         self.assertNotIn("arc-sig:deadbeefdeadbeef", body)
 
 
+class IncrementalMarkerTrustTest(unittest.TestCase):
+    @mock.patch("ai_jury.github._gh")
+    def test_comment_bodies_filter_to_trusted_authors(self, mock_gh):
+        # The reviewed-sha marker is security-sensitive: only trusted authors'
+        # comments may be returned, so a fork-PR attacker can't forge it
+        # (audit 2026-06-13 r4/M-1).
+        mock_gh.return_value = "<!-- arc-reviewed-sha:abc1234 -->"
+        github.pr_comment_bodies("1")
+        args = mock_gh.call_args.args
+        jq = args[args.index("--jq") + 1]
+        self.assertIn("authorAssociation", jq)
+        for assoc in ("OWNER", "MEMBER", "COLLABORATOR"):
+            self.assertIn(assoc, jq)
+        self.assertNotIn("CONTRIBUTOR", jq)
+
+
 class TestGithubFunctions(unittest.TestCase):
     @mock.patch("ai_jury.github._gh")
     def test_pr_diff(self, mock_gh):
