@@ -33,7 +33,7 @@ from .github import (
     pr_diff,
 )
 from .metadata import build_run_metadata
-from .orchestrator import review_diff, run_jury
+from .orchestrator import resolve_chair, review_diff, run_jury
 from .policy import PolicyError, load_policy
 from .report import render, render_live_step, render_transcript
 
@@ -296,6 +296,14 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="stream each step (review, debate, verdict) to stdout as it happens; "
         "add --pr --post to also post each step as its own PR comment",
+    )
+    p.add_argument(
+        "--theater",
+        dest="theater",
+        action="store_true",
+        help="animated 'courtroom' view of the live run (each model seated, "
+        "speaking per phase, gavel/vote finale); needs an interactive terminal, "
+        "else falls back to --live",
     )
     p.add_argument(
         "--post-summary",
@@ -1278,23 +1286,50 @@ def main(argv: list[str] | None = None) -> int:
     # alone just streams locally. Posting is best-effort: a GitHub hiccup is logged
     # and never aborts the run.
     live_target = args.pr or args.issue
-    live_posts = bool(args.live and args.post_summary and live_target)
+    live_posts = bool((args.live or args.theater) and args.post_summary and live_target)
     live_post = post_issue_comment if args.issue else post_pr_comment
+    # Opt-in animated "courtroom" scene (--theater): an interactive TTY view of
+    # the REAL run (each model seated, speaking per phase, gavel/vote finale). It
+    # needs a wide TTY and an actual run (a cache hit has nothing to replay), so
+    # it falls back to the plain --live step stream otherwise. The structured
+    # outcome / report / CI gate are untouched — this is a side channel.
+    court = None
+    if args.theater and outcome is None and not args.quiet:
+        from . import theater as _theater
+
+        if _theater.supports_scene(sys.stdout):
+            chair_name = resolve_chair(config)
+            case = (f"PR #{args.pr}" if args.pr else
+                    f"issue #{args.issue}" if args.issue else "local diff")
+            court = _theater.Courtroom(
+                [(a.name, a.vendor) for a in config.agents],
+                chair_name or (config.agents[0].name if config.agents else "chair"),
+                case=case,
+                mode=("issue" if args.issue else "code"),
+                decision=(args.decision or config.decision),
+            )
+            court.open()
+
     on_event = None
-    if args.live:
+    if args.live or args.theater:
 
         def on_event(kind, result, round_no=None):
-            title, body = render_live_step(kind, result, round_no)
-            print(f"## {title}\n\n{body}\n", flush=True)
+            if court is not None:
+                court.step(kind, result, round_no)
+            else:
+                # plain step stream (--live, or --theater fallback off a TTY)
+                title, body = render_live_step(kind, result, round_no)
+                print(f"## {title}\n\n{body}\n", flush=True)
             if live_posts:
                 try:
+                    title, body = render_live_step(kind, result, round_no)
                     live_post(live_target, f"## {title}\n\n{body}", args.repo)
                 except Exception as exc:  # noqa: BLE001 - best-effort, never crash
                     log(f"live: failed to post step to #{live_target}: {exc}")
 
     # We stream live only when actually running the jury; a cache hit has nothing
     # to replay, so the consolidated report is still printed in that case.
-    live_streamed = bool(args.live) and outcome is None
+    live_streamed = bool(args.live or args.theater) and outcome is None
 
     if outcome is None:
         try:
@@ -1360,6 +1395,13 @@ def main(argv: list[str] | None = None) -> int:
             voters,
             mode=("issue" if args.issue else "code"),
         )
+
+    # Close the courtroom scene (after the vote is tallied, so the panel-vote
+    # finale can show the ballots/verdict).
+    if court is not None:
+        if vote is not None:
+            court.set_vote(vote)
+        court.close()
 
     metadata = build_run_metadata(outcome, config, decision=decision, vote=vote)
 

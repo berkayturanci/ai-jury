@@ -93,6 +93,7 @@ DOCUMENTED_FLAGS = [
     "--no-transcript",
     "--verbose",
     "--live",
+    "--theater",
     "--post-summary",
     "--post",
     "--post-inline",

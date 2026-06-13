@@ -9,7 +9,7 @@ usage: jury [-h] [--pr PR] [--issue ISSUE] [--repo REPO]
             [--chair CHAIR] [--mock] [--strict] [--verify] [--no-verify]
             [--doctor] [--write WRITE] [-o OUTPUT] [--metadata-json PATH]
             [--format {markdown,json,sarif}] [--decision {chair,vote}]
-            [--transcript] [--no-transcript] [--verbose] [--live]
+            [--transcript] [--no-transcript] [--verbose] [--live] [--theater]
             [--post-summary] [--post-inline] [--post-progress]
             [--post-mode {single,phased}] [--dry-run] [--label] [--ci]
             [--fail-on FAIL_ON] [--cache] [--clear-cache]
@@ -67,7 +67,8 @@ options:
                         (no telemetry is collected or sent)
   --write WRITE         with --doctor, also write the diagnostics as JSON to
                         this path (secrets redacted)
-  -o, --output OUTPUT   write the report to a file instead of stdout
+  -o OUTPUT, --output OUTPUT
+                        write the report to a file instead of stdout
   --metadata-json PATH  write machine-readable run metadata (durations,
                         status, rounds) as JSON
   --format {markdown,json,sarif}
@@ -86,6 +87,9 @@ options:
   --live                stream each step (review, debate, verdict) to stdout
                         as it happens; add --pr --post to also post each step
                         as its own PR comment
+  --theater             animated 'courtroom' view of the live run (each model
+                        seated, speaking per phase, gavel/vote finale); needs
+                        an interactive terminal, else falls back to --live
   --post-summary, --post
                         post the report as a single summary comment on --pr
   --post-inline         post inline review comments for located findings on
