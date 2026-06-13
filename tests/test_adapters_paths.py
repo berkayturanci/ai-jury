@@ -118,6 +118,20 @@ class AdapterRunTests(unittest.TestCase):
         self.assertFalse(r.ok)
         self.assertIn("exit 1", r.error)
 
+    def test_nonzero_exit_redacts_secret_in_stderr(self):
+        # A crashing CLI can dump a token into stderr; the error string is
+        # rendered into the report and posted to the PR, so it must be redacted
+        # like the LocalAdapter path (audit 2026-06-13/N-1).
+        leak = "boom AKIAIOSFODNN7EXAMPLE failed token=ghp_" + "a" * 36
+        with (
+            mock.patch("shutil.which", return_value="/usr/bin/claude"),
+            mock.patch("ai_jury.adapters._spawn", return_value=_proc(1, "", leak)),
+        ):
+            r = self._adapter().run("p")
+        self.assertFalse(r.ok)
+        self.assertNotIn("ghp_" + "a" * 36, r.error)
+        self.assertIn("[REDACTED", r.error)
+
     def test_empty_output(self):
         with (
             mock.patch("shutil.which", return_value="/usr/bin/claude"),

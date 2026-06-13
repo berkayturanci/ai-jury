@@ -26,7 +26,9 @@ import re
 # v4: the debater's own round-1 review is fenced like every other untrusted-
 # derived slot, and sentinel neutralization also covers homoglyph/fullwidth
 # angle brackets (security audit 2026-06-13).
-PROMPT_VERSION = 4
+# v5: broaden the homoglyph angle-bracket set after a red-team pass (small-form,
+# heavy-ornament, much-less/greater, Canadian-syllabic, guillemet forms).
+PROMPT_VERSION = 5
 
 
 # Neutralize sentinel fences inside untrusted content (issue #301). Every fence
@@ -44,14 +46,27 @@ PROMPT_VERSION = 4
 # zero-width lookahead (it does not consume the marker), and the closer pass
 # runs separately; both tolerate ``\s*`` between the marker and the angle run
 # (so ``UNTRUSTED_DIFF >>>`` / ``…\n>>>`` are broken too).
-# Angle-run character classes include common homoglyph/fullwidth forms an LLM
-# may read as equivalent to ASCII ``<``/``>`` (security audit 2026-06-13): a
-# fence forged from ``＜＜＜`` / ``＞＞＞`` (U+FF1C/U+FF1E) or other angle
-# homoglyphs would otherwise evade an ASCII-only matcher while still reading as
-# a real fence to the model. Matching a run of 3+ of these adjacent to the
-# ``UNTRUSTED_`` marker closes that bypass.
-_LANGLES = "<＜‹⟨〈〈❬"  # < ＜ ‹ ⟨ 〈 〈 ❬
-_RANGLES = ">＞›⟩〉〉❭"  # > ＞ › ⟩ 〉 〉 ❭
+# Angle-run character classes cover ASCII ``<``/``>`` plus the homoglyph,
+# fullwidth, and compatibility forms an LLM may read as equivalent (security
+# audit 2026-06-13, hardened after a red-team pass found the first list
+# incomplete). A fence forged from e.g. ``\uFE64\uFE64\uFE64`` (small ``<``,
+# which NFKC-folds to ASCII ``<``), heavy ornaments ``\u276E``, much-less
+# ``\u226A``, Canadian-syllabic ``\u1438``, or fullwidth ``\uFF1C`` would
+# otherwise evade an ASCII-only matcher while still reading as a real fence.
+# Membership is per-character, so a *mixed* ASCII/homoglyph run of 3+ adjacent to
+# the ``UNTRUSTED_`` marker is broken too. A character class is inherently an
+# arms race; this is defense-in-depth and the structured-consensus gate remains
+# the authoritative protection.
+_LANGLE_CPS = (
+    0x3C, 0xAB, 0x2039, 0x276E, 0x27E8, 0x3008, 0x2329, 0x276C, 0x2770,
+    0x226A, 0x02C2, 0x1438, 0xFF1C, 0xFE64, 0x29FC,
+)
+_RANGLE_CPS = (
+    0x3E, 0xBB, 0x203A, 0x276F, 0x27E9, 0x3009, 0x232A, 0x276D, 0x2771,
+    0x226B, 0x02C3, 0x1433, 0xFF1E, 0xFE65, 0x29FD,
+)
+_LANGLES = "".join(chr(c) for c in _LANGLE_CPS)
+_RANGLES = "".join(chr(c) for c in _RANGLE_CPS)
 _OPENER_RE = re.compile(rf"[{_LANGLES}]{{3,}}(?=\s*UNTRUSTED_[A-Z]+)", re.IGNORECASE)
 _CLOSER_RE = re.compile(rf"(UNTRUSTED_[A-Z]+\s*)[{_RANGLES}]{{3,}}", re.IGNORECASE)
 

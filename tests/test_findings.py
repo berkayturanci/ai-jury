@@ -92,6 +92,15 @@ class ParseFindingsTest(unittest.TestCase):
         self.assertEqual(findings, [])
         self.assertEqual(warnings, [])
 
+    def test_deeply_nested_json_does_not_raise(self):
+        # RecursionError (not a ValueError) must be caught so a steerable
+        # reviewer can't abort the run (audit 2026-06-13/N-2).
+        text = "```json\n" + "[" * 100000 + "\n```"
+        findings, warnings = parse_findings(text, "claude")
+        self.assertEqual(findings, [])
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("malformed", warnings[0])
+
     def test_empty_array_is_no_findings_no_warning(self):
         findings, warnings = parse_findings("```json\n[]\n```", "claude")
         self.assertEqual(findings, [])

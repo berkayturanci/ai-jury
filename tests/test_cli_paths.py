@@ -224,13 +224,21 @@ class DiffIngestCapTests(unittest.TestCase):
 
     def test_within_cap_returned(self):
         payload = "x" * 1000
-        self.assertEqual(cli._read_capped(io.StringIO(payload), "stdin"), payload)
+        self.assertEqual(cli._read_capped(io.BytesIO(payload.encode()), "stdin"), payload)
 
-    def test_over_cap_rejected(self):
-        big = io.StringIO("y" * (cli._MAX_DIFF_INGEST_BYTES + 10))
+    def test_over_cap_rejected_bytes(self):
+        big = io.BytesIO(b"y" * (cli._MAX_DIFF_INGEST_BYTES + 10))
         with self.assertRaises(SystemExit) as ctx:
             cli._read_capped(big, "stdin")
         self.assertIn("ingest limit", str(ctx.exception))
+
+    def test_cap_is_on_bytes_not_chars(self):
+        # A multi-byte char payload just over the byte cap must be rejected even
+        # though its character count is well under it (red-team 2026-06-13).
+        n_chars = cli._MAX_DIFF_INGEST_BYTES // 3 + 10  # "界" is 3 bytes in UTF-8
+        big = io.BytesIO(("界" * n_chars).encode("utf-8"))
+        with self.assertRaises(SystemExit):
+            cli._read_capped(big, "stdin")
 
 
 if __name__ == "__main__":

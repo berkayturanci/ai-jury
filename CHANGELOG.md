@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Red-team re-audit** (`docs/security-audit-2026-06-13-redteam.md`). A
+  same-day adversarial pass against the seventh audit's fixes plus a fresh
+  full-surface sweep; no Critical/High. Fixed six items, all with tests:
+  - Broadened homoglyph fence neutralization after a red-team pass found the
+    first set incomplete (small-form `﹤﹥`, heavy ornaments `❮❯`, much-less/
+    greater `≪≫`, Canadian-syllabic `ᐸᐳ`, guillemets, and mixed ASCII/homoglyph
+    runs all now broken). Bumps `PROMPT_VERSION` to 5.
+  - The raw-diff ingest cap is now enforced on **bytes**, not characters (a
+    multi-byte UTF-8 input could previously use 3–4× the intended 64 MiB).
+  - CLI-adapter error snippets are now redacted before being embedded in the
+    report/PR comment, matching the local-adapter path (a crashing CLI could
+    otherwise leak a token from stderr).
+  - `parse_findings`/`parse_verdicts` now catch `RecursionError` on deeply
+    nested JSON, so one steerable reviewer can't abort the whole run.
+  - `diff --git` paths containing spaces or git-quoting are recovered from the
+    `+++`/`---` marker lines, so a space-named file can no longer evade an
+    `include` allow-list (hiding itself from review).
 - **Seventh security audit** (`docs/security-audit-2026-06-13.md`). Four-surface
   re-audit of `main`; no Critical/High. Fixed two Medium prompt-injection gaps
   and two Low issues, all with new tests:
