@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.2] - 2026-06-13
+
+> Security-hardening release. Nine successive same-day re-audits (a seventh
+> four-surface audit, a red-team round, then rounds 3–9) — each a red-team pass
+> plus an independent convergence sweep — drove the codebase to a clean round
+> with **no Critical/High at any point** and no Medium remaining. The bulk of the
+> work hardened the CI-gate's verify→verdict→group attachment so an
+> attacker-steered verifier verdict can no longer suppress a real finding, and
+> closed a class of markdown output-injection into the posted PR/issue comment.
+> Also ships the earlier website/UX and performance tweaks. No breaking changes.
+
 ### Security
 
 - **Ninth security re-audit** (`docs/security-audit-2026-06-13-round9.md`). A
