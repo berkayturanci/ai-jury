@@ -39,6 +39,40 @@ class SplitDiffTest(unittest.TestCase):
     def test_empty_diff(self):
         self.assertEqual(split_diff(""), [])
 
+    def test_space_in_path_recovered_from_marker(self):
+        # The `diff --git` header is ambiguous for space-containing names; the
+        # `+++ b/<p>` marker carries the full path (audit 2026-06-13/L-4).
+        seg = _file_segment("src/evil with space.py")
+        files = split_diff(seg)
+        self.assertEqual(len(files), 1)
+        self.assertEqual(files[0].path, "src/evil with space.py")
+
+    def test_space_path_not_hidden_from_include_filter(self):
+        # A space-named file must not slip past an include allow-list by being
+        # truncated to its first token (audit 2026-06-13/N-3).
+        diff = _file_segment("src/evil with space.py")
+        plan = plan_diff(diff, max_bytes=1_000_000, chunk=False, include=["src/*"])
+        self.assertEqual(plan.kept_paths, ["src/evil with space.py"])
+
+    def test_crlf_marker_path_has_no_trailing_cr(self):
+        # On Windows a diff read in binary keeps CRLF; the +++/--- path must not
+        # retain a trailing '\r' or it fails glob/include matching (regression).
+        seg = _file_segment("src/a.py").replace("\n", "\r\n")
+        files = split_diff(seg)
+        self.assertEqual(files[0].path, "src/a.py")
+
+    def test_crlf_path_matches_include_filter(self):
+        diff = _file_segment("src/a.py").replace("\n", "\r\n")
+        plan = plan_diff(diff, max_bytes=1_000_000, chunk=False, include=["*.py"])
+        self.assertEqual(plan.kept_paths, ["src/a.py"])
+
+    def test_quoted_unicode_path_unquoted(self):
+        seg = _file_segment("src/a.py").replace(
+            "+++ b/src/a.py", '+++ "b/src/\\303\\251.py"'
+        )
+        files = split_diff(seg)
+        self.assertEqual(files[0].path, "src/é.py")
+
 
 class FilterTest(unittest.TestCase):
     def test_binary_file_excluded(self):

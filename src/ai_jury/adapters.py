@@ -364,13 +364,19 @@ class Adapter:
         if proc.returncode != 0:
             stderr = (proc.stderr or "").strip()
             detail = stderr or out
+            # Redact before embedding in the error: a crashing CLI can dump an
+            # env var / token into its stderr, and this string is rendered into
+            # the report and posted to the PR. Mirrors the LocalAdapter path
+            # (#293/F-8); the asymmetry was a secret-leak vector (audit
+            # 2026-06-13/N-1). Classify on the raw text (no secrets in codes).
+            safe_detail = redaction.redact(detail)[0]
             return AgentResult(
                 self.name,
                 self.spec.vendor,
                 False,
                 "",
                 dur,
-                f"exit {proc.returncode}: {detail[:500]}",
+                f"exit {proc.returncode}: {safe_detail[:500]}",
                 error_code=classify_stderr(proc.returncode, stderr or out),
             )
         if not out:

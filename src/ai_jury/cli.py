@@ -46,13 +46,27 @@ _MAX_DIFF_INGEST_BYTES = 64 * 1024 * 1024  # 64 MiB
 
 
 def _read_capped(fh, source: str) -> str:
-    """Read text from ``fh`` but refuse inputs above the ingest ceiling."""
+    """Read from ``fh``, refusing inputs above the ingest ceiling.
+
+    The cap is enforced on **bytes**, not characters: a text read of N chars can
+    hold up to 4N bytes for multi-byte UTF-8, so a char ceiling would admit
+    several times the intended memory (security audit 2026-06-13, red-team).
+    Callers pass a binary stream for real input (``sys.stdin.buffer`` / a file
+    opened ``"rb"``); a text stream is also accepted (its read is measured by its
+    UTF-8 byte length) so test doubles and unusual streams still work.
+    """
     data = fh.read(_MAX_DIFF_INGEST_BYTES + 1)
+    if isinstance(data, str):
+        if len(data.encode("utf-8", "replace")) > _MAX_DIFF_INGEST_BYTES:
+            raise SystemExit(
+                f"error: {source} exceeds the {_MAX_DIFF_INGEST_BYTES}-byte ingest limit"
+            )
+        return data
     if len(data) > _MAX_DIFF_INGEST_BYTES:
         raise SystemExit(
             f"error: {source} exceeds the {_MAX_DIFF_INGEST_BYTES}-byte ingest limit"
         )
-    return data
+    return data.decode("utf-8", errors="replace")
 
 
 def _read_diff(args) -> tuple[str, str]:
@@ -65,8 +79,10 @@ def _read_diff(args) -> tuple[str, str]:
         return issue_body(args.issue, args.repo), ""
     if args.diff_file:
         if args.diff_file == "-":
-            return _read_capped(sys.stdin, "stdin"), ""
-        with Path(args.diff_file).open(encoding="utf-8") as fh:
+            # Prefer the byte stream so the cap is exact; fall back to the text
+            # stream (e.g. a StringIO test double) which lacks ``.buffer``.
+            return _read_capped(getattr(sys.stdin, "buffer", sys.stdin), "stdin"), ""
+        with Path(args.diff_file).open("rb") as fh:
             return _read_capped(fh, args.diff_file), ""
     raise SystemExit(
         "error: provide one of --pr, --issue, --diff-file (or --diff-file - for stdin)"

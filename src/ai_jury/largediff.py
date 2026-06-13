@@ -94,6 +94,44 @@ def _strip_ab(path: str) -> str:
     return path
 
 
+def _unquote_git_path(path: str) -> str:
+    """Undo git's C-style quoting of paths with special chars (best-effort).
+
+    git wraps a path in double quotes and octal-escapes special/non-ASCII bytes
+    when ``core.quotepath`` is on. We decode it back so the full path is
+    recovered for glob filtering and classification.
+    """
+    if len(path) >= 2 and path.startswith('"') and path.endswith('"'):
+        inner = path[1:-1]
+        try:
+            return (
+                inner.encode("latin-1", "backslashreplace")
+                .decode("unicode_escape")
+                .encode("latin-1")
+                .decode("utf-8", "replace")
+            )
+        except (UnicodeDecodeError, UnicodeEncodeError):
+            return inner.replace('\\"', '"').replace("\\\\", "\\")
+    return path
+
+
+def _path_from_marker(line: str) -> str | None:
+    """Path from a ``+++ b/<p>`` or ``--- a/<p>`` line, or None for /dev/null.
+
+    These marker lines carry a single, unambiguous path even when it contains
+    spaces or quoted special chars — unlike the ``diff --git a/<p> b/<p>``
+    header, which a ``str.split()`` truncates at the first space, hiding or
+    mislabeling the file (security audit 2026-06-13/L-4,N-3).
+    """
+    rest = line[4:].rstrip("\r\n")
+    # Some diff formats append a tab + timestamp; the path ends at the tab.
+    if "\t" in rest:
+        rest = rest.split("\t", 1)[0]
+    if rest == "/dev/null":
+        return None
+    return _strip_ab(_unquote_git_path(rest))
+
+
 def split_diff(diff: str) -> list[DiffFile]:
     """Split a unified diff into per-file segments.
 
@@ -118,10 +156,19 @@ def split_diff(diff: str) -> list[DiffFile]:
             flush()
             cur = [line]
             parts = line.split()
-            # "diff --git a/x b/x" -> prefer the new-side (b/) path.
+            # Best-effort from the header (ambiguous for space-containing names);
+            # refined below from the unambiguous +++/--- marker lines.
             cur_path = _strip_ab(parts[3]) if len(parts) >= 4 else _strip_ab(parts[-1])
         else:
             cur.append(line)
+            # Prefer the new-side path; fall back to the old side for deletions
+            # (where ``+++`` is ``/dev/null``). The marker lines are unambiguous
+            # for space/quoted names; the `+++` always wins, `---` only fills a
+            # still-empty path.
+            if line.startswith("+++ ") or (line.startswith("--- ") and not cur_path):
+                p = _path_from_marker(line)
+                if p is not None:
+                    cur_path = p
             if cur_path is None:
                 cur_path = ""
     flush()
