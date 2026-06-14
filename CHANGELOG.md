@@ -18,7 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   share a lock (no torn frames), and the ticker is animate-only.
 - **Long verdict no longer overflows the decision banner.** A long chair verdict
   headline ran past the table / screen edge; it's now truncated with an ellipsis
-  to fit (flat and pixel scenes).
+  to fit (flat and pixel scenes), and the **full** verdict is shown wrapped under
+  "the panel has decided" so the rationale stays readable in the scene.
 
 ## [1.9.1] - 2026-06-14
 

@@ -383,6 +383,19 @@ class LiveAndFitTest(unittest.TestCase):
         for line in plain.split("\n"):
             self.assertLessEqual(len(line), court.cols)   # nothing overflows
 
+    def test_full_verdict_readable_below_banner(self):
+        court = _court()
+        court.open()
+        verdict = ("## Verdict\nNEEDS-INFO — "
+                   + "scope and acceptance criteria are undefined " * 3 + "ZEBRA_END")
+        court.step("synthesis", _ar("codex", "openai", output=verdict))
+        court.close()
+        plain = court.screen.to_plain()
+        self.assertIn("the panel has decided", plain)
+        # the tail of the verdict only appears if the full text is wrapped below
+        # (the one-line banner truncates well before it)
+        self.assertIn("ZEBRA_END", plain)
+
 
 class HelpersTest(unittest.TestCase):
     def test_banner_sgr(self):

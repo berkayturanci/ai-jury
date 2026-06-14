@@ -523,6 +523,10 @@ class Courtroom:
             s.put(r0 + 2 + len(wrapped), 6, "'" + "-" * (width + 2) + "'", "97")
         elif self.verdict:
             s.put(r0, 2, " the panel has decided ", "97;1")
+            # The banner is one truncated line; show the FULL verdict here,
+            # wrapped, so the rationale is actually readable in the scene.
+            for j, w in enumerate(_wrap(self.verdict, self.cols - 8)[:3]):
+                s.put(r0 + 1 + j, 4, w, "97")
 
     def _transcript(self) -> None:
         s = self.screen
