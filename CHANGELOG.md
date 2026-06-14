@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.1] - 2026-06-14
+
+### Fixed
+
+- **`--theater` crashed on a real interactive terminal** with
+  `TypeError: resolve_chair() missing 3 required positional arguments`. The
+  scene's chair label called the run-time `resolve_chair` with the wrong
+  arguments; it now uses a best-effort display name (the run still resolves the
+  real chair internally). The crash only fired on a TTY (where the scene
+  actually renders), so it slipped past CI — now covered by a `--theater`
+  CLI smoke test (flat + pixel + issue/vote) that forces the scene path on.
+
 ## [1.8.0] - 2026-06-14
 
 ### Added

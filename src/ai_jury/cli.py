@@ -33,7 +33,7 @@ from .github import (
     pr_diff,
 )
 from .metadata import build_run_metadata
-from .orchestrator import resolve_chair, review_diff, run_jury
+from .orchestrator import review_diff, run_jury
 from .policy import PolicyError, load_policy
 from .report import render, render_live_step, render_transcript
 
@@ -1306,12 +1306,16 @@ def main(argv: list[str] | None = None) -> int:
         from . import theater as _theater
 
         if _theater.supports_scene(sys.stdout):
-            chair_name = resolve_chair(config)
+            # Display-only chair label for the scene title. The run resolves the
+            # REAL chair internally (resolve_chair needs the usable/reviewer sets
+            # and run RNG, which don't exist yet here), so use a best-effort name.
+            chair_name = (config.chair if config.chair and config.chair != "rotate"
+                          else (config.agents[0].name if config.agents else "chair"))
             case = (f"PR #{args.pr}" if args.pr else
                     f"issue #{args.issue}" if args.issue else "local diff")
             court = _theater.Courtroom(
                 [(a.name, a.vendor) for a in config.agents],
-                chair_name or (config.agents[0].name if config.agents else "chair"),
+                chair_name,
                 case=case,
                 mode=("issue" if args.issue else "code"),
                 decision=(args.decision or config.decision),
