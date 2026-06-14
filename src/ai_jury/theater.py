@@ -36,6 +36,22 @@ _VENDOR_SGR = {
     "google": "38;2;66;133;244",      # Antigravity #4285f4
     "local": "38;2;168;85;247",       # local / open-weight #a855f7
 }
+# Same brand palette as RGB tuples, for the pixel-art style (half-block render).
+_VENDOR_RGB = {
+    "anthropic": (217, 119, 87),
+    "openai": (16, 163, 127),
+    "google": (66, 133, 244),
+    "local": (168, 85, 247),
+}
+# Pixel-art scene palette (RGB). The room is drawn into a pixel buffer and folded
+# to the terminal two rows at a time via the upper-half-block ▀ (fg = top pixel,
+# bg = bottom pixel), so it needs a truecolor + unicode terminal.
+_HALF = "▀"  # ▀
+_PIX = {
+    "bg": (16, 16, 20), "floor_a": (208, 170, 120), "floor_b": (196, 156, 108),
+    "rug": (34, 36, 54), "table": (176, 110, 38), "table_edge": (150, 92, 28),
+    "glow": (210, 210, 210), "skin": (226, 208, 182), "spk": (255, 255, 255),
+}
 _PHASES = (("review", "REVIEW"), ("debate", "DEBATE"), ("verify", "VERIFY"),
            ("synthesis", "DECISION"))
 
@@ -112,6 +128,10 @@ _TABLE_TOP = 8
 _TABLE_BOT = 14
 _SEAT_SLOT = 14   # min horizontal room per seat before we fall back to a roster
 
+# Pixel-art band geometry (terminal rows occupied by the half-block scene).
+_PIX_TOP = 5
+_PIX_BOT = 17
+
 
 class Courtroom:
     """Draws and animates the deliberation from the on_event stream.
@@ -122,10 +142,11 @@ class Courtroom:
     def __init__(self, agents, chair: str, *, case: str = "", stream=None,
                  animate: bool = True, cols: int | None = None, rows: int = 30,
                  capture=None, mode: str = "code", decision: str = "chair",
-                 unicode: bool = True):
+                 unicode: bool = True, style: str = "flat"):
         # agents: list of (name, vendor); chair: the synthesizer (records the
         # decision in chair mode). mode: "code"/"issue". decision: "chair" or
-        # "vote" (the panel tallies ballots) — different decision beat.
+        # "vote" (the panel tallies ballots) — different decision beat. style:
+        # "flat" (ANSI line scene) or "pixel" (half-block pixel-art room).
         self.agents = list(agents)
         self.chair = chair
         self.case = case
@@ -136,6 +157,10 @@ class Courtroom:
         self.cols = cols or min(98, max(70, shutil.get_terminal_size((90, 30)).columns))
         self.rows = rows
         self._capture = capture
+        self.unicode = unicode
+        # Pixel-art needs the half-block glyph + truecolor; with unicode off it
+        # transparently falls back to the flat line scene.
+        self.pixel = (style == "pixel" and unicode)
         self.g = _GLYPHS if unicode else _ASCII_GLYPHS
         self.hr = "─" if unicode else "-"
         self.dot = "·" if unicode else "."
@@ -180,7 +205,9 @@ class Courtroom:
         self.screen.clear()
         self._title()
         self._strip()
-        if self._seats_fit():
+        if self.pixel and self._seats_fit():
+            self._pixel_room()
+        elif self._seats_fit():
             self._table_and_seats()
         else:
             self._roster()
@@ -325,6 +352,121 @@ class Courtroom:
         if v.status == "unsupported":
             return self.g["no"], msg, "2;31"
         return self.g["dispute"], msg, "33"
+
+    # -- pixel-art scene (--theater-style pixel) -------------------------
+    def _pix_slots(self, count: int, width: int):
+        """Evenly spaced seat centre-x in pixel columns across the room width."""
+        if count <= 0:
+            return []
+        x0, x1 = 9, width - 9
+        span = x1 - x0
+        return [x0 + span * (2 * i + 1) // (2 * count) for i in range(count)]
+
+    def _pixel_room(self) -> None:
+        """Draw the top-down room as pixel-art (half-block) and overlay labels."""
+        pw, ph = self.cols, (_PIX_BOT - _PIX_TOP + 1) * 2
+        px = [[_PIX["bg"]] * pw for _ in range(ph)]
+
+        def rect(x0, y0, x1, y1, c):
+            for y in range(max(0, y0), min(ph, y1 + 1)):
+                rowp = px[y]
+                for x in range(max(0, x0), min(pw, x1 + 1)):
+                    rowp[x] = c
+
+        for y in range(ph):                       # warm checkerboard floor
+            for x in range(pw):
+                px[y][x] = _PIX["floor_a"] if (x // 2 + y // 2) % 2 else _PIX["floor_b"]
+        mx = 4
+        rect(mx, 2, pw - 1 - mx, ph - 3, _PIX["rug"])
+        tx0, ty0, tx1, ty1 = mx + 6, 8, pw - 1 - mx - 6, 17
+        rect(tx0, ty0, tx1, ty1, _PIX["table"])
+        rect(tx0, ty0, tx1, ty0 + 1, _PIX["table_edge"])
+        cx, cy = (tx0 + tx1) // 2, (ty0 + ty1) // 2
+        rect(cx - 6, cy - 1, cx + 6, cy + 1, _PIX["glow"])
+
+        eye = (40, 40, 54)
+
+        def figure(axc, heady, vendor, name):
+            body = _VENDOR_RGB.get(vendor, (180, 180, 190))
+            hair = tuple(int(c * 0.55) for c in body)        # darker vendor tint
+            hi = self.state.get(name) in ("speaking", "arguing")
+            rect(axc - 2, heady, axc + 2, heady + 2, _PIX["skin"])   # head (5×3)
+            rect(axc - 2, heady, axc + 2, heady, hair)              # hair on top
+            rect(axc - 1, heady + 1, axc - 1, heady + 1, eye)        # left eye
+            rect(axc + 1, heady + 1, axc + 1, heady + 1, eye)        # right eye
+            rect(axc - 2, heady + 3, axc + 2, heady + 5, body)      # torso (5×3)
+            rect(axc - 3, heady + 3, axc - 3, heady + 4, body)      # left arm
+            rect(axc + 3, heady + 3, axc + 3, heady + 4, body)      # right arm
+            if hi:                                                  # speaking halo
+                rect(axc - 3, heady - 1, axc + 3, heady - 1, _PIX["spk"])
+
+        top, bottom = self._split_seats()
+        txs, bxs = self._pix_slots(len(top), pw), self._pix_slots(len(bottom), pw)
+        for axc, (name, vendor) in zip(txs, top, strict=True):
+            figure(axc, 2, vendor, name)
+        for axc, (name, vendor) in zip(bxs, bottom, strict=True):
+            figure(axc, 18, vendor, name)
+
+        self._blit_band(px)
+        self._pixel_overlays(txs, bxs, top, bottom)
+
+    def _blit_band(self, px) -> None:
+        """Fold the pixel buffer into the screen, two rows per cell via ▀."""
+        s = self.screen
+        for i in range(_PIX_BOT - _PIX_TOP + 1):
+            top_row, bot_row = px[2 * i], px[2 * i + 1]
+            for c in range(self.cols):
+                tr, tg, tb = top_row[c]
+                br, bg, bb = bot_row[c]
+                s.put(_PIX_TOP + i, c, _HALF, f"38;2;{tr};{tg};{tb};48;2;{br};{bg};{bb}")
+
+    def _pixel_overlays(self, txs, bxs, top, bottom) -> None:
+        """Names, ballots and the decision/verify text laid over the pixel band."""
+        s = self.screen
+        # name labels: top edge along the top of the band, bottom edge below it.
+        # Top ballots sit in the gap above the band; the bottom edge has no spare
+        # row (the speech band follows), so the panel tally on the table banner is
+        # the per-juror vote record there.
+        for x, (name, vendor) in zip(txs, top, strict=True):
+            self._pix_label(x, name, vendor, _PIX_TOP, ballot_row=_PIX_TOP - 1)
+        for x, (name, vendor) in zip(bxs, bottom, strict=True):
+            self._pix_label(x, name, vendor, _PIX_BOT, ballot_row=None)
+
+        mid = (_PIX_TOP + _PIX_BOT) // 2
+        if self.verdict:
+            extra = ""
+            if self.decision == "vote" and self.vote is not None:
+                extra = "  (" + " · ".join(
+                    f"{n} {lbl.lower()}" for lbl, n in self.vote.tally.items()) + ")"
+            label = ("DECISION by panel vote" if self.decision == "vote"
+                     else "DECISION (chair)")
+            s.center(mid - 1, f" {label} ", "97;1")
+            s.center(mid, f"  {self.verdict}{extra}  ", _banner_sgr(self.verdict))
+        elif self.phase == "verify" and self.verifies:
+            s.center(mid - 1, " verifying findings ", "97;1")
+            for j, v in enumerate(self.verifies[:3]):
+                mk, msg, sgr = self._verify_row(v)
+                s.center(mid + j, f"{mk} {msg}", sgr)
+        elif self.case:
+            s.center(mid, f" case: {self.case} ", "97;1")
+
+    def _pix_label(self, x, name, vendor, row, *, ballot_row) -> None:
+        st = self.state.get(name, "idle")
+        plate = name[:10]
+        if self.chair == name and self.decision != "vote":
+            plate += "*"
+        plate = f" {plate} "      # padding for the dark pill
+        # Vendor-coloured, bold, on a dark pill so the name reads over the floor.
+        speaking = st in ("speaking", "arguing")
+        sgr = _VENDOR_SGR.get(vendor, "37") + ";48;2;22;22;32;1"
+        if speaking:
+            sgr = "30;47;1"       # invert (black on white) while speaking
+        self.screen.put(row, max(0, x - len(plate) // 2), plate, sgr)
+        ballot = self.ballots.get(name)
+        if ballot and ballot_row is not None:
+            chip = f"[{ballot[:8]}]"
+            self.screen.put(ballot_row, max(0, x - len(chip) // 2), chip,
+                            _banner_sgr(ballot))
 
     def _speaking_area(self) -> None:
         s = self.screen
