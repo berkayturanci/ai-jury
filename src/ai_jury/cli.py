@@ -301,9 +301,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--theater",
         dest="theater",
         action="store_true",
-        help="animated 'courtroom' view of the live run (each model seated, "
-        "speaking per phase, gavel/vote finale); needs an interactive terminal, "
-        "else falls back to --live",
+        help="animated deliberation view of the live run (each model seated "
+        "around a table, speaking per phase, panel-vote/chair finale); needs an "
+        "interactive terminal, else falls back to --live",
+    )
+    p.add_argument(
+        "--theater-style",
+        dest="theater_style",
+        choices=("flat", "pixel"),
+        default="flat",
+        help="--theater scene style: 'flat' (ANSI line scene, default) or "
+        "'pixel' (pixel-art room; needs a truecolor+unicode terminal)",
     )
     p.add_argument(
         "--post-summary",
@@ -1307,6 +1315,7 @@ def main(argv: list[str] | None = None) -> int:
                 case=case,
                 mode=("issue" if args.issue else "code"),
                 decision=(args.decision or config.decision),
+                style=args.theater_style,
             )
             court.open()
 

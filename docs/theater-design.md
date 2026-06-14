@@ -13,7 +13,25 @@ plain `--live` step stream.
 
 Implementation: `src/ai_jury/theater.py` (`Screen` grid buffer + `Courtroom`
 scene — class name kept for back-compat). Tests: `tests/test_theater.py`. Flag:
-`cli.py` (`--theater`).
+`cli.py` (`--theater`, `--theater-style`).
+
+## Scene styles (`--theater-style {flat,pixel}`)
+
+The same deliberation, the same `on_event` flow, two render styles:
+
+- **`flat`** (default) — the ANSI line scene: a drawn table with vendor-coloured
+  nameplates and figure glyphs, a speech bubble, the verify checklist, and the
+  decision banner. Works on any 16-colour terminal.
+- **`pixel`** — a top-down **pixel-art room** drawn into an RGB pixel buffer and
+  folded to the terminal two rows per cell via the upper-half-block `▀`
+  (foreground = top pixel, background = bottom pixel). Little chibi jurors
+  (hair + eyes + vendor-coloured torso) sit around a wooden table on a warm
+  checkerboard floor; the speaker gets a bright halo and an inverted nameplate;
+  the table shows the case / verify checklist / decision banner. The per-juror
+  vote chips show on the top edge; the full tally is on the banner. It needs a
+  **truecolor + unicode** terminal; without either it transparently falls back
+  to the `flat` scene (and, like `flat`, to the plain `--live` stream off a TTY
+  or when too many jurors won't fit, where it shows the compact roster).
 
 ## Screen bands (≈90×30, scales 70–98 wide)
 

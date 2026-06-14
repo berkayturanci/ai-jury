@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-06-14
+
+### Added
+
+- **`--theater-style {flat,pixel}`: a pixel-art style for the theater scene.**
+  The same live deliberation (same `on_event` flow) rendered as a top-down
+  **pixel-art room** — little chibi jurors (hair + eyes + vendor-coloured torso)
+  around a wooden table, the speaker haloed and name-inverted, the case / verify
+  checklist / decision banner on the table. Drawn into an RGB pixel buffer and
+  folded to the terminal via the upper-half-block `▀` (truecolor); needs a
+  truecolor + unicode terminal, else it transparently falls back to the default
+  `flat` ANSI scene. Pure stdlib. See `docs/theater-design.md`.
+
+### Changed
+
+- `--theater` help text now describes the **deliberation** framing (no
+  "courtroom"/"gavel") to match the round-table scene.
+
+### Documentation
+
+- README, `docs/theater-design.md`, and the landing page document both theater
+  styles (flat + pixel) with refreshed demos rendered from the real renderer.
+- Site: the demo's `jury.toml` preview now grows to fill the controls column and
+  scrolls only on overflow (was capped at a fixed height).
+
 ## [1.7.0] - 2026-06-14
 
 ### Added

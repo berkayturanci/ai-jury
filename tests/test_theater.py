@@ -195,6 +195,93 @@ class CourtroomTest(unittest.TestCase):
         self.assertEqual(court._slots(0), [])
 
 
+_PIX_AGENTS = [("claude", "anthropic"), ("codex", "openai"),
+               ("agy", "google"), ("qwen", "local")]
+
+
+def _pix_court(**kw):
+    return Courtroom(_PIX_AGENTS, "claude", animate=False, cols=92, rows=30,
+                     capture=[], style="pixel", **kw)
+
+
+class PixelSceneTest(unittest.TestCase):
+    """The pixel-art style (--theater-style pixel): half-block room render."""
+
+    def _drive(self, court):
+        court.open()
+        court.step("review", _ar("claude", output=_REVIEW))
+        court.step("review", _ar("codex", "openai", output=_REVIEW))
+        court.step("debate", _ar("agy", "google", output=_REVIEW), round_no=2)
+        court.step("verify", _ar("codex", "openai", output=_VERIFY))
+        court.step("synthesis", _ar("codex", "openai", output=_SYNTH))
+
+    def test_pixel_chair_scene_renders_band_and_names(self):
+        court = _pix_court(case="PR #142")
+        self._drive(court)
+        court.close()
+        plain = court.screen.to_plain()
+        self.assertIn("▀", plain)                       # half-block band drawn
+        for name in ("claude", "codex", "agy", "qwen"):
+            self.assertIn(name, plain)
+        self.assertIn("REQUEST CHANGES", plain)         # chair decision banner
+        self.assertIn("DECISION (chair)", plain)
+        # truecolor fg+bg per half-block cell
+        self.assertIn("48;2;", court.screen.to_ansi())
+
+    def test_pixel_vote_finale_banner_tally_and_top_ballots(self):
+        vote = types.SimpleNamespace(
+            verdict="REQUEST CHANGES",
+            tally={"REQUEST CHANGES": 3, "COMMENT": 1, "APPROVE": 0},
+            ballots=[
+                types.SimpleNamespace(reviewer="claude", vote="REQUEST CHANGES", reason=""),
+                types.SimpleNamespace(reviewer="codex", vote="REQUEST CHANGES", reason=""),
+                types.SimpleNamespace(reviewer="agy", vote="COMMENT", reason=""),
+                types.SimpleNamespace(reviewer="qwen", vote="REQUEST CHANGES", reason=""),
+            ],
+        )
+        court = _pix_court(decision="vote", case="PR #142")
+        self._drive(court)
+        court.set_vote(vote)
+        court.close()
+        plain = court.screen.to_plain()
+        self.assertIn("DECISION by panel vote", plain)
+        self.assertIn("request changes", plain)         # tally on the banner
+        self.assertIn("[REQUEST", plain)                # a top-edge ballot chip
+
+    def test_pixel_verify_overlay(self):
+        court = _pix_court()
+        court.open()
+        court.step("review", _ar("claude", output=_REVIEW))
+        court.step("verify", _ar("codex", "openai", output=_VERIFY))
+        frame = court.screen.to_plain()
+        self.assertIn("verifying findings", frame)
+        self.assertIn("▀", frame)
+
+    def test_pixel_ascii_falls_back_to_flat(self):
+        # unicode off → no half-block; pixel transparently uses the flat scene.
+        court = Courtroom(_PIX_AGENTS, "claude", animate=False, cols=92, rows=30,
+                          capture=[], style="pixel", unicode=False)
+        court.open()
+        court.step("review", _ar("claude", output=_REVIEW))
+        court.close()
+        plain = court.screen.to_plain()
+        self.assertNotIn("▀", plain)
+        self.assertIn("claude", plain)
+
+    def test_pixel_many_jurors_falls_back_to_roster(self):
+        agents = [(f"j{i}", "local") for i in range(16)]
+        court = Courtroom(agents, agents[0][0], animate=False, cols=92, rows=30,
+                          capture=[], style="pixel")
+        court.open()
+        court.close()
+        plain = court.screen.to_plain()
+        self.assertIn("JURY:", plain)
+        self.assertNotIn("▀", plain)        # no pixel band when seats don't fit
+
+    def test_pix_slots_empty(self):
+        self.assertEqual(_pix_court()._pix_slots(0, 92), [])
+
+
 _DISPUTE = (
     "```json\n"
     '[{"file":"a.py","line":1,"claim":"unclear","status":"needs_human_decision"}]\n```'

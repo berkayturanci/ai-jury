@@ -94,6 +94,7 @@ DOCUMENTED_FLAGS = [
     "--verbose",
     "--live",
     "--theater",
+    "--theater-style",
     "--post-summary",
     "--post",
     "--post-inline",
