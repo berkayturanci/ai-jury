@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.3] - 2026-06-14
+
+### Fixed
+
+- Theater transcript lines are now truncated with an ellipsis instead of being
+  hard-cut mid-word at the screen edge (e.g. the long `DECISION -> …` log line).
+
+### Internal
+
+- `theater.py` is now at 100% coverage (covered the ticker, `_fit`, and the
+  verdict-headline branches); overall coverage nudged up off the 99% floor.
+
 ## [1.9.2] - 2026-06-14
 
 ### Fixed

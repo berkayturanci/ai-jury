@@ -534,7 +534,7 @@ class Courtroom:
         s.put(r0, 0, self.hr, "2;37")
         s.put(r0, 2, " TRANSCRIPT ", "2;37")
         for j, line in enumerate(self.log[-4:]):
-            s.put(r0 + 1 + j, 2, flatten_inline(line)[: self.cols - 4], "37")
+            s.put(r0 + 1 + j, 2, self._fit(flatten_inline(line), self.cols - 4), "37")
 
     def _status(self) -> None:
         s = self.screen
@@ -616,7 +616,7 @@ class Courtroom:
             self._speak(kind, result, round_no)
         elif kind == "verify":
             self._verify(result)
-        elif kind == "synthesis":
+        else:                       # synthesis (the four phases are exhaustive)
             self._synthesize(result)
 
     @staticmethod

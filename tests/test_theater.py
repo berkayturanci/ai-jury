@@ -208,6 +208,16 @@ class CourtroomTest(unittest.TestCase):
         court = _court()
         self.assertEqual(court._slots(0), [])
 
+    def test_speak_with_already_done_seats(self):
+        # verify marks every seat 'done'; a later review speak must leave the
+        # done seats untouched (exercises the done-skip branch in _speak).
+        court = _court()
+        court.open()
+        court.step("verify", _ar("codex", "openai", output=_VERIFY))
+        court.step("review", _ar("claude", output=_REVIEW))
+        court.close()
+        self.assertIn("claude", court.screen.to_plain())
+
 
 _PIX_AGENTS = [("claude", "anthropic"), ("codex", "openai"),
                ("agy", "google"), ("qwen", "local")]
@@ -415,6 +425,9 @@ class HelpersTest(unittest.TestCase):
         self.assertEqual(_gist("  \n  hello there"), "hello there")
         self.assertEqual(_verdict_headline("## Verdict\nAPPROVE — ok"), "APPROVE — ok")
         self.assertEqual(_verdict_headline("no header"), "no header")  # gist fallback
+        # header present but only blank lines follow → inner loop skips, falls
+        # through to the gist fallback (covers both inner branches)
+        self.assertEqual(_verdict_headline("## Verdict\n   \n"), "## Verdict")
 
     def test_screen_out_of_bounds_is_safe(self):
         s = Screen(4, 1)
