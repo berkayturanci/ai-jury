@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import shutil
 import sys
+import threading
 import time
 
 from .adapters import AgentResult
@@ -199,6 +200,13 @@ class Courtroom:
         self.max_round = 0
         self.disputes = 0
         self.start = time.monotonic()
+        # Background ticker: repaint on an interval so the clock stays live and
+        # the scene doesn't freeze between on_event callbacks (agents can run for
+        # tens of seconds). Guarded by a lock shared with event-driven repaints.
+        self.tick_interval = 1.0
+        self._lock = threading.RLock()
+        self._tick_stop: threading.Event | None = None
+        self._tick_thread: threading.Thread | None = None
 
     # -- geometry --------------------------------------------------------
     def _split_seats(self):
@@ -334,7 +342,7 @@ class Courtroom:
             label = ("DECISION by panel vote" if self.decision == "vote"
                      else "DECISION (chair)")
             s.center(mid - 1, label, "2;37")
-            banner = f"  {self.verdict}{extra}  "
+            banner = f"  {self._fit(self.verdict + extra, self.cols - 18)}  "
             s.center(mid, banner, _banner_sgr(self.verdict))
             return
         if self.phase == "verify" and self.verifies:
@@ -365,6 +373,16 @@ class Courtroom:
                   + (";1" if st in ("speaking", "arguing") else ""))
             x += len(label) + 2
         self._table_interior()
+
+    def _fit(self, text: str, width: int) -> str:
+        """Truncate ``text`` to ``width`` columns with an ellipsis so a long
+        verdict line never overflows the table / screen edge."""
+        if width <= 0:
+            return ""
+        if len(text) <= width:
+            return text
+        ell = "…" if self.unicode else "..."
+        return text[: max(0, width - len(ell))].rstrip() + ell
 
     def _verify_row(self, v):
         msg = f"{v.status:<18} {flatten_inline(v.claim)[:40]}"
@@ -462,7 +480,8 @@ class Courtroom:
             label = ("DECISION by panel vote" if self.decision == "vote"
                      else "DECISION (chair)")
             s.center(mid - 1, f" {label} ", "97;1")
-            s.center(mid, f"  {self.verdict}{extra}  ", _banner_sgr(self.verdict))
+            s.center(mid, f"  {self._fit(self.verdict + extra, self.cols - 8)}  ",
+                     _banner_sgr(self.verdict))
         elif self.phase == "verify" and self.verifies:
             s.center(mid - 1, " verifying findings ", "97;1")
             for j, v in enumerate(self.verifies[:3]):
@@ -527,14 +546,41 @@ class Courtroom:
             self.out.write("\033[H\033[J" + frame)
             self.out.flush()
 
+    def _render(self) -> None:
+        # Paint + flush as one critical section so an event-driven repaint and a
+        # background tick never interleave writes (torn frames) on the terminal.
+        with self._lock:
+            self._paint()
+            self._flush()
+
     def _beat(self, secs: float) -> None:
         if self.animate:
             time.sleep(secs)
 
     def _frame(self, beat: float = 0.0) -> None:
-        self._paint()
-        self._flush()
+        self._render()
         self._beat(beat)
+
+    def _tick_loop(self) -> None:
+        # Repaint every ``tick_interval`` until stopped — keeps the clock live and
+        # the scene from freezing while the orchestrator waits on the agents.
+        assert self._tick_stop is not None
+        while not self._tick_stop.wait(self.tick_interval):
+            self._render()
+
+    def _start_ticker(self) -> None:
+        if not self.animate or self._tick_thread is not None:
+            return
+        self._tick_stop = threading.Event()
+        self._tick_thread = threading.Thread(target=self._tick_loop, daemon=True)
+        self._tick_thread.start()
+
+    def _stop_ticker(self) -> None:
+        if self._tick_stop is not None:
+            self._tick_stop.set()
+        if self._tick_thread is not None:
+            self._tick_thread.join(timeout=1.0)
+            self._tick_thread = None
 
     # -- public API ------------------------------------------------------
     def open(self) -> None:
@@ -543,6 +589,7 @@ class Courtroom:
         self.phase = "review"
         self.log.append("the jury convenes")
         self._frame(0.4)
+        self._start_ticker()
 
     def step(self, kind: str, result: AgentResult, round_no: int | None = None) -> None:
         skipped_debate = (
@@ -627,6 +674,7 @@ class Courtroom:
             self.ballots[b.reviewer] = b.vote
 
     def close(self) -> None:
+        self._stop_ticker()
         self.done_phases.update(k for k, _ in _PHASES)
         if self.decision == "vote" and self.vote is not None:
             self.log.append(f"the panel votes -> {self.verdict}")

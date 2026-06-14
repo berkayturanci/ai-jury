@@ -336,6 +336,54 @@ class AnimateTest(unittest.TestCase):
         self.assertIn("\033[", buf.getvalue())
 
 
+class LiveAndFitTest(unittest.TestCase):
+    """Background ticker (live clock) + verdict-banner truncation."""
+
+    def test_ticker_repaints_while_open_then_stops(self):
+        import threading
+        import unittest.mock as mock
+
+        buf = io.StringIO()
+        with mock.patch("ai_jury.theater.time.sleep"):   # no real beat sleeps
+            c = Courtroom(_AGENTS, "codex", animate=True, stream=buf)
+            c.tick_interval = 0.01                        # Event.wait stays real
+            c.open()
+            before = buf.getvalue()
+            # Real delay that the time.sleep patch does NOT affect, so the
+            # background ticker gets wall-clock time to repaint.
+            threading.Event().wait(0.08)
+            self.assertGreater(len(buf.getvalue()), len(before))
+            c.close()
+        self.assertIsNone(c._tick_thread)                # joined/cleared on close
+
+    def test_ticker_noop_when_not_animating(self):
+        c = _court()           # animate=False
+        c._start_ticker()
+        self.assertIsNone(c._tick_thread)
+
+    def test_fit_truncates_with_ellipsis(self):
+        c = _court()
+        self.assertEqual(c._fit("short", 20), "short")
+        out = c._fit("a very long verdict line that overflows", 12)
+        self.assertTrue(out.endswith("…"))
+        self.assertLessEqual(len(out), 12)
+        self.assertEqual(c._fit("x", 0), "")
+        ascii_court = Courtroom(_AGENTS, "codex", animate=False, cols=92, rows=30,
+                                capture=[], unicode=False)
+        self.assertTrue(ascii_court._fit("y" * 40, 8).endswith("..."))
+
+    def test_long_verdict_banner_is_truncated(self):
+        court = _court(case="issue #264", mode="issue")
+        court.open()
+        court.step("synthesis", _ar("codex", "openai",
+                   output="## Verdict\nNEEDS-INFO — " + "blah " * 80))
+        court.close()
+        plain = court.screen.to_plain()
+        self.assertIn("…", plain)                        # banner ellipsised
+        for line in plain.split("\n"):
+            self.assertLessEqual(len(line), court.cols)   # nothing overflows
+
+
 class HelpersTest(unittest.TestCase):
     def test_banner_sgr(self):
         from ai_jury.theater import _banner_sgr
