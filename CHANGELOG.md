@@ -7,17 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-06-14
+
 ### Added
 
-- **`--theater`: an animated "courtroom" view of a live run.** Opt-in,
-  presentation-only: each model sits in a seat and stands to speak as the run
-  moves through review → debate → verify → verdict, with a chair-gavel or
-  panel-vote finale. It consumes the real `on_event` stream (so it mirrors the
-  actual run; `--mock` drives a deterministic demo), is pure-stdlib ANSI, and
-  never touches the structured outcome/report/CI gate. Adapts to PR vs issue and
-  chair vs vote, shows debate rounds / early-stop / disputes, scales to 2–5
-  jurors, and falls back to the plain `--live` stream on a non-interactive
-  terminal. See `docs/theater-design.md`.
+- **`--theater`: an animated "deliberation" view of a live run.** Opt-in,
+  presentation-only: the models sit around a table and take turns speaking as
+  the run moves through review → debate → verify → decision, then decide together
+  (no judge) — by panel vote or recorded by the chair. It consumes the real
+  `on_event` stream (so it mirrors the actual run; `--mock` drives a
+  deterministic demo), is pure-stdlib ANSI, and never touches the structured
+  outcome/report/CI gate. Adapts to PR vs issue and chair vs vote, shows debate
+  rounds / early-stop / disputes, seats many jurors (compact roster fallback),
+  and falls back to the plain `--live` stream on a non-interactive terminal.
+  See `docs/theater-design.md`.
+- Theater seats use each vendor's own **product brand colour** (24-bit truecolor:
+  Anthropic coral, OpenAI teal, Google blue, local violet), matching the
+  website's vendor palette; terminals without truecolor degrade to the nearest
+  colour.
+
+### Documentation
+
+- README, `docs/theater-design.md`, and the landing page gained a dedicated
+  **Theater mode** section with a pixel-art deliberation demo gif.
 
 ## [1.6.2] - 2026-06-13
 

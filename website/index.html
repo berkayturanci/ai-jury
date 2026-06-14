@@ -130,6 +130,7 @@
     "hasPart": [
       { "@type": "WebPageElement", "name": "How it works", "url": "https://berkayturanci.github.io/ai-jury/#how" },
       { "@type": "WebPageElement", "name": "Demo", "url": "https://berkayturanci.github.io/ai-jury/#demo" },
+      { "@type": "WebPageElement", "name": "Theater mode", "url": "https://berkayturanci.github.io/ai-jury/#theater" },
       { "@type": "WebPageElement", "name": "Configuration", "url": "https://berkayturanci.github.io/ai-jury/#config" },
       { "@type": "WebPageElement", "name": "Comparison", "url": "https://berkayturanci.github.io/ai-jury/#compare" },
       { "@type": "WebPageElement", "name": "Sample report", "url": "https://berkayturanci.github.io/ai-jury/#report" },
@@ -151,11 +152,12 @@
     <div class="wrap nav-inner">
       <div class="brand">
         <a class="brand-link" href="#top"><img src="assets/logos/mark-convergence.svg" alt="" /> ai-jury</a>
-        <a class="ver" id="site-version" href="https://github.com/berkayturanci/ai-jury/releases/latest">v1.1.0</a>
+        <a class="ver" id="site-version" href="https://github.com/berkayturanci/ai-jury/releases/latest">v1.7.0</a>
       </div>
       <div class="nav-links">
         <a class="nav-link hide-sm" href="#how">How it works</a>
         <a class="nav-link hide-sm" href="#demo">Demo</a>
+        <a class="nav-link hide-sm" href="#theater">Theater</a>
         <a class="nav-link hide-sm" href="#compare">Compare</a>
         <a class="nav-link hide-sm" href="#faq">FAQ</a>
         <a class="nav-link hide-sm" href="docs.html">Docs</a>
@@ -173,6 +175,7 @@
     <div class="nav-mobile" id="nav-mobile">
       <a class="nav-mlink" href="#how">How it works</a>
       <a class="nav-mlink" href="#demo">Demo</a>
+      <a class="nav-mlink" href="#theater">Theater</a>
       <a class="nav-mlink" href="#compare">Compare</a>
       <a class="nav-mlink" href="#faq">FAQ</a>
       <a class="nav-mlink" href="docs.html">Docs</a>
@@ -555,6 +558,50 @@ endpoint = <span class="s">"http://localhost:11434/v1"</span></code></pre>
           <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h7l-1 8 10-12h-7z"/></svg></div>
           <h3>Drop-in skill</h3>
           <p>Install as a Claude Code plugin or copy the skill into <code>.claude/skills/</code>. Works across the major coding-agent platforms.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────────────── Theater mode ───────────────── -->
+    <section id="theater">
+      <div class="sec-head wide reveal">
+        <p class="sec-kicker">Watch it deliberate</p>
+        <h2>Theater mode</h2>
+        <p class="muted">
+          <code class="mono" style="color:var(--accent-2)">--theater</code> is an opt-in, animated view of a <em>live</em> run: the
+          models take their seats <strong style="color:var(--text)">around a table</strong> and speak in turn as the run moves through
+          review → debate → verify, then decide <strong style="color:var(--text)">together</strong> — by panel vote or recorded by the chair.
+          No judge; the jurors deliberate with each other. It's driven by the real
+          <code class="mono">on_event</code> stream, so it always reflects the actual run.
+        </p>
+      </div>
+
+      <div class="theater reveal">
+        <figure class="theater-stage">
+          <img src="assets/theater-pixel.gif" width="1072" height="640" loading="lazy" decoding="async"
+               alt="Pixel-art round table: Claude, Codex, Antigravity and a local model take turns speaking, then reach a verdict together." />
+          <figcaption>A four-vendor panel deliberating — pixel-art theater (<code class="mono">--theater</code>).</figcaption>
+        </figure>
+
+        <div class="theater-points">
+          <div class="tp">
+            <h3>Round-table, not a bench</h3>
+            <p>Jurors seat around the table and take turns; the table itself shows what's on it — the case, the verify checklist, or the decision banner.</p>
+          </div>
+          <div class="tp">
+            <h3>Reflects the real run</h3>
+            <p>It's a pure-stdlib ANSI side channel over the orchestrator's event stream — it never touches the report or the CI gate. Works for PRs <em>and</em> issues, chair <em>or</em> vote.</p>
+          </div>
+          <div class="tp">
+            <h3>Degrades gracefully</h3>
+            <p>Many jurors or a narrow terminal fall back to a compact roster; a non-interactive terminal falls back to the plain <code class="mono">--live</code> step stream.</p>
+          </div>
+        </div>
+
+        <div class="theater-run">
+          <span class="prompt mono">$</span>
+          <code>jury --pr 123 --theater</code>
+          <span class="theater-note muted">also: <code class="mono">--issue 42 --theater</code> · <code class="mono">--decision vote --theater</code></span>
         </div>
       </div>
     </section>

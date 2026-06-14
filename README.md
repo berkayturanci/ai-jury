@@ -185,7 +185,7 @@ jury --issue 42 --decision vote        # issue verdict by panel vote (NEEDS-INFO
 jury --issue 42 --live --post          # stream + post each step to the issue thread
 jury --pr 123 --transcript             # full play-by-play (every review, debate, the reasoning)
 jury --pr 123 --live                   # stream each step to the terminal as it happens
-jury --pr 123 --theater                # animated "courtroom" view of the live run
+jury --pr 123 --theater                # animated "deliberation" view of the live run
 jury --pr 123 --post-progress             # live: a sticky PR comment updated each round/chunk
 jury --pr 123 --post --post-mode phased   # post Round 1 / debate / decision as separate comments
 jury --pr 123 --incremental            # review only changes since the last run
@@ -205,18 +205,23 @@ false positives and the local model's contribution), see
 
 ### Theater mode — `--theater`
 
-An opt-in, animated **courtroom** view of a *live* run: each model sits in a
-seat and stands to speak as the run moves through review → debate → verify →
-verdict, with a chair-gavel or panel-vote finale.
+An opt-in, animated **deliberation** view of a *live* run: the models sit around
+a table and take turns speaking as the run moves through review → debate →
+verify → decision, then reach a decision together — by panel vote, or recorded
+by the chair. There is no judge; the jurors deliberate with each other.
 
-![ai-jury theater mode](docs/theater.gif)
+![ai-jury deliberation (pixel)](docs/theater-pixel.gif)
+
+…and the actual terminal view it renders live:
+
+![ai-jury deliberation (terminal)](docs/theater.gif)
 
 It is presentation-only — it reads the same per-phase `on_event` stream the
 report does, so it mirrors the **real** run (`jury --mock --theater` gives a
 deterministic, offline demo). It adapts to PR vs issue and chair vs vote, shows
-debate rounds / early-stop / disputes, scales to 2–5 jurors, and falls back to
-the plain `--live` step stream on a non-interactive terminal. Details:
-[`docs/theater-design.md`](docs/theater-design.md).
+debate rounds / early-stop / disputes, seats many jurors (with a compact roster
+fallback), and degrades to the plain `--live` step stream on a non-interactive
+terminal. Details: [`docs/theater-design.md`](docs/theater-design.md).
 
 ## Output formats
 
