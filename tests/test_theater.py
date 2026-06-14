@@ -371,6 +371,22 @@ class LiveAndFitTest(unittest.TestCase):
         c._start_ticker()
         self.assertIsNone(c._tick_thread)
 
+    def test_verdict_label_keyword_only(self):
+        c = _court()
+        self.assertEqual(c._verdict_label("NEEDS-INFO — long reason here"), "NEEDS-INFO")
+        self.assertEqual(c._verdict_label("APPROVE - looks good"), "APPROVE")
+        self.assertEqual(c._verdict_label("REQUEST CHANGES"), "REQUEST CHANGES")
+
+    def test_decision_transcript_line_is_short(self):
+        court = _court()
+        court.open()
+        court.step("synthesis", _ar("codex", "openai",
+                   output="## Verdict\nNEEDS-INFO — " + "blah " * 60))
+        court.close()
+        log = " ".join(court.log)
+        self.assertIn("DECISION -> NEEDS-INFO", log)
+        self.assertNotIn("blah", " ".join(court.log[-1:]))   # rationale not in the log line
+
     def test_fit_truncates_with_ellipsis(self):
         c = _court()
         self.assertEqual(c._fit("short", 20), "short")

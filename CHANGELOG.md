@@ -16,7 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   verdict to one line — so the rationale is readable in the scene itself (flat +
   pixel).
 - Theater transcript lines are now truncated with an ellipsis instead of being
-  hard-cut mid-word at the screen edge (e.g. the long `DECISION -> …` log line).
+  hard-cut mid-word at the screen edge, and the rolling `DECISION -> …` log line
+  records the **short verdict keyword** (e.g. `DECISION -> NEEDS-INFO`) — the full
+  rationale lives on the banner, so the transcript no longer ends in an ellipsis.
 
 ### Internal
 

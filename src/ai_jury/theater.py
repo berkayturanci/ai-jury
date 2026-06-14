@@ -386,6 +386,13 @@ class Courtroom:
         ell = "…" if self.unicode else "..."
         return text[: max(0, width - len(ell))].rstrip() + ell
 
+    def _verdict_label(self, verdict: str) -> str:
+        """Short verdict keyword for the transcript log (the full rationale is on
+        the banner), e.g. 'NEEDS-INFO — long reason…' -> 'NEEDS-INFO'. Splits on
+        the em-dash / spaced-hyphen separator, never the keyword's own hyphen."""
+        head = verdict.split("—")[0].split(" - ")[0].strip()
+        return head or verdict
+
     def _wrap_banner(self, text: str, width: int, max_lines: int) -> list[str]:
         """Wrap ``text`` to ``width`` over at most ``max_lines`` rows so the
         verdict is readable; if it still overflows, the last line gets an
@@ -680,7 +687,7 @@ class Courtroom:
         self.done_phases.update({"review", "debate", "verify"})
         if self.decision != "vote":
             self.verdict = _verdict_headline(result.output or "") if result.ok else "NO DECISION"
-            self.log.append(f"DECISION -> {self.verdict}")
+            self.log.append(f"DECISION -> {self._verdict_label(self.verdict)}")
             self._frame(0.4)
 
     def set_vote(self, vote) -> None:
@@ -694,7 +701,7 @@ class Courtroom:
         self._stop_ticker()
         self.done_phases.update(k for k, _ in _PHASES)
         if self.decision == "vote" and self.vote is not None:
-            self.log.append(f"the panel votes -> {self.verdict}")
+            self.log.append(f"the panel votes -> {self._verdict_label(self.verdict)}")
             self._frame(0.6)
         self._frame()
         if self.animate:
