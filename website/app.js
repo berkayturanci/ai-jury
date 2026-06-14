@@ -449,6 +449,9 @@
     // re-runs and sees the new outcome play out from scratch.
     ctrls.addEventListener("change", function () {
       render();
+      // Reset the run: stop any in-flight animation timer and collapse the
+      // output (incl. the theater) so the next Run replays from scratch with the
+      // new panel/depth — no stale seats, phase marks, or decision banner linger.
       if (runTimer) { clearTimeout(runTimer); runTimer = null; }
       var ro = $("run-out");
       if (ro && !ro.hidden) {
@@ -456,9 +459,12 @@
         $("term-body").innerHTML = "";
         $("gh-comments").innerHTML = "";
       }
+      var theater = $("demo-theater");
+      if (theater) { theater.hidden = true; theater.innerHTML = ""; }
       var btn = $("run-btn");
       if (btn) {
         btn.disabled = false;
+        btn.removeAttribute("aria-busy");
         btn.textContent = "▶ Run review (demo)";
       }
     });
@@ -791,29 +797,6 @@
         });
       });
     }
-    function syncRun() {
-      if ($("run-out").hidden) return;
-      if (runTimer) { clearTimeout(runTimer); runTimer = null; }
-      $("run-btn").disabled = false;
-      $("run-btn").textContent = "▶ Run review (demo)";
-      if (selectedAgents().length === 0) {
-        $("demo-theater").hidden = true;
-        $("term-body").innerHTML = "";
-        $("gh-comments").innerHTML = '<p class="muted">Pick at least one reviewer.</p>';
-        return;
-      }
-      var run = buildRun();
-      setTermTitle(run);
-      // Refresh the theater to its final (static) frame so it stays in sync with
-      // the panel/depth without replaying the animation on every tweak.
-      renderTheater(run);
-      var beats = theaterBeats(run);
-      applyBeat(run, beats[beats.length - 1]);
-      $("term-body").innerHTML = "";
-      run.con.forEach(function (l) { $("term-body").appendChild(consoleLine(l)); });
-      renderComments(run);
-    }
-
     $("run-btn").addEventListener("click", runDemo);
   })();
 })();

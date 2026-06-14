@@ -83,6 +83,20 @@ def supports_scene(stream) -> bool:
     return shutil.get_terminal_size((80, 24)).columns >= 60
 
 
+def _unsafe_cell_char(ch: str) -> bool:
+    """True for characters that must never appear in agent-influenced terminal
+    cell content: C0 controls (incl. ESC), DEL, C1 controls, and the Unicode
+    bidi/zero-width format characters used for text-spoofing (Trojan Source,
+    CVE-2021-42574). Styling escapes arrive separately via the trusted ``sgr``
+    argument, so any of these in the *content* is an injection/spoof attempt."""
+    o = ord(ch)
+    return (
+        o < 0x20 or o == 0x7F or 0x80 <= o <= 0x9F          # C0 / DEL / C1
+        or 0x200B <= o <= 0x200F or 0x202A <= o <= 0x202E   # zero-width / bidi
+        or 0x2066 <= o <= 0x2069 or o == 0xFEFF             # bidi isolates / BOM
+    )
+
+
 class Screen:
     """A fixed grid of (char, sgr) cells rendered to ANSI or plain text."""
 
@@ -98,6 +112,13 @@ class Screen:
             return
         row = self._g[r]
         for i, ch in enumerate(text):
+            # Scrub control / bidi / zero-width characters from agent-influenced
+            # cell content (finding claims, the verdict line). Styling arrives
+            # separately via ``sgr`` (trusted), so any of these in the content is
+            # a terminal-injection (cursor/clear/title) or text-spoof (bidi
+            # override) attempt. Replace with a space to keep the layout width.
+            if _unsafe_cell_char(ch):
+                ch = " "
             x = c + i
             if 0 <= x < self.cols:
                 row[x] = (ch, sgr)
