@@ -27,7 +27,15 @@ from .findings import SEVERITY_ORDER, flatten_inline, parse_findings, parse_verd
 
 # ---- styling ---------------------------------------------------------------
 _RESET = "\033[0m"
-_VENDOR_SGR = {"anthropic": "33", "openai": "32", "google": "34", "local": "35"}
+# Each vendor's own product brand colour (24-bit truecolor SGR). Matches the
+# website's vendor tokens: Anthropic coral, OpenAI teal, Google blue, local
+# violet. Terminals without truecolor degrade to the nearest available colour.
+_VENDOR_SGR = {
+    "anthropic": "38;2;217;119;87",   # Claude  #d97757
+    "openai": "38;2;16;163;127",      # Codex   #10a37f
+    "google": "38;2;66;133;244",      # Antigravity #4285f4
+    "local": "38;2;168;85;247",       # local / open-weight #a855f7
+}
 _PHASES = (("review", "REVIEW"), ("debate", "DEBATE"), ("verify", "VERIFY"),
            ("synthesis", "DECISION"))
 

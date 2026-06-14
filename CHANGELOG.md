@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rounds / early-stop / disputes, seats many jurors (compact roster fallback),
   and falls back to the plain `--live` stream on a non-interactive terminal.
   See `docs/theater-design.md`.
+- Theater seats use each vendor's own **product brand colour** (24-bit truecolor:
+  Anthropic coral, OpenAI teal, Google blue, local violet), matching the
+  website's vendor palette; terminals without truecolor degrade to the nearest
+  colour.
 
 ### Documentation
 
