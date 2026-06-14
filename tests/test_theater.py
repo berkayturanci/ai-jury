@@ -78,12 +78,10 @@ class CourtroomTest(unittest.TestCase):
         frame = court.screen.to_plain()
         for name in ("claude", "codex", "qwen"):
             self.assertIn(name, frame)
-        self.assertIn("ANTHRO", frame)
-        self.assertIn("OPENAI", frame)
-        self.assertIn("LOCAL", frame)
         self.assertIn("PR #142", frame)
-        self.assertIn("REQUEST CHANGES", frame)        # verdict banner
-        self.assertIn("THE HON. CHAIR", frame)
+        self.assertIn("REQUEST CHANGES", frame)        # decision banner
+        self.assertIn("DECISION", frame)
+        self.assertIn("chair: codex", frame)           # chair recorded, no judge
 
     def test_debate_round_shown_in_strip(self):
         court = _court()
@@ -100,7 +98,7 @@ class CourtroomTest(unittest.TestCase):
         court.close()
         self.assertIn("debate", court.done_phases)
         joined = " ".join(court.log)
-        self.assertIn("converged", joined)
+        self.assertIn("agreed", joined)
 
     def test_vote_finale_shows_ballots_and_tally(self):
         vote = types.SimpleNamespace(
@@ -117,10 +115,10 @@ class CourtroomTest(unittest.TestCase):
         court.set_vote(vote)
         court.close()
         frame = court.screen.to_plain()
-        self.assertIn("THE PANEL", frame)        # bench changes for vote
-        self.assertIn("by panel vote", frame)
-        self.assertIn("REQUEST", frame)          # ballot chips / banner
-        self.assertIn("request changes", frame)  # tally line
+        self.assertIn("panel vote", frame)              # title + interior label
+        self.assertIn("DECISION by panel vote", frame)
+        self.assertIn("REQUEST", frame)                 # ballot chips / banner
+        self.assertIn("request changes", frame)         # tally line
 
     def test_issue_mode_case_label(self):
         court = _court(mode="issue", case="issue #88")
@@ -163,9 +161,8 @@ class CourtroomTest(unittest.TestCase):
                 self.assertIn(name[:6], court.screen.to_plain())
 
     def test_many_jurors_fall_back_to_roster(self):
-        # 8 jurors can't fit full seat sprites — degrade to a compact roster
-        # instead of clipping.
-        agents = [(f"juror{i}", "local") for i in range(8)]
+        # Too many jurors to seat around the table → compact roster, no clipping.
+        agents = [(f"juror{i}", "local") for i in range(16)]
         court = Courtroom(agents, agents[0][0], animate=False, cols=92, rows=30, capture=[])
         self.assertFalse(court._seats_fit())
         court.open()
@@ -173,12 +170,12 @@ class CourtroomTest(unittest.TestCase):
         court.close()
         frame = court.screen.to_plain()
         self.assertIn("JURY:", frame)
-        for i in range(8):
-            self.assertIn(f"juror{i}", frame)
+        self.assertIn("juror0", frame)
+        self.assertIn("juror1", frame)
 
     def test_narrow_terminal_uses_roster(self):
-        agents = [(f"a{i}", "openai") for i in range(5)]
-        court = Courtroom(agents, agents[0][0], animate=False, cols=58, rows=30, capture=[])
+        agents = [(f"a{i}", "openai") for i in range(6)]
+        court = Courtroom(agents, agents[0][0], animate=False, cols=44, rows=30, capture=[])
         self.assertFalse(court._seats_fit())
         court.open()
         court.close()
@@ -186,12 +183,16 @@ class CourtroomTest(unittest.TestCase):
 
     def test_roster_wraps_and_caps_many_jurors(self):
         # Lots of long-named jurors on a narrow width → roster wraps across rows
-        # and stops without clipping/erroring.
-        agents = [(f"longjuror{i:02d}", "local") for i in range(20)]
-        court = Courtroom(agents, agents[0][0], animate=False, cols=64, rows=30, capture=[])
+        # and stops (caps) without clipping/erroring.
+        agents = [(f"longjuror{i:02d}", "local") for i in range(40)]
+        court = Courtroom(agents, agents[0][0], animate=False, cols=44, rows=30, capture=[])
         court.open()
         court.close()
         self.assertIn("JURY:", court.screen.to_plain())
+
+    def test_slots_empty(self):
+        court = _court()
+        self.assertEqual(court._slots(0), [])
 
 
 _DISPUTE = (
