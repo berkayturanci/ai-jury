@@ -13,3 +13,7 @@
 ## 2026-06-12 - Explicit tooltips for disabled form inputs
 **Learning:** Disabled form elements (like radio buttons or checkboxes) offer no native way to explain *why* they are disabled. Users might think the UI is broken if they click an option and it's grayed out without context.
 **Action:** Always add a `title` attribute tooltip to disabled form elements explaining the condition that disabled them (e.g., 'Debate requires at least 2 reviewers').
+
+## 2026-06-13 - Context tooltips directly on disabled inputs
+**Learning:** When adding `title` tooltips to disabled form elements, putting the tooltip only on the parent wrapper (like `.opt` or `fieldset`) may result in keyboard users and screen readers missing the context, since they navigate directly to the `<input>` element.
+**Action:** Always apply the `title` attribute directly on the disabled `<input>` element itself (in addition to parent wrappers, if necessary for mouse users) so the context is announced or displayed properly when navigating.
