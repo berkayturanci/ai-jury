@@ -9,15 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **`--theater`: an animated "courtroom" view of a live run.** Opt-in,
-  presentation-only: each model sits in a seat and stands to speak as the run
-  moves through review → debate → verify → verdict, with a chair-gavel or
-  panel-vote finale. It consumes the real `on_event` stream (so it mirrors the
-  actual run; `--mock` drives a deterministic demo), is pure-stdlib ANSI, and
-  never touches the structured outcome/report/CI gate. Adapts to PR vs issue and
-  chair vs vote, shows debate rounds / early-stop / disputes, scales to 2–5
-  jurors, and falls back to the plain `--live` stream on a non-interactive
-  terminal. See `docs/theater-design.md`.
+- **`--theater`: an animated "deliberation" view of a live run.** Opt-in,
+  presentation-only: the models sit around a table and take turns speaking as
+  the run moves through review → debate → verify → decision, then decide together
+  (no judge) — by panel vote or recorded by the chair. It consumes the real
+  `on_event` stream (so it mirrors the actual run; `--mock` drives a
+  deterministic demo), is pure-stdlib ANSI, and never touches the structured
+  outcome/report/CI gate. Adapts to PR vs issue and chair vs vote, shows debate
+  rounds / early-stop / disputes, seats many jurors (compact roster fallback),
+  and falls back to the plain `--live` stream on a non-interactive terminal.
+  See `docs/theater-design.md`.
 
 ## [1.6.2] - 2026-06-13
 
