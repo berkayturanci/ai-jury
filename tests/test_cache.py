@@ -2,6 +2,7 @@
 
 Offline: mock pipeline + a temp cache dir; no live CLIs, no network.
 """
+
 from __future__ import annotations
 
 import json
@@ -37,9 +38,7 @@ def _config():
 
 class CacheKeyTest(unittest.TestCase):
     def test_same_inputs_same_key(self):
-        self.assertEqual(
-            cache_key(_config(), SAMPLE_DIFF), cache_key(_config(), SAMPLE_DIFF)
-        )
+        self.assertEqual(cache_key(_config(), SAMPLE_DIFF), cache_key(_config(), SAMPLE_DIFF))
 
     def test_diff_change_changes_key(self):
         self.assertNotEqual(
@@ -101,15 +100,24 @@ class RoundTripTest(unittest.TestCase):
         self.assertEqual(len(restored.reviews), len(outcome.reviews))
         self.assertEqual(len(restored.findings), len(outcome.findings))
         self.assertEqual(restored.chair, outcome.chair)
-        self.assertEqual(
-            [g.bucket for g in restored.groups], [g.bucket for g in outcome.groups]
-        )
+        self.assertEqual([g.bucket for g in restored.groups], [g.bucket for g in outcome.groups])
         self.assertEqual(restored.reviews[0].agent, outcome.reviews[0].agent)
         # Findings keep their reviewer + severity through the round trip.
         self.assertEqual(
             {f.reviewer for f in restored.findings},
             {f.reviewer for f in outcome.findings},
         )
+
+
+class CacheRobustnessTest(unittest.TestCase):
+    def test_deeply_nested_planted_entry_is_a_miss_not_a_crash(self):
+        # RecursionError on deeply nested JSON must be caught so the fail-closed
+        # read can't be crashed by a planted entry (audit 2026-06-13 r3).
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Cache(tmp)
+            key = cache_key(_config(), SAMPLE_DIFF)
+            cache._path(key).write_text("[" * 5000, encoding="utf-8")
+            self.assertIsNone(cache.load(key))
 
 
 class CacheHitMissTest(unittest.TestCase):

@@ -15,6 +15,7 @@ Everything here is PURE and deterministic: parsing, classification, and chunk
 boundaries are a function of the diff text and config only, so the plan is
 reproducible and unit-testable.
 """
+
 from __future__ import annotations
 
 import fnmatch
@@ -89,8 +90,79 @@ class DiffPlan:
 def _strip_ab(path: str) -> str:
     for prefix in ("a/", "b/"):
         if path.startswith(prefix):
-            return path[len(prefix):]
+            return path[len(prefix) :]
     return path
+
+
+def _unquote_git_path(path: str) -> str:
+    """Undo git's C-style quoting of paths with special chars (best-effort).
+
+    git wraps a path in double quotes and octal-escapes special/non-ASCII bytes
+    when ``core.quotepath`` is on. We decode it back so the full path is
+    recovered for glob filtering and classification.
+    """
+    if len(path) >= 2 and path.startswith('"') and path.endswith('"'):
+        inner = path[1:-1]
+        try:
+            return (
+                inner.encode("latin-1", "backslashreplace")
+                .decode("unicode_escape")
+                .encode("latin-1")
+                .decode("utf-8", "replace")
+            )
+        except (UnicodeDecodeError, UnicodeEncodeError):
+            return inner.replace('\\"', '"').replace("\\\\", "\\")
+    return path
+
+
+def _path_from_marker(line: str) -> str | None:
+    """Path from a ``+++ b/<p>`` or ``--- a/<p>`` line, or None for /dev/null.
+
+    These marker lines carry a single, unambiguous path even when it contains
+    spaces or quoted special chars — unlike the ``diff --git a/<p> b/<p>``
+    header, which a ``str.split()`` truncates at the first space, hiding or
+    mislabeling the file (security audit 2026-06-13/L-4,N-3).
+    """
+    rest = line[4:].rstrip("\r\n")
+    # Some diff formats append a tab + timestamp; the path ends at the tab.
+    if "\t" in rest:
+        rest = rest.split("\t", 1)[0]
+    if rest == "/dev/null":
+        return None
+    return _strip_ab(_unquote_git_path(rest))
+
+
+def _path_from_git_header(line: str) -> str:
+    """Best-effort new-side path from a ``diff --git a/<p> b/<p>`` header.
+
+    ``str.split()[3]`` truncates a space-containing name; split on the last
+    `` b/`` separator instead so the full b-side path is recovered, then unquote
+    git's C-quoting (audit 2026-06-13/L-4, r3 marker-less case).
+    """
+    rest = line[len("diff --git ") :].rstrip("\r\n")
+    # Non-rename headers are symmetric: ``a/<p> b/<p>`` with the SAME <p> on both
+    # sides. Recover <p> by halving, which is robust even when <p> itself
+    # contains `` b/`` (a mode-change-only segment has no +++/--- or rename
+    # marker to fall back on — audit 2026-06-13 r4/L). len(body) = 2*len(p)+3.
+    if rest.startswith("a/"):
+        body = rest[2:]
+        half = (len(body) - 3) // 2
+        if (
+            len(body) >= 3
+            and body[half : half + 3] == " b/"
+            and body[:half] == body[half + 3 :]
+        ):
+            return _unquote_git_path(body[:half])
+    idx = rest.rfind(" b/")
+    if idx != -1:
+        return _strip_ab(_unquote_git_path(rest[idx + 1 :]))
+    # Quoted b-side: git C-quotes special/spaced paths as `"a/<p>" "b/<p>"`, so
+    # the separator is `` "b/`` not `` b/`` (audit 2026-06-13 r5/L).
+    qidx = rest.rfind(' "b/')
+    if qidx != -1:
+        return _strip_ab(_unquote_git_path(rest[qidx + 1 :]))
+    parts = line.split()
+    return _strip_ab(parts[3]) if len(parts) >= 4 else _strip_ab(parts[-1])
 
 
 def split_diff(diff: str) -> list[DiffFile]:
@@ -116,11 +188,23 @@ def split_diff(diff: str) -> list[DiffFile]:
         if line.startswith("diff --git "):
             flush()
             cur = [line]
-            parts = line.split()
-            # "diff --git a/x b/x" -> prefer the new-side (b/) path.
-            cur_path = _strip_ab(parts[3]) if len(parts) >= 4 else _strip_ab(parts[-1])
+            # Best-effort from the header (refined below from the unambiguous
+            # +++/--- markers, or rename/copy headers for marker-less segments).
+            cur_path = _path_from_git_header(line)
         else:
             cur.append(line)
+            # Prefer the new-side path; `+++` always wins, `---` only fills a
+            # still-empty path (deletions have ``+++ /dev/null``). For
+            # marker-less segments (pure rename/copy/mode-change) use the
+            # ``rename to``/``copy to`` extended header (audit r3).
+            if line.startswith("+++ ") or (line.startswith("--- ") and not cur_path):
+                p = _path_from_marker(line)
+                if p is not None:
+                    cur_path = p
+            elif line.startswith(("rename to ", "copy to ")):
+                p = _strip_ab(_unquote_git_path(line.split(" to ", 1)[1].rstrip("\r\n")))
+                if p:
+                    cur_path = p
             if cur_path is None:
                 cur_path = ""
     flush()

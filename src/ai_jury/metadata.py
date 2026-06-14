@@ -55,7 +55,9 @@ def _rounds_executed(outcome: JuryOutcome) -> int:
     return rounds
 
 
-def build_run_metadata(outcome: JuryOutcome, config: JuryConfig, *, decision=None, vote=None) -> dict:
+def build_run_metadata(
+    outcome: JuryOutcome, config: JuryConfig, *, decision=None, vote=None
+) -> dict:
     """Return a machine-readable metadata dict for a jury run.
 
     The dict is safe to serialize as JSON and contains no diff text, prompt
@@ -89,8 +91,7 @@ def build_run_metadata(outcome: JuryOutcome, config: JuryConfig, *, decision=Non
     # never ran; ``budget_exhausted`` flags a run that stopped early on the total
     # timeout; ``stop_reason`` explains why debate ran or stopped.
     skipped = [
-        {"name": name, "reason": reason}
-        for name, reason in getattr(outcome, "skipped", []) or []
+        {"name": name, "reason": reason} for name, reason in getattr(outcome, "skipped", []) or []
     ]
     retried = [a["name"] for a in agents if a["attempts"] > 1]
 
@@ -103,8 +104,7 @@ def build_run_metadata(outcome: JuryOutcome, config: JuryConfig, *, decision=Non
             "verdict": vote.verdict,
             "tally": vote.tally,
             "ballots": [
-                {"reviewer": b.reviewer, "vote": b.vote, "reason": b.reason}
-                for b in vote.ballots
+                {"reviewer": b.reviewer, "vote": b.vote, "reason": b.reason} for b in vote.ballots
             ],
         }
 

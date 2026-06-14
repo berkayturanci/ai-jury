@@ -2,6 +2,7 @@
 
 Offline: pure ``plan_diff`` fixtures plus a mock chunked pipeline run.
 """
+
 from __future__ import annotations
 
 import sys
@@ -38,12 +39,93 @@ class SplitDiffTest(unittest.TestCase):
     def test_empty_diff(self):
         self.assertEqual(split_diff(""), [])
 
+    def test_space_in_path_recovered_from_marker(self):
+        # The `diff --git` header is ambiguous for space-containing names; the
+        # `+++ b/<p>` marker carries the full path (audit 2026-06-13/L-4).
+        seg = _file_segment("src/evil with space.py")
+        files = split_diff(seg)
+        self.assertEqual(len(files), 1)
+        self.assertEqual(files[0].path, "src/evil with space.py")
+
+    def test_space_path_not_hidden_from_include_filter(self):
+        # A space-named file must not slip past an include allow-list by being
+        # truncated to its first token (audit 2026-06-13/N-3).
+        diff = _file_segment("src/evil with space.py")
+        plan = plan_diff(diff, max_bytes=1_000_000, chunk=False, include=["src/*"])
+        self.assertEqual(plan.kept_paths, ["src/evil with space.py"])
+
+    def test_crlf_marker_path_has_no_trailing_cr(self):
+        # On Windows a diff read in binary keeps CRLF; the +++/--- path must not
+        # retain a trailing '\r' or it fails glob/include matching (regression).
+        seg = _file_segment("src/a.py").replace("\n", "\r\n")
+        files = split_diff(seg)
+        self.assertEqual(files[0].path, "src/a.py")
+
+    def test_crlf_path_matches_include_filter(self):
+        diff = _file_segment("src/a.py").replace("\n", "\r\n")
+        plan = plan_diff(diff, max_bytes=1_000_000, chunk=False, include=["*.py"])
+        self.assertEqual(plan.kept_paths, ["src/a.py"])
+
+    def test_markerless_rename_path_from_extended_header(self):
+        # A pure rename (no +++/--- lines) with a space in the name must recover
+        # the full path from the `rename to` header, not truncate at the space
+        # (audit 2026-06-13 r3; #343 fix was incomplete for marker-less segments).
+        seg = (
+            "diff --git a/old.txt b/src/auth handler.py\n"
+            "similarity index 100%\n"
+            "rename from old.txt\n"
+            "rename to src/auth handler.py\n"
+        )
+        files = split_diff(seg)
+        self.assertEqual(files[0].path, "src/auth handler.py")
+
+    def test_markerless_rename_not_hidden_from_include(self):
+        seg = (
+            "diff --git a/old.py b/src/evil thing.py\n"
+            "rename from old.py\n"
+            "rename to src/evil thing.py\n"
+        )
+        plan = plan_diff(seg, max_bytes=1_000_000, chunk=False, include=["src/*"])
+        self.assertEqual(plan.kept_paths, ["src/evil thing.py"])
+
+    def test_space_in_header_recovered_without_markers(self):
+        # Header path with a space, no marker lines: split on " b/" not " ".
+        seg = "diff --git a/a b.py b/a b.py\nold mode 100644\nnew mode 100755\n"
+        files = split_diff(seg)
+        self.assertEqual(files[0].path, "a b.py")
+
+    def test_modechange_quoted_spaced_path_recovered(self):
+        # Quoted symmetric header (git C-quotes spaced/special paths) with no
+        # +++/--- markers must still recover the full path (audit r5/L).
+        seg = (
+            'diff --git "a/evil file.py" "b/evil file.py"\n'
+            "old mode 100644\nnew mode 100755\n"
+        )
+        files = split_diff(seg)
+        self.assertEqual(files[0].path, "evil file.py")
+
+    def test_modechange_path_with_b_slash_in_name_recovered(self):
+        # A mode-change-only segment (no +++/--- or rename marker) whose path
+        # contains the literal " b/" must not be truncated/hidden (audit r4/L).
+        seg = (
+            "diff --git a/weird b/secret.py b/weird b/secret.py\n"
+            "old mode 100644\nnew mode 100755\n"
+        )
+        files = split_diff(seg)
+        self.assertEqual(files[0].path, "weird b/secret.py")
+
+    def test_quoted_unicode_path_unquoted(self):
+        seg = _file_segment("src/a.py").replace(
+            "+++ b/src/a.py", '+++ "b/src/\\303\\251.py"'
+        )
+        files = split_diff(seg)
+        self.assertEqual(files[0].path, "src/é.py")
+
 
 class FilterTest(unittest.TestCase):
     def test_binary_file_excluded(self):
         diff = (
-            "diff --git a/img.png b/img.png\n"
-            "Binary files a/img.png and b/img.png differ\n"
+            "diff --git a/img.png b/img.png\nBinary files a/img.png and b/img.png differ\n"
         ) + _file_segment("src/a.py")
         plan = plan_diff(diff, max_bytes=1_000_000, chunk=False)
         self.assertEqual(plan.kept_paths, ["src/a.py"])
@@ -156,7 +238,8 @@ class ChunkedPipelineTest(unittest.TestCase):
         cfg = _from_dict(
             {
                 "jury": {
-                    "rounds": 1, "verify": False,
+                    "rounds": 1,
+                    "verify": False,
                     "context": {"mode": "expanded", "redact_secrets": True},
                     "diff": {"max_bytes": 10, "chunk": True, "chunk_max_bytes": 200},
                 },
@@ -178,15 +261,18 @@ class ChunkedPipelineTest(unittest.TestCase):
         cfg = _from_dict(
             {
                 "jury": {
-                    "rounds": 1, "verify": False,
+                    "rounds": 1,
+                    "verify": False,
                     "context": {"mode": "expanded", "redact_secrets": True},
                 },
                 "agent": [{"name": "claude", "vendor": "anthropic", "command": "claude"}],
             }
         )
         outcome, plan = review_diff(
-            cfg, _file_segment("src/a.py", 2),
-            context="token AKIAABCDEFGHIJKLMNOP here", mock=True,
+            cfg,
+            _file_segment("src/a.py", 2),
+            context="token AKIAABCDEFGHIJKLMNOP here",
+            mock=True,
         )
         self.assertEqual(plan.mode, MODE_FULL)
         self.assertEqual(outcome.redaction_count, 1)
@@ -200,7 +286,9 @@ class ChunkedPipelineTest(unittest.TestCase):
         cfg = _from_dict(
             {
                 "jury": {
-                    "rounds": 1, "verify": False, "total_timeout": 300,
+                    "rounds": 1,
+                    "verify": False,
+                    "total_timeout": 300,
                     "diff": {"max_bytes": 10, "chunk": True, "chunk_max_bytes": 200},
                 },
                 "agent": [{"name": "claude", "vendor": "anthropic", "command": "claude"}],

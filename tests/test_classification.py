@@ -6,6 +6,7 @@ and that labeling is OFF by default (the *decision*, not any network call). One
 test drives the full mock pipeline and asserts the rendered ``## Classification``
 section is deterministic. No GitHub network access is required anywhere.
 """
+
 from __future__ import annotations
 
 import sys
@@ -14,7 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from ai_jury import classification as C  # noqa: E402
+from ai_jury import classification  # noqa: E402
 from ai_jury.config import (  # noqa: E402
     DEFAULT_CONFIG,
     JuryConfig,
@@ -49,25 +50,25 @@ SAMPLE_DIFF = """diff --git a/src/example.py b/src/example.py
 
 class RiskLevelTests(unittest.TestCase):
     def test_empty_findings_is_low_risk(self):
-        cls = C.classify(findings=[], groups=[])
+        cls = classification.classify(findings=[], groups=[])
         self.assertEqual(cls["risk_level"], "low")
 
     def test_critical_is_high_risk(self):
-        cls = C.classify(findings=[_f("critical")], groups=[])
+        cls = classification.classify(findings=[_f("critical")], groups=[])
         self.assertEqual(cls["risk_level"], "high")
 
     def test_only_minor_is_medium_risk(self):
-        cls = C.classify(findings=[_f("minor")], groups=[])
+        cls = classification.classify(findings=[_f("minor")], groups=[])
         self.assertEqual(cls["risk_level"], "medium")
 
     def test_only_nit_info_is_low_risk(self):
-        cls = C.classify(findings=[_f("nit"), _f("info")], groups=[])
+        cls = classification.classify(findings=[_f("nit"), _f("info")], groups=[])
         self.assertEqual(cls["risk_level"], "low")
 
     def test_single_reviewer_major_is_medium_risk(self):
         findings = [_f("major", reviewer="claude")]
         groups = group_findings(findings, reviewer_count=3)
-        cls = C.classify(findings=findings, groups=groups)
+        cls = classification.classify(findings=findings, groups=groups)
         # Isolated, unconfirmed major -> medium (not high).
         self.assertEqual(cls["risk_level"], "medium")
 
@@ -79,67 +80,75 @@ class RiskLevelTests(unittest.TestCase):
         ]
         groups = group_findings(findings, reviewer_count=2)
         self.assertTrue(any(g.bucket == "consensus" for g in groups))
-        cls = C.classify(findings=findings, groups=groups)
+        cls = classification.classify(findings=findings, groups=groups)
         self.assertEqual(cls["risk_level"], "high")
 
 
 class ReviewEffortTests(unittest.TestCase):
     def test_empty_is_effort_one(self):
-        cls = C.classify(findings=[], groups=[])
+        cls = classification.classify(findings=[], groups=[])
         self.assertEqual(cls["review_effort"], 1)
 
     def test_effort_in_range(self):
         for findings in ([], [_f("nit")], [_f("major")], [_f("critical")] * 12):
-            cls = C.classify(findings=findings, groups=[], diff=SAMPLE_DIFF)
+            cls = classification.classify(findings=findings, groups=[], diff=SAMPLE_DIFF)
             self.assertGreaterEqual(cls["review_effort"], 1)
             self.assertLessEqual(cls["review_effort"], 5)
 
     def test_single_nit_low_effort(self):
         # 1 finding, only nit, tiny diff -> base 1 (nit is below the minor
         # severity term, so it adds nothing); documented minimum effort.
-        cls = C.classify(findings=[_f("nit")], groups=[])
+        cls = classification.classify(findings=[_f("nit")], groups=[])
         self.assertEqual(cls["review_effort"], 1)
 
     def test_single_major_higher_than_single_nit(self):
-        nit = C.classify(findings=[_f("nit")], groups=[])["review_effort"]
-        major = C.classify(findings=[_f("major")], groups=[])["review_effort"]
+        nit = classification.classify(findings=[_f("nit")], groups=[])["review_effort"]
+        major = classification.classify(findings=[_f("major")], groups=[])["review_effort"]
         self.assertGreater(major, nit)
 
     def test_many_severe_findings_max_effort(self):
         # >=8 findings (+2) + critical (+2) + base 1 = 5, clamped to 5.
-        cls = C.classify(findings=[_f("critical")] * 10, groups=[])
+        cls = classification.classify(findings=[_f("critical")] * 10, groups=[])
         self.assertEqual(cls["review_effort"], 5)
 
     def test_diff_size_raises_effort(self):
         big = "\n".join("+x" for _ in range(500))
         diff = "diff --git a/x b/x\n@@ -0,0 +1,500 @@\n" + big
-        small = C.classify(findings=[_f("nit")], groups=[])["review_effort"]
-        large = C.classify(findings=[_f("nit")], groups=[], diff=diff)["review_effort"]
+        small = classification.classify(findings=[_f("nit")], groups=[])["review_effort"]
+        large = classification.classify(findings=[_f("nit")], groups=[], diff=diff)["review_effort"]
         self.assertGreater(large, small)
 
 
 class SecuritySensitiveTests(unittest.TestCase):
     def test_sql_injection_claim_is_security(self):
-        cls = C.classify(findings=[_f("minor", claim="possible SQL injection")], groups=[])
+        cls = classification.classify(
+            findings=[_f("minor", claim="possible SQL injection")], groups=[]
+        )
         self.assertTrue(cls["security_sensitive"])
 
     def test_benign_claim_is_not_security(self):
-        cls = C.classify(findings=[_f("minor", claim="rename this variable")], groups=[])
+        cls = classification.classify(
+            findings=[_f("minor", claim="rename this variable")], groups=[]
+        )
         self.assertFalse(cls["security_sensitive"])
 
     def test_critical_is_always_security(self):
-        cls = C.classify(findings=[_f("critical", claim="rename this variable")], groups=[])
+        cls = classification.classify(
+            findings=[_f("critical", claim="rename this variable")], groups=[]
+        )
         self.assertTrue(cls["security_sensitive"])
 
     def test_auth_keyword_word_boundary(self):
         # "author" must NOT match the "auth" keyword.
-        self.assertFalse(C.is_security_finding(_f("nit", claim="update the author field")))
-        self.assertTrue(C.is_security_finding(_f("nit", claim="broken auth check")))
+        self.assertFalse(
+            classification.is_security_finding(_f("nit", claim="update the author field"))
+        )
+        self.assertTrue(classification.is_security_finding(_f("nit", claim="broken auth check")))
 
     def test_various_keywords(self):
         for kw in ("XSS", "CSRF", "path traversal", "hardcoded secret", "RCE"):
             self.assertTrue(
-                C.is_security_finding(_f("nit", claim=f"found a {kw} issue")),
+                classification.is_security_finding(_f("nit", claim=f"found a {kw} issue")),
                 kw,
             )
 
@@ -152,33 +161,31 @@ class SecuritySensitiveTests(unittest.TestCase):
             "an exploitable bug",
             "exploited in production",
         ):
-            self.assertTrue(
-                C.is_security_finding(_f("nit", claim=claim)), claim
-            )
+            self.assertTrue(classification.is_security_finding(_f("nit", claim=claim)), claim)
 
 
 class NeedsHumanAttentionTests(unittest.TestCase):
     def test_empty_no_human_attention(self):
-        cls = C.classify(findings=[], groups=[])
+        cls = classification.classify(findings=[], groups=[])
         self.assertFalse(cls["needs_human_attention"])
 
     def test_high_risk_needs_human(self):
-        cls = C.classify(findings=[_f("critical")], groups=[])
+        cls = classification.classify(findings=[_f("critical")], groups=[])
         self.assertTrue(cls["needs_human_attention"])
 
     def test_security_needs_human(self):
-        cls = C.classify(findings=[_f("minor", claim="SQL injection")], groups=[])
+        cls = classification.classify(findings=[_f("minor", claim="SQL injection")], groups=[])
         self.assertTrue(cls["needs_human_attention"])
 
     def test_disputed_group_needs_human(self):
         g = FindingGroup(representative=_f("minor"), severity="minor", bucket="disputed")
-        cls = C.classify(findings=[_f("minor")], groups=[g])
+        cls = classification.classify(findings=[_f("minor")], groups=[g])
         self.assertTrue(cls["needs_human_attention"])
 
     def test_benign_minor_no_human(self):
         findings = [_f("minor", claim="rename a variable")]
         groups = group_findings(findings, reviewer_count=3)
-        cls = C.classify(findings=findings, groups=groups)
+        cls = classification.classify(findings=findings, groups=groups)
         self.assertFalse(cls["needs_human_attention"])
 
 
@@ -186,14 +193,14 @@ class DeterminismTests(unittest.TestCase):
     def test_classify_is_deterministic(self):
         findings = [_f("major", claim="injection bug"), _f("nit")]
         groups = group_findings(findings, reviewer_count=2)
-        a = C.classify(findings=findings, groups=groups, diff=SAMPLE_DIFF)
-        b = C.classify(findings=findings, groups=groups, diff=SAMPLE_DIFF)
+        a = classification.classify(findings=findings, groups=groups, diff=SAMPLE_DIFF)
+        b = classification.classify(findings=findings, groups=groups, diff=SAMPLE_DIFF)
         self.assertEqual(a, b)
 
     def test_outcome_positional_matches_kwargs(self):
         outcome = run_jury(_config(), SAMPLE_DIFF, mock=True)
-        via_outcome = C.classify(outcome)
-        via_kwargs = C.classify(findings=outcome.findings, groups=outcome.groups)
+        via_outcome = classification.classify(outcome)
+        via_kwargs = classification.classify(findings=outcome.findings, groups=outcome.groups)
         self.assertEqual(via_outcome, via_kwargs)
 
 
@@ -205,7 +212,7 @@ class LabelStringTests(unittest.TestCase):
             "security_sensitive": True,
             "needs_human_attention": True,
         }
-        labels = C.label_strings(cls)
+        labels = classification.label_strings(cls)
         self.assertIn("review effort: 3/5", labels)
         self.assertIn("risk: high", labels)
         self.assertIn("possible security issue", labels)
@@ -218,7 +225,7 @@ class LabelStringTests(unittest.TestCase):
             "security_sensitive": False,
             "needs_human_attention": False,
         }
-        labels = C.label_strings(cls)
+        labels = classification.label_strings(cls)
         self.assertEqual(labels, ["review effort: 1/5", "risk: low"])
 
 
@@ -249,11 +256,16 @@ class LabelingDefaultOffTests(unittest.TestCase):
         self.assertEqual(
             args,
             [
-                "pr", "edit",
-                "--add-label", "risk: high",
-                "--add-label", "review effort: 3/5",
-                "--repo", "o/r",
-                "--", "42",
+                "pr",
+                "edit",
+                "--add-label",
+                "risk: high",
+                "--add-label",
+                "review effort: 3/5",
+                "--repo",
+                "o/r",
+                "--",
+                "42",
             ],
         )
 

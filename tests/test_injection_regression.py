@@ -10,11 +10,12 @@ an injected APPROVE instruction, compute the CI gate from structured consensus
 for both, and assert the gate does not change — while also asserting the
 injection was surfaced as a synthetic finding/warning. Offline + deterministic.
 """
-import os
+
 import sys
 import unittest
+from pathlib import Path
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from ai_jury.ci import evaluate_ci
 from ai_jury.config import DEFAULT_CONFIG, _from_dict
@@ -79,9 +80,7 @@ class InjectionRegressionTest(unittest.TestCase):
         scanner_findings = [
             f for f in outcome.findings if getattr(f, "reviewer", "") == "injection-scanner"
         ]
-        self.assertTrue(
-            scanner_findings, "injection was not surfaced as a finding"
-        )
+        self.assertTrue(scanner_findings, "injection was not surfaced as a finding")
         self.assertEqual(scanner_findings[0].severity, "major")
 
         # ...and as a human-readable warning.
@@ -97,8 +96,7 @@ class InjectionRegressionTest(unittest.TestCase):
         injected_code, _ = _gate(cfg, injected_outcome)
 
         surfaced = any(
-            getattr(f, "reviewer", "") == "injection-scanner"
-            for f in injected_outcome.findings
+            getattr(f, "reviewer", "") == "injection-scanner" for f in injected_outcome.findings
         ) or any("prompt-injection" in w for w in injected_outcome.warnings)
 
         self.assertEqual(injected_code, baseline_code)  # not obeyed

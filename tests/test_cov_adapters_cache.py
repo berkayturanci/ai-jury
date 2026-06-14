@@ -9,6 +9,7 @@ Targets the uncovered lines:
   cache.py: 122 (_agent_result None), 150 (_hit), 210 (load schema mismatch),
     227 (clear on missing dir).
 """
+
 from __future__ import annotations
 
 import json
@@ -51,7 +52,7 @@ class _Resp:
         self._b = body
         self.status = status
 
-    def read(self, *args):
+    def read(self, *_args):
         return self._b.encode("utf-8")
 
     def close(self):
@@ -68,9 +69,7 @@ class AdaptersCoverageTests(unittest.TestCase):
     def test_agy_argv_with_model(self):
         # AgyAdapter.build_argv appends --model when a model is set; the prompt is
         # on stdin (#287) and the mandatory --sandbox is injected (#288).
-        a = adapters.AgyAdapter(
-            _spec(name="agy", vendor="google", command="agy", model="gemini-x")
-        )
+        a = adapters.AgyAdapter(_spec(name="agy", vendor="google", command="agy", model="gemini-x"))
         self.assertEqual(
             a.build_argv("P"),
             ["agy", "--print", "--model", "gemini-x", "--sandbox"],
@@ -90,13 +89,9 @@ class AdaptersCoverageTests(unittest.TestCase):
             self.assertEqual(adapters.list_local_models("http://localhost:11434/v1"), [])
 
     def test_list_local_models_happy_path(self):
-        body = json.dumps(
-            {"data": [{"id": "m1"}, {"no": "id"}, {"id": "m2"}, "junk"]}
-        )
+        body = json.dumps({"data": [{"id": "m1"}, {"no": "id"}, {"id": "m2"}, "junk"]})
         with mock.patch("ai_jury.adapters._open", return_value=_Resp(body)):
-            self.assertEqual(
-                adapters.list_local_models("http://localhost:11434/v1"), ["m1", "m2"]
-            )
+            self.assertEqual(adapters.list_local_models("http://localhost:11434/v1"), ["m1", "m2"])
 
     def test_list_local_models_unreachable(self):
         with mock.patch(
@@ -109,9 +104,7 @@ class AdaptersCoverageTests(unittest.TestCase):
         # Issue #309: a non-loopback host is gated before any network call (the
         # _open mock raises if it is ever reached).
         with mock.patch("ai_jury.adapters._open", side_effect=AssertionError("network")):
-            self.assertEqual(
-                adapters.list_local_models("http://169.254.169.254/latest"), []
-            )
+            self.assertEqual(adapters.list_local_models("http://169.254.169.254/latest"), [])
 
     def test_list_local_models_file_scheme_refused_without_network(self):
         with mock.patch("ai_jury.adapters._open", side_effect=AssertionError("network")):
@@ -188,9 +181,7 @@ class AdaptersCoverageTests(unittest.TestCase):
 
     def test_run_http_error_detail_read_succeeds(self):
         # Complementary: exc.read() works -> detail body used.
-        err = urllib.error.HTTPError(
-            "u", 401, "unauth", {}, _Resp("auth error body")
-        )
+        err = urllib.error.HTTPError("u", 401, "unauth", {}, _Resp("auth error body"))
         self.addCleanup(err.close)
         a = adapters.LocalAdapter(_local_spec())
         with mock.patch("ai_jury.adapters._open", side_effect=err):
@@ -221,9 +212,7 @@ class CacheCoverageTests(unittest.TestCase):
 
     def test_hit_builds_injection_hit(self):
         # Line 150: _hit constructs an InjectionHit from a dict.
-        hit = cache_mod._hit(
-            {"kind": "k", "source": "s", "line": 7, "snippet": "snip"}
-        )
+        hit = cache_mod._hit({"kind": "k", "source": "s", "line": 7, "snippet": "snip"})
         self.assertEqual(hit.kind, "k")
         self.assertEqual(hit.source, "s")
         self.assertEqual(hit.line, 7)
@@ -293,13 +282,13 @@ class CacheCoverageTests(unittest.TestCase):
     def test_default_cache_dir_xdg(self):
         env = {"XDG_CACHE_HOME": "/tmp/xdg"}
         with mock.patch.dict("os.environ", env, clear=True):
-            self.assertEqual(
-                cache_mod.default_cache_dir(), Path("/tmp/xdg") / "ai-jury"
-            )
+            self.assertEqual(cache_mod.default_cache_dir(), Path("/tmp/xdg") / "ai-jury")
 
     def test_default_cache_dir_home_fallback(self):
-        with mock.patch.dict("os.environ", {}, clear=True), \
-             mock.patch("pathlib.Path.home", return_value=Path("/home/u")):
+        with (
+            mock.patch.dict("os.environ", {}, clear=True),
+            mock.patch("pathlib.Path.home", return_value=Path("/home/u")),
+        ):
             self.assertEqual(
                 cache_mod.default_cache_dir(),
                 Path("/home/u") / ".cache" / "ai-jury",

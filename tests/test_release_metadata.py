@@ -8,6 +8,7 @@ the real release).
 
 Stdlib-only by policy: `tomllib` + `json`.
 """
+
 from __future__ import annotations
 
 import json

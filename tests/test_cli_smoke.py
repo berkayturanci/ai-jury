@@ -1,6 +1,7 @@
 """End-to-end CLI coverage via the offline ``--mock`` path. Invokes
 ``cli.main([...])`` and asserts stdout/exit for the major flag surfaces.
 Network-free and deterministic (mock agents)."""
+
 from __future__ import annotations
 
 import contextlib
@@ -61,7 +62,9 @@ class CliMockTests(unittest.TestCase):
 
     def test_json_format_to_file(self):
         outp = self.d / "r.json"
-        code, _, _ = run(["--mock", "--diff-file", str(self.diff), "-q", "--format", "json", "-o", str(outp)])
+        code, _, _ = run(
+            ["--mock", "--diff-file", str(self.diff), "-q", "--format", "json", "-o", str(outp)]
+        )
         self.assertEqual(code, 0)
         data = json.loads(outp.read_text())
         self.assertIn("schema_version", data)
@@ -75,7 +78,9 @@ class CliMockTests(unittest.TestCase):
 
     def test_metadata_json(self):
         mp = self.d / "m.json"
-        code, _, _ = run(["--mock", "--diff-file", str(self.diff), "-q", "--metadata-json", str(mp)])
+        code, _, _ = run(
+            ["--mock", "--diff-file", str(self.diff), "-q", "--metadata-json", str(mp)]
+        )
         self.assertEqual(code, 0)
         meta = json.loads(mp.read_text())
         self.assertIn("rounds_executed", meta)
@@ -83,8 +88,19 @@ class CliMockTests(unittest.TestCase):
     def test_ci_mode_returns_gate_code(self):
         # --seed makes the mock run reproducible; assert a valid CLI exit (the
         # point is to exercise the --ci path, not pin a specific verdict).
-        code, _, _ = run(["--mock", "--diff-file", str(self.diff), "-q", "--seed", "1",
-                          "--ci", "--fail-on", "critical,major"])
+        code, _, _ = run(
+            [
+                "--mock",
+                "--diff-file",
+                str(self.diff),
+                "-q",
+                "--seed",
+                "1",
+                "--ci",
+                "--fail-on",
+                "critical,major",
+            ]
+        )
         self.assertIsInstance(code, int)
         self.assertIn(code, (0, 1, 2))
 
@@ -103,13 +119,17 @@ class CliMockTests(unittest.TestCase):
 
     def test_config_validate_valid(self):
         cfg = self.d / "jury.toml"
-        cfg.write_text('[jury]\nrounds = 1\nchair = "a"\n\n[[agent]]\nname = "a"\nvendor = "anthropic"\ncommand = "x"\n')
+        cfg.write_text(
+            '[jury]\nrounds = 1\nchair = "a"\n\n[[agent]]\nname = "a"\nvendor = "anthropic"\ncommand = "x"\n'
+        )
         code, _, _ = run(["--config-validate", "--config", str(cfg)])
         self.assertEqual(code, 0)
 
     def test_config_validate_invalid(self):
         cfg = self.d / "bad.toml"
-        cfg.write_text('[jury]\nrounds = 0\n\n[[agent]]\nname = "a"\nvendor = "anthropic"\ncommand = "x"\n')
+        cfg.write_text(
+            '[jury]\nrounds = 0\n\n[[agent]]\nname = "a"\nvendor = "anthropic"\ncommand = "x"\n'
+        )
         code, _, _ = run(["--config-validate", "--config", str(cfg)])
         self.assertEqual(code, 2)
 
@@ -141,6 +161,7 @@ class CliOverviewTests(unittest.TestCase):
 
     def test_bare_jury_in_tty_prints_overview_and_exits_zero(self):
         import unittest.mock as m
+
         fake = m.MagicMock()
         fake.isatty.return_value = True
         with m.patch.object(sys, "stdin", fake):
@@ -160,6 +181,7 @@ class CliOverviewTests(unittest.TestCase):
         # sys.stdin can be None under detached I/O; the isatty() guard must not
         # raise AttributeError — it falls through to the normal missing-input path.
         import unittest.mock as m
+
         with m.patch.object(sys, "stdin", None):
             code, _, _ = run([])
         self.assertNotEqual(code, 0)  # missing-input error, not a crash
@@ -168,6 +190,7 @@ class CliOverviewTests(unittest.TestCase):
         # Piped/CI (no TTY) must keep the strict error + non-zero exit so a script
         # that forgot an input fails loudly instead of printing a welcome.
         import unittest.mock as m
+
         fake = m.MagicMock()
         fake.isatty.return_value = False
         fake.read.return_value = ""

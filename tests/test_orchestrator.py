@@ -3,6 +3,7 @@
 Run with: python -m unittest discover -s tests
 No third-party dependencies, no live CLIs, no network.
 """
+
 from __future__ import annotations
 
 import sys
@@ -77,8 +78,7 @@ class CouncilPipelineTest(unittest.TestCase):
         # advisories about the default codex/agy config may be present and are
         # asserted separately in LeastPrivilegeAuditTest.)
         parser_warnings = [
-            w for w in outcome.warnings
-            if "structured findings" in w or "verdicts" in w
+            w for w in outcome.warnings if "structured findings" in w or "verdicts" in w
         ]
         self.assertEqual(parser_warnings, [])
         # Findings attached to each review, reviewer preserved.

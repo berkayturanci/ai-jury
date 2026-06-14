@@ -5,6 +5,7 @@ distinguish issues raised by every reviewer (consensus) from those raised by a
 single reviewer (single_reviewer). Grouping is fully deterministic: identical
 input always produces identical output.
 """
+
 from __future__ import annotations
 
 import re
@@ -39,10 +40,28 @@ class FindingGroup:
     status_reasoning: str = ""
 
 
-def _normalize_path(path) -> str:
+def _normalize_path(path, *, fold_case: bool = True) -> str:
+    """Normalize a path for comparison.
+
+    Strips only a real leading ``./`` prefix — NOT ``str.lstrip("./")``, which
+    removes a whole leading run of ``.``/``/`` and collides distinct paths
+    (e.g. ``.github/x.yml`` vs ``github/x.yml``, ``../auth.py`` vs ``./auth.py``;
+    audit 2026-06-13 r5/M).
+
+    ``fold_case`` lower-cases the result, which is fine for *grouping/dedup*
+    (a finding's display location) but DANGEROUS for the CI gate: on a
+    case-sensitive filesystem ``Config.py`` and ``config.py`` are different
+    files, so a case-folded match would let a verifier ``unsupported`` verdict on
+    a benign sibling swallow a real critical and pass the gate (audit
+    2026-06-13 r6/M). ``orchestrator._verdict_matches_group`` therefore calls
+    this with ``fold_case=False`` (case-exact, fail-closed).
+    """
     if not path:
         return ""
-    return str(path).strip().replace("\\", "/").lstrip("./").lower()
+    p = str(path).strip().replace("\\", "/")
+    while p.startswith("./"):
+        p = p[2:]
+    return p.lower() if fold_case else p
 
 
 def _normalize_claim(claim) -> str:
@@ -61,7 +80,8 @@ def _jaccard(a: set[str], b: set[str]) -> float:
     if not a or not b:
         return 0.0
     inter = len(a & b)
-    union = len(a | b)
+    # Bolt ⚡: calculate union size without allocating a new set
+    union = len(a) + len(b) - inter
     return inter / union if union else 0.0
 
 
@@ -82,7 +102,11 @@ def _same_claim(a_norm: str, b_norm: str) -> bool:
 
 
 def _sort_key(f: Finding):
-    return (_normalize_path(f.file), f.line if f.line is not None else -1, _normalize_claim(f.claim))
+    return (
+        _normalize_path(f.file),
+        f.line if f.line is not None else -1,
+        _normalize_claim(f.claim),
+    )
 
 
 def _max_severity(findings) -> str:

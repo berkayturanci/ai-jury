@@ -10,6 +10,7 @@ Both functions are PURE (no I/O, no randomness): identical inputs always yield
 the same ``(converged, reason)`` pair, so the early-stop decision is reproducible
 and unit-testable with mock fixtures.
 """
+
 from __future__ import annotations
 
 import re
@@ -27,9 +28,7 @@ _HEADER_RE = re.compile(r"^#{1,6}\s*(.+?)\s*$")
 _EMPTY_TOKENS = frozenset({"none", "na", "nothing", "nonenoted", "nonefound"})
 
 
-def review_convergence(
-    groups: list[FindingGroup], reviewer_count: int
-) -> tuple[bool, str]:
+def review_convergence(groups: list[FindingGroup], reviewer_count: int) -> tuple[bool, str]:
     """Decide whether round-1 reviews have already converged.
 
     Converged means there is nothing for a debate round to resolve:

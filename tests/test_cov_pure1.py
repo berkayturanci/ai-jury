@@ -3,6 +3,7 @@
 Targets specific uncovered lines/branches in consensus, largediff,
 classification, and policy. Deterministic, no network, no mocking needed.
 """
+
 import sys
 import unittest
 from pathlib import Path
@@ -136,6 +137,7 @@ class ClassificationTests(unittest.TestCase):
     def test_resolved_findings_outcome_none_findings(self):
         class Outcome:
             findings = None
+
         self.assertEqual(classification._resolved_findings(Outcome(), None), [])
 
     def test_resolved_groups_empty_when_all_none(self):
@@ -145,6 +147,7 @@ class ClassificationTests(unittest.TestCase):
     def test_resolved_groups_outcome_none_groups(self):
         class Outcome:
             groups = None
+
         self.assertEqual(classification._resolved_groups(Outcome(), None), [])
 
     def test_review_effort_medium_diff_size_bump(self):
@@ -178,8 +181,11 @@ class ClassificationTests(unittest.TestCase):
         self.assertFalse(classification._has_unresolved_groups([g]))
 
     def test_classify_uses_resolved_when_outcome_only(self):
-        groups = [FindingGroup(representative=_f(), bucket="single_reviewer",
-                               status="needs_human_decision")]
+        groups = [
+            FindingGroup(
+                representative=_f(), bucket="single_reviewer", status="needs_human_decision"
+            )
+        ]
         result = classification.classify(findings=[_f(severity="info")], groups=groups)
         self.assertTrue(result["needs_human_attention"])
 
@@ -187,6 +193,7 @@ class ClassificationTests(unittest.TestCase):
 class PolicyTests(unittest.TestCase):
     def _write(self, text):
         import tempfile
+
         d = tempfile.mkdtemp()
         p = Path(d) / "policy.toml"
         p.write_text(text, encoding="utf-8")
@@ -195,6 +202,7 @@ class PolicyTests(unittest.TestCase):
     def test_load_policy_read_oserror_is_policyerror(self):
         # Line 91: open() raises OSError (directory used as a file).
         import tempfile
+
         d = Path(tempfile.mkdtemp())
         with self.assertRaises(PolicyError) as ctx:
             policy.load_policy(d)

@@ -3,6 +3,7 @@
 Config is TOML (see ``jury.toml``). The loader is tolerant: a missing config
 file falls back to a sensible built-in default so the tool runs out of the box.
 """
+
 from __future__ import annotations
 
 import os
@@ -26,9 +27,7 @@ def _read_toml_bounded(path: Path) -> dict:
     with path.open("rb") as fh:
         raw = fh.read(_MAX_CONFIG_BYTES + 1)
     if len(raw) > _MAX_CONFIG_BYTES:
-        raise ConfigError(
-            f"config file '{path}' exceeds the {_MAX_CONFIG_BYTES}-byte limit."
-        )
+        raise ConfigError(f"config file '{path}' exceeds the {_MAX_CONFIG_BYTES}-byte limit.")
     try:
         text = raw.decode("utf-8")
     except UnicodeDecodeError as exc:
@@ -119,6 +118,7 @@ def _endpoint_issues(endpoint: str, label: str) -> tuple[list[str], list[str]]:
         )
     return errors, warnings
 
+
 DEFAULT_CONFIG: dict = {
     "jury": {
         "rounds": 2,
@@ -139,8 +139,10 @@ DEFAULT_CONFIG: dict = {
             "vendor": "anthropic",
             "command": "claude",
             "extra_args": [
-                "--output-format", "text",
-                "--disallowed-tools", "Edit,Write,NotebookEdit,Bash",
+                "--output-format",
+                "text",
+                "--disallowed-tools",
+                "Edit,Write,NotebookEdit,Bash",
                 # Avoid `-p` blocking on a permission prompt in non-interactive mode.
                 "--dangerously-skip-permissions",
             ],
@@ -248,59 +250,40 @@ def validate_config(data: dict, strict: bool = False) -> list:
     for key in jury:
         if key not in KNOWN_JURY_KEYS:
             warnings.append(
-                f"unknown key 'jury.{key}' (expected one of "
-                f"{', '.join(KNOWN_JURY_KEYS)})."
+                f"unknown key 'jury.{key}' (expected one of {', '.join(KNOWN_JURY_KEYS)})."
             )
 
     # rounds >= 1 (hard).
     rounds = jury.get("rounds", 1)
     if not isinstance(rounds, int) or isinstance(rounds, bool) or rounds < 1:
-        errors.append(
-            f"jury.rounds must be an integer >= 1 (got {rounds!r})."
-        )
+        errors.append(f"jury.rounds must be an integer >= 1 (got {rounds!r}).")
 
     # timeout > 0 (hard).
     timeout = jury.get("timeout", 600)
-    if (
-        not isinstance(timeout, int)
-        or isinstance(timeout, bool)
-        or timeout <= 0
-    ):
-        errors.append(
-            f"jury.timeout must be a positive integer (got {timeout!r})."
-        )
+    if not isinstance(timeout, int) or isinstance(timeout, bool) or timeout <= 0:
+        errors.append(f"jury.timeout must be a positive integer (got {timeout!r}).")
 
     # Execution controls (issue #30): optional positive budgets, non-negative
     # retries (hard when present and invalid).
     for key in ("total_timeout", "phase_timeout"):
         val = jury.get(key)
-        if val is not None and (
-            not isinstance(val, int) or isinstance(val, bool) or val <= 0
-        ):
-            errors.append(
-                f"jury.{key} must be a positive integer when set (got {val!r})."
-            )
+        if val is not None and (not isinstance(val, int) or isinstance(val, bool) or val <= 0):
+            errors.append(f"jury.{key} must be a positive integer when set (got {val!r}).")
     retries = jury.get("retries", 0)
     if not isinstance(retries, int) or isinstance(retries, bool) or retries < 0:
-        errors.append(
-            f"jury.retries must be an integer >= 0 (got {retries!r})."
-        )
+        errors.append(f"jury.retries must be an integer >= 0 (got {retries!r}).")
 
     # Final-verdict mode (issue #220): "chair" or "vote".
     decision = jury.get("decision")
     if decision is not None and str(decision).strip().lower() not in ("chair", "vote"):
-        errors.append(
-            f"jury.decision must be 'chair' or 'vote' (got {decision!r})."
-        )
+        errors.append(f"jury.decision must be 'chair' or 'vote' (got {decision!r}).")
 
     # Adaptive rounds (issue #40): max_rounds >= 1 (hard); early_stop is a bool.
     max_rounds = jury.get("max_rounds")
     if max_rounds is not None and (
         not isinstance(max_rounds, int) or isinstance(max_rounds, bool) or max_rounds < 1
     ):
-        errors.append(
-            f"jury.max_rounds must be an integer >= 1 when set (got {max_rounds!r})."
-        )
+        errors.append(f"jury.max_rounds must be an integer >= 1 when set (got {max_rounds!r}).")
 
     # Large-diff handling (issue #31): [jury.diff] sizes are positive ints.
     diff_cfg = jury.get("diff", {})
@@ -309,13 +292,8 @@ def validate_config(data: dict, strict: bool = False) -> list:
     else:
         for key in ("max_bytes", "chunk_max_bytes"):
             val = diff_cfg.get(key)
-            if val is not None and (
-                not isinstance(val, int) or isinstance(val, bool) or val <= 0
-            ):
-                errors.append(
-                    f"jury.diff.{key} must be a positive integer when set "
-                    f"(got {val!r})."
-                )
+            if val is not None and (not isinstance(val, int) or isinstance(val, bool) or val <= 0):
+                errors.append(f"jury.diff.{key} must be a positive integer when set (got {val!r}).")
 
     agents_data = data.get("agent", [])
     if not isinstance(agents_data, list):
@@ -323,9 +301,7 @@ def validate_config(data: dict, strict: bool = False) -> list:
 
     # At least one agent (hard).
     if not agents_data:
-        errors.append(
-            "no agents configured; define at least one [[agent]] entry."
-        )
+        errors.append("no agents configured; define at least one [[agent]] entry.")
 
     seen_names: set = set()
     enabled_names: set = set()
@@ -379,9 +355,7 @@ def validate_config(data: dict, strict: bool = False) -> list:
                 f"agent '{label}' command '{command}' is a relative path; use a "
                 f"bare name (resolved on PATH) or an absolute path."
             )
-        elif os.environ.get(_REQUIRE_ABSOLUTE_COMMAND_ENV) and not Path(
-            command
-        ).is_absolute():
+        elif os.environ.get(_REQUIRE_ABSOLUTE_COMMAND_ENV) and not Path(command).is_absolute():
             # Strict opt-in (issue #296): in a hardened/CI context, refuse even a
             # bare name so a poisoned PATH can't resolve a shim — require an
             # absolute path for every agent command.
@@ -393,14 +367,9 @@ def validate_config(data: dict, strict: bool = False) -> list:
 
         # Per-agent timeout (hard if present and invalid).
         a_timeout = agent.get("timeout", 600)
-        if (
-            not isinstance(a_timeout, int)
-            or isinstance(a_timeout, bool)
-            or a_timeout <= 0
-        ):
+        if not isinstance(a_timeout, int) or isinstance(a_timeout, bool) or a_timeout <= 0:
             errors.append(
-                f"agent '{label}' timeout must be a positive integer "
-                f"(got {a_timeout!r})."
+                f"agent '{label}' timeout must be a positive integer (got {a_timeout!r})."
             )
 
         # Known vendor (soft).
@@ -425,9 +394,7 @@ def validate_config(data: dict, strict: bool = False) -> list:
         )
 
     if errors:
-        raise ConfigError(
-            "invalid configuration:\n  - " + "\n  - ".join(errors)
-        )
+        raise ConfigError("invalid configuration:\n  - " + "\n  - ".join(errors))
 
     if strict and warnings:
         raise ConfigError(

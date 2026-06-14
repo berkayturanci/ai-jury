@@ -5,6 +5,7 @@ gate in CI, or turn into inline comments. This module defines a structured
 ``Finding`` schema and a tolerant parser that extracts findings from an agent's
 raw output (a fenced ``json`` code block).
 """
+
 from __future__ import annotations
 
 import json
@@ -13,6 +14,44 @@ from dataclasses import dataclass
 
 SEVERITIES: tuple[str, ...] = ("critical", "major", "minor", "nit", "info")
 CONFIDENCES: tuple[str, ...] = ("high", "medium", "low")
+
+# Output-injection guards for attacker-influenced finding text rendered into the
+# human-facing markdown report that is posted verbatim to the PR/issue (security
+# audit 2026-06-13 round 3). The machine CI gate is a pure function of the
+# structured fields and is unaffected by this text; these helpers only stop a
+# forged ``## Verdict APPROVE`` heading or a broken code fence from corrupting
+# the comment a human (or a downstream grep) reads.
+_FENCE_RUN_RE = re.compile(r"`{3,}|~{3,}")
+_HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
+
+
+def flatten_inline(text: str) -> str:
+    """Collapse text to a single line for safe inline rendering.
+
+    Markdown headings, list items, and code fences must begin a line, so
+    flattening newlines (and runs of whitespace) neutralizes forged structure
+    when the value is rendered inside a one-line list item.
+    """
+    if not text:
+        return text
+    return " ".join(str(text).split())
+
+
+def fence_safe(text: str) -> str:
+    """Break 3+ backtick/tilde runs so text rendered *inside* a code fence
+    (e.g. a ``suggestion`` block) cannot close the fence and inject markdown."""
+    if not text:
+        return text
+    return _FENCE_RUN_RE.sub(lambda m: m.group()[0], str(text))
+
+
+def strip_html_comments(text: str) -> str:
+    """Remove HTML comments so attacker text can't forge the jury's hidden
+    inline-comment markers (``<!-- arc-inline -->`` / ``<!-- arc-sig:… -->``)."""
+    if not text:
+        return text
+    return _HTML_COMMENT_RE.sub("", str(text))
+
 
 # Verification verdict statuses (issue #3).
 VERDICT_STATUSES: tuple[str, ...] = ("verified", "unsupported", "needs_human_decision")
@@ -106,7 +145,10 @@ def parse_findings(text: str, reviewer: str) -> tuple[list[Finding], list[str]]:
     raw = blocks[-1].strip()
     try:
         data = json.loads(raw)
-    except (ValueError, TypeError) as exc:
+    except (ValueError, TypeError, RecursionError) as exc:
+        # RecursionError (deeply nested JSON, e.g. "[[[[…") is not a ValueError;
+        # catching it keeps the documented "never raises" contract so one
+        # steerable reviewer can't abort the whole run (audit 2026-06-13/N-2).
         return [], [f"{reviewer}: malformed or missing structured findings ({exc})"]
 
     if not isinstance(data, list):
@@ -174,7 +216,9 @@ def parse_verdicts(text: str, verifier: str = "") -> tuple[list[Verdict], list[s
     raw = blocks[-1].strip()
     try:
         data = json.loads(raw)
-    except (ValueError, TypeError) as exc:
+    except (ValueError, TypeError, RecursionError) as exc:
+        # See parse_findings: RecursionError on deeply nested JSON must not
+        # escape (audit 2026-06-13/N-2).
         return [], [f"{label}: malformed verdicts JSON ({exc})"]
 
     if isinstance(data, dict):
@@ -186,9 +230,7 @@ def parse_verdicts(text: str, verifier: str = "") -> tuple[list[Verdict], list[s
     warnings: list[str] = []
     for i, obj in enumerate(data):
         if not isinstance(obj, dict):
-            warnings.append(
-                f"{label}: verdict item {i} is {type(obj).__name__}, expected object"
-            )
+            warnings.append(f"{label}: verdict item {i} is {type(obj).__name__}, expected object")
             continue
         verdicts.append(
             Verdict(

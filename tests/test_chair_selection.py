@@ -9,6 +9,7 @@ Covers:
 
 Offline: pure-function calls plus the mock pipeline. No live CLIs, no network.
 """
+
 from __future__ import annotations
 
 import random
@@ -43,16 +44,12 @@ class ResolveChairExplicitTest(unittest.TestCase):
     def test_explicit_usable_chair_honoured(self) -> None:
         cfg = _config()
         cfg.chair = "codex"
-        self.assertEqual(
-            resolve_chair(cfg, USABLE, USABLE, random.Random(1)), "codex"
-        )
+        self.assertEqual(resolve_chair(cfg, USABLE, USABLE, random.Random(1)), "codex")
 
     def test_unusable_chair_falls_back_to_first(self) -> None:
         cfg = _config()
         cfg.chair = "nonexistent"
-        self.assertEqual(
-            resolve_chair(cfg, USABLE, USABLE, random.Random(1)), "claude"
-        )
+        self.assertEqual(resolve_chair(cfg, USABLE, USABLE, random.Random(1)), "claude")
 
     def test_empty_usable_returns_configured(self) -> None:
         cfg = _config()
@@ -111,10 +108,7 @@ class RotateChairTest(unittest.TestCase):
     def test_rotate_varies_across_seeds(self) -> None:
         cfg = _config()
         cfg.chair = "rotate"
-        picks = {
-            resolve_chair(cfg, USABLE, USABLE, random.Random(s))
-            for s in range(50)
-        }
+        picks = {resolve_chair(cfg, USABLE, USABLE, random.Random(s)) for s in range(50)}
         self.assertGreater(len(picks), 1, "rotate never varied across seeds")
 
     def test_rotate_end_to_end_same_seed_same_chair(self) -> None:
@@ -128,10 +122,7 @@ class RotateChairTest(unittest.TestCase):
     def test_rotate_end_to_end_varies_across_seeds(self) -> None:
         cfg = _config()
         cfg.chair = "rotate"
-        chairs = {
-            run_jury(cfg, SAMPLE_DIFF, mock=True, seed=s).chair
-            for s in range(30)
-        }
+        chairs = {run_jury(cfg, SAMPLE_DIFF, mock=True, seed=s).chair for s in range(30)}
         self.assertGreater(len(chairs), 1)
 
     def test_verify_and_synthesis_use_same_resolved_chair(self) -> None:
@@ -184,9 +175,7 @@ class SynthesisAnonymizationTest(unittest.TestCase):
         prompt = self._capture_synthesis_prompt(cfg, seed=3)
         self.assertTrue(prompt)
         # Isolate the round-1 reviews block fed to the chair.
-        reviews_block = prompt.split("ROUND-1 REVIEWS", 1)[1].split(
-            "ROUND-2 DEBATE", 1
-        )[0]
+        reviews_block = prompt.split("ROUND-1 REVIEWS", 1)[1].split("ROUND-2 DEBATE", 1)[0]
         # The chair must not be able to tell which review heading is "its own":
         # every per-review HEADING is anonymous. (The mock review body prints its
         # author name, which is reviewer-authored content, not a label we add.)

@@ -5,6 +5,7 @@ local-model probes are mocked, and TOML is fed via tempfiles. Import style and
 fixture conventions match tests/test_config_validation.py and the
 DoctorDiagnosticsTests in tests/test_perfile_coverage.py.
 """
+
 from __future__ import annotations
 
 import sys
@@ -48,14 +49,14 @@ class ConfigValidationBranches(unittest.TestCase):
     def test_diff_max_bytes_non_positive_errors(self):
         # config.py:194 — jury.diff.{key} must be a positive integer.
         with self.assertRaises(ConfigError) as ctx:
-            validate_config(_full(jury={"rounds": 1, "chair": "a",
-                                        "diff": {"max_bytes": 0}}))
+            validate_config(_full(jury={"rounds": 1, "chair": "a", "diff": {"max_bytes": 0}}))
         self.assertIn("jury.diff.max_bytes", str(ctx.exception))
 
     def test_diff_chunk_max_bytes_non_int_errors(self):
         with self.assertRaises(ConfigError) as ctx:
-            validate_config(_full(jury={"rounds": 1, "chair": "a",
-                                        "diff": {"chunk_max_bytes": "big"}}))
+            validate_config(
+                _full(jury={"rounds": 1, "chair": "a", "diff": {"chunk_max_bytes": "big"}})
+            )
         self.assertIn("jury.diff.chunk_max_bytes", str(ctx.exception))
 
     def test_agent_timeout_non_positive_errors(self):
@@ -203,8 +204,7 @@ class DoctorWarningBranches(unittest.TestCase):
         with mock.patch("ai_jury.doctor._is_available", return_value=False):
             diag = doctor.build_diagnostics(str(cfg))
         self.assertTrue(
-            any("(local) endpoint" in w and "not reachable" in w
-                for w in diag["config_warnings"]),
+            any("(local) endpoint" in w and "not reachable" in w for w in diag["config_warnings"]),
             diag["config_warnings"],
         )
 
@@ -225,9 +225,7 @@ class DoctorWarningBranches(unittest.TestCase):
         # doctor.py:199-200 — an agent table missing "name" makes _from_dict
         # raise KeyError, which build_diagnostics catches into config_warnings.
         cfg = self.d / "jury.toml"
-        cfg.write_text(
-            '[jury]\nrounds = 1\n\n[[agent]]\nvendor = "anthropic"\ncommand = "x"\n'
-        )
+        cfg.write_text('[jury]\nrounds = 1\n\n[[agent]]\nvendor = "anthropic"\ncommand = "x"\n')
         diag = doctor.build_diagnostics(str(cfg))
         self.assertIsNone(diag["config"])
         self.assertTrue(
@@ -258,22 +256,23 @@ class DoctorRecommendationBranches(unittest.TestCase):
         # doctor.py:159 — no available agents and no local models.
         with mock.patch("ai_jury.adapters.list_local_models", return_value=[]):
             rec = doctor._recommendations(
-                "jury.toml", {"enabled_agents": []},
+                "jury.toml",
+                {"enabled_agents": []},
                 [{"name": "a", "available": False}],
             )
         self.assertFalse(rec["ready"])
-        self.assertTrue(any("No reviewer is available" in s for s in rec["steps"]),
-                        rec["steps"])
+        self.assertTrue(any("No reviewer is available" in s for s in rec["steps"]), rec["steps"])
 
     def test_not_ready_local_models_offline_step(self):
-        with mock.patch("ai_jury.adapters.list_local_models",
-                        return_value=["qwen2.5-coder:7b"]):
+        with mock.patch("ai_jury.adapters.list_local_models", return_value=["qwen2.5-coder:7b"]):
             rec = doctor._recommendations(
-                "jury.toml", {"enabled_agents": []},
+                "jury.toml",
+                {"enabled_agents": []},
                 [{"name": "a", "available": False}],
             )
-        self.assertTrue(any("local model server is reachable" in s
-                            for s in rec["steps"]), rec["steps"])
+        self.assertTrue(
+            any("local model server is reachable" in s for s in rec["steps"]), rec["steps"]
+        )
 
     def test_ready_with_enabled_unavailable_step(self):
         # doctor.py:172-173 — ready, but an enabled agent is unavailable.
@@ -282,11 +281,14 @@ class DoctorRecommendationBranches(unittest.TestCase):
             {"name": "down", "available": False},
         ]
         rec = doctor._recommendations(
-            "jury.toml", {"enabled_agents": ["up", "down"]}, agents,
+            "jury.toml",
+            {"enabled_agents": ["up", "down"]},
+            agents,
         )
         self.assertTrue(rec["ready"])
-        self.assertTrue(any("Enabled but unavailable" in s and "down" in s
-                            for s in rec["steps"]), rec["steps"])
+        self.assertTrue(
+            any("Enabled but unavailable" in s and "down" in s for s in rec["steps"]), rec["steps"]
+        )
 
 
 class DoctorRenderCapabilityBranches(unittest.TestCase):

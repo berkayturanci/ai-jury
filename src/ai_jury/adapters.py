@@ -12,6 +12,7 @@ real adapter so it is not exposed in the process list (issue #287):
   - Codex CLI   : ``codex exec <args>``               (prompt piped via stdin)
   - Antigravity : ``agy --print``                     (prompt piped via stdin)
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -82,6 +83,7 @@ def _read_only_extra_args(spec: AgentSpec) -> list[str]:
     """
     return privilege.enforce_read_only(spec.vendor, spec.name, spec.extra_args)
 
+
 # Short timeout for capability/version probes. Detection is best-effort and must
 # never slow down or block a normal run, so probes are deliberately snappy.
 _VERSION_PROBE_TIMEOUT = 10
@@ -110,30 +112,34 @@ ERR_RATE_LIMITED = "rate_limited"
 ERR_CONNECTION = "connection_error"
 ERR_UNKNOWN = "unknown"
 
-ERROR_CODES = frozenset({
-    ERR_MISSING_CLI,
-    ERR_AUTH_REQUIRED,
-    ERR_PERMISSION_PROMPT,
-    ERR_TIMEOUT,
-    ERR_NONZERO_EXIT,
-    ERR_EMPTY_OUTPUT,
-    ERR_SPAWN_FAILED,
-    ERR_RATE_LIMITED,
-    ERR_CONNECTION,
-    ERR_UNKNOWN,
-})
+ERROR_CODES = frozenset(
+    {
+        ERR_MISSING_CLI,
+        ERR_AUTH_REQUIRED,
+        ERR_PERMISSION_PROMPT,
+        ERR_TIMEOUT,
+        ERR_NONZERO_EXIT,
+        ERR_EMPTY_OUTPUT,
+        ERR_SPAWN_FAILED,
+        ERR_RATE_LIMITED,
+        ERR_CONNECTION,
+        ERR_UNKNOWN,
+    }
+)
 
 # Failures that are worth retrying because they are typically transient (issue
 # #30): a timeout, a rate-limit, a process that failed to spawn, or a local
 # server that was briefly unreachable (#43). Auth, missing-CLI,
 # permission-prompt, empty-output, and generic nonzero-exit are treated as
 # deterministic — retrying them just burns time and tokens.
-RETRYABLE_ERROR_CODES = frozenset({
-    ERR_TIMEOUT,
-    ERR_RATE_LIMITED,
-    ERR_SPAWN_FAILED,
-    ERR_CONNECTION,
-})
+RETRYABLE_ERROR_CODES = frozenset(
+    {
+        ERR_TIMEOUT,
+        ERR_RATE_LIMITED,
+        ERR_SPAWN_FAILED,
+        ERR_CONNECTION,
+    }
+)
 
 
 # Ordered keyword groups for classify_stderr. Each keyword is matched on word
@@ -143,22 +149,32 @@ RETRYABLE_ERROR_CODES = frozenset({
 # char, so there is no boundary inside "login_attempts"). Multi-word phrases
 # tolerate a space OR "_" between tokens (e.g. "rate limit"/"rate_limit").
 def _keyword_pattern(*keywords: str) -> re.Pattern[str]:
-    parts = [
-        r"[ _]+".join(re.escape(tok) for tok in kw.split())
-        for kw in keywords
-    ]
+    parts = [r"[ _]+".join(re.escape(tok) for tok in kw.split()) for kw in keywords]
     return re.compile(r"\b(?:" + "|".join(parts) + r")\b")
 
 
 # Order matters: auth and rate-limit signals are checked before the generic
 # permission and nonzero-exit fallbacks.
 _AUTH_RE = _keyword_pattern(
-    "not authenticated", "unauthenticated", "authentication", "unauthorized",
-    "api key", "auth", "log in", "login", "credential", "credentials",
+    "not authenticated",
+    "unauthenticated",
+    "authentication",
+    "unauthorized",
+    "api key",
+    "auth",
+    "log in",
+    "login",
+    "credential",
+    "credentials",
 )
 _RATE_LIMIT_RE = _keyword_pattern("rate limit", "429", "quota", "too many requests")
 _PERMISSION_RE = _keyword_pattern(
-    "permission", "permissions", "approve", "approval", "confirm", "confirmation",
+    "permission",
+    "permissions",
+    "approve",
+    "approval",
+    "confirm",
+    "confirmation",
 )
 
 
@@ -273,15 +289,12 @@ class Adapter:
         except subprocess.TimeoutExpired:
             caps["status"] = CAP_UNKNOWN_VERSION
             caps["warnings"].append(
-                f"version probe for '{self.spec.command}' timed out after "
-                f"{_VERSION_PROBE_TIMEOUT}s"
+                f"version probe for '{self.spec.command}' timed out after {_VERSION_PROBE_TIMEOUT}s"
             )
             return caps
         except Exception as exc:  # noqa: BLE001 - swallow any spawn failure
             caps["status"] = CAP_UNKNOWN_VERSION
-            caps["warnings"].append(
-                f"version probe for '{self.spec.command}' failed: {exc}"
-            )
+            caps["warnings"].append(f"version probe for '{self.spec.command}' failed: {exc}")
             return caps
 
         raw = ((proc.stdout or "") + (proc.stderr or "")).strip()
@@ -302,8 +315,12 @@ class Adapter:
         del phase
         if not self.available():
             return AgentResult(
-                self.name, self.spec.vendor, False, "",
-                0.0, f"command not found on PATH: {self.spec.command}",
+                self.name,
+                self.spec.vendor,
+                False,
+                "",
+                0.0,
+                f"command not found on PATH: {self.spec.command}",
                 error_code=ERR_MISSING_CLI,
             )
         # The effective timeout is the caller's override (the run budget, issue
@@ -318,14 +335,22 @@ class Adapter:
             proc = _spawn(argv, stdin, effective_timeout)
         except subprocess.TimeoutExpired:
             return AgentResult(
-                self.name, self.spec.vendor, False, "",
-                time.monotonic() - start, f"timed out after {effective_timeout}s",
+                self.name,
+                self.spec.vendor,
+                False,
+                "",
+                time.monotonic() - start,
+                f"timed out after {effective_timeout}s",
                 error_code=ERR_TIMEOUT,
             )
         except Exception as exc:  # noqa: BLE001 - surface any spawn failure
             return AgentResult(
-                self.name, self.spec.vendor, False, "",
-                time.monotonic() - start, f"spawn failed: {exc}",
+                self.name,
+                self.spec.vendor,
+                False,
+                "",
+                time.monotonic() - start,
+                f"spawn failed: {exc}",
                 error_code=ERR_SPAWN_FAILED,
             )
         dur = time.monotonic() - start
@@ -339,16 +364,30 @@ class Adapter:
         if proc.returncode != 0:
             stderr = (proc.stderr or "").strip()
             detail = stderr or out
+            # Redact before embedding in the error: a crashing CLI can dump an
+            # env var / token into its stderr, and this string is rendered into
+            # the report and posted to the PR. Mirrors the LocalAdapter path
+            # (#293/F-8); the asymmetry was a secret-leak vector (audit
+            # 2026-06-13/N-1). Classify on the raw text (no secrets in codes).
+            safe_detail = redaction.redact(detail)[0]
             return AgentResult(
-                self.name, self.spec.vendor, False, "",
-                dur, f"exit {proc.returncode}: {detail[:500]}",
+                self.name,
+                self.spec.vendor,
+                False,
+                "",
+                dur,
+                f"exit {proc.returncode}: {safe_detail[:500]}",
                 error_code=classify_stderr(proc.returncode, stderr or out),
             )
         if not out:
             # Exit 0 but nothing on stdout: the agent produced no usable review.
             return AgentResult(
-                self.name, self.spec.vendor, False, "",
-                dur, f"exit {proc.returncode}: empty output",
+                self.name,
+                self.spec.vendor,
+                False,
+                "",
+                dur,
+                f"exit {proc.returncode}: empty output",
                 error_code=ERR_EMPTY_OUTPUT,
             )
         return AgentResult(self.name, self.spec.vendor, True, out, dur)
@@ -569,9 +608,7 @@ class LocalAdapter(Adapter):
             "supports_model_selection": self.SUPPORTS_MODEL_SELECTION,
             "raw_version_output": f"local endpoint {self.endpoint}",
             "status": CAP_OK if reachable else CAP_UNAVAILABLE,
-            "warnings": (
-                [] if reachable else [f"local server unreachable at {self.endpoint}"]
-            ),
+            "warnings": ([] if reachable else [f"local server unreachable at {self.endpoint}"]),
         }
 
     def run(self, prompt: str, phase: str = "review", timeout: int | None = None) -> AgentResult:
@@ -605,35 +642,54 @@ class LocalAdapter(Adapter):
             # the report; redact recognized secrets before embedding (#293/F-8).
             detail = redaction.redact(detail)[0]
             return AgentResult(
-                self.name, self.spec.vendor, False, "",
-                time.monotonic() - start, f"HTTP {exc.code}: {detail}",
+                self.name,
+                self.spec.vendor,
+                False,
+                "",
+                time.monotonic() - start,
+                f"HTTP {exc.code}: {detail}",
                 error_code=self.classify_http_status(exc.code),
             )
         except TimeoutError:
             return AgentResult(
-                self.name, self.spec.vendor, False, "",
-                time.monotonic() - start, f"timed out after {effective_timeout}s",
+                self.name,
+                self.spec.vendor,
+                False,
+                "",
+                time.monotonic() - start,
+                f"timed out after {effective_timeout}s",
                 error_code=ERR_TIMEOUT,
             )
         except urllib.error.URLError as exc:
             return AgentResult(
-                self.name, self.spec.vendor, False, "",
+                self.name,
+                self.spec.vendor,
+                False,
+                "",
                 time.monotonic() - start,
                 f"could not reach local server at {self.endpoint}: {exc.reason}",
                 error_code=ERR_CONNECTION,
             )
         except Exception as exc:  # noqa: BLE001 - surface any other failure
             return AgentResult(
-                self.name, self.spec.vendor, False, "",
-                time.monotonic() - start, f"local request failed: {exc}",
+                self.name,
+                self.spec.vendor,
+                False,
+                "",
+                time.monotonic() - start,
+                f"local request failed: {exc}",
                 error_code=ERR_UNKNOWN,
             )
         dur = time.monotonic() - start
         content = self.parse_content(data)
         if not content:
             return AgentResult(
-                self.name, self.spec.vendor, False, "",
-                dur, "local model returned empty content",
+                self.name,
+                self.spec.vendor,
+                False,
+                "",
+                dur,
+                "local model returned empty content",
                 error_code=ERR_EMPTY_OUTPUT,
             )
         return AgentResult(self.name, self.spec.vendor, True, content, dur)

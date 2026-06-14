@@ -1,4 +1,5 @@
 """Tests for `jury init` config scaffolding (issue #107)."""
+
 from __future__ import annotations
 
 import contextlib
@@ -147,9 +148,7 @@ class InitCliTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "jury.toml"
             path.write_text("existing", encoding="utf-8")
-            code, _, _ = self._run(
-                ["init", "--agents", "claude", "-o", str(path), "--force"]
-            )
+            code, _, _ = self._run(["init", "--agents", "claude", "-o", str(path), "--force"])
             self.assertEqual(code, 0)
             self.assertIn("[[agent]]", path.read_text(encoding="utf-8"))
 
@@ -216,9 +215,7 @@ class LocalModelDiscoveryTest(unittest.TestCase):
 
         from ai_jury.adapters import list_local_models
 
-        payload = json.dumps(
-            {"data": [{"id": "gemma:2b"}, {"id": "qwen2.5-coder:7b"}]}
-        ).encode()
+        payload = json.dumps({"data": [{"id": "gemma:2b"}, {"id": "qwen2.5-coder:7b"}]}).encode()
 
         class _Resp:
             def __enter__(self):
@@ -227,7 +224,7 @@ class LocalModelDiscoveryTest(unittest.TestCase):
             def __exit__(self, *a):
                 return False
 
-            def read(self, *args):
+            def read(self, *_args):
                 return payload
 
         with mock.patch("ai_jury.adapters._open", return_value=_Resp()):
@@ -240,9 +237,7 @@ class LocalModelDiscoveryTest(unittest.TestCase):
 
         from ai_jury.adapters import list_local_models
 
-        with mock.patch(
-            "ai_jury.adapters._open", side_effect=urllib.error.URLError("down")
-        ):
+        with mock.patch("ai_jury.adapters._open", side_effect=urllib.error.URLError("down")):
             self.assertEqual(list_local_models("http://localhost:11434/v1"), [])
 
 
@@ -267,8 +262,7 @@ class PresetTest(unittest.TestCase):
     def test_balanced_preset_sets_early_stop(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "jury.toml"
-            self._run(["init", "--preset", "balanced", "--agents", "claude,codex",
-                       "-o", str(path)])
+            self._run(["init", "--preset", "balanced", "--agents", "claude,codex", "-o", str(path)])
             data = tomllib.loads(path.read_text(encoding="utf-8"))
             self.assertEqual(data["jury"]["rounds"], 2)
             self.assertTrue(data["jury"]["verify"])
@@ -279,9 +273,7 @@ class PresetTest(unittest.TestCase):
             path = Path(tmp) / "jury.toml"
             self._run(["init", "--preset", "thorough", "-o", str(path)])
             data = tomllib.loads(path.read_text(encoding="utf-8"))
-            self.assertEqual(
-                [a["name"] for a in data["agent"]], ["claude", "codex", "agy", "qwen"]
-            )
+            self.assertEqual([a["name"] for a in data["agent"]], ["claude", "codex", "agy", "qwen"])
 
     def test_explicit_flag_overrides_preset(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -305,10 +297,13 @@ class OfflineFallbackTest(unittest.TestCase):
 
         cfg = _from_dict(DEFAULT_CONFIG)  # claude/codex/agy, no local
         logs = []
-        with mock.patch.object(adapters.Adapter, "available", return_value=False), \
-             mock.patch.object(adapters, "list_local_models",
-                               return_value=["gemma:2b", "qwen2.5-coder:7b"]), \
-             mock.patch.object(climod.Path, "exists", return_value=False):
+        with (
+            mock.patch.object(adapters.Adapter, "available", return_value=False),
+            mock.patch.object(
+                adapters, "list_local_models", return_value=["gemma:2b", "qwen2.5-coder:7b"]
+            ),
+            mock.patch.object(climod.Path, "exists", return_value=False),
+        ):
             climod._maybe_add_local_fallback(cfg, self._args(), logs.append)
 
         local = next((a for a in cfg.agents if a.name == "local"), None)
@@ -356,7 +351,10 @@ class ConfigShowTest(unittest.TestCase):
     def test_config_show_invalid_exits_2(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "bad.toml"
-            path.write_text("[jury]\nrounds = 0\n[[agent]]\nname='x'\nvendor='anthropic'\ncommand='c'\n", encoding="utf-8")
+            path.write_text(
+                "[jury]\nrounds = 0\n[[agent]]\nname='x'\nvendor='anthropic'\ncommand='c'\n",
+                encoding="utf-8",
+            )
             code, _, err = self._run(["config", "show", "--config", str(path)])
             self.assertEqual(code, 2)
             self.assertIn("error", err)

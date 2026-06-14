@@ -1,4 +1,5 @@
 """Tests for deterministic consensus grouping."""
+
 import unittest
 
 from ai_jury.consensus import (
@@ -12,6 +13,42 @@ from ai_jury.findings import Finding
 
 def _f(reviewer, severity="major", file="src/a.py", line=10, claim="Null deref"):
     return Finding(severity=severity, file=file, line=line, claim=claim, reviewer=reviewer)
+
+
+class NormalizePathTests(unittest.TestCase):
+    def test_dotfile_path_not_collided_with_sibling(self):
+        # Security audit r5/M: lstrip("./") collapsed ".github/x.yml" and
+        # "github/x.yml" to the same key, letting a benign sibling's verdict
+        # swallow a real finding. Distinct paths must group separately.
+        a = _f("claude", severity="critical", file=".github/workflows/deploy.yml")
+        b = _f("codex", severity="critical", file="github/workflows/deploy.yml")
+        groups = group_findings([a, b], reviewer_count=2)
+        self.assertEqual(len(groups), 2)
+
+    def test_parent_and_current_dir_not_collided(self):
+        a = _f("claude", file="../auth.py")
+        b = _f("codex", file="./auth.py")
+        groups = group_findings([a, b], reviewer_count=2)
+        self.assertEqual(len(groups), 2)
+
+    def test_case_fold_for_grouping_but_not_for_gate_match(self):
+        # fold_case=True (grouping/dedup) folds case; fold_case=False (the
+        # gate-critical verdict match) is case-exact so Config.py != config.py
+        # on a case-sensitive filesystem (audit r6/M).
+        from ai_jury.consensus import _normalize_path
+
+        self.assertEqual(_normalize_path("Config.py"), _normalize_path("config.py"))
+        self.assertNotEqual(
+            _normalize_path("Config.py", fold_case=False),
+            _normalize_path("config.py", fold_case=False),
+        )
+
+    def test_leading_dotslash_still_normalized(self):
+        # A real "./" prefix is still stripped so genuine duplicates group.
+        a = _f("claude", file="./src/a.py")
+        b = _f("codex", file="src/a.py")
+        groups = group_findings([a, b], reviewer_count=2)
+        self.assertEqual(len(groups), 1)
 
 
 class GroupFindingsTests(unittest.TestCase):
@@ -88,8 +125,14 @@ class GroupFindingsTests(unittest.TestCase):
         ga = group_findings(a, reviewer_count=3)
         gb = group_findings(b, reviewer_count=3)
         self.assertEqual(
-            [(g.severity, g.representative.file, g.representative.line, g.reviewers, g.bucket) for g in ga],
-            [(g.severity, g.representative.file, g.representative.line, g.reviewers, g.bucket) for g in gb],
+            [
+                (g.severity, g.representative.file, g.representative.line, g.reviewers, g.bucket)
+                for g in ga
+            ],
+            [
+                (g.severity, g.representative.file, g.representative.line, g.reviewers, g.bucket)
+                for g in gb
+            ],
         )
 
 

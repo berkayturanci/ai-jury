@@ -6,6 +6,7 @@ invoked: github helpers are exercised either through mocked ``_gh`` /
 ``_gh_with_input`` or as pure arg-builders. Each test notes the exact
 line/branch it targets.
 """
+
 from __future__ import annotations
 
 import sys
@@ -29,8 +30,12 @@ from ai_jury.patches import PatchSuggestion  # noqa: E402
 
 def _ar(agent: str = "claude", *, ok: bool = True, output: str = "out") -> AgentResult:
     return AgentResult(
-        agent=agent, vendor="anthropic", ok=ok, output=output,
-        duration_s=0.0, error=None if ok else "boom",
+        agent=agent,
+        vendor="anthropic",
+        ok=ok,
+        output=output,
+        duration_s=0.0,
+        error=None if ok else "boom",
     )
 
 
@@ -40,8 +45,11 @@ def _ar(agent: str = "claude", *, ok: bool = True, output: str = "out") -> Agent
 class CiGateReasonTests(unittest.TestCase):
     def _group(self, rep, severity="major"):
         return FindingGroup(
-            representative=rep, reviewers=["claude"], severity=severity,
-            members=[rep] if rep is not None else [], bucket="consensus",
+            representative=rep,
+            reviewers=["claude"],
+            severity=severity,
+            members=[rep] if rep is not None else [],
+            bucket="consensus",
             status="verified",
         )
 
@@ -101,7 +109,9 @@ class InjectionTailTests(unittest.TestCase):
 class PatchLocationTests(unittest.TestCase):
     def test_location_without_line(self):
         # patches.py 32->34: line is None -> location() has no ":line".
-        p = PatchSuggestion(file="src/x.py", line=None, severity="major", claim="c", suggested_fix="f")
+        p = PatchSuggestion(
+            file="src/x.py", line=None, severity="major", claim="c", suggested_fix="f"
+        )
         self.assertEqual(p.location(), "src/x.py")
 
     def test_location_with_line(self):
@@ -120,8 +130,12 @@ class DiffProfileDescribeTests(unittest.TestCase):
     def test_describe_docs_or_generated_only(self):
         # diffprofile.py line 101: docs_or_generated_only True -> "docs/generated-only".
         profile = DiffProfile(
-            changed_lines=3, file_count=1, paths=["README.md"],
-            docs_or_generated_only=True, security_sensitive=False, risk="low",
+            changed_lines=3,
+            file_count=1,
+            paths=["README.md"],
+            docs_or_generated_only=True,
+            security_sensitive=False,
+            risk="low",
         )
         out = describe(profile)
         self.assertIn("docs/generated-only", out)
@@ -129,8 +143,12 @@ class DiffProfileDescribeTests(unittest.TestCase):
 
     def test_describe_security_sensitive(self):
         profile = DiffProfile(
-            changed_lines=500, file_count=1, paths=["auth.py"],
-            docs_or_generated_only=False, security_sensitive=True, risk="high",
+            changed_lines=500,
+            file_count=1,
+            paths=["auth.py"],
+            docs_or_generated_only=False,
+            security_sensitive=True,
+            risk="high",
         )
         out = describe(profile)
         self.assertIn("security-sensitive paths", out)
@@ -216,8 +234,13 @@ class ReportTailTests(unittest.TestCase):
         # "_verification:" line is rendered WITHOUT a reason.
         rep = Finding(severity="major", file="src/a.py", line=None, claim="boom")
         g = FindingGroup(
-            representative=rep, reviewers=["claude"], severity="major",
-            members=[rep], bucket="consensus", status="verified", status_reasoning="",
+            representative=rep,
+            reviewers=["claude"],
+            severity="major",
+            members=[rep],
+            bucket="consensus",
+            status="verified",
+            status_reasoning="",
         )
         line = report._group_line(g)
         self.assertIn("src/a.py —", line)
@@ -229,10 +252,15 @@ class ReportTailTests(unittest.TestCase):
         # report.py 187->189: classification is NOT None -> the in-line
         # classify() call is skipped (the explicit dict is used instead).
         explicit = {"summary": "x", "label": "approve"}
-        with mock.patch("ai_jury.classification.classify") as classify, \
-             mock.patch("ai_jury.classification.summary_line", return_value="SUMMARY"):
+        with (
+            mock.patch("ai_jury.classification.classify") as classify,
+            mock.patch("ai_jury.classification.summary_line", return_value="SUMMARY"),
+        ):
             out = report.render(
-                [_ar("claude")], [], _ar("claude"), chair="claude",
+                [_ar("claude")],
+                [],
+                _ar("claude"),
+                chair="claude",
                 classification=explicit,
             )
         classify.assert_not_called()
@@ -242,8 +270,13 @@ class ReportTailTests(unittest.TestCase):
         # report.py 193->195: context_mode is None (skip that line) but
         # redact_secrets set -> the secret-redaction line still renders.
         out = report.render(
-            [_ar("claude")], [], _ar("claude"), chair="claude",
-            context_mode=None, redact_secrets=True, redaction_count=2,
+            [_ar("claude")],
+            [],
+            _ar("claude"),
+            chair="claude",
+            context_mode=None,
+            redact_secrets=True,
+            redaction_count=2,
         )
         self.assertIn("## Context policy", out)
         self.assertIn("secret redaction: on (2 redacted)", out)
@@ -253,8 +286,12 @@ class ReportTailTests(unittest.TestCase):
         # report.py 195->199: context_mode set but redact_secrets is None ->
         # only the context-mode line renders, redaction line skipped.
         out = report.render(
-            [_ar("claude")], [], _ar("claude"), chair="claude",
-            context_mode="full-repo", redact_secrets=None,
+            [_ar("claude")],
+            [],
+            _ar("claude"),
+            chair="claude",
+            context_mode="full-repo",
+            redact_secrets=None,
         )
         self.assertIn("## Context policy", out)
         self.assertIn("context mode: full-repo", out)
@@ -265,7 +302,10 @@ class ReportTailTests(unittest.TestCase):
         # -> "Synthesis failed" decision text.
         synthesis = _ar("claude", ok=False)
         sections = report.render_sections(
-            [_ar("claude")], [], synthesis, chair="claude",
+            [_ar("claude")],
+            [],
+            synthesis,
+            chair="claude",
         )
         decision = sections[-1][1]
         self.assertIn("Synthesis failed", decision)
@@ -275,10 +315,15 @@ class ReportTailTests(unittest.TestCase):
         # report.py 309->311: classification is NOT None -> in-line classify()
         # skipped in render_sections too.
         explicit = {"summary": "x"}
-        with mock.patch("ai_jury.classification.classify") as classify, \
-             mock.patch("ai_jury.classification.summary_line", return_value="SUMMARY"):
+        with (
+            mock.patch("ai_jury.classification.classify") as classify,
+            mock.patch("ai_jury.classification.summary_line", return_value="SUMMARY"),
+        ):
             sections = report.render_sections(
-                [_ar("claude")], [], _ar("claude"), chair="claude",
+                [_ar("claude")],
+                [],
+                _ar("claude"),
+                chair="claude",
                 classification=explicit,
             )
         classify.assert_not_called()
@@ -300,8 +345,10 @@ class CliDetectedAgentsContinue(unittest.TestCase):
         detected = {n: (n == "claude") for n in KNOWN_AGENTS}  # claude reachable
         out_path = Path(tempfile.mkdtemp()) / "jury.toml"
         buf, err = io.StringIO(), io.StringIO()
-        with mock.patch("ai_jury.cli._init_available", return_value=detected), \
-             mock.patch("ai_jury.cli.sys.stdin") as stdin:
+        with (
+            mock.patch("ai_jury.cli._init_available", return_value=detected),
+            mock.patch("ai_jury.cli.sys.stdin") as stdin,
+        ):
             stdin.isatty.return_value = False
             with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(err):
                 code = cli.main(["init", "-o", str(out_path), "--force"])

@@ -1,4 +1,5 @@
 """Tests for the verification round (issue #3)."""
+
 import unittest
 
 from ai_jury.config import AgentSpec, JuryConfig

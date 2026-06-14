@@ -3,6 +3,7 @@
 Deterministic: the same input always yields the same redacted output and count.
 Each match is replaced with ``[REDACTED:<kind>]``.
 """
+
 from __future__ import annotations
 
 import re
@@ -20,11 +21,14 @@ _REDACTED_MARKER = re.compile(r"^\[REDACTED:[a-z_]+\]$")
 # patterns run before the generic key=value catch-all so secrets are labeled
 # with the most informative kind.
 _PATTERNS: list[tuple[str, re.Pattern]] = [
-    ("pem_private_key", re.compile(
-        r"-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----"
-        r".*?-----END (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----",
-        re.DOTALL,
-    )),
+    (
+        "pem_private_key",
+        re.compile(
+            r"-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----"
+            r".*?-----END (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----",
+            re.DOTALL,
+        ),
+    ),
     ("aws_access_key", re.compile(r"AKIA[0-9A-Z]{16}")),
     ("github_token", re.compile(r"gh[pousr]_[A-Za-z0-9]{20,}")),
     # Classic `sk-…` AND modern project/service keys `sk-proj-…` /
@@ -98,14 +102,17 @@ _PATTERNS: list[tuple[str, re.Pattern]] = [
     # in a GCP service-account blob — is matched too (its value is redacted while
     # the structure stays valid). A non-secret like `client_email` is not caught:
     # its value contains `@`/`.` outside the value char class.
-    ("secret_assignment", re.compile(
-        r"([A-Za-z0-9_]{0,40}(?:api[_-]?key|secret|token|password|passwd|"
-        r"access[_-]?key|account[_-]?key|private[_-]?key|client[_-]?secret|"
-        r"credential)"
-        r"[A-Za-z0-9_]{0,40})"
-        r"([\"']?\s*[=:]\s*)([\"']?)[A-Za-z0-9_\-+/=]{16,}([\"']?)",
-        re.IGNORECASE,
-    )),
+    (
+        "secret_assignment",
+        re.compile(
+            r"([A-Za-z0-9_]{0,40}(?:api[_-]?key|secret|token|password|passwd|"
+            r"access[_-]?key|account[_-]?key|private[_-]?key|client[_-]?secret|"
+            r"credential)"
+            r"[A-Za-z0-9_]{0,40})"
+            r"([\"']?\s*[=:]\s*)([\"']?)[A-Za-z0-9_\-+/=]{16,}([\"']?)",
+            re.IGNORECASE,
+        ),
+    ),
 ]
 
 
@@ -120,17 +127,17 @@ def redact(text: str) -> tuple[str, int]:
     result = text
     for kind, pattern in _PATTERNS:
         if kind == "secret_assignment":
+
             def _sub_assign(m, _kind=kind):
                 nonlocal count
                 count += 1
                 # Preserve the key, separator, AND surrounding quotes; redact
                 # only the value so a quoted assignment stays syntactically valid.
-                return (
-                    f"{m.group(1)}{m.group(2)}{m.group(3)}"
-                    f"[REDACTED:{_kind}]{m.group(4)}"
-                )
+                return f"{m.group(1)}{m.group(2)}{m.group(3)}[REDACTED:{_kind}]{m.group(4)}"
+
             result = pattern.sub(_sub_assign, result)
         elif kind == "basic_auth":
+
             def _sub_basic_auth(m, _kind=kind):
                 nonlocal count
                 # Don't re-redact a value an earlier pattern already replaced
@@ -142,12 +149,15 @@ def redact(text: str) -> tuple[str, int]:
                 # Keep the prefix (group 1: `://user:` or `://`) and `@` suffix
                 # (group 3); redact only the credential so the URL stays readable.
                 return f"{m.group(1)}[REDACTED:{_kind}]{m.group(3)}"
+
             result = pattern.sub(_sub_basic_auth, result)
         else:
-            def _sub(m, _kind=kind):
+
+            def _sub(_m, _kind=kind):
                 nonlocal count
                 count += 1
                 return f"[REDACTED:{_kind}]"
+
             result = pattern.sub(_sub, result)
     return result, count
 
@@ -170,9 +180,23 @@ def redact_url_userinfo(url: str) -> str:
     except ValueError:
         return redact(url)[0]
     netloc = parts.netloc
-    if "@" not in netloc:
-        return url
-    # The host part has no unencoded '@'; split on the last one so a userinfo
-    # that contains a percent-encoded '@' is still handled correctly.
-    hostport = netloc[netloc.rfind("@") + 1:]
-    return urlunsplit(parts._replace(netloc=f"[REDACTED]@{hostport}"))
+    if "@" in netloc:
+        # The host part has no unencoded '@'; split on the last one so a userinfo
+        # that contains a percent-encoded '@' is still handled correctly.
+        hostport = netloc[netloc.rfind("@") + 1 :]
+        return urlunsplit(parts._replace(netloc=f"[REDACTED]@{hostport}"))
+    # A scheme-less URL ("user:pass@host/p") leaves netloc empty — urlsplit dumps
+    # the authority into the scheme/path, so the userinfo would slip through
+    # unredacted (security audit 2026-06-13; continues v1.5.0/L-1). If the URL
+    # has no "://" authority but still carries an "@", re-parse with a synthetic
+    # "//" authority so netloc is populated, redact, then strip it back off.
+    if "@" in url and "://" not in url:
+        try:
+            reparsed = urlsplit("//" + url)
+        except ValueError:
+            return redact(url)[0]
+        if "@" in reparsed.netloc:
+            hostport = reparsed.netloc[reparsed.netloc.rfind("@") + 1 :]
+            redacted = urlunsplit(reparsed._replace(netloc=f"[REDACTED]@{hostport}"))
+            return redacted[2:] if redacted.startswith("//") else redacted
+    return url

@@ -1,4 +1,5 @@
 """Tests for the live sticky PR progress comment (issue #125). Network-free."""
+
 from __future__ import annotations
 
 import contextlib

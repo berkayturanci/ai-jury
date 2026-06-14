@@ -4,6 +4,7 @@ The orchestrator owns the round structure and prompt assembly; adapters only run
 their CLI. Rounds run agents concurrently (thread pool) because each call is an
 independent, IO-bound subprocess.
 """
+
 from __future__ import annotations
 
 import random
@@ -93,13 +94,8 @@ def _run_with_retry(
         and attempts < max_attempts
         and not budget.expired()
     ):
-        log(
-            f"{adapter.name}: {phase} attempt {attempts} failed "
-            f"({result.error_code}); retrying"
-        )
-        result = adapter.run(
-            prompt, phase=phase, timeout=budget.call_timeout()
-        )
+        log(f"{adapter.name}: {phase} attempt {attempts} failed ({result.error_code}); retrying")
+        result = adapter.run(prompt, phase=phase, timeout=budget.call_timeout())
         attempts += 1
     result.attempts = attempts
     return result
@@ -285,8 +281,13 @@ def _debate_round(
             )
         debate_prompt[a.name] = text
     results = _run_phase(
-        debaters, debate_prompt, "debate", config.parallel,
-        budget=budget, retries=retries, log=log,
+        debaters,
+        debate_prompt,
+        "debate",
+        config.parallel,
+        budget=budget,
+        retries=retries,
+        log=log,
     )
     # Same stable-ordering guarantee as round 1: independent of thread-pool
     # completion order.
@@ -385,8 +386,7 @@ def run_jury(
         log(f"least-privilege warning: {w}")
     if strict and privilege_warnings:
         raise RuntimeError(
-            "least-privilege check failed (--strict): "
-            + "; ".join(privilege_warnings)
+            "least-privilege check failed (--strict): " + "; ".join(privilege_warnings)
         )
 
     specs = config.enabled_agents
@@ -424,8 +424,13 @@ def run_jury(
         for a in usable
     }
     reviews = _run_phase(
-        usable, review_prompt, "review", config.parallel,
-        budget=budget, retries=retries, log=log,
+        usable,
+        review_prompt,
+        "review",
+        config.parallel,
+        budget=budget,
+        retries=retries,
+        log=log,
     )
     # Stable ordering: the thread pool can return results in any completion
     # order. Reorder to the enabled-agent order so the report (and every
@@ -504,8 +509,17 @@ def run_jury(
                         break
                     round_no += 1
                     debate = _debate_round(
-                        debaters, reviews, diff, config, run_rng, agent_order,
-                        prior, budget, retries, log, round_no,
+                        debaters,
+                        reviews,
+                        diff,
+                        config,
+                        run_rng,
+                        agent_order,
+                        prior,
+                        budget,
+                        retries,
+                        log,
+                        round_no,
                         template=tmpl["debate"],
                     )
                     rounds_executed = round_no
@@ -531,8 +545,17 @@ def run_jury(
                 log(stop_reason)
             else:
                 debate = _debate_round(
-                    debaters, reviews, diff, config, run_rng, agent_order,
-                    [], budget, retries, log, 2,
+                    debaters,
+                    reviews,
+                    diff,
+                    config,
+                    run_rng,
+                    agent_order,
+                    [],
+                    budget,
+                    retries,
+                    log,
+                    2,
                     template=tmpl["debate"],
                 )
                 rounds_executed = 2
@@ -557,7 +580,14 @@ def run_jury(
             all_warnings.append(msg)
         else:
             verify_result, verdicts, verify_warnings = _verify(
-                chair_name, usable, all_findings, diff, context, budget, retries, log,
+                chair_name,
+                usable,
+                all_findings,
+                diff,
+                context,
+                budget,
+                retries,
+                log,
                 template=tmpl["verify"],
             )
             all_warnings.extend(verify_warnings)
@@ -698,7 +728,14 @@ def _format_verdicts(verdicts: list[Verdict]) -> str:
 
 
 def _verify(
-    chair_name, usable, findings, diff, context, budget, retries, log,
+    chair_name,
+    usable,
+    findings,
+    diff,
+    context,
+    budget,
+    retries,
+    log,
     template=prompts.VERIFY,
 ) -> tuple[AgentResult | None, list[Verdict], list[str]]:
     chair = next((a for a in usable if a.name == chair_name), None)
@@ -722,13 +759,29 @@ def _verdict_matches_group(verdict: Verdict, group: FindingGroup) -> bool:
     from .consensus import _normalize_claim, _normalize_path
 
     rep = group.representative
-    if _normalize_path(verdict.file) != _normalize_path(rep.file):
+    # Case-EXACT path match (fold_case=False): on a case-sensitive filesystem
+    # ``Config.py`` != ``config.py``, so a verdict must not reject a finding it
+    # only case-collapses onto (audit 2026-06-13 r6/M).
+    if _normalize_path(verdict.file, fold_case=False) != _normalize_path(
+        rep.file, fold_case=False
+    ):
         return False
     if verdict.line is not None and rep.line is not None and abs(verdict.line - rep.line) > 3:
         return False
     v_claim = _normalize_claim(verdict.claim)
     r_claim = _normalize_claim(rep.claim)
-    if not v_claim or v_claim == r_claim:
+    if not v_claim:
+        # An empty verdict claim is allowed to match the finding *at this
+        # location* (the verifier may omit the claim and refer to it by
+        # position). But a verdict with NEITHER a claim NOR a line has no
+        # location precision at all: it would otherwise match — and, when
+        # ``unsupported``, REJECT — every finding group in the file, including
+        # unrelated criticals, flipping the CI gate from FAIL to PASS. Such a
+        # claim-less, line-less verdict is a file-wide wildcard and must not
+        # match (security audit 2026-06-13 r6/M). Require a concrete line that
+        # actually pins the finding before honoring an empty-claim match.
+        return verdict.line is not None and rep.line is not None
+    if v_claim == r_claim:
         return True
     v_tokens, r_tokens = set(v_claim.split()), set(r_claim.split())
     if not v_tokens or not r_tokens:
@@ -738,26 +791,120 @@ def _verdict_matches_group(verdict: Verdict, group: FindingGroup) -> bool:
     return (inter / union if union else 0.0) >= 0.5
 
 
+def _claim_sim(a_claim: str, b_claim: str) -> float:
+    """Token-set similarity between two claims: 1.0 exact, else Jaccard, 0.0 if
+    either side is empty."""
+    from .consensus import _normalize_claim
+
+    a = _normalize_claim(a_claim)
+    b = _normalize_claim(b_claim)
+    if not a or not b:
+        return 0.0
+    if a == b:
+        return 1.0
+    at, bt = set(a.split()), set(b.split())
+    union = len(at | bt)
+    return (len(at & bt) / union) if union else 0.0
+
+
+# Verdict statuses that move a finding into a non-blocking bucket (suppress it).
+_REJECTING_STATUSES = frozenset({"unsupported", "needs_human_decision"})
+# Apply most-blocking statuses first so a contradictory verdict pair on one
+# finding is fail-closed: a `verified` (blocking) judgement is recorded before
+# any `unsupported`/`needs_human_decision` and cannot then be flipped to
+# non-blocking by verdict array ordering (audit 2026-06-13 r8/M).
+_STATUS_PRIORITY = {"verified": 0, "needs_human_decision": 1, "unsupported": 2}
+# Minimum claim similarity for a verdict to be considered "about" a finding at
+# all. The PRIMARY defence against a verdict dismissing a co-located *distinct*
+# finding is that a rejection attaches to AT MOST the single best-matching group
+# (`_best_reject_target`), so a verdict whose claim copies a benign neighbour
+# routes to that neighbour, not to the co-located critical (audit 2026-06-13
+# r8/M). The threshold stays moderate so the verifier's legitimate paraphrased
+# rejections (it drops the reviewer-name prefix etc.) still apply.
+_REJECT_CLAIM_THRESHOLD = 0.5
+
+
+def _reject_targets(verdict: Verdict, groups: list[FindingGroup]) -> list[FindingGroup]:
+    """Un-statused groups a rejecting verdict may suppress (fail-closed, r7/r8).
+
+    Defences (each closes a distinct collateral-rejection vector found across
+    audit rounds 6-9):
+
+    0. **Line required.** A rejecting verdict must pin a concrete line. A
+       line-less verdict is too imprecise to safely suppress a finding and would
+       act as a file-wide-by-claim wildcard (audit r9/M, the claim-ful
+       counterpart of the round-6 line-less-wildcard fix).
+    1. **Member-tier guard.** A group may merge findings of different severities
+       (consensus keeps the max). A verdict is "about" the member whose claim it
+       best matches; if that member is *less severe* than the group's max, the
+       verdict is dismissing a lesser co-located finding and must NOT suppress
+       the (e.g. critical) group.
+    2. **Best-tier only.** Across candidate groups, suppress only those at the
+       highest match similarity — a verdict copying a benign neighbour rejects
+       that neighbour (and its duplicate phrasings, which tie) but not a
+       separate, less-similar critical group.
+    3. **Least-severe within a tie.** If the best-similarity tier still spans
+       severities (an exact `_claim_sim` tie between a critical and a benign
+       decoy), suppress only the *least*-severe groups — a tie must never drag a
+       critical down alongside a decoy (audit r9/M).
+    """
+    from .findings import SEVERITY_ORDER
+
+    if verdict.line is None:
+        return []
+    scored: list[tuple[float, FindingGroup]] = []
+    for group in groups:
+        if group.status:
+            continue
+        if not _verdict_matches_group(verdict, group):
+            continue
+        members = getattr(group, "members", None) or [group.representative]
+        best_sim, best_member = max(
+            ((_claim_sim(verdict.claim, m.claim), m) for m in members),
+            key=lambda t: t[0],
+        )
+        if best_sim < _REJECT_CLAIM_THRESHOLD:
+            continue
+        # Member-tier guard: refuse if the verdict best-names a member less
+        # severe than the group's max severity (lower rank = more severe).
+        if SEVERITY_ORDER.get(best_member.severity, 99) > SEVERITY_ORDER.get(group.severity, 99):
+            continue
+        scored.append((best_sim, group))
+    if not scored:
+        return []
+    best = max(sim for sim, _ in scored)
+    tier = [(sim, group) for sim, group in scored if sim >= best]
+    # Within the top-similarity tier, keep only the least-severe groups.
+    least_rank = max(SEVERITY_ORDER.get(g.severity, 99) for _, g in tier)
+    return [g for _, g in tier if SEVERITY_ORDER.get(g.severity, 99) == least_rank]
+
+
 def _apply_verdicts(groups: list[FindingGroup], verdicts: list[Verdict]) -> None:
     """Attach verification statuses to consensus groups.
 
     unsupported -> bucket 'rejected'; needs_human_decision -> bucket 'disputed';
     verified -> status recorded, bucket unchanged.
     """
-    for verdict in verdicts:
-        # Apply to every matching group: when reviewers phrase the same issue
-        # slightly differently it can land in more than one group, and all of
-        # them should carry the verifier's judgement.
+    # Stable-sort by blocking priority so contradictions resolve fail-closed.
+    for verdict in sorted(verdicts, key=lambda v: _STATUS_PRIORITY.get(v.status, 3)):
+        if verdict.status in _REJECTING_STATUSES:
+            # Suppress only the best-similarity tier this verdict names — never
+            # collaterally a co-located, less-similar distinct finding.
+            bucket = "rejected" if verdict.status == "unsupported" else "disputed"
+            for target in _reject_targets(verdict, groups):
+                target.status = verdict.status
+                target.status_reasoning = verdict.reasoning
+                target.bucket = bucket
+            continue
+        # A verifying (non-suppressing) verdict may attach to every matching
+        # group: when reviewers phrase the same issue differently it can land in
+        # more than one group, and all should carry the judgement.
         for group in groups:
             if group.status:
                 continue
             if _verdict_matches_group(verdict, group):
                 group.status = verdict.status
                 group.status_reasoning = verdict.reasoning
-                if verdict.status == "unsupported":
-                    group.bucket = "rejected"
-                elif verdict.status == "needs_human_decision":
-                    group.bucket = "disputed"
 
 
 def _synthesize(
@@ -787,12 +934,16 @@ def _synthesize(
         peer_rng = random.Random(rng.random()) if rng is not None else random.Random()
         reviews_txt, _label_map = _anonymize_peers(reviews, None, peer_rng)
     else:
-        reviews_txt = "\n\n".join(
-            f"### {r.agent} ({r.vendor})\n{r.output}" for r in reviews if r.ok and r.output
-        ) or "_(no reviews)_"
-    debate_txt = "\n\n".join(
-        f"### {r.agent}\n{r.output}" for r in debate if r.ok and r.output
-    ) or "_(no debate round)_"
+        reviews_txt = (
+            "\n\n".join(
+                f"### {r.agent} ({r.vendor})\n{r.output}" for r in reviews if r.ok and r.output
+            )
+            or "_(no reviews)_"
+        )
+    debate_txt = (
+        "\n\n".join(f"### {r.agent}\n{r.output}" for r in debate if r.ok and r.output)
+        or "_(no debate round)_"
+    )
     prompt = template.format(
         diff=prompts.neutralize_sentinels(diff),
         reviews=prompts.neutralize_sentinels(reviews_txt),
@@ -834,9 +985,7 @@ def _merge_results_by_agent(phase_lists: list[list[AgentResult]]) -> list[AgentR
         parts = by_agent[name]
         ok = any(p.ok for p in parts)
         body = "\n\n".join(
-            f"#### chunk {i}\n{p.output}"
-            for i, p in enumerate(parts, 1)
-            if p.ok and p.output
+            f"#### chunk {i}\n{p.output}" for i, p in enumerate(parts, 1) if p.ok and p.output
         )
         first_err = next((p for p in parts if not p.ok), None)
         merged.append(
@@ -854,20 +1003,14 @@ def _merge_results_by_agent(phase_lists: list[list[AgentResult]]) -> list[AgentR
     return merged
 
 
-def _combine_chair_results(
-    results: list[AgentResult], chair: str
-) -> AgentResult | None:
+def _combine_chair_results(results: list[AgentResult], chair: str) -> AgentResult | None:
     """Combine per-chunk chair results (verify/synthesis) into one labelled result."""
     ok_parts = [r for r in results if r.ok and r.output]
     if not ok_parts:
         return results[0] if results else None
     vendor = ok_parts[0].vendor
-    body = "\n\n".join(
-        f"### chunk {i}\n{r.output}" for i, r in enumerate(ok_parts, 1)
-    )
-    return AgentResult(
-        chair, vendor, True, body, round(sum(r.duration_s for r in ok_parts), 3)
-    )
+    body = "\n\n".join(f"### chunk {i}\n{r.output}" for i, r in enumerate(ok_parts, 1))
+    return AgentResult(chair, vendor, True, body, round(sum(r.duration_s for r in ok_parts), 3))
 
 
 def _merge_chunk_outcomes(outcomes: list[JuryOutcome]) -> JuryOutcome:
@@ -890,7 +1033,25 @@ def _merge_chunk_outcomes(outcomes: list[JuryOutcome]) -> JuryOutcome:
     findings = [f for o in outcomes for f in o.findings]
     groups = group_findings(findings, len(reviews))
     verdicts = [v for o in outcomes for v in o.verdicts]
-    _apply_verdicts(groups, verdicts)
+    # Scope each chunk's verdicts to that chunk's own findings. A verdict is
+    # produced while verifying ONE chunk (whose prompt held only that chunk's
+    # findings, but whose attacker-controlled diff text could steer it); after
+    # the global merge an unscoped verdict could reject a *different* chunk's
+    # structured critical and flip the CI gate (audit 2026-06-13 r7/M). Chunks
+    # are file-disjoint, so apply each chunk's verdicts only to groups whose
+    # location is one of that chunk's files.
+    from .consensus import _normalize_path
+
+    for o in outcomes:
+        chunk_files = {
+            _normalize_path(f.file, fold_case=False) for f in o.findings if f.file
+        }
+        chunk_groups = [
+            g
+            for g in groups
+            if _normalize_path(g.representative.file, fold_case=False) in chunk_files
+        ]
+        _apply_verdicts(chunk_groups, o.verdicts)
     warnings = [w for o in outcomes for w in o.warnings]
 
     synthesis = _combine_chair_results([o.synthesis for o in outcomes if o.synthesis], base.chair)
@@ -994,8 +1155,15 @@ def review_diff(
 
     def _run(chunk: str) -> JuryOutcome:
         return run_jury(
-            config, chunk, context=context, mock=mock, strict=strict,
-            seed=seed, policy=policy, log=log, budget=shared_budget,
+            config,
+            chunk,
+            context=context,
+            mock=mock,
+            strict=strict,
+            seed=seed,
+            policy=policy,
+            log=log,
+            budget=shared_budget,
             on_event=on_event,
         )
 

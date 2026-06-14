@@ -17,6 +17,7 @@ Regenerate the golden after an intentional change::
 
     UPDATE_GOLDEN=1 PYTHONPATH=src python3 -m unittest tests.test_cli_contract
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -92,6 +93,7 @@ DOCUMENTED_FLAGS = [
     "--no-transcript",
     "--verbose",
     "--live",
+    "--theater",
     "--post-summary",
     "--post",
     "--post-inline",
@@ -184,14 +186,12 @@ class HelpSnapshotTests(unittest.TestCase):
         missing_from_docs = parser_flags - documented
         self.assertFalse(
             missing_from_docs,
-            f"parser exposes flags not in DOCUMENTED_FLAGS: "
-            f"{sorted(missing_from_docs)}",
+            f"parser exposes flags not in DOCUMENTED_FLAGS: {sorted(missing_from_docs)}",
         )
         stale_in_docs = documented - parser_flags
         self.assertFalse(
             stale_in_docs,
-            f"DOCUMENTED_FLAGS lists flags the parser no longer defines: "
-            f"{sorted(stale_in_docs)}",
+            f"DOCUMENTED_FLAGS lists flags the parser no longer defines: {sorted(stale_in_docs)}",
         )
         self.assertEqual(documented, parser_flags)
 
@@ -205,9 +205,7 @@ class HelpSnapshotTests(unittest.TestCase):
             GOLDEN_DIR.mkdir(exist_ok=True)
             HELP_GOLDEN.write_text(rendered, encoding="utf-8")
         if sys.version_info[:2] != (3, 13):
-            self.skipTest(
-                "help golden is pinned to Python 3.13 argparse formatting"
-            )
+            self.skipTest("help golden is pinned to Python 3.13 argparse formatting")
         self.assertTrue(
             HELP_GOLDEN.exists(),
             "help golden missing; regenerate with UPDATE_GOLDEN=1",
@@ -250,15 +248,11 @@ class ErrorContractTests(unittest.TestCase):
         self.assertEqual(code, "error: empty diff — nothing to review")
 
     def test_post_summary_without_pr(self):
-        code, _, _ = _run_cli(
-            ["--mock", "--diff-file", "-", "--post-summary"], stdin=SAMPLE_DIFF
-        )
+        code, _, _ = _run_cli(["--mock", "--diff-file", "-", "--post-summary"], stdin=SAMPLE_DIFF)
         self.assertEqual(code, "error: --post-summary requires --pr")
 
     def test_post_inline_without_pr(self):
-        code, _, _ = _run_cli(
-            ["--mock", "--diff-file", "-", "--post-inline"], stdin=SAMPLE_DIFF
-        )
+        code, _, _ = _run_cli(["--mock", "--diff-file", "-", "--post-inline"], stdin=SAMPLE_DIFF)
         self.assertEqual(code, "error: --post-inline requires --pr")
 
     def test_unknown_flag_exits_2(self):
@@ -284,9 +278,7 @@ class MockPipelineTests(unittest.TestCase):
     def test_quiet_suppresses_progress_logs(self):
         # --quiet suppresses the "[jury] ..." progress lines on stderr; the
         # report itself still goes to stdout.
-        code, out, err = _run_cli(
-            ["--mock", "--diff-file", "-", "--quiet"], stdin=SAMPLE_DIFF
-        )
+        code, out, err = _run_cli(["--mock", "--diff-file", "-", "--quiet"], stdin=SAMPLE_DIFF)
         self.assertEqual(code, 0)
         self.assertNotIn("[jury]", err)
         self.assertIn("AI Jury", out)
@@ -309,9 +301,7 @@ class CiGateTests(unittest.TestCase):
     def test_ci_mock_fails_on_blocking_finding(self):
         # The mock pipeline produces a confirmed blocking major finding, so the
         # CI gate must return a non-zero exit code (1).
-        code, _, _ = _run_cli(
-            ["--ci", "--mock", "--diff-file", "-"], stdin=SAMPLE_DIFF
-        )
+        code, _, _ = _run_cli(["--ci", "--mock", "--diff-file", "-"], stdin=SAMPLE_DIFF)
         self.assertEqual(code, 1)
 
 

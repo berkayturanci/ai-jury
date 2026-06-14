@@ -1,5 +1,6 @@
 """Coverage for small branch gaps: metadata rounds fallback, cache dir
 resolution, and comment-parse error paths. Network-free."""
+
 from __future__ import annotations
 
 import os

@@ -12,6 +12,7 @@ maps it to a jury CLI argument vector. Security properties:
 
 Pure and network-free, so parsing and rejection are fully unit-testable.
 """
+
 from __future__ import annotations
 
 import re
@@ -70,9 +71,7 @@ def parse_comment(text: str) -> ParsedCommand:
         raise CommandError(f"could not parse command: {exc}") from exc
 
     if not tokens:
-        raise CommandError(
-            f"missing subcommand; expected one of {', '.join(ALLOWED_COMMANDS)}"
-        )
+        raise CommandError(f"missing subcommand; expected one of {', '.join(ALLOWED_COMMANDS)}")
 
     command, rest = tokens[0], tokens[1:]
     if command not in ALLOWED_COMMANDS:

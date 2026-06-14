@@ -1,5 +1,6 @@
 """Coverage for orchestrator adaptive-rounds / budget / chunk branches.
 Deterministic via mock agents + a seed."""
+
 from __future__ import annotations
 
 import sys
@@ -41,8 +42,9 @@ def _single_agent_cfg(**over):
 
 class FixedNPaths(unittest.TestCase):
     def test_two_rounds_budget_expired_skips_debate(self):
-        out = run_jury(_cfg(rounds=2, early_stop=False), DIFF, mock=True, seed=1,
-                       budget=RunBudget(0, None))
+        out = run_jury(
+            _cfg(rounds=2, early_stop=False), DIFF, mock=True, seed=1, budget=RunBudget(0, None)
+        )
         self.assertEqual(out.debate, [])
         self.assertTrue(out.budget_exhausted)
 
@@ -69,8 +71,9 @@ class EarlyStopPaths(unittest.TestCase):
     def test_early_stop_budget_expired(self):
         # Round 1 runs; an already-expired budget then skips debate (and may skip
         # later phases) — the run still returns an outcome (partial-result policy).
-        out = run_jury(_cfg(early_stop=True, max_rounds=3), DIFF, mock=True, seed=1,
-                       budget=RunBudget(0, None))
+        out = run_jury(
+            _cfg(early_stop=True, max_rounds=3), DIFF, mock=True, seed=1, budget=RunBudget(0, None)
+        )
         self.assertTrue(out.reviews)
         self.assertEqual(out.debate, [])
 

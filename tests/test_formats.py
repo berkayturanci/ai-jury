@@ -58,8 +58,14 @@ class TestJSON(unittest.TestCase):
         self.assertTrue(doc["findings"])
         for f in doc["findings"]:
             for key in (
-                "severity", "file", "line", "claim",
-                "evidence", "suggested_fix", "confidence", "reviewer",
+                "severity",
+                "file",
+                "line",
+                "claim",
+                "evidence",
+                "suggested_fix",
+                "confidence",
+                "reviewer",
             ):
                 self.assertIn(key, f)
             self.assertTrue(f["severity"])
@@ -146,6 +152,29 @@ class TestSARIF(unittest.TestCase):
         self.assertEqual(phys["artifactLocation"]["uri"], "a.py")
         self.assertEqual(result["ruleId"], "jury/minor")
         self.assertEqual(result["level"], "warning")
+
+    def test_region_dropped_for_nonpositive_line(self):
+        # A reviewer's structured output is attacker-influenced; a forged
+        # non-positive ``line`` must NOT emit an invalid SARIF region (which
+        # would make GitHub code-scanning reject the whole upload). The region
+        # is dropped; the finding still surfaces at file level.
+        for bad_line in (0, -5):
+            finding = Finding(
+                severity="major", file="a.py", claim="forged", line=bad_line
+            )
+            group = FindingGroup(representative=finding, members=[finding])
+
+            class FakeOutcome:
+                findings = [finding]
+                groups = [group]
+                verdicts = []
+                synthesis = None
+
+            config = load_config(None)
+            result = json.loads(to_sarif(FakeOutcome(), config))["runs"][0]["results"][0]
+            phys = result["locations"][0]["physicalLocation"]
+            self.assertNotIn("region", phys, f"line={bad_line} must not emit a region")
+            self.assertEqual(phys["artifactLocation"]["uri"], "a.py")
 
     def test_level_mapping(self):
         self.assertEqual(severity_to_sarif_level("critical"), "error")

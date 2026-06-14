@@ -7,9 +7,214 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-06-14
+
+### Added
+
+- **`--theater`: an animated "deliberation" view of a live run.** Opt-in,
+  presentation-only: the models sit around a table and take turns speaking as
+  the run moves through review → debate → verify → decision, then decide together
+  (no judge) — by panel vote or recorded by the chair. It consumes the real
+  `on_event` stream (so it mirrors the actual run; `--mock` drives a
+  deterministic demo), is pure-stdlib ANSI, and never touches the structured
+  outcome/report/CI gate. Adapts to PR vs issue and chair vs vote, shows debate
+  rounds / early-stop / disputes, seats many jurors (compact roster fallback),
+  and falls back to the plain `--live` stream on a non-interactive terminal.
+  See `docs/theater-design.md`.
+- Theater seats use each vendor's own **product brand colour** (24-bit truecolor:
+  Anthropic coral, OpenAI teal, Google blue, local violet), matching the
+  website's vendor palette; terminals without truecolor degrade to the nearest
+  colour.
+
+### Documentation
+
+- README, `docs/theater-design.md`, and the landing page gained a dedicated
+  **Theater mode** section with a pixel-art deliberation demo gif.
+
+## [1.6.2] - 2026-06-13
+
+> Security-hardening release. Nine successive same-day re-audits (a seventh
+> four-surface audit, a red-team round, then rounds 3–9) — each a red-team pass
+> plus an independent convergence sweep — drove the codebase to a clean round
+> with **no Critical/High at any point** and no Medium remaining. The bulk of the
+> work hardened the CI-gate's verify→verdict→group attachment so an
+> attacker-steered verifier verdict can no longer suppress a real finding, and
+> closed a class of markdown output-injection into the posted PR/issue comment.
+> Also ships the earlier website/UX and performance tweaks. No breaking changes.
+
+### Security
+
+- **Ninth security re-audit** (`docs/security-audit-2026-06-13-round9.md`). A
+  determined final red-team of the verdict-attach layer + an independent
+  convergence pass (which confirmed no new Medium+ and recommended release); no
+  Critical/High. Fixed one more Medium CI-gate bypass, with tests:
+  - A rejecting verdict with `line: null` plus a claim-similarity tie could drop
+    a co-located critical (the claim-ful counterpart of the round-6 line-less
+    wildcard). A rejecting verdict now must pin a concrete line, and on a
+    top-similarity tie only the *least*-severe groups are suppressed — so a tie
+    can never drag a critical down alongside a benign decoy.
+- **Eighth security re-audit** (`docs/security-audit-2026-06-13-round8.md`). A
+  red-team of the round-7 verdict-attach fixes + a whole-codebase convergence
+  sweep; no Critical/High. Fixed two Medium CI-gate bypasses with a structural
+  redesign of verdict→group attachment, all with tests:
+  - A verifier `unsupported` verdict aimed at a co-located *lesser* finding (one
+    consensus merged into a critical group, or a benign decoy / numbered sibling
+    like `parse_v2`/`parse_v3`) could reject the critical and pass the gate.
+    Rejection now uses a **member-tier guard** (a verdict can't suppress a group
+    via a member less severe than the group's max) and attaches only to the
+    **best-similarity tier**, so it dismisses the finding it actually names and
+    never a co-located, less-similar critical.
+  - Contradictory verdicts (`verified` + `unsupported`) on one finding are now
+    resolved in blocking-priority order (verified wins) instead of by the
+    verifier's array order (fail-closed).
+- **Seventh security re-audit** (`docs/security-audit-2026-06-13-round7.md`). Two
+  independent passes (exhaustive gate-flow probe + wide net); no Critical/High.
+  Fixed three Medium CI-gate / posted-comment integrity issues, all with tests:
+  - **Empty-/unrelated-claim verdict could collaterally reject a co-located
+    finding:** a line-ful but claim-less `unsupported` verdict (meant for a
+    benign finding sharing a line) also rejected a `critical`, flipping the
+    strict gate to PASS. A *rejecting* verdict now requires real claim
+    relatedness (exact or Jaccard ≥ 0.5) — it can verify by position but not
+    reject what it doesn't name (fail-closed).
+  - **Cross-chunk verdict cross-attachment:** on a chunked review, a verdict
+    produced for one chunk could reject a real critical in another chunk after
+    the global merge. Verdicts are now scoped to their own chunk's files.
+  - **CI gate reason line** (posted to the PR) now flattens the blocking
+    finding's `file`/`claim`, closing the last markdown-injection sink.
+- **Sixth security re-audit** (`docs/security-audit-2026-06-13-round6.md`). Two
+  independent gate-integrity passes; no Critical/High. Fixed two Medium CI-gate
+  bypasses and one Low, all with tests:
+  - **Claim-less, line-less verdict was a file-wide CI-gate wildcard:**
+    `orchestrator._verdict_matches_group` treated an empty verdict claim as a
+    location match, but a verdict carrying *neither* a `claim` *nor* a `line`
+    (a normal/plausible verifier output shape — and exactly what an injected
+    diff would coach the verifier to emit) matched **every** finding group in
+    the file. An `unsupported` verdict of that shape rejected unrelated
+    `critical` groups (bucket → `rejected`), flipping the CI gate from FAIL to
+    PASS; under the default `ignore_unverified=True`, mere verdict *ordering*
+    decided the outcome. Now an empty-claim match requires a concrete line on
+    both the verdict and the finding.
+  - **Path case-collapse:** `consensus._normalize_path` lower-cased paths, so on
+    a case-sensitive filesystem (Linux/CI) a verdict on `config.py` could reject
+    a real critical at `Config.py` and pass the gate (the round-5 fix covered the
+    `./` collision but not case). Case-folding is kept for grouping/dedup, but
+    the gate-critical verdict match is now case-exact (`fold_case=False`).
+  - Run-metadata report strings (rounds decision, skipped agent name/reason,
+    agent name/vendor) are now flattened for defense-in-depth (config-controlled
+    today, but keeps them from ever breaking the table / forging structure).
+- **Fifth security re-audit** (`docs/security-audit-2026-06-13-round5.md`). Two
+  independent passes (red-team + deterministic-core sweep); no Critical/High.
+  Fixed two Medium issues and one Low, all with tests:
+  - **CI-gate path collision:** `consensus._normalize_path` used
+    `str.lstrip("./")`, which strips a whole leading run of `.`/`/` and collided
+    distinct paths (`.github/x.yml` vs `github/x.yml`, `../auth.py` vs
+    `./auth.py`). An attacker could make a verifier "unsupported" verdict on a
+    benign sibling path swallow a real critical finding's group and pass the
+    gate. Now only a true leading `./` is stripped. (Also backs
+    `orchestrator._verdict_matches_group`.)
+  - SARIF output (`--format sarif`) drops an invalid `region.startLine`: a
+    finding's `line` is parsed from attacker-influenceable reviewer JSON, and a
+    forged `"line": 0`/negative value emitted an invalid SARIF region, which
+    makes GitHub code-scanning reject the *entire* upload — suppressing every
+    finding (denial-of-evidence). Non-positive lines now drop the region so the
+    finding still surfaces at file level.
+  - `diff --git` mode-change segments with a git-quoted spaced path
+    (`"a/x y.py" "b/x y.py"`) are recovered, closing the last path-truncation
+    file-hiding vector from an `include` allow-list.
+- **Fourth security re-audit** (`docs/security-audit-2026-06-13-round4.md`). A
+  red-team pass plus a fresh sweep of under-examined modules; no Critical/High.
+  Fixed two Medium issues and one Low, all with tests:
+  - Failed-agent error snippets (`AgentResult.error`, attacker-influenced CLI
+    stderr) are now flattened before rendering — the report-integrity fix from
+    round 3 covered finding fields but missed error strings, so a failed agent
+    could forge a `## Verdict APPROVE` heading in the posted comment.
+  - Incremental mode now trusts the hidden `arc-reviewed-sha` marker only from
+    OWNER/MEMBER/COLLABORATOR comments — an external PR author could otherwise
+    forge it to narrow the reviewed range and skip malicious commits.
+  - `diff --git` mode-change segments whose path contains `" b/"` are recovered
+    correctly (were truncated, hiding the file from an `include` allow-list).
+- **Third security re-audit** (`docs/security-audit-2026-06-13-round3.md`). A
+  red-team pass plus a fresh sweep of the report/GitHub-post surface; no
+  Critical/High. Fixed a newly-found markdown output-injection class and the
+  deferred gh-output cap, all with tests:
+  - **Report integrity:** attacker-influenced finding text (`claim`/`evidence`/
+    `suggested_fix`/`file`) is now flattened to a single line before rendering,
+    and `--suggest-patches` bodies are fence-safe — so a finding can no longer
+    forge a `## Verdict APPROVE` heading or break a code fence in the markdown
+    comment posted to the PR/issue. (The machine CI gate was never affected.)
+  - **gh output cap:** `gh` stdout on the `--pr`/`--issue` path is now streamed
+    with a 64 MiB ceiling (previously only `--diff-file`/stdin was capped), so a
+    hostile huge PR diff can't OOM the process.
+  - Inline-comment bodies strip HTML comments so a finding can't forge the
+    jury's hidden `<!-- arc-inline -->` markers / perturb dedup.
+  - `diff --git` paths for marker-less segments (renames/copies/mode-changes)
+    are recovered from the extended header, closing the remaining file-hiding
+    vector from the include allow-list.
+  - Added vertical presentation-form angle brackets to the homoglyph fence set
+    (`PROMPT_VERSION` 6); `cache.load`/`github` json parsing also catch
+    `RecursionError` for parity.
+- **Red-team re-audit** (`docs/security-audit-2026-06-13-redteam.md`). A
+  same-day adversarial pass against the seventh audit's fixes plus a fresh
+  full-surface sweep; no Critical/High. Fixed six items, all with tests:
+  - Broadened homoglyph fence neutralization after a red-team pass found the
+    first set incomplete (small-form `﹤﹥`, heavy ornaments `❮❯`, much-less/
+    greater `≪≫`, Canadian-syllabic `ᐸᐳ`, guillemets, and mixed ASCII/homoglyph
+    runs all now broken). Bumps `PROMPT_VERSION` to 5.
+  - The raw-diff ingest cap is now enforced on **bytes**, not characters (a
+    multi-byte UTF-8 input could previously use 3–4× the intended 64 MiB).
+  - CLI-adapter error snippets are now redacted before being embedded in the
+    report/PR comment, matching the local-adapter path (a crashing CLI could
+    otherwise leak a token from stderr).
+  - `parse_findings`/`parse_verdicts` now catch `RecursionError` on deeply
+    nested JSON, so one steerable reviewer can't abort the whole run.
+  - `diff --git` paths containing spaces or git-quoting are recovered from the
+    `+++`/`---` marker lines, so a space-named file can no longer evade an
+    `include` allow-list (hiding itself from review).
+- **Seventh security audit** (`docs/security-audit-2026-06-13.md`). Four-surface
+  re-audit of `main`; no Critical/High. Fixed two Medium prompt-injection gaps
+  and two Low issues, all with new tests:
+  - The debater's own round-1 review is now wrapped in an `UNTRUSTED_REVIEW`
+    fence like every other untrusted-derived slot (it was neutralized but not
+    fenced), so injected text surviving into a reviewer's output can no longer
+    land in a region the anti-injection preamble treats as trusted. Bumps
+    `PROMPT_VERSION` to 4 (cache invalidation).
+  - `neutralize_sentinels` now also breaks fences forged from fullwidth/
+    homoglyph angle brackets (e.g. `＜＜＜UNTRUSTED_DIFF`), which previously
+    evaded the ASCII-only matcher while still reading as a real fence to an LLM.
+  - `redact_url_userinfo` now redacts credentials in scheme-less endpoint URLs
+    (`user:pass@host/v1`), which `urlsplit` previously left in the path so the
+    credential slipped through unredacted (continues v1.5.0/L-1).
+  - Raw diff ingestion (`--diff-file`/stdin) is now bounded by a 64 MiB ceiling
+    so a hostile huge input cannot OOM the process before the post-split
+    `diff.max_bytes` budget engages.
+  - The #336 combined classification regex was verified equivalent to the prior
+    per-regex matching and free of catastrophic backtracking.
+
+### Changed
+
+- Website demo "Run review" button now shows "Running review..." while a run is
+  in progress, making the loading state explicit.
+- Added an `aria-label` to the install-command copy button so screen readers
+  announce what it copies.
+- Reduced redundant work in security-path classification and PR-level risk
+  scoring (combined-regex path matching in `diffprofile`, single-pass
+  `_risk_level`).
+
+## [1.6.1] - 2026-06-11
+
+> Patch release for the post-v1.6.0 hardening, performance, accessibility, and
+> repository-quality work. No breaking changes.
+
 ### Security
 
 - **Post-v1.6.0 security re-audit** (`docs/security-audit-2026-06-07-v1.6.0.md`). A sixth re-audit — four independent surface reviews (subprocess/sandbox, network/SSRF, prompt-injection/redaction, filesystem/cache + classification) with the key claims confirmed empirically — verifies every #287–#322 fix holds in the released v1.6.0 source. It is the **first round with no Critical, High, *or* Medium finding**: prompt-injection coverage is now complete (the M-1 verdicts slot is fenced + neutralized), least privilege and SSRF are fail-closed, and cache integrity holds under tamper/forgery. Only optional, non-attacker-reachable defense-in-depth notes remain (scheme-less `redact_url_userinfo` early-return, no hard diff byte cap, `LocalAdapter` runtime SSRF gate, unknown-vendor flag retention, string-based loopback allow-list). The superseded intermediate Claude reports are removed; their history lives in this changelog.
+
+### Changed
+
+- Improved report/rendering performance by reducing repeated list-extension and string-join work in report assembly.
+- Combined security keyword classification regexes so repeated classification passes do less redundant matching.
+- Improved website accessibility with semantic form grouping, visible keyboard focus states, and clearer disabled-button styling.
+- Applied repository-wide Ruff lint and formatting cleanups across source, benchmark helpers, and tests.
 
 ## [1.6.0] - 2026-06-07
 

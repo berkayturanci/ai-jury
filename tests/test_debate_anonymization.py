@@ -9,6 +9,7 @@ rendered report still attributes everything by real name.
 Offline: uses the mock pipeline plus direct helper calls. No live CLIs, no
 network.
 """
+
 from __future__ import annotations
 
 import random
@@ -103,8 +104,7 @@ class AnonymizePeersTest(unittest.TestCase):
         self.assertEqual(a, b)  # deterministic for a fixed seed
         # Find a seed that yields a different ordering (overwhelmingly likely).
         differs = any(
-            _anonymize_peers(reviews, "claude", random.Random(s))[0] != a
-            for s in range(1, 50)
+            _anonymize_peers(reviews, "claude", random.Random(s))[0] != a for s in range(1, 50)
         )
         self.assertTrue(differs, "ordering never varied across seeds")
 

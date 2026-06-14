@@ -5,6 +5,7 @@ report.render_live_step formatting, and the CLI --live wiring (stdout stream,
 per-step PR posting, and the cache-hit-does-not-stream case). Offline and
 deterministic — agents run via --mock with a fixed --seed.
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -40,8 +41,9 @@ def _run(args, stdin=DIFF):
 
 class RenderLiveStepTests(unittest.TestCase):
     def _ar(self, agent, vendor="anthropic", *, ok=True, output="hi", error=None):
-        return AgentResult(agent=agent, vendor=vendor, ok=ok, output=output,
-                           duration_s=0.0, error=error)
+        return AgentResult(
+            agent=agent, vendor=vendor, ok=ok, output=output, duration_s=0.0, error=error
+        )
 
     def test_review_step(self):
         title, body = report.render_live_step("review", self._ar("claude"))
@@ -61,7 +63,8 @@ class RenderLiveStepTests(unittest.TestCase):
 
     def test_failed_step_shows_error(self):
         title, body = report.render_live_step(
-            "review", self._ar("codex", "openai", ok=False, output="", error="timeout"))
+            "review", self._ar("codex", "openai", ok=False, output="", error="timeout")
+        )
         self.assertIn("timeout", title)
         self.assertEqual(body, "_(no output)_")
 
@@ -80,8 +83,13 @@ class OrchestratorEventOrderTests(unittest.TestCase):
     def test_events_fire_in_phase_order(self):
         events = []
         orchestrator.review_diff(
-            self._config(), DIFF, mock=True, seed=1,
-            on_event=lambda kind, result, round_no=None: events.append((kind, result.agent, round_no)),
+            self._config(),
+            DIFF,
+            mock=True,
+            seed=1,
+            on_event=lambda kind, result, round_no=None: events.append(
+                (kind, result.agent, round_no)
+            ),
         )
         kinds = [e[0] for e in events]
         # ALL reviews precede ALL debates precede verify precedes synthesis
@@ -106,7 +114,10 @@ class OrchestratorEventOrderTests(unittest.TestCase):
         events = []
         with mock.patch("ai_jury.orchestrator.resolve_chair", return_value="ghost"):
             outcome, _ = orchestrator.review_diff(
-                self._config(), DIFF, mock=True, seed=1,
+                self._config(),
+                DIFF,
+                mock=True,
+                seed=1,
                 on_event=lambda kind, _result, _round_no=None: events.append(kind),
             )
         self.assertNotIn("verify", events)
@@ -127,8 +138,9 @@ class CliLiveTests(unittest.TestCase):
     def test_live_with_output_file_still_writes_report(self):
         d = Path(tempfile.mkdtemp())
         outp = d / "r.md"
-        code, out, _ = _run(["--mock", "--diff-file", "-", "-q", "--seed", "1",
-                             "--live", "-o", str(outp)])
+        code, out, _ = _run(
+            ["--mock", "--diff-file", "-", "-q", "--seed", "1", "--live", "-o", str(outp)]
+        )
         self.assertEqual(code, 0)
         self.assertIn("Round 1 review", out)  # streamed to stdout
         # Read as UTF-8 explicitly: the report contains 🏛️ and Windows' default
@@ -138,8 +150,10 @@ class CliLiveTests(unittest.TestCase):
     def test_live_format_json_still_emits_json(self):
         # --live streams markdown, but a json/sarif document must still reach stdout.
         import json
-        code, out, _ = _run(["--mock", "--diff-file", "-", "-q", "--seed", "1",
-                             "--live", "--format", "json"])
+
+        code, out, _ = _run(
+            ["--mock", "--diff-file", "-", "-q", "--seed", "1", "--live", "--format", "json"]
+        )
         self.assertEqual(code, 0)
         # The stream is markdown blocks; the JSON document is the trailing chunk.
         # Find the first column-0 '{' from which the rest parses as JSON.
@@ -157,20 +171,24 @@ class CliLiveTests(unittest.TestCase):
 
     def test_live_pr_without_post_does_not_post(self):
         # Posting is opt-in: bare --pr --live streams locally, never spams the PR.
-        with mock.patch("ai_jury.cli.pr_diff", return_value=DIFF), \
-             mock.patch("ai_jury.cli.pr_context", return_value="t\n\nb"), \
-             mock.patch("ai_jury.github.pr_head_sha", return_value="abc123"), \
-             mock.patch("ai_jury.cli.post_pr_comment") as ppc:
+        with (
+            mock.patch("ai_jury.cli.pr_diff", return_value=DIFF),
+            mock.patch("ai_jury.cli.pr_context", return_value="t\n\nb"),
+            mock.patch("ai_jury.github.pr_head_sha", return_value="abc123"),
+            mock.patch("ai_jury.cli.post_pr_comment") as ppc,
+        ):
             code, out, _ = _run(["--mock", "--pr", "5", "-q", "--seed", "1", "--live"])
         self.assertEqual(code, 0)
         self.assertIn("Round 1 review", out)
         ppc.assert_not_called()
 
     def test_live_posts_each_step_with_pr_and_post(self):
-        with mock.patch("ai_jury.cli.pr_diff", return_value=DIFF), \
-             mock.patch("ai_jury.cli.pr_context", return_value="t\n\nb"), \
-             mock.patch("ai_jury.github.pr_head_sha", return_value="abc123"), \
-             mock.patch("ai_jury.cli.post_pr_comment") as ppc:
+        with (
+            mock.patch("ai_jury.cli.pr_diff", return_value=DIFF),
+            mock.patch("ai_jury.cli.pr_context", return_value="t\n\nb"),
+            mock.patch("ai_jury.github.pr_head_sha", return_value="abc123"),
+            mock.patch("ai_jury.cli.post_pr_comment") as ppc,
+        ):
             code, _, _ = _run(["--mock", "--pr", "5", "-q", "--seed", "1", "--live", "--post"])
         self.assertEqual(code, 0)
         # A comment per streamed step (>= 2 reviewers + decision), plus the final summary.
@@ -182,10 +200,13 @@ class CliLiveTests(unittest.TestCase):
         def fail_only_steps(_pr, body, _repo=None):
             if "AI Jury — " in body:  # an em-dash live step title
                 raise RuntimeError("boom")
-        with mock.patch("ai_jury.cli.pr_diff", return_value=DIFF), \
-             mock.patch("ai_jury.cli.pr_context", return_value="t\n\nb"), \
-             mock.patch("ai_jury.github.pr_head_sha", return_value="abc123"), \
-             mock.patch("ai_jury.cli.post_pr_comment", side_effect=fail_only_steps):
+
+        with (
+            mock.patch("ai_jury.cli.pr_diff", return_value=DIFF),
+            mock.patch("ai_jury.cli.pr_context", return_value="t\n\nb"),
+            mock.patch("ai_jury.github.pr_head_sha", return_value="abc123"),
+            mock.patch("ai_jury.cli.post_pr_comment", side_effect=fail_only_steps),
+        ):
             code, out, err = _run(["--mock", "--pr", "5", "--seed", "1", "--live", "--post"])
         self.assertEqual(code, 0)
         self.assertIn("failed to post step", err)

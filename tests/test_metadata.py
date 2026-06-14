@@ -4,6 +4,7 @@ Offline: uses the mock pipeline (no live CLIs, no network). Asserts the
 machine-readable metadata dict's shape, that it reflects config, and crucially
 that no secret/prompt/diff/agent-output text leaks into it or its JSON sidecar.
 """
+
 from __future__ import annotations
 
 import json
@@ -120,33 +121,25 @@ class MetadataShapeTest(unittest.TestCase):
     def test_rounds_reflect_config(self) -> None:
         single = _config()
         single.rounds = 1
-        meta_single = build_run_metadata(
-            run_jury(single, SAMPLE_DIFF, mock=True), single
-        )
+        meta_single = build_run_metadata(run_jury(single, SAMPLE_DIFF, mock=True), single)
         self.assertEqual(meta_single["rounds_executed"], 1)
 
         multi = _config()
         multi.rounds = 2
-        meta_multi = build_run_metadata(
-            run_jury(multi, SAMPLE_DIFF, mock=True), multi
-        )
+        meta_multi = build_run_metadata(run_jury(multi, SAMPLE_DIFF, mock=True), multi)
         self.assertEqual(meta_multi["rounds_executed"], 2)
 
     def test_verify_reflects_config(self) -> None:
         off = _config()
         off.verify = False
         self.assertFalse(
-            build_run_metadata(
-                run_jury(off, SAMPLE_DIFF, mock=True), off
-            )["verify_enabled"]
+            build_run_metadata(run_jury(off, SAMPLE_DIFF, mock=True), off)["verify_enabled"]
         )
 
         on = _config()
         on.verify = True
         self.assertTrue(
-            build_run_metadata(
-                run_jury(on, SAMPLE_DIFF, mock=True), on
-            )["verify_enabled"]
+            build_run_metadata(run_jury(on, SAMPLE_DIFF, mock=True), on)["verify_enabled"]
         )
 
 
@@ -155,9 +148,7 @@ class MetadataNoSecretsTest(unittest.TestCase):
         cfg = _config()
         # Disable redaction so the secret would survive into outputs if copied.
         cfg.context.redact_secrets = False
-        outcome = run_jury(
-            cfg, f"{PROMPT_MARKER} {SECRET}\n{SAMPLE_DIFF}", mock=True
-        )
+        outcome = run_jury(cfg, f"{PROMPT_MARKER} {SECRET}\n{SAMPLE_DIFF}", mock=True)
         # Inject a fake secret + prompt marker into agent output/error to be
         # defensive: the metadata must still never carry them.
         for r in outcome.reviews:

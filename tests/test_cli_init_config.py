@@ -1,6 +1,7 @@
 """Coverage for the `jury init` and `jury config show|path` subcommand paths
 (cli._run_init, _init_available, presets, _render_effective_config). Offline:
 local-model discovery is mocked."""
+
 from __future__ import annotations
 
 import contextlib
@@ -33,10 +34,13 @@ class InitTests(unittest.TestCase):
 
     def test_init_non_interactive_writes_valid_config(self):
         out = self.d / "jury.toml"
-        code, _, _ = run(["init", "--agents", "claude,codex", "--rounds", "2", "-o", str(out), "--force"])
+        code, _, _ = run(
+            ["init", "--agents", "claude,codex", "--rounds", "2", "-o", str(out), "--force"]
+        )
         self.assertEqual(code, 0)
         self.assertTrue(out.exists())
         from ai_jury.config import load_config
+
         load_config(str(out), validate=True)  # must be valid
 
     def test_init_preset_offline(self):
@@ -77,14 +81,15 @@ class InitWizardCoverageTests(unittest.TestCase):
 
     def _wizard(self, answers, models=("gemma:2b", "qwen2.5-coder:7b")):
         it = iter(answers)
-        return cli._init_wizard(self.available, input_fn=lambda _p: next(it),
-                                models_fn=lambda _ep: list(models))
+        return cli._init_wizard(
+            self.available, input_fn=lambda _p: next(it), models_fn=lambda _ep: list(models)
+        )
 
     def test_depth_one_round_and_ci_skip_and_invalid_pick(self):
         # depth=1 (rounds=1), decision pick invalid (-> skipped), ci=skip (-> []).
         kw = self._wizard(["claude", "1", "x", "", "", "", "3", ""])
         self.assertEqual(kw["rounds"], 1)
-        self.assertNotIn("decision", kw)      # invalid pick = skip
+        self.assertNotIn("decision", kw)  # invalid pick = skip
         self.assertEqual(kw["ci_fail_on"], [])
 
     def test_depth_two_explicit(self):
@@ -110,12 +115,19 @@ class InitWizardCoverageTests(unittest.TestCase):
     def test_run_init_wizard_local_model_flag_override(self):
         # `init --wizard --local-model X` threads the flag value into the config.
         out = Path(tempfile.mkdtemp()) / "w.toml"
-        with mock.patch.object(cli, "_init_wizard",
-                               return_value={"agents": ["claude"], "chair": "claude"}), \
-             mock.patch.object(cli, "_init_available",
-                               return_value={"claude": True, "codex": False, "agy": False, "qwen": False}):
-            code, _, _ = run(["init", "--wizard", "--local-model", "m:1b",
-                              "-o", str(out), "--force"])
+        with (
+            mock.patch.object(
+                cli, "_init_wizard", return_value={"agents": ["claude"], "chair": "claude"}
+            ),
+            mock.patch.object(
+                cli,
+                "_init_available",
+                return_value={"claude": True, "codex": False, "agy": False, "qwen": False},
+            ),
+        ):
+            code, _, _ = run(
+                ["init", "--wizard", "--local-model", "m:1b", "-o", str(out), "--force"]
+            )
         self.assertEqual(code, 0)
         self.assertTrue(out.exists())
 
@@ -128,17 +140,19 @@ class InitWizardTests(unittest.TestCase):
     def test_full_set_captured(self):
         # Reviewers, depth=adaptive(3), decision=vote(2), verify=n, context=expanded(2),
         # redact=n, ci gate=critical only(2), chair, local model by number.
-        answers = iter([
-            "claude,qwen",   # reviewers
-            "3",             # depth -> adaptive (early_stop)
-            "2",             # decision -> vote
-            "n",             # verify off
-            "2",             # context -> expanded
-            "n",             # redact off
-            "2",             # ci fail_on -> critical only
-            "codex",         # chair
-            "1",             # local model #1
-        ])
+        answers = iter(
+            [
+                "claude,qwen",  # reviewers
+                "3",  # depth -> adaptive (early_stop)
+                "2",  # decision -> vote
+                "n",  # verify off
+                "2",  # context -> expanded
+                "n",  # redact off
+                "2",  # ci fail_on -> critical only
+                "codex",  # chair
+                "1",  # local model #1
+            ]
+        )
         kwargs = cli._init_wizard(
             self.available,
             input_fn=lambda _p: next(answers),
@@ -156,6 +170,7 @@ class InitWizardTests(unittest.TestCase):
         self.assertEqual(kwargs["local_model"], "gemma:2b")
         from ai_jury.config import validate_config
         from ai_jury.scaffold import build_config
+
         validate_config(build_config(**kwargs))
 
     def test_all_skips_only_defaults(self):
@@ -168,8 +183,16 @@ class InitWizardTests(unittest.TestCase):
         self.assertEqual(kwargs["agents"], ["claude", "codex", "qwen"])  # detected
         self.assertEqual(kwargs["chair"], "claude")  # default = first reviewer
         # No optional knobs captured at all.
-        for k in ("rounds", "early_stop", "auto_depth", "decision",
-                  "verify", "context_mode", "redact_secrets", "ci_fail_on"):
+        for k in (
+            "rounds",
+            "early_stop",
+            "auto_depth",
+            "decision",
+            "verify",
+            "context_mode",
+            "redact_secrets",
+            "ci_fail_on",
+        ):
             self.assertNotIn(k, kwargs)
         # local picked the default since qwen is in the detected set + Enter.
         self.assertEqual(kwargs["local_model"], "qwen2.5-coder:7b")
@@ -182,28 +205,33 @@ class InitWizardTests(unittest.TestCase):
 
     def test_wizard_end_to_end_writes_minimal_valid_file(self):
         out = self.d / "jury.toml"
-        answers = iter([
-            "claude,codex",  # reviewers
-            "",              # depth skip
-            "2",             # decision -> vote
-            "",              # verify skip
-            "2",             # context -> expanded
-            "",              # redact skip
-            "",              # ci gate skip (default critical,major -> NOT written)
-            "",              # chair skip -> claude
-        ])
+        answers = iter(
+            [
+                "claude,codex",  # reviewers
+                "",  # depth skip
+                "2",  # decision -> vote
+                "",  # verify skip
+                "2",  # context -> expanded
+                "",  # redact skip
+                "",  # ci gate skip (default critical,major -> NOT written)
+                "",  # chair skip -> claude
+            ]
+        )
         # Drive the real wizard offline to capture kwargs, then exercise the
         # write path through main with those kwargs injected (no real stdin).
         kwargs = cli._init_wizard(self.available, input_fn=lambda _p: next(answers))
-        with mock.patch.object(cli, "_init_wizard", return_value=kwargs), \
-             mock.patch("ai_jury.adapters.list_local_models", return_value=[]):
+        with (
+            mock.patch.object(cli, "_init_wizard", return_value=kwargs),
+            mock.patch("ai_jury.adapters.list_local_models", return_value=[]),
+        ):
             code, _, _ = run(["init", "--wizard", "-o", str(out), "--force"])
         self.assertEqual(code, 0)
         self.assertTrue(out.exists())
         text = out.read_text(encoding="utf-8")
         from ai_jury.config import load_config
+
         load_config(str(out), validate=True)  # must be valid
-        self.assertIn("decision = \"vote\"", text)
+        self.assertIn('decision = "vote"', text)
         self.assertIn("[jury.context]", text)
         self.assertIn('mode = "expanded"', text)
         # Skipped CI gate -> no [jury.ci] section.
@@ -232,7 +260,9 @@ class ConfigShowTests(unittest.TestCase):
 
     def test_config_show_from_file(self):
         cfg = self.d / "jury.toml"
-        cfg.write_text('[jury]\nrounds = 1\nchair = "a"\n\n[[agent]]\nname = "a"\nvendor = "anthropic"\ncommand = "x"\n')
+        cfg.write_text(
+            '[jury]\nrounds = 1\nchair = "a"\n\n[[agent]]\nname = "a"\nvendor = "anthropic"\ncommand = "x"\n'
+        )
         code, out, _ = run(["config", "show", "--config", str(cfg)])
         self.assertEqual(code, 0)
         self.assertIn("a", out)

@@ -28,6 +28,7 @@ instead of asserting. Review the resulting fixture diff like any other change,
 then commit it. Running the suite normally (without the env var) asserts the
 rendered output matches the committed fixtures.
 """
+
 from __future__ import annotations
 
 import os
@@ -163,20 +164,14 @@ class ReportGoldenTest(unittest.TestCase):
         """Failed-agent report: one reviewer errored (ok=False) in both rounds."""
         reviews = [
             AgentResult("claude", "anthropic", True, "claude review body.", 0.0),
-            AgentResult(
-                "codex", "openai", False, "", 0.0, error="exit 1: rate limited"
-            ),
+            AgentResult("codex", "openai", False, "", 0.0, error="exit 1: rate limited"),
             AgentResult("agy", "google", True, "agy review body.", 0.0),
         ]
         debate = [
             AgentResult("claude", "anthropic", True, "claude debate body.", 0.0),
-            AgentResult(
-                "agy", "google", False, "", 0.0, error="timed out after 600s"
-            ),
+            AgentResult("agy", "google", False, "", 0.0, error="timed out after 600s"),
         ]
-        synthesis = AgentResult(
-            "claude", "anthropic", True, "## Verdict\nAPPROVE.", 0.0
-        )
+        synthesis = AgentResult("claude", "anthropic", True, "## Verdict\nAPPROVE.", 0.0)
         report = render(
             reviews,
             debate,

@@ -1,9 +1,10 @@
 """Render the jury run into a single markdown report."""
+
 from __future__ import annotations
 
 from . import classification as _classification
 from .adapters import AgentResult
-from .findings import SEVERITY_ORDER, Finding
+from .findings import SEVERITY_ORDER, Finding, flatten_inline
 
 
 def _block(title: str, body: str) -> str:
@@ -13,14 +14,18 @@ def _block(title: str, body: str) -> str:
 def _fail_status(r: AgentResult) -> str:
     """Failed-agent status line with a concise typed-error-code prefix."""
     prefix = f"[{r.error_code}] " if getattr(r, "error_code", None) else ""
-    return f"⚠️ {prefix}{r.error}"
+    # The error snippet quotes the agent CLI's stderr (attacker-influenced) and
+    # is posted to the PR, so flatten it like every other untrusted field so it
+    # can't forge a heading/fence in the comment (audit 2026-06-13 r4).
+    return f"⚠️ {prefix}{flatten_inline(r.error)}"
 
 
 def _finding_line(f: Finding) -> str:
-    loc = f.file or "?"
+    loc = flatten_inline(f.file) or "?"
     if f.line is not None:
         loc = f"{loc}:{f.line}"
-    return f"- [{f.severity}] {loc} — {f.claim} ({f.confidence}, by {f.reviewer})"
+    claim = flatten_inline(f.claim)
+    return f"- [{f.severity}] {loc} — {claim} ({f.confidence}, by {f.reviewer})"
 
 
 _BUCKET_LABELS = {
@@ -41,28 +46,33 @@ _STATUS_LABELS = {
 
 def _group_line(g) -> str:
     f = g.representative
-    loc = f.file or "?"
+    loc = flatten_inline(f.file) or "?"
     if f.line is not None:
         loc = f"{loc}:{f.line}"
     reviewers = ", ".join(g.reviewers) if g.reviewers else "(unknown)"
 
-    parts = [f"- [{g.severity}] {loc} — {f.claim} (reviewers: {reviewers})"]
+    # Attacker-influenced fields (claim/evidence/fix) are flattened to one line
+    # so they cannot forge a heading or open a code fence in the posted report
+    # (audit 2026-06-13 r3).
+    parts = [f"- [{g.severity}] {loc} — {flatten_inline(f.claim)} (reviewers: {reviewers})"]
 
     # Surface the reviewer's supporting evidence — the "why" behind the claim —
     # so the verdict is auditable, not just asserted (issue: evidence surfacing).
     if getattr(f, "evidence", ""):
-        parts.append(f"\n  - _evidence:_ {f.evidence}")
+        parts.append(f"\n  - _evidence:_ {flatten_inline(f.evidence)}")
 
     status = getattr(g, "status", "")
     if status:
-        reasoning = getattr(g, "status_reasoning", "")
+        reasoning = flatten_inline(getattr(g, "status_reasoning", ""))
         if reasoning:
-            parts.append(f"\n  - _verification:_ {_STATUS_LABELS.get(status, status)} — {reasoning}")
+            parts.append(
+                f"\n  - _verification:_ {_STATUS_LABELS.get(status, status)} — {reasoning}"
+            )
         else:
             parts.append(f"\n  - _verification:_ {_STATUS_LABELS.get(status, status)}")
 
     if f.suggested_fix:
-        parts.append(f"\n  - _fix:_ {f.suggested_fix}")
+        parts.append(f"\n  - _fix:_ {flatten_inline(f.suggested_fix)}")
 
     return "".join(parts) if len(parts) > 1 else parts[0]
 
@@ -83,7 +93,11 @@ def _metadata_block(metadata: dict) -> list[str]:
         lines.append("- ♻️ served from local cache (not re-computed)")
     stop_reason = metadata.get("stop_reason")
     if stop_reason:
-        lines.append(f"- rounds decision: {stop_reason}")
+        # flatten metadata strings too (defense-in-depth, audit r6/L): these are
+        # config/internal-controlled today, but keeping them single-line means a
+        # name/reason can never break the table or forge structure if a future
+        # source carries agent/diff text.
+        lines.append(f"- rounds decision: {flatten_inline(stop_reason)}")
     lines.append(f"- verify: {'on' if metadata['verify_enabled'] else 'off'}")
     lines.append(f"- context mode: {metadata['context_mode']}")
     # Partial-result signals (issue #30): only rendered when relevant so a
@@ -92,7 +106,10 @@ def _metadata_block(metadata: dict) -> list[str]:
         lines.append("- ⚠️ run budget exhausted: some phases were skipped")
     skipped = metadata.get("skipped") or []
     if skipped:
-        names = ", ".join(f"{s['name']} ({s['reason']})" for s in skipped)
+        # bolt: CPython optimization — list comprehension inside join avoids generator overhead
+        names = ", ".join(
+            [f"{flatten_inline(s['name'])} ({flatten_inline(s['reason'])})" for s in skipped]
+        )
         lines.append(f"- skipped agents (never ran): {names}")
     retried = metadata.get("retried") or []
     if retried:
@@ -110,7 +127,8 @@ def _metadata_block(metadata: dict) -> list[str]:
         if attempts and attempts > 1:
             status += f", {attempts} attempts"
         lines.append(
-            f"| {a['name']} | {a['vendor']} | {status} | {a['duration_s']:.0f}s |"
+            f"| {flatten_inline(a['name'])} | {flatten_inline(a['vendor'])} "
+            f"| {status} | {a['duration_s']:.0f}s |"
         )
     lines.append("")
     lines.append(
@@ -157,7 +175,8 @@ def _vote_block(vote) -> list[str]:
     (code: REQUEST CHANGES/COMMENT/APPROVE; issue: NEEDS-INFO/UNCLEAR/READY).
     """
     lines = ["## Verdict — panel vote\n"]
-    tally = " · ".join(f"{n} {label.lower()}" for label, n in vote.tally.items())
+    # bolt: CPython optimization — list comprehension avoids generator expression overhead
+    tally = " · ".join([f"{n} {label.lower()}" for label, n in vote.tally.items()])
     lines.append(f"**{vote.verdict}** — {tally}\n")
     for b in vote.ballots:
         lines.append(f"- `{b.reviewer}`: **{b.vote}** ({b.reason})")
@@ -184,7 +203,7 @@ def _verdict_headline(synthesis, vote) -> str | None:
     for i, row in enumerate(rows):
         if row.strip().lower().lstrip("#").strip() == "verdict":
             collected: list[str] = []
-            for nxt in rows[i + 1:]:
+            for nxt in rows[i + 1 :]:
                 if nxt.strip().startswith("#"):
                     break
                 if not nxt.strip():
@@ -227,7 +246,8 @@ def render(
     if headline:
         lines.append(f"> ⚡ **TL;DR · {headline}**\n")
 
-    panel = ", ".join(f"`{r.agent}` ({r.vendor})" for r in reviews)
+    # bolt: Explicit list materialization lets join evaluate iteratively in C
+    panel = ", ".join([f"`{r.agent}` ({r.vendor})" for r in reviews])
     lines.append(f"**Panel:** {panel}\n")
 
     # Review-scope note (issue #9): only rendered when the caller supplies it
@@ -268,7 +288,7 @@ def render(
         if verify.ok:
             lines.append(verify.output.strip() + "\n")
         else:
-            lines.append(f"_Verification failed: {verify.error}_\n")
+            lines.append(f"_Verification failed: {flatten_inline(verify.error)}_\n")
         lines.append("---\n")
 
     chair_heading = "Chair's reasoning" if vote is not None else "Chair verdict"
@@ -278,7 +298,7 @@ def render(
         lines.append(synthesis.output.strip() + "\n")
     elif synthesis and not synthesis.ok:
         lines.append(f"## {chair_heading}\n")
-        lines.append(f"_Synthesis failed: {synthesis.error}_\n")
+        lines.append(f"_Synthesis failed: {flatten_inline(synthesis.error)}_\n")
 
     lines.append("---\n")
     lines.append("## Structured findings\n")
@@ -333,7 +353,9 @@ _LIVE_LABELS = {
 }
 
 
-def render_live_step(kind: str, result: AgentResult, round_no: int | None = None) -> tuple[str, str]:
+def render_live_step(
+    kind: str, result: AgentResult, round_no: int | None = None
+) -> tuple[str, str]:
     """Format one streamed step as ``(title, body)`` for live output (issue #210).
 
     Pure — no I/O. The CLI ``--live`` handler prints this to stdout and (with
@@ -376,13 +398,17 @@ def _conversation_blocks(
     if verify is not None:
         lines.append("## Verification\n")
         lines.append(f"> Verified by `{chair}`\n")
-        lines.append(verify.output.strip() + "\n" if verify.ok else f"_Verification failed: {verify.error}_\n")
+        lines.append(
+            verify.output.strip() + "\n"
+            if verify.ok
+            else f"_Verification failed: {flatten_inline(verify.error)}_\n"
+        )
     lines.append("## Decision — verdict & reasoning\n")
     if synthesis and synthesis.ok:
         lines.append(f"> Decided by `{chair}`\n")
         lines.append(synthesis.output.strip() + "\n")
     elif synthesis and not synthesis.ok:
-        lines.append(f"_Synthesis failed: {synthesis.error}_\n")
+        lines.append(f"_Synthesis failed: {flatten_inline(synthesis.error)}_\n")
     else:
         lines.append("_(no synthesis produced)_\n")
     return lines
@@ -407,13 +433,14 @@ def _summary_blocks(
             findings,
             key=lambda f: (SEVERITY_ORDER.get(f.severity, 99), f.file or "", f.line or 0),
         )
-        lines.extend(_finding_line(f) for f in ranked)
+        # bolt: CPython optimization — list comprehension instead of generator expressions in extend()
+        lines.extend([_finding_line(f) for f in ranked])
         lines.append("")
     else:
         lines.append("_(no structured findings parsed)_\n")
     if warnings:
         lines.append("> ⚠️ agent output warnings\n")
-        lines.extend(f"- {w}" for w in warnings)
+        lines.extend([f"- {w}" for w in warnings])
         lines.append("")
     return lines
 
@@ -458,15 +485,15 @@ def render_transcript(
 
     lines: list[str] = []
     lines.append(
-        "# 🏛️ AI Jury — verbose report\n" if lead_with_summary
-        else "# 🏛️ AI Jury — full transcript\n"
+        "# 🏛️ AI Jury — verbose report\n" if lead_with_summary else "# 🏛️ AI Jury — full transcript\n"
     )
     # TL;DR callout (parity with render()): the verdict headline leads the
     # verbose/transcript report too, so every renderer surfaces the outcome first.
     headline = _verdict_headline(synthesis, vote)
     if headline:
         lines.append(f"> ⚡ **TL;DR · {headline}**\n")
-    panel = ", ".join(f"`{r.agent}` ({r.vendor})" for r in reviews)
+    # bolt: explicit list enables optimized string join bypassing generator loop overhead
+    panel = ", ".join([f"`{r.agent}` ({r.vendor})" for r in reviews])
     lines.append(f"**Panel:** {panel}\n")
     if review_scope:
         lines.append(f"{review_scope}\n")
@@ -534,7 +561,8 @@ def render_sections(
     sections: list[tuple[str, str]] = []
 
     # Round 1 — independent reviews.
-    r1 = [f"**Panel:** {', '.join(f'`{r.agent}` ({r.vendor})' for r in reviews)}\n"]
+    # bolt: Explicitly evaluating as a list allows C-level optimizations in join
+    r1 = [f"**Panel:** {', '.join([f'`{r.agent}` ({r.vendor})' for r in reviews])}\n"]
     for r in reviews:
         status = f"{r.duration_s:.0f}s" if r.ok else _fail_status(r)
         r1.append(_block(f"`{r.agent}` ({r.vendor}) — {status}", r.output if r.ok else ""))
@@ -560,24 +588,29 @@ def render_sections(
     if verify is not None:
         dec.append("## Verification\n")
         dec.append(f"> Verified by `{chair}`\n")
-        dec.append(verify.output.strip() + "\n" if verify.ok else f"_Verification failed: {verify.error}_\n")
+        dec.append(
+            verify.output.strip() + "\n"
+            if verify.ok
+            else f"_Verification failed: {flatten_inline(verify.error)}_\n"
+        )
     chair_heading = "Chair's reasoning" if vote is not None else "Chair verdict"
     if synthesis and synthesis.ok:
         dec.append(f"## {chair_heading}\n")
         dec.append(f"> Synthesized by `{chair}`\n")
         dec.append(synthesis.output.strip() + "\n")
     elif synthesis and not synthesis.ok:
-        dec.append(f"## {chair_heading}\n\n_Synthesis failed: {synthesis.error}_\n")
+        dec.append(f"## {chair_heading}\n\n_Synthesis failed: {flatten_inline(synthesis.error)}_\n")
     if findings:
         dec.append("## Structured findings\n")
         ranked = sorted(
             findings,
             key=lambda f: (SEVERITY_ORDER.get(f.severity, 99), f.file or "", f.line or 0),
         )
-        dec.extend(_finding_line(f) for f in ranked)
+        # bolt: Optimizes speed by allowing Python C implementations of extend()
+        dec.extend([_finding_line(f) for f in ranked])
     if warnings:
         dec.append("\n> ⚠️ agent output warnings\n")
-        dec.extend(f"- {w}" for w in warnings)
+        dec.extend([f"- {w}" for w in warnings])
     sections.append(("🏛️ AI Jury — Decision: verdict & consensus", "\n".join(dec).strip()))
 
     return sections

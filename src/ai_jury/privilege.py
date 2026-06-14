@@ -21,6 +21,7 @@ Required read-only invocation per adapter (documented here and in docs/security.
                 ``--dangerously-skip-permissions`` / ``--yolo`` without a sandbox
                 is flagged.
 """
+
 from __future__ import annotations
 
 # Flags that grant broad write/tool/network powers — dangerous for a reviewer.
@@ -92,6 +93,7 @@ def _ensure_claude_disallowed(extra_args: list[str]) -> list[str]:
     the flag when absent. Idempotent: the shipped default already lists all four,
     so it is returned unchanged.
     """
+
     def _merged(value: str) -> str:
         existing = [t.strip() for t in value.split(",") if t.strip()]
         for tool in _WRITE_TOOLS:
@@ -137,10 +139,7 @@ def _ensure_value_sandbox(extra_args: list[str], default: list[str]) -> list[str
     args = list(extra_args)
     # Recognize both the space form (-s read-only) and the equals form
     # (--sandbox=read-only) so an existing sandbox is never double-specified.
-    if any(
-        a in ("-s", "--sandbox") or a.startswith(("-s=", "--sandbox="))
-        for a in args
-    ):
+    if any(a in ("-s", "--sandbox") or a.startswith(("-s=", "--sandbox=")) for a in args):
         return args
     return [*default, *args]
 

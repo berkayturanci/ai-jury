@@ -1,5 +1,6 @@
 """Coverage for adapter run() error/edge paths + build_argv + make_adapter.
 Network/subprocess-free (all mocked)."""
+
 from __future__ import annotations
 
 import subprocess
@@ -36,8 +37,15 @@ class BuildArgvTests(unittest.TestCase):
         a = adapters.ClaudeAdapter(_spec(model="m", extra_args=["-x"]))
         self.assertEqual(
             a.build_argv("P"),
-            ["claude", "-p", "--model", "m",
-             "--disallowed-tools", "Edit,Write,NotebookEdit,Bash", "-x"],
+            [
+                "claude",
+                "-p",
+                "--model",
+                "m",
+                "--disallowed-tools",
+                "Edit,Write,NotebookEdit,Bash",
+                "-x",
+            ],
         )
 
     def test_claude_prompt_via_stdin_not_argv(self):
@@ -47,7 +55,9 @@ class BuildArgvTests(unittest.TestCase):
         self.assertEqual(a._stdin_for("SENSITIVE PROMPT"), "SENSITIVE PROMPT")
 
     def test_codex_argv_and_stdin(self):
-        a = adapters.CodexAdapter(_spec(name="codex", vendor="openai", command="codex", extra_args=["-s", "read-only"]))
+        a = adapters.CodexAdapter(
+            _spec(name="codex", vendor="openai", command="codex", extra_args=["-s", "read-only"])
+        )
         self.assertEqual(a.build_argv("P"), ["codex", "exec", "-s", "read-only"])
         self.assertEqual(a._stdin_for("P"), "P")
 
@@ -71,36 +81,62 @@ class AdapterRunTests(unittest.TestCase):
         self.assertEqual(r.error_code, adapters.ERR_MISSING_CLI)
 
     def test_success(self):
-        with mock.patch("shutil.which", return_value="/usr/bin/claude"), \
-             mock.patch("ai_jury.adapters._spawn", return_value=_proc(0, "a review")):
+        with (
+            mock.patch("shutil.which", return_value="/usr/bin/claude"),
+            mock.patch("ai_jury.adapters._spawn", return_value=_proc(0, "a review")),
+        ):
             r = self._adapter().run("p", timeout=5)
         self.assertTrue(r.ok)
         self.assertEqual(r.output, "a review")
 
     def test_timeout(self):
-        with mock.patch("shutil.which", return_value="/usr/bin/claude"), \
-             mock.patch("ai_jury.adapters._spawn", side_effect=subprocess.TimeoutExpired("claude", 1)):
+        with (
+            mock.patch("shutil.which", return_value="/usr/bin/claude"),
+            mock.patch(
+                "ai_jury.adapters._spawn", side_effect=subprocess.TimeoutExpired("claude", 1)
+            ),
+        ):
             r = self._adapter().run("p")
         self.assertFalse(r.ok)
         self.assertEqual(r.error_code, adapters.ERR_TIMEOUT)
 
     def test_spawn_failure(self):
-        with mock.patch("shutil.which", return_value="/usr/bin/claude"), \
-             mock.patch("ai_jury.adapters._spawn", side_effect=OSError("nope")):
+        with (
+            mock.patch("shutil.which", return_value="/usr/bin/claude"),
+            mock.patch("ai_jury.adapters._spawn", side_effect=OSError("nope")),
+        ):
             r = self._adapter().run("p")
         self.assertFalse(r.ok)
         self.assertEqual(r.error_code, adapters.ERR_SPAWN_FAILED)
 
     def test_nonzero_exit(self):
-        with mock.patch("shutil.which", return_value="/usr/bin/claude"), \
-             mock.patch("ai_jury.adapters._spawn", return_value=_proc(1, "partial", "boom")):
+        with (
+            mock.patch("shutil.which", return_value="/usr/bin/claude"),
+            mock.patch("ai_jury.adapters._spawn", return_value=_proc(1, "partial", "boom")),
+        ):
             r = self._adapter().run("p")
         self.assertFalse(r.ok)
         self.assertIn("exit 1", r.error)
 
+    def test_nonzero_exit_redacts_secret_in_stderr(self):
+        # A crashing CLI can dump a token into stderr; the error string is
+        # rendered into the report and posted to the PR, so it must be redacted
+        # like the LocalAdapter path (audit 2026-06-13/N-1).
+        leak = "boom AKIAIOSFODNN7EXAMPLE failed token=ghp_" + "a" * 36
+        with (
+            mock.patch("shutil.which", return_value="/usr/bin/claude"),
+            mock.patch("ai_jury.adapters._spawn", return_value=_proc(1, "", leak)),
+        ):
+            r = self._adapter().run("p")
+        self.assertFalse(r.ok)
+        self.assertNotIn("ghp_" + "a" * 36, r.error)
+        self.assertIn("[REDACTED", r.error)
+
     def test_empty_output(self):
-        with mock.patch("shutil.which", return_value="/usr/bin/claude"), \
-             mock.patch("ai_jury.adapters._spawn", return_value=_proc(0, "   ")):
+        with (
+            mock.patch("shutil.which", return_value="/usr/bin/claude"),
+            mock.patch("ai_jury.adapters._spawn", return_value=_proc(0, "   ")),
+        ):
             r = self._adapter().run("p")
         self.assertFalse(r.ok)
         self.assertEqual(r.error_code, adapters.ERR_EMPTY_OUTPUT)
@@ -109,18 +145,28 @@ class AdapterRunTests(unittest.TestCase):
 class _Resp:
     def __init__(self, body):
         self._b = body
-    def read(self, *args):
+
+    def read(self, *_args):
         return self._b.encode("utf-8")
+
     def __enter__(self):
         return self
+
     def __exit__(self, *a):
         return False
 
 
 class LocalAdapterRunTests(unittest.TestCase):
     def _adapter(self):
-        return adapters.LocalAdapter(_spec(name="qwen", vendor="local", command="", model="qwen2.5-coder:7b",
-                                           endpoint="http://localhost:11434/v1"))
+        return adapters.LocalAdapter(
+            _spec(
+                name="qwen",
+                vendor="local",
+                command="",
+                model="qwen2.5-coder:7b",
+                endpoint="http://localhost:11434/v1",
+            )
+        )
 
     def test_success(self):
         body = '{"choices": [{"message": {"content": "local review"}}]}'
@@ -169,10 +215,9 @@ class SpawnTests(unittest.TestCase):
 
     def test_timeout_raises(self):
         import subprocess as _sp
+
         with self.assertRaises(_sp.TimeoutExpired):
-            adapters._spawn(
-                [sys.executable, "-c", "import time; time.sleep(30)"], None, timeout=1
-            )
+            adapters._spawn([sys.executable, "-c", "import time; time.sleep(30)"], None, timeout=1)
 
 
 class HttpOnlyOpenerTests(unittest.TestCase):
@@ -192,24 +237,33 @@ class HttpOnlyOpenerTests(unittest.TestCase):
         # Review of #291: a 3xx redirect must NOT be followed (an endpoint could
         # 302 to an internal/metadata host, bypassing the configured-URL check).
         import urllib.request
+
         opener = adapters._http_only_opener()
         self.assertFalse(
-            any(isinstance(h, urllib.request.HTTPRedirectHandler)
-                for h in opener.handlers)
+            any(isinstance(h, urllib.request.HTTPRedirectHandler) for h in opener.handlers)
         )
 
 
 class MakeAdapterTests(unittest.TestCase):
     def test_each_vendor(self):
-        self.assertIsInstance(adapters.make_adapter(_spec(vendor="anthropic")), adapters.ClaudeAdapter)
-        self.assertIsInstance(adapters.make_adapter(_spec(vendor="openai", command="codex")), adapters.CodexAdapter)
-        self.assertIsInstance(adapters.make_adapter(_spec(vendor="google", command="agy")), adapters.AgyAdapter)
         self.assertIsInstance(
-            adapters.make_adapter(_spec(vendor="local", command="", endpoint="http://x/v1")), adapters.LocalAdapter
+            adapters.make_adapter(_spec(vendor="anthropic")), adapters.ClaudeAdapter
+        )
+        self.assertIsInstance(
+            adapters.make_adapter(_spec(vendor="openai", command="codex")), adapters.CodexAdapter
+        )
+        self.assertIsInstance(
+            adapters.make_adapter(_spec(vendor="google", command="agy")), adapters.AgyAdapter
+        )
+        self.assertIsInstance(
+            adapters.make_adapter(_spec(vendor="local", command="", endpoint="http://x/v1")),
+            adapters.LocalAdapter,
         )
 
     def test_unknown_vendor_falls_back(self):
-        self.assertIsInstance(adapters.make_adapter(_spec(vendor="acme", command="acme")), adapters.AgyAdapter)
+        self.assertIsInstance(
+            adapters.make_adapter(_spec(vendor="acme", command="acme")), adapters.AgyAdapter
+        )
 
     def test_mock_overrides(self):
         self.assertIsInstance(adapters.make_adapter(_spec(), mock=True), adapters.MockAdapter)

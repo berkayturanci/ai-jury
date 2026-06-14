@@ -11,6 +11,7 @@ Run with::
 
 Override the target with ``JURY_LOCAL_ENDPOINT`` and ``JURY_LOCAL_MODEL``.
 """
+
 from __future__ import annotations
 
 import os
@@ -33,9 +34,7 @@ SAMPLE_DIFF = (
 
 
 def _spec():
-    return AgentSpec(
-        name="local", vendor="local", model=_MODEL, endpoint=_ENDPOINT, timeout=180
-    )
+    return AgentSpec(name="local", vendor="local", model=_MODEL, endpoint=_ENDPOINT, timeout=180)
 
 
 @unittest.skipUnless(_ENABLED, "set JURY_LOCAL_LIVE=1 to run the local live smoke test")
@@ -58,8 +57,13 @@ class LocalLiveSmokeTest(unittest.TestCase):
         )
 
         cfg = JuryConfig(
-            rounds=1, chair="local", verify=False, agents=[_spec()],
-            ci=CiConfig(), context=ContextConfig(), diff=DiffConfig(),
+            rounds=1,
+            chair="local",
+            verify=False,
+            agents=[_spec()],
+            ci=CiConfig(),
+            context=ContextConfig(),
+            diff=DiffConfig(),
         )
         outcome = run_jury(cfg, SAMPLE_DIFF, mock=False)
         self.assertEqual(len(outcome.reviews), 1)

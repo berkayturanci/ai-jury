@@ -1,4 +1,5 @@
 """Coverage for config.validate_config branches (hard errors vs warnings)."""
+
 from __future__ import annotations
 
 import os
@@ -22,9 +23,7 @@ class ConfigSizeLimit(unittest.TestCase):
     """Issue #316/L-5: a config file is size-capped before tomllib parses it."""
 
     def test_oversized_config_is_rejected(self):
-        with tempfile.NamedTemporaryFile(
-            "w", suffix=".toml", delete=False, encoding="utf-8"
-        ) as fh:
+        with tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False, encoding="utf-8") as fh:
             fh.write("x = 1\n# " + "a" * (5 * 1024 * 1024))  # > 4 MiB
             name = fh.name
         try:
@@ -95,20 +94,33 @@ class HardErrors(unittest.TestCase):
 
     def test_agent_missing_name(self):
         with self.assertRaises(ConfigError):
-            validate_config({"jury": {"rounds": 1, "chair": "a"},
-                             "agent": [{"vendor": "anthropic", "command": "x"}]})
+            validate_config(
+                {
+                    "jury": {"rounds": 1, "chair": "a"},
+                    "agent": [{"vendor": "anthropic", "command": "x"}],
+                }
+            )
 
     def test_agent_missing_command(self):
         with self.assertRaises(ConfigError):
-            validate_config({"jury": {"rounds": 1, "chair": "a"},
-                             "agent": [{"name": "a", "vendor": "anthropic"}]})
+            validate_config(
+                {
+                    "jury": {"rounds": 1, "chair": "a"},
+                    "agent": [{"name": "a", "vendor": "anthropic"}],
+                }
+            )
 
     def test_duplicate_agent_names(self):
         with self.assertRaises(ConfigError):
-            validate_config({"jury": {"rounds": 1, "chair": "a"}, "agent": [
-                {"name": "a", "vendor": "anthropic", "command": "x"},
-                {"name": "a", "vendor": "openai", "command": "y"},
-            ]})
+            validate_config(
+                {
+                    "jury": {"rounds": 1, "chair": "a"},
+                    "agent": [
+                        {"name": "a", "vendor": "anthropic", "command": "x"},
+                        {"name": "a", "vendor": "openai", "command": "y"},
+                    ],
+                }
+            )
 
     def test_no_agents(self):
         with self.assertRaises(ConfigError):
@@ -124,25 +136,47 @@ class SoftWarnings(unittest.TestCase):
         self.assertTrue(any("bogus" in x for x in w), w)
 
     def test_unknown_agent_key_warns(self):
-        w = validate_config({"jury": {"rounds": 1, "chair": "a"},
-                             "agent": [{"name": "a", "vendor": "anthropic", "command": "x", "weird": 1}]})
+        w = validate_config(
+            {
+                "jury": {"rounds": 1, "chair": "a"},
+                "agent": [{"name": "a", "vendor": "anthropic", "command": "x", "weird": 1}],
+            }
+        )
         self.assertTrue(any("weird" in x for x in w), w)
 
     def test_unknown_vendor_warns(self):
-        w = validate_config({"jury": {"rounds": 1, "chair": "a"},
-                             "agent": [{"name": "a", "vendor": "acme", "command": "x"}]})
+        w = validate_config(
+            {
+                "jury": {"rounds": 1, "chair": "a"},
+                "agent": [{"name": "a", "vendor": "acme", "command": "x"}],
+            }
+        )
         self.assertTrue(any("acme" in x or "vendor" in x for x in w), w)
 
     def test_chair_not_enabled_warns(self):
-        w = validate_config({"jury": {"rounds": 1, "chair": "ghost"},
-                             "agent": [{"name": "a", "vendor": "anthropic", "command": "x"}]})
+        w = validate_config(
+            {
+                "jury": {"rounds": 1, "chair": "ghost"},
+                "agent": [{"name": "a", "vendor": "anthropic", "command": "x"}],
+            }
+        )
         self.assertTrue(any("ghost" in x or "chair" in x for x in w), w)
 
     def test_local_agent_needs_no_command(self):
         # vendor=local doesn't require a command — should not raise.
-        validate_config({"jury": {"rounds": 1, "chair": "q"}, "agent": [
-            {"name": "q", "vendor": "local", "model": "m", "endpoint": "http://localhost:11434/v1"},
-        ]})
+        validate_config(
+            {
+                "jury": {"rounds": 1, "chair": "q"},
+                "agent": [
+                    {
+                        "name": "q",
+                        "vendor": "local",
+                        "model": "m",
+                        "endpoint": "http://localhost:11434/v1",
+                    },
+                ],
+            }
+        )
 
     def test_strict_promotes_warnings(self):
         with self.assertRaises(ConfigError):
@@ -153,8 +187,10 @@ class CommandPathValidation(unittest.TestCase):
     """Issue #293/F-6: a relative path command is rejected."""
 
     def _agent(self, command):
-        return {"jury": {"rounds": 1, "chair": "a"},
-                "agent": [{"name": "a", "vendor": "anthropic", "command": command}]}
+        return {
+            "jury": {"rounds": 1, "chair": "a"},
+            "agent": [{"name": "a", "vendor": "anthropic", "command": command}],
+        }
 
     def test_relative_path_command_is_hard_error(self):
         with self.assertRaises(ConfigError):
@@ -176,9 +212,10 @@ class CommandPathValidation(unittest.TestCase):
 
     # Issue #296: opt-in strict absolute-path mode.
     def test_strict_mode_rejects_bare_name(self):
-        with mock.patch.dict(
-            os.environ, {"JURY_REQUIRE_ABSOLUTE_COMMAND": "1"}, clear=True
-        ), self.assertRaises(ConfigError):
+        with (
+            mock.patch.dict(os.environ, {"JURY_REQUIRE_ABSOLUTE_COMMAND": "1"}, clear=True),
+            self.assertRaises(ConfigError),
+        ):
             validate_config(self._agent("claude"))
 
     def test_strict_mode_allows_absolute(self):
@@ -197,8 +234,7 @@ class EndpointValidation(unittest.TestCase):
     def _local(self, endpoint):
         return {
             "jury": {"rounds": 1, "chair": "q"},
-            "agent": [{"name": "q", "vendor": "local", "model": "m",
-                       "endpoint": endpoint}],
+            "agent": [{"name": "q", "vendor": "local", "model": "m", "endpoint": endpoint}],
         }
 
     def test_file_scheme_is_hard_error(self):

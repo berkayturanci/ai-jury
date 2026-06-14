@@ -1,6 +1,7 @@
 """Deep CLI coverage: --pr / post / inline / label / cache / incremental /
 auto-depth / progress / error paths and the full flag-override block. All
 offline — `gh` and network functions are mocked; agents run via --mock."""
+
 from __future__ import annotations
 
 import contextlib
@@ -46,14 +47,16 @@ def run(args, stdin=None):
 @contextlib.contextmanager
 def gh_mocked(diff=DIFF, head="abc123def456789", comments=None):
     comments = comments or []
-    with mock.patch("ai_jury.cli.pr_diff", return_value=diff), \
-         mock.patch("ai_jury.cli.pr_context", return_value="title\n\nbody"), \
-         mock.patch("ai_jury.cli.post_pr_comment") as ppc, \
-         mock.patch("ai_jury.cli.post_inline_comments") as pic, \
-         mock.patch("ai_jury.cli.apply_labels") as al, \
-         mock.patch("ai_jury.github.pr_head_sha", return_value=head), \
-         mock.patch("ai_jury.github.pr_comment_bodies", return_value=comments), \
-         mock.patch("ai_jury.github.compare_diff", return_value=diff):
+    with (
+        mock.patch("ai_jury.cli.pr_diff", return_value=diff),
+        mock.patch("ai_jury.cli.pr_context", return_value="title\n\nbody"),
+        mock.patch("ai_jury.cli.post_pr_comment") as ppc,
+        mock.patch("ai_jury.cli.post_inline_comments") as pic,
+        mock.patch("ai_jury.cli.apply_labels") as al,
+        mock.patch("ai_jury.github.pr_head_sha", return_value=head),
+        mock.patch("ai_jury.github.pr_comment_bodies", return_value=comments),
+        mock.patch("ai_jury.github.compare_diff", return_value=diff),
+    ):
         yield {"post": ppc, "inline": pic, "labels": al}
 
 
@@ -61,15 +64,40 @@ class FlagOverrideBlock(unittest.TestCase):
     def test_all_overrides_apply(self):
         d = Path(tempfile.mkdtemp()) / "x.diff"
         d.write_text(DIFF)
-        code, out, _ = run([
-            "--mock", "--diff-file", str(d), "-q",
-            "--rounds", "2", "--max-rounds", "3", "--early-stop",
-            "--total-timeout", "120", "--phase-timeout", "60", "--retries", "1",
-            "--seed", "7", "--chair", "codex", "--verify",
-            "--context-mode", "expanded", "--redact",
-            "--max-diff-bytes", "500000", "--chunk",
-            "--exclude", "*.lock", "--include", "*.py",
-        ])
+        code, out, _ = run(
+            [
+                "--mock",
+                "--diff-file",
+                str(d),
+                "-q",
+                "--rounds",
+                "2",
+                "--max-rounds",
+                "3",
+                "--early-stop",
+                "--total-timeout",
+                "120",
+                "--phase-timeout",
+                "60",
+                "--retries",
+                "1",
+                "--seed",
+                "7",
+                "--chair",
+                "codex",
+                "--verify",
+                "--context-mode",
+                "expanded",
+                "--redact",
+                "--max-diff-bytes",
+                "500000",
+                "--chunk",
+                "--exclude",
+                "*.lock",
+                "--include",
+                "*.py",
+            ]
+        )
         self.assertEqual(code, 0)
         self.assertIn("AI Jury", out)
 
@@ -106,10 +134,10 @@ class PrPostPaths(unittest.TestCase):
         m["labels"].assert_called()
 
     def test_post_progress(self):
-        with gh_mocked(), mock.patch("ai_jury.github.ProgressReporter") as PR:
+        with gh_mocked(), mock.patch("ai_jury.github.ProgressReporter") as progress_reporter:
             code, _, _ = run(["--mock", "--pr", "123", "--post-progress", "-q"])
         self.assertEqual(code, 0)
-        PR.assert_called()
+        progress_reporter.assert_called()
 
     def test_incremental(self):
         marker = "<!-- arc-reviewed-sha: deadbeefcafe -->"
@@ -157,7 +185,9 @@ class ErrorPaths(unittest.TestCase):
 
     def test_config_load_invalid(self):
         cfg = Path(tempfile.mkdtemp()) / "bad.toml"
-        cfg.write_text('[jury]\nrounds = 0\n\n[[agent]]\nname = "a"\nvendor = "anthropic"\ncommand = "x"\n')
+        cfg.write_text(
+            '[jury]\nrounds = 0\n\n[[agent]]\nname = "a"\nvendor = "anthropic"\ncommand = "x"\n'
+        )
         d = Path(tempfile.mkdtemp()) / "x.diff"
         d.write_text(DIFF)
         code, _, err = run(["--mock", "--diff-file", str(d), "--config", str(cfg)])
@@ -175,7 +205,9 @@ class DoctorAndCommentPaths(unittest.TestCase):
     def test_config_validate_warnings(self):
         cfg = Path(tempfile.mkdtemp()) / "warn.toml"
         # unknown vendor → a soft warning (valid, but warned).
-        cfg.write_text('[jury]\nrounds = 1\nchair = "a"\n\n[[agent]]\nname = "a"\nvendor = "acme"\ncommand = "x"\n')
+        cfg.write_text(
+            '[jury]\nrounds = 1\nchair = "a"\n\n[[agent]]\nname = "a"\nvendor = "acme"\ncommand = "x"\n'
+        )
         code, out, _ = run(["--config-validate", "--config", str(cfg)])
         self.assertEqual(code, 0)
         self.assertIn("warning", out.lower())
@@ -184,6 +216,29 @@ class DoctorAndCommentPaths(unittest.TestCase):
         with gh_mocked():
             code, out, _ = run(["comment", "--text", "/jury review", "--pr", "1", "--print-args"])
         self.assertEqual(code, 0)
+
+
+class DiffIngestCapTests(unittest.TestCase):
+    """Security audit 2026-06-13: the raw diff read must be bounded so a hostile
+    huge input cannot OOM the process before diff.max_bytes engages."""
+
+    def test_within_cap_returned(self):
+        payload = "x" * 1000
+        self.assertEqual(cli._read_capped(io.BytesIO(payload.encode()), "stdin"), payload)
+
+    def test_over_cap_rejected_bytes(self):
+        big = io.BytesIO(b"y" * (cli._MAX_DIFF_INGEST_BYTES + 10))
+        with self.assertRaises(SystemExit) as ctx:
+            cli._read_capped(big, "stdin")
+        self.assertIn("ingest limit", str(ctx.exception))
+
+    def test_cap_is_on_bytes_not_chars(self):
+        # A multi-byte char payload just over the byte cap must be rejected even
+        # though its character count is well under it (red-team 2026-06-13).
+        n_chars = cli._MAX_DIFF_INGEST_BYTES // 3 + 10  # "界" is 3 bytes in UTF-8
+        big = io.BytesIO(("界" * n_chars).encode("utf-8"))
+        with self.assertRaises(SystemExit):
+            cli._read_capped(big, "stdin")
 
 
 if __name__ == "__main__":

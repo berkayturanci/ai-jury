@@ -4,6 +4,7 @@ Run with: python -m unittest discover -s tests
 No third-party dependencies, no live CLIs, no network. Subprocess is faked or
 monkeypatched so no real agent CLI is ever spawned.
 """
+
 from __future__ import annotations
 
 import subprocess
@@ -118,46 +119,46 @@ class RunClassificationTest(unittest.TestCase):
         self.assertEqual(res.error_code, ERR_MISSING_CLI)
 
     def test_timeout(self):
-        def fake_run(*args, **kwargs):
+        def fake_run(*_args, **_kwargs):
             raise subprocess.TimeoutExpired(cmd="x", timeout=5)
 
-        with _patched(fake_run):
+        with _Patched(fake_run):
             res = _FakeAdapter(_spec()).run("prompt")
         self.assertFalse(res.ok)
         self.assertEqual(res.error_code, ERR_TIMEOUT)
 
     def test_spawn_failed(self):
-        def fake_run(*args, **kwargs):
+        def fake_run(*_args, **_kwargs):
             raise OSError("boom")
 
-        with _patched(fake_run):
+        with _Patched(fake_run):
             res = _FakeAdapter(_spec()).run("prompt")
         self.assertFalse(res.ok)
         self.assertEqual(res.error_code, ERR_SPAWN_FAILED)
 
     def test_nonzero_exit_auth(self):
-        def fake_run(*args, **kwargs):
+        def fake_run(*_args, **_kwargs):
             return _Completed(1, stdout="", stderr="not authenticated")
 
-        with _patched(fake_run):
+        with _Patched(fake_run):
             res = _FakeAdapter(_spec()).run("prompt")
         self.assertFalse(res.ok)
         self.assertEqual(res.error_code, ERR_AUTH_REQUIRED)
 
     def test_empty_output_exit_zero(self):
-        def fake_run(*args, **kwargs):
+        def fake_run(*_args, **_kwargs):
             return _Completed(0, stdout="   \n", stderr="")
 
-        with _patched(fake_run):
+        with _Patched(fake_run):
             res = _FakeAdapter(_spec()).run("prompt")
         self.assertFalse(res.ok)
         self.assertEqual(res.error_code, ERR_EMPTY_OUTPUT)
 
     def test_success_has_no_error_code(self):
-        def fake_run(*args, **kwargs):
+        def fake_run(*_args, **_kwargs):
             return _Completed(0, stdout="real review content", stderr="")
 
-        with _patched(fake_run):
+        with _Patched(fake_run):
             res = _FakeAdapter(_spec()).run("prompt")
         self.assertTrue(res.ok)
         self.assertIsNone(res.error_code)
@@ -165,10 +166,10 @@ class RunClassificationTest(unittest.TestCase):
     def test_nonzero_exit_with_stdout_is_failure(self):
         # Issue #101: a nonzero exit must be a failure even when the CLI printed
         # something — partial/error output must not count as a clean review.
-        def fake_run(*args, **kwargs):
+        def fake_run(*_args, **_kwargs):
             return _Completed(1, stdout="partial review then crash", stderr="")
 
-        with _patched(fake_run):
+        with _Patched(fake_run):
             res = _FakeAdapter(_spec()).run("prompt")
         self.assertFalse(res.ok)
         self.assertEqual(res.output, "")
@@ -177,10 +178,10 @@ class RunClassificationTest(unittest.TestCase):
 
     def test_nonzero_exit_with_stdout_classifies_from_stderr(self):
         # stderr still drives classification when present, even with stdout.
-        def fake_run(*args, **kwargs):
+        def fake_run(*_args, **_kwargs):
             return _Completed(1, stdout="some output", stderr="rate limit exceeded")
 
-        with _patched(fake_run):
+        with _Patched(fake_run):
             res = _FakeAdapter(_spec()).run("prompt")
         self.assertFalse(res.ok)
         self.assertEqual(res.error_code, ERR_RATE_LIMITED)
@@ -191,7 +192,7 @@ class _MissingAdapter(_FakeAdapter):
         return False
 
 
-class _patched:
+class _Patched:
     """Context manager that monkeypatches adapters._spawn (the run() seam)."""
 
     def __init__(self, fn):

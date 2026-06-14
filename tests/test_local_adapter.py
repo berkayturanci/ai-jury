@@ -3,6 +3,7 @@
 Network-free: exercises the pure helpers (URL/payload/parse/error mapping) and
 config wiring. A live Ollama smoke test lives in tests/live/ (opt-in).
 """
+
 from __future__ import annotations
 
 import sys
@@ -83,7 +84,7 @@ class _FakeResp:
     def __exit__(self, *a):
         return False
 
-    def read(self, *args):
+    def read(self, *_args):
         return self._payload
 
 
@@ -116,9 +117,7 @@ class RunHttpTest(unittest.TestCase):
         import urllib.error
         from unittest import mock
 
-        with mock.patch(
-            "ai_jury.adapters._open", side_effect=urllib.error.URLError("refused")
-        ):
+        with mock.patch("ai_jury.adapters._open", side_effect=urllib.error.URLError("refused")):
             result = LocalAdapter(_spec()).run("prompt")
         self.assertFalse(result.ok)
         self.assertEqual(result.error_code, ERR_CONNECTION)
@@ -145,8 +144,12 @@ class FactoryAndConfigTest(unittest.TestCase):
         cfg = {
             "jury": {"chair": "local"},
             "agent": [
-                {"name": "local", "vendor": "local", "model": "qwen2.5-coder:7b",
-                 "endpoint": "http://localhost:11434/v1"}
+                {
+                    "name": "local",
+                    "vendor": "local",
+                    "model": "qwen2.5-coder:7b",
+                    "endpoint": "http://localhost:11434/v1",
+                }
             ],
         }
         # No hard errors (missing command is allowed for local).
@@ -170,8 +173,7 @@ class FactoryAndConfigTest(unittest.TestCase):
             validate_config(cfg)
 
     def test_local_is_a_known_vendor(self):
-        cfg = {"jury": {}, "agent": [
-            {"name": "local", "vendor": "local", "model": "m"}]}
+        cfg = {"jury": {}, "agent": [{"name": "local", "vendor": "local", "model": "m"}]}
         warnings = validate_config(cfg)
         self.assertFalse(any("unknown vendor" in w for w in warnings))
 

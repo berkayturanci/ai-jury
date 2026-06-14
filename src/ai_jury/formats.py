@@ -123,8 +123,15 @@ def to_json(outcome: Any, config: Any, *, decision=None, vote=None) -> str:
 
 def _sarif_result(f: Finding) -> dict[str, Any]:
     """Map a finding to a SARIF result object."""
-    physical: dict[str, Any] = {"artifactLocation": {"uri": f.file}}
-    if f.line is not None:
+    physical: dict[str, Any] = {"artifactLocation": {"uri": f.file or ""}}
+    # SARIF 2.1.0 requires ``region.startLine`` to be a positive (1-based)
+    # integer. A reviewer's structured output is attacker-influenced (a finding's
+    # ``line`` is parsed from agent JSON that can be steered by the diff), so a
+    # forged ``"line": 0`` / negative value would emit an invalid region and make
+    # GitHub code-scanning reject the WHOLE SARIF upload — suppressing every
+    # finding (denial-of-evidence). Drop the region in that case so the finding
+    # still surfaces at file level (security audit 2026-06-13 r5).
+    if f.line is not None and f.line >= 1:
         physical["region"] = {"startLine": f.line}
     return {
         "ruleId": f"jury/{f.severity}",
@@ -134,7 +141,7 @@ def _sarif_result(f: Finding) -> dict[str, Any]:
     }
 
 
-def to_sarif(outcome: Any, config: Any) -> str:
+def to_sarif(outcome: Any, _config: Any) -> str:
     """Render the jury outcome as a SARIF 2.1.0 document.
 
     Consensus group representatives are preferred as the source of results; if
@@ -152,9 +159,7 @@ def to_sarif(outcome: Any, config: Any) -> str:
         {
             "id": f"jury/{sev}",
             "name": f"jury-{sev}",
-            "shortDescription": {
-                "text": f"{sev} finding reported by the review jury"
-            },
+            "shortDescription": {"text": f"{sev} finding reported by the review jury"},
             "defaultConfiguration": {"level": severity_to_sarif_level(sev)},
         }
         for sev in SEVERITIES

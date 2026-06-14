@@ -129,9 +129,7 @@ def _detect_warnings(cfg) -> list[str]:
         warnings.append("all configured agents are disabled")
     names = {a.name for a in cfg.agents}
     if cfg.chair not in names:
-        warnings.append(
-            f"chair '{_redact_value(cfg.chair)}' does not match any configured agent"
-        )
+        warnings.append(f"chair '{_redact_value(cfg.chair)}' does not match any configured agent")
     for agent in enabled:
         if _is_available(agent):
             continue
@@ -178,12 +176,13 @@ def _recommendations(config_path, config_summary, agents) -> dict:
             steps.append(
                 "No reviewer is available. Install an agent CLI (claude / codex / agy), "
                 "or run a local model (e.g. `ollama serve` + `ollama pull "
-                "qwen2.5-coder:7b`) and add a `vendor = \"local\"` agent — or use "
+                'qwen2.5-coder:7b`) and add a `vendor = "local"` agent — or use '
                 "`--mock` for an offline demo."
             )
     else:
         missing = [
-            a["name"] for a in agents
+            a["name"]
+            for a in agents
             if not a.get("available")
             and config_summary
             and a["name"] in config_summary.get("enabled_agents", [])
@@ -229,9 +228,7 @@ def build_diagnostics(config_path=None):
             if spec.name not in enabled_names:
                 continue
             for warning in entry.get("capability_warnings", []):
-                config_warnings.append(
-                    f"agent '{entry['name']}': {warning}"
-                )
+                config_warnings.append(f"agent '{entry['name']}': {warning}")
 
     return {
         "tool_version": __version__,
@@ -254,8 +251,7 @@ def render_report(diagnostics) -> str:
     lines.append("=" * 40)
     lines.append(f"tool version:   {diagnostics['tool_version']}")
     lines.append(
-        f"python:         {diagnostics['python_version']} "
-        f"({diagnostics['python_implementation']})"
+        f"python:         {diagnostics['python_version']} ({diagnostics['python_implementation']})"
     )
     lines.append(f"python exe:     {diagnostics['python_executable']}")
     lines.append(f"os:             {diagnostics['os']}")

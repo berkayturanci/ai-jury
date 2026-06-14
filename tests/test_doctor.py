@@ -3,6 +3,7 @@
 Run with: python -m unittest discover -s tests
 No third-party dependencies, no live agent CLIs, no network.
 """
+
 from __future__ import annotations
 
 import json
@@ -57,12 +58,11 @@ enabled = true
 
 
 def _write_config(text):
-    tmp = tempfile.NamedTemporaryFile(
+    with tempfile.NamedTemporaryFile(
         mode="w", suffix=".toml", delete=False, encoding="utf-8"
-    )
-    tmp.write(text)
-    tmp.close()
-    return tmp.name
+    ) as tmp:
+        tmp.write(text)
+        return tmp.name
 
 
 class BuildDiagnosticsTests(unittest.TestCase):
@@ -215,6 +215,7 @@ class CapabilityDiagnosticsTests(unittest.TestCase):
                 return self._caps
 
         def _factory(spec, mock=False):
+            _ = mock
             caps = caps_by_name.get(
                 spec.name,
                 {
@@ -317,8 +318,11 @@ class CapabilityDiagnosticsTests(unittest.TestCase):
 
     def test_capability_probe_exception_caught(self):
         orig = doctor.make_adapter
-        def _raising_factory(spec, mock=False):
+
+        def _raising_factory(_spec, mock=False):
+            _ = mock
             raise RuntimeError("simulate probe crash")
+
         doctor.make_adapter = _raising_factory
         self.addCleanup(lambda: setattr(doctor, "make_adapter", orig))
 
@@ -331,7 +335,10 @@ class CapabilityDiagnosticsTests(unittest.TestCase):
         self.assertEqual(by_name["claude"]["capabilities"]["status"], "unknown_version")
 
         self.assertTrue(
-            any("capability probe raised: simulate probe crash" in w for w in diag["config_warnings"]),
+            any(
+                "capability probe raised: simulate probe crash" in w
+                for w in diag["config_warnings"]
+            ),
             diag["config_warnings"],
         )
 
@@ -368,7 +375,9 @@ class RecommendationsTest(unittest.TestCase):
 class AvailabilityTests(unittest.TestCase):
     def test_is_available_catches_exceptions(self):
         orig = doctor.make_adapter
-        def _crashing_factory(spec, mock=False):
+
+        def _crashing_factory(_spec, mock=False):
+            _ = mock
             raise RuntimeError("adapter creation failed")
 
         doctor.make_adapter = _crashing_factory

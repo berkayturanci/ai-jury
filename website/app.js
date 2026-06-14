@@ -368,11 +368,16 @@
       if (fsPost) {
         fsPost.classList.toggle("disabled", isIssue);
         qa("input", fsPost).forEach(function (el) { el.disabled = isIssue; });
+        if (isIssue) fsPost.setAttribute("title", "PR output options are not applicable for issue review");
+        else fsPost.removeAttribute("title");
       }
 
       // auto-depth owns rounds/verify
       $("verify").disabled = auto;
-      $("verify").closest(".opt").classList.toggle("disabled", auto);
+      var verifyOpt = $("verify").closest(".opt");
+      verifyOpt.classList.toggle("disabled", auto);
+      if (auto) verifyOpt.setAttribute("title", "Auto-depth manages verification automatically");
+      else verifyOpt.removeAttribute("title");
 
       // debate (round 2) needs >=2 successful reviewers — lock it for a solo panel
       var soloPanel = ags.length < 2;
@@ -382,7 +387,11 @@
         var lockAuto = auto;
         var lockSolo = soloPanel && el.value === "2";
         el.disabled = lockAuto || lockSolo;
-        el.closest(".opt").classList.toggle("disabled", lockAuto || lockSolo);
+        var opt = el.closest(".opt");
+        opt.classList.toggle("disabled", lockAuto || lockSolo);
+        if (lockAuto) opt.setAttribute("title", "Auto-depth manages rounds automatically");
+        else if (lockSolo) opt.setAttribute("title", "Debate requires at least 2 reviewers");
+        else opt.removeAttribute("title");
       });
       // if a solo panel has "2 rounds" selected, fall back to 1 round (review only)
       if (soloPanel && !auto && r2 && r2.checked) { r2.checked = false; if (r1) r1.checked = true; }
@@ -448,7 +457,10 @@
         $("gh-comments").innerHTML = "";
       }
       var btn = $("run-btn");
-      if (btn) btn.disabled = false;
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "▶ Run review (demo)";
+      }
     });
     render();
 
@@ -683,6 +695,8 @@
         return;
       }
       btn.disabled = true;
+      btn.setAttribute("aria-busy", "true");
+      btn.textContent = "Running review...";
       var i = 0;
       (function step() {
         if (i < run.con.length) {
@@ -693,6 +707,8 @@
           runTimer = null;
           renderComments(run);
           btn.disabled = false;
+          btn.removeAttribute("aria-busy");
+          btn.textContent = "▶ Run review (demo)";
         }
       })();
     }
@@ -700,6 +716,7 @@
       if ($("run-out").hidden) return;
       if (runTimer) { clearTimeout(runTimer); runTimer = null; }
       $("run-btn").disabled = false;
+      $("run-btn").textContent = "▶ Run review (demo)";
       if (selectedAgents().length === 0) {
         $("term-body").innerHTML = "";
         $("gh-comments").innerHTML = '<p class="muted">Pick at least one reviewer.</p>';
