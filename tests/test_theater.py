@@ -208,6 +208,16 @@ class CourtroomTest(unittest.TestCase):
         court = _court()
         self.assertEqual(court._slots(0), [])
 
+    def test_speak_with_already_done_seats(self):
+        # verify marks every seat 'done'; a later review speak must leave the
+        # done seats untouched (exercises the done-skip branch in _speak).
+        court = _court()
+        court.open()
+        court.step("verify", _ar("codex", "openai", output=_VERIFY))
+        court.step("review", _ar("claude", output=_REVIEW))
+        court.close()
+        self.assertIn("claude", court.screen.to_plain())
+
 
 _PIX_AGENTS = [("claude", "anthropic"), ("codex", "openai"),
                ("agy", "google"), ("qwen", "local")]
@@ -361,6 +371,22 @@ class LiveAndFitTest(unittest.TestCase):
         c._start_ticker()
         self.assertIsNone(c._tick_thread)
 
+    def test_verdict_label_keyword_only(self):
+        c = _court()
+        self.assertEqual(c._verdict_label("NEEDS-INFO — long reason here"), "NEEDS-INFO")
+        self.assertEqual(c._verdict_label("APPROVE - looks good"), "APPROVE")
+        self.assertEqual(c._verdict_label("REQUEST CHANGES"), "REQUEST CHANGES")
+
+    def test_decision_transcript_line_is_short(self):
+        court = _court()
+        court.open()
+        court.step("synthesis", _ar("codex", "openai",
+                   output="## Verdict\nNEEDS-INFO — " + "blah " * 60))
+        court.close()
+        log = " ".join(court.log)
+        self.assertIn("DECISION -> NEEDS-INFO", log)
+        self.assertNotIn("blah", " ".join(court.log[-1:]))   # rationale not in the log line
+
     def test_fit_truncates_with_ellipsis(self):
         c = _court()
         self.assertEqual(c._fit("short", 20), "short")
@@ -383,7 +409,7 @@ class LiveAndFitTest(unittest.TestCase):
         for line in plain.split("\n"):
             self.assertLessEqual(len(line), court.cols)   # nothing overflows
 
-    def test_full_verdict_readable_below_banner(self):
+    def test_full_verdict_readable_via_wrapped_banner(self):
         court = _court()
         court.open()
         verdict = ("## Verdict\nNEEDS-INFO — "
@@ -392,8 +418,8 @@ class LiveAndFitTest(unittest.TestCase):
         court.close()
         plain = court.screen.to_plain()
         self.assertIn("the panel has decided", plain)
-        # the tail of the verdict only appears if the full text is wrapped below
-        # (the one-line banner truncates well before it)
+        # the tail of the verdict only appears if the banner wrapped it across
+        # multiple lines (a single truncated line would drop it)
         self.assertIn("ZEBRA_END", plain)
 
 
@@ -415,6 +441,9 @@ class HelpersTest(unittest.TestCase):
         self.assertEqual(_gist("  \n  hello there"), "hello there")
         self.assertEqual(_verdict_headline("## Verdict\nAPPROVE — ok"), "APPROVE — ok")
         self.assertEqual(_verdict_headline("no header"), "no header")  # gist fallback
+        # header present but only blank lines follow → inner loop skips, falls
+        # through to the gist fallback (covers both inner branches)
+        self.assertEqual(_verdict_headline("## Verdict\n   \n"), "## Verdict")
 
     def test_screen_out_of_bounds_is_safe(self):
         s = Screen(4, 1)

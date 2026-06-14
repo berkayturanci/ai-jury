@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai-jury"
-version = "1.9.2"
+version = "1.9.3"
 description = "Cross-vendor multi-agent PR review jury — orchestrate native coding-agent CLIs (Claude Code, Codex, Antigravity) to mutually review and debate the same pull request."
 readme = "README.md"
 requires-python = ">=3.11"
