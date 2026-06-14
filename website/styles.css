@@ -623,6 +623,40 @@ footer { border-top: 1px solid var(--border); padding: 2.4rem 0; color: var(--fa
 .foot-legal { margin-top: .8rem; }
 .foot-legal span { font-family: var(--font-body); font-size: .76rem; line-height: 1.6; color: var(--faint); opacity: .85; max-width: 92ch; display: block; }
 
+/* ---- Theater mode --------------------------------------------------- */
+.theater { display: grid; gap: 1.4rem; }
+.theater-stage {
+  margin: 0; border-radius: var(--radius); overflow: hidden;
+  border: 1px solid var(--border); background: var(--surface-2);
+  box-shadow: 0 24px 60px -34px rgba(0,0,0,.6);
+}
+.theater-stage img { display: block; width: 100%; height: auto; }
+.theater-stage figcaption {
+  padding: .7rem 1rem; font-size: .84rem; color: var(--muted);
+  border-top: 1px solid var(--border-soft); background: var(--surface);
+}
+.theater-points { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+.theater-points .tp {
+  padding: 1.1rem 1.2rem; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); background: var(--surface);
+}
+.theater-points .tp h3 { margin: 0 0 .4rem; font-size: 1rem; }
+.theater-points .tp p { margin: 0; font-size: .9rem; color: var(--muted); line-height: 1.55; }
+.theater-run {
+  display: flex; align-items: center; flex-wrap: wrap; gap: .6rem;
+  padding: .8rem 1.1rem; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); background: var(--surface-2);
+}
+.theater-run .prompt { color: var(--accent-2); }
+.theater-run > code {
+  font-family: var(--font-mono); color: var(--text); font-size: .95rem;
+}
+.theater-note { font-size: .82rem; margin-left: auto; }
+@media (max-width: 720px) {
+  .theater-points { grid-template-columns: 1fr; }
+  .theater-note { margin-left: 0; }
+}
+
 /* ---- Comparison table ----------------------------------------------- */
 .cmp-wrap { overflow-x: auto; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface); }
 .cmp { width: 100%; border-collapse: collapse; min-width: 640px; font-size: .9rem; }
