@@ -296,6 +296,38 @@ class MockPipelineTests(unittest.TestCase):
             self.assertIn("AI Jury", path.read_text(encoding="utf-8"))
 
 
+class TheaterCliTests(unittest.TestCase):
+    """The --theater wiring on an interactive terminal.
+
+    Regression guard: the scene branch only runs when ``supports_scene`` is true
+    (a real TTY), which never happens under test capture — so a crash in that
+    path (e.g. a wrong ``resolve_chair`` call) slips past every other test. Here
+    we force it on (sleeps patched out) and assert the run still completes.
+    """
+
+    def _run_theater(self, *extra):
+        import unittest.mock as mock
+
+        from ai_jury import theater
+        with mock.patch.object(theater, "supports_scene", return_value=True), \
+                mock.patch("ai_jury.theater.time.sleep"):
+            return _run_cli(["--mock", "--diff-file", "-", "--theater", *extra],
+                            stdin=SAMPLE_DIFF)
+
+    def test_theater_flat_completes(self):
+        code, _, err = self._run_theater()
+        self.assertEqual(code, 0, err)
+
+    def test_theater_pixel_completes(self):
+        code, _, err = self._run_theater("--theater-style", "pixel")
+        self.assertEqual(code, 0, err)
+
+    def test_theater_issue_vote_completes(self):
+        # the path that crashed in the field: --issue + --theater
+        code, _, err = self._run_theater("--decision", "vote")
+        self.assertEqual(code, 0, err)
+
+
 class CiGateTests(unittest.TestCase):
     """Lock the --ci exit-code contract for the mock pipeline."""
 
