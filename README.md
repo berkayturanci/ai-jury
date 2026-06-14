@@ -494,6 +494,13 @@ it composes with existing review workflows: run the jury for a cross-vendor pass
 then act on the consensus findings. For other platforms (Codex, Antigravity, CI) and
 their support status, see the [platform support matrix](docs/platforms.md).
 
+For a concrete consumer: [**keel**](https://github.com/berkayturanci/keel)'s review
+gate (step `s7`, auto-enabled on its tier-3 risk class) runs ai-jury as its
+cross-vendor jury — **fail-soft**, a no-op when ai-jury isn't installed, so keel
+never hard-depends on it. keel's optional
+[keel-visual](https://github.com/berkayturanci/keel/tree/main/keel-visual) run
+visualizer surfaces the jury on the review step when a run used it.
+
 ## How it works
 
 | Module | Responsibility |
