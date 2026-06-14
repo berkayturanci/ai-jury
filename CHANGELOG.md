@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.2] - 2026-06-14
+
+### Fixed
+
+- **Theater clock is now live.** The scene only repainted on each `on_event`, so
+  between phases (while agents run, often tens of seconds) it froze and the timer
+  jumped in bursts. A background ticker now repaints on an interval so the clock
+  ticks smoothly and the scene stays alive; event-driven and ticker repaints
+  share a lock (no torn frames), and the ticker is animate-only.
+- **Long verdict no longer overflows the decision banner.** A long chair verdict
+  headline ran past the table / screen edge; it's now truncated with an ellipsis
+  to fit (flat and pixel scenes), and the **full** verdict is shown wrapped under
+  "the panel has decided" so the rationale stays readable in the scene.
+
 ## [1.9.1] - 2026-06-14
 
 ### Security
