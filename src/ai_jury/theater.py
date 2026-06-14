@@ -211,7 +211,15 @@ class Courtroom:
     def _sprite_state(self, name: str) -> str:
         return self.state.get(name, "idle")
 
+    def _seats_fit(self) -> bool:
+        # Full sprites need _W each plus a >=1 gutter between/around them.
+        n = len(self.agents)
+        return n * _W + (n + 1) <= self.cols - 2
+
     def _seats(self) -> None:
+        if not self._seats_fit():
+            self._roster()
+            return
         s = self.screen
         top = 10
         faces = {"idle": "( -- )", "speaking": "( o o )", "arguing": "( ^ ^ )",
@@ -237,6 +245,30 @@ class Courtroom:
                 s.put(top - 1, x, f"[{ballot[:7]}]", _banner_sgr(ballot))
             if hi:
                 s.put(top + 4, x + 2, self.g["caret"], "96")
+
+    def _roster(self) -> None:
+        # Compact fallback for many jurors / narrow terminals: a wrapped row of
+        # juror chips (name + state mark) instead of full seat sprites, so 6+
+        # jurors never clip. State marks: caret = speaking, ok = done, ! = error.
+        s = self.screen
+        marks = {"speaking": self.g["caret"], "arguing": self.g["caret"],
+                 "done": self.g["ok"], "error": "!"}
+        chips = []
+        for name, vendor in self.agents:
+            st = self._sprite_state(name)
+            m = marks.get(st, self.dot)
+            chips.append((f"{name[:10]}{m}", _VENDOR_SGR.get(vendor, "37"),
+                          st in ("speaking", "arguing")))
+        s.put(10, 2, "JURY:", "2;37")
+        row, x = 11, 4
+        for label, vsgr, hi in chips:
+            if x + len(label) + 2 > self.cols - 2:
+                row += 1
+                x = 4
+            if row > 14:
+                break
+            s.put(row, x, label, vsgr + (";1" if hi else ""))
+            x += len(label) + 2
 
     def _speaking_area(self) -> None:
         s = self.screen
