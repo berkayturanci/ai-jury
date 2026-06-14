@@ -625,10 +625,20 @@ footer { border-top: 1px solid var(--border); padding: 2.4rem 0; color: var(--fa
 
 /* ---- Theater mode --------------------------------------------------- */
 .theater { display: grid; gap: 1.4rem; }
+.theater-stages { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.2rem; }
 .theater-stage {
+  position: relative;
   margin: 0; border-radius: var(--radius); overflow: hidden;
   border: 1px solid var(--border); background: var(--surface-2);
   box-shadow: 0 24px 60px -34px rgba(0,0,0,.6);
+}
+.theater-badge {
+  position: absolute; top: .7rem; left: .7rem; z-index: 1;
+  font-family: var(--font-mono); font-size: .72rem; font-weight: 600;
+  padding: .2rem .6rem; border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
+  border: 1px solid var(--accent-line); color: var(--accent-3);
+  backdrop-filter: blur(4px);
 }
 .theater-stage img { display: block; width: 100%; height: auto; }
 .theater-stage figcaption {
@@ -653,6 +663,7 @@ footer { border-top: 1px solid var(--border); padding: 2.4rem 0; color: var(--fa
 }
 .theater-note { font-size: .82rem; margin-left: auto; }
 @media (max-width: 720px) {
+  .theater-stages { grid-template-columns: 1fr; }
   .theater-points { grid-template-columns: 1fr; }
   .theater-note { margin-left: 0; }
 }
