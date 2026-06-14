@@ -10,12 +10,12 @@ usage: jury [-h] [--pr PR] [--issue ISSUE] [--repo REPO]
             [--doctor] [--write WRITE] [-o OUTPUT] [--metadata-json PATH]
             [--format {markdown,json,sarif}] [--decision {chair,vote}]
             [--transcript] [--no-transcript] [--verbose] [--live] [--theater]
-            [--theater-style {flat,pixel}] [--post-summary] [--post-inline]
-            [--post-progress] [--post-mode {single,phased}] [--dry-run]
-            [--label] [--ci] [--fail-on FAIL_ON] [--cache] [--clear-cache]
-            [--cache-dir CACHE_DIR] [--suggest-patches] [--patches-out PATH]
-            [--incremental] [-q] [--config-validate] [--strict-config]
-            [--version]
+            [--no-theater] [--theater-style {flat,pixel}] [--post-summary]
+            [--post-inline] [--post-progress] [--post-mode {single,phased}]
+            [--dry-run] [--label] [--ci] [--fail-on FAIL_ON] [--cache]
+            [--clear-cache] [--cache-dir CACHE_DIR] [--suggest-patches]
+            [--patches-out PATH] [--incremental] [-q] [--config-validate]
+            [--strict-config] [--version]
 
 Cross-vendor multi-agent PR review jury.
 
@@ -89,11 +89,14 @@ options:
   --theater             animated deliberation view of the live run (each model
                         seated around a table, speaking per phase, panel-
                         vote/chair finale); needs an interactive terminal,
-                        else falls back to --live
+                        else falls back to --live. Can be defaulted on in
+                        jury.toml ([jury] theater = true)
+  --no-theater          disable the theater scene even if jury.toml enables it
   --theater-style {flat,pixel}
                         --theater scene style: 'flat' (ANSI line scene,
                         default) or 'pixel' (pixel-art room; needs a
-                        truecolor+unicode terminal)
+                        truecolor+unicode terminal). Defaults from jury.toml
+                        ([jury] theater_style)
   --post-summary, --post
                         post the report as a single summary comment on --pr
   --post-inline         post inline review comments for located findings on

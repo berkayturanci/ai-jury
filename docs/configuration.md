@@ -65,6 +65,24 @@ an `--issue` votes `NEEDS-INFO > UNCLEAR > READY`. Voting is **rendering-only**:
 does not change orchestration, the config hash / cache key, or the severity-based
 `--ci` gate, which stays the independent hard safety check.
 
+## Theater view (`theater` / `theater_style`)
+
+The opt-in animated **deliberation** view (`--theater`) can be defaulted on from
+the config so you don't pass the flag every run:
+
+```toml
+[jury]
+theater = true            # default the animated scene on (default: false)
+theater_style = "pixel"   # "flat" (ANSI line scene, default) | "pixel" (pixel-art room)
+```
+
+The CLI overrides the file per run: `--theater` / `--no-theater` and
+`--theater-style {flat,pixel}`. Like `decision`, this is **rendering-only** — it
+never touches orchestration, the config hash / cache key, or the `--ci` gate.
+Theater is TTY-only: even with `theater = true` it falls back to the plain
+`--live` step stream off an interactive terminal, and `pixel` falls back to
+`flat` without a truecolor + unicode terminal.
+
 ## Large-diff handling (`[jury.diff]`)
 
 Before running, the diff is measured and filtered. The CLI logs the total and

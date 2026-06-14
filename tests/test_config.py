@@ -13,6 +13,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from ai_jury.config import (  # noqa: E402
     DEFAULT_CONFIG,
     ConfigError,
+    _from_dict,
+    config_hash,
     load_config,
     validate_config,
 )
@@ -96,6 +98,39 @@ class TestLoadConfig(unittest.TestCase):
     def test_load_default_with_validation(self):
         cfg = load_config(validate=True)
         self.assertEqual(cfg.rounds, 2)
+
+
+class TheaterConfigTests(unittest.TestCase):
+    """jury.toml theater defaults (issue #364)."""
+
+    def test_defaults_off_flat(self):
+        cfg = _from_dict({})
+        self.assertFalse(cfg.theater)
+        self.assertEqual(cfg.theater_style, "flat")
+
+    def test_parsed_from_jury_table(self):
+        cfg = _from_dict({"jury": {"theater": True, "theater_style": "PIXEL"}})
+        self.assertTrue(cfg.theater)
+        self.assertEqual(cfg.theater_style, "pixel")   # normalised lower
+
+    def test_rendering_only_excluded_from_config_hash(self):
+        base = _from_dict({})
+        themed = _from_dict({"jury": {"theater": True, "theater_style": "pixel"}})
+        self.assertEqual(config_hash(base), config_hash(themed))
+
+    def test_validate_rejects_bad_values(self):
+        bad = _valid()
+        bad["jury"]["theater"] = "yes"
+        with self.assertRaises(ConfigError):
+            validate_config(bad)
+        bad2 = _valid()
+        bad2["jury"]["theater_style"] = "ascii"
+        with self.assertRaises(ConfigError):
+            validate_config(bad2)
+        ok = _valid()
+        ok["jury"]["theater"] = True
+        ok["jury"]["theater_style"] = "pixel"
+        self.assertEqual(validate_config(ok), [])
 
 
 if __name__ == "__main__":

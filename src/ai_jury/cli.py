@@ -301,17 +301,26 @@ def build_parser() -> argparse.ArgumentParser:
         "--theater",
         dest="theater",
         action="store_true",
+        default=None,
         help="animated deliberation view of the live run (each model seated "
         "around a table, speaking per phase, panel-vote/chair finale); needs an "
-        "interactive terminal, else falls back to --live",
+        "interactive terminal, else falls back to --live. Can be defaulted on in "
+        "jury.toml ([jury] theater = true)",
+    )
+    p.add_argument(
+        "--no-theater",
+        dest="theater",
+        action="store_false",
+        help="disable the theater scene even if jury.toml enables it",
     )
     p.add_argument(
         "--theater-style",
         dest="theater_style",
         choices=("flat", "pixel"),
-        default="flat",
+        default=None,
         help="--theater scene style: 'flat' (ANSI line scene, default) or "
-        "'pixel' (pixel-art room; needs a truecolor+unicode terminal)",
+        "'pixel' (pixel-art room; needs a truecolor+unicode terminal). Defaults "
+        "from jury.toml ([jury] theater_style)",
     )
     p.add_argument(
         "--post-summary",
@@ -1294,7 +1303,12 @@ def main(argv: list[str] | None = None) -> int:
     # alone just streams locally. Posting is best-effort: a GitHub hiccup is logged
     # and never aborts the run.
     live_target = args.pr or args.issue
-    live_posts = bool((args.live or args.theater) and args.post_summary and live_target)
+    # Theater defaults can come from jury.toml (issue #364); the CLI flags
+    # (--theater / --no-theater, --theater-style) override per run. Sentinels
+    # (None) distinguish "not passed" from an explicit choice.
+    theater_on = args.theater if args.theater is not None else config.theater
+    theater_style = args.theater_style or config.theater_style
+    live_posts = bool((args.live or theater_on) and args.post_summary and live_target)
     live_post = post_issue_comment if args.issue else post_pr_comment
     # Opt-in animated "courtroom" scene (--theater): an interactive TTY view of
     # the REAL run (each model seated, speaking per phase, gavel/vote finale). It
@@ -1302,7 +1316,7 @@ def main(argv: list[str] | None = None) -> int:
     # it falls back to the plain --live step stream otherwise. The structured
     # outcome / report / CI gate are untouched — this is a side channel.
     court = None
-    if args.theater and outcome is None and not args.quiet:
+    if theater_on and outcome is None and not args.quiet:
         from . import theater as _theater
 
         if _theater.supports_scene(sys.stdout):
@@ -1319,12 +1333,12 @@ def main(argv: list[str] | None = None) -> int:
                 case=case,
                 mode=("issue" if args.issue else "code"),
                 decision=(args.decision or config.decision),
-                style=args.theater_style,
+                style=theater_style,
             )
             court.open()
 
     on_event = None
-    if args.live or args.theater:
+    if args.live or theater_on:
 
         def on_event(kind, result, round_no=None):
             if court is not None:
@@ -1342,7 +1356,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # We stream live only when actually running the jury; a cache hit has nothing
     # to replay, so the consolidated report is still printed in that case.
-    live_streamed = bool(args.live or args.theater) and outcome is None
+    live_streamed = bool(args.live or theater_on) and outcome is None
 
     if outcome is None:
         try:
