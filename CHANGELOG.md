@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.1] - 2026-06-14
+
+### Security
+
+- **Theater scrubs control / bidi / zero-width characters from terminal output**
+  (`docs/security-audit-2026-06-14-theater.md`). The `--theater` scene rendered
+  agent-influenced text (finding claims, the verdict line) to the terminal
+  without stripping control bytes, so a crafted claim could inject ANSI escapes
+  (clear the screen, move the cursor to **spoof the verdict banner**, set the
+  title) or use Unicode bidi overrides to spoof text (Trojan Source). `Screen.put`
+  — the single render sink — now replaces C0/DEL/C1 and bidi/zero-width format
+  characters with a space; trusted styling still arrives via the separate `sgr`
+  argument. No Critical/High/Medium remaining after re-audit.
+
+### Fixed
+
+- Website demo: changing the panel/depth now fully **resets the animated
+  theater** (the scene is hidden and cleared) so the next run replays from
+  scratch with no stale seats, phase marks, or decision banner.
+
 ## [1.9.0] - 2026-06-14
 
 ### Added

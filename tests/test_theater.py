@@ -61,6 +61,20 @@ class ScreenTest(unittest.TestCase):
         self.assertIn("\033[31m", out)
         self.assertIn("\033[0m", out)
 
+    def test_put_scrubs_control_chars(self):
+        # Content is agent-influenced; a raw escape would be a terminal-injection
+        # attempt. The cell content must never carry control bytes (only the
+        # trusted sgr param emits escapes).
+        s = Screen(28, 1)
+        # C0/ESC/DEL/C1 + bidi override (U+202E) + zero-width (U+200B) + BOM
+        s.put(0, 0, "\x1b[2Jx\x07y\x7fz\x9b‮EVIL​﻿", "")
+        plain = s.to_plain()
+        for bad in ("\x1b", "\x07", "\x7f", "\x9b", "‮", "​", "﻿"):
+            self.assertNotIn(bad, plain)
+        self.assertIn("x", plain)
+        self.assertIn("z", plain)
+        self.assertNotIn("\x1b[2J", s.to_ansi())   # injected control seq gone from terminal output
+
 
 class CourtroomTest(unittest.TestCase):
     def _drive(self, court):
