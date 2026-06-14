@@ -210,7 +210,11 @@ a table and take turns speaking as the run moves through review → debate →
 verify → decision, then reach a decision together — by panel vote, or recorded
 by the chair. There is no judge; the jurors deliberate with each other.
 
-![ai-jury deliberation mode](docs/theater.gif)
+![ai-jury deliberation (pixel)](docs/theater-pixel.gif)
+
+…and the actual terminal view it renders live:
+
+![ai-jury deliberation (terminal)](docs/theater.gif)
 
 It is presentation-only — it reads the same per-phase `on_event` stream the
 report does, so it mirrors the **real** run (`jury --mock --theater` gives a
