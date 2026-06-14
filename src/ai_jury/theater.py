@@ -341,9 +341,11 @@ class Courtroom:
                 ) + ")"
             label = ("DECISION by panel vote" if self.decision == "vote"
                      else "DECISION (chair)")
-            s.center(mid - 1, label, "2;37")
-            banner = f"  {self._fit(self.verdict + extra, self.cols - 18)}  "
-            s.center(mid, banner, _banner_sgr(self.verdict))
+            s.center(_TABLE_TOP + 1, label, "2;37")
+            sgr = _banner_sgr(self.verdict)
+            for j, ln in enumerate(self._wrap_banner(self.verdict + extra,
+                                                     self.cols - 16, 3)):
+                s.center(_TABLE_TOP + 3 + j, f" {ln} ", sgr)
             return
         if self.phase == "verify" and self.verifies:
             s.center(_TABLE_TOP + 1, "- verifying findings -", "97;1")
@@ -383,6 +385,17 @@ class Courtroom:
             return text
         ell = "…" if self.unicode else "..."
         return text[: max(0, width - len(ell))].rstrip() + ell
+
+    def _wrap_banner(self, text: str, width: int, max_lines: int) -> list[str]:
+        """Wrap ``text`` to ``width`` over at most ``max_lines`` rows so the
+        verdict is readable; if it still overflows, the last line gets an
+        ellipsis (better than truncating the whole verdict to one line)."""
+        lines = _wrap(text, width)
+        if len(lines) > max_lines:
+            lines = lines[:max_lines]
+            ell = "…" if self.unicode else "..."
+            lines[-1] = self._fit(lines[-1], width - len(ell) - 1) + " " + ell
+        return lines
 
     def _verify_row(self, v):
         msg = f"{v.status:<18} {flatten_inline(v.claim)[:40]}"
@@ -480,8 +493,10 @@ class Courtroom:
             label = ("DECISION by panel vote" if self.decision == "vote"
                      else "DECISION (chair)")
             s.center(mid - 1, f" {label} ", "97;1")
-            s.center(mid, f"  {self._fit(self.verdict + extra, self.cols - 8)}  ",
-                     _banner_sgr(self.verdict))
+            sgr = _banner_sgr(self.verdict)
+            for j, ln in enumerate(self._wrap_banner(self.verdict + extra,
+                                                     self.cols - 8, 3)):
+                s.center(mid + j, f" {ln} ", sgr)
         elif self.phase == "verify" and self.verifies:
             s.center(mid - 1, " verifying findings ", "97;1")
             for j, v in enumerate(self.verifies[:3]):
@@ -522,11 +537,9 @@ class Courtroom:
                 s.put(r0 + 2 + j, 6, f"( {w:<{width}} )", "39")
             s.put(r0 + 2 + len(wrapped), 6, "'" + "-" * (width + 2) + "'", "97")
         elif self.verdict:
+            # The full verdict is shown wrapped on the table banner now, so this
+            # is just the closing note.
             s.put(r0, 2, " the panel has decided ", "97;1")
-            # The banner is one truncated line; show the FULL verdict here,
-            # wrapped, so the rationale is actually readable in the scene.
-            for j, w in enumerate(_wrap(self.verdict, self.cols - 8)[:3]):
-                s.put(r0 + 1 + j, 4, w, "97")
 
     def _transcript(self) -> None:
         s = self.screen

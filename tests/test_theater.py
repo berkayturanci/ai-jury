@@ -393,7 +393,7 @@ class LiveAndFitTest(unittest.TestCase):
         for line in plain.split("\n"):
             self.assertLessEqual(len(line), court.cols)   # nothing overflows
 
-    def test_full_verdict_readable_below_banner(self):
+    def test_full_verdict_readable_via_wrapped_banner(self):
         court = _court()
         court.open()
         verdict = ("## Verdict\nNEEDS-INFO — "
@@ -402,8 +402,8 @@ class LiveAndFitTest(unittest.TestCase):
         court.close()
         plain = court.screen.to_plain()
         self.assertIn("the panel has decided", plain)
-        # the tail of the verdict only appears if the full text is wrapped below
-        # (the one-line banner truncates well before it)
+        # the tail of the verdict only appears if the banner wrapped it across
+        # multiple lines (a single truncated line would drop it)
         self.assertIn("ZEBRA_END", plain)
 
 

@@ -11,13 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The decision banner now wraps the full verdict** across up to 3 lines on the
+  table (ellipsis only if it's still longer), instead of truncating the whole
+  verdict to one line — so the rationale is readable in the scene itself (flat +
+  pixel).
 - Theater transcript lines are now truncated with an ellipsis instead of being
   hard-cut mid-word at the screen edge (e.g. the long `DECISION -> …` log line).
 
 ### Internal
 
-- `theater.py` is now at 100% coverage (covered the ticker, `_fit`, and the
-  verdict-headline branches); overall coverage nudged up off the 99% floor.
+- `theater.py` is now at 100% coverage (covered the ticker, `_fit`/`_wrap_banner`,
+  and the verdict-headline branches); overall coverage nudged off the 99% floor.
 
 ## [1.9.2] - 2026-06-14
 
