@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-06-14
+
 ### Added
 
 - **`--theater`: an animated "deliberation" view of a live run.** Opt-in,
@@ -19,6 +21,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rounds / early-stop / disputes, seats many jurors (compact roster fallback),
   and falls back to the plain `--live` stream on a non-interactive terminal.
   See `docs/theater-design.md`.
+- Theater seats use each vendor's own **product brand colour** (24-bit truecolor:
+  Anthropic coral, OpenAI teal, Google blue, local violet), matching the
+  website's vendor palette; terminals without truecolor degrade to the nearest
+  colour.
+
+### Documentation
+
+- README, `docs/theater-design.md`, and the landing page gained a dedicated
+  **Theater mode** section with a pixel-art deliberation demo gif.
 
 ## [1.6.2] - 2026-06-13
 
