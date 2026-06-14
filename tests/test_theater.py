@@ -162,6 +162,37 @@ class CourtroomTest(unittest.TestCase):
             for name, _ in agents:
                 self.assertIn(name[:6], court.screen.to_plain())
 
+    def test_many_jurors_fall_back_to_roster(self):
+        # 8 jurors can't fit full seat sprites — degrade to a compact roster
+        # instead of clipping.
+        agents = [(f"juror{i}", "local") for i in range(8)]
+        court = Courtroom(agents, agents[0][0], animate=False, cols=92, rows=30, capture=[])
+        self.assertFalse(court._seats_fit())
+        court.open()
+        court.step("review", _ar("juror0", output=_REVIEW))
+        court.close()
+        frame = court.screen.to_plain()
+        self.assertIn("JURY:", frame)
+        for i in range(8):
+            self.assertIn(f"juror{i}", frame)
+
+    def test_narrow_terminal_uses_roster(self):
+        agents = [(f"a{i}", "openai") for i in range(5)]
+        court = Courtroom(agents, agents[0][0], animate=False, cols=58, rows=30, capture=[])
+        self.assertFalse(court._seats_fit())
+        court.open()
+        court.close()
+        self.assertIn("JURY:", court.screen.to_plain())
+
+    def test_roster_wraps_and_caps_many_jurors(self):
+        # Lots of long-named jurors on a narrow width → roster wraps across rows
+        # and stops without clipping/erroring.
+        agents = [(f"longjuror{i:02d}", "local") for i in range(20)]
+        court = Courtroom(agents, agents[0][0], animate=False, cols=64, rows=30, capture=[])
+        court.open()
+        court.close()
+        self.assertIn("JURY:", court.screen.to_plain())
+
 
 _DISPUTE = (
     "```json\n"
