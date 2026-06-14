@@ -675,6 +675,44 @@ footer { border-top: 1px solid var(--border); padding: 2.4rem 0; color: var(--fa
   .theater-note { margin-left: 0; }
 }
 
+/* ---- Demo theater (animated deliberation preview) ------------------- */
+.theater-demo {
+  margin-bottom: 1rem; padding: 1rem 1.1rem; border-radius: var(--radius);
+  border: 1px solid var(--border); background: var(--surface-2);
+}
+.th-strip { display: flex; flex-wrap: wrap; gap: .5rem 1rem; margin-bottom: .9rem; font-family: var(--font-mono); font-size: .8rem; }
+.th-ph { color: var(--faint); transition: color .25s ease; white-space: nowrap; }
+.th-ph.on { color: var(--accent-3); font-weight: 700; }
+.th-ph.done { color: var(--green); }
+.th-table { display: grid; grid-template-rows: auto auto auto; gap: .7rem; }
+.th-seats { display: flex; flex-wrap: wrap; justify-content: center; gap: .6rem; }
+.th-center {
+  text-align: center; font-family: var(--font-mono); font-size: .9rem; color: var(--muted);
+  padding: .9rem 1rem; border-radius: var(--radius-sm);
+  border: 1px dashed var(--border); background: var(--surface);
+  min-height: 1.2em;
+}
+.th-center.banner { font-weight: 700; border-style: solid; }
+.th-center.v-bad { color: #fff; background: var(--red); border-color: var(--red); }
+.th-center.v-ok { color: #062; background: var(--green); border-color: var(--green); }
+.th-center.v-warn { color: var(--text); border-color: var(--accent-line); background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
+.seat {
+  display: inline-flex; align-items: center; gap: .4rem;
+  padding: .35rem .7rem; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--surface);
+  font-size: .82rem; color: var(--muted); transition: all .25s ease;
+}
+.seat .dot { width: 9px; height: 9px; border-radius: 50%; }
+.seat.speaking {
+  color: var(--text); border-color: var(--accent-line);
+  box-shadow: 0 0 0 2px var(--accent-soft); transform: translateY(-2px);
+}
+.seat.done { color: var(--text); }
+.seat .ballot { font-family: var(--font-mono); font-size: .72rem; color: var(--faint); }
+@media (prefers-reduced-motion: reduce) {
+  .th-ph, .seat { transition: none; }
+}
+
 /* ---- Comparison table ----------------------------------------------- */
 .cmp-wrap { overflow-x: auto; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface); }
 .cmp { width: 100%; border-collapse: collapse; min-width: 640px; font-size: .9rem; }

@@ -198,6 +198,9 @@ KNOWN_JURY_KEYS = (
     "transcript",
     # Final-verdict mode: "chair" synthesis or panel "vote" (rendering-only).
     "decision",
+    # Animated theater view defaults (rendering-only; issue #364).
+    "theater",
+    "theater_style",
     # Large-diff handling (issue #31).
     "diff",
 )
@@ -277,6 +280,14 @@ def validate_config(data: dict, strict: bool = False) -> list:
     decision = jury.get("decision")
     if decision is not None and str(decision).strip().lower() not in ("chair", "vote"):
         errors.append(f"jury.decision must be 'chair' or 'vote' (got {decision!r}).")
+
+    # Animated theater defaults (issue #364): theater is a bool, style is enum.
+    theater = jury.get("theater")
+    if theater is not None and not isinstance(theater, bool):
+        errors.append(f"jury.theater must be true or false (got {theater!r}).")
+    style = jury.get("theater_style")
+    if style is not None and str(style).strip().lower() not in ("flat", "pixel"):
+        errors.append(f"jury.theater_style must be 'flat' or 'pixel' (got {style!r}).")
 
     # Adaptive rounds (issue #40): max_rounds >= 1 (hard); early_stop is a bool.
     max_rounds = jury.get("max_rounds")
@@ -514,6 +525,15 @@ class JuryConfig:
     # the cache key. The chair still runs (its reasoning is shown as supporting
     # narrative), and the severity-based CI gate is unaffected. CLI: ``--decision``.
     decision: str = "chair"
+    # Animated theater view defaults (issue #364). Rendering-only side channel —
+    # excluded from ``config_hash`` and the cache key (it never touches the
+    # outcome). ``theater`` defaults the scene on; ``theater_style`` is "flat"
+    # (ANSI line scene) or "pixel" (pixel-art room). The CLI ``--theater`` /
+    # ``--theater-style`` flags override these per run. Theater is TTY-only, so
+    # even when defaulted on it falls back to ``--live`` off an interactive
+    # terminal (and ``pixel`` falls back to ``flat`` without truecolor/unicode).
+    theater: bool = False
+    theater_style: str = "flat"
 
     @property
     def effective_max_rounds(self) -> int:
@@ -637,6 +657,8 @@ def _from_dict(data: dict) -> JuryConfig:
         auto_depth=bool(jury.get("auto_depth", False)),
         transcript=bool(jury.get("transcript", False)),
         decision=(str(jury.get("decision", "chair")).strip().lower() or "chair"),
+        theater=bool(jury.get("theater", False)),
+        theater_style=(str(jury.get("theater_style", "flat")).strip().lower() or "flat"),
     )
 
 

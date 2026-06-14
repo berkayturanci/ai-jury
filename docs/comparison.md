@@ -46,6 +46,7 @@ Legend: ✅ yes · ➖ partial / optional · ❌ no · — not applicable.
 | Incremental review (changed-since-last-run) | ✅ (`--incremental`) | ❌ | ❌ | ✅ |
 | Risk-aware auto-depth (scale rounds to the diff) | ✅ (`--auto` / `auto_depth`) | ❌ | ❌ | ➖ |
 | Live progress on the PR (sticky / phased comments) | ✅ (`--post-progress`, `--post-mode phased`) | ❌ | ❌ | ➖ |
+| Animated deliberation view (in-terminal) | ✅ (`--theater`, flat / pixel) | ❌ | ❌ | ❌ |
 | Comment-triggered runs (`/jury …`) | ➖ (`jury comment` + workflow recipe) | ➖ | ❌ | ✅ |
 | Offline / local open-weight reviewer | ✅ (`vendor = "local"`, Ollama/etc., $0) | ➖ | ➖ | ❌ |
 | Guided config setup | ✅ (`jury init`, `--wizard`) | ❌ | ❌ | n/a (hosted) |

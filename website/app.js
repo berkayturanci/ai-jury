@@ -679,6 +679,90 @@
       var t = $("term-title");
       if (t && run.con.length) t.textContent = run.con[0][0].replace(/^\$\s*/, "");
     }
+    // ---- Animated theater preview (issue #365) ----------------------------
+    // An in-browser echo of the CLI's --theater: jurors around a table light up
+    // per phase, then the decision lands. Illustrative; the real animation is
+    // the CLI. Mirrors the chosen panel / depth / decision.
+    var TH_PHASES = [["review", "REVIEW"], ["debate", "DEBATE"], ["verify", "VERIFY"], ["decision", "DECISION"]];
+    var TH_ORDER = ["review", "debate", "verify", "decision"];
+
+    function theaterBeats(run) {
+      var beats = [], spoken = [], what = run.mode === "issue" ? "issue" : "diff";
+      run.ags.forEach(function (a) {
+        beats.push({ phase: "review", speaker: a, spoken: spoken.slice(), center: LABEL[a] + " reviews the " + what + "…" });
+        spoken.push(a);
+      });
+      var all = run.ags.slice();
+      if (run.debate) beats.push({ phase: "debate", spoken: all, center: "the panel debates ⇄ (round 2)" });
+      if (run.verifyOn) beats.push({ phase: "verify", spoken: all, center: "verifying findings — chair " + LABEL[run.chair] });
+      var how = run.vm === "vote" ? "panel vote" : "chair: " + LABEL[run.chair];
+      var note = run.verdictNote ? "  ·  " + run.verdictNote : "";
+      beats.push({ phase: "decision", spoken: all, banner: true, center: run.verdict + note + "  ·  " + how });
+      return beats;
+    }
+
+    function renderTheater(run) {
+      var stage = $("demo-theater"), ags = run.ags, mid = Math.ceil(ags.length / 2);
+      function seatRow(list) {
+        return list.map(function (a) {
+          return '<div class="seat" data-seat="' + a + '"><span class="dot d-' + a + '"></span><span class="snm">' + esc(LABEL[a]) + "</span></div>";
+        }).join("");
+      }
+      var strip = TH_PHASES.filter(function (p) {
+        return (p[0] !== "debate" || run.debate) && (p[0] !== "verify" || run.verifyOn);
+      }).map(function (p) {
+        return '<span class="th-ph" data-ph="' + p[0] + '">' + p[1] + "</span>";
+      }).join('<span class="th-sep" aria-hidden="true">·</span>');
+      stage.innerHTML =
+        '<div class="th-strip">' + strip + "</div>" +
+        '<div class="th-table">' +
+          '<div class="th-seats th-top">' + seatRow(ags.slice(0, mid)) + "</div>" +
+          '<div class="th-center" id="th-center">the jury convenes…</div>' +
+          '<div class="th-seats th-bot">' + seatRow(ags.slice(mid)) + "</div>" +
+        "</div>";
+      stage.hidden = false;
+    }
+
+    function applyBeat(run, b) {
+      var stage = $("demo-theater");
+      qa(".th-ph", stage).forEach(function (el) {
+        var ph = el.getAttribute("data-ph");
+        el.classList.toggle("on", ph === b.phase);
+        el.classList.toggle("done", TH_ORDER.indexOf(ph) < TH_ORDER.indexOf(b.phase));
+      });
+      qa(".seat", stage).forEach(function (el) {
+        var a = el.getAttribute("data-seat");
+        el.classList.toggle("speaking", b.speaker === a);
+        el.classList.toggle("done", b.spoken.indexOf(a) !== -1);
+      });
+      var c = $("th-center");
+      c.className = "th-center" + (b.banner ? " banner " + verdictClass(run.verdict) : "");
+      c.textContent = b.center;
+    }
+
+    function playTheater(run, onDone) {
+      renderTheater(run);
+      var beats = theaterBeats(run);
+      if (reduce) { applyBeat(run, beats[beats.length - 1]); onDone(); return; }
+      var i = 0;
+      (function tick() {
+        applyBeat(run, beats[i++]);
+        if (i < beats.length) runTimer = setTimeout(tick, 950);
+        else { runTimer = null; setTimeout(onDone, 650); }
+      })();
+    }
+
+    function streamTerminal(run, onDone) {
+      var i = 0;
+      (function step() {
+        if (i < run.con.length) {
+          $("term-body").appendChild(consoleLine(run.con[i++]));
+          $("term-body").scrollTop = $("term-body").scrollHeight;
+          runTimer = setTimeout(step, 180);
+        } else { runTimer = null; onDone(); }
+      })();
+    }
+
     function runDemo() {
       if (selectedAgents().length === 0) { $("flow-note").textContent = "Pick at least one reviewer to run."; return; }
       var run = buildRun();
@@ -690,6 +774,7 @@
       if (runTimer) { clearTimeout(runTimer); runTimer = null; }
 
       if (reduce) {
+        playTheater(run, function () {});
         run.con.forEach(function (l) { $("term-body").appendChild(consoleLine(l)); });
         renderComments(run);
         return;
@@ -697,20 +782,14 @@
       btn.disabled = true;
       btn.setAttribute("aria-busy", "true");
       btn.textContent = "Running review...";
-      var i = 0;
-      (function step() {
-        if (i < run.con.length) {
-          $("term-body").appendChild(consoleLine(run.con[i++]));
-          $("term-body").scrollTop = $("term-body").scrollHeight;
-          runTimer = setTimeout(step, 220);
-        } else {
-          runTimer = null;
+      playTheater(run, function () {
+        streamTerminal(run, function () {
           renderComments(run);
           btn.disabled = false;
           btn.removeAttribute("aria-busy");
           btn.textContent = "▶ Run review (demo)";
-        }
-      })();
+        });
+      });
     }
     function syncRun() {
       if ($("run-out").hidden) return;
@@ -718,12 +797,18 @@
       $("run-btn").disabled = false;
       $("run-btn").textContent = "▶ Run review (demo)";
       if (selectedAgents().length === 0) {
+        $("demo-theater").hidden = true;
         $("term-body").innerHTML = "";
         $("gh-comments").innerHTML = '<p class="muted">Pick at least one reviewer.</p>';
         return;
       }
       var run = buildRun();
       setTermTitle(run);
+      // Refresh the theater to its final (static) frame so it stays in sync with
+      // the panel/depth without replaying the animation on every tweak.
+      renderTheater(run);
+      var beats = theaterBeats(run);
+      applyBeat(run, beats[beats.length - 1]);
       $("term-body").innerHTML = "";
       run.con.forEach(function (l) { $("term-body").appendChild(consoleLine(l)); });
       renderComments(run);

@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-06-14
+
+### Added
+
+- **Default the theater view from `jury.toml`** (issue #364): `[jury] theater =
+  true` and `theater_style = "flat"|"pixel"` so the animated deliberation view
+  can be on by default. New CLI flags `--no-theater` and a config-aware
+  `--theater-style` override the file per run. Rendering-only — excluded from the
+  config hash / cache key, and still TTY-only (falls back to `--live`, and
+  `pixel` to `flat`, when unsupported).
+
+### Documentation
+
+- Landing page + `docs/comparison.md`: new comparison row — **animated
+  deliberation view (in-terminal)**, an ai-jury-only capability.
+- Website demo: the scripted "Run review" now plays an in-browser animated
+  theater preview (issue #365).
+
 ## [1.8.1] - 2026-06-14
 
 ### Fixed
