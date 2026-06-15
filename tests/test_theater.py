@@ -208,6 +208,16 @@ class CourtroomTest(unittest.TestCase):
         court = _court()
         self.assertEqual(court._slots(0), [])
 
+    def test_speak_with_already_done_seats(self):
+        # verify marks every seat 'done'; a later review speak must leave the
+        # done seats untouched (exercises the done-skip branch in _speak).
+        court = _court()
+        court.open()
+        court.step("verify", _ar("codex", "openai", output=_VERIFY))
+        court.step("review", _ar("claude", output=_REVIEW))
+        court.close()
+        self.assertIn("claude", court.screen.to_plain())
+
 
 _PIX_AGENTS = [("claude", "anthropic"), ("codex", "openai"),
                ("agy", "google"), ("qwen", "local")]
@@ -336,6 +346,84 @@ class AnimateTest(unittest.TestCase):
         self.assertIn("\033[", buf.getvalue())
 
 
+class LiveAndFitTest(unittest.TestCase):
+    """Background ticker (live clock) + verdict-banner truncation."""
+
+    def test_ticker_repaints_while_open_then_stops(self):
+        import threading
+        import unittest.mock as mock
+
+        buf = io.StringIO()
+        with mock.patch("ai_jury.theater.time.sleep"):   # no real beat sleeps
+            c = Courtroom(_AGENTS, "codex", animate=True, stream=buf)
+            c.tick_interval = 0.01                        # Event.wait stays real
+            c.open()
+            before = buf.getvalue()
+            # Real delay that the time.sleep patch does NOT affect, so the
+            # background ticker gets wall-clock time to repaint.
+            threading.Event().wait(0.08)
+            self.assertGreater(len(buf.getvalue()), len(before))
+            c.close()
+        self.assertIsNone(c._tick_thread)                # joined/cleared on close
+
+    def test_ticker_noop_when_not_animating(self):
+        c = _court()           # animate=False
+        c._start_ticker()
+        self.assertIsNone(c._tick_thread)
+
+    def test_verdict_label_keyword_only(self):
+        c = _court()
+        self.assertEqual(c._verdict_label("NEEDS-INFO — long reason here"), "NEEDS-INFO")
+        self.assertEqual(c._verdict_label("APPROVE - looks good"), "APPROVE")
+        self.assertEqual(c._verdict_label("REQUEST CHANGES"), "REQUEST CHANGES")
+
+    def test_decision_transcript_line_is_short(self):
+        court = _court()
+        court.open()
+        court.step("synthesis", _ar("codex", "openai",
+                   output="## Verdict\nNEEDS-INFO — " + "blah " * 60))
+        court.close()
+        log = " ".join(court.log)
+        self.assertIn("DECISION -> NEEDS-INFO", log)
+        self.assertNotIn("blah", " ".join(court.log[-1:]))   # rationale not in the log line
+
+    def test_fit_truncates_with_ellipsis(self):
+        c = _court()
+        self.assertEqual(c._fit("short", 20), "short")
+        out = c._fit("a very long verdict line that overflows", 12)
+        self.assertTrue(out.endswith("…"))
+        self.assertLessEqual(len(out), 12)
+        self.assertEqual(c._fit("x", 0), "")
+        ascii_court = Courtroom(_AGENTS, "codex", animate=False, cols=92, rows=30,
+                                capture=[], unicode=False)
+        self.assertTrue(ascii_court._fit("y" * 40, 8).endswith("..."))
+
+    def test_long_verdict_banner_is_truncated(self):
+        court = _court(case="issue #264", mode="issue")
+        court.open()
+        court.step("synthesis", _ar("codex", "openai",
+                   output="## Verdict\nNEEDS-INFO — " + "blah " * 80))
+        court.close()
+        plain = court.screen.to_plain()
+        self.assertIn("…", plain)                        # banner ellipsised
+        self.assertNotIn("… …", plain)                   # but not doubled
+        for line in plain.split("\n"):
+            self.assertLessEqual(len(line), court.cols)   # nothing overflows
+
+    def test_full_verdict_readable_via_wrapped_banner(self):
+        court = _court()
+        court.open()
+        verdict = ("## Verdict\nNEEDS-INFO — "
+                   + "scope and acceptance criteria are undefined " * 3 + "ZEBRA_END")
+        court.step("synthesis", _ar("codex", "openai", output=verdict))
+        court.close()
+        plain = court.screen.to_plain()
+        self.assertIn("the panel has decided", plain)
+        # the tail of the verdict only appears if the banner wrapped it across
+        # multiple lines (a single truncated line would drop it)
+        self.assertIn("ZEBRA_END", plain)
+
+
 class HelpersTest(unittest.TestCase):
     def test_banner_sgr(self):
         from ai_jury.theater import _banner_sgr
@@ -354,6 +442,9 @@ class HelpersTest(unittest.TestCase):
         self.assertEqual(_gist("  \n  hello there"), "hello there")
         self.assertEqual(_verdict_headline("## Verdict\nAPPROVE — ok"), "APPROVE — ok")
         self.assertEqual(_verdict_headline("no header"), "no header")  # gist fallback
+        # header present but only blank lines follow → inner loop skips, falls
+        # through to the gist fallback (covers both inner branches)
+        self.assertEqual(_verdict_headline("## Verdict\n   \n"), "## Verdict")
 
     def test_screen_out_of_bounds_is_safe(self):
         s = Screen(4, 1)
