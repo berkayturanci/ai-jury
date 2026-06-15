@@ -48,7 +48,11 @@ implemented as a project-specific wrapper outside this package.
    make lint
    ```
 4. Update documentation and tests when behavior changes.
-5. Keep changes project-agnostic. Do not add references to a downstream repository,
+5. Fill in the PR template: a real **Summary** of your own and a **Related issues**
+   reference — `Closes #N` (or `Relates to #N`), or write `no issue` if it touches
+   none. The required `pr-lint` check enforces this, so PRs that replace the template
+   without a summary + issue reference will fail until both are present.
+6. Keep changes project-agnostic. Do not add references to a downstream repository,
    private workflow, or organization-specific process unless it is clearly framed as
    an external example.
 
