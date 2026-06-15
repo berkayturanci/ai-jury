@@ -21,7 +21,8 @@ The same deliberation, the same `on_event` flow, two render styles:
 
 - **`flat`** (default) — the ANSI line scene: a drawn table with vendor-coloured
   nameplates and figure glyphs, a speech bubble, the verify checklist, and the
-  decision banner. Works on any 16-colour terminal.
+  decision banner. The chrome uses the terminal's **default foreground**
+  (bold/faint), so it stays readable on both **light and dark** backgrounds.
 - **`pixel`** — a top-down **pixel-art room** drawn into an RGB pixel buffer and
   folded to the terminal two rows per cell via the upper-half-block `▀`
   (foreground = top pixel, background = bottom pixel). Little chibi jurors
@@ -83,3 +84,22 @@ brightens with a `▲` caret and their bubble opens in the speech band.
 - Not a TTY / width < 60 → fall back to the plain `--live` step stream.
 - `unicode=False` → ASCII glyph set (the chrome is forced ASCII; agent *content*
   may still carry Unicode).
+
+## Liveness, banner & safety
+
+- **Live clock.** Events can be tens of seconds apart (agents running), so a
+  background ticker repaints on an interval (default 1s) under a shared lock —
+  the clock ticks smoothly and the scene never freezes between phases.
+- **Readable verdict.** The decision banner **wraps the full verdict** over up to
+  three lines on the table (an ellipsis only if it still overflows), instead of
+  truncating it to one line. The rolling transcript logs the short verdict
+  keyword (`DECISION -> NEEDS-INFO`); long transcript lines are ellipsised, not
+  hard-cut.
+- **Light & dark.** Chrome uses the terminal default foreground (see above); the
+  pixel scene paints its own background, and vendor/verdict colours have contrast
+  on both themes.
+- **Safety.** All agent-influenced text (claims, the verdict line) is rendered
+  through `Screen.put`, which scrubs control / DEL / C1 and bidi / zero-width
+  characters, so a crafted finding can't inject ANSI escapes (banner/cursor
+  spoofing) or Trojan-Source text into the terminal. See
+  `docs/security-audit-2026-06-14-theater.md`.
