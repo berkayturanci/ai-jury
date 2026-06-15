@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Website analytics switched from Google Analytics 4 to **Cloudflare Web
+  Analytics** — cookieless and privacy-first, so no cookie-consent banner is
+  required (GDPR / ePrivacy / PECR). The CLI still sends no telemetry.
+
 ## [1.9.4] - 2026-06-15
 
 ### Fixed
