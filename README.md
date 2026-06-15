@@ -172,32 +172,65 @@ expected/recorded schema, and the match/scoring rules.
 
 ## Usage
 
+**Set up** — detect your agents and write a `jury.toml`:
+
 ```bash
-jury init                              # scaffold jury.toml (detects agents + local models)
-jury init --wizard                     # guided setup: numbered questions, every one skippable
-jury init --preset balanced            # one-command setup from a preset (offline|fast|balanced|thorough)
-jury --pr 123                          # review a GitHub PR
-jury --pr 123 --auto                   # auto-depth: scale rounds/verify to the diff
-jury --pr 123 --post                   # ...and post the verdict as a comment
-jury --pr 123 --decision vote          # verdict by panel vote instead of a single chair
-jury --issue 42                        # review an ISSUE for completeness/clarity (READY/NEEDS-INFO/UNCLEAR)
-jury --issue 42 --decision vote        # issue verdict by panel vote (NEEDS-INFO > UNCLEAR > READY)
-jury --issue 42 --live --post          # stream + post each step to the issue thread
-jury --pr 123 --transcript             # full play-by-play (every review, debate, the reasoning)
-jury --pr 123 --live                   # stream each step to the terminal as it happens
-jury --pr 123 --theater                # animated "deliberation" view of the live run
-jury --pr 123 --theater --theater-style pixel   # …as a pixel-art room (truecolor terminal)
-jury --pr 123 --post-progress             # live: a sticky PR comment updated each round/chunk
-jury --pr 123 --post --post-mode phased   # post Round 1 / debate / decision as separate comments
-jury --pr 123 --incremental            # review only changes since the last run
-jury --pr 123 --suggest-patches        # also emit inspectable patches for verified findings
-git diff origin/HEAD... | jury --diff-file -   # review the current branch
-jury --diff-file examples/sample.diff  # review a diff file
-jury --rounds 1                        # independent review only (no debate)
-jury --mock --diff-file examples/sample.diff   # offline demo, no live CLIs
-jury config show                       # print the effective resolved config + its source
-jury --doctor                          # readiness check + actionable next steps
+jury init                     # scaffold (detects agents + local models)
+jury init --wizard            # guided setup: numbered, skippable questions
+jury init --preset balanced   # from a preset: offline | fast | balanced | thorough
 ```
+
+**Review a pull request:**
+
+```bash
+jury --pr 123                  # review a GitHub PR
+jury --pr 123 --auto           # auto-depth: scale rounds/verify to the diff
+jury --pr 123 --decision vote  # verdict by panel vote instead of a single chair
+jury --pr 123 --post           # post the verdict back as a PR comment
+```
+
+**Review an issue** — completeness & clarity (READY / NEEDS-INFO / UNCLEAR):
+
+```bash
+jury --issue 42
+jury --issue 42 --decision vote   # tie-break order: NEEDS-INFO > UNCLEAR > READY
+jury --issue 42 --live --post     # stream + post each step to the issue thread
+```
+
+**Watch it happen** — live in your terminal:
+
+```bash
+jury --pr 123 --live                            # stream each step as it lands
+jury --pr 123 --transcript                      # full play-by-play (reviews, debate, reasoning)
+jury --pr 123 --theater                         # animated "deliberation" view
+jury --pr 123 --theater --theater-style pixel   # …as a pixel-art room (truecolor terminal)
+```
+
+**Post to the PR:**
+
+```bash
+jury --pr 123 --post-progress             # one sticky comment, updated each round/chunk
+jury --pr 123 --post --post-mode phased   # Round 1 / debate / decision as separate comments
+jury --pr 123 --suggest-patches           # also emit inspectable patches for verified findings
+jury --pr 123 --incremental               # review only changes since the last run
+```
+
+**Local diffs & offline:**
+
+```bash
+git diff origin/HEAD... | jury --diff-file -   # review the current branch
+jury --diff-file examples/sample.diff          # review a diff file
+jury --rounds 1                                # independent review only (no debate)
+jury --mock --diff-file examples/sample.diff   # offline demo, no live CLIs
+```
+
+**Inspect:**
+
+```bash
+jury config show   # the effective resolved config + its source
+jury --doctor      # readiness check + actionable next steps
+```
+
 
 A sample report is in [`docs/example-run.md`](docs/example-run.md). For a **real**
 four-vendor run where the jury reviews its own repository (with honest notes on
