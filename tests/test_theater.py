@@ -406,6 +406,7 @@ class LiveAndFitTest(unittest.TestCase):
         court.close()
         plain = court.screen.to_plain()
         self.assertIn("…", plain)                        # banner ellipsised
+        self.assertNotIn("… …", plain)                   # but not doubled
         for line in plain.split("\n"):
             self.assertLessEqual(len(line), court.cols)   # nothing overflows
 
