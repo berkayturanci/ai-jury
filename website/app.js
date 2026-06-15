@@ -367,13 +367,19 @@
       var fsPost = $("fs-postmode");
       if (fsPost) {
         fsPost.classList.toggle("disabled", isIssue);
-        qa("input", fsPost).forEach(function (el) { el.disabled = isIssue; });
+        qa("input", fsPost).forEach(function (el) {
+          el.disabled = isIssue;
+          if (isIssue) el.setAttribute("title", "PR output options are not applicable for issue review");
+          else el.removeAttribute("title");
+        });
         if (isIssue) fsPost.setAttribute("title", "PR output options are not applicable for issue review");
         else fsPost.removeAttribute("title");
       }
 
       // auto-depth owns rounds/verify
       $("verify").disabled = auto;
+      if (auto) $("verify").setAttribute("title", "Auto-depth manages verification automatically");
+      else $("verify").removeAttribute("title");
       var verifyOpt = $("verify").closest(".opt");
       verifyOpt.classList.toggle("disabled", auto);
       if (auto) verifyOpt.setAttribute("title", "Auto-depth manages verification automatically");
@@ -387,6 +393,10 @@
         var lockAuto = auto;
         var lockSolo = soloPanel && el.value === "2";
         el.disabled = lockAuto || lockSolo;
+        if (lockAuto) el.setAttribute("title", "Auto-depth manages rounds automatically");
+        else if (lockSolo) el.setAttribute("title", "Debate requires at least 2 reviewers");
+        else el.removeAttribute("title");
+
         var opt = el.closest(".opt");
         opt.classList.toggle("disabled", lockAuto || lockSolo);
         if (lockAuto) opt.setAttribute("title", "Auto-depth manages rounds automatically");
@@ -786,12 +796,14 @@
         return;
       }
       btn.disabled = true;
+      btn.setAttribute("title", "Review is currently running");
       btn.setAttribute("aria-busy", "true");
       btn.textContent = "Running review...";
       playTheater(run, function () {
         streamTerminal(run, function () {
           renderComments(run);
           btn.disabled = false;
+          btn.removeAttribute("title");
           btn.removeAttribute("aria-busy");
           btn.textContent = "▶ Run review (demo)";
         });
