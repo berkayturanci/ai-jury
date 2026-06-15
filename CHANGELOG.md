@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.4] - 2026-06-15
+
+### Fixed
+
+- Theater decision banner no longer shows a **doubled ellipsis** ("x… …") when a
+  verdict overflows 3 lines; the last line is plain-sliced with a single "…".
+
 ## [1.9.3] - 2026-06-14
 
 ### Fixed

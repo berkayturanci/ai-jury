@@ -401,7 +401,8 @@ class Courtroom:
         if len(lines) > max_lines:
             lines = lines[:max_lines]
             ell = "…" if self.unicode else "..."
-            lines[-1] = self._fit(lines[-1], width - len(ell) - 1) + " " + ell
+            # plain slice (not _fit, which would add its own ellipsis → "x… …")
+            lines[-1] = lines[-1][: max(0, width - len(ell) - 1)].rstrip() + " " + ell
         return lines
 
     def _verify_row(self, v):
