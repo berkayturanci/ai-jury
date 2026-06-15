@@ -1,24 +1,21 @@
-// Google Analytics 4 (gtag.js) for the ai-jury website.
+// Cloudflare Web Analytics for the ai-jury website.
 //
-// Scope note: this measures **the website only** — anonymous pageviews and
-// the GA4 default events (scroll, outbound click, etc.). The `ai-jury` CLI
-// itself sends no telemetry; the two are different surfaces.
+// Privacy: this is a **cookieless, privacy-first** measurement — it sets no
+// cookies and collects no personal data / cross-site identifiers, so it needs no
+// cookie-consent banner under GDPR / ePrivacy / PECR. It measures the website
+// only (anonymous pageviews + Core Web Vitals); the `ai-jury` CLI itself sends
+// no telemetry — the two are different surfaces.
 //
-// To rotate the GA4 property, change `MEASUREMENT_ID` and commit. To disable
-// tracking entirely (e.g. for a fork or local preview), leave it as the
-// placeholder string starting with `G-REPLACE_ME` — the loader short-circuits.
+// Setup: create a free site in Cloudflare → Web Analytics, copy its beacon
+// token, and set `TOKEN` below. To disable tracking (a fork or local preview),
+// leave the placeholder — the loader short-circuits.
 
-const MEASUREMENT_ID = "G-72JDED64T7";
+const TOKEN = "REPLACE_WITH_CF_BEACON_TOKEN";
 
-if (!MEASUREMENT_ID.startsWith("G-REPLACE_ME")) {
+if (!TOKEN.startsWith("REPLACE_")) {
   const s = document.createElement("script");
-  s.async = true;
-  s.src = "https://www.googletagmanager.com/gtag/js?id=" + MEASUREMENT_ID;
+  s.defer = true;
+  s.src = "https://static.cloudflareinsights.com/beacon.min.js";
+  s.setAttribute("data-cf-beacon", JSON.stringify({ token: TOKEN }));
   document.head.appendChild(s);
-
-  window.dataLayer = window.dataLayer || [];
-  function gtag() { window.dataLayer.push(arguments); }
-  window.gtag = gtag;
-  gtag("js", new Date());
-  gtag("config", MEASUREMENT_ID);
 }
