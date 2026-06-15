@@ -10,7 +10,7 @@
 // token, and set `TOKEN` below. To disable tracking (a fork or local preview),
 // leave the placeholder — the loader short-circuits.
 
-const TOKEN = "REPLACE_WITH_CF_BEACON_TOKEN";
+const TOKEN = "f9a978b9ccc64ff49460fbcee8f722ef";
 
 if (!TOKEN.startsWith("REPLACE_")) {
   const s = document.createElement("script");
