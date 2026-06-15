@@ -204,12 +204,24 @@ class SpawnTests(unittest.TestCase):
     """Issue #293/F-7: _spawn runs in its own group and kills it on timeout."""
 
     def test_happy_path_returns_completed_process(self):
-        proc = adapters._spawn(["printf", "hi"], None, timeout=10)
+        proc = adapters._spawn(
+            [sys.executable, "-c", "print('hi', end='')"],
+            None,
+            timeout=10,
+)
         self.assertEqual(proc.returncode, 0)
         self.assertEqual(proc.stdout, "hi")
 
     def test_stdin_is_delivered(self):
-        proc = adapters._spawn(["cat"], "piped-input", timeout=10)
+        proc = adapters._spawn(
+            [
+                sys.executable,
+                "-c",
+                "import sys; print(sys.stdin.read(), end='')",
+            ],
+            "piped-input",
+            timeout=10,
+        )
         self.assertEqual(proc.returncode, 0)
         self.assertEqual(proc.stdout, "piped-input")
 
