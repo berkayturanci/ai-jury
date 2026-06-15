@@ -246,13 +246,13 @@ class Courtroom:
 
     def _title(self) -> None:
         s = self.screen
-        s.put(0, 1, f"{self.g['speak']} ai-jury - deliberation", "93;1")
+        s.put(0, 1, f"{self.g['speak']} ai-jury - deliberation", "1")
         decided = "panel vote" if self.decision == "vote" else f"chair: {self.chair[:10]}"
         meta = f"{len(self.agents)} jurors {self.dot} {decided}"
         if self.case:
             meta = f"case: {self.case}  {self.dot}  " + meta
-        s.put(0, 34, meta, "97")
-        s.put(1, 0, self.hr, "2;37")
+        s.put(0, 34, meta, "2")
+        s.put(1, 0, self.hr, "2")
 
     def _strip(self) -> None:
         s = self.screen
@@ -266,16 +266,16 @@ class Courtroom:
             elif kind == self.phase:
                 mark, sgr = ">", "96;1"
             else:
-                mark, sgr = self.dot, "2;37"
+                mark, sgr = self.dot, "2"
             cell = f"{mark} {text}"
             s.put(2, x, cell, sgr)
             x += len(cell) + 1
             if kind != _PHASES[-1][0]:
-                s.put(2, x, "--", "2;37")
+                s.put(2, x, "--", "2")
                 x += 3
         elapsed = int(time.monotonic() - self.start)
         s.put(2, self.cols - 8, f"{elapsed // 60:02d}:{elapsed % 60:02d}", "96")
-        s.put(3, 0, self.hr, "2;37")
+        s.put(3, 0, self.hr, "2")
 
     def _seat(self, x: int, name: str, vendor: str, *, facing: str) -> None:
         """Draw one juror seated at the table (facing 'down' = top edge, 'up' =
@@ -283,7 +283,7 @@ class Courtroom:
         s = self.screen
         st = self.state.get(name, "idle")
         hi = st in ("speaking", "arguing")
-        vsgr = _VENDOR_SGR.get(vendor, "37") + (";1" if hi else "")
+        vsgr = _VENDOR_SGR.get(vendor, "1") + (";1" if hi else "")
         figure = self.g["speak"] if hi else self.g["idle"]
         if st == "done":
             figure = self.g["ok"]
@@ -298,7 +298,7 @@ class Courtroom:
         fx = x - 1
         if facing == "down":      # top edge: nameplate above, figure toward table
             s.put(_TABLE_TOP - 3, plate_x, plate, vsgr)
-            s.put(_TABLE_TOP - 2, fx, fig, "96;1" if hi else "2;37")
+            s.put(_TABLE_TOP - 2, fx, fig, "96;1" if hi else "2")
             if ballot:
                 s.put(_TABLE_TOP - 4, x - len(ballot) // 2 - 1, f"[{ballot[:8]}]",
                       _banner_sgr(ballot))
@@ -307,7 +307,7 @@ class Courtroom:
         else:                      # bottom edge: figure toward table, nameplate below
             if hi:
                 s.put(_TABLE_BOT, x, self.g["caret"], "96")
-            s.put(_TABLE_BOT + 1, fx, fig, "96;1" if hi else "2;37")
+            s.put(_TABLE_BOT + 1, fx, fig, "96;1" if hi else "2")
             s.put(_TABLE_BOT + 2, plate_x, plate, vsgr)
             if ballot:
                 s.put(_TABLE_BOT + 3, x - len(ballot) // 2 - 1, f"[{ballot[:8]}]",
@@ -341,19 +341,19 @@ class Courtroom:
                 ) + ")"
             label = ("DECISION by panel vote" if self.decision == "vote"
                      else "DECISION (chair)")
-            s.center(_TABLE_TOP + 1, label, "2;37")
+            s.center(_TABLE_TOP + 1, label, "2")
             sgr = _banner_sgr(self.verdict)
             for j, ln in enumerate(self._wrap_banner(self.verdict + extra,
                                                      self.cols - 16, 3)):
                 s.center(_TABLE_TOP + 3 + j, f" {ln} ", sgr)
             return
         if self.phase == "verify" and self.verifies:
-            s.center(_TABLE_TOP + 1, "- verifying findings -", "97;1")
+            s.center(_TABLE_TOP + 1, "- verifying findings -", "1")
             for j, v in enumerate(self.verifies[:4]):
                 mk, msg, sgr = self._verify_row(v)
                 s.put(_TABLE_TOP + 2 + j, 9, f"{mk} {msg}", sgr)
             return
-        s.center(mid, f"case: {self.case}" if self.case else "deliberating…", "2;37")
+        s.center(mid, f"case: {self.case}" if self.case else "deliberating…", "2")
 
     def _roster(self) -> None:
         # Compact fallback (many jurors / narrow terminal): a wrapped row of
@@ -361,7 +361,7 @@ class Courtroom:
         s = self.screen
         marks = {"speaking": self.g["caret"], "arguing": self.g["caret"],
                  "done": self.g["ok"], "error": "!"}
-        s.put(_TABLE_TOP, 2, "JURY:", "2;37")
+        s.put(_TABLE_TOP, 2, "JURY:", "2")
         row, x = _TABLE_TOP + 1, 4
         for name, vendor in self.agents:
             st = self.state.get(name, "idle")
@@ -371,7 +371,7 @@ class Courtroom:
                 x = 4
             if row > _TABLE_BOT:
                 break
-            s.put(row, x, label, _VENDOR_SGR.get(vendor, "37")
+            s.put(row, x, label, _VENDOR_SGR.get(vendor, "1")
                   + (";1" if st in ("speaking", "arguing") else ""))
             x += len(label) + 2
         self._table_interior()
@@ -534,28 +534,28 @@ class Courtroom:
     def _speaking_area(self) -> None:
         s = self.screen
         r0 = 18
-        s.put(r0, 0, self.hr, "2;37")
+        s.put(r0, 0, self.hr, "2")
         speaker, text = self.bubble
         if speaker and not self.verdict:
             s.put(r0, 2, f" {speaker} is speaking ", "96;1")
             wrapped = _wrap(text, self.cols - 12)[:3]
             width = max((len(w) for w in wrapped), default=0)
-            s.put(r0 + 1, 6, "." + "-" * (width + 2) + ".", "97")
+            s.put(r0 + 1, 6, "." + "-" * (width + 2) + ".", "2")
             for j, w in enumerate(wrapped):
                 s.put(r0 + 2 + j, 6, f"( {w:<{width}} )", "39")
-            s.put(r0 + 2 + len(wrapped), 6, "'" + "-" * (width + 2) + "'", "97")
+            s.put(r0 + 2 + len(wrapped), 6, "'" + "-" * (width + 2) + "'", "2")
         elif self.verdict:
             # The full verdict is shown wrapped on the table banner now, so this
             # is just the closing note.
-            s.put(r0, 2, " the panel has decided ", "97;1")
+            s.put(r0, 2, " the panel has decided ", "1")
 
     def _transcript(self) -> None:
         s = self.screen
         r0 = 23
-        s.put(r0, 0, self.hr, "2;37")
-        s.put(r0, 2, " TRANSCRIPT ", "2;37")
+        s.put(r0, 0, self.hr, "2")
+        s.put(r0, 2, " TRANSCRIPT ", "2")
         for j, line in enumerate(self.log[-4:]):
-            s.put(r0 + 1 + j, 2, self._fit(flatten_inline(line), self.cols - 4), "37")
+            s.put(r0 + 1 + j, 2, self._fit(flatten_inline(line), self.cols - 4), "")
 
     def _status(self) -> None:
         s = self.screen

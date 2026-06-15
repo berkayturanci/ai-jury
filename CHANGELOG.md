@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.5] - 2026-06-15
+
+### Fixed
+
+- Theater is now readable on **light-background terminals**. The chrome (title,
+  meta, phase strip, separators, transcript, speech bubble) hardcoded white/grey
+  foregrounds that vanished on a light theme; it now uses the terminal's default
+  foreground (bold/faint), which adapts to both light and dark backgrounds. The
+  pixel scene (own dark background) and vendor/verdict colours are unchanged.
+
+### Changed
+
+- Website analytics switched from Google Analytics 4 to **Cloudflare Web
+  Analytics** — cookieless and privacy-first, so no cookie-consent banner is
+  required (GDPR / ePrivacy / PECR). The CLI still sends no telemetry.
+
 ## [1.9.4] - 2026-06-15
 
 ### Fixed
