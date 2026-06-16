@@ -31,3 +31,10 @@ cache/
 website/coverage/
 website/coverage-badge.json
 coverage.json
+
+# keel — track the committed adapters under .claude/commands/ + .keel/project.yaml,
+# ignore harness-local runtime state (resumable checkpoints, ledgers, activity records).
+.keel/state/
+.keel/activity/
+.claude/worktrees/
+.claude/settings.local.json
