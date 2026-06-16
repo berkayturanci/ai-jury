@@ -1,3 +1,3 @@
-## 2026-06-15 - Add focus visible styles to summary elements
-**Learning:** `<summary>` elements are inherently interactive and receive keyboard focus during tab navigation, but depending on browser defaults and CSS resets, they may lack a visible focus indicator. This makes them inaccessible to keyboard users who cannot tell which FAQ or details item they are currently focused on.
-**Action:** When adding global `:focus-visible` styles to interactive elements like `a`, `button`, and `input`, explicitly include `summary:focus-visible` to ensure accordions and collapsible sections remain keyboard-accessible.
+## 2026-06-16 - Dynamic State Masked by Static ARIA Label
+**Learning:** If an interactive element like a button has a static `aria-label`, screen readers will announce the `aria-label` and completely ignore any dynamic text changes *inside* the button (like a "copy" span changing to "copied!"). This creates a broken experience for non-visual users where the success state is invisible.
+**Action:** When creating buttons that change text content to indicate state (like copy buttons), either dynamically update the `aria-label` to match the state, or remove the `aria-label` entirely and use an `aria-live` region or visually-hidden text within the button so the text change is naturally announced.

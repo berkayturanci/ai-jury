@@ -95,7 +95,14 @@
         var t = cmd.textContent;
         var done = function () {
           btn.classList.add("done"); labelEl.textContent = "copied ✓";
-          setTimeout(function () { btn.classList.remove("done"); labelEl.textContent = base; }, 1400);
+          btn.setAttribute("aria-label", "Copied to clipboard");
+          btn.setAttribute("title", "Copied!");
+          setTimeout(function () {
+            btn.classList.remove("done");
+            labelEl.textContent = base;
+            btn.setAttribute("aria-label", "Copy install command");
+            btn.removeAttribute("title");
+          }, 1400);
         };
         if (navigator.clipboard) navigator.clipboard.writeText(t).then(done, done); else done();
       });
@@ -126,7 +133,14 @@
         var ok = function () {
           btn.classList.add("done");
           btn.querySelector("span").textContent = "copied";
-          setTimeout(function () { btn.classList.remove("done"); btn.querySelector("span").textContent = "copy"; }, 1400);
+          btn.setAttribute("aria-label", "Copied to clipboard");
+          btn.setAttribute("title", "Copied!");
+          setTimeout(function () {
+            btn.classList.remove("done");
+            btn.querySelector("span").textContent = "copy";
+            btn.setAttribute("aria-label", "Copy code");
+            btn.removeAttribute("title");
+          }, 1400);
         };
         if (navigator.clipboard) navigator.clipboard.writeText(text).then(ok, ok); else ok();
       });
