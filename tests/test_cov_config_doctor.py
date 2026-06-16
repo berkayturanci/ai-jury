@@ -8,6 +8,7 @@ DoctorDiagnosticsTests in tests/test_perfile_coverage.py.
 
 from __future__ import annotations
 
+import shutil
 import sys
 import tempfile
 import unittest
@@ -28,6 +29,13 @@ from ai_jury.config import (  # noqa: E402
     load_raw_config,
     validate_config,
 )
+
+
+def _tmpdir(case: unittest.TestCase) -> Path:
+    """A temp directory that is removed when the test case finishes."""
+    d = tempfile.mkdtemp()
+    case.addCleanup(shutil.rmtree, d, ignore_errors=True)
+    return Path(d)
 
 
 def _agent(**over):
@@ -183,7 +191,7 @@ class DoctorWarningBranches(unittest.TestCase):
     """build_diagnostics warning/error branches in doctor.py."""
 
     def setUp(self):
-        self.d = Path(tempfile.mkdtemp())
+        self.d = _tmpdir(self)
 
     def test_no_agents_configured_warning(self):
         # doctor.py:107 — empty [[agent]] list -> "no agents are configured".
@@ -238,7 +246,7 @@ class DoctorRecommendationBranches(unittest.TestCase):
     """_recommendations branches surfaced via build_diagnostics."""
 
     def setUp(self):
-        self.d = Path(tempfile.mkdtemp())
+        self.d = _tmpdir(self)
 
     def test_no_config_suggests_init(self):
         # doctor.py:146 — config_path is None and no jury.toml in cwd.
