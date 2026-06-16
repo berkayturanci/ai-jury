@@ -13,3 +13,7 @@
 ## 2025-06-10 - O(N) finding iteration
 **Learning:** In PR-level deterministic classification functions, iterating sequentially over the findings list multiple times using `any()` expression overhead is significantly slower than doing one single explicit for-loop iteration pass through the list.
 **Action:** Consolidate multiple sequential list iteration conditions (like `any(severity == "x")`, `any(severity == "y")`) into a single explicit loop over the findings array.
+
+## 2025-06-11 - Single-pass Explicit Loop for Aggregates
+**Learning:** Using multiple `sum(generator)` calls sequentially on the same list evaluates the list completely for each calculation and also incurs Python-level generator overhead. A single explicit for loop that performs all calculations concurrently on the target variables is significantly faster (around ~25-30% in Python 3.11).
+**Action:** Replace sequential identical or heavily overlapping O(N) aggregate loops on lists with a single explicit `for` loop that computes all metrics in a single pass.

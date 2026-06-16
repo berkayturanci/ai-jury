@@ -208,7 +208,7 @@ class SpawnTests(unittest.TestCase):
             [sys.executable, "-c", "print('hi', end='')"],
             None,
             timeout=10,
-)
+        )
         self.assertEqual(proc.returncode, 0)
         self.assertEqual(proc.stdout, "hi")
 

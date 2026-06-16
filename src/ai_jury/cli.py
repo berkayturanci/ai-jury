@@ -63,9 +63,7 @@ def _read_capped(fh, source: str) -> str:
             )
         return data
     if len(data) > _MAX_DIFF_INGEST_BYTES:
-        raise SystemExit(
-            f"error: {source} exceeds the {_MAX_DIFF_INGEST_BYTES}-byte ingest limit"
-        )
+        raise SystemExit(f"error: {source} exceeds the {_MAX_DIFF_INGEST_BYTES}-byte ingest limit")
     return data.decode("utf-8", errors="replace")
 
 
@@ -1323,10 +1321,18 @@ def main(argv: list[str] | None = None) -> int:
             # Display-only chair label for the scene title. The run resolves the
             # REAL chair internally (resolve_chair needs the usable/reviewer sets
             # and run RNG, which don't exist yet here), so use a best-effort name.
-            chair_name = (config.chair if config.chair and config.chair != "rotate"
-                          else (config.agents[0].name if config.agents else "chair"))
-            case = (f"PR #{args.pr}" if args.pr else
-                    f"issue #{args.issue}" if args.issue else "local diff")
+            chair_name = (
+                config.chair
+                if config.chair and config.chair != "rotate"
+                else (config.agents[0].name if config.agents else "chair")
+            )
+            case = (
+                f"PR #{args.pr}"
+                if args.pr
+                else f"issue #{args.issue}"
+                if args.issue
+                else "local diff"
+            )
             court = _theater.Courtroom(
                 [(a.name, a.vendor) for a in config.agents],
                 chair_name,

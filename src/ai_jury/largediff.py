@@ -147,11 +147,7 @@ def _path_from_git_header(line: str) -> str:
     if rest.startswith("a/"):
         body = rest[2:]
         half = (len(body) - 3) // 2
-        if (
-            len(body) >= 3
-            and body[half : half + 3] == " b/"
-            and body[:half] == body[half + 3 :]
-        ):
+        if len(body) >= 3 and body[half : half + 3] == " b/" and body[:half] == body[half + 3 :]:
             return _unquote_git_path(body[:half])
     idx = rest.rfind(" b/")
     if idx != -1:
