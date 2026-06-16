@@ -215,10 +215,13 @@ class CliIssueTests(unittest.TestCase):
         self.assertNotIn("approve", vote_line.lower())
 
     def test_config_vote_issue_vocabulary(self):
+        import shutil
         import tempfile
         from pathlib import Path
 
-        cfg = Path(tempfile.mkdtemp()) / "jury.toml"
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        cfg = Path(tmp) / "jury.toml"
         cfg.write_text(
             '[jury]\nrounds = 1\nchair = "claude"\ndecision = "vote"\n'
             '\n[[agent]]\nname = "claude"\nvendor = "anthropic"\ncommand = "x"\n'

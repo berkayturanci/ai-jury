@@ -10,6 +10,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import shutil
 import sys
 import tempfile
 import unittest
@@ -21,6 +22,14 @@ from ai_jury import cli, voting  # noqa: E402
 from ai_jury.config import JuryConfig, config_hash, load_config  # noqa: E402
 from ai_jury.consensus import FindingGroup  # noqa: E402
 from ai_jury.findings import Finding  # noqa: E402
+
+
+def _tmpdir(case: unittest.TestCase) -> Path:
+    """A temp directory that is removed when the test case finishes."""
+    d = tempfile.mkdtemp()
+    case.addCleanup(shutil.rmtree, d, ignore_errors=True)
+    return Path(d)
+
 
 DIFF = "diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n@@ -1 +1 @@\n-x\n+y\n"
 
@@ -138,7 +147,7 @@ class CliDecisionTests(unittest.TestCase):
         self.assertNotIn("## Chair verdict", out)
 
     def test_decision_vote_in_metadata_json(self):
-        d = Path(tempfile.mkdtemp())
+        d = _tmpdir(self)
         mp = d / "m.json"
         code, _, _ = _run(
             [
@@ -161,7 +170,7 @@ class CliDecisionTests(unittest.TestCase):
         self.assertIn("ballots", meta["vote"])
 
     def test_config_decision_vote(self):
-        d = Path(tempfile.mkdtemp())
+        d = _tmpdir(self)
         cfg = d / "jury.toml"
         cfg.write_text(
             '[jury]\nrounds = 1\nchair = "claude"\ndecision = "vote"\n'
@@ -181,7 +190,7 @@ class CliDecisionTests(unittest.TestCase):
         self.assertIn("## Verdict — panel vote", out)
 
     def test_flag_overrides_config(self):
-        d = Path(tempfile.mkdtemp())
+        d = _tmpdir(self)
         cfg = d / "jury.toml"
         cfg.write_text(
             '[jury]\nrounds = 1\nchair = "claude"\ndecision = "vote"\n'
@@ -230,7 +239,7 @@ class PhasedPostingVoteTests(unittest.TestCase):
 
 class DecisionConfigInvariantTests(unittest.TestCase):
     def test_decision_parsed(self):
-        d = Path(tempfile.mkdtemp())
+        d = _tmpdir(self)
         cfg = d / "jury.toml"
         cfg.write_text(
             '[jury]\nrounds = 1\nchair = "a"\ndecision = "vote"\n'

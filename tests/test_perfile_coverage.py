@@ -3,6 +3,7 @@ and doctor diagnostics branches. Network/subprocess-free (mocked)."""
 
 from __future__ import annotations
 
+import shutil
 import sys
 import tempfile
 import unittest
@@ -13,6 +14,13 @@ from types import SimpleNamespace
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from ai_jury import benchmark, cli, doctor  # noqa: E402
+
+
+def _tmpdir(case: unittest.TestCase) -> Path:
+    """A temp directory that is removed when the test case finishes."""
+    d = tempfile.mkdtemp()
+    case.addCleanup(shutil.rmtree, d, ignore_errors=True)
+    return Path(d)
 
 
 class InitInteractiveTests(unittest.TestCase):
@@ -99,7 +107,7 @@ class BenchmarkEdgeTests(unittest.TestCase):
 
 class DoctorDiagnosticsTests(unittest.TestCase):
     def setUp(self):
-        self.d = Path(tempfile.mkdtemp())
+        self.d = _tmpdir(self)
 
     def test_all_agents_disabled(self):
         cfg = self.d / "jury.toml"
@@ -130,7 +138,7 @@ class DoctorDiagnosticsTests(unittest.TestCase):
 
 class CliExtraPathsTests(unittest.TestCase):
     def setUp(self):
-        self.d = Path(tempfile.mkdtemp())
+        self.d = _tmpdir(self)
         self.diff = self.d / "x.diff"
         self.diff.write_text(
             "diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n@@ -1 +1 @@\n-a\n+b\n"
