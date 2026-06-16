@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import contextlib
 import io
-import shutil
 import sys
 import tempfile
 import unittest
@@ -16,14 +15,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from ai_jury import cli  # noqa: E402
-
-
-def _tmpdir(case: unittest.TestCase) -> Path:
-    """A temp directory that is removed when the test case finishes."""
-    d = tempfile.mkdtemp()
-    case.addCleanup(shutil.rmtree, d, ignore_errors=True)
-    return Path(d)
-
 
 DIFF = """diff --git a/app.py b/app.py
 index 0000000..1111111 100644
@@ -71,7 +62,7 @@ def gh_mocked(diff=DIFF, head="abc123def456789", comments=None):
 
 class FlagOverrideBlock(unittest.TestCase):
     def test_all_overrides_apply(self):
-        d = _tmpdir(self) / "x.diff"
+        d = Path(tempfile.mkdtemp()) / "x.diff"
         d.write_text(DIFF)
         code, out, _ = run(
             [
@@ -111,7 +102,7 @@ class FlagOverrideBlock(unittest.TestCase):
         self.assertIn("AI Jury", out)
 
     def test_auto_depth(self):
-        d = _tmpdir(self) / "x.diff"
+        d = Path(tempfile.mkdtemp()) / "x.diff"
         d.write_text(DIFF)
         code, out, _ = run(["--mock", "--diff-file", str(d), "--auto", "-q"])
         self.assertEqual(code, 0)
@@ -157,8 +148,8 @@ class PrPostPaths(unittest.TestCase):
 
 class CachePath(unittest.TestCase):
     def test_cache_miss_then_hit(self):
-        cdir = str(_tmpdir(self))
-        d = _tmpdir(self) / "x.diff"
+        cdir = tempfile.mkdtemp()
+        d = Path(tempfile.mkdtemp()) / "x.diff"
         d.write_text(DIFF)
         # No -q: the "cache miss/hit" lines are emitted by log() to stderr.
         a = ["--mock", "--diff-file", str(d), "--cache", "--cache-dir", cdir]
@@ -172,7 +163,7 @@ class CachePath(unittest.TestCase):
 
 class ErrorPaths(unittest.TestCase):
     def test_review_runtime_error(self):
-        d = _tmpdir(self) / "x.diff"
+        d = Path(tempfile.mkdtemp()) / "x.diff"
         d.write_text(DIFF)
         with mock.patch("ai_jury.cli.review_diff", side_effect=RuntimeError("no usable agents")):
             code, _, err = run(["--mock", "--diff-file", str(d), "-q"])
@@ -180,24 +171,24 @@ class ErrorPaths(unittest.TestCase):
         self.assertIn("no usable agents", err)
 
     def test_review_keyboard_interrupt(self):
-        d = _tmpdir(self) / "x.diff"
+        d = Path(tempfile.mkdtemp()) / "x.diff"
         d.write_text(DIFF)
         with mock.patch("ai_jury.cli.review_diff", side_effect=KeyboardInterrupt()):
             code, _, err = run(["--mock", "--diff-file", str(d), "-q"])
         self.assertEqual(code, 130)
 
     def test_empty_diff_errors(self):
-        d = _tmpdir(self) / "empty.diff"
+        d = Path(tempfile.mkdtemp()) / "empty.diff"
         d.write_text("   \n")
         code, _, _ = run(["--mock", "--diff-file", str(d), "-q"])
         self.assertNotEqual(code, 0)
 
     def test_config_load_invalid(self):
-        cfg = _tmpdir(self) / "bad.toml"
+        cfg = Path(tempfile.mkdtemp()) / "bad.toml"
         cfg.write_text(
             '[jury]\nrounds = 0\n\n[[agent]]\nname = "a"\nvendor = "anthropic"\ncommand = "x"\n'
         )
-        d = _tmpdir(self) / "x.diff"
+        d = Path(tempfile.mkdtemp()) / "x.diff"
         d.write_text(DIFF)
         code, _, err = run(["--mock", "--diff-file", str(d), "--config", str(cfg)])
         self.assertEqual(code, 2)
@@ -206,13 +197,13 @@ class ErrorPaths(unittest.TestCase):
 
 class DoctorAndCommentPaths(unittest.TestCase):
     def test_doctor_write(self):
-        outp = _tmpdir(self) / "diag.json"
+        outp = Path(tempfile.mkdtemp()) / "diag.json"
         code, out, _ = run(["--doctor", "--write", str(outp)])
         self.assertIn("ready to run", out)
         self.assertTrue(outp.exists())
 
     def test_config_validate_warnings(self):
-        cfg = _tmpdir(self) / "warn.toml"
+        cfg = Path(tempfile.mkdtemp()) / "warn.toml"
         # unknown vendor → a soft warning (valid, but warned).
         cfg.write_text(
             '[jury]\nrounds = 1\nchair = "a"\n\n[[agent]]\nname = "a"\nvendor = "acme"\ncommand = "x"\n'

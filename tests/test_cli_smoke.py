@@ -7,7 +7,6 @@ from __future__ import annotations
 import contextlib
 import io
 import json
-import shutil
 import sys
 import tempfile
 import unittest
@@ -16,13 +15,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from ai_jury import cli  # noqa: E402
-
-
-def _tmpdir(case: unittest.TestCase) -> Path:
-    """A temp directory that is removed when the test case finishes."""
-    d = tempfile.mkdtemp()
-    case.addCleanup(shutil.rmtree, d, ignore_errors=True)
-    return Path(d)
 
 DIFF = """diff --git a/app.py b/app.py
 index 0000000..1111111 100644
@@ -54,7 +46,7 @@ def run(args, stdin=None):
 
 class CliMockTests(unittest.TestCase):
     def setUp(self):
-        self.d = _tmpdir(self)
+        self.d = Path(tempfile.mkdtemp())
         self.diff = self.d / "x.diff"
         self.diff.write_text(DIFF)
 

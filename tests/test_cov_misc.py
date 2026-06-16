@@ -244,11 +244,9 @@ class BenchmarkCovTests(unittest.TestCase):
     def test_load_fixture_without_recorded_findings(self):
         # 284->286: a fixture with expected.json + diff but NO findings.json
         # leaves recorded == [].
-        import shutil
         import tempfile
 
         d = Path(tempfile.mkdtemp())
-        self.addCleanup(shutil.rmtree, d, ignore_errors=True)
         (d / "x.diff").write_text("diff --git a/a b/a\n", encoding="utf-8")
         (d / "x.expected.json").write_text(
             '{"description": "d", "expect": {"min_findings": 0}}', encoding="utf-8"

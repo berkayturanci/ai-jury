@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import contextlib
 import io
-import shutil
 import sys
 import tempfile
 import unittest
@@ -16,13 +15,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from ai_jury import cli  # noqa: E402
-
-
-def _tmpdir(case: unittest.TestCase) -> Path:
-    """A temp directory that is removed when the test case finishes."""
-    d = tempfile.mkdtemp()
-    case.addCleanup(shutil.rmtree, d, ignore_errors=True)
-    return Path(d)
 
 
 def run(args):
@@ -38,7 +30,7 @@ def run(args):
 
 class InitTests(unittest.TestCase):
     def setUp(self):
-        self.d = _tmpdir(self)
+        self.d = Path(tempfile.mkdtemp())
 
     def test_init_non_interactive_writes_valid_config(self):
         out = self.d / "jury.toml"
@@ -122,7 +114,7 @@ class InitWizardCoverageTests(unittest.TestCase):
 
     def test_run_init_wizard_local_model_flag_override(self):
         # `init --wizard --local-model X` threads the flag value into the config.
-        out = _tmpdir(self) / "w.toml"
+        out = Path(tempfile.mkdtemp()) / "w.toml"
         with (
             mock.patch.object(
                 cli, "_init_wizard", return_value={"agents": ["claude"], "chair": "claude"}
@@ -142,7 +134,7 @@ class InitWizardCoverageTests(unittest.TestCase):
 
 class InitWizardTests(unittest.TestCase):
     def setUp(self):
-        self.d = _tmpdir(self)
+        self.d = Path(tempfile.mkdtemp())
         self.available = {"claude": True, "codex": True, "agy": False, "qwen": True}
 
     def test_full_set_captured(self):
@@ -259,7 +251,7 @@ class InitWizardTests(unittest.TestCase):
 
 class ConfigShowTests(unittest.TestCase):
     def setUp(self):
-        self.d = _tmpdir(self)
+        self.d = Path(tempfile.mkdtemp())
 
     def test_config_show_builtin(self):
         code, out, _ = run(["config", "show"])
