@@ -11,7 +11,6 @@ from __future__ import annotations
 import contextlib
 import io
 import os
-import shutil
 import sys
 import tempfile
 import unittest
@@ -21,13 +20,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from ai_jury import cli  # noqa: E402
-
-
-def _tmpdir(case: unittest.TestCase) -> Path:
-    """A temp directory that is removed when the test case finishes."""
-    d = tempfile.mkdtemp()
-    case.addCleanup(shutil.rmtree, d, ignore_errors=True)
-    return Path(d)
 
 DIFF = """diff --git a/app.py b/app.py
 index 0000000..1111111 100644
@@ -130,7 +122,7 @@ class CommentCommandDispatch(unittest.TestCase):
 
 class InitDetectionPaths(unittest.TestCase):
     def setUp(self):
-        self.d = _tmpdir(self)
+        self.d = Path(tempfile.mkdtemp())
 
     def test_init_available_swallows_errors(self):
         # _init_available: make_adapter raising -> detection records False (312-313).
@@ -219,7 +211,7 @@ class InitInteractive(unittest.TestCase):
         # _run_init interactive branch (453-456): force --interactive; the
         # interactive prompting itself is exercised separately, so stub it here
         # and assert --local-model overrides the returned kwargs.
-        d = _tmpdir(self)
+        d = Path(tempfile.mkdtemp())
         out = d / "i.toml"
         with (
             mock.patch(
@@ -246,7 +238,7 @@ class InitInteractive(unittest.TestCase):
 
     def test_interactive_branch_without_local_model(self):
         # Interactive branch, no --local-model (455->477 false branch).
-        d = _tmpdir(self)
+        d = Path(tempfile.mkdtemp())
         out = d / "j.toml"
         with (
             mock.patch(
@@ -381,7 +373,7 @@ class DoctorWriteError(unittest.TestCase):
 
 class IncrementalAndGuards(unittest.TestCase):
     def setUp(self):
-        self.d = _tmpdir(self)
+        self.d = Path(tempfile.mkdtemp())
         self.diff = self.d / "x.diff"
         self.diff.write_text(DIFF)
 
@@ -426,7 +418,7 @@ class AutoDepthBranches(unittest.TestCase):
     815->817): when those flags are given, the config values are NOT overwritten."""
 
     def setUp(self):
-        self.d = _tmpdir(self)
+        self.d = Path(tempfile.mkdtemp())
         self.diff = self.d / "x.diff"
         self.diff.write_text(DIFF)
 
@@ -461,7 +453,7 @@ class AutoDepthBranches(unittest.TestCase):
 
 class CiAndPatchesBranches(unittest.TestCase):
     def setUp(self):
-        self.d = _tmpdir(self)
+        self.d = Path(tempfile.mkdtemp())
         self.diff = self.d / "x.diff"
         self.diff.write_text(DIFF)
 
@@ -544,7 +536,7 @@ class InitPresetAgentSpecs(unittest.TestCase):
     """_resolve_preset_agents 'all'/'detected' specs (440, 442) via presets."""
 
     def setUp(self):
-        self.d = _tmpdir(self)
+        self.d = Path(tempfile.mkdtemp())
 
     def test_preset_thorough_all_agents(self):
         # 'thorough' preset uses spec 'all' (440).
@@ -575,7 +567,7 @@ class InitPresetAgentSpecs(unittest.TestCase):
 class ConfigShowError(unittest.TestCase):
     def test_config_show_invalid_file(self):
         # _run_config load error (564-566).
-        cfg = _tmpdir(self) / "bad.toml"
+        cfg = Path(tempfile.mkdtemp()) / "bad.toml"
         cfg.write_text("[jury]\nrounds = 0\n")
         code, _, err = run(["config", "show", "--config", str(cfg)])
         self.assertEqual(code, 2)
@@ -584,7 +576,7 @@ class ConfigShowError(unittest.TestCase):
 
 class PolicyAndPostGuards(unittest.TestCase):
     def setUp(self):
-        self.d = _tmpdir(self)
+        self.d = Path(tempfile.mkdtemp())
         self.diff = self.d / "x.diff"
         self.diff.write_text(DIFF)
 
