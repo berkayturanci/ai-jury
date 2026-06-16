@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import shutil
 import sys
 import tempfile
 import unittest
@@ -20,6 +21,13 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from ai_jury import cli, report  # noqa: E402
 from ai_jury.adapters import AgentResult  # noqa: E402
 from ai_jury.config import JuryConfig, config_hash, load_config  # noqa: E402
+
+
+def _tmpdir(case: unittest.TestCase) -> Path:
+    """A temp directory that is removed when the test case finishes."""
+    d = tempfile.mkdtemp()
+    case.addCleanup(shutil.rmtree, d, ignore_errors=True)
+    return Path(d)
 
 DIFF = "diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n@@ -1 +1 @@\n-x\n+y\n"
 
@@ -179,7 +187,7 @@ class CliTranscriptWiringTests(unittest.TestCase):
         self.assertIn("# Full transcript", out)
 
     def test_config_transcript_true_defaults_on(self):
-        d = Path(tempfile.mkdtemp())
+        d = _tmpdir(self)
         cfg = d / "jury.toml"
         cfg.write_text(
             '[jury]\nrounds = 1\nchair = "claude"\ntranscript = true\n'
@@ -202,7 +210,7 @@ class CliTranscriptWiringTests(unittest.TestCase):
         self.assertIn("# Full transcript", out)
 
     def test_no_transcript_overrides_config(self):
-        d = Path(tempfile.mkdtemp())
+        d = _tmpdir(self)
         cfg = d / "jury.toml"
         cfg.write_text(
             '[jury]\nrounds = 1\nchair = "claude"\ntranscript = true\n'
@@ -227,7 +235,7 @@ class CliTranscriptWiringTests(unittest.TestCase):
 
 class TranscriptConfigInvariantTests(unittest.TestCase):
     def test_transcript_key_parsed(self):
-        d = Path(tempfile.mkdtemp())
+        d = _tmpdir(self)
         cfg = d / "jury.toml"
         cfg.write_text(
             '[jury]\nrounds = 1\nchair = "a"\ntranscript = true\n'

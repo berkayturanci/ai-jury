@@ -337,13 +337,16 @@ class CliDetectedAgentsContinue(unittest.TestCase):
     def test_detected_agents_proceeds(self):
         import contextlib
         import io
+        import shutil
         import tempfile
 
         from ai_jury import cli
         from ai_jury.scaffold import KNOWN_AGENTS
 
         detected = {n: (n == "claude") for n in KNOWN_AGENTS}  # claude reachable
-        out_path = Path(tempfile.mkdtemp()) / "jury.toml"
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        out_path = Path(tmp) / "jury.toml"
         buf, err = io.StringIO(), io.StringIO()
         with (
             mock.patch("ai_jury.cli._init_available", return_value=detected),

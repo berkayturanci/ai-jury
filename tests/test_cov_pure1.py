@@ -192,18 +192,22 @@ class ClassificationTests(unittest.TestCase):
 
 class PolicyTests(unittest.TestCase):
     def _write(self, text):
+        import shutil
         import tempfile
 
         d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, ignore_errors=True)
         p = Path(d) / "policy.toml"
         p.write_text(text, encoding="utf-8")
         return p
 
     def test_load_policy_read_oserror_is_policyerror(self):
         # Line 91: open() raises OSError (directory used as a file).
+        import shutil
         import tempfile
 
         d = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, d, ignore_errors=True)
         with self.assertRaises(PolicyError) as ctx:
             policy.load_policy(d)
         self.assertIn("could not read policy file", str(ctx.exception))
