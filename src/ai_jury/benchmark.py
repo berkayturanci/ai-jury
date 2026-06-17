@@ -241,11 +241,23 @@ def score_fixture(findings: list[dict], expected: dict, tol: int = LINE_TOLERANC
 def aggregate(scores: list[FixtureScore]) -> dict:
     """Aggregate per-fixture scores into a summary dict."""
     total = len(scores)
-    passed = sum(1 for s in scores if s.passed)
-    matched = sum(s.matched for s in scores)
-    missed = sum(s.missed for s in scores)
-    false_positives = sum(s.false_positives for s in scores)
-    expected_count = sum(s.expected_count for s in scores)
+
+    # ⚡ Bolt: A single explicit pass avoiding any generator or repeated list iteration overheads
+    # to sum up various metrics simultaneously.
+    passed = 0
+    matched = 0
+    missed = 0
+    false_positives = 0
+    expected_count = 0
+
+    for s in scores:
+        if s.passed:
+            passed += 1
+        matched += s.matched
+        missed += s.missed
+        false_positives += s.false_positives
+        expected_count += s.expected_count
+
     recall = matched / expected_count if expected_count else 1.0
     denom = matched + false_positives
     precision = matched / denom if denom else 1.0
