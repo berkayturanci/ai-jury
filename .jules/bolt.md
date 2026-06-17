@@ -13,6 +13,3 @@
 ## 2025-06-10 - O(N) finding iteration
 **Learning:** In PR-level deterministic classification functions, iterating sequentially over the findings list multiple times using `any()` expression overhead is significantly slower than doing one single explicit for-loop iteration pass through the list.
 **Action:** Consolidate multiple sequential list iteration conditions (like `any(severity == "x")`, `any(severity == "y")`) into a single explicit loop over the findings array.
-## 2024-05-18 - Generator Overhead in C-Optimized Functions
-**Learning:** Passing generator expressions to C-optimized functions like sum() or any() causes unnecessary object allocation overhead in Python. List comprehensions or explicit single-pass loops bypass this overhead and improve execution speed.
-**Action:** Explicitly materialize comprehensions or consolidate sequential aggregations into single-pass loops when optimizing performance in Python.

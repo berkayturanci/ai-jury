@@ -675,9 +675,8 @@ class Courtroom:
             self.state[k] = "done" if self.state[k] != "error" else "error"
         verdicts, _ = parse_verdicts(result.output or "", result.agent)
         self.verifies = verdicts
-        # ⚡ Bolt: using a list comprehension here avoids the object allocation overhead of generator expressions inside sum()
-        ok = sum([1 for v in verdicts if v.status == "verified"])
-        self.disputes = sum([1 for v in verdicts if v.status == "needs_human_decision"])
+        ok = sum(1 for v in verdicts if v.status == "verified")
+        self.disputes = sum(1 for v in verdicts if v.status == "needs_human_decision")
         note = f"the jury verifies: {ok}/{len(verdicts) or 0} upheld"
         if self.disputes:
             note += f" {self.dot} {self.disputes} disputed"

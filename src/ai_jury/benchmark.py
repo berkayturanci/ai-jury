@@ -249,7 +249,6 @@ def aggregate(scores: list[FixtureScore]) -> dict:
     missed = 0
     false_positives = 0
     expected_count = 0
-
     for s in scores:
         if s.passed:
             passed += 1

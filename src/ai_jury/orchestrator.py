@@ -994,8 +994,7 @@ def _merge_results_by_agent(phase_lists: list[list[AgentResult]]) -> list[AgentR
                 parts[0].vendor,
                 ok,
                 body,
-                # ⚡ Bolt: using a list comprehension here avoids the object allocation overhead of generator expressions inside sum()
-                round(sum([p.duration_s for p in parts]), 3),
+                round(sum(p.duration_s for p in parts), 3),
                 error=None if ok else (first_err.error if first_err else None),
                 error_code=None if ok else (first_err.error_code if first_err else None),
                 attempts=max(p.attempts for p in parts),
@@ -1011,8 +1010,7 @@ def _combine_chair_results(results: list[AgentResult], chair: str) -> AgentResul
         return results[0] if results else None
     vendor = ok_parts[0].vendor
     body = "\n\n".join(f"### chunk {i}\n{r.output}" for i, r in enumerate(ok_parts, 1))
-    # ⚡ Bolt: using a list comprehension here avoids the object allocation overhead of generator expressions inside sum()
-    return AgentResult(chair, vendor, True, body, round(sum([r.duration_s for r in ok_parts]), 3))
+    return AgentResult(chair, vendor, True, body, round(sum(r.duration_s for r in ok_parts), 3))
 
 
 def _merge_chunk_outcomes(outcomes: list[JuryOutcome]) -> JuryOutcome:
@@ -1071,11 +1069,10 @@ def _merge_chunk_outcomes(outcomes: list[JuryOutcome]) -> JuryOutcome:
         verdicts=verdicts,
         context_mode=base.context_mode,
         redact_secrets=base.redact_secrets,
-        # ⚡ Bolt: using a list comprehension here avoids the object allocation overhead of generator expressions inside sum()
-        redaction_count=sum([o.redaction_count for o in outcomes]),
+        redaction_count=sum(o.redaction_count for o in outcomes),
         injection_hits=[h for o in outcomes for h in o.injection_hits],
         skipped=base.skipped,
-        budget_exhausted=any([o.budget_exhausted for o in outcomes]),
+        budget_exhausted=any(o.budget_exhausted for o in outcomes),
         rounds_executed=max(o.rounds_executed for o in outcomes),
         stop_reason=f"chunked review across {len(outcomes)} part(s)",
     )
