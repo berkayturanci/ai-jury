@@ -1,3 +1,6 @@
-## 2026-06-15 - Add focus visible styles to summary elements
-**Learning:** `<summary>` elements are inherently interactive and receive keyboard focus during tab navigation, but depending on browser defaults and CSS resets, they may lack a visible focus indicator. This makes them inaccessible to keyboard users who cannot tell which FAQ or details item they are currently focused on.
-**Action:** When adding global `:focus-visible` styles to interactive elements like `a`, `button`, and `input`, explicitly include `summary:focus-visible` to ensure accordions and collapsible sections remain keyboard-accessible.
+## 2024-03-24 - Dynamic state changes need accessible attributes
+**Learning:** When dynamically changing the visible text of an interactive element (e.g. "copy" to "copied"), screen readers may not read the updated visible text if they rely on a static `aria-label` attribute. A static aria-label will mask the new state.
+**Action:** When using JavaScript to update the visible state or text of a button (like a copy-to-clipboard button), always explicitly update the element's `aria-label` and `title` to match the new state, and revert them when the state changes back.
+## 2024-03-24 - Preserving element attributes across state changes
+**Learning:** When temporarily updating `aria-label` or `title` for a dynamic state (like "copied"), it's crucial to restore the *original* attributes. Hardcoding the restored value (like "Copy code") might incorrectly overwrite specific labels set in HTML or by other logic. Also, unconditionally removing the `title` attribute when restoring might erase a preexisting tooltip that was present on page load.
+**Action:** Before modifying attributes for a temporary state, read and save their original values (or their absence) into local variables within the closure. When reverting the state, selectively restore or remove the attributes based on their original presence.
