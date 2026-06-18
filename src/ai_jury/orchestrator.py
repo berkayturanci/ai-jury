@@ -762,9 +762,7 @@ def _verdict_matches_group(verdict: Verdict, group: FindingGroup) -> bool:
     # Case-EXACT path match (fold_case=False): on a case-sensitive filesystem
     # ``Config.py`` != ``config.py``, so a verdict must not reject a finding it
     # only case-collapses onto (audit 2026-06-13 r6/M).
-    if _normalize_path(verdict.file, fold_case=False) != _normalize_path(
-        rep.file, fold_case=False
-    ):
+    if _normalize_path(verdict.file, fold_case=False) != _normalize_path(rep.file, fold_case=False):
         return False
     if verdict.line is not None and rep.line is not None and abs(verdict.line - rep.line) > 3:
         return False
@@ -1043,9 +1041,7 @@ def _merge_chunk_outcomes(outcomes: list[JuryOutcome]) -> JuryOutcome:
     from .consensus import _normalize_path
 
     for o in outcomes:
-        chunk_files = {
-            _normalize_path(f.file, fold_case=False) for f in o.findings if f.file
-        }
+        chunk_files = {_normalize_path(f.file, fold_case=False) for f in o.findings if f.file}
         chunk_groups = [
             g
             for g in groups
