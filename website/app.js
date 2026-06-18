@@ -91,11 +91,21 @@
       if (!btn || !cmd) return;
       var labelEl = btn.querySelector("span") || btn;
       var base = labelEl.textContent;
+      var baseAria = btn.getAttribute("aria-label");
+      var baseTitle = btn.getAttribute("title");
       btn.addEventListener("click", function () {
         var t = cmd.textContent;
         var done = function () {
           btn.classList.add("done"); labelEl.textContent = "copied ✓";
-          setTimeout(function () { btn.classList.remove("done"); labelEl.textContent = base; }, 1400);
+          btn.setAttribute("aria-label", "Copied install command");
+          if (baseTitle !== null) btn.setAttribute("title", "Copied install command");
+          setTimeout(function () {
+            btn.classList.remove("done"); labelEl.textContent = base;
+            if (baseAria !== null) btn.setAttribute("aria-label", baseAria);
+            else btn.removeAttribute("aria-label");
+            if (baseTitle !== null) btn.setAttribute("title", baseTitle);
+            else btn.removeAttribute("title");
+          }, 1400);
         };
         if (navigator.clipboard) navigator.clipboard.writeText(t).then(done, done); else done();
       });
@@ -119,6 +129,8 @@
       btn.setAttribute("aria-label", "Copy code");
       btn.innerHTML = COPY + "<span>copy</span>";
       wrap.appendChild(btn);
+      var baseAria = btn.getAttribute("aria-label");
+      var baseTitle = btn.getAttribute("title");
       btn.addEventListener("click", function () {
         var code = pre.querySelector("code") || pre;
         // strip inline comments? no — copy verbatim, trimmed
@@ -126,7 +138,15 @@
         var ok = function () {
           btn.classList.add("done");
           btn.querySelector("span").textContent = "copied";
-          setTimeout(function () { btn.classList.remove("done"); btn.querySelector("span").textContent = "copy"; }, 1400);
+          btn.setAttribute("aria-label", "Copied code");
+          if (baseTitle !== null) btn.setAttribute("title", "Copied code");
+          setTimeout(function () {
+            btn.classList.remove("done"); btn.querySelector("span").textContent = "copy";
+            if (baseAria !== null) btn.setAttribute("aria-label", baseAria);
+            else btn.removeAttribute("aria-label");
+            if (baseTitle !== null) btn.setAttribute("title", baseTitle);
+            else btn.removeAttribute("title");
+          }, 1400);
         };
         if (navigator.clipboard) navigator.clipboard.writeText(text).then(ok, ok); else ok();
       });
