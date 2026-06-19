@@ -310,10 +310,12 @@ class TheaterCliTests(unittest.TestCase):
         import unittest.mock as mock
 
         from ai_jury import theater
-        with mock.patch.object(theater, "supports_scene", return_value=True), \
-                mock.patch("ai_jury.theater.time.sleep"):
-            return _run_cli(["--mock", "--diff-file", "-", "--theater", *extra],
-                            stdin=SAMPLE_DIFF)
+
+        with (
+            mock.patch.object(theater, "supports_scene", return_value=True),
+            mock.patch("ai_jury.theater.time.sleep"),
+        ):
+            return _run_cli(["--mock", "--diff-file", "-", "--theater", *extra], stdin=SAMPLE_DIFF)
 
     def test_theater_flat_completes(self):
         code, _, err = self._run_theater()
@@ -332,27 +334,33 @@ class TheaterCliTests(unittest.TestCase):
         import unittest.mock as mock
 
         from ai_jury import theater
+
         with tempfile.TemporaryDirectory() as d:
             cfg = Path(d) / "jury.toml"
             cfg.write_text(toml, encoding="utf-8")
-            with mock.patch.object(theater, "supports_scene", return_value=True), \
-                    mock.patch("ai_jury.theater.time.sleep"):
-                return _run_cli(["--mock", "--diff-file", "-", "--config", str(cfg),
-                                 *extra], stdin=SAMPLE_DIFF)
+            with (
+                mock.patch.object(theater, "supports_scene", return_value=True),
+                mock.patch("ai_jury.theater.time.sleep"),
+            ):
+                return _run_cli(
+                    ["--mock", "--diff-file", "-", "--config", str(cfg), *extra], stdin=SAMPLE_DIFF
+                )
 
     def test_theater_defaulted_on_from_jury_toml(self):
         # [jury] theater = true should render the scene without the CLI flag.
         code, out, err = self._run_with_config(
-            "[jury]\ntheater = true\n[[agent]]\nname='m'\nvendor='anthropic'\ncommand='claude'\n")
+            "[jury]\ntheater = true\n[[agent]]\nname='m'\nvendor='anthropic'\ncommand='claude'\n"
+        )
         self.assertEqual(code, 0, err)
-        self.assertIn("\033[?25l", out)        # scene hid the cursor → it ran
+        self.assertIn("\033[?25l", out)  # scene hid the cursor → it ran
 
     def test_no_theater_overrides_config_on(self):
         code, out, err = self._run_with_config(
             "[jury]\ntheater = true\n[[agent]]\nname='m'\nvendor='anthropic'\ncommand='claude'\n",
-            "--no-theater")
+            "--no-theater",
+        )
         self.assertEqual(code, 0, err)
-        self.assertNotIn("\033[?25l", out)     # flag won → no scene
+        self.assertNotIn("\033[?25l", out)  # flag won → no scene
 
 
 class CiGateTests(unittest.TestCase):

@@ -762,9 +762,7 @@ def _verdict_matches_group(verdict: Verdict, group: FindingGroup) -> bool:
     # Case-EXACT path match (fold_case=False): on a case-sensitive filesystem
     # ``Config.py`` != ``config.py``, so a verdict must not reject a finding it
     # only case-collapses onto (audit 2026-06-13 r6/M).
-    if _normalize_path(verdict.file, fold_case=False) != _normalize_path(
-        rep.file, fold_case=False
-    ):
+    if _normalize_path(verdict.file, fold_case=False) != _normalize_path(rep.file, fold_case=False):
         return False
     if verdict.line is not None and rep.line is not None and abs(verdict.line - rep.line) > 3:
         return False
@@ -787,7 +785,10 @@ def _verdict_matches_group(verdict: Verdict, group: FindingGroup) -> bool:
     if not v_tokens or not r_tokens:
         return False
     inter = len(v_tokens & r_tokens)
-    union = len(v_tokens | r_tokens)
+    # bolt: Calculate set union size using the inclusion-exclusion principle
+    # (len(a) + len(b) - len(a & b)) rather than explicitly computing the union
+    # to avoid O(N) memory allocation and iteration.
+    union = len(v_tokens) + len(r_tokens) - inter
     return (inter / union if union else 0.0) >= 0.5
 
 
@@ -803,8 +804,12 @@ def _claim_sim(a_claim: str, b_claim: str) -> float:
     if a == b:
         return 1.0
     at, bt = set(a.split()), set(b.split())
-    union = len(at | bt)
-    return (len(at & bt) / union) if union else 0.0
+    inter = len(at & bt)
+    # bolt: Calculate set union size using the inclusion-exclusion principle
+    # (len(a) + len(b) - len(a & b)) rather than explicitly computing the union
+    # to avoid O(N) memory allocation and iteration.
+    union = len(at) + len(bt) - inter
+    return (inter / union) if union else 0.0
 
 
 # Verdict statuses that move a finding into a non-blocking bucket (suppress it).
@@ -1043,9 +1048,7 @@ def _merge_chunk_outcomes(outcomes: list[JuryOutcome]) -> JuryOutcome:
     from .consensus import _normalize_path
 
     for o in outcomes:
-        chunk_files = {
-            _normalize_path(f.file, fold_case=False) for f in o.findings if f.file
-        }
+        chunk_files = {_normalize_path(f.file, fold_case=False) for f in o.findings if f.file}
         chunk_groups = [
             g
             for g in groups

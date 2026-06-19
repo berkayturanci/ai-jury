@@ -159,9 +159,7 @@ class TestSARIF(unittest.TestCase):
         # would make GitHub code-scanning reject the whole upload). The region
         # is dropped; the finding still surfaces at file level.
         for bad_line in (0, -5):
-            finding = Finding(
-                severity="major", file="a.py", claim="forged", line=bad_line
-            )
+            finding = Finding(severity="major", file="a.py", claim="forged", line=bad_line)
             group = FindingGroup(representative=finding, members=[finding])
 
             class FakeOutcome:
