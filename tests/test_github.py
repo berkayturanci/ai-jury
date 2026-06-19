@@ -51,6 +51,15 @@ class TestGithubSubprocess(unittest.TestCase):
 
     @mock.patch("shutil.which")
     @mock.patch("subprocess.Popen")
+    def test_gh_failure_redacts_stderr(self, mock_popen, mock_which):
+        mock_which.return_value = "/usr/bin/gh"
+        mock_popen.return_value = _FakePopen(b"", returncode=1, stderr=b"error: token sk-proj-1234567890abcdefghij")
+
+        with self.assertRaisesRegex(RuntimeError, r"gh pr view failed: error: token \[REDACTED:openai_key\]"):
+            github._gh("pr", "view")
+
+    @mock.patch("shutil.which")
+    @mock.patch("subprocess.Popen")
     def test_gh_failure(self, mock_popen, mock_which):
         mock_which.return_value = "/usr/bin/gh"
         mock_popen.return_value = _FakePopen(b"", returncode=1, stderr=b"some gh error")
@@ -206,6 +215,19 @@ class TestGithubWithInput(unittest.TestCase):
     def test_gh_with_input_missing(self, mock_which):
         mock_which.return_value = None
         with self.assertRaisesRegex(RuntimeError, "the GitHub CLI `gh` is not installed"):
+            github._gh_with_input(["pr", "comment"], "data")
+
+    @mock.patch("shutil.which")
+    @mock.patch("subprocess.run")
+    def test_gh_with_input_failure_redacts_stderr(self, mock_run, mock_which):
+        mock_which.return_value = "/usr/bin/gh"
+
+        mock_proc = mock.Mock()
+        mock_proc.returncode = 1
+        mock_proc.stderr = "error: token sk-proj-1234567890abcdefghij"
+        mock_run.return_value = mock_proc
+
+        with self.assertRaisesRegex(RuntimeError, r"gh pr comment failed: error: token \[REDACTED:openai_key\]"):
             github._gh_with_input(["pr", "comment"], "data")
 
     @mock.patch("shutil.which")
