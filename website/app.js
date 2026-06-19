@@ -14,10 +14,17 @@
     var btn = $("theme-toggle");
     if (!btn) return;
     function isLight() { return document.documentElement.getAttribute("data-theme") === "light"; }
+    function updateBtn() {
+      var nextAction = isLight() ? "dark" : "light";
+      btn.setAttribute("aria-label", "Switch to " + nextAction + " theme");
+      btn.setAttribute("title", "Switch to " + nextAction + " theme");
+    }
+    updateBtn();
     btn.addEventListener("click", function () {
       var next = isLight() ? "dark" : "light";
       document.documentElement.setAttribute("data-theme", next);
       try { if (next === (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")) localStorage.removeItem("theme"); else localStorage.setItem("theme", next); } catch (e) {}
+      updateBtn();
     });
   })();
 
