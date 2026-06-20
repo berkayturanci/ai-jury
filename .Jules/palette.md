@@ -1,3 +1,6 @@
 ## 2026-06-15 - Add focus visible styles to summary elements
 **Learning:** `<summary>` elements are inherently interactive and receive keyboard focus during tab navigation, but depending on browser defaults and CSS resets, they may lack a visible focus indicator. This makes them inaccessible to keyboard users who cannot tell which FAQ or details item they are currently focused on.
 **Action:** When adding global `:focus-visible` styles to interactive elements like `a`, `button`, and `input`, explicitly include `summary:focus-visible` to ensure accordions and collapsible sections remain keyboard-accessible.
+## 2026-06-20 - Explicit State Communication for Theme Toggles
+**Learning:** When implementing theme toggle buttons, generic labels like 'Toggle light/dark theme' are insufficient for accessibility. It is critical to explicitly communicate the resulting state dynamically (e.g., 'Switch to light theme' or 'Switch to dark theme') based on the current active theme.
+**Action:** Use MutationObserver on the global theme state (like document.documentElement's data-theme attribute) to dynamically update the aria-label and title properties of theme toggles, keeping them in sync across click events, page loads, and OS-level preference changes.
