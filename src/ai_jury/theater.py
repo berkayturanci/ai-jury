@@ -675,8 +675,17 @@ class Courtroom:
             self.state[k] = "done" if self.state[k] != "error" else "error"
         verdicts, _ = parse_verdicts(result.output or "", result.agent)
         self.verifies = verdicts
-        ok = sum(1 for v in verdicts if v.status == "verified")
-        self.disputes = sum(1 for v in verdicts if v.status == "needs_human_decision")
+
+        # Performance optimization: consolidate multiple sum(generator_expression)
+        # evaluations into a single-pass explicit for loop.
+        ok = 0
+        self.disputes = 0
+        for v in verdicts:
+            if v.status == "verified":
+                ok += 1
+            elif v.status == "needs_human_decision":
+                self.disputes += 1
+
         note = f"the jury verifies: {ok}/{len(verdicts) or 0} upheld"
         if self.disputes:
             note += f" {self.dot} {self.disputes} disputed"
