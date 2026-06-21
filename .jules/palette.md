@@ -25,3 +25,7 @@
 ## 2026-06-20 - Explicit State Communication for Theme Toggles
 **Learning:** When implementing theme toggle buttons, generic labels like 'Toggle light/dark theme' are insufficient for accessibility. It is critical to explicitly communicate the resulting state dynamically (e.g., 'Switch to light theme' or 'Switch to dark theme') based on the current active theme.
 **Action:** Use MutationObserver on the global theme state (like document.documentElement's data-theme attribute) to dynamically update the aria-label and title properties of theme toggles, keeping them in sync across click events, page loads, and OS-level preference changes.
+
+## 2026-06-18 - Dynamically updating state text without losing underlying labels
+**Learning:** When changing the text of an interactive element to reflect an updated state temporarily (such as changing a "copy" button to "copied"), changing the text can obscure the underlying static label, or the new state might be obscured from screen readers entirely if the static `aria-label` continues to be announced.
+**Action:** Always read and save the original `aria-label` and `title` attribute values before updating them dynamically. That way, the accessibility properties accurately reflect the current state and can be cleanly restored when reverting the visual state without accidentally wiping out preexisting labels.
