@@ -14,6 +14,18 @@
     var btn = $("theme-toggle");
     if (!btn) return;
     function isLight() { return document.documentElement.getAttribute("data-theme") === "light"; }
+    function updateAria() {
+      var next = isLight() ? "dark" : "light";
+      var msg = "Switch to " + next + " theme";
+      btn.setAttribute("aria-label", msg);
+      btn.setAttribute("title", msg);
+    }
+    updateAria();
+    new MutationObserver(function (mutations) {
+      mutations.forEach(function (m) {
+        if (m.attributeName === "data-theme") updateAria();
+      });
+    }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
     btn.addEventListener("click", function () {
       var next = isLight() ? "dark" : "light";
       document.documentElement.setAttribute("data-theme", next);

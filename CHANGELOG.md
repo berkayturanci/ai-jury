@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- `gh` CLI subprocess stderr is now **redacted before being wrapped into a
+  `RuntimeError`**, so secrets (e.g. `ghp_` GitHub tokens) echoed by a failing
+  `gh` call can no longer leak into logs, tracebacks, or CI output.
+
+### Changed
+
+- The website **theme-toggle button now announces the action it will perform**
+  ("Switch to light theme" / "Switch to dark theme") via a dynamic `aria-label`
+  and `title`, kept in sync with the active theme through a `MutationObserver`
+  (covers both the home page and the docs page).
+- The website **copy buttons now announce a "Copied" state** to screen readers
+  by swapping their `aria-label`/`title` while copying and restoring the
+  original values afterwards (install-command and code-block copy buttons).
+
 ## [1.9.5] - 2026-06-15
 
 ### Fixed
