@@ -19,7 +19,7 @@ jobs:
       contents: write       # create the GitHub Release and upload assets
       attestations: write   # build-provenance attestations (issue #25)
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v6.0.2 (updated 2026-05-31)
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0 (updated 2026-06-21)
 
       # Hard guard against version drift across the three release-version
       # sources of truth (issue #284): the tag we're publishing under
@@ -105,7 +105,7 @@ jobs:
           skip-existing: true
 
       - name: Create GitHub Release and Upload Packages
-        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b  # v3.0.0 (updated 2026-05-31)
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b  # v3.0.1 (updated 2026-06-21)
         with:
           files: |
             release/*.whl
