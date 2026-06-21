@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- `gh` CLI subprocess stderr is now **redacted before being wrapped into a
+  `RuntimeError`**, so secrets (e.g. `ghp_` GitHub tokens) echoed by a failing
+  `gh` call can no longer leak into logs, tracebacks, or CI output.
+
 ## [1.9.5] - 2026-06-15
 
 ### Fixed

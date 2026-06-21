@@ -14,6 +14,7 @@ import subprocess
 import threading
 
 from .findings import strip_html_comments
+from .redaction import redact
 
 # Every `gh` invocation is bounded (#246): a stalled network call or an
 # interactive auth/2FA prompt would otherwise block `subprocess.run` forever and
@@ -61,7 +62,8 @@ def _gh(*args: str) -> str:
     t_err.join(_GH_TIMEOUT_S)
     if proc.returncode != 0:
         err = holder.get("err", b"").decode("utf-8", "replace")
-        raise RuntimeError(f"gh {label} failed: {err.strip()}")
+        safe_err = redact(err.strip())[0]
+        raise RuntimeError(f"gh {label} failed: {safe_err}")
     return out.decode("utf-8", "replace")
 
 
@@ -358,7 +360,8 @@ def _gh_with_input(args: list[str], stdin_data: str) -> str:
     except subprocess.TimeoutExpired:
         raise RuntimeError(f"gh {' '.join(args)} timed out after {_GH_TIMEOUT_S}s") from None
     if proc.returncode != 0:
-        raise RuntimeError(f"gh {' '.join(args)} failed: {proc.stderr.strip()}")
+        safe_err = redact(proc.stderr.strip())[0]
+        raise RuntimeError(f"gh {' '.join(args)} failed: {safe_err}")
     return proc.stdout
 
 

@@ -53,9 +53,16 @@ class TestGithubSubprocess(unittest.TestCase):
     @mock.patch("subprocess.Popen")
     def test_gh_failure(self, mock_popen, mock_which):
         mock_which.return_value = "/usr/bin/gh"
-        mock_popen.return_value = _FakePopen(b"", returncode=1, stderr=b"some gh error")
+        mock_popen.return_value = _FakePopen(
+            b"",
+            returncode=1,
+            stderr=b"some gh error with token ghp_123456789012345678901234567890123456",
+        )
 
-        with self.assertRaisesRegex(RuntimeError, "gh pr view failed: some gh error"):
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"gh pr view failed: some gh error with token \[REDACTED:github_token\]",
+        ):
             github._gh("pr", "view")
 
     @mock.patch("shutil.which")
@@ -215,10 +222,13 @@ class TestGithubWithInput(unittest.TestCase):
 
         mock_proc = mock.Mock()
         mock_proc.returncode = 1
-        mock_proc.stderr = "some error"
+        mock_proc.stderr = "some error ghp_123456789012345678901234567890123456"
         mock_run.return_value = mock_proc
 
-        with self.assertRaisesRegex(RuntimeError, "gh pr comment failed: some error"):
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"gh pr comment failed: some error \[REDACTED:github_token\]",
+        ):
             github._gh_with_input(["pr", "comment"], "data")
 
     @mock.patch("shutil.which")
