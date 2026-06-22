@@ -676,8 +676,6 @@ class Courtroom:
         verdicts, _ = parse_verdicts(result.output or "", result.agent)
         self.verifies = verdicts
 
-        # Performance optimization: consolidate multiple sum(generator_expression)
-        # evaluations into a single-pass explicit for loop.
         ok = 0
         self.disputes = 0
         for v in verdicts:
