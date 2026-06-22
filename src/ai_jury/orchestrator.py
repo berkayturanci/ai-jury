@@ -787,7 +787,7 @@ def _verdict_matches_group(verdict: Verdict, group: FindingGroup) -> bool:
     if not v_tokens or not r_tokens:
         return False
     inter = len(v_tokens & r_tokens)
-    union = len(v_tokens | r_tokens)
+    union = len(v_tokens) + len(r_tokens) - inter
     return (inter / union if union else 0.0) >= 0.5
 
 
@@ -803,8 +803,9 @@ def _claim_sim(a_claim: str, b_claim: str) -> float:
     if a == b:
         return 1.0
     at, bt = set(a.split()), set(b.split())
-    union = len(at | bt)
-    return (len(at & bt) / union) if union else 0.0
+    inter = len(at & bt)
+    union = len(at) + len(bt) - inter
+    return (inter / union) if union else 0.0
 
 
 # Verdict statuses that move a finding into a non-blocking bucket (suppress it).
