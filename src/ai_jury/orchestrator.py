@@ -1058,6 +1058,19 @@ def _merge_chunk_outcomes(outcomes: list[JuryOutcome]) -> JuryOutcome:
     synthesis = _combine_chair_results([o.synthesis for o in outcomes if o.synthesis], base.chair)
     verify = _combine_chair_results([o.verify for o in outcomes if o.verify], base.chair)
 
+    # bolt: Consolidate multiple sequential aggregations over the same list into a single-pass explicit loop
+    redaction_count = 0
+    injection_hits = []
+    budget_exhausted = False
+    rounds_executed = 0
+    for o in outcomes:
+        redaction_count += o.redaction_count
+        injection_hits.extend(o.injection_hits)
+        if o.budget_exhausted:
+            budget_exhausted = True
+        if o.rounds_executed > rounds_executed:
+            rounds_executed = o.rounds_executed
+
     return JuryOutcome(
         reviews=reviews,
         debate=debate,
@@ -1070,11 +1083,11 @@ def _merge_chunk_outcomes(outcomes: list[JuryOutcome]) -> JuryOutcome:
         verdicts=verdicts,
         context_mode=base.context_mode,
         redact_secrets=base.redact_secrets,
-        redaction_count=sum(o.redaction_count for o in outcomes),
-        injection_hits=[h for o in outcomes for h in o.injection_hits],
+        redaction_count=redaction_count,
+        injection_hits=injection_hits,
         skipped=base.skipped,
-        budget_exhausted=any(o.budget_exhausted for o in outcomes),
-        rounds_executed=max(o.rounds_executed for o in outcomes),
+        budget_exhausted=budget_exhausted,
+        rounds_executed=rounds_executed,
         stop_reason=f"chunked review across {len(outcomes)} part(s)",
     )
 
