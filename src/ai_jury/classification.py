@@ -165,8 +165,8 @@ def is_security_finding(finding: Any) -> bool:
     return bool(_COMBINED_RX.search(blob))
 
 
-def _risk_level(findings: list, groups: list) -> str:
-    """Derive the risk level from the most severe finding.
+def _risk_level_from_stats(has_critical: bool, has_major: bool, has_minor: bool, groups: list) -> str:
+    """Derive the risk level from precomputed severity stats.
 
     Thresholds (deterministic):
       * ``high``   — any ``critical`` finding, OR any ``major`` finding that is
@@ -176,19 +176,8 @@ def _risk_level(findings: list, groups: list) -> str:
         ``minor`` finding.
       * ``low``    — only ``nit`` / ``info`` findings, or no findings at all.
     """
-    if not findings:
-        return RISK_LOW
-
-    has_major = False
-    has_minor = False
-
-    for f in findings:
-        if f.severity == "critical":
-            return RISK_HIGH
-        if f.severity == "major":
-            has_major = True
-        elif f.severity == "minor":
-            has_minor = True
+    if has_critical:
+        return RISK_HIGH
 
     if has_major:
         # A confirmed (consensus/majority, not rejected) major finding is high
@@ -208,27 +197,10 @@ def _risk_level(findings: list, groups: list) -> str:
     return RISK_LOW
 
 
-def _review_effort(findings: list, lines_changed: int) -> int:
-    """Map findings + diff size onto a 1-5 review-effort score (deterministic).
-
-    Formula (clamped to 1..5):
-
-        base = 1
-        + finding-count contribution:
-            >= 8 findings -> +2, >= 3 findings -> +1, >= 1 finding -> +0 extra
-            (1 is added below via the severity/any-finding term)
-        + severity-spread contribution:
-            any critical/major -> +2, else any minor -> +1
-        + diff-size contribution:
-            > 400 changed lines -> +2, > 80 changed lines -> +1
-
-    The score is monotonic-ish: more findings, more severe findings, and a
-    larger diff each only ever raise (never lower) the effort, and the result is
-    clamped to the documented 1..5 range.
-    """
+def _review_effort_from_stats(n: int, most_severe: int, lines_changed: int) -> int:
+    """Map precomputed stats + diff size onto a 1-5 review-effort score (deterministic)."""
     score = 1
 
-    n = len(findings)
     if n >= 8:
         score += 2
     elif n >= 3:
@@ -236,7 +208,6 @@ def _review_effort(findings: list, lines_changed: int) -> int:
     elif n >= 1:
         score += 0  # presence is captured by the severity term below
 
-    most_severe = min((_severity_rank(f.severity) for f in findings), default=99)
     if most_severe <= _severity_rank("major"):
         score += 2
     elif most_severe <= _severity_rank("minor"):
@@ -267,29 +238,35 @@ def classify(
     groups: Any = None,
     diff: str | None = None,
 ) -> dict:
-    """Return the deterministic PR-level classification dict.
-
-    Accepts either a ``JuryOutcome`` (positional) or explicit ``findings`` /
-    ``groups`` keyword arguments (which take precedence). ``diff`` is optional;
-    when given, its changed-line count feeds the review-effort score.
-
-    Returns a dict with exactly these keys:
-
-      ``review_effort``         int 1-5
-      ``risk_level``            "low" | "medium" | "high"
-      ``security_sensitive``    bool
-      ``needs_human_attention`` bool
-
-    Determinism: the result is a pure function of the inputs — same findings,
-    groups, and diff always yield the same dict.
-    """
+    """Return the deterministic PR-level classification dict."""
     fs = _resolved_findings(outcome, findings)
     gs = _resolved_groups(outcome, groups)
     lines_changed = diff_lines_changed(diff)
 
-    risk = _risk_level(fs, gs)
-    security = any(is_security_finding(f) for f in fs)
-    effort = _review_effort(fs, lines_changed)
+    has_critical = False
+    has_major = False
+    has_minor = False
+    security = False
+    most_severe = 99
+
+    # bolt: single-pass iteration to collect finding statistics
+    for f in fs:
+        rank = _severity_rank(f.severity)
+        if rank < most_severe:
+            most_severe = rank
+
+        if f.severity == "critical":
+            has_critical = True
+        elif f.severity == "major":
+            has_major = True
+        elif f.severity == "minor":
+            has_minor = True
+
+        if not security and is_security_finding(f):
+            security = True
+
+    risk = _risk_level_from_stats(has_critical, has_major, has_minor, gs)
+    effort = _review_effort_from_stats(len(fs), most_severe, lines_changed)
     needs_human = risk == RISK_HIGH or security or _has_unresolved_groups(gs)
 
     return {
