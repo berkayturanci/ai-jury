@@ -76,6 +76,26 @@
 /* ---- Base ------------------------------------------------------------ */
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; overflow-x: clip; }
+
+/* ---- Accessibility --------------------------------------------------- */
+.skip-link {
+  position: absolute;
+  top: -100px;
+  left: 1rem;
+  background: var(--text);
+  color: var(--bg);
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  z-index: 9999;
+  font-weight: 600;
+  text-decoration: none;
+  transition: top 0.2s ease;
+}
+.skip-link:focus-visible {
+  top: 1rem;
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 
 body {
