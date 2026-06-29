@@ -36,6 +36,7 @@ from .metadata import build_run_metadata
 from .orchestrator import review_diff, run_jury
 from .policy import PolicyError, load_policy
 from .report import render, render_live_step, render_transcript
+from .redaction import redact
 
 # Hard ceiling on raw diff ingestion. The per-run ``diff.max_bytes`` budget is
 # only applied *after* the full diff is read and split, so an unbounded
@@ -1352,7 +1353,7 @@ def main(argv: list[str] | None = None) -> int:
                     title, body = render_live_step(kind, result, round_no)
                     live_post(live_target, f"## {title}\n\n{body}", args.repo)
                 except Exception as exc:  # noqa: BLE001 - best-effort, never crash
-                    log(f"live: failed to post step to #{live_target}: {exc}")
+                    log(f"live: failed to post step to #{live_target}: {redact(str(exc))[0]}")
 
     # We stream live only when actually running the jury; a cache hit has nothing
     # to replay, so the consolidated report is still printed in that case.

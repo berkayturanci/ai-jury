@@ -294,7 +294,7 @@ class Adapter:
             return caps
         except Exception as exc:  # noqa: BLE001 - swallow any spawn failure
             caps["status"] = CAP_UNKNOWN_VERSION
-            caps["warnings"].append(f"version probe for '{self.spec.command}' failed: {exc}")
+            caps["warnings"].append(f"version probe for '{self.spec.command}' failed: {redaction.redact(str(exc))[0]}")
             return caps
 
         raw = ((proc.stdout or "") + (proc.stderr or "")).strip()
@@ -350,7 +350,7 @@ class Adapter:
                 False,
                 "",
                 time.monotonic() - start,
-                f"spawn failed: {exc}",
+                f"spawn failed: {redaction.redact(str(exc))[0]}",
                 error_code=ERR_SPAWN_FAILED,
             )
         dur = time.monotonic() - start
@@ -677,7 +677,7 @@ class LocalAdapter(Adapter):
                 False,
                 "",
                 time.monotonic() - start,
-                f"local request failed: {exc}",
+                f"local request failed: {redaction.redact(str(exc))[0]}",
                 error_code=ERR_UNKNOWN,
             )
         dur = time.monotonic() - start
