@@ -196,6 +196,9 @@ body::before {
 /* ---- Keyboard Accessibility Global ------------------------------------- */
 a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 
+.skip-to-content { position: absolute; left: 0; top: -100%; padding: .6rem 1rem; background: var(--accent); color: #fff; font-family: var(--font-display); font-weight: 600; z-index: 999; border-radius: 0 0 8px 0; transition: top 0.2s; }
+.skip-to-content:focus-visible { top: 0; }
+
 /* ---- Buttons --------------------------------------------------------- */
 .btn {
   display: inline-flex; align-items: center; gap: .5rem;
