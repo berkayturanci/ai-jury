@@ -4,3 +4,6 @@
 ## 2024-05-18 - Dynamic Accessible Names for Theme Toggles
 **Learning:** For theme toggle buttons (and similar state-toggling UI elements), using a static generic `aria-label` like "Toggle light/dark theme" is bad for accessibility because it does not communicate the resulting state of activating the button. Screen reader users need to know what will happen when they interact with it.
 **Action:** Always ensure that toggle buttons explicitly communicate their resulting state by dynamically updating the `aria-label` and `title` attributes based on the current state (e.g., dynamically setting it to "Switch to light theme" or "Switch to dark theme").
+## 2026-07-02 - Skip-to-content for Keyboard Accessibility
+**Learning:** For websites with extensive navigation menus or sidebars (like docs), keyboard and screen reader users must tab through every single navigation link before reaching the main content. This is tedious and repetitive.
+**Action:** Implement a 'skip-to-content' link as the first interactive element in the `<body>`. Ensure it remains visually hidden (e.g., positioned off-screen) until focused (`:focus-visible`), at which point it should become prominently visible and positioned correctly to allow immediate skipping to the main content container.
