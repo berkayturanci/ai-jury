@@ -64,7 +64,7 @@ def _gh(*args: str) -> str:
         err = holder.get("err", b"").decode("utf-8", "replace")
         safe_err = redact(err.strip())[0]
         raise RuntimeError(f"gh {label} failed: {safe_err}")
-    return out.decode("utf-8", "replace")
+    return redact(out.decode("utf-8", "replace"))[0]
 
 
 def pr_diff(pr: str, repo: str | None = None) -> str:
@@ -362,7 +362,7 @@ def _gh_with_input(args: list[str], stdin_data: str) -> str:
     if proc.returncode != 0:
         safe_err = redact(proc.stderr.strip())[0]
         raise RuntimeError(f"gh {' '.join(args)} failed: {safe_err}")
-    return proc.stdout
+    return redact(proc.stdout)[0]
 
 
 def post_inline_comments(
