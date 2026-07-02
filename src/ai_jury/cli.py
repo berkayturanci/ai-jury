@@ -35,8 +35,8 @@ from .github import (
 from .metadata import build_run_metadata
 from .orchestrator import review_diff, run_jury
 from .policy import PolicyError, load_policy
-from .report import render, render_live_step, render_transcript
 from .redaction import redact
+from .report import render, render_live_step, render_transcript
 
 # Hard ceiling on raw diff ingestion. The per-run ``diff.max_bytes`` budget is
 # only applied *after* the full diff is read and split, so an unbounded
