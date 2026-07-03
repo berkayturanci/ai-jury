@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   being wrapped into error/warning messages** — closing the same secret-leak
   class fixed for `gh` CLI stderr in 1.9.6, but for `str(exc)` text raised by
   Python itself.
+- Two more unredacted paths in `adapters.py`, missed by the fix above: a CLI's
+  raw version-probe output (`raw_version_output`, surfaced via `jury doctor`)
+  and the local-model adapter's `URLError.reason` on a connection failure are
+  now redacted too.
 
 ## [1.9.6] - 2026-06-21
 

@@ -298,7 +298,7 @@ class Adapter:
             return caps
 
         raw = ((proc.stdout or "") + (proc.stderr or "")).strip()
-        caps["raw_version_output"] = raw[:200]
+        caps["raw_version_output"] = redaction.redact(raw[:200])[0]
         match = _VERSION_RE.search(raw)
         if proc.returncode == 0 and match:
             caps["version"] = match.group(0)
@@ -667,7 +667,7 @@ class LocalAdapter(Adapter):
                 False,
                 "",
                 time.monotonic() - start,
-                f"could not reach local server at {self.endpoint}: {exc.reason}",
+                f"could not reach local server at {self.endpoint}: {redaction.redact(str(exc.reason))[0]}",
                 error_code=ERR_CONNECTION,
             )
         except Exception as exc:  # noqa: BLE001 - surface any other failure
