@@ -342,6 +342,28 @@ class CapabilityDiagnosticsTests(unittest.TestCase):
             diag["config_warnings"],
         )
 
+    def test_capability_probe_exception_redacts_secret(self):
+        # doctor.py's own probe wrapper builds a separate warning string from
+        # make_adapter()/detect_capabilities() failures; it must redact too,
+        # since diagnostics are often pasted into shared bug reports.
+        orig = doctor.make_adapter
+        leak = "simulate probe crash token=ghp_" + "a" * 36
+
+        def _raising_factory(_spec, mock=False):
+            _ = mock
+            raise RuntimeError(leak)
+
+        doctor.make_adapter = _raising_factory
+        self.addCleanup(lambda: setattr(doctor, "make_adapter", orig))
+
+        path = _write_config(VALID_CONFIG)
+        self.addCleanup(os.unlink, path)
+        diag = doctor.build_diagnostics(path)
+
+        warnings_blob = " ".join(diag["config_warnings"])
+        self.assertNotIn("ghp_" + "a" * 36, warnings_blob)
+        self.assertIn("[REDACTED", warnings_blob)
+
 
 class RecommendationsTest(unittest.TestCase):
     def test_not_ready_when_no_agents_available(self):

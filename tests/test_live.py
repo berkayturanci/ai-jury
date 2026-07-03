@@ -212,6 +212,27 @@ class CliLiveTests(unittest.TestCase):
         self.assertIn("failed to post step", err)
         self.assertIn("Round 1 review", out)  # streaming completed despite post failures
 
+    def test_live_post_failure_redacts_secret_in_exception(self):
+        # A gh-CLI failure surfaced through post_pr_comment can carry a raw
+        # token (e.g. an expired/invalid auth error echoing the header); the
+        # logged line must not leak it.
+        leak = "boom token=ghp_" + "a" * 36
+
+        def fail_only_steps(_pr, body, _repo=None):
+            if "AI Jury — " in body:
+                raise RuntimeError(leak)
+
+        with (
+            mock.patch("ai_jury.cli.pr_diff", return_value=DIFF),
+            mock.patch("ai_jury.cli.pr_context", return_value="t\n\nb"),
+            mock.patch("ai_jury.github.pr_head_sha", return_value="abc123"),
+            mock.patch("ai_jury.cli.post_pr_comment", side_effect=fail_only_steps),
+        ):
+            code, _, err = _run(["--mock", "--pr", "5", "--seed", "1", "--live", "--post"])
+        self.assertEqual(code, 0)
+        self.assertNotIn("ghp_" + "a" * 36, err)
+        self.assertIn("[REDACTED", err)
+
 
 if __name__ == "__main__":
     unittest.main()
