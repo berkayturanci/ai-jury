@@ -38,6 +38,7 @@ from ai_jury.orchestrator import (  # noqa: E402
     _format_findings_for_verify,
     _format_verdicts,
     _merge_chunk_outcomes,
+    _merge_results_by_agent,
     _run_with_retry,
     _synthesize,
     _verdict_matches_group,
@@ -831,6 +832,74 @@ class ChunkMerge(unittest.TestCase):
         cfg = _cfg(rounds=1)
         out = run_jury(cfg, DIFF, mock=True, seed=1)
         self.assertIs(_merge_chunk_outcomes([out]), out)
+
+    def test_merge_chunk_outcomes_aggregates_stats_across_chunks(self):
+        # redaction_count summed, injection_hits concatenated, budget_exhausted
+        # true if any chunk hit it, rounds_executed the max across chunks —
+        # including the case where a later chunk's count is lower than an
+        # earlier one's, so the running max must not regress.
+        from ai_jury.orchestrator import JuryOutcome
+
+        rev = AgentResult("r", "v", True, "ok", 0.0)
+        chunk_a = JuryOutcome(
+            reviews=[rev], debate=[], synthesis=None, chair="c",
+            redaction_count=2, injection_hits=["hit-a"],
+            budget_exhausted=False, rounds_executed=3,
+        )
+        chunk_b = JuryOutcome(
+            reviews=[rev], debate=[], synthesis=None, chair="c",
+            redaction_count=5, injection_hits=["hit-b"],
+            budget_exhausted=True, rounds_executed=1,
+        )
+        merged = _merge_chunk_outcomes([chunk_a, chunk_b])
+        self.assertEqual(merged.redaction_count, 7)
+        self.assertEqual(merged.injection_hits, ["hit-a", "hit-b"])
+        self.assertTrue(merged.budget_exhausted)
+        self.assertEqual(merged.rounds_executed, 3)
+
+
+class MergeResultsByAgent(unittest.TestCase):
+    """_merge_results_by_agent (issue #31): per-chunk results for one agent
+    folded into a single AgentResult — ok-if-any-chunk-ok, durations summed,
+    attempts maxed, and the first failing chunk's error surfaced when none
+    succeed."""
+
+    def test_ok_wins_over_failed_chunk_and_error_is_none(self):
+        failed = AgentResult("claude", "anthropic", False, "", 0.1, error="boom")
+        ok = AgentResult("claude", "anthropic", True, "good", 0.2)
+        merged = _merge_results_by_agent([[failed], [ok]])
+        self.assertEqual(len(merged), 1)
+        self.assertTrue(merged[0].ok)
+        self.assertIsNone(merged[0].error)
+        self.assertIsNone(merged[0].error_code)
+        self.assertIn("good", merged[0].output)
+
+    def test_first_error_surfaced_when_all_chunks_fail(self):
+        first = AgentResult("claude", "anthropic", False, "", 0.1, error="first", error_code="E1")
+        second = AgentResult("claude", "anthropic", False, "", 0.1, error="second", error_code="E2")
+        merged = _merge_results_by_agent([[first], [second]])
+        self.assertFalse(merged[0].ok)
+        self.assertEqual(merged[0].error, "first")
+        self.assertEqual(merged[0].error_code, "E1")
+
+    def test_ok_chunk_with_empty_output_contributes_no_body_section(self):
+        empty = AgentResult("claude", "anthropic", True, "", 0.1)
+        merged = _merge_results_by_agent([[empty]])
+        self.assertTrue(merged[0].ok)
+        self.assertEqual(merged[0].output, "")
+
+    def test_duration_summed_and_attempts_maxed(self):
+        p1 = AgentResult("claude", "anthropic", True, "a", 0.1, attempts=1)
+        p2 = AgentResult("claude", "anthropic", True, "b", 0.25, attempts=3)
+        merged = _merge_results_by_agent([[p1], [p2]])
+        self.assertAlmostEqual(merged[0].duration_s, 0.35)
+        self.assertEqual(merged[0].attempts, 3)
+
+    def test_agent_order_follows_first_appearance(self):
+        a = AgentResult("codex", "openai", True, "a", 0.1)
+        b = AgentResult("claude", "anthropic", True, "b", 0.1)
+        merged = _merge_results_by_agent([[a, b]])
+        self.assertEqual([r.agent for r in merged], ["codex", "claude"])
 
 
 # --- review_diff filtering / too-large / empty branches --------------------
