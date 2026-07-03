@@ -57,7 +57,7 @@ def _detect_capabilities(spec):
             "supports_model_selection": None,
             "raw_version_output": "",
             "status": "unknown_version",
-            "warnings": [f"capability probe raised: {exc}"],
+            "warnings": [f"capability probe raised: {redact(str(exc))[0]}"],
         }
 
 
@@ -211,11 +211,11 @@ def build_diagnostics(config_path=None):
     try:
         cfg = load_config(config_path)
     except FileNotFoundError as exc:
-        config_warnings.append(f"config error: {exc}")
+        config_warnings.append(f"config error: {redact(str(exc))[0]}")
     except tomllib.TOMLDecodeError as exc:
-        config_warnings.append(f"config error: invalid TOML: {exc}")
+        config_warnings.append(f"config error: invalid TOML: {redact(str(exc))[0]}")
     except (KeyError, ValueError, TypeError) as exc:
-        config_warnings.append(f"config error: {exc}")
+        config_warnings.append(f"config error: {redact(str(exc))[0]}")
     else:
         config_summary = _config_summary(cfg)
         agents = [_agent_entry(spec) for spec in cfg.agents]

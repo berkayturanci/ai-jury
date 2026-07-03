@@ -762,9 +762,7 @@ def _verdict_matches_group(verdict: Verdict, group: FindingGroup) -> bool:
     # Case-EXACT path match (fold_case=False): on a case-sensitive filesystem
     # ``Config.py`` != ``config.py``, so a verdict must not reject a finding it
     # only case-collapses onto (audit 2026-06-13 r6/M).
-    if _normalize_path(verdict.file, fold_case=False) != _normalize_path(
-        rep.file, fold_case=False
-    ):
+    if _normalize_path(verdict.file, fold_case=False) != _normalize_path(rep.file, fold_case=False):
         return False
     if verdict.line is not None and rep.line is not None and abs(verdict.line - rep.line) > 3:
         return False
@@ -984,21 +982,39 @@ def _merge_results_by_agent(phase_lists: list[list[AgentResult]]) -> list[AgentR
     merged: list[AgentResult] = []
     for name in order:
         parts = by_agent[name]
-        ok = any(p.ok for p in parts)
-        body = "\n\n".join(
-            f"#### chunk {i}\n{p.output}" for i, p in enumerate(parts, 1) if p.ok and p.output
-        )
-        first_err = next((p for p in parts if not p.ok), None)
+
+        # bolt: Consolidate multiple metrics (ok, body, total_duration, max_attempts)
+        # into a single-pass O(N) explicit loop to bypass multiple generator instantiations
+        ok = False
+        body_parts = []
+        first_err = None
+        total_duration = 0.0
+        max_attempts = 0
+
+        for i, p in enumerate(parts, 1):
+            if p.ok:
+                ok = True
+                if p.output:
+                    body_parts.append(f"#### chunk {i}\n{p.output}")
+            elif first_err is None:
+                first_err = p
+
+            total_duration += p.duration_s
+            if p.attempts > max_attempts:
+                max_attempts = p.attempts
+
+        body = "\n\n".join(body_parts)
+
         merged.append(
             AgentResult(
                 name,
                 parts[0].vendor,
                 ok,
                 body,
-                round(sum(p.duration_s for p in parts), 3),
+                round(total_duration, 3),
                 error=None if ok else (first_err.error if first_err else None),
                 error_code=None if ok else (first_err.error_code if first_err else None),
-                attempts=max(p.attempts for p in parts),
+                attempts=max_attempts,
             )
         )
     return merged
@@ -1010,8 +1026,16 @@ def _combine_chair_results(results: list[AgentResult], chair: str) -> AgentResul
     if not ok_parts:
         return results[0] if results else None
     vendor = ok_parts[0].vendor
-    body = "\n\n".join(f"### chunk {i}\n{r.output}" for i, r in enumerate(ok_parts, 1))
-    return AgentResult(chair, vendor, True, body, round(sum(r.duration_s for r in ok_parts), 3))
+
+    # bolt: Consolidate body text concatenation and duration sum into a single-pass O(N) loop
+    body_parts = []
+    total_duration = 0.0
+    for i, r in enumerate(ok_parts, 1):
+        body_parts.append(f"### chunk {i}\n{r.output}")
+        total_duration += r.duration_s
+
+    body = "\n\n".join(body_parts)
+    return AgentResult(chair, vendor, True, body, round(total_duration, 3))
 
 
 def _merge_chunk_outcomes(outcomes: list[JuryOutcome]) -> JuryOutcome:
@@ -1044,9 +1068,7 @@ def _merge_chunk_outcomes(outcomes: list[JuryOutcome]) -> JuryOutcome:
     from .consensus import _normalize_path
 
     for o in outcomes:
-        chunk_files = {
-            _normalize_path(f.file, fold_case=False) for f in o.findings if f.file
-        }
+        chunk_files = {_normalize_path(f.file, fold_case=False) for f in o.findings if f.file}
         chunk_groups = [
             g
             for g in groups
@@ -1057,6 +1079,20 @@ def _merge_chunk_outcomes(outcomes: list[JuryOutcome]) -> JuryOutcome:
 
     synthesis = _combine_chair_results([o.synthesis for o in outcomes if o.synthesis], base.chair)
     verify = _combine_chair_results([o.verify for o in outcomes if o.verify], base.chair)
+
+    # bolt: Consolidate collection aggregations (sum, extend, max, any) into a single-pass O(N) explicit loop
+    redaction_count = 0
+    injection_hits = []
+    budget_exhausted = False
+    rounds_executed = 0
+
+    for o in outcomes:
+        redaction_count += o.redaction_count
+        injection_hits.extend(o.injection_hits)
+        if o.budget_exhausted:
+            budget_exhausted = True
+        if o.rounds_executed > rounds_executed:
+            rounds_executed = o.rounds_executed
 
     return JuryOutcome(
         reviews=reviews,
@@ -1070,11 +1106,11 @@ def _merge_chunk_outcomes(outcomes: list[JuryOutcome]) -> JuryOutcome:
         verdicts=verdicts,
         context_mode=base.context_mode,
         redact_secrets=base.redact_secrets,
-        redaction_count=sum(o.redaction_count for o in outcomes),
-        injection_hits=[h for o in outcomes for h in o.injection_hits],
+        redaction_count=redaction_count,
+        injection_hits=injection_hits,
         skipped=base.skipped,
-        budget_exhausted=any(o.budget_exhausted for o in outcomes),
-        rounds_executed=max(o.rounds_executed for o in outcomes),
+        budget_exhausted=budget_exhausted,
+        rounds_executed=rounds_executed,
         stop_reason=f"chunked review across {len(outcomes)} part(s)",
     )
 
