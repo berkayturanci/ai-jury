@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Exception strings from failed agent spawns, version probes, local-model
+  requests, config loading, and live-post steps are now **redacted before
+  being wrapped into error/warning messages** — closing the same secret-leak
+  class fixed for `gh` CLI stderr in 1.9.6, but for `str(exc)` text raised by
+  Python itself.
+
 ## [1.9.6] - 2026-06-21
 
 ### Security

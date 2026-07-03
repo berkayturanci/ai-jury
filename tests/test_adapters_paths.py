@@ -109,6 +109,34 @@ class AdapterRunTests(unittest.TestCase):
         self.assertFalse(r.ok)
         self.assertEqual(r.error_code, adapters.ERR_SPAWN_FAILED)
 
+    def test_spawn_failure_redacts_secret_in_exception(self):
+        # OSError/Exception text from a failed spawn can echo back env or argv
+        # content (e.g. a token embedded in a broken PATH/shell wrapper); it
+        # must be redacted before landing in the report like stderr is.
+        leak = "nope token=ghp_" + "a" * 36
+        with (
+            mock.patch("shutil.which", return_value="/usr/bin/claude"),
+            mock.patch("ai_jury.adapters._spawn", side_effect=OSError(leak)),
+        ):
+            r = self._adapter().run("p")
+        self.assertFalse(r.ok)
+        self.assertNotIn("ghp_" + "a" * 36, r.error)
+        self.assertIn("[REDACTED", r.error)
+
+    def test_version_probe_failure_redacts_secret_in_exception(self):
+        # Same _spawn call, but via detect_capabilities()'s own except-branch
+        # (distinct from run()'s), which builds a separate warning string.
+        leak = "boom token=ghp_" + "a" * 36
+        with (
+            mock.patch("shutil.which", return_value="/usr/bin/claude"),
+            mock.patch("ai_jury.adapters._spawn", side_effect=RuntimeError(leak)),
+        ):
+            caps = self._adapter().detect_capabilities()
+        self.assertEqual(caps["status"], adapters.CAP_UNKNOWN_VERSION)
+        warning = caps["warnings"][0]
+        self.assertNotIn("ghp_" + "a" * 36, warning)
+        self.assertIn("[REDACTED", warning)
+
     def test_nonzero_exit(self):
         with (
             mock.patch("shutil.which", return_value="/usr/bin/claude"),
@@ -198,6 +226,14 @@ class LocalAdapterRunTests(unittest.TestCase):
         with mock.patch("ai_jury.adapters._open", side_effect=ValueError("weird")):
             r = self._adapter().run("p")
         self.assertFalse(r.ok)
+
+    def test_generic_error_redacts_secret(self):
+        leak = "weird token=ghp_" + "a" * 36
+        with mock.patch("ai_jury.adapters._open", side_effect=ValueError(leak)):
+            r = self._adapter().run("p")
+        self.assertFalse(r.ok)
+        self.assertNotIn("ghp_" + "a" * 36, r.error)
+        self.assertIn("[REDACTED", r.error)
 
 
 class SpawnTests(unittest.TestCase):

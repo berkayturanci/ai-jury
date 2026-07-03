@@ -481,6 +481,17 @@
         lines.push("");
       });
       $("toml-out").textContent = lines.join("\n").trim() + "\n";
+
+      var runBtn = $("run-btn");
+      if (runBtn) {
+        if (ags.length === 0) {
+          runBtn.disabled = true;
+          runBtn.setAttribute("title", "Pick at least one reviewer to run.");
+        } else {
+          runBtn.disabled = false;
+          runBtn.removeAttribute("title");
+        }
+      }
     }
 
     // Any config change resets the run output: collapse it so the user
@@ -501,8 +512,14 @@
       if (theater) { theater.hidden = true; theater.innerHTML = ""; }
       var btn = $("run-btn");
       if (btn) {
-        btn.disabled = false;
+        var noAgents = selectedAgents().length === 0;
+        btn.disabled = noAgents;
         btn.removeAttribute("aria-busy");
+        if (noAgents) {
+          btn.setAttribute("title", "Pick at least one reviewer to run.");
+        } else {
+          btn.removeAttribute("title");
+        }
         btn.textContent = "▶ Run review (demo)";
       }
     });
@@ -830,8 +847,15 @@
       playTheater(run, function () {
         streamTerminal(run, function () {
           renderComments(run);
-          btn.disabled = false;
-          btn.removeAttribute("title");
+          // The reviewer selection can change while the demo animation is
+          // still playing (the change handler only resets the run output,
+          // not this in-flight callback) — re-check it instead of always
+          // re-enabling, or the button could pop back on with 0 reviewers
+          // selected, contradicting the disabled-when-empty invariant.
+          var stillNoAgents = selectedAgents().length === 0;
+          btn.disabled = stillNoAgents;
+          if (stillNoAgents) btn.setAttribute("title", "Pick at least one reviewer to run.");
+          else btn.removeAttribute("title");
           btn.removeAttribute("aria-busy");
           btn.textContent = "▶ Run review (demo)";
         });

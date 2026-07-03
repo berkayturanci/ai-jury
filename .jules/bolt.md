@@ -17,3 +17,7 @@
 ## 2025-06-11 - Single-pass Collection Aggregation
 **Learning:** Using multiple `sum(generator_expression)` calls sequentially over the same collection forces Python to evaluate the collection multiple times, allocating generator objects for each call.
 **Action:** Consolidate multiple sequential aggregations over the same list into a single-pass explicit `for` loop to compute all metrics simultaneously, bypassing redundant evaluations and generator overhead.
+
+## 2025-06-12 - Ensure Single-Pass Consolidations Include Comments
+**Learning:** When making code optimizations for single-pass collections or loop iterations, always verify that explicit comments are included to explain *why* the loop was implemented this way (e.g., `# bolt: Consolidate multiple metrics into a single-pass O(N) explicit loop`).
+**Action:** Before submitting, ensure performance optimizations explicitly have their rationale documented in code via a comment as required by Bolt's guidelines.
