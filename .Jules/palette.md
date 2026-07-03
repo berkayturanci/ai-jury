@@ -4,3 +4,7 @@
 ## 2024-05-18 - Dynamic Accessible Names for Theme Toggles
 **Learning:** For theme toggle buttons (and similar state-toggling UI elements), using a static generic `aria-label` like "Toggle light/dark theme" is bad for accessibility because it does not communicate the resulting state of activating the button. Screen reader users need to know what will happen when they interact with it.
 **Action:** Always ensure that toggle buttons explicitly communicate their resulting state by dynamically updating the `aria-label` and `title` attributes based on the current state (e.g., dynamically setting it to "Switch to light theme" or "Switch to dark theme").
+
+## 2024-07-01 - Explaining disabled states
+**Learning:** It is a good UX practice to disable call-to-action buttons (like "Run review") when the form state is invalid (e.g., 0 reviewers selected), rather than letting users click and showing an error note afterward. When disabling the button, providing an explicit `title` attribute on the button itself (e.g., "Pick at least one reviewer to run.") is essential so that users know exactly *why* it is disabled and how to fix it.
+**Action:** When dynamically disabling a button due to missing prerequisites, always set a `title` explaining the missing prerequisite directly on the button, and ensure it is removed when the button is re-enabled.
