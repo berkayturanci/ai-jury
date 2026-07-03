@@ -54,12 +54,10 @@ class FailOnBlockerAlias(unittest.TestCase):  # issue #245
 
 class RiskLevelHonoursVerifyStatus(unittest.TestCase):  # issue #247
     def test_rejected_major_consensus_is_not_high(self):
-        findings = [Finding(severity="major", file="src/a.py", line=1, claim="c")]
         rejected = [_grp("major", bucket="consensus", status="unsupported")]
         self.assertEqual(clf._risk_level_from_stats(False, True, False, rejected), clf.RISK_MEDIUM)
 
     def test_verified_major_consensus_is_high(self):
-        findings = [Finding(severity="major", file="src/a.py", line=1, claim="c")]
         verified = [_grp("major", bucket="consensus", status="verified")]
         self.assertEqual(clf._risk_level_from_stats(False, True, False, verified), clf.RISK_HIGH)
 
