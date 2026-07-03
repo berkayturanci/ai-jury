@@ -8,3 +8,6 @@
 ## 2024-07-01 - Explaining disabled states
 **Learning:** It is a good UX practice to disable call-to-action buttons (like "Run review") when the form state is invalid (e.g., 0 reviewers selected), rather than letting users click and showing an error note afterward. When disabling the button, providing an explicit `title` attribute on the button itself (e.g., "Pick at least one reviewer to run.") is essential so that users know exactly *why* it is disabled and how to fix it.
 **Action:** When dynamically disabling a button due to missing prerequisites, always set a `title` explaining the missing prerequisite directly on the button, and ensure it is removed when the button is re-enabled.
+## 2026-07-02 - Skip-to-content for Keyboard Accessibility
+**Learning:** For websites with extensive navigation menus or sidebars (like docs), keyboard and screen reader users must tab through every single navigation link before reaching the main content. This is tedious and repetitive.
+**Action:** Implement a 'skip-to-content' link as the first interactive element in the `<body>`. Ensure it remains visually hidden (e.g., positioned off-screen) until focused (`:focus-visible`), at which point it should become prominently visible and positioned correctly to allow immediate skipping to the main content container.
