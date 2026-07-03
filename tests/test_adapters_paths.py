@@ -137,6 +137,20 @@ class AdapterRunTests(unittest.TestCase):
         self.assertNotIn("ghp_" + "a" * 36, warning)
         self.assertIn("[REDACTED", warning)
 
+    def test_version_probe_raw_output_redacts_secret(self):
+        # The version probe's combined stdout+stderr is stored verbatim in
+        # raw_version_output and surfaced via `jury doctor`; a CLI that
+        # echoes a token in its version banner (e.g. a misconfigured wrapper
+        # script) must not leak it there either.
+        leak = "v1.0.0 token=ghp_" + "a" * 36
+        with (
+            mock.patch("shutil.which", return_value="/usr/bin/claude"),
+            mock.patch("ai_jury.adapters._spawn", return_value=_proc(0, leak, "")),
+        ):
+            caps = self._adapter().detect_capabilities()
+        self.assertNotIn("ghp_" + "a" * 36, caps["raw_version_output"])
+        self.assertIn("[REDACTED", caps["raw_version_output"])
+
     def test_nonzero_exit(self):
         with (
             mock.patch("shutil.which", return_value="/usr/bin/claude"),
@@ -221,6 +235,19 @@ class LocalAdapterRunTests(unittest.TestCase):
             r = self._adapter().run("p")
         self.assertFalse(r.ok)
         self.assertEqual(r.error_code, adapters.ERR_CONNECTION)
+
+    def test_url_error_redacts_secret_in_reason(self):
+        # exc.reason can be an arbitrary OSError/str carrying proxy or DNS
+        # error text; if a token ends up embedded there it must be redacted
+        # like the adjacent generic-Exception branch already is.
+        leak = "refused token=ghp_" + "a" * 36
+        with mock.patch(
+            "ai_jury.adapters._open", side_effect=urllib.error.URLError(leak)
+        ):
+            r = self._adapter().run("p")
+        self.assertFalse(r.ok)
+        self.assertNotIn("ghp_" + "a" * 36, r.error)
+        self.assertIn("[REDACTED", r.error)
 
     def test_generic_error(self):
         with mock.patch("ai_jury.adapters._open", side_effect=ValueError("weird")):
