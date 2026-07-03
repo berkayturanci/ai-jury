@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.7] - 2026-07-03
+
 ### Security
 
 - Exception strings from failed agent spawns, version probes, local-model
@@ -18,6 +20,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   raw version-probe output (`raw_version_output`, surfaced via `jury doctor`)
   and the local-model adapter's `URLError.reason` on a connection failure are
   now redacted too.
+
+### Changed
+
+- The website's **"Run review" demo button is now disabled (with an
+  explanatory `title`) when zero reviewers are selected**, instead of staying
+  clickable and only showing an inline note after the fact.
+- The website now has a **skip-to-content link** on every page (home, docs,
+  404, coverage report) — hidden until keyboard-focused, then jumps straight
+  past the nav to the main content (WCAG 2.4.1 bypass-blocks).
 
 ## [1.9.6] - 2026-06-21
 
