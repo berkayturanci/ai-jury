@@ -61,10 +61,11 @@ def _gh(*args: str) -> str:
         raise RuntimeError(f"gh {label} timed out after {_GH_TIMEOUT_S}s") from None
     t_err.join(_GH_TIMEOUT_S)
     if proc.returncode != 0:
-        err = holder.get("err", b"").decode("utf-8", "replace")
-        safe_err = redact(err.strip())[0]
+        err = holder.get("err", b"").decode("utf-8", "replace").strip()
+        out_err = holder.get("out", b"").decode("utf-8", "replace").strip()
+        safe_err = redact(err or out_err)[0]
         raise RuntimeError(f"gh {label} failed: {safe_err}")
-    return redact(out.decode("utf-8", "replace"))[0]
+    return out.decode("utf-8", "replace")
 
 
 def pr_diff(pr: str, repo: str | None = None) -> str:
@@ -360,9 +361,11 @@ def _gh_with_input(args: list[str], stdin_data: str) -> str:
     except subprocess.TimeoutExpired:
         raise RuntimeError(f"gh {' '.join(args)} timed out after {_GH_TIMEOUT_S}s") from None
     if proc.returncode != 0:
-        safe_err = redact(proc.stderr.strip())[0]
+        err = proc.stderr.strip()
+        out_err = proc.stdout.strip()
+        safe_err = redact(err or out_err)[0]
         raise RuntimeError(f"gh {' '.join(args)} failed: {safe_err}")
-    return redact(proc.stdout)[0]
+    return proc.stdout
 
 
 def post_inline_comments(
@@ -383,7 +386,7 @@ def post_inline_comments(
 
     if dry_run:
         payload = {"event": "COMMENT", "body": _review_body(len(comments)), "comments": comments}
-        print(json.dumps(payload, indent=2))
+        print(redact(json.dumps(payload, indent=2))[0])
         return payload
 
     resolved = _resolve_repo(repo)
