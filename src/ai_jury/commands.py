@@ -14,6 +14,7 @@ Pure and network-free, so parsing and rejection are fully unit-testable.
 """
 
 from __future__ import annotations
+from .redaction import redact
 
 import re
 import shlex
@@ -68,7 +69,7 @@ def parse_comment(text: str) -> ParsedCommand:
     try:
         tokens = shlex.split(match.group(1).strip())
     except ValueError as exc:
-        raise CommandError(f"could not parse command: {exc}") from exc
+        raise CommandError(f"could not parse command: {redact(str(exc))[0]}") from exc
 
     if not tokens:
         raise CommandError(f"missing subcommand; expected one of {', '.join(ALLOWED_COMMANDS)}")

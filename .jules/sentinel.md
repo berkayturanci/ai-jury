@@ -7,3 +7,8 @@
 **Vulnerability:** Unsanitized exception strings (e.g. str(exc)) could leak secrets into the jury report/logs.
 **Learning:** Just like stdout/stderr, exception messages containing raw inputs/urls/commands must be sanitized, as they often include verbatim tokens or paths that crashed the process.
 **Prevention:** Always wrap str(exc) with redaction.redact()[0] before logging or returning it in the user report.
+
+## 2024-05-18 - [CRITICAL] Fix exception string secret leakage (cli, findings, policy, commands)
+**Vulnerability:** Unsanitized exception strings (e.g. str(exc)) could leak secrets into the jury report/logs in multiple places: `cli.py`, `commands.py`, `findings.py`, and `policy.py`.
+**Learning:** Exception messages containing raw inputs/urls/commands must be sanitized across the entire codebase, as they often include verbatim tokens or paths that crashed the process. Furthermore, when adding redaction, one must ensure the `redact` function is correctly imported, placing it *after* any `from __future__ import annotations` statements to avoid `SyntaxError`.
+**Prevention:** Always wrap str(exc) with redaction.redact()[0] before logging or returning it in the user report. Verify the `redact` import is present and correctly positioned when modifying files to add redaction.
