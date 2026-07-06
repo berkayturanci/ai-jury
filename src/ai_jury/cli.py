@@ -1138,7 +1138,7 @@ def main(argv: list[str] | None = None) -> int:
             data = load_raw_config(args.config)
             warnings = validate_config(data, strict=args.strict_config)
         except (ConfigError, FileNotFoundError) as exc:
-            print(f"Config invalid ({source}): {redact(str(exc))[0]}", file=sys.stderr)
+            print(redact(f"Config invalid ({source}): {exc}")[0], file=sys.stderr)
             return 2
         if warnings:
             print(f"Config valid with warnings ({source}):")
