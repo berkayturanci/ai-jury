@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.8] - 2026-07-06
+
+### Security
+
+- **Scoped `gh` output redaction to error/log paths only.** Failed-`gh` error
+  messages now redact **stdout as well as stderr**, and the
+  `post_inline_comments` **dry-run payload dump is redacted before it is
+  printed** — closing the remaining console/log paths where raw `gh` output
+  could surface secrets, while leaving the PR diffs and API JSON that the jury
+  consumes untouched (#420).
+- **Exception strings in `cli.py`, `commands.py`, `findings.py`, and
+  `policy.py` are now redacted** before being printed to stderr or wrapped into
+  error messages — extending the `str(exc)` redaction shipped in 1.9.7 to
+  config/policy loading, comment parsing, and findings/verdict parsing (#422).
+
 ## [1.9.7] - 2026-07-03
 
 ### Security
