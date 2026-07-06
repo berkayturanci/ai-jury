@@ -12,3 +12,8 @@
 **Vulnerability:** Unsanitized exception strings (e.g. str(exc)) could leak secrets into the jury report/logs in multiple places: `cli.py`, `commands.py`, `findings.py`, and `policy.py`.
 **Learning:** Exception messages containing raw inputs/urls/commands must be sanitized across the entire codebase, as they often include verbatim tokens or paths that crashed the process. Furthermore, when adding redaction, one must ensure the `redact` function is correctly imported, placing it *after* any `from __future__ import annotations` statements to avoid `SyntaxError`.
 **Prevention:** Always wrap str(exc) with redaction.redact()[0] before logging or returning it in the user report. Verify the `redact` import is present and correctly positioned when modifying files to add redaction.
+
+## 2024-05-18 - [CRITICAL] Properly Scope Stdout Secret Leakage Fix
+**Vulnerability:** In an attempt to prevent standard output leaks from `gh` calls, redacting the successful `stdout` globally broke the AI's ability to see and review actual diffs, while simultaneously failing to address the actual log/print paths where successful output was printed to console (e.g. `dry_run` payload dumps).
+**Learning:** Redaction must be applied strictly to Error outputs and Log paths. Successful data pathways that feed downstream consumers MUST remain intact.
+**Prevention:** Always trace the data flow of the `stdout`. If the `stdout` is data consumed by the app (like a fetched diff), do NOT redact the return value. Apply redaction *only* at the specific points where that data is printed, logged, or bundled into an exception string that crosses the application boundary.
