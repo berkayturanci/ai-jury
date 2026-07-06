@@ -22,6 +22,7 @@ from __future__ import annotations
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
+from .redaction import redact
 
 # Standard discovery locations, searched in order when no explicit path is given.
 DEFAULT_POLICY_NAMES = (".jury/policy.toml", "jury-policy.toml")
@@ -98,12 +99,12 @@ def load_policy(path: Path | None = None) -> ReviewPolicy | None:
             )
         data = tomllib.loads(raw.decode("utf-8"))
     except OSError as exc:
-        raise PolicyError(f"could not read policy file {policy_path}: {exc}") from exc
+        raise PolicyError(f"could not read policy file {policy_path}: {redact(str(exc))[0]}") from exc
     except UnicodeDecodeError as exc:
         # TOML is UTF-8 by spec (review of #316).
         raise PolicyError(f"policy file {policy_path} is not valid UTF-8.") from exc
     except tomllib.TOMLDecodeError as exc:
-        raise PolicyError(f"invalid TOML in policy file {policy_path}: {exc}") from exc
+        raise PolicyError(f"invalid TOML in policy file {policy_path}: {redact(str(exc))[0]}") from exc
 
     return _from_dict(data, source=policy_path)
 

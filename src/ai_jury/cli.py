@@ -452,7 +452,7 @@ def _run_comment_command(rest: list[str]) -> int:
     try:
         parsed = parse_comment(ns.text)
     except CommandError as exc:
-        print(f"comment command rejected: {exc}", file=sys.stderr)
+        print(f"comment command rejected: {redact(str(exc))[0]}", file=sys.stderr)
         return 2
 
     inner = parsed.to_cli_args()
@@ -818,14 +818,14 @@ def _run_init(rest: list[str]) -> int:
     try:
         config = build_config(**kwargs)
     except ValueError as exc:
-        print(f"error: {exc}", file=sys.stderr)
+        print(f"error: {redact(str(exc))[0]}", file=sys.stderr)
         return 2
 
     # The scaffolded config must itself be valid (fail loudly if a template drifts).
     try:
         validate_config(config)
     except ConfigError as exc:
-        print(f"error: generated config is invalid: {exc}", file=sys.stderr)
+        print(f"error: generated config is invalid: {redact(str(exc))[0]}", file=sys.stderr)
         return 2
 
     out_path = Path(ns.output)
@@ -905,7 +905,7 @@ def _run_config(rest: list[str]) -> int:
     try:
         cfg = load_config(ns.config, validate=True)
     except (ConfigError, FileNotFoundError) as exc:
-        print(f"error: {exc}", file=sys.stderr)
+        print(f"error: {redact(str(exc))[0]}", file=sys.stderr)
         return 2
     print(f"source: {source}")
     print(_render_effective_config(cfg))
@@ -1127,7 +1127,7 @@ def main(argv: list[str] | None = None) -> int:
                     json.dumps(diagnostics, indent=2) + "\n", encoding="utf-8"
                 )
             except OSError as exc:
-                print(f"error: {exc}", file=sys.stderr)
+                print(f"error: {redact(str(exc))[0]}", file=sys.stderr)
                 return 2
             print(f"\nWrote diagnostics to {args.write}")
         return 0
@@ -1138,7 +1138,7 @@ def main(argv: list[str] | None = None) -> int:
             data = load_raw_config(args.config)
             warnings = validate_config(data, strict=args.strict_config)
         except (ConfigError, FileNotFoundError) as exc:
-            print(f"Config invalid ({source}): {exc}", file=sys.stderr)
+            print(redact(f"Config invalid ({source}): {exc}")[0], file=sys.stderr)
             return 2
         if warnings:
             print(f"Config valid with warnings ({source}):")
@@ -1151,7 +1151,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         config = load_config(args.config, validate=True, strict=args.strict_config)
     except ConfigError as exc:
-        print(f"Config invalid: {exc}", file=sys.stderr)
+        print(f"Config invalid: {redact(str(exc))[0]}", file=sys.stderr)
         return 2
     if args.rounds is not None:
         config.rounds = args.rounds
@@ -1191,7 +1191,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         policy = load_policy(args.policy)
     except PolicyError as exc:
-        print(f"error: {exc}", file=sys.stderr)
+        print(f"error: {redact(str(exc))[0]}", file=sys.stderr)
         return 2
 
     # Issue mode (issue #221) reviews prose, not a diff, so the PR/diff-only
@@ -1399,7 +1399,7 @@ def main(argv: list[str] | None = None) -> int:
         except RuntimeError as exc:
             # Large-diff "too large / nothing to review" (issue #31) and "no
             # usable agents" are actionable user errors, not crashes.
-            print(f"error: {exc}", file=sys.stderr)
+            print(f"error: {redact(str(exc))[0]}", file=sys.stderr)
             return 2
         if cache is not None and cache_k is not None:
             cache.store(cache_k, outcome)

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import re
+from .redaction import redact
 from dataclasses import dataclass
 
 SEVERITIES: tuple[str, ...] = ("critical", "major", "minor", "nit", "info")
@@ -149,7 +150,7 @@ def parse_findings(text: str, reviewer: str) -> tuple[list[Finding], list[str]]:
         # RecursionError (deeply nested JSON, e.g. "[[[[…") is not a ValueError;
         # catching it keeps the documented "never raises" contract so one
         # steerable reviewer can't abort the whole run (audit 2026-06-13/N-2).
-        return [], [f"{reviewer}: malformed or missing structured findings ({exc})"]
+        return [], [f"{reviewer}: malformed or missing structured findings ({redact(str(exc))[0]})"]
 
     if not isinstance(data, list):
         return [], [
@@ -219,7 +220,7 @@ def parse_verdicts(text: str, verifier: str = "") -> tuple[list[Verdict], list[s
     except (ValueError, TypeError, RecursionError) as exc:
         # See parse_findings: RecursionError on deeply nested JSON must not
         # escape (audit 2026-06-13/N-2).
-        return [], [f"{label}: malformed verdicts JSON ({exc})"]
+        return [], [f"{label}: malformed verdicts JSON ({redact(str(exc))[0]})"]
 
     if isinstance(data, dict):
         data = data.get("verdicts", data.get("findings", []))
