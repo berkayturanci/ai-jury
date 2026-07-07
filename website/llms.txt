@@ -1,0 +1,25 @@
+# ai-jury
+
+> ai-jury convenes a cross-vendor, multi-agent code-review jury on a diff, PR, or
+> issue and produces one report. Independent reviewers — Claude Code, Codex,
+> Antigravity, and/or a free local/open-weight model — each review, then
+> cross-examine each other, verify findings, and reach a single verdict: either a
+> chair's synthesis or a panel vote. Stdlib-only Python CLI, zero runtime
+> dependencies, 100% test coverage.
+
+## Docs
+
+- [Home](https://berkayturanci.github.io/ai-jury/): overview, how the jury works, and quick start
+- [Documentation](https://berkayturanci.github.io/ai-jury/docs.html): configuration, adapters, consensus modes, and CLI reference
+- [Coverage report](https://berkayturanci.github.io/ai-jury/coverage.html): live test-coverage dashboard
+
+## Source
+
+- [GitHub repository](https://github.com/berkayturanci/ai-jury): source, issues, and releases
+
+## Key concepts
+
+- Cross-vendor panel: each reviewer is a different model/vendor, reviewing independently
+- Cross-examination: reviewers critique each other's findings before a verdict
+- Verdict modes: chair's synthesis (one model reconciles) or panel vote (majority)
+- Redaction and injection defenses for safe review of untrusted diffs
