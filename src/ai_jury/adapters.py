@@ -114,6 +114,11 @@ ERR_CONNECTION = "connection_error"
 # from ERR_AUTH_REQUIRED (a key was sent but the server rejected it) so a report
 # can tell "never configured" apart from "misconfigured/expired/revoked".
 ERR_MISSING_API_KEY = "missing_api_key"
+# Hosted-API adapter (issue #430): the configured key contains a control
+# character and was rejected BEFORE being sent as a header, rather than
+# letting http.client raise (and risk echoing a transformed/escaped copy of
+# the secret in its exception text — see _HostedApiAdapter._invalid_key_reason).
+ERR_INVALID_API_KEY = "invalid_api_key"
 ERR_UNKNOWN = "unknown"
 
 ERROR_CODES = frozenset(
@@ -128,6 +133,7 @@ ERROR_CODES = frozenset(
         ERR_RATE_LIMITED,
         ERR_CONNECTION,
         ERR_MISSING_API_KEY,
+        ERR_INVALID_API_KEY,
         ERR_UNKNOWN,
     }
 )
@@ -794,18 +800,41 @@ class _HostedApiAdapter(Adapter):
     def _api_key(self) -> str:
         return os.environ.get(self._API_KEY_ENV, "")
 
+    def _invalid_key_reason(self) -> str | None:
+        """None if the key is safe to use as an HTTP header value; else why not.
+
+        A key containing a control character (most plausibly a stray
+        trailing ``\\n`` from a file/k8s-secret/`.env` mount) trips CPython's
+        ``http.client`` header-injection guard. That guard reports the
+        rejected value via ``repr()`` (e.g. an embedded newline becomes the
+        two literal characters ``\\`` ``n``), which does **not** byte-for-byte
+        match the raw key — so a literal substring scrub of the exception
+        text (see :meth:`_scrub_secret`) cannot reliably catch it; the
+        transformed text is no longer equal to the original secret. Validate
+        and reject *before* the key ever reaches a header instead of trying
+        to scrub it back out afterward.
+        """
+        if any(ord(ch) < 0x20 or ord(ch) == 0x7F for ch in self._api_key()):
+            return (
+                f"{self._API_KEY_ENV} contains a control character (e.g. a stray "
+                f"trailing newline from how the secret was loaded) and cannot be "
+                f"used as an HTTP header value"
+            )
+        return None
+
     def _scrub_secret(self, text: str) -> str:
         """Strip the literal API key value from an error message (issue #430).
 
-        Defense-in-depth alongside ``redaction.redact()``: that function only
-        recognizes known vendor-token *shapes* via regex. An operator's actual
-        key can fail to match one (e.g. a custom/rotated format, or a value
-        with a stray embedded newline/control character that trips CPython's
-        ``http.client`` header-injection guard and ends up verbatim inside
-        that exception's message) and would otherwise pass through
-        unredacted into ``AgentResult.error`` — which the report renders and
-        ``--post`` can put in a public PR comment. Since the exact key value
-        is always known here, mask it literally regardless of its shape.
+        Defense-in-depth alongside ``redaction.redact()`` (which only
+        recognizes known vendor-token *shapes* via regex) for any leak path
+        NOT already ruled out by :meth:`_invalid_key_reason` — e.g. a
+        well-formed key that still ends up quoted in some other library's
+        error text. Not a substitute for that check: once a value contains
+        control characters, downstream formatting (``repr()``, percent-
+        encoding, ...) can transform it before it reaches an error message,
+        and a literal match against the *original* key would then silently
+        miss it — which is exactly why control characters are rejected
+        upfront in :meth:`run` instead of relying on this alone.
         """
         key = self._api_key()
         if key and key in text:
@@ -856,6 +885,15 @@ class _HostedApiAdapter(Adapter):
                 0.0,
                 f"{self._API_KEY_ENV} is not set in the environment",
                 error_code=ERR_MISSING_API_KEY,
+            )
+        invalid_reason = self._invalid_key_reason()
+        if invalid_reason is not None:
+            # Reject before the key ever reaches a header — see
+            # _invalid_key_reason for why post-hoc scrubbing can't be trusted
+            # here. This message never echoes the key itself.
+            return AgentResult(
+                self.name, self.spec.vendor, False, "", 0.0,
+                invalid_reason, error_code=ERR_INVALID_API_KEY,
             )
         effective_timeout = self.spec.timeout
         if timeout is not None:

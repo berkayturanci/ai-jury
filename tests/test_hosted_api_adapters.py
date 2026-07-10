@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from ai_jury.adapters import (  # noqa: E402
     ERR_AUTH_REQUIRED,
     ERR_CONNECTION,
+    ERR_INVALID_API_KEY,
     ERR_MISSING_API_KEY,
     ERR_NONZERO_EXIT,
     ERR_RATE_LIMITED,
@@ -113,6 +114,9 @@ class ParseAndErrorMappingTest(unittest.TestCase):
     def test_missing_api_key_is_not_retryable(self):
         # A permanently-unset key is a config problem, not a transient failure.
         self.assertNotIn(ERR_MISSING_API_KEY, RETRYABLE_ERROR_CODES)
+
+    def test_invalid_api_key_is_not_retryable(self):
+        self.assertNotIn(ERR_INVALID_API_KEY, RETRYABLE_ERROR_CODES)
 
 
 class AvailabilityTest(unittest.TestCase):
@@ -310,25 +314,81 @@ class RunHttpTest(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertEqual(result.error_code, "unknown")
 
-    def test_key_with_embedded_newline_is_never_leaked_in_error(self):
+    def test_key_with_embedded_newline_is_rejected_before_any_request(self):
         # A key value containing a control character (a plausible artifact of
-        # a secret loaded from a file/k8s mount with a trailing newline) can
-        # trip CPython's http.client header-injection guard, raising a
-        # ValueError whose message embeds the raw header value verbatim.
-        # redaction.redact() only recognizes known vendor-token *shapes*, so
-        # an arbitrary key like this one won't match any pattern — the
-        # literal-value scrub in _HostedApiAdapter._scrub_secret is the only
-        # thing standing between this and a leaked key in a rendered report.
+        # a secret loaded from a file/k8s mount with a trailing newline) would
+        # trip CPython's http.client header-injection guard. That guard
+        # reports the rejected value via repr() — which escapes the newline
+        # to the two literal characters `\` `n`, no longer byte-for-byte equal
+        # to the raw key — so a literal-substring scrub of the exception text
+        # CANNOT reliably catch it (see test_repr_escaping_defeats_literal_
+        # scrub_alone below for a direct demonstration). The key must never
+        # reach a header in the first place: _invalid_key_reason() rejects it
+        # up front, so _open is never even called.
         secret = "totally-real-secret-value-987\nX-Injected: evil"
-        boom = ValueError(f"Invalid header value b'{secret}'")
         with (
             mock.patch.dict("os.environ", {"ANTHROPIC_API_KEY": secret}, clear=False),
-            mock.patch("ai_jury.adapters._open", side_effect=boom),
+            mock.patch("ai_jury.adapters._open") as opened,
         ):
             result = AnthropicApiAdapter(_anthropic_spec()).run("prompt")
+        opened.assert_not_called()
         self.assertFalse(result.ok)
+        self.assertEqual(result.error_code, ERR_INVALID_API_KEY)
         self.assertNotIn(secret, result.error)
-        self.assertIn("[REDACTED]", result.error)
+        self.assertNotIn("\n", result.error)
+
+    def test_clean_key_is_not_rejected(self):
+        import json
+
+        payload = json.dumps({"content": [{"type": "text", "text": "ok"}]}).encode()
+        with (
+            mock.patch.dict("os.environ", {"ANTHROPIC_API_KEY": "sk-ant-perfectly-normal"}, clear=False),
+            mock.patch("ai_jury.adapters._open", return_value=_FakeResp(payload)) as opened,
+        ):
+            result = AnthropicApiAdapter(_anthropic_spec()).run("prompt")
+        opened.assert_called_once()
+        self.assertTrue(result.ok)
+
+    def test_invalid_key_reason_flags_control_characters(self):
+        with mock.patch.dict("os.environ", {"ANTHROPIC_API_KEY": "bad\nkey"}, clear=False):
+            adapter = AnthropicApiAdapter(_anthropic_spec())
+            self.assertIsNotNone(adapter._invalid_key_reason())
+            self.assertNotIn("bad\nkey", adapter._invalid_key_reason())
+
+    def test_invalid_key_reason_none_for_clean_key(self):
+        with mock.patch.dict("os.environ", {"ANTHROPIC_API_KEY": "sk-ant-clean"}, clear=False):
+            adapter = AnthropicApiAdapter(_anthropic_spec())
+            self.assertIsNone(adapter._invalid_key_reason())
+
+    def test_repr_escaping_defeats_literal_scrub_alone(self):
+        # Documents *why* _invalid_key_reason exists rather than relying on
+        # _scrub_secret alone: repr() of a string containing a real newline
+        # byte produces the two literal characters `\` `n`, which is not a
+        # substring match against the original (unescaped) key — so a naive
+        # literal scrub silently fails to redact it. This is exactly the gap
+        # an earlier version of this fix had (caught in review).
+        secret = "totally-real-secret-value-987\nEvil: header"
+        http_client_style_message = f"Invalid header value {secret!r}"
+        with mock.patch.dict("os.environ", {"ANTHROPIC_API_KEY": secret}, clear=False):
+            adapter = AnthropicApiAdapter(_anthropic_spec())
+            scrubbed = adapter._scrub_secret(http_client_style_message)
+        # The raw secret is gone (repr already escaped it) but so is any
+        # "[REDACTED]" marker — _scrub_secret is a no-op here, proving it
+        # alone would NOT have been a sufficient fix for this case.
+        self.assertNotIn(secret, scrubbed)
+        self.assertNotIn("[REDACTED]", scrubbed)
+
+    def test_scrub_secret_still_catches_a_verbatim_echo(self):
+        # A single-line key (no control characters — already ruled out by
+        # _invalid_key_reason before any request is made) could still turn up
+        # verbatim in some unrelated error text, e.g. a misbehaving endpoint
+        # echoing a header back in a JSON error body. _scrub_secret remains a
+        # useful second layer for exactly that case.
+        with mock.patch.dict("os.environ", {"ANTHROPIC_API_KEY": "sk-ant-plainkey"}, clear=False):
+            adapter = AnthropicApiAdapter(_anthropic_spec())
+            scrubbed = adapter._scrub_secret("server echoed header: sk-ant-plainkey")
+        self.assertNotIn("sk-ant-plainkey", scrubbed)
+        self.assertIn("[REDACTED]", scrubbed)
 
     def test_scrub_secret_is_a_no_op_when_key_absent_from_text(self):
         with mock.patch.dict("os.environ", {"ANTHROPIC_API_KEY": "sk-ant-x"}, clear=False):
