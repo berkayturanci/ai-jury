@@ -143,6 +143,18 @@ class AvailabilityTest(unittest.TestCase):
         self.assertEqual(caps["status"], "ok")
         self.assertEqual(caps["warnings"], [])
 
+    def test_available_and_capabilities_false_for_invalid_key(self):
+        # A key that IS set but contains a control character must not report
+        # as available/CAP_OK — run() will reject it, so a capability check
+        # (jury --doctor) should agree, not give a falsely reassuring answer.
+        with mock.patch.dict("os.environ", {"ANTHROPIC_API_KEY": "bad\nkey"}, clear=False):
+            adapter = AnthropicApiAdapter(_anthropic_spec())
+            self.assertFalse(adapter.available())
+            caps = adapter.detect_capabilities()
+        self.assertEqual(caps["status"], "unavailable")
+        self.assertTrue(caps["warnings"])
+        self.assertNotIn("bad\nkey", caps["warnings"][0])
+
 
 class _FakeResp:
     def __init__(self, payload: bytes):

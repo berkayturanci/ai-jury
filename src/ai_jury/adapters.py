@@ -842,26 +842,36 @@ class _HostedApiAdapter(Adapter):
         return text
 
     def available(self) -> bool:
-        """Available when the API key is set — a fast, network-free check.
+        """Available when a *usable* API key is set — a fast, network-free check.
 
         Unlike ``LocalAdapter.available()`` (which probes the server, since a
         local endpoint's reachability is genuinely uncertain), a hosted
-        vendor's API is assumed reachable; the only real unknown locally is
-        whether the operator configured a key at all.
+        vendor's API is assumed reachable; the two real unknowns locally are
+        whether the operator configured a key at all, and whether it's
+        actually usable as a header value (see :meth:`_invalid_key_reason`) —
+        a key that will be rejected by :meth:`run` should not report as
+        available here either, or a capability check (``jury --doctor``)
+        would give a falsely reassuring answer.
         """
-        return bool(self._api_key())
+        return bool(self._api_key()) and self._invalid_key_reason() is None
 
     def detect_capabilities(self) -> dict:
-        has_key = self.available()
+        key_set = bool(self._api_key())
+        invalid_reason = self._invalid_key_reason() if key_set else None
+        has_key = key_set and invalid_reason is None
+        if not key_set:
+            warnings = [f"{self._API_KEY_ENV} is not set in the environment"]
+        elif invalid_reason:
+            warnings = [invalid_reason]
+        else:
+            warnings = []
         return {
             "version": None,
             "supports_headless": self.SUPPORTS_HEADLESS,
             "supports_model_selection": self.SUPPORTS_MODEL_SELECTION,
             "raw_version_output": f"hosted API {self._API_URL}",
             "status": CAP_OK if has_key else CAP_UNAVAILABLE,
-            "warnings": (
-                [] if has_key else [f"{self._API_KEY_ENV} is not set in the environment"]
-            ),
+            "warnings": warnings,
         }
 
     def build_payload(self, prompt: str) -> dict:  # pragma: no cover - overridden
@@ -876,7 +886,11 @@ class _HostedApiAdapter(Adapter):
 
     def run(self, prompt: str, phase: str = "review", timeout: int | None = None) -> AgentResult:
         del phase
-        if not self.available():
+        # Checked independently of available() (not just "not available()"):
+        # available() now also returns False for a key that IS set but
+        # invalid, and that case needs its own distinct error_code/message
+        # below rather than the misleading "is not set" one.
+        if not self._api_key():
             return AgentResult(
                 self.name,
                 self.spec.vendor,
