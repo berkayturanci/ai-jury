@@ -61,6 +61,7 @@
       menu.classList.toggle("open", open);
       burger.setAttribute("aria-expanded", open ? "true" : "false");
       burger.setAttribute("aria-label", open ? "Close menu" : "Open menu");
+      burger.setAttribute("title", open ? "Close menu" : "Open menu");
     }
     burger.addEventListener("click", function () { setOpen(!menu.classList.contains("open")); });
     // close after navigating
@@ -137,6 +138,7 @@
       btn.type = "button";
       btn.className = "code-copy";
       btn.setAttribute("aria-label", "Copy code");
+      btn.setAttribute("title", "Copy code");
       btn.innerHTML = COPY + "<span>copy</span>";
       wrap.appendChild(btn);
       var baseAria = btn.getAttribute("aria-label");

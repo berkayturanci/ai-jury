@@ -42,3 +42,7 @@
 ## 2026-07-02 - Skip-to-content for Keyboard Accessibility
 **Learning:** For websites with extensive navigation menus or sidebars (like docs), keyboard and screen reader users must tab through every single navigation link before reaching the main content. This is tedious and repetitive.
 **Action:** Implement a 'skip-to-content' link as the first interactive element in the `<body>`. Ensure it remains visually hidden (e.g., positioned off-screen) until focused (`:focus-visible`), at which point it should become prominently visible and positioned correctly to allow immediate skipping to the main content container.
+
+## 2026-07-08 - Icon-only buttons need native tooltips
+**Learning:** Icon-only buttons (like hamburger menus or copy buttons) often have `aria-label`s for screen readers, but sighted mouse users rely on native tooltips (`title` attributes) for context. Omitting the `title` attribute leaves sighted users guessing the button's function.
+**Action:** Always provide a `title` attribute (in addition to `aria-label`) for icon-only buttons, and ensure it dynamically updates if the button's state changes.
