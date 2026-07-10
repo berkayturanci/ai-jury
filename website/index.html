@@ -105,12 +105,12 @@
       {
         "@type": "Question",
         "name": "Are these real API calls to the models?",
-        "acceptedAnswer": { "@type": "Answer", "text": "No — ai-jury drives each vendor's own coding-agent CLI (claude, codex, agy) as a subprocess, so each reviewer runs in its native environment with its own tooling and context. It is orchestration, not raw model API calls." }
+        "acceptedAnswer": { "@type": "Answer", "text": "By default, no — ai-jury drives each vendor's own coding-agent CLI (claude, codex, agy) as a subprocess, so each reviewer runs in its native environment with its own tooling and context; it is orchestration, not a raw model API call. An optional hosted-API adapter (vendor = anthropic-api / openai-api / google-api) trades that native tooling for a zero-install reviewer keyed by just an API key, for CI/container environments where installing an agent CLI isn't practical." }
       },
       {
         "@type": "Question",
         "name": "What do I need installed to use ai-jury?",
-        "acceptedAnswer": { "@type": "Answer", "text": "Python 3.11+ and at least one reviewer — an agent CLI (claude, codex, agy) or a local model via Ollama. The gh CLI is needed for --pr / --issue and for posting comments. The tool itself is stdlib-only, with no third-party Python dependencies." }
+        "acceptedAnswer": { "@type": "Answer", "text": "Python 3.11+ and at least one reviewer — an agent CLI (claude, codex, agy), a local model via Ollama, or a hosted-API key (ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY) with no CLI at all. The gh CLI is needed for --pr / --issue and for posting comments. The tool itself is stdlib-only, with no third-party Python dependencies." }
       },
       {
         "@type": "Question",
