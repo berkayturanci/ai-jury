@@ -119,6 +119,12 @@ def _config_summary(cfg):
     }
 
 
+# Hosted-API vendors (issue #430): no `command`/`endpoint`, so neither the
+# "local" nor the "CLI on PATH" branch below is the right diagnosis when one
+# is unavailable.
+_HOSTED_API_VENDORS = ("anthropic-api", "openai-api")
+
+
 def _detect_warnings(cfg) -> list[str]:
     """Best-effort config sanity checks reported to the user."""
     warnings: list[str] = []
@@ -139,6 +145,13 @@ def _detect_warnings(cfg) -> list[str]:
                 f"'{redact_url_userinfo(agent.endpoint or 'http://localhost:11434/v1')}' "
                 f"is not reachable"
             )
+        elif agent.vendor in _HOSTED_API_VENDORS:
+            # Reuse the adapter's own capability warning (issue #430) instead
+            # of re-deriving the vendor -> env-var mapping here, so the
+            # message can't drift from what the adapter actually reports.
+            caps = _detect_capabilities(agent)
+            reason = "; ".join(caps.get("warnings", [])) or "the hosted API is not reachable"
+            warnings.append(f"agent '{_redact_value(agent.name)}' (hosted API): {reason}")
         else:
             warnings.append(
                 f"agent '{_redact_value(agent.name)}' command "

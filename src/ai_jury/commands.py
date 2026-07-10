@@ -14,11 +14,12 @@ Pure and network-free, so parsing and rejection are fully unit-testable.
 """
 
 from __future__ import annotations
-from .redaction import redact
 
 import re
 import shlex
 from dataclasses import dataclass
+
+from .redaction import redact
 
 # Allowlisted subcommands. ``review`` = a normal review; ``summary`` = a quick
 # single-round pass intended for a short summary comment.

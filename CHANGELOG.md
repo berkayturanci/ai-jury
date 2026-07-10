@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Hosted-API reviewer adapters** (`vendor = "anthropic-api"` / `"openai-api"`):
+  a reviewer seat keyed by just `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`, needing
+  no `claude`/`codex` CLI install or interactive login — useful for CI runners
+  and containers where that's impractical. Same stdlib-`urllib`,
+  no-subprocess design as the existing `local` adapter, but pointed at the
+  vendor's real hosted API with a fixed (non-configurable) endpoint. Scaffold
+  one with `jury init --agents claude-api,codex-api` (#430).
+
 ## [1.9.8] - 2026-07-06
 
 ### Security

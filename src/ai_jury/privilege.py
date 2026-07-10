@@ -152,17 +152,20 @@ def enforce_read_only(vendor: str, name: str, extra_args: list[str]) -> list[str
     of an attacker-controlled diff. Config may still WIDEN a codex sandbox
     (``-s workspace-write``) — an explicit opt-in the audit warns about — but it
     can never REMOVE the restriction. A ``local`` (network) agent runs no
-    subprocess and is returned unchanged. An **unknown vendor** routes to the
-    generic ``AgyAdapter``, so it is treated like agy and gets ``--sandbox``
-    injected (issue #310, completes #300) — fail-closed, never fail-open.
+    subprocess and is returned unchanged; neither does a hosted-API agent
+    (issue #430) — it makes one HTTP call with no tool/file/shell access at
+    all, so there is no ``extra_args``/sandbox concept to enforce. An
+    **unknown vendor** routes to the generic ``AgyAdapter``, so it is treated
+    like agy and gets ``--sandbox`` injected (issue #310, completes #300) —
+    fail-closed, never fail-open.
     """
     vendor = (vendor or "").lower()
     name = (name or "").lower()
     extra_args = list(extra_args or [])
-    # `local` is checked FIRST (review of #310): a network agent runs no
-    # subprocess, and the name-substring checks below would otherwise mis-handle a
-    # local agent named e.g. "local-claude" / "my-codex".
-    if vendor == "local":
+    # `local`/hosted-API vendors are checked FIRST (review of #310): a network
+    # agent runs no subprocess, and the name-substring checks below would
+    # otherwise mis-handle e.g. a local agent named "local-claude" / "my-codex".
+    if vendor in ("local", "anthropic-api", "openai-api"):
         return extra_args
     if "claude" in name or vendor == "anthropic":
         return _ensure_claude_disallowed(extra_args)
@@ -195,9 +198,12 @@ def audit_agent(spec) -> list[str]:
     args_text = _args_str(extra_args)
     label = getattr(spec, "name", "agent")
 
-    # Local/HTTP agents (issue #43) run no subprocess to sandbox — there is no
-    # write/tool/network surface to flag, so they are out of scope for this audit.
-    if vendor == "local":
+    # Local/HTTP agents (issue #43) and hosted-API agents (issue #430) run no
+    # subprocess to sandbox — there is no write/tool/network surface to flag
+    # (a hosted-API call has strictly less access than even a sandboxed CLI:
+    # no filesystem, no shell, nothing to disallow), so they are out of scope
+    # for this audit.
+    if vendor in ("local", "anthropic-api", "openai-api"):
         return warnings
 
     is_claude = "claude" in name or vendor == "anthropic"
