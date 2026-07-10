@@ -109,6 +109,19 @@ class PayloadAndHeadersTest(unittest.TestCase):
             "gemini-2.5-pro:generateContent",
         )
 
+    def test_google_url_escapes_reserved_characters_in_model(self):
+        # A model value containing reserved URL characters must not change
+        # the request's path/query semantics — it stays a single escaped
+        # path segment (caught in review: unescaped interpolation would let
+        # e.g. a `/` or `?` in `model` smuggle an extra path/query).
+        a = GoogleApiAdapter(_google_spec(model="weird/model?x=1#frag"))
+        url = a._api_url()
+        self.assertNotIn("?x=1", url)
+        self.assertTrue(url.startswith("https://generativelanguage.googleapis.com/v1beta/models/"))
+        # Exactly one path segment between "models/" and ":generateContent".
+        segment = url.split("/models/", 1)[1].rsplit(":generateContent", 1)[0]
+        self.assertNotIn("/", segment)
+
 
 class ParseAndErrorMappingTest(unittest.TestCase):
     def test_anthropic_parse_content(self):
@@ -551,6 +564,12 @@ class ParseContentMalformedShapeTest(unittest.TestCase):
         self.assertEqual(
             GoogleApiAdapter.parse_content({"candidates": [{"content": "not-a-dict"}]}), ""
         )
+
+    def test_google_parse_content_non_string_text_does_not_raise(self):
+        # A malformed `text` value (e.g. an int) must not crash "".join() —
+        # caught in review: the part contributes nothing instead of raising.
+        data = {"candidates": [{"content": {"parts": [{"text": 1}, {"text": "ok"}]}}]}
+        self.assertEqual(GoogleApiAdapter.parse_content(data), "ok")
 
 
 class FactoryAndConfigTest(unittest.TestCase):

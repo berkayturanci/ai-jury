@@ -1051,7 +1051,14 @@ class GoogleApiAdapter(_HostedApiAdapter):
     _API_KEY_ENV = "GEMINI_API_KEY"
 
     def _api_url(self) -> str:
-        return f"{_GEMINI_API_BASE}/{self.spec.model or ''}:generateContent"
+        # Escape the model id as a single path segment (issue #432 review): an
+        # operator-configured model containing reserved URL characters
+        # (`/`, `?`, `#`, ...) would otherwise change the request's path/query
+        # semantics instead of staying a single `{model}` segment.
+        import urllib.parse
+
+        model = urllib.parse.quote(self.spec.model or "", safe="")
+        return f"{_GEMINI_API_BASE}/{model}:generateContent"
 
     def build_payload(self, prompt: str) -> dict:
         """Build the Gemini ``generateContent`` request body (pure)."""
@@ -1075,7 +1082,11 @@ class GoogleApiAdapter(_HostedApiAdapter):
         if not isinstance(content, dict):
             return ""
         parts = content.get("parts") or []
-        texts = [part.get("text", "") for part in parts if isinstance(part, dict)]
+        texts = [
+            part.get("text", "")
+            for part in parts
+            if isinstance(part, dict) and isinstance(part.get("text", ""), str)
+        ]
         return "".join(texts).strip()
 
 
