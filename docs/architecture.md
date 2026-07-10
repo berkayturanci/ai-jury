@@ -77,6 +77,7 @@ way, the orchestrator owns prompt content. Verified headless invocations (early 
 | local / open-weight | `LocalAdapter` | HTTP `POST {endpoint}/v1/chat/completions` (Ollama, llama.cpp, vLLM, LM Studio) — stdlib `urllib`, no subprocess |
 | Anthropic (hosted API) | `AnthropicApiAdapter` | HTTP `POST api.anthropic.com/v1/messages`, keyed by `ANTHROPIC_API_KEY` — stdlib `urllib`, no subprocess, no CLI needed |
 | OpenAI (hosted API) | `OpenAiApiAdapter` | HTTP `POST api.openai.com/v1/chat/completions`, keyed by `OPENAI_API_KEY` — stdlib `urllib`, no subprocess, no CLI needed |
+| Google (hosted API) | `GoogleApiAdapter` | HTTP `POST generativelanguage.googleapis.com/v1beta/models/{model}:generateContent`, keyed by `GEMINI_API_KEY` (header, not the `?key=...` query form) — stdlib `urllib`, no subprocess, no CLI needed |
 | — (tests) | `MockAdapter` | deterministic, phase-aware output; no subprocess |
 
 Adapters fail soft: a missing CLI, **non-zero exit** (even with stdout), timeout, an
@@ -97,15 +98,17 @@ A `local` agent is a normal `[[agent]]` with `vendor = "local"`, an `endpoint`
 (default `http://localhost:11434/v1`), and a `model`; it adds vendor diversity at
 zero marginal cost and enables fully offline reviews.
 
-A **hosted-API agent** is a normal `[[agent]]` with `vendor = "anthropic-api"` or
-`vendor = "openai-api"` and a `model` — no `command`, no CLI install, no interactive
-login. The API key comes from the environment only (`ANTHROPIC_API_KEY` /
-`OPENAI_API_KEY`), never from `jury.toml`, so it can't leak into a checked-in config;
-the endpoint is a fixed, non-configurable constant per vendor (unlike `local`'s
-user-supplied `endpoint`, so there is no SSRF surface to validate). This is the
+A **hosted-API agent** is a normal `[[agent]]` with `vendor = "anthropic-api"`,
+`vendor = "openai-api"`, or `vendor = "google-api"` and a `model` — no `command`, no
+CLI install, no interactive login. The API key comes from the environment only
+(`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY`), never from `jury.toml`,
+so it can't leak into a checked-in config; the endpoint is a fixed, non-configurable
+constant per vendor (unlike `local`'s user-supplied `endpoint`, so there is no SSRF
+surface to validate — the Gemini adapter's URL depends on `model`, but only to select
+*which* fixed path segment, never an operator- or attacker-supplied host). This is the
 lowest-friction reviewer seat for CI/containers where installing and interactively
 authenticating an agent CLI is impractical but an API key as a secret is trivial —
-see `jury init --agents claude-api,codex-api`.
+see `jury init --agents claude-api,codex-api,gemini-api`.
 
 ## Design decisions
 

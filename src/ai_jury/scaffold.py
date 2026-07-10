@@ -28,6 +28,7 @@ _LOCAL_TEMPLATE = {
 # `validate_config` already warns when it's missing).
 _ANTHROPIC_API_TEMPLATE = {"name": "claude-api", "vendor": "anthropic-api", "model": ""}
 _OPENAI_API_TEMPLATE = {"name": "codex-api", "vendor": "openai-api", "model": ""}
+_GOOGLE_API_TEMPLATE = {"name": "gemini-api", "vendor": "google-api", "model": ""}
 
 
 def _from_default(name: str) -> dict | None:
@@ -47,10 +48,13 @@ def agent_templates() -> dict[str, dict]:
     templates["qwen"] = dict(_LOCAL_TEMPLATE)
     templates["claude-api"] = dict(_ANTHROPIC_API_TEMPLATE)
     templates["codex-api"] = dict(_OPENAI_API_TEMPLATE)
+    templates["gemini-api"] = dict(_GOOGLE_API_TEMPLATE)
     return templates
 
 
-KNOWN_AGENTS: tuple[str, ...] = ("claude", "codex", "agy", "qwen", "claude-api", "codex-api")
+KNOWN_AGENTS: tuple[str, ...] = (
+    "claude", "codex", "agy", "qwen", "claude-api", "codex-api", "gemini-api",
+)
 
 # Substrings that hint a local model is code-oriented (preferred for reviews).
 _CODER_HINTS: tuple[str, ...] = ("coder", "code", "deepseek", "qwen")

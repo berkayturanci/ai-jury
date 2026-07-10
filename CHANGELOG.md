@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Google (Gemini) hosted-API adapter** (`vendor = "google-api"`): completes the
+  three-vendor hosted-API set alongside `anthropic-api`/`openai-api` — a reviewer
+  keyed by just `GEMINI_API_KEY`, no `agy` CLI install or interactive login needed.
+  Same `_HostedApiAdapter` base (no subprocess, control-character key validation
+  before any request, fixed endpoint). Sends the key via the `x-goog-api-key`
+  header rather than Gemini's alternative `?key=...` query-parameter form, since a
+  query-string key is a much easier accidental-leak vector than a header. Scaffold
+  one with `jury init --agents gemini-api` (#432).
 - **Hosted-API reviewer adapters** (`vendor = "anthropic-api"` / `"openai-api"`):
   a reviewer seat keyed by just `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`, needing
   no `claude`/`codex` CLI install or interactive login — useful for CI runners

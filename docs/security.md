@@ -100,21 +100,35 @@ content; the least-privilege audit (`--strict` to fail the run) will flag it.
   untrusted content; `--dangerously-skip-permissions` only avoids a prompt hang.
   A bare `--dangerously-skip-permissions` *without* `--sandbox` is flagged by the
   least-privilege audit.
-- **`anthropic-api` / `openai-api`** (hosted-API reviewers) are out of scope for the
-  sandbox audit entirely, and there is no `--strict` finding to fix here: unlike
-  every CLI-backed adapter, a hosted-API call makes a single HTTP request with no
-  filesystem, shell, or tool access at all — there is no sandbox to widen or narrow.
+- **`anthropic-api` / `openai-api` / `google-api`** (hosted-API reviewers) are out of
+  scope for the sandbox audit entirely, and there is no `--strict` finding to fix here:
+  unlike every CLI-backed adapter, a hosted-API call makes a single HTTP request with
+  no filesystem, shell, or tool access at all — there is no sandbox to widen or narrow.
 
 ### Hosted-API reviewers (no CLI, no sandbox needed)
 
-`anthropic-api` / `openai-api` (issue #430) trade the native-CLI tooling for a
-zero-install reviewer keyed by `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` — no `command`,
-no interactive login, no subprocess. Two things worth knowing:
+`anthropic-api` / `openai-api` / `google-api` (issue #430/#432) trade the native-CLI
+tooling for a zero-install reviewer keyed by `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` /
+`GEMINI_API_KEY` — no `command`, no interactive login, no subprocess. Things worth
+knowing:
 
 - The API key is read from the environment only, never from `jury.toml` — so a
   checked-in config (or one shared/pasted for debugging) never leaks it.
+- Every key is validated for control characters (a stray trailing newline from a
+  file/k8s-secret mount is the realistic case) *before* it is ever used in an HTTP
+  header, and rejected with a static error that never echoes the key back. This
+  matters because `http.client`'s own header-injection guard reports a rejected value
+  via `repr()`-escaping it — no longer byte-for-byte equal to the raw key — so a
+  post-hoc literal-value scrub of the resulting exception text cannot reliably catch
+  a leak; the key is checked up front instead.
 - The endpoint is a fixed, hardcoded constant per vendor, not a config value — unlike
-  `local`'s user-supplied `endpoint`, there is no SSRF surface here to validate.
+  `local`'s user-supplied `endpoint`, there is no SSRF surface here to validate. The
+  `google-api` endpoint does interpolate `model` into the URL path, but only ever
+  into the fixed `generativelanguage.googleapis.com` host/path template — never a
+  user- or attacker-supplied host.
+- `google-api` sends its key via the `x-goog-api-key` header rather than Gemini's
+  alternative `?key=...` query-parameter form — a query-string key is a much easier
+  accidental-leak vector (proxy/access logs, anything that prints the request URL).
 
 ## Threat model: prompt injection from untrusted diff/PR content (OWASP LLM01)
 

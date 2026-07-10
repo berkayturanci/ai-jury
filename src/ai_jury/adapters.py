@@ -793,12 +793,14 @@ class _HostedApiAdapter(Adapter):
     SUPPORTS_HEADLESS = True
     SUPPORTS_MODEL_SELECTION = True
 
-    # Subclasses override both.
+    # Subclasses override.
     _API_KEY_ENV: str = ""
-    _API_URL: str = ""
 
     def _api_key(self) -> str:
         return os.environ.get(self._API_KEY_ENV, "")
+
+    def _api_url(self) -> str:  # pragma: no cover - overridden
+        raise NotImplementedError
 
     def _invalid_key_reason(self) -> str | None:
         """None if the key is safe to use as an HTTP header value; else why not.
@@ -869,7 +871,7 @@ class _HostedApiAdapter(Adapter):
             "version": None,
             "supports_headless": self.SUPPORTS_HEADLESS,
             "supports_model_selection": self.SUPPORTS_MODEL_SELECTION,
-            "raw_version_output": f"hosted API {self._API_URL}",
+            "raw_version_output": f"hosted API {self._api_url()}",
             "status": CAP_OK if has_key else CAP_UNAVAILABLE,
             "warnings": warnings,
         }
@@ -914,7 +916,7 @@ class _HostedApiAdapter(Adapter):
             effective_timeout = max(1, min(self.spec.timeout, int(timeout)))
         start = time.monotonic()
         data, err_msg, err_code = _post_json(
-            self._API_URL, self.build_payload(prompt), self._headers(), effective_timeout
+            self._api_url(), self.build_payload(prompt), self._headers(), effective_timeout
         )
         dur = time.monotonic() - start
         if err_msg is not None:
@@ -945,7 +947,9 @@ class AnthropicApiAdapter(_HostedApiAdapter):
     """
 
     _API_KEY_ENV = "ANTHROPIC_API_KEY"
-    _API_URL = _ANTHROPIC_API_URL
+
+    def _api_url(self) -> str:
+        return _ANTHROPIC_API_URL
 
     def build_payload(self, prompt: str) -> dict:
         """Build the Anthropic Messages API request body (pure)."""
@@ -987,7 +991,9 @@ class OpenAiApiAdapter(_HostedApiAdapter):
     """
 
     _API_KEY_ENV = "OPENAI_API_KEY"
-    _API_URL = _OPENAI_API_URL
+
+    def _api_url(self) -> str:
+        return _OPENAI_API_URL
 
     def build_payload(self, prompt: str) -> dict:
         """Build the OpenAI chat-completions request body (pure)."""
@@ -1012,6 +1018,76 @@ class OpenAiApiAdapter(_HostedApiAdapter):
             return ""
         message = choices[0].get("message") or {}
         return (message.get("content") or "").strip()
+
+
+_GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
+
+
+class GoogleApiAdapter(_HostedApiAdapter):
+    """Hosted Google Gemini API reviewer, keyed by ``GEMINI_API_KEY`` (issue #432).
+
+    Configure as a normal ``[[agent]]`` with ``vendor = "google-api"`` and a
+    ``model`` (e.g. a current Gemini model id) — no ``command``, no ``agy``
+    CLI install or interactive login needed.
+
+    Two differences from the other two hosted adapters:
+
+    - The Gemini API embeds the model id in the URL **path**
+      (``.../models/{model}:generateContent``), not the request body, so
+      ``_api_url()`` is built from ``self.spec.model`` on every call rather
+      than returning a fixed constant like the other two adapters.
+    - The key is sent via the ``x-goog-api-key`` header. Gemini also accepts
+      the key as a ``?key=...`` query parameter, but a query-string key is a
+      much easier accidental-leak vector (proxy/access logs, anything that
+      prints the request URL) than a header — deliberately not supported.
+
+    A prompt blocked by Gemini's safety filters comes back with an empty
+    ``candidates`` list (and a ``promptFeedback.blockReason``); this is not
+    distinguished from a genuinely empty response and both currently surface
+    as the same generic ``ERR_EMPTY_OUTPUT`` — a possible future refinement,
+    not required for parity with the other two adapters.
+    """
+
+    _API_KEY_ENV = "GEMINI_API_KEY"
+
+    def _api_url(self) -> str:
+        # Escape the model id as a single path segment (issue #432 review): an
+        # operator-configured model containing reserved URL characters
+        # (`/`, `?`, `#`, ...) would otherwise change the request's path/query
+        # semantics instead of staying a single `{model}` segment.
+        import urllib.parse
+
+        model = urllib.parse.quote(self.spec.model or "", safe="")
+        return f"{_GEMINI_API_BASE}/{model}:generateContent"
+
+    def build_payload(self, prompt: str) -> dict:
+        """Build the Gemini ``generateContent`` request body (pure)."""
+        return {"contents": [{"parts": [{"text": prompt}]}]}
+
+    def _headers(self) -> dict[str, str]:
+        return {
+            "Content-Type": "application/json",
+            "x-goog-api-key": self._api_key(),
+        }
+
+    @staticmethod
+    def parse_content(data: dict) -> str:
+        """Extract the assistant text from a ``generateContent`` response."""
+        if not isinstance(data, dict):
+            return ""
+        candidates = data.get("candidates") or []
+        if not candidates or not isinstance(candidates[0], dict):
+            return ""
+        content = candidates[0].get("content")
+        if not isinstance(content, dict):
+            return ""
+        parts = content.get("parts") or []
+        texts = [
+            part.get("text", "")
+            for part in parts
+            if isinstance(part, dict) and isinstance(part.get("text", ""), str)
+        ]
+        return "".join(texts).strip()
 
 
 class MockAdapter(Adapter):
@@ -1105,6 +1181,7 @@ _VENDOR_ADAPTERS: dict[str, type[Adapter]] = {
     "local": LocalAdapter,
     "anthropic-api": AnthropicApiAdapter,
     "openai-api": OpenAiApiAdapter,
+    "google-api": GoogleApiAdapter,
 }
 
 

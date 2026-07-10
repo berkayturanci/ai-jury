@@ -24,6 +24,7 @@ from ai_jury.adapters import (  # noqa: E402
     ERR_RATE_LIMITED,
     RETRYABLE_ERROR_CODES,
     AnthropicApiAdapter,
+    GoogleApiAdapter,
     OpenAiApiAdapter,
     make_adapter,
 )
@@ -45,6 +46,12 @@ def _anthropic_spec(**kw):
 
 def _openai_spec(**kw):
     base = {"name": "codex-api", "vendor": "openai-api", "model": "gpt-x"}
+    base.update(kw)
+    return AgentSpec(**base)
+
+
+def _google_spec(**kw):
+    base = {"name": "gemini-api", "vendor": "google-api", "model": "gemini-x"}
     base.update(kw)
     return AgentSpec(**base)
 
@@ -79,6 +86,42 @@ class PayloadAndHeadersTest(unittest.TestCase):
             headers = a._headers()
         self.assertEqual(headers["Authorization"], "Bearer sk-oai-secret")
 
+    def test_google_payload_shape(self):
+        a = GoogleApiAdapter(_google_spec())
+        p = a.build_payload("review this")
+        self.assertEqual(p["contents"], [{"parts": [{"text": "review this"}]}])
+        self.assertNotIn("model", p)
+
+    def test_google_headers_carry_api_key(self):
+        with mock.patch.dict("os.environ", {"GEMINI_API_KEY": "sk-goog-secret"}, clear=False):
+            a = GoogleApiAdapter(_google_spec())
+            headers = a._headers()
+        self.assertEqual(headers["x-goog-api-key"], "sk-goog-secret")
+        self.assertEqual(headers["Content-Type"], "application/json")
+        # The key must never appear in the URL — only the header form is used.
+        self.assertNotIn("sk-goog-secret", a._api_url())
+
+    def test_google_url_embeds_model_in_path(self):
+        a = GoogleApiAdapter(_google_spec(model="gemini-2.5-pro"))
+        self.assertEqual(
+            a._api_url(),
+            "https://generativelanguage.googleapis.com/v1beta/models/"
+            "gemini-2.5-pro:generateContent",
+        )
+
+    def test_google_url_escapes_reserved_characters_in_model(self):
+        # A model value containing reserved URL characters must not change
+        # the request's path/query semantics — it stays a single escaped
+        # path segment (caught in review: unescaped interpolation would let
+        # e.g. a `/` or `?` in `model` smuggle an extra path/query).
+        a = GoogleApiAdapter(_google_spec(model="weird/model?x=1#frag"))
+        url = a._api_url()
+        self.assertNotIn("?x=1", url)
+        self.assertTrue(url.startswith("https://generativelanguage.googleapis.com/v1beta/models/"))
+        # Exactly one path segment between "models/" and ":generateContent".
+        segment = url.split("/models/", 1)[1].rsplit(":generateContent", 1)[0]
+        self.assertNotIn("/", segment)
+
 
 class ParseAndErrorMappingTest(unittest.TestCase):
     def test_anthropic_parse_content(self):
@@ -108,6 +151,26 @@ class ParseAndErrorMappingTest(unittest.TestCase):
     def test_openai_parse_empty_choices(self):
         self.assertEqual(OpenAiApiAdapter.parse_content({"choices": []}), "")
 
+    def test_google_parse_content(self):
+        data = {"candidates": [{"content": {"parts": [{"text": "  a finding  "}]}}]}
+        self.assertEqual(GoogleApiAdapter.parse_content(data), "a finding")
+
+    def test_google_parse_concatenates_multiple_parts(self):
+        data = {
+            "candidates": [
+                {"content": {"parts": [{"text": "part one. "}, {"text": "part two."}]}}
+            ]
+        }
+        self.assertEqual(GoogleApiAdapter.parse_content(data), "part one. part two.")
+
+    def test_google_parse_empty_candidates(self):
+        self.assertEqual(GoogleApiAdapter.parse_content({"candidates": []}), "")
+
+    def test_google_parse_blocked_prompt_has_no_content(self):
+        # A safety-filter block yields no `content` key on the candidate.
+        data = {"candidates": [{"finishReason": "SAFETY"}], "promptFeedback": {"blockReason": "SAFETY"}}
+        self.assertEqual(GoogleApiAdapter.parse_content(data), "")
+
     def test_connection_error_is_retryable(self):
         self.assertIn(ERR_CONNECTION, RETRYABLE_ERROR_CODES)
 
@@ -124,12 +187,15 @@ class AvailabilityTest(unittest.TestCase):
         with mock.patch.dict("os.environ", {}, clear=True):
             self.assertFalse(AnthropicApiAdapter(_anthropic_spec()).available())
             self.assertFalse(OpenAiApiAdapter(_openai_spec()).available())
+            self.assertFalse(GoogleApiAdapter(_google_spec()).available())
 
     def test_available_with_key(self):
         with mock.patch.dict("os.environ", {"ANTHROPIC_API_KEY": "x"}, clear=False):
             self.assertTrue(AnthropicApiAdapter(_anthropic_spec()).available())
         with mock.patch.dict("os.environ", {"OPENAI_API_KEY": "x"}, clear=False):
             self.assertTrue(OpenAiApiAdapter(_openai_spec()).available())
+        with mock.patch.dict("os.environ", {"GEMINI_API_KEY": "x"}, clear=False):
+            self.assertTrue(GoogleApiAdapter(_google_spec()).available())
 
     def test_detect_capabilities_reports_missing_key(self):
         with mock.patch.dict("os.environ", {}, clear=True):
@@ -206,6 +272,71 @@ class RunHttpTest(unittest.TestCase):
             result = OpenAiApiAdapter(_openai_spec()).run("prompt")
         self.assertTrue(result.ok)
         self.assertEqual(result.output, "a real finding")
+
+    def test_google_success(self):
+        import json
+
+        payload = json.dumps(
+            {"candidates": [{"content": {"parts": [{"text": "a real finding"}]}}]}
+        ).encode()
+        with (
+            mock.patch.dict("os.environ", {"GEMINI_API_KEY": "x"}, clear=False),
+            mock.patch("ai_jury.adapters._open", return_value=_FakeResp(payload)) as opened,
+        ):
+            result = GoogleApiAdapter(_google_spec()).run("prompt")
+        self.assertTrue(result.ok)
+        self.assertEqual(result.output, "a real finding")
+        # The request hit the model-specific URL, not a fixed constant.
+        self.assertIn("gemini-x:generateContent", opened.call_args.args[0].full_url)
+
+    def test_google_missing_key_short_circuits_before_any_request(self):
+        with (
+            mock.patch.dict("os.environ", {}, clear=True),
+            mock.patch("ai_jury.adapters._open") as opened,
+        ):
+            result = GoogleApiAdapter(_google_spec()).run("prompt")
+        opened.assert_not_called()
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_code, ERR_MISSING_API_KEY)
+
+    def test_google_key_with_embedded_newline_is_rejected_before_any_request(self):
+        secret = "totally-real-secret-value-987\nX-Injected: evil"
+        with (
+            mock.patch.dict("os.environ", {"GEMINI_API_KEY": secret}, clear=False),
+            mock.patch("ai_jury.adapters._open") as opened,
+        ):
+            result = GoogleApiAdapter(_google_spec()).run("prompt")
+        opened.assert_not_called()
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_code, ERR_INVALID_API_KEY)
+        self.assertNotIn(secret, result.error)
+
+    def test_google_http_error_maps_to_rate_limit(self):
+        import io
+        import urllib.error
+
+        err = urllib.error.HTTPError(
+            url="x", code=429, msg="Too Many Requests", hdrs=None, fp=io.BytesIO(b"slow down")
+        )
+        with (
+            mock.patch.dict("os.environ", {"GEMINI_API_KEY": "x"}, clear=False),
+            mock.patch("ai_jury.adapters._open", side_effect=err),
+        ):
+            result = GoogleApiAdapter(_google_spec()).run("prompt")
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_code, ERR_RATE_LIMITED)
+
+    def test_google_empty_content_is_failure(self):
+        import json
+
+        payload = json.dumps({"candidates": []}).encode()
+        with (
+            mock.patch.dict("os.environ", {"GEMINI_API_KEY": "x"}, clear=False),
+            mock.patch("ai_jury.adapters._open", return_value=_FakeResp(payload)),
+        ):
+            result = GoogleApiAdapter(_google_spec()).run("prompt")
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_code, "empty_output")
 
     def test_empty_content_is_failure(self):
         import json
@@ -423,6 +554,23 @@ class ParseContentMalformedShapeTest(unittest.TestCase):
         self.assertEqual(OpenAiApiAdapter.parse_content("not a dict"), "")
         self.assertEqual(OpenAiApiAdapter.parse_content(None), "")
 
+    def test_google_parse_content_non_dict_body(self):
+        self.assertEqual(GoogleApiAdapter.parse_content([1, 2, 3]), "")
+        self.assertEqual(GoogleApiAdapter.parse_content("not a dict"), "")
+        self.assertEqual(GoogleApiAdapter.parse_content(None), "")
+        # Malformed nested shapes (non-dict candidate / content) must also
+        # degrade cleanly rather than raising.
+        self.assertEqual(GoogleApiAdapter.parse_content({"candidates": ["not-a-dict"]}), "")
+        self.assertEqual(
+            GoogleApiAdapter.parse_content({"candidates": [{"content": "not-a-dict"}]}), ""
+        )
+
+    def test_google_parse_content_non_string_text_does_not_raise(self):
+        # A malformed `text` value (e.g. an int) must not crash "".join() —
+        # caught in review: the part contributes nothing instead of raising.
+        data = {"candidates": [{"content": {"parts": [{"text": 1}, {"text": "ok"}]}}]}
+        self.assertEqual(GoogleApiAdapter.parse_content(data), "ok")
+
 
 class FactoryAndConfigTest(unittest.TestCase):
     def test_make_adapter_returns_anthropic_api(self):
@@ -430,6 +578,9 @@ class FactoryAndConfigTest(unittest.TestCase):
 
     def test_make_adapter_returns_openai_api(self):
         self.assertIsInstance(make_adapter(_openai_spec()), OpenAiApiAdapter)
+
+    def test_make_adapter_returns_google_api(self):
+        self.assertIsInstance(make_adapter(_google_spec()), GoogleApiAdapter)
 
     def test_hosted_api_agent_valid_without_command(self):
         cfg = {
@@ -452,10 +603,21 @@ class FactoryAndConfigTest(unittest.TestCase):
             "agent": [
                 {"name": "a", "vendor": "anthropic-api", "model": "m"},
                 {"name": "b", "vendor": "openai-api", "model": "m"},
+                {"name": "c", "vendor": "google-api", "model": "m"},
             ],
         }
         warnings = validate_config(cfg)
         self.assertFalse(any("unknown vendor" in w for w in warnings))
+
+    def test_google_api_agent_valid_without_command(self):
+        cfg = {
+            "jury": {"chair": "gemini-api"},
+            "agent": [{"name": "gemini-api", "vendor": "google-api", "model": "gemini-x"}],
+        }
+        warnings = validate_config(cfg)
+        self.assertFalse(any("missing a non-empty 'command'" in w for w in warnings))
+        spec = _from_dict(cfg).agents[0]
+        self.assertEqual(spec.command, "")
 
     def test_hosted_api_agent_does_not_get_endpoint_validated(self):
         # No `endpoint` key at all is fine — the URL is fixed, not a config value.
@@ -477,10 +639,13 @@ class PrivilegeAuditTest(unittest.TestCase):
         self.assertEqual(audit_agent(spec), [])
         spec2 = _openai_spec()
         self.assertEqual(audit_agent(spec2), [])
+        spec3 = _google_spec()
+        self.assertEqual(audit_agent(spec3), [])
 
     def test_enforce_read_only_is_a_no_op_for_hosted_api(self):
         self.assertEqual(enforce_read_only("anthropic-api", "claude-api", []), [])
         self.assertEqual(enforce_read_only("openai-api", "codex-api", ["whatever"]), ["whatever"])
+        self.assertEqual(enforce_read_only("google-api", "gemini-api", []), [])
 
 
 class ScaffoldTemplateTest(unittest.TestCase):
@@ -488,14 +653,18 @@ class ScaffoldTemplateTest(unittest.TestCase):
         templates = agent_templates()
         self.assertIn("claude-api", templates)
         self.assertIn("codex-api", templates)
+        self.assertIn("gemini-api", templates)
         self.assertEqual(templates["claude-api"]["vendor"], "anthropic-api")
         self.assertEqual(templates["codex-api"]["vendor"], "openai-api")
+        self.assertEqual(templates["gemini-api"]["vendor"], "google-api")
         self.assertNotIn("command", templates["claude-api"])
         self.assertNotIn("command", templates["codex-api"])
+        self.assertNotIn("command", templates["gemini-api"])
 
     def test_hosted_api_names_in_known_agents(self):
         self.assertIn("claude-api", KNOWN_AGENTS)
         self.assertIn("codex-api", KNOWN_AGENTS)
+        self.assertIn("gemini-api", KNOWN_AGENTS)
 
 
 if __name__ == "__main__":

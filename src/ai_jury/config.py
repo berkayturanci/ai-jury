@@ -174,10 +174,13 @@ DEFAULT_CONFIG: dict = {
 # Vendors that talk HTTP directly (no CLI subprocess), so they need no
 # `command`: `local` (a user-supplied OpenAI-compatible server, issue #43) and
 # the hosted-API adapters (a real vendor API keyed by an env-var API key,
-# issue #430).
-_NO_COMMAND_VENDORS = ("local", "anthropic-api", "openai-api")
+# issue #430/#432).
+_NO_COMMAND_VENDORS = ("local", "anthropic-api", "openai-api", "google-api")
 
-KNOWN_VENDORS = ("anthropic", "openai", "google", "local", "anthropic-api", "openai-api")
+KNOWN_VENDORS = (
+    "anthropic", "openai", "google", "local",
+    "anthropic-api", "openai-api", "google-api",
+)
 
 KNOWN_TOP_LEVEL_KEYS = ("jury", "agent")
 KNOWN_JURY_KEYS = (
