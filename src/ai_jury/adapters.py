@@ -794,6 +794,24 @@ class _HostedApiAdapter(Adapter):
     def _api_key(self) -> str:
         return os.environ.get(self._API_KEY_ENV, "")
 
+    def _scrub_secret(self, text: str) -> str:
+        """Strip the literal API key value from an error message (issue #430).
+
+        Defense-in-depth alongside ``redaction.redact()``: that function only
+        recognizes known vendor-token *shapes* via regex. An operator's actual
+        key can fail to match one (e.g. a custom/rotated format, or a value
+        with a stray embedded newline/control character that trips CPython's
+        ``http.client`` header-injection guard and ends up verbatim inside
+        that exception's message) and would otherwise pass through
+        unredacted into ``AgentResult.error`` — which the report renders and
+        ``--post`` can put in a public PR comment. Since the exact key value
+        is always known here, mask it literally regardless of its shape.
+        """
+        key = self._api_key()
+        if key and key in text:
+            return text.replace(key, "[REDACTED]")
+        return text
+
     def available(self) -> bool:
         """Available when the API key is set — a fast, network-free check.
 
@@ -848,7 +866,10 @@ class _HostedApiAdapter(Adapter):
         )
         dur = time.monotonic() - start
         if err_msg is not None:
-            return AgentResult(self.name, self.spec.vendor, False, "", dur, err_msg, error_code=err_code)
+            return AgentResult(
+                self.name, self.spec.vendor, False, "", dur,
+                self._scrub_secret(err_msg), error_code=err_code,
+            )
         content = self.parse_content(data or {})
         if not content:
             return AgentResult(
@@ -892,6 +913,8 @@ class AnthropicApiAdapter(_HostedApiAdapter):
     @staticmethod
     def parse_content(data: dict) -> str:
         """Extract the assistant text from a Messages API response."""
+        if not isinstance(data, dict):
+            return ""
         blocks = data.get("content") or []
         texts = [
             block.get("text", "")
@@ -930,6 +953,8 @@ class OpenAiApiAdapter(_HostedApiAdapter):
     @staticmethod
     def parse_content(data: dict) -> str:
         """Extract the assistant message text from a chat-completions response."""
+        if not isinstance(data, dict):
+            return ""
         choices = data.get("choices") or []
         if not choices:
             return ""

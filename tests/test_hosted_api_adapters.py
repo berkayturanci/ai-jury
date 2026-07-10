@@ -310,6 +310,47 @@ class RunHttpTest(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertEqual(result.error_code, "unknown")
 
+    def test_key_with_embedded_newline_is_never_leaked_in_error(self):
+        # A key value containing a control character (a plausible artifact of
+        # a secret loaded from a file/k8s mount with a trailing newline) can
+        # trip CPython's http.client header-injection guard, raising a
+        # ValueError whose message embeds the raw header value verbatim.
+        # redaction.redact() only recognizes known vendor-token *shapes*, so
+        # an arbitrary key like this one won't match any pattern — the
+        # literal-value scrub in _HostedApiAdapter._scrub_secret is the only
+        # thing standing between this and a leaked key in a rendered report.
+        secret = "totally-real-secret-value-987\nX-Injected: evil"
+        boom = ValueError(f"Invalid header value b'{secret}'")
+        with (
+            mock.patch.dict("os.environ", {"ANTHROPIC_API_KEY": secret}, clear=False),
+            mock.patch("ai_jury.adapters._open", side_effect=boom),
+        ):
+            result = AnthropicApiAdapter(_anthropic_spec()).run("prompt")
+        self.assertFalse(result.ok)
+        self.assertNotIn(secret, result.error)
+        self.assertIn("[REDACTED]", result.error)
+
+    def test_scrub_secret_is_a_no_op_when_key_absent_from_text(self):
+        with mock.patch.dict("os.environ", {"ANTHROPIC_API_KEY": "sk-ant-x"}, clear=False):
+            adapter = AnthropicApiAdapter(_anthropic_spec())
+            self.assertEqual(adapter._scrub_secret("unrelated error text"), "unrelated error text")
+
+
+class ParseContentMalformedShapeTest(unittest.TestCase):
+    """A malformed/unexpected JSON response body (not a dict) must not crash
+    parse_content — it should degrade to empty content, which run() already
+    turns into a clean ERR_EMPTY_OUTPUT failure."""
+
+    def test_anthropic_parse_content_non_dict_body(self):
+        self.assertEqual(AnthropicApiAdapter.parse_content([1, 2, 3]), "")
+        self.assertEqual(AnthropicApiAdapter.parse_content("not a dict"), "")
+        self.assertEqual(AnthropicApiAdapter.parse_content(None), "")
+
+    def test_openai_parse_content_non_dict_body(self):
+        self.assertEqual(OpenAiApiAdapter.parse_content([1, 2, 3]), "")
+        self.assertEqual(OpenAiApiAdapter.parse_content("not a dict"), "")
+        self.assertEqual(OpenAiApiAdapter.parse_content(None), "")
+
 
 class FactoryAndConfigTest(unittest.TestCase):
     def test_make_adapter_returns_anthropic_api(self):

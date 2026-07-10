@@ -12,6 +12,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
@@ -408,6 +409,55 @@ class AvailabilityTests(unittest.TestCase):
         # We can pass None as the spec since the factory doesn't check it
         # before raising the exception.
         self.assertFalse(doctor._is_available(None))
+
+
+class HostedApiWarningTests(unittest.TestCase):
+    """A missing-API-key hosted agent gets its own diagnosis, not a bogus
+    "command is not on PATH" (there is no command) or "local endpoint
+    unreachable" message (issue #430)."""
+
+    def test_missing_key_gets_hosted_api_warning_not_path_warning(self):
+        config = """\
+[jury]
+rounds = 1
+chair = "claude-api"
+
+[[agent]]
+name = "claude-api"
+vendor = "anthropic-api"
+model = "claude-x"
+enabled = true
+"""
+        path = _write_config(config)
+        self.addCleanup(os.unlink, path)
+        with mock.patch.dict(os.environ, {}, clear=True):
+            diag = doctor.build_diagnostics(path)
+        warnings = diag["config_warnings"]
+        self.assertTrue(any("hosted API" in w for w in warnings), warnings)
+        self.assertFalse(any("not on PATH" in w for w in warnings), warnings)
+        self.assertFalse(any("endpoint" in w for w in warnings), warnings)
+        self.assertTrue(any("ANTHROPIC_API_KEY" in w for w in warnings), warnings)
+
+    def test_configured_key_is_available_no_warning(self):
+        config = """\
+[jury]
+rounds = 1
+chair = "codex-api"
+
+[[agent]]
+name = "codex-api"
+vendor = "openai-api"
+model = "gpt-x"
+enabled = true
+"""
+        path = _write_config(config)
+        self.addCleanup(os.unlink, path)
+        with mock.patch.dict(os.environ, {"OPENAI_API_KEY": "x"}, clear=False):
+            diag = doctor.build_diagnostics(path)
+        self.assertTrue(diag["agents"][0]["available"])
+        self.assertFalse(
+            any("codex-api" in w for w in diag["config_warnings"]), diag["config_warnings"]
+        )
 
 
 if __name__ == "__main__":
