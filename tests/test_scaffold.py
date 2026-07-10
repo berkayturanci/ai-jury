@@ -275,7 +275,7 @@ class PresetTest(unittest.TestCase):
             data = tomllib.loads(path.read_text(encoding="utf-8"))
             self.assertEqual(
                 [a["name"] for a in data["agent"]],
-                ["claude", "codex", "agy", "qwen", "claude-api", "codex-api"],
+                ["claude", "codex", "agy", "qwen", "claude-api", "codex-api", "gemini-api"],
             )
 
     def test_explicit_flag_overrides_preset(self):

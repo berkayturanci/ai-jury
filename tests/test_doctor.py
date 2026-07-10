@@ -459,6 +459,27 @@ enabled = true
             any("codex-api" in w for w in diag["config_warnings"]), diag["config_warnings"]
         )
 
+    def test_google_api_missing_key_gets_hosted_api_warning(self):
+        config = """\
+[jury]
+rounds = 1
+chair = "gemini-api"
+
+[[agent]]
+name = "gemini-api"
+vendor = "google-api"
+model = "gemini-x"
+enabled = true
+"""
+        path = _write_config(config)
+        self.addCleanup(os.unlink, path)
+        with mock.patch.dict(os.environ, {}, clear=True):
+            diag = doctor.build_diagnostics(path)
+        warnings = diag["config_warnings"]
+        self.assertTrue(any("hosted API" in w for w in warnings), warnings)
+        self.assertFalse(any("not on PATH" in w for w in warnings), warnings)
+        self.assertTrue(any("GEMINI_API_KEY" in w for w in warnings), warnings)
+
 
 if __name__ == "__main__":
     unittest.main()

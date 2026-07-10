@@ -301,7 +301,7 @@ diagnostics and also writes them as redacted JSON.
 | Flag | Value | Description |
 | --- | --- | --- |
 | `--preset` | `offline` \| `fast` \| `balanced` \| `thorough` | One-command setup (see [presets](#presets)). |
-| `--agents` | `claude,codex,agy,qwen,claude-api,codex-api` | Comma-separated panel to scaffold. `claude-api`/`codex-api` scaffold a hosted-API agent (`ANTHROPIC_API_KEY`/`OPENAI_API_KEY`) instead of a CLI. |
+| `--agents` | `claude,codex,agy,qwen,claude-api,codex-api,gemini-api` | Comma-separated panel to scaffold. `claude-api`/`codex-api`/`gemini-api` scaffold a hosted-API agent (`ANTHROPIC_API_KEY`/`OPENAI_API_KEY`/`GEMINI_API_KEY`) instead of a CLI. |
 | `--rounds` | integer | Rounds for the scaffolded config. |
 | `--chair` | agent name | Chair for the scaffolded config. |
 | `--verify` / `--no-verify` | flag | Verification round on/off. |
@@ -404,10 +404,10 @@ transcript = true   # default the markdown report to the full play-by-play
 | Key | Type | Default | Allowed / notes |
 | --- | --- | --- | --- |
 | `name` | string | — | **Required**, unique, non-empty. |
-| `vendor` | string | — | `anthropic` \| `openai` \| `google` \| `local` \| `anthropic-api` \| `openai-api` (unknown → generic fallback + warning). |
-| `command` | string | — | Required CLI command (not required for `vendor = "local"` / `"anthropic-api"` / `"openai-api"`). |
-| `model` | string | unset | Model identifier. |
-| `endpoint` | string | `http://localhost:11434/v1` (local) | OpenAI-compatible base URL for `vendor = "local"` only — `anthropic-api`/`openai-api` use a fixed hosted URL, not configurable. |
+| `vendor` | string | — | `anthropic` \| `openai` \| `google` \| `local` \| `anthropic-api` \| `openai-api` \| `google-api` (unknown → generic fallback + warning). |
+| `command` | string | — | Required CLI command (not required for `vendor = "local"` / `"anthropic-api"` / `"openai-api"` / `"google-api"`). |
+| `model` | string | unset | Model identifier. **Required** in practice for `google-api` — Gemini embeds it in the request URL path, so an unset `model` produces a malformed URL. |
+| `endpoint` | string | `http://localhost:11434/v1` (local) | OpenAI-compatible base URL for `vendor = "local"` only — the hosted-API vendors (`anthropic-api`/`openai-api`/`google-api`) use a fixed URL per vendor, not configurable. |
 | `timeout` | int | `600` | Positive seconds (inherits `jury.timeout`). |
 | `enabled` | bool | `true` | Disabled agents are skipped. |
 | `extra_args` | list[str] | `[]` | Extra CLI args (e.g. the secure-default sandbox flags). |
@@ -438,7 +438,8 @@ ties resolve to the **stricter** stance.
 `anthropic` · `openai` · `google` · `local` (OpenAI-compatible: Ollama, llama.cpp, vLLM,
 LM Studio) · `anthropic-api` (hosted Anthropic Messages API, keyed by `ANTHROPIC_API_KEY`
 — no `claude` CLI needed) · `openai-api` (hosted OpenAI chat completions API, keyed by
-`OPENAI_API_KEY` — no `codex` CLI needed).
+`OPENAI_API_KEY` — no `codex` CLI needed) · `google-api` (hosted Google Gemini API, keyed
+by `GEMINI_API_KEY` — no `agy` CLI needed).
 
 ### Presets
 Set with `jury init --preset`.

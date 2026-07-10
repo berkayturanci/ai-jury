@@ -119,10 +119,10 @@ def _config_summary(cfg):
     }
 
 
-# Hosted-API vendors (issue #430): no `command`/`endpoint`, so neither the
-# "local" nor the "CLI on PATH" branch below is the right diagnosis when one
-# is unavailable.
-_HOSTED_API_VENDORS = ("anthropic-api", "openai-api")
+# Hosted-API vendors (issue #430/#432): no `command`/`endpoint`, so neither
+# the "local" nor the "CLI on PATH" branch below is the right diagnosis when
+# one is unavailable.
+_HOSTED_API_VENDORS = ("anthropic-api", "openai-api", "google-api")
 
 
 def _detect_warnings(cfg) -> list[str]:
