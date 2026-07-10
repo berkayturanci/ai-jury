@@ -33,7 +33,7 @@ _GH_MAX_OUTPUT_BYTES = 64 * 1024 * 1024  # 64 MiB
 def _gh(*args: str) -> str:
     if shutil.which("gh") is None:
         raise RuntimeError("the GitHub CLI `gh` is not installed or not on PATH")
-    label = " ".join(args)
+    label = redact(" ".join(args))[0]
     proc = subprocess.Popen(["gh", *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     holder: dict[str, bytes] = {}
 
@@ -359,12 +359,12 @@ def _gh_with_input(args: list[str], stdin_data: str) -> str:
             timeout=_GH_TIMEOUT_S,
         )
     except subprocess.TimeoutExpired:
-        raise RuntimeError(f"gh {' '.join(args)} timed out after {_GH_TIMEOUT_S}s") from None
+        raise RuntimeError(f"gh {redact(' '.join(args))[0]} timed out after {_GH_TIMEOUT_S}s") from None
     if proc.returncode != 0:
         err = proc.stderr.strip()
         out_err = proc.stdout.strip()
         safe_err = redact(err or out_err)[0]
-        raise RuntimeError(f"gh {' '.join(args)} failed: {safe_err}")
+        raise RuntimeError(f"gh {redact(' '.join(args))[0]} failed: {safe_err}")
     return proc.stdout
 
 
