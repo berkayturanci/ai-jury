@@ -463,8 +463,10 @@ jury <span class="k">--issue</span> 42 <span class="k">--live --post</span>     
 jury <span class="k">--ci --fail-on</span> critical,major    <span class="cm"># gate CI on blocking findings</span></code></pre>
       <p class="muted reveal" style="margin-top:1rem">
         Requires Python 3.11+ and at least one reviewer — an agent CLI (<code class="mono" style="color:var(--accent-2)">claude</code>,
-        <code class="mono" style="color:var(--accent-2)">codex</code>, <code class="mono" style="color:var(--accent-2)">agy</code>)
-        or a free local model via Ollama. <code class="mono" style="color:var(--accent-2)">gh</code> is needed for <code class="mono" style="color:var(--accent-2)">--pr</code> / <code class="mono" style="color:var(--accent-2)">--issue</code> and for posting comments.
+        <code class="mono" style="color:var(--accent-2)">codex</code>, <code class="mono" style="color:var(--accent-2)">agy</code>),
+        a free local model via Ollama, or a hosted-API key (<code class="mono" style="color:var(--accent-2)">ANTHROPIC_API_KEY</code> /
+        <code class="mono" style="color:var(--accent-2)">OPENAI_API_KEY</code> / <code class="mono" style="color:var(--accent-2)">GEMINI_API_KEY</code>) — no CLI install needed.
+        <code class="mono" style="color:var(--accent-2)">gh</code> is needed for <code class="mono" style="color:var(--accent-2)">--pr</code> / <code class="mono" style="color:var(--accent-2)">--issue</code> and for posting comments.
       </p>
     </section>
 
@@ -776,11 +778,11 @@ endpoint = <span class="s">"http://localhost:11434/v1"</span></code></pre>
         </details>
         <details class="qa">
           <summary>Are these real API calls to the models?<span class="chev"></span></summary>
-          <div class="qa-body"><p>No — ai-jury drives each vendor's <strong>own coding-agent CLI</strong> (<code class="mono">claude</code>, <code class="mono">codex</code>, <code class="mono">agy</code>) as a subprocess, so each reviewer runs in its native environment with its own tooling and context. It's orchestration, not raw model API calls.</p></div>
+          <div class="qa-body"><p>By default, no — ai-jury drives each vendor's <strong>own coding-agent CLI</strong> (<code class="mono">claude</code>, <code class="mono">codex</code>, <code class="mono">agy</code>) as a subprocess, so each reviewer runs in its native environment with its own tooling and context; it's orchestration, not a raw model API call. For CI/container environments where installing an agent CLI isn't practical, an optional <strong>hosted-API adapter</strong> (<code class="mono">vendor = "anthropic-api"</code> / <code class="mono">"openai-api"</code> / <code class="mono">"google-api"</code>) trades that native tooling for a zero-install reviewer keyed by just an API key.</p></div>
         </details>
         <details class="qa">
           <summary>What do I need installed?<span class="chev"></span></summary>
-          <div class="qa-body"><p>Python 3.11+ and at least one reviewer — an agent CLI (<code class="mono">claude</code>, <code class="mono">codex</code>, <code class="mono">agy</code>) or a local model via Ollama. The <code class="mono">gh</code> CLI is needed for <code class="mono">--pr</code> / <code class="mono">--issue</code> and for posting comments. The tool itself is <strong>stdlib-only</strong> — no third-party Python dependencies.</p></div>
+          <div class="qa-body"><p>Python 3.11+ and at least one reviewer — an agent CLI (<code class="mono">claude</code>, <code class="mono">codex</code>, <code class="mono">agy</code>), a local model via Ollama, or a hosted-API key (<code class="mono">ANTHROPIC_API_KEY</code> / <code class="mono">OPENAI_API_KEY</code> / <code class="mono">GEMINI_API_KEY</code>) with no CLI at all. The <code class="mono">gh</code> CLI is needed for <code class="mono">--pr</code> / <code class="mono">--issue</code> and for posting comments. The tool itself is <strong>stdlib-only</strong> — no third-party Python dependencies.</p></div>
         </details>
         <details class="qa">
           <summary>How does it keep secrets and untrusted diffs safe?<span class="chev"></span></summary>
