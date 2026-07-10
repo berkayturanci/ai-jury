@@ -273,7 +273,10 @@ class PresetTest(unittest.TestCase):
             path = Path(tmp) / "jury.toml"
             self._run(["init", "--preset", "thorough", "-o", str(path)])
             data = tomllib.loads(path.read_text(encoding="utf-8"))
-            self.assertEqual([a["name"] for a in data["agent"]], ["claude", "codex", "agy", "qwen"])
+            self.assertEqual(
+                [a["name"] for a in data["agent"]],
+                ["claude", "codex", "agy", "qwen", "claude-api", "codex-api"],
+            )
 
     def test_explicit_flag_overrides_preset(self):
         with tempfile.TemporaryDirectory() as tmp:

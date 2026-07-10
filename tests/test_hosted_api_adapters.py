@@ -1,0 +1,389 @@
+"""Tests for the hosted-vendor-API adapters (issue #430).
+
+Network-free: exercises the pure helpers (payload/headers/parse/error mapping)
+and config/privilege/scaffold wiring for ``anthropic-api``/``openai-api``. A
+live smoke test would need a real API key and is intentionally out of scope
+for the offline suite (mirrors the native-CLI live-smoke pattern).
+"""
+
+from __future__ import annotations
+
+import sys
+import unittest
+from pathlib import Path
+from unittest import mock
+
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+from ai_jury.adapters import (  # noqa: E402
+    ERR_AUTH_REQUIRED,
+    ERR_CONNECTION,
+    ERR_MISSING_API_KEY,
+    ERR_NONZERO_EXIT,
+    ERR_RATE_LIMITED,
+    RETRYABLE_ERROR_CODES,
+    AnthropicApiAdapter,
+    OpenAiApiAdapter,
+    make_adapter,
+)
+from ai_jury.config import (  # noqa: E402
+    AgentSpec,
+    ConfigError,
+    _from_dict,
+    validate_config,
+)
+from ai_jury.privilege import audit_agent, enforce_read_only  # noqa: E402
+from ai_jury.scaffold import KNOWN_AGENTS, agent_templates  # noqa: E402
+
+
+def _anthropic_spec(**kw):
+    base = {"name": "claude-api", "vendor": "anthropic-api", "model": "claude-x"}
+    base.update(kw)
+    return AgentSpec(**base)
+
+
+def _openai_spec(**kw):
+    base = {"name": "codex-api", "vendor": "openai-api", "model": "gpt-x"}
+    base.update(kw)
+    return AgentSpec(**base)
+
+
+class PayloadAndHeadersTest(unittest.TestCase):
+    def test_anthropic_payload_shape(self):
+        a = AnthropicApiAdapter(_anthropic_spec())
+        p = a.build_payload("review this")
+        self.assertEqual(p["model"], "claude-x")
+        self.assertEqual(p["messages"], [{"role": "user", "content": "review this"}])
+        self.assertIn("max_tokens", p)
+        self.assertGreater(p["max_tokens"], 0)
+
+    def test_openai_payload_shape(self):
+        a = OpenAiApiAdapter(_openai_spec())
+        p = a.build_payload("review this")
+        self.assertEqual(p["model"], "gpt-x")
+        self.assertEqual(p["messages"], [{"role": "user", "content": "review this"}])
+        self.assertNotIn("max_tokens", p)
+
+    def test_anthropic_headers_carry_api_key_and_version(self):
+        with mock.patch.dict("os.environ", {"ANTHROPIC_API_KEY": "sk-ant-secret"}, clear=False):
+            a = AnthropicApiAdapter(_anthropic_spec())
+            headers = a._headers()
+        self.assertEqual(headers["x-api-key"], "sk-ant-secret")
+        self.assertIn("anthropic-version", headers)
+        self.assertEqual(headers["Content-Type"], "application/json")
+
+    def test_openai_headers_carry_bearer_token(self):
+        with mock.patch.dict("os.environ", {"OPENAI_API_KEY": "sk-oai-secret"}, clear=False):
+            a = OpenAiApiAdapter(_openai_spec())
+            headers = a._headers()
+        self.assertEqual(headers["Authorization"], "Bearer sk-oai-secret")
+
+
+class ParseAndErrorMappingTest(unittest.TestCase):
+    def test_anthropic_parse_content(self):
+        data = {"content": [{"type": "text", "text": "  a finding  "}]}
+        self.assertEqual(AnthropicApiAdapter.parse_content(data), "a finding")
+
+    def test_anthropic_parse_concatenates_multiple_text_blocks(self):
+        data = {
+            "content": [
+                {"type": "text", "text": "part one. "},
+                {"type": "text", "text": "part two."},
+            ]
+        }
+        self.assertEqual(AnthropicApiAdapter.parse_content(data), "part one. part two.")
+
+    def test_anthropic_parse_ignores_non_text_blocks(self):
+        data = {"content": [{"type": "tool_use", "id": "x"}, {"type": "text", "text": "ok"}]}
+        self.assertEqual(AnthropicApiAdapter.parse_content(data), "ok")
+
+    def test_anthropic_parse_empty_content(self):
+        self.assertEqual(AnthropicApiAdapter.parse_content({"content": []}), "")
+
+    def test_openai_parse_content(self):
+        data = {"choices": [{"message": {"content": "  a finding  "}}]}
+        self.assertEqual(OpenAiApiAdapter.parse_content(data), "a finding")
+
+    def test_openai_parse_empty_choices(self):
+        self.assertEqual(OpenAiApiAdapter.parse_content({"choices": []}), "")
+
+    def test_connection_error_is_retryable(self):
+        self.assertIn(ERR_CONNECTION, RETRYABLE_ERROR_CODES)
+
+    def test_missing_api_key_is_not_retryable(self):
+        # A permanently-unset key is a config problem, not a transient failure.
+        self.assertNotIn(ERR_MISSING_API_KEY, RETRYABLE_ERROR_CODES)
+
+
+class AvailabilityTest(unittest.TestCase):
+    def test_unavailable_without_key(self):
+        with mock.patch.dict("os.environ", {}, clear=True):
+            self.assertFalse(AnthropicApiAdapter(_anthropic_spec()).available())
+            self.assertFalse(OpenAiApiAdapter(_openai_spec()).available())
+
+    def test_available_with_key(self):
+        with mock.patch.dict("os.environ", {"ANTHROPIC_API_KEY": "x"}, clear=False):
+            self.assertTrue(AnthropicApiAdapter(_anthropic_spec()).available())
+        with mock.patch.dict("os.environ", {"OPENAI_API_KEY": "x"}, clear=False):
+            self.assertTrue(OpenAiApiAdapter(_openai_spec()).available())
+
+    def test_detect_capabilities_reports_missing_key(self):
+        with mock.patch.dict("os.environ", {}, clear=True):
+            caps = AnthropicApiAdapter(_anthropic_spec()).detect_capabilities()
+        self.assertEqual(caps["status"], "unavailable")
+        self.assertTrue(caps["warnings"])
+
+    def test_detect_capabilities_ok_with_key(self):
+        with mock.patch.dict("os.environ", {"OPENAI_API_KEY": "x"}, clear=False):
+            caps = OpenAiApiAdapter(_openai_spec()).detect_capabilities()
+        self.assertEqual(caps["status"], "ok")
+        self.assertEqual(caps["warnings"], [])
+
+
+class _FakeResp:
+    def __init__(self, payload: bytes):
+        self._payload = payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def read(self, *_args):
+        return self._payload
+
+
+class RunHttpTest(unittest.TestCase):
+    """Exercise run()'s HTTP success/error branches offline by patching urllib."""
+
+    def test_missing_key_short_circuits_before_any_request(self):
+        with (
+            mock.patch.dict("os.environ", {}, clear=True),
+            mock.patch("ai_jury.adapters._open") as opened,
+        ):
+            result = AnthropicApiAdapter(_anthropic_spec()).run("prompt")
+        opened.assert_not_called()
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_code, ERR_MISSING_API_KEY)
+
+    def test_anthropic_success(self):
+        import json
+
+        payload = json.dumps({"content": [{"type": "text", "text": "a real finding"}]}).encode()
+        with (
+            mock.patch.dict("os.environ", {"ANTHROPIC_API_KEY": "x"}, clear=False),
+            mock.patch("ai_jury.adapters._open", return_value=_FakeResp(payload)),
+        ):
+            result = AnthropicApiAdapter(_anthropic_spec()).run("prompt")
+        self.assertTrue(result.ok)
+        self.assertEqual(result.output, "a real finding")
+
+    def test_openai_success(self):
+        import json
+
+        payload = json.dumps({"choices": [{"message": {"content": "a real finding"}}]}).encode()
+        with (
+            mock.patch.dict("os.environ", {"OPENAI_API_KEY": "x"}, clear=False),
+            mock.patch("ai_jury.adapters._open", return_value=_FakeResp(payload)),
+        ):
+            result = OpenAiApiAdapter(_openai_spec()).run("prompt")
+        self.assertTrue(result.ok)
+        self.assertEqual(result.output, "a real finding")
+
+    def test_empty_content_is_failure(self):
+        import json
+
+        payload = json.dumps({"content": [{"type": "text", "text": "   "}]}).encode()
+        with (
+            mock.patch.dict("os.environ", {"ANTHROPIC_API_KEY": "x"}, clear=False),
+            mock.patch("ai_jury.adapters._open", return_value=_FakeResp(payload)),
+        ):
+            result = AnthropicApiAdapter(_anthropic_spec()).run("prompt")
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_code, "empty_output")
+
+    def test_connection_error(self):
+        import urllib.error
+
+        with (
+            mock.patch.dict("os.environ", {"ANTHROPIC_API_KEY": "x"}, clear=False),
+            mock.patch("ai_jury.adapters._open", side_effect=urllib.error.URLError("refused")),
+        ):
+            result = AnthropicApiAdapter(_anthropic_spec()).run("prompt")
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_code, ERR_CONNECTION)
+
+    def test_http_error_maps_to_auth_required(self):
+        import io
+        import urllib.error
+
+        err = urllib.error.HTTPError(
+            url="x", code=401, msg="Unauthorized", hdrs=None, fp=io.BytesIO(b"bad key")
+        )
+        with (
+            mock.patch.dict("os.environ", {"OPENAI_API_KEY": "x"}, clear=False),
+            mock.patch("ai_jury.adapters._open", side_effect=err),
+        ):
+            result = OpenAiApiAdapter(_openai_spec()).run("prompt")
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_code, ERR_AUTH_REQUIRED)
+
+    def test_http_error_maps_to_rate_limit(self):
+        import io
+        import urllib.error
+
+        err = urllib.error.HTTPError(
+            url="x", code=429, msg="Too Many Requests", hdrs=None, fp=io.BytesIO(b"slow down")
+        )
+        with (
+            mock.patch.dict("os.environ", {"ANTHROPIC_API_KEY": "x"}, clear=False),
+            mock.patch("ai_jury.adapters._open", side_effect=err),
+        ):
+            result = AnthropicApiAdapter(_anthropic_spec()).run("prompt")
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_code, ERR_RATE_LIMITED)
+
+    def test_http_error_other_status_is_nonzero_exit(self):
+        import io
+        import urllib.error
+
+        err = urllib.error.HTTPError(
+            url="x", code=500, msg="Server Error", hdrs=None, fp=io.BytesIO(b"oops")
+        )
+        with (
+            mock.patch.dict("os.environ", {"ANTHROPIC_API_KEY": "x"}, clear=False),
+            mock.patch("ai_jury.adapters._open", side_effect=err),
+        ):
+            result = AnthropicApiAdapter(_anthropic_spec()).run("prompt")
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_code, ERR_NONZERO_EXIT)
+
+    def test_timeout_is_typed(self):
+        with (
+            mock.patch.dict("os.environ", {"ANTHROPIC_API_KEY": "x"}, clear=False),
+            mock.patch("ai_jury.adapters._open", side_effect=TimeoutError),
+        ):
+            result = AnthropicApiAdapter(_anthropic_spec()).run("prompt")
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_code, "timeout")
+
+    def test_run_timeout_override_is_capped_by_agent_timeout(self):
+        # Exercises the `timeout is not None` override branch in run(); the
+        # actual effective value only affects the mocked _open call's timeout
+        # arg, so just assert the run still completes normally.
+        import json
+
+        payload = json.dumps({"content": [{"type": "text", "text": "ok"}]}).encode()
+        with (
+            mock.patch.dict("os.environ", {"ANTHROPIC_API_KEY": "x"}, clear=False),
+            mock.patch("ai_jury.adapters._open", return_value=_FakeResp(payload)) as opened,
+        ):
+            result = AnthropicApiAdapter(_anthropic_spec(timeout=600)).run("prompt", timeout=5)
+        self.assertTrue(result.ok)
+        self.assertEqual(opened.call_args.args[1], 5)
+
+    def test_http_error_body_read_failure_falls_back_to_reason(self):
+        import urllib.error
+
+        class _UnreadableHTTPError(urllib.error.HTTPError):
+            def read(self, *_args):
+                raise OSError("body already consumed")
+
+        err = _UnreadableHTTPError(
+            url="x", code=500, msg="Server Error", hdrs=None, fp=None
+        )
+        with (
+            mock.patch.dict("os.environ", {"ANTHROPIC_API_KEY": "x"}, clear=False),
+            mock.patch("ai_jury.adapters._open", side_effect=err),
+        ):
+            result = AnthropicApiAdapter(_anthropic_spec()).run("prompt")
+        self.assertFalse(result.ok)
+        self.assertIn("Server Error", result.error)
+
+    def test_unexpected_exception_is_unknown(self):
+        with (
+            mock.patch.dict("os.environ", {"ANTHROPIC_API_KEY": "x"}, clear=False),
+            mock.patch("ai_jury.adapters._open", side_effect=RuntimeError("boom")),
+        ):
+            result = AnthropicApiAdapter(_anthropic_spec()).run("prompt")
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_code, "unknown")
+
+
+class FactoryAndConfigTest(unittest.TestCase):
+    def test_make_adapter_returns_anthropic_api(self):
+        self.assertIsInstance(make_adapter(_anthropic_spec()), AnthropicApiAdapter)
+
+    def test_make_adapter_returns_openai_api(self):
+        self.assertIsInstance(make_adapter(_openai_spec()), OpenAiApiAdapter)
+
+    def test_hosted_api_agent_valid_without_command(self):
+        cfg = {
+            "jury": {"chair": "claude-api"},
+            "agent": [{"name": "claude-api", "vendor": "anthropic-api", "model": "claude-x"}],
+        }
+        warnings = validate_config(cfg)
+        self.assertFalse(any("missing a non-empty 'command'" in w for w in warnings))
+        spec = _from_dict(cfg).agents[0]
+        self.assertEqual(spec.command, "")
+
+    def test_hosted_api_without_model_warns(self):
+        cfg = {"jury": {}, "agent": [{"name": "codex-api", "vendor": "openai-api"}]}
+        warnings = validate_config(cfg)
+        self.assertTrue(any("has no 'model'" in w for w in warnings))
+
+    def test_hosted_api_vendors_are_known(self):
+        cfg = {
+            "jury": {},
+            "agent": [
+                {"name": "a", "vendor": "anthropic-api", "model": "m"},
+                {"name": "b", "vendor": "openai-api", "model": "m"},
+            ],
+        }
+        warnings = validate_config(cfg)
+        self.assertFalse(any("unknown vendor" in w for w in warnings))
+
+    def test_hosted_api_agent_does_not_get_endpoint_validated(self):
+        # No `endpoint` key at all is fine — the URL is fixed, not a config value.
+        cfg = {"jury": {}, "agent": [{"name": "a", "vendor": "anthropic-api", "model": "m"}]}
+        # Must not raise even though there's no `endpoint`/SSRF check to run.
+        validate_config(cfg)
+
+    def test_native_anthropic_vendor_still_requires_command(self):
+        # "anthropic" (native CLI) and "anthropic-api" (hosted) are distinct
+        # vendors; the CLI one is unaffected by the new no-command carve-out.
+        cfg = {"jury": {}, "agent": [{"name": "x", "vendor": "anthropic"}]}
+        with self.assertRaises(ConfigError):
+            validate_config(cfg)
+
+
+class PrivilegeAuditTest(unittest.TestCase):
+    def test_hosted_api_agent_has_no_privilege_warnings(self):
+        spec = _anthropic_spec()
+        self.assertEqual(audit_agent(spec), [])
+        spec2 = _openai_spec()
+        self.assertEqual(audit_agent(spec2), [])
+
+    def test_enforce_read_only_is_a_no_op_for_hosted_api(self):
+        self.assertEqual(enforce_read_only("anthropic-api", "claude-api", []), [])
+        self.assertEqual(enforce_read_only("openai-api", "codex-api", ["whatever"]), ["whatever"])
+
+
+class ScaffoldTemplateTest(unittest.TestCase):
+    def test_hosted_api_templates_present(self):
+        templates = agent_templates()
+        self.assertIn("claude-api", templates)
+        self.assertIn("codex-api", templates)
+        self.assertEqual(templates["claude-api"]["vendor"], "anthropic-api")
+        self.assertEqual(templates["codex-api"]["vendor"], "openai-api")
+        self.assertNotIn("command", templates["claude-api"])
+        self.assertNotIn("command", templates["codex-api"])
+
+    def test_hosted_api_names_in_known_agents(self):
+        self.assertIn("claude-api", KNOWN_AGENTS)
+        self.assertIn("codex-api", KNOWN_AGENTS)
+
+
+if __name__ == "__main__":
+    unittest.main()

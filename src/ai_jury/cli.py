@@ -474,6 +474,8 @@ _AGENT_BLURB = {
     "codex": "Codex CLI (OpenAI)",
     "agy": "Antigravity (Google)",
     "qwen": "local / open-weight via Ollama (free, offline)",
+    "claude-api": "hosted Anthropic API (ANTHROPIC_API_KEY, no CLI needed)",
+    "codex-api": "hosted OpenAI API (OPENAI_API_KEY, no CLI needed)",
 }
 
 

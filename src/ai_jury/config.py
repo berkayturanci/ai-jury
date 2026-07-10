@@ -171,7 +171,13 @@ DEFAULT_CONFIG: dict = {
 }
 
 
-KNOWN_VENDORS = ("anthropic", "openai", "google", "local")
+# Vendors that talk HTTP directly (no CLI subprocess), so they need no
+# `command`: `local` (a user-supplied OpenAI-compatible server, issue #43) and
+# the hosted-API adapters (a real vendor API keyed by an env-var API key,
+# issue #430).
+_NO_COMMAND_VENDORS = ("local", "anthropic-api", "openai-api")
+
+KNOWN_VENDORS = ("anthropic", "openai", "google", "local", "anthropic-api", "openai-api")
 
 KNOWN_TOP_LEVEL_KEYS = ("jury", "agent")
 KNOWN_JURY_KEYS = (
@@ -341,21 +347,29 @@ def validate_config(data: dict, strict: bool = False) -> list:
 
         # A local OpenAI-compatible agent (issue #43) talks to an HTTP
         # ``endpoint`` (default ``http://localhost:11434/v1``) instead of a CLI,
-        # so it does not require a ``command``; it does need a ``model``. Every
-        # other vendor requires a non-empty ``command``.
+        # so it does not require a ``command``; it does need a ``model``. A
+        # hosted-API agent (issue #430) likewise talks HTTP instead of a CLI —
+        # to the vendor's fixed, non-configurable endpoint — so it also needs
+        # no ``command``, but does need a ``model``; it has no ``endpoint`` to
+        # validate since the URL isn't a config value. Every other vendor
+        # requires a non-empty ``command``.
         command = agent.get("command", "")
-        is_local = agent.get("vendor", "") == "local"
-        if is_local:
+        vendor_value = agent.get("vendor", "")
+        is_local = vendor_value == "local"
+        if vendor_value in _NO_COMMAND_VENDORS:
             if not agent.get("model"):
+                kind = "local" if is_local else "hosted API"
+                verb = "server" if is_local else "call"
                 warnings.append(
-                    f"agent '{label}' (vendor 'local') has no 'model'; the local "
-                    f"server will likely reject the request."
+                    f"agent '{label}' (vendor '{vendor_value}') has no 'model'; the "
+                    f"{kind} {verb} will likely reject the request."
                 )
-            endpoint = agent.get("endpoint")
-            if endpoint:
-                e_errors, e_warnings = _endpoint_issues(endpoint, label)
-                errors.extend(e_errors)
-                warnings.extend(e_warnings)
+            if is_local:
+                endpoint = agent.get("endpoint")
+                if endpoint:
+                    e_errors, e_warnings = _endpoint_issues(endpoint, label)
+                    errors.extend(e_errors)
+                    warnings.extend(e_warnings)
         elif not command:
             errors.append(f"agent '{label}' is missing a non-empty 'command'.")
         elif _is_relative_path_command(command):

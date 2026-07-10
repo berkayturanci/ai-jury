@@ -22,6 +22,13 @@ _LOCAL_TEMPLATE = {
     "endpoint": "http://localhost:11434/v1",
 }
 
+# Hosted-API templates (issue #430): no `command`/`endpoint` — see
+# adapters._HostedApiAdapter. `model` is left for the user to fill in (a
+# hardcoded model id here would go stale as vendors deprecate/rename models;
+# `validate_config` already warns when it's missing).
+_ANTHROPIC_API_TEMPLATE = {"name": "claude-api", "vendor": "anthropic-api", "model": ""}
+_OPENAI_API_TEMPLATE = {"name": "codex-api", "vendor": "openai-api", "model": ""}
+
 
 def _from_default(name: str) -> dict | None:
     for a in DEFAULT_CONFIG.get("agent", []):
@@ -38,10 +45,12 @@ def agent_templates() -> dict[str, dict]:
         if tmpl is not None:
             templates[name] = tmpl
     templates["qwen"] = dict(_LOCAL_TEMPLATE)
+    templates["claude-api"] = dict(_ANTHROPIC_API_TEMPLATE)
+    templates["codex-api"] = dict(_OPENAI_API_TEMPLATE)
     return templates
 
 
-KNOWN_AGENTS: tuple[str, ...] = ("claude", "codex", "agy", "qwen")
+KNOWN_AGENTS: tuple[str, ...] = ("claude", "codex", "agy", "qwen", "claude-api", "codex-api")
 
 # Substrings that hint a local model is code-oriented (preferred for reviews).
 _CODER_HINTS: tuple[str, ...] = ("coder", "code", "deepseek", "qwen")

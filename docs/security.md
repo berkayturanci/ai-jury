@@ -100,6 +100,21 @@ content; the least-privilege audit (`--strict` to fail the run) will flag it.
   untrusted content; `--dangerously-skip-permissions` only avoids a prompt hang.
   A bare `--dangerously-skip-permissions` *without* `--sandbox` is flagged by the
   least-privilege audit.
+- **`anthropic-api` / `openai-api`** (hosted-API reviewers) are out of scope for the
+  sandbox audit entirely, and there is no `--strict` finding to fix here: unlike
+  every CLI-backed adapter, a hosted-API call makes a single HTTP request with no
+  filesystem, shell, or tool access at all — there is no sandbox to widen or narrow.
+
+### Hosted-API reviewers (no CLI, no sandbox needed)
+
+`anthropic-api` / `openai-api` (issue #430) trade the native-CLI tooling for a
+zero-install reviewer keyed by `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` — no `command`,
+no interactive login, no subprocess. Two things worth knowing:
+
+- The API key is read from the environment only, never from `jury.toml` — so a
+  checked-in config (or one shared/pasted for debugging) never leaks it.
+- The endpoint is a fixed, hardcoded constant per vendor, not a config value — unlike
+  `local`'s user-supplied `endpoint`, there is no SSRF surface here to validate.
 
 ## Threat model: prompt injection from untrusted diff/PR content (OWASP LLM01)
 

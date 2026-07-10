@@ -65,8 +65,9 @@ end-of-run comment).
 
 ## Adapters
 
-Each adapter knows only how to invoke one CLI headlessly; the orchestrator owns prompt
-content. Verified headless invocations (early 2026):
+Each CLI-backed adapter knows only how to invoke one CLI headlessly; the HTTP-backed
+adapters (`LocalAdapter` and the hosted-API adapters) speak plain HTTP instead. Either
+way, the orchestrator owns prompt content. Verified headless invocations (early 2026):
 
 | Vendor | Adapter | Invocation |
 |:--|:--|:--|
@@ -74,27 +75,47 @@ content. Verified headless invocations (early 2026):
 | OpenAI | `CodexAdapter` | `codex exec` (prompt piped on stdin, not argv) |
 | Google | `AgyAdapter` | `agy --print "<prompt>"` |
 | local / open-weight | `LocalAdapter` | HTTP `POST {endpoint}/v1/chat/completions` (Ollama, llama.cpp, vLLM, LM Studio) — stdlib `urllib`, no subprocess |
+| Anthropic (hosted API) | `AnthropicApiAdapter` | HTTP `POST api.anthropic.com/v1/messages`, keyed by `ANTHROPIC_API_KEY` — stdlib `urllib`, no subprocess, no CLI needed |
+| OpenAI (hosted API) | `OpenAiApiAdapter` | HTTP `POST api.openai.com/v1/chat/completions`, keyed by `OPENAI_API_KEY` — stdlib `urllib`, no subprocess, no CLI needed |
 | — (tests) | `MockAdapter` | deterministic, phase-aware output; no subprocess |
 
-Adapters fail soft: a missing CLI, **non-zero exit** (even with stdout), timeout, or an
-unreachable local endpoint (`connection_error`) becomes a non-fatal
-`AgentResult(ok=False, error=…)`. The run continues with whoever is available unless
-`--strict` is passed; the report lists skipped / failed / retried / timed-out agents.
+Adapters fail soft: a missing CLI, **non-zero exit** (even with stdout), timeout, an
+unreachable local endpoint (`connection_error`), or an unset hosted-API key
+(`missing_api_key`) becomes a non-fatal `AgentResult(ok=False, error=…)`. The run
+continues with whoever is available unless `--strict` is passed; the report lists
+skipped / failed / retried / timed-out agents.
 
 **Read-only by default (secure):** reviewers read attacker-controlled diffs, so the
 shipped defaults run them sandboxed — Claude with `--disallowed-tools
 Edit,Write,NotebookEdit,Bash`, Codex with `-s read-only`, Antigravity with
 `--sandbox`. `privilege.py` audits this and warns (or fails under `--strict`) when an
-agent is given broad powers without a sandbox.
+agent is given broad powers without a sandbox. `local` and hosted-API agents are out of
+scope for that audit entirely — they run no subprocess and have no filesystem/tool
+access to disallow in the first place, so there is nothing to sandbox.
 
 A `local` agent is a normal `[[agent]]` with `vendor = "local"`, an `endpoint`
 (default `http://localhost:11434/v1`), and a `model`; it adds vendor diversity at
 zero marginal cost and enables fully offline reviews.
 
+A **hosted-API agent** is a normal `[[agent]]` with `vendor = "anthropic-api"` or
+`vendor = "openai-api"` and a `model` — no `command`, no CLI install, no interactive
+login. The API key comes from the environment only (`ANTHROPIC_API_KEY` /
+`OPENAI_API_KEY`), never from `jury.toml`, so it can't leak into a checked-in config;
+the endpoint is a fixed, non-configurable constant per vendor (unlike `local`'s
+user-supplied `endpoint`, so there is no SSRF surface to validate). This is the
+lowest-friction reviewer seat for CI/containers where installing and interactively
+authenticating an agent CLI is impractical but an API key as a secret is trivial —
+see `jury init --agents claude-api,codex-api`.
+
 ## Design decisions
 
-- **Native CLI over API.** The differentiator is that each reviewer runs in its own
-  vendor agent with its own tooling and context handling, not a raw model API call.
+- **Native CLI over API, with a hosted-API escape hatch.** The differentiator for the
+  primary review adapters is that each reviewer runs in its own vendor agent with its
+  own tooling and context handling, not a raw model API call — but a review prompt
+  needs no filesystem/tool access at all (the jury fetches the diff itself), so the
+  hosted-API adapters (issue #430) trade that native tooling for zero-install,
+  API-key-only reviewers where a CLI genuinely can't be installed or authenticated
+  (CI, containers).
 - **Stdlib only.** No third-party deps — `subprocess`, `tomllib`, `concurrent.futures`,
   `argparse`. Easy to vendor into any repo or CI.
 - **Mock path is first-class.** `--mock` runs the entire pipeline deterministically so

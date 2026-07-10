@@ -57,8 +57,11 @@ pipx install git+https://github.com/berkayturanci/ai-jury.git
 
 Requires Python 3.11+. Then scaffold a config with **`jury init`** (it detects your
 installed agents and local models). You need at least one reviewer: an agent CLI
-(`claude`, `codex`, `agy`) **or** a free local model via Ollama; missing/unreachable ones
-are skipped. `gh` is needed for `--pr` / `--post`.
+(`claude`, `codex`, `agy`), a free local model via Ollama, **or** a hosted-API reviewer
+keyed by just `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` (`jury init --agents
+claude-api,codex-api`) — no CLI install or interactive login needed, useful for CI and
+containers; missing/unreachable/unkeyed reviewers are skipped. `gh` is needed for `--pr`
+/ `--post`.
 
 For development, install the dev extras (linting, build, and coverage tooling):
 

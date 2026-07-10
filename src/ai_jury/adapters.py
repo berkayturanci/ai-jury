@@ -110,6 +110,10 @@ ERR_RATE_LIMITED = "rate_limited"
 # Local/HTTP adapter could not reach its server (issue #43): connection refused,
 # DNS failure, or the local model server is not running.
 ERR_CONNECTION = "connection_error"
+# Hosted-API adapter (issue #430): the vendor's API key env var is unset. Distinct
+# from ERR_AUTH_REQUIRED (a key was sent but the server rejected it) so a report
+# can tell "never configured" apart from "misconfigured/expired/revoked".
+ERR_MISSING_API_KEY = "missing_api_key"
 ERR_UNKNOWN = "unknown"
 
 ERROR_CODES = frozenset(
@@ -123,6 +127,7 @@ ERROR_CODES = frozenset(
         ERR_SPAWN_FAILED,
         ERR_RATE_LIMITED,
         ERR_CONNECTION,
+        ERR_MISSING_API_KEY,
         ERR_UNKNOWN,
     }
 )
@@ -695,6 +700,243 @@ class LocalAdapter(Adapter):
         return AgentResult(self.name, self.spec.vendor, True, content, dur)
 
 
+# Hosted vendor API endpoints (issue #430). Fixed, not configurable: unlike
+# `local`'s user-supplied `endpoint` (which needs the SSRF validation in
+# config._endpoint_issues), a hosted vendor's URL is a known constant, not an
+# attacker- or operator-influenceable value, so there is nothing to validate.
+_ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
+_ANTHROPIC_API_VERSION = "2023-06-01"
+_OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
+# The Anthropic Messages API requires max_tokens on every request; there is no
+# server-side default. Generous enough for a review response, small enough to
+# bound cost/latency if a run is ever misconfigured to loop.
+_HOSTED_API_MAX_TOKENS = 4096
+
+
+def _hosted_api_status_code(status: int) -> str:
+    """Map a hosted-API HTTP status to a typed error code (issue #430).
+
+    Shared by every hosted-API adapter — identical mapping to
+    ``LocalAdapter.classify_http_status`` (401/403 → auth, 429 → rate limit),
+    kept as a free function since it has no per-adapter state.
+    """
+    if status in (401, 403):
+        return ERR_AUTH_REQUIRED
+    if status == 429:
+        return ERR_RATE_LIMITED
+    return ERR_NONZERO_EXIT
+
+
+def _post_json(
+    url: str, payload: dict, headers: dict[str, str], timeout: int
+) -> tuple[dict | None, str | None, str | None]:
+    """POST a JSON body and parse a JSON response (issue #430).
+
+    Shared HTTP mechanics for the hosted-API adapters: build the request,
+    route it through the SSRF-safe opener (``_open``, no file/ftp handlers, no
+    redirect following — the same seam ``LocalAdapter`` uses), cap the response
+    read at ``_MAX_RESPONSE_BYTES``, and classify any failure into a typed
+    error code. Returns ``(response_dict, None, None)`` on success or
+    ``(None, error_message, error_code)`` on failure — exactly one shape.
+    Response bodies are redacted before being returned in an error message
+    since they originate from the network and are surfaced in the report.
+    """
+    import json as _json
+    import urllib.error
+    import urllib.request
+
+    body = _json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+    try:
+        with _open(req, timeout) as resp:  # noqa: S310
+            raw = resp.read(_MAX_RESPONSE_BYTES).decode("utf-8", errors="replace")
+        return _json.loads(raw), None, None
+    except urllib.error.HTTPError as exc:
+        detail = ""
+        try:
+            detail = exc.read(_MAX_RESPONSE_BYTES).decode("utf-8", errors="replace")[:300]
+        except Exception:  # noqa: BLE001 - reading the error body is best-effort
+            detail = exc.reason or ""
+        detail = redaction.redact(detail)[0]
+        return None, f"HTTP {exc.code}: {detail}", _hosted_api_status_code(exc.code)
+    except TimeoutError:
+        return None, f"timed out after {timeout}s", ERR_TIMEOUT
+    except urllib.error.URLError as exc:
+        return (
+            None,
+            f"could not reach {url}: {redaction.redact(str(exc.reason))[0]}",
+            ERR_CONNECTION,
+        )
+    except Exception as exc:  # noqa: BLE001 - surface any other failure
+        return None, f"request failed: {redaction.redact(str(exc))[0]}", ERR_UNKNOWN
+
+
+class _HostedApiAdapter(Adapter):
+    """Shared base for hosted-vendor-API reviewers keyed by an env-var API key.
+
+    No CLI install, no interactive login, no subprocess: just an HTTP call
+    over stdlib ``urllib`` to the vendor's real hosted API (issue #430), the
+    same no-subprocess/no-new-dependency design as ``LocalAdapter`` but
+    pointed at a hosted endpoint instead of a local server. The API key is
+    read from the environment ONLY, never from ``jury.toml``, so it cannot
+    leak into a checked-in config; the endpoint is a fixed per-vendor
+    constant, not a config value, so there is no SSRF surface to guard the
+    way `local`'s `endpoint` needs.
+    """
+
+    SUPPORTS_HEADLESS = True
+    SUPPORTS_MODEL_SELECTION = True
+
+    # Subclasses override both.
+    _API_KEY_ENV: str = ""
+    _API_URL: str = ""
+
+    def _api_key(self) -> str:
+        return os.environ.get(self._API_KEY_ENV, "")
+
+    def available(self) -> bool:
+        """Available when the API key is set — a fast, network-free check.
+
+        Unlike ``LocalAdapter.available()`` (which probes the server, since a
+        local endpoint's reachability is genuinely uncertain), a hosted
+        vendor's API is assumed reachable; the only real unknown locally is
+        whether the operator configured a key at all.
+        """
+        return bool(self._api_key())
+
+    def detect_capabilities(self) -> dict:
+        has_key = self.available()
+        return {
+            "version": None,
+            "supports_headless": self.SUPPORTS_HEADLESS,
+            "supports_model_selection": self.SUPPORTS_MODEL_SELECTION,
+            "raw_version_output": f"hosted API {self._API_URL}",
+            "status": CAP_OK if has_key else CAP_UNAVAILABLE,
+            "warnings": (
+                [] if has_key else [f"{self._API_KEY_ENV} is not set in the environment"]
+            ),
+        }
+
+    def build_payload(self, prompt: str) -> dict:  # pragma: no cover - overridden
+        raise NotImplementedError
+
+    def _headers(self) -> dict[str, str]:  # pragma: no cover - overridden
+        raise NotImplementedError
+
+    @staticmethod
+    def parse_content(data: dict) -> str:  # pragma: no cover - overridden
+        raise NotImplementedError
+
+    def run(self, prompt: str, phase: str = "review", timeout: int | None = None) -> AgentResult:
+        del phase
+        if not self.available():
+            return AgentResult(
+                self.name,
+                self.spec.vendor,
+                False,
+                "",
+                0.0,
+                f"{self._API_KEY_ENV} is not set in the environment",
+                error_code=ERR_MISSING_API_KEY,
+            )
+        effective_timeout = self.spec.timeout
+        if timeout is not None:
+            effective_timeout = max(1, min(self.spec.timeout, int(timeout)))
+        start = time.monotonic()
+        data, err_msg, err_code = _post_json(
+            self._API_URL, self.build_payload(prompt), self._headers(), effective_timeout
+        )
+        dur = time.monotonic() - start
+        if err_msg is not None:
+            return AgentResult(self.name, self.spec.vendor, False, "", dur, err_msg, error_code=err_code)
+        content = self.parse_content(data or {})
+        if not content:
+            return AgentResult(
+                self.name,
+                self.spec.vendor,
+                False,
+                "",
+                dur,
+                "hosted API returned empty content",
+                error_code=ERR_EMPTY_OUTPUT,
+            )
+        return AgentResult(self.name, self.spec.vendor, True, content, dur)
+
+
+class AnthropicApiAdapter(_HostedApiAdapter):
+    """Hosted Anthropic Messages API reviewer, keyed by ``ANTHROPIC_API_KEY`` (issue #430).
+
+    Configure as a normal ``[[agent]]`` with ``vendor = "anthropic-api"`` and a
+    ``model`` (e.g. a current Claude model id) — no ``command``, no ``claude``
+    CLI install or interactive login needed.
+    """
+
+    _API_KEY_ENV = "ANTHROPIC_API_KEY"
+    _API_URL = _ANTHROPIC_API_URL
+
+    def build_payload(self, prompt: str) -> dict:
+        """Build the Anthropic Messages API request body (pure)."""
+        return {
+            "model": self.spec.model or "",
+            "max_tokens": _HOSTED_API_MAX_TOKENS,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+
+    def _headers(self) -> dict[str, str]:
+        return {
+            "Content-Type": "application/json",
+            "x-api-key": self._api_key(),
+            "anthropic-version": _ANTHROPIC_API_VERSION,
+        }
+
+    @staticmethod
+    def parse_content(data: dict) -> str:
+        """Extract the assistant text from a Messages API response."""
+        blocks = data.get("content") or []
+        texts = [
+            block.get("text", "")
+            for block in blocks
+            if isinstance(block, dict) and block.get("type") == "text"
+        ]
+        return "".join(texts).strip()
+
+
+class OpenAiApiAdapter(_HostedApiAdapter):
+    """Hosted OpenAI Chat Completions API reviewer, keyed by ``OPENAI_API_KEY`` (issue #430).
+
+    Configure as a normal ``[[agent]]`` with ``vendor = "openai-api"`` and a
+    ``model`` (e.g. a current GPT model id) — no ``command``, no ``codex`` CLI
+    install or interactive login needed. Same request/response shape as
+    ``LocalAdapter`` (both are OpenAI-compatible chat completions), just
+    against the real hosted API with an ``Authorization`` header.
+    """
+
+    _API_KEY_ENV = "OPENAI_API_KEY"
+    _API_URL = _OPENAI_API_URL
+
+    def build_payload(self, prompt: str) -> dict:
+        """Build the OpenAI chat-completions request body (pure)."""
+        return {
+            "model": self.spec.model or "",
+            "messages": [{"role": "user", "content": prompt}],
+        }
+
+    def _headers(self) -> dict[str, str]:
+        return {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self._api_key()}",
+        }
+
+    @staticmethod
+    def parse_content(data: dict) -> str:
+        """Extract the assistant message text from a chat-completions response."""
+        choices = data.get("choices") or []
+        if not choices:
+            return ""
+        message = choices[0].get("message") or {}
+        return (message.get("content") or "").strip()
+
+
 class MockAdapter(Adapter):
     """Offline adapter for tests and ``--mock`` runs.
 
@@ -784,6 +1026,8 @@ _VENDOR_ADAPTERS: dict[str, type[Adapter]] = {
     "openai": CodexAdapter,
     "google": AgyAdapter,
     "local": LocalAdapter,
+    "anthropic-api": AnthropicApiAdapter,
+    "openai-api": OpenAiApiAdapter,
 }
 
 
