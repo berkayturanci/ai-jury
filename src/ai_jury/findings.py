@@ -10,8 +10,9 @@ from __future__ import annotations
 
 import json
 import re
-from .redaction import redact
 from dataclasses import dataclass
+
+from .redaction import redact
 
 SEVERITIES: tuple[str, ...] = ("critical", "major", "minor", "nit", "info")
 CONFIDENCES: tuple[str, ...] = ("high", "medium", "low")
