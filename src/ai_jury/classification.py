@@ -132,11 +132,14 @@ def diff_lines_changed(diff: str | None) -> int:
     """
     if not diff:
         return 0
-    return sum(
-        1
-        for line in diff.splitlines()
-        if line.startswith(("+", "-")) and not line.startswith(("+++", "---"))
-    )
+    # bolt: avoid allocating a huge list of strings from splitlines()
+    # and generator overhead by using C-optimized string counting.
+    c = diff.count("\n+") + diff.count("\n-") - diff.count("\n+++") - diff.count("\n---")
+    if diff.startswith("+") and not diff.startswith("+++"):
+        c += 1
+    elif diff.startswith("-") and not diff.startswith("---"):
+        c += 1
+    return c
 
 
 def _text_blob(finding: Any) -> str:

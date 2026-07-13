@@ -21,3 +21,7 @@
 ## 2025-06-12 - Ensure Single-Pass Consolidations Include Comments
 **Learning:** When making code optimizations for single-pass collections or loop iterations, always verify that explicit comments are included to explain *why* the loop was implemented this way (e.g., `# bolt: Consolidate multiple metrics into a single-pass O(N) explicit loop`).
 **Action:** Before submitting, ensure performance optimizations explicitly have their rationale documented in code via a comment as required by Bolt's guidelines.
+
+## 2025-06-13 - Avoid splitlines() memory allocation on large text
+**Learning:** Parsing large text or diffs using `splitlines()` allocates a huge list of strings, turning an O(1) memory operation into O(N). Iterating through it with Python generators is also significantly slower than C-optimized string operations.
+**Action:** When counting line prefix occurrences across a large body of text, use `str.count("\nprefix")` instead of `splitlines()` to avoid memory allocation and benefit from C-level speeds, handling the first line specifically if it lacks a newline.
