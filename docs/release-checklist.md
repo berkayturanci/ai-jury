@@ -10,8 +10,8 @@ true to announce/publish) and **Nice-to-have** (improves polish, not a blocker).
 - [ ] `pyproject.toml` metadata correct: name, description, `requires-python`, license,
       classifiers, `project.urls`, `console_scripts` (`jury`).
 - [ ] Version bumped and consistent across `pyproject.toml`, `__init__.__version__`,
-      `.claude-plugin/plugin.json`, and `CHANGELOG.md`. (CI enforces the
-      pyproject ↔ plugin.json equality via `tests/test_release_metadata.py`;
+      `.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`, and `CHANGELOG.md`.
+      (CI enforces the pyproject ↔ plugin.json equality via `tests/test_release_metadata.py`;
       `publish.yml` re-checks both against the tag at release time.)
 - [ ] `pip install -e .` and `python -m build` (sdist + wheel) succeed cleanly.
 - [ ] PyPI **trusted publishing** (OIDC) configured for the repo (one-time PyPI
@@ -61,7 +61,7 @@ true to announce/publish) and **Nice-to-have** (improves polish, not a blocker).
 1. Confirm every **Required before public** box above is checked.
 2. Update `CHANGELOG.md`: rename `[Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD`.
 3. Bump the version in `pyproject.toml`, `src/ai_jury/__init__.py`, **and
-   `.claude-plugin/plugin.json`**.
+   `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json`**.
 4. Open a release PR; wait for green CI; merge.
 5. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
 6. Create the GitHub Release from the tag (paste the changelog section). This triggers
