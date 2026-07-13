@@ -329,12 +329,35 @@
     function selectMode(newMode) {
       if (newMode === mode || !MODES[newMode]) return;
       mode = newMode;
-      if (tabPr) { tabPr.classList.toggle("on", mode === "pr"); tabPr.setAttribute("aria-selected", mode === "pr" ? "true" : "false"); }
-      if (tabIssue) { tabIssue.classList.toggle("on", mode === "issue"); tabIssue.setAttribute("aria-selected", mode === "issue" ? "true" : "false"); }
+      if (tabPr) {
+        tabPr.classList.toggle("on", mode === "pr");
+        tabPr.setAttribute("aria-selected", mode === "pr" ? "true" : "false");
+        tabPr.setAttribute("tabindex", mode === "pr" ? "0" : "-1");
+      }
+      if (tabIssue) {
+        tabIssue.classList.toggle("on", mode === "issue");
+        tabIssue.setAttribute("aria-selected", mode === "issue" ? "true" : "false");
+        tabIssue.setAttribute("tabindex", mode === "issue" ? "0" : "-1");
+      }
       restart();
     }
     if (tabPr) tabPr.addEventListener("click", function () { selectMode("pr"); });
     if (tabIssue) tabIssue.addEventListener("click", function () { selectMode("issue"); });
+
+    var tabs = [tabPr, tabIssue].filter(Boolean);
+    tabs.forEach(function (tab, i) {
+      tab.addEventListener("keydown", function (e) {
+        var dir = 0;
+        if (e.key === "ArrowLeft") dir = -1;
+        else if (e.key === "ArrowRight") dir = 1;
+        if (dir !== 0) {
+          e.preventDefault();
+          var nextIndex = (i + dir + tabs.length) % tabs.length;
+          tabs[nextIndex].focus();
+          tabs[nextIndex].click();
+        }
+      });
+    });
 
     if (reduce) {
       applyStatic();
