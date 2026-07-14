@@ -459,9 +459,6 @@ def run_jury(
 
     # Deterministic consensus grouping across reviewers.
     groups = group_findings(all_findings, len(reviews))
-    if config.demote_local_only:
-        vendor_by_reviewer = {a.name: a.vendor for a in config.agents}
-        demote_local_only_groups(groups, vendor_by_reviewer)
 
     # Names of agents whose round-1 review succeeded — the chair resolver uses
     # this to (optionally) prefer a non-reviewer chair (#38).
@@ -597,6 +594,17 @@ def run_jury(
             _apply_verdicts(groups, verdicts)
             if verify_result is not None:
                 emit("verify", verify_result)
+
+    # Local-only demotion (issue #442) runs AFTER verification, never before:
+    # _reject_targets' member-tier guard (orchestrator._reject_targets) assumes
+    # group.severity == max(member severities) to decide whether a rejecting
+    # verdict may suppress the whole group. Demoting group.severity earlier
+    # would desync it from that invariant and could let a verdict aimed at a
+    # minor local-only duplicate collateral-reject a genuinely critical,
+    # never-verified co-located finding merged into the same group.
+    if config.demote_local_only:
+        vendor_by_reviewer = {a.name: a.vendor for a in config.agents}
+        demote_local_only_groups(groups, vendor_by_reviewer)
 
     # Synthesis: the chair consolidates. When the resolved chair is ALSO a
     # round-1 reviewer, feed it an anonymized view of the reviews (#38 guardrail)
@@ -1060,9 +1068,6 @@ def _merge_chunk_outcomes(outcomes: list[JuryOutcome], config: JuryConfig) -> Ju
     )
     findings = [f for o in outcomes for f in o.findings]
     groups = group_findings(findings, len(reviews))
-    if config.demote_local_only:
-        vendor_by_reviewer = {a.name: a.vendor for a in config.agents}
-        demote_local_only_groups(groups, vendor_by_reviewer)
     verdicts = [v for o in outcomes for v in o.verdicts]
     # Scope each chunk's verdicts to that chunk's own findings. A verdict is
     # produced while verifying ONE chunk (whose prompt held only that chunk's
@@ -1081,6 +1086,14 @@ def _merge_chunk_outcomes(outcomes: list[JuryOutcome], config: JuryConfig) -> Ju
             if _normalize_path(g.representative.file, fold_case=False) in chunk_files
         ]
         _apply_verdicts(chunk_groups, o.verdicts)
+
+    # Runs AFTER verdicts are applied — see the matching comment in run_jury for
+    # why (the _reject_targets member-tier guard assumes group.severity is the
+    # true max member severity; demoting earlier would desync that invariant).
+    if config.demote_local_only:
+        vendor_by_reviewer = {a.name: a.vendor for a in config.agents}
+        demote_local_only_groups(groups, vendor_by_reviewer)
+
     warnings = [w for o in outcomes for w in o.warnings]
 
     synthesis = _combine_chair_results([o.synthesis for o in outcomes if o.synthesis], base.chair)

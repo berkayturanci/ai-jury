@@ -184,6 +184,30 @@ class DemoteLocalOnlyGroupsTests(unittest.TestCase):
         demote_local_only_groups(groups, self.VENDORS)
         self.assertEqual(groups[0].severity, "minor")
 
+    def test_demotion_flips_default_ci_gate_from_fail_to_pass(self):
+        # Proves the feature's actual purpose, not just that a field mutates:
+        # an uncorroborated local-only critical must stop blocking the default
+        # CI gate once demoted.
+        from ai_jury.ci import evaluate_ci
+
+        groups = group_findings([_f("local-model", severity="critical")], reviewer_count=1)
+        self.assertEqual(evaluate_ci(groups, ["critical", "major"], ignore_unverified=False)[0], 1)
+        demote_local_only_groups(groups, self.VENDORS)
+        self.assertEqual(evaluate_ci(groups, ["critical", "major"], ignore_unverified=False)[0], 0)
+
+    def test_demotion_softens_local_reviewers_own_tallied_vote(self):
+        # Proves the vote tally (not just the CI gate) reflects the demotion:
+        # the local reviewer's own ballot softens from blocking to non-blocking
+        # once its uncorroborated critical is capped at "minor" ("middling").
+        from ai_jury.voting import COMMENT, REQUEST_CHANGES, tally_votes
+
+        groups = group_findings([_f("local-model", severity="critical")], reviewer_count=1)
+        before = tally_votes(groups, ["local-model"])
+        self.assertEqual(before.verdict, REQUEST_CHANGES)
+        demote_local_only_groups(groups, self.VENDORS)
+        after = tally_votes(groups, ["local-model"])
+        self.assertEqual(after.verdict, COMMENT)
+
 
 if __name__ == "__main__":
     unittest.main()
