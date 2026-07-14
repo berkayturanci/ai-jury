@@ -226,10 +226,10 @@
       <!-- Animated pipeline -->
       <div class="pipe-shell reveal" data-d="5">
         <div class="pipe-tabs" role="tablist" aria-label="What the jury reviews">
-          <button class="pipe-tab on" id="tab-pr" role="tab" aria-selected="true" type="button">Pull request</button>
-          <button class="pipe-tab" id="tab-issue" role="tab" aria-selected="false" type="button">Issue</button>
+          <button class="pipe-tab on" id="tab-pr" role="tab" aria-selected="true" tabindex="0" aria-controls="pipe" type="button">Pull request</button>
+          <button class="pipe-tab" id="tab-issue" role="tab" aria-selected="false" tabindex="-1" aria-controls="pipe" type="button">Issue</button>
         </div>
-        <div class="pipe" id="pipe">
+        <div class="pipe" id="pipe" role="tabpanel" aria-label="Pipeline view">
           <div class="pipe-cap">
             <span class="ttl" id="pipe-ttl">$ jury --pr 123</span>
             <span class="pipe-legend">

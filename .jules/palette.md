@@ -46,3 +46,7 @@
 ## 2026-07-08 - Icon-only buttons need native tooltips
 **Learning:** Icon-only buttons (like hamburger menus or copy buttons) often have `aria-label`s for screen readers, but sighted mouse users rely on native tooltips (`title` attributes) for context. Omitting the `title` attribute leaves sighted users guessing the button's function.
 **Action:** Always provide a `title` attribute (in addition to `aria-label`) for icon-only buttons, and ensure it dynamically updates if the button's state changes.
+
+## 2026-10-25 - Arrow key navigation for WAI-ARIA tablists
+**Learning:** Simply applying `role="tablist"` and `role="tab"` to elements does not automatically make them accessible. Keyboard users expect to use Arrow keys (Left/Right or Up/Down) to navigate between tabs, and the roving `tabindex` technique (where only the active tab has `tabindex="0"` and the others have `-1`) must be implemented manually via JavaScript.
+**Action:** Whenever using `role="tablist"`, write custom JavaScript to intercept arrow keys (`keydown` events) to move focus and toggle the active tab, and dynamically update `tabindex` attributes to ensure the active tab remains in the document's tab order while inactive tabs are removed from it.

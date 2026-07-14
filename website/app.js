@@ -329,12 +329,35 @@
     function selectMode(newMode) {
       if (newMode === mode || !MODES[newMode]) return;
       mode = newMode;
-      if (tabPr) { tabPr.classList.toggle("on", mode === "pr"); tabPr.setAttribute("aria-selected", mode === "pr" ? "true" : "false"); }
-      if (tabIssue) { tabIssue.classList.toggle("on", mode === "issue"); tabIssue.setAttribute("aria-selected", mode === "issue" ? "true" : "false"); }
+      if (tabPr) {
+        tabPr.classList.toggle("on", mode === "pr");
+        tabPr.setAttribute("aria-selected", mode === "pr" ? "true" : "false");
+        tabPr.setAttribute("tabindex", mode === "pr" ? "0" : "-1");
+      }
+      if (tabIssue) {
+        tabIssue.classList.toggle("on", mode === "issue");
+        tabIssue.setAttribute("aria-selected", mode === "issue" ? "true" : "false");
+        tabIssue.setAttribute("tabindex", mode === "issue" ? "0" : "-1");
+      }
       restart();
     }
-    if (tabPr) tabPr.addEventListener("click", function () { selectMode("pr"); });
-    if (tabIssue) tabIssue.addEventListener("click", function () { selectMode("issue"); });
+    function handleTabKeydown(e) {
+      if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+        e.preventDefault();
+        var nextMode = mode === "pr" ? "issue" : "pr";
+        selectMode(nextMode);
+        var nextTab = nextMode === "pr" ? tabPr : tabIssue;
+        if (nextTab) nextTab.focus();
+      }
+    }
+    if (tabPr) {
+      tabPr.addEventListener("click", function () { selectMode("pr"); });
+      tabPr.addEventListener("keydown", handleTabKeydown);
+    }
+    if (tabIssue) {
+      tabIssue.addEventListener("click", function () { selectMode("issue"); });
+      tabIssue.addEventListener("keydown", handleTabKeydown);
+    }
 
     if (reduce) {
       applyStatic();
