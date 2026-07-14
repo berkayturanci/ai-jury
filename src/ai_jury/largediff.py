@@ -19,6 +19,7 @@ reproducible and unit-testable.
 from __future__ import annotations
 
 import fnmatch
+import re
 from dataclasses import dataclass, field
 
 # Default "generated / not worth reviewing" path globs. Conservative and
@@ -175,29 +176,42 @@ def split_diff(diff: str) -> list[DiffFile]:
     """
     if not diff:
         return []
-    lines = diff.splitlines(keepends=True)
+
     files: list[DiffFile] = []
-    cur_path: str | None = None
-    cur: list[str] = []
 
-    def flush() -> None:
-        if cur:
-            files.append(DiffFile(path=cur_path or "", text="".join(cur)))
+    parts = []
+    # bolt: avoid allocating a huge list of strings from splitlines(keepends=True)
+    # by splitting chunks directly and only iterating their header lines.
+    idx = diff.find("diff --git ")
+    if idx == -1:
+        parts = [diff]
+    else:
+        if idx > 0:
+            parts.append(diff[:idx])
 
-    for line in lines:
-        if line.startswith("diff --git "):
-            flush()
-            cur = [line]
-            # Best-effort from the header (refined below from the unambiguous
-            # +++/--- markers, or rename/copy headers for marker-less segments).
-            cur_path = _path_from_git_header(line)
-        else:
-            cur.append(line)
-            # Prefer the new-side path; `+++` always wins, `---` only fills a
-            # still-empty path (deletions have ``+++ /dev/null``). For
-            # marker-less segments (pure rename/copy/mode-change) use the
-            # ``rename to``/``copy to`` extended header (audit r3).
-            if line.startswith("+++ ") or (line.startswith("--- ") and not cur_path):
+        while idx != -1:
+            next_idx = diff.find("\ndiff --git ", idx)
+            if next_idx == -1:
+                parts.append(diff[idx:])
+                break
+            else:
+                parts.append(diff[idx:next_idx+1])
+                idx = next_idx + 1
+
+    for part in parts:
+        cur_path = None
+
+        p_idx = 0
+        while p_idx < len(part):
+            next_nl = part.find("\n", p_idx)
+            if next_nl == -1:
+                line = part[p_idx:]
+            else:
+                line = part[p_idx:next_nl+1]
+
+            if line.startswith("diff --git "):
+                cur_path = _path_from_git_header(line)
+            elif line.startswith("+++ ") or (line.startswith("--- ") and not cur_path):
                 p = _path_from_marker(line)
                 if p is not None:
                     cur_path = p
@@ -205,10 +219,23 @@ def split_diff(diff: str) -> list[DiffFile]:
                 p = _strip_ab(_unquote_git_path(line.split(" to ", 1)[1].rstrip("\r\n")))
                 if p:
                     cur_path = p
+
             if cur_path is None:
                 cur_path = ""
-    flush()
+
+            if line.startswith("@@ "):
+                break
+
+            if next_nl == -1:
+                break
+            p_idx = next_nl + 1
+
+        files.append(DiffFile(path=cur_path or "", text=part))
+
     return files
+
+
+_BINARY_RE = re.compile(r"(?m)^\s*(?:GIT binary patch|Binary files .* differ)\s*$")
 
 
 def _is_binary(text: str) -> bool:
@@ -220,13 +247,9 @@ def _is_binary(text: str) -> bool:
     never misfires on source code that merely *mentions* those strings (e.g. this
     module's own detector).
     """
-    for line in text.splitlines():
-        stripped = line.strip()
-        if stripped == "GIT binary patch":
-            return True
-        if stripped.startswith("Binary files ") and stripped.endswith(" differ"):
-            return True
-    return False
+    # bolt: avoid allocating a huge list of strings from splitlines()
+    # and generator overhead by using C-optimized regex finding.
+    return bool(_BINARY_RE.search(text))
 
 
 def _matches_any(path: str, patterns) -> bool:
