@@ -68,6 +68,13 @@
     qa(".nav-mlink", menu).forEach(function (a) { a.addEventListener("click", function () { setOpen(false); }); });
     // close if resized to desktop
     window.addEventListener("resize", function () { if (window.innerWidth > 680) setOpen(false); });
+    // close on Escape
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && menu.classList.contains("open")) {
+        setOpen(false);
+        burger.focus();
+      }
+    });
   })();
 
   /* ---- Scroll reveal (rect-based — robust across embeds) ------------ */

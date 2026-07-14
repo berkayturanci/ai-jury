@@ -161,6 +161,19 @@
       this.innerHTML = open ? "✕ Close" : "☰ Menu";
       var bar = this.closest(".docs-mobilebar"); if (bar) bar.classList.toggle("open", open);
     });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && !sideEl.classList.contains("collapsed")) {
+        sideEl.classList.add("collapsed");
+        var mb = $("menu-btn");
+        if (mb) {
+          mb.setAttribute("aria-expanded", "false");
+          mb.innerHTML = "☰ Menu";
+          var bar = mb.closest(".docs-mobilebar");
+          if (bar) bar.classList.remove("open");
+          mb.focus();
+        }
+      }
+    });
 
     /* ---- sidebar ---- */
     function buildSidebar(activeSlug) {

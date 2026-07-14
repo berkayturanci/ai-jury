@@ -50,3 +50,7 @@
 ## 2026-10-25 - Arrow key navigation for WAI-ARIA tablists
 **Learning:** Simply applying `role="tablist"` and `role="tab"` to elements does not automatically make them accessible. Keyboard users expect to use Arrow keys (Left/Right or Up/Down) to navigate between tabs, and the roving `tabindex` technique (where only the active tab has `tabindex="0"` and the others have `-1`) must be implemented manually via JavaScript.
 **Action:** Whenever using `role="tablist"`, write custom JavaScript to intercept arrow keys (`keydown` events) to move focus and toggle the active tab, and dynamically update `tabindex` attributes to ensure the active tab remains in the document's tab order while inactive tabs are removed from it.
+
+## 2026-11-04 - Escape key for mobile menus
+**Learning:** Flyout menus and mobile hamburger menus often trap keyboard users if they cannot be dismissed with the `Escape` key. Users expect to be able to press `Escape` to close temporary navigation overlays and return focus to the trigger button.
+**Action:** Whenever implementing a custom flyout menu, modal, or mobile sidebar, always add a `keydown` event listener for the `Escape` key that closes the overlay and returns focus to the button that opened it.
