@@ -16,7 +16,7 @@ from dataclasses import dataclass, field, replace
 from . import convergence, injection, largediff, prompts
 from .adapters import RETRYABLE_ERROR_CODES, Adapter, AgentResult, make_adapter
 from .config import JuryConfig
-from .consensus import FindingGroup, group_findings
+from .consensus import FindingGroup, demote_local_only_groups, group_findings
 from .findings import Finding, Verdict, parse_findings, parse_verdicts
 from .policy import ReviewPolicy, render_policy_section
 from .privilege import audit_privilege
@@ -459,6 +459,9 @@ def run_jury(
 
     # Deterministic consensus grouping across reviewers.
     groups = group_findings(all_findings, len(reviews))
+    if config.demote_local_only:
+        vendor_by_reviewer = {a.name: a.vendor for a in config.agents}
+        demote_local_only_groups(groups, vendor_by_reviewer)
 
     # Names of agents whose round-1 review succeeded — the chair resolver uses
     # this to (optionally) prefer a non-reviewer chair (#38).
@@ -1038,7 +1041,7 @@ def _combine_chair_results(results: list[AgentResult], chair: str) -> AgentResul
     return AgentResult(chair, vendor, True, body, round(total_duration, 3))
 
 
-def _merge_chunk_outcomes(outcomes: list[JuryOutcome]) -> JuryOutcome:
+def _merge_chunk_outcomes(outcomes: list[JuryOutcome], config: JuryConfig) -> JuryOutcome:
     """Fold per-chunk outcomes (issue #31) into one renderable JuryOutcome.
 
     Findings are unioned and re-grouped across all chunks so the consensus view
@@ -1057,6 +1060,9 @@ def _merge_chunk_outcomes(outcomes: list[JuryOutcome]) -> JuryOutcome:
     )
     findings = [f for o in outcomes for f in o.findings]
     groups = group_findings(findings, len(reviews))
+    if config.demote_local_only:
+        vendor_by_reviewer = {a.name: a.vendor for a in config.agents}
+        demote_local_only_groups(groups, vendor_by_reviewer)
     verdicts = [v for o in outcomes for v in o.verdicts]
     # Scope each chunk's verdicts to that chunk's own findings. A verdict is
     # produced while verifying ONE chunk (whose prompt held only that chunk's
@@ -1218,4 +1224,4 @@ def review_diff(
     for i, chunk in enumerate(plan.chunks, 1):
         log(f"reviewing chunk {i}/{len(plan.chunks)}")
         outcomes.append(_run(chunk))
-    return _finalize(_merge_chunk_outcomes(outcomes)), plan
+    return _finalize(_merge_chunk_outcomes(outcomes, config)), plan

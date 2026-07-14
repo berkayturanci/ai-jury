@@ -6,6 +6,7 @@ from ai_jury.consensus import (
     BUCKET_CONSENSUS,
     BUCKET_MAJORITY,
     BUCKET_SINGLE,
+    demote_local_only_groups,
     group_findings,
 )
 from ai_jury.findings import Finding
@@ -134,6 +135,54 @@ class GroupFindingsTests(unittest.TestCase):
                 for g in gb
             ],
         )
+
+
+class DemoteLocalOnlyGroupsTests(unittest.TestCase):
+    """demote_local_only_groups (issue #442)."""
+
+    VENDORS = {"local-model": "local", "claude": "anthropic", "codex": "openai"}
+
+    def test_local_only_critical_demoted_to_minor(self):
+        groups = group_findings([_f("local-model", severity="critical")], reviewer_count=1)
+        demote_local_only_groups(groups, self.VENDORS)
+        self.assertEqual(groups[0].severity, "minor")
+
+    def test_cloud_corroboration_leaves_severity_untouched(self):
+        findings = [
+            _f("local-model", severity="critical"),
+            _f("claude", severity="critical"),
+        ]
+        groups = group_findings(findings, reviewer_count=2)
+        demote_local_only_groups(groups, self.VENDORS)
+        self.assertEqual(groups[0].severity, "critical")
+
+    def test_already_low_severity_not_raised(self):
+        # A local-only "nit" must not be *escalated* to "minor" — demotion is a
+        # ceiling, never a floor.
+        groups = group_findings([_f("local-model", severity="nit")], reviewer_count=1)
+        demote_local_only_groups(groups, self.VENDORS)
+        self.assertEqual(groups[0].severity, "nit")
+
+    def test_unknown_reviewer_not_treated_as_local(self):
+        # A reviewer absent from the vendor map (e.g. a stale/renamed agent) must
+        # not be silently treated as "local" and demoted.
+        groups = group_findings([_f("ghost", severity="major")], reviewer_count=1)
+        demote_local_only_groups(groups, self.VENDORS)
+        self.assertEqual(groups[0].severity, "major")
+
+    def test_no_reviewers_left_untouched(self):
+        # A synthetic/injected finding can carry no reviewer at all.
+        f = Finding(severity="critical", file="a.py", claim="x", reviewer="")
+        groups = group_findings([f], reviewer_count=1)
+        self.assertEqual(groups[0].reviewers, [])
+        demote_local_only_groups(groups, self.VENDORS)
+        self.assertEqual(groups[0].severity, "critical")
+
+    def test_idempotent(self):
+        groups = group_findings([_f("local-model", severity="major")], reviewer_count=1)
+        demote_local_only_groups(groups, self.VENDORS)
+        demote_local_only_groups(groups, self.VENDORS)
+        self.assertEqual(groups[0].severity, "minor")
 
 
 if __name__ == "__main__":

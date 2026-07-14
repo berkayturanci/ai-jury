@@ -303,6 +303,62 @@ class ConvergenceBranches(unittest.TestCase):
         self.assertIn("converged after round 2", out.stop_reason)
 
 
+# --- local-only finding demotion (issue #442) -------------------------------
+
+
+class DemoteLocalOnlyIntegration(unittest.TestCase):
+    def _cfg_with_local_agent(self, **over):
+        cfg = _cfg(rounds=1, verify=False, **over)
+        cfg.agents[0].vendor = "local"
+        return cfg
+
+    def test_local_only_critical_demoted_end_to_end(self):
+        cfg = self._cfg_with_local_agent(demote_local_only=True)
+        specs = list(cfg.enabled_agents)
+        finding = (
+            '```json\n[{"severity":"critical","file":"a.py","line":1,'
+            f'"claim":"local-only claim","reviewer":"{specs[0].name}"}}]\n```'
+        )
+        amap = {specs[0].name: ScriptedAdapter(specs[0], outputs={"review": _ok(finding)})}
+        for s in specs[1:]:
+            amap[s.name] = ScriptedAdapter(s, outputs={"review": _ok("no concerns; LGTM")})
+        with mock.patch("ai_jury.orchestrator.make_adapter", _patched_make(amap)):
+            out = run_jury(cfg, DIFF, seed=1)
+        self.assertEqual(len(out.groups), 1)
+        self.assertEqual(out.groups[0].severity, "minor")
+
+    def test_flag_off_leaves_severity_critical(self):
+        cfg = self._cfg_with_local_agent(demote_local_only=False)
+        specs = list(cfg.enabled_agents)
+        finding = (
+            '```json\n[{"severity":"critical","file":"a.py","line":1,'
+            f'"claim":"local-only claim","reviewer":"{specs[0].name}"}}]\n```'
+        )
+        amap = {specs[0].name: ScriptedAdapter(specs[0], outputs={"review": _ok(finding)})}
+        for s in specs[1:]:
+            amap[s.name] = ScriptedAdapter(s, outputs={"review": _ok("no concerns; LGTM")})
+        with mock.patch("ai_jury.orchestrator.make_adapter", _patched_make(amap)):
+            out = run_jury(cfg, DIFF, seed=1)
+        self.assertEqual(out.groups[0].severity, "critical")
+
+    def test_cloud_corroboration_not_demoted_end_to_end(self):
+        # The same finding raised by BOTH the local agent and a cloud agent must
+        # keep its original severity — only an uncorroborated local-only finding
+        # is demoted.
+        cfg = self._cfg_with_local_agent(demote_local_only=True)
+        specs = list(cfg.enabled_agents)
+        amap = {}
+        for s in specs:
+            finding = (
+                '```json\n[{"severity":"critical","file":"a.py","line":1,'
+                f'"claim":"shared claim","reviewer":"{s.name}"}}]\n```'
+            )
+            amap[s.name] = ScriptedAdapter(s, outputs={"review": _ok(finding)})
+        with mock.patch("ai_jury.orchestrator.make_adapter", _patched_make(amap)):
+            out = run_jury(cfg, DIFF, seed=1)
+        self.assertEqual(out.groups[0].severity, "critical")
+
+
 # --- budget-exhausted dedup for synthesis warning --------------------------
 
 
@@ -654,7 +710,7 @@ class VerdictMatching(unittest.TestCase):
                 claim="auth bypass token check skipped", status="unsupported",
             )],
         )
-        merged = _merge_chunk_outcomes([chunk_a, chunk_b])
+        merged = _merge_chunk_outcomes([chunk_a, chunk_b], _cfg())
         code, _ = evaluate_ci(merged.groups, ["critical"], ignore_unverified=False)
         self.assertEqual(code, 1)
 
@@ -831,7 +887,7 @@ class ChunkMerge(unittest.TestCase):
     def test_merge_single_outcome_returns_it(self):
         cfg = _cfg(rounds=1)
         out = run_jury(cfg, DIFF, mock=True, seed=1)
-        self.assertIs(_merge_chunk_outcomes([out]), out)
+        self.assertIs(_merge_chunk_outcomes([out], _cfg()), out)
 
     def test_merge_chunk_outcomes_aggregates_stats_across_chunks(self):
         # redaction_count summed, injection_hits concatenated, budget_exhausted
@@ -851,7 +907,7 @@ class ChunkMerge(unittest.TestCase):
             redaction_count=5, injection_hits=["hit-b"],
             budget_exhausted=True, rounds_executed=1,
         )
-        merged = _merge_chunk_outcomes([chunk_a, chunk_b])
+        merged = _merge_chunk_outcomes([chunk_a, chunk_b], _cfg())
         self.assertEqual(merged.redaction_count, 7)
         self.assertEqual(merged.injection_hits, ["hit-a", "hit-b"])
         self.assertTrue(merged.budget_exhausted)
