@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Show the OpenSSF Scorecard badge in the README and tighten Scorecard-related
+  workflow signals for permissions, provenance, and CI install commands.
+
 ## [1.9.5] - 2026-06-15
 
 ### Fixed

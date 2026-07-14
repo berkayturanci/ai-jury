@@ -45,9 +45,7 @@ jobs:
           python-version: "3.13"
 
       - name: Install build dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install build
+        run: python -m pip install "build==1.5.0"
 
       - name: Build package distributions
         run: python -m build --sdist --wheel --outdir dist/
@@ -66,7 +64,7 @@ jobs:
       # in the upload dir. The SBOM still ships with the GitHub Release.
       - name: Generate CycloneDX SBOM
         run: |
-          python -m pip install cyclonedx-bom
+          python -m pip install "cyclonedx-bom==7.3.0"
           mkdir -p release
           python -m venv --without-pip sbom-venv
           python -m pip --python sbom-venv/bin/python install --no-deps dist/*.whl
@@ -91,7 +89,7 @@ jobs:
       - name: Attest build provenance
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32  # v4.1.0 (pinned 2026-06-02)
         with:
-          subject-path: "dist/*.whl, dist/*.tar.gz"
+          subject-path: "release/*"
 
       # PyPI trusted publishing (issue #25): OIDC, no long-lived API token. dist/
       # holds only the wheel + sdist (SBOM/checksums live in release/), so the
