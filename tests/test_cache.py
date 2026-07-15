@@ -79,8 +79,11 @@ class CacheKeyTest(unittest.TestCase):
         a.anonymize_debate = not base.anonymize_debate
         b = _config()
         b.prefer_non_reviewer_chair = not base.prefer_non_reviewer_chair
+        c = _config()
+        c.demote_local_only = not base.demote_local_only
         self.assertNotEqual(config_hash(base), config_hash(a))
         self.assertNotEqual(config_hash(base), config_hash(b))
+        self.assertNotEqual(config_hash(base), config_hash(c))
 
     def test_mock_flag_changes_key(self):
         # A --mock run must never share a cache entry with a real run (review
