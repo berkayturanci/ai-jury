@@ -264,6 +264,25 @@ fallback), and degrades to the plain `--live` step stream on a non-interactive
 terminal (or, for `pixel`, to the flat scene without truecolor/unicode).
 Details: [`docs/theater-design.md`](docs/theater-design.md).
 
+### Replay a saved run — `jury replay`
+
+Re-watch a finished run without re-spending a single token:
+
+```bash
+jury replay run.json --theater                 # replay in the deliberation theater
+jury replay run.json --theater --theater-style pixel
+jury replay run.json --decision vote --mode issue   # re-tally the panel-vote finale
+```
+
+`replay` loads a serialized outcome — a bare `outcome_to_dict` dump or a result-cache
+entry (via its `outcome` key) — and re-drives the theater with the exact per-phase event
+sequence the live run emitted (review → debate → verify → synthesis, then the vote/chair
+finale). No orchestration, no network, no agents. Off a tty (or without `--theater`) it
+degrades to the plain `--live` step stream. The serialized outcome does not record the run
+mode, so `--mode code|issue` selects the vote vocabulary when you replay with
+`--decision vote`. A `jury --format json` *report* cannot be replayed — it does not carry
+the per-agent deliberation stream — and is rejected with a pointed message.
+
 ## Output formats
 
 Use `--format {markdown,json,sarif}` (default `markdown`) to control what is
@@ -291,6 +310,11 @@ A structured report with these top-level keys:
 
 The output is deterministic for a deterministic run (e.g. `--mock`) and contains
 only legitimate finding fields — never raw diff or prompt text.
+
+This JSON is also a **replayable artifact**: feed it to `jury replay` (above) to re-watch
+the run in the terminal theater, or drag it onto the **"Load a real run"** panel on the
+[website](https://berkayturanci.github.io/ai-jury/) to play the real reviewers, findings,
+and verdict through the in-browser theater (fully client-side — nothing is uploaded).
 
 ### SARIF
 

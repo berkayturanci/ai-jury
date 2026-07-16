@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`jury replay <outcome.json>`**: re-watch a finished run in the deliberation theater
+  with no orchestration, network, or agents. Loads a serialized outcome (bare
+  `outcome_to_dict` dump or a result-cache entry) and re-drives the theater with the exact
+  per-phase event sequence the live run emitted. `--decision vote --mode code|issue`
+  re-tallies the panel finale (the outcome doesn't record the run mode, hence `--mode`);
+  off a tty it degrades to the `--live` step stream. Untrusted-input hardened: 8 MiB read
+  cap, every failure is a clean `error:` + exit 2. First consumer of the serialized-outcome
+  artifact. (#449)
+- **Website "Load a real run"**: the site demo can now render an actual `jury --format json`
+  outcome instead of only canned data — drop or pick a file and the in-browser theater plays
+  the real reviewers, findings, verify results, and verdict. Fully client-side (8 MB cap,
+  every field escaped, nothing uploaded); accepts the same shapes as `jury replay`. (#450)
+- **Local-only finding demotion** (`jury.demote_local_only`, default off): a finding raised
+  only by vendor `local` reviewers, uncorroborated by any cloud reviewer, is capped at
+  `minor` so it no longer blocks the default CI gate but still shows. An auditable
+  categorical rule instead of a numeric trust weight. (#442)
+
+### Fixed
+
+- `jury --doctor` no longer crashes on an oversized/invalid config: `ConfigError` is caught
+  and surfaced as a redacted warning like every other config-loading failure. (#441)
+
 ## [1.10.0] - 2026-07-11
 
 ### Added
