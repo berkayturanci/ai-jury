@@ -52,5 +52,24 @@ class TestWebsiteAssets(unittest.TestCase):
             self.assertIn(needle, js)
 
 
+class EscapeRegressionPins(unittest.TestCase):
+    """Cheap structural pins against un-escaping regressions (security review):
+    the innerHTML-feeding row builders must route file-sourced fields through
+    esc(), and esc() must cover the quote/backtick classes."""
+
+    def test_esc_covers_quotes_and_backtick(self):
+        src = (WEBSITE / "app.js").read_text(encoding="utf-8")
+        esc_line = next(line for line in src.splitlines() if "function esc(" in line)
+        self.assertIn("&#39;", esc_line)
+        self.assertIn("&#96;", esc_line)
+
+    def test_row_builders_escape_fields(self):
+        src = (WEBSITE / "app.js").read_text(encoding="utf-8")
+        for builder in ("function findingRow", "function seatRow"):
+            self.assertIn(builder, src)
+            body = src.split(builder, 1)[1][:900]
+            self.assertIn("esc(", body)
+
+
 if __name__ == "__main__":
     unittest.main()

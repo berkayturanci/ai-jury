@@ -577,7 +577,9 @@
       { aspect: "environment / version", sev: "medium", status: "missing", by: ["codex"], evidence: "no OS, runtime, or jury version recorded" },
       { aspect: "scope / acceptance criteria", sev: "low", status: "missing", by: ["qwen"], evidence: "no definition of done to verify a fix against" }
     ];
-    function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+    // Also encodes ' and ` so a future single-quoted/template attribute context
+    // stays safe (security-review hardening; every current sink is double-quoted).
+    function esc(s) { return String(s).replace(/[&<>"'`]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;", "`": "&#96;" }[c]; }); }
     function bySev(a, b) { return (SEV_RANK[sevClassOf(b)] || 0) - (SEV_RANK[sevClassOf(a)] || 0); }
 
     // Each reviewer votes from the worst severity among the items they raised; the
