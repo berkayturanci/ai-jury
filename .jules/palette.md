@@ -54,3 +54,7 @@
 ## 2026-10-26 - Missing ARIA states on custom toggle button groups
 **Learning:** For sets of buttons functioning as single-choice filters or sort controls (like "Worst first", "Best first"), applying a visual class like `class="on"` visually communicates the active choice but leaves screen readers completely unaware of the selected state. Standard anchor navigation implies its own state with `aria-current="page"`, but interactive toggle buttons on the same view need `aria-pressed="true"` (or `aria-selected` if a tab list).
 **Action:** When building custom groups of toggle buttons that filter or sort without navigating away, ensure the active button gets `aria-pressed="true"` and inactive buttons get `aria-pressed="false"` dynamically whenever the visual `on`/`active` class is toggled.
+
+## 2026-11-04 - Escape key for mobile menus
+**Learning:** Flyout menus and mobile hamburger menus often trap keyboard users if they cannot be dismissed with the `Escape` key. Users expect to be able to press `Escape` to close temporary navigation overlays and return focus to the trigger button.
+**Action:** Whenever implementing a custom flyout menu, modal, or mobile sidebar, always add a `keydown` event listener for the `Escape` key that closes the overlay and returns focus to the button that opened it.

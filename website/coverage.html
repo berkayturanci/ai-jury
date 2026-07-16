@@ -203,6 +203,18 @@ python3 <span class="k">-m</span> coverage report</code></pre>
         mb.innerHTML = open ? "✕ Close" : "☰ Menu";
         var bar = mb.closest(".docs-mobilebar"); if (bar) bar.classList.toggle("open", open);
       });
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape" && side && !side.classList.contains("collapsed")) {
+          side.classList.add("collapsed");
+          if (mb) {
+            mb.setAttribute("aria-expanded", "false");
+            mb.innerHTML = "☰ Menu";
+            var bar = mb.closest(".docs-mobilebar");
+            if (bar) bar.classList.remove("open");
+            mb.focus();
+          }
+        }
+      });
       // close after picking a doc link
       side && side.querySelectorAll(".ds-link, .ds-sub").forEach(function (a) {
         a.addEventListener("click", function () { if (window.innerWidth <= 860) { side.classList.add("collapsed"); if (mb) { mb.setAttribute("aria-expanded", "false"); mb.innerHTML = "☰ Menu"; var bar = mb.closest(".docs-mobilebar"); if (bar) bar.classList.remove("open"); } } });
