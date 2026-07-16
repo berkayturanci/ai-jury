@@ -402,6 +402,23 @@
         <span class="run-hint">Scripted on a sample diff — the output changes with the panel &amp; depth.</span>
       </div>
 
+      <div class="load-run reveal">
+        <fieldset class="fieldset load-run-zone" id="load-run-zone">
+          <legend class="legend">Load a real run</legend>
+          <p class="load-run-copy" id="load-run-copy">
+            Replay an actual run in the theater above — fully client-side; the file never leaves your browser.
+            Accepts the serialized outcome JSON that <code>jury replay</code> plays back (a saved outcome, or a cache entry).
+            Pick a file or drag &amp; drop it onto this panel.
+          </p>
+          <div class="load-run-actions">
+            <input type="file" id="run-file" accept=".json,application/json" aria-describedby="load-run-copy load-run-status" />
+            <label class="btn ghost load-run-label" for="run-file">Choose outcome JSON…</label>
+            <button type="button" class="btn ghost" id="back-to-demo" hidden>← Back to the demo</button>
+          </div>
+          <p class="load-run-status" id="load-run-status" role="status" aria-live="polite"></p>
+        </fieldset>
+      </div>
+
       <div class="run-out" id="run-out" hidden>
         <div class="theater-demo" id="demo-theater" hidden aria-hidden="true"></div>
         <div class="term">
