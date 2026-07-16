@@ -27,8 +27,8 @@ from ai_jury.adapters import (  # noqa: E402
     Adapter,
     AgentResult,
 )
-from ai_jury.config import DEFAULT_CONFIG, AgentSpec, _from_dict  # noqa: E402
-from ai_jury.consensus import demote_local_only_groups, group_findings  # noqa: E402
+from ai_jury.config import DEFAULT_CONFIG, _from_dict  # noqa: E402
+from ai_jury.consensus import group_findings  # noqa: E402
 from ai_jury.findings import Finding, Verdict  # noqa: E402
 from ai_jury.orchestrator import (  # noqa: E402
     RunBudget,
@@ -303,62 +303,6 @@ class ConvergenceBranches(unittest.TestCase):
         self.assertIn("converged after round 2", out.stop_reason)
 
 
-# --- local-only finding demotion (issue #442) -------------------------------
-
-
-class DemoteLocalOnlyIntegration(unittest.TestCase):
-    def _cfg_with_local_agent(self, **over):
-        cfg = _cfg(rounds=1, verify=False, **over)
-        cfg.agents[0].vendor = "local"
-        return cfg
-
-    def test_local_only_critical_demoted_end_to_end(self):
-        cfg = self._cfg_with_local_agent(demote_local_only=True)
-        specs = list(cfg.enabled_agents)
-        finding = (
-            '```json\n[{"severity":"critical","file":"a.py","line":1,'
-            f'"claim":"local-only claim","reviewer":"{specs[0].name}"}}]\n```'
-        )
-        amap = {specs[0].name: ScriptedAdapter(specs[0], outputs={"review": _ok(finding)})}
-        for s in specs[1:]:
-            amap[s.name] = ScriptedAdapter(s, outputs={"review": _ok("no concerns; LGTM")})
-        with mock.patch("ai_jury.orchestrator.make_adapter", _patched_make(amap)):
-            out = run_jury(cfg, DIFF, seed=1)
-        self.assertEqual(len(out.groups), 1)
-        self.assertEqual(out.groups[0].severity, "minor")
-
-    def test_flag_off_leaves_severity_critical(self):
-        cfg = self._cfg_with_local_agent(demote_local_only=False)
-        specs = list(cfg.enabled_agents)
-        finding = (
-            '```json\n[{"severity":"critical","file":"a.py","line":1,'
-            f'"claim":"local-only claim","reviewer":"{specs[0].name}"}}]\n```'
-        )
-        amap = {specs[0].name: ScriptedAdapter(specs[0], outputs={"review": _ok(finding)})}
-        for s in specs[1:]:
-            amap[s.name] = ScriptedAdapter(s, outputs={"review": _ok("no concerns; LGTM")})
-        with mock.patch("ai_jury.orchestrator.make_adapter", _patched_make(amap)):
-            out = run_jury(cfg, DIFF, seed=1)
-        self.assertEqual(out.groups[0].severity, "critical")
-
-    def test_cloud_corroboration_not_demoted_end_to_end(self):
-        # The same finding raised by BOTH the local agent and a cloud agent must
-        # keep its original severity — only an uncorroborated local-only finding
-        # is demoted.
-        cfg = self._cfg_with_local_agent(demote_local_only=True)
-        specs = list(cfg.enabled_agents)
-        amap = {}
-        for s in specs:
-            finding = (
-                '```json\n[{"severity":"critical","file":"a.py","line":1,'
-                f'"claim":"shared claim","reviewer":"{s.name}"}}]\n```'
-            )
-            amap[s.name] = ScriptedAdapter(s, outputs={"review": _ok(finding)})
-        with mock.patch("ai_jury.orchestrator.make_adapter", _patched_make(amap)):
-            out = run_jury(cfg, DIFF, seed=1)
-        self.assertEqual(out.groups[0].severity, "critical")
-
-
 # --- budget-exhausted dedup for synthesis warning --------------------------
 
 
@@ -600,54 +544,6 @@ class VerdictMatching(unittest.TestCase):
         )
         self.assertEqual(evaluate_ci(groups, ["critical"], ignore_unverified=False)[0], 1)
 
-    def test_demote_after_verdicts_does_not_corrupt_member_tier_guard(self):
-        # Regression (issue #442 review): demote_local_only_groups must run
-        # AFTER _apply_verdicts, never before. group_findings() sets
-        # group.severity = max(member severities), and the member-tier guard in
-        # _reject_targets relies on that invariant to refuse a verdict that only
-        # names a lesser co-located member. If demotion ran BEFORE verdicts and
-        # collapsed group.severity to "minor" first, the guard's
-        # `best_member.severity_rank > group.severity_rank` check could never
-        # fire for the true-critical members, letting a verdict aimed at the
-        # minor duplicate collateral-reject the whole group.
-        from ai_jury.ci import evaluate_ci
-
-        crit = Finding(
-            severity="critical", file="h.py", line=42,
-            claim="missing authentication check on admin endpoint", reviewer="local-1",
-        )
-        crit2 = Finding(
-            severity="critical", file="h.py", line=42,
-            claim="missing authentication check on admin endpoint", reviewer="local-2",
-        )
-        nit = Finding(
-            severity="minor", file="h.py", line=44,
-            claim="missing check on admin endpoint logging", reviewer="local-3",
-        )
-        groups = group_findings([crit, crit2, nit], 3)
-        _apply_verdicts(
-            groups,
-            [Verdict(
-                file="h.py", line=44,
-                claim="missing check on admin endpoint logging", status="unsupported",
-            )],
-        )
-        # Guard must have already refused the collateral rejection before any
-        # demotion touches severity.
-        self.assertEqual(groups[0].status, "")
-        self.assertNotEqual(groups[0].bucket, "rejected")
-
-        vendors = {"local-1": "local", "local-2": "local", "local-3": "local"}
-        demote_local_only_groups(groups, vendors)
-        self.assertEqual(groups[0].severity, "minor")
-        self.assertEqual(groups[0].status, "")  # still not corrupted by demotion
-
-        # A stricter fail_on that includes "minor" must still catch this
-        # never-verified finding — proving it wasn't silently swallowed.
-        self.assertEqual(
-            evaluate_ci(groups, ["critical", "major", "minor"], ignore_unverified=False)[0], 1
-        )
-
     def test_verdict_on_decoy_does_not_drop_separate_critical(self):
         # A verdict copying a benign decoy's claim rejects the decoy (best-tier),
         # not a separate, less-similar critical group (audit r8/M).
@@ -758,7 +654,7 @@ class VerdictMatching(unittest.TestCase):
                 claim="auth bypass token check skipped", status="unsupported",
             )],
         )
-        merged = _merge_chunk_outcomes([chunk_a, chunk_b], _cfg())
+        merged = _merge_chunk_outcomes([chunk_a, chunk_b])
         code, _ = evaluate_ci(merged.groups, ["critical"], ignore_unverified=False)
         self.assertEqual(code, 1)
 
@@ -935,7 +831,7 @@ class ChunkMerge(unittest.TestCase):
     def test_merge_single_outcome_returns_it(self):
         cfg = _cfg(rounds=1)
         out = run_jury(cfg, DIFF, mock=True, seed=1)
-        self.assertIs(_merge_chunk_outcomes([out], _cfg()), out)
+        self.assertIs(_merge_chunk_outcomes([out]), out)
 
     def test_merge_chunk_outcomes_aggregates_stats_across_chunks(self):
         # redaction_count summed, injection_hits concatenated, budget_exhausted
@@ -955,58 +851,11 @@ class ChunkMerge(unittest.TestCase):
             redaction_count=5, injection_hits=["hit-b"],
             budget_exhausted=True, rounds_executed=1,
         )
-        merged = _merge_chunk_outcomes([chunk_a, chunk_b], _cfg())
+        merged = _merge_chunk_outcomes([chunk_a, chunk_b])
         self.assertEqual(merged.redaction_count, 7)
         self.assertEqual(merged.injection_hits, ["hit-a", "hit-b"])
         self.assertTrue(merged.budget_exhausted)
         self.assertEqual(merged.rounds_executed, 3)
-
-    def test_merge_chunk_outcomes_demotes_local_only_finding(self):
-        # issue #442: demotion on the chunked-diff path is a SEPARATE code path
-        # from run_jury's (it re-groups from the unioned findings), and must be
-        # exercised directly rather than only via the new `config` parameter.
-        from ai_jury.orchestrator import JuryOutcome
-
-        rev = AgentResult("r", "v", True, "ok", 0.0)
-        finding = Finding(
-            severity="critical", file="a.py", line=1,
-            claim="unchecked return value", reviewer="local-model",
-        )
-        chunk = JuryOutcome(reviews=[rev], debate=[], synthesis=None, chair="c", findings=[finding])
-        cfg = _cfg(demote_local_only=True)
-        cfg.agents = [AgentSpec(name="local-model", vendor="local", command="x")]
-        merged = _merge_chunk_outcomes([chunk, chunk], cfg)
-        self.assertEqual(merged.groups[0].severity, "minor")
-
-    def test_merge_chunk_outcomes_cross_chunk_corroboration_not_demoted(self):
-        # A finding raised by the local reviewer in one chunk and independently
-        # corroborated by a cloud reviewer in ANOTHER chunk must not be demoted
-        # — the cross-chunk regroup is what makes this corroboration visible at
-        # all, so this can only be proven at the merge layer, not per-chunk.
-        from ai_jury.orchestrator import JuryOutcome
-
-        rev = AgentResult("r", "v", True, "ok", 0.0)
-        local_finding = Finding(
-            severity="critical", file="a.py", line=1,
-            claim="unchecked return value", reviewer="local-model",
-        )
-        cloud_finding = Finding(
-            severity="critical", file="a.py", line=1,
-            claim="unchecked return value", reviewer="claude",
-        )
-        chunk_a = JuryOutcome(
-            reviews=[rev], debate=[], synthesis=None, chair="c", findings=[local_finding]
-        )
-        chunk_b = JuryOutcome(
-            reviews=[rev], debate=[], synthesis=None, chair="c", findings=[cloud_finding]
-        )
-        cfg = _cfg(demote_local_only=True)
-        cfg.agents = [
-            AgentSpec(name="local-model", vendor="local", command="x"),
-            AgentSpec(name="claude", vendor="anthropic", command="y"),
-        ]
-        merged = _merge_chunk_outcomes([chunk_a, chunk_b], cfg)
-        self.assertEqual(merged.groups[0].severity, "critical")
 
 
 class MergeResultsByAgent(unittest.TestCase):

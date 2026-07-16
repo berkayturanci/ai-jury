@@ -24,7 +24,7 @@ from pathlib import Path
 
 from . import __version__
 from .adapters import make_adapter
-from .config import load_config
+from .config import load_config, ConfigError
 from .redaction import redact, redact_url_userinfo
 
 
@@ -227,6 +227,8 @@ def build_diagnostics(config_path=None):
         config_warnings.append(f"config error: {redact(str(exc))[0]}")
     except tomllib.TOMLDecodeError as exc:
         config_warnings.append(f"config error: invalid TOML: {redact(str(exc))[0]}")
+    except ConfigError as exc:
+        config_warnings.append(f"config error: {redact(str(exc))[0]}")
     except (KeyError, ValueError, TypeError) as exc:
         config_warnings.append(f"config error: {redact(str(exc))[0]}")
     else:
