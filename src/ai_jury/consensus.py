@@ -129,31 +129,6 @@ def _classify(reviewer_count: int, distinct_reviewers: int) -> str:
     return BUCKET_SINGLE
 
 
-# Severity a demoted group is capped at — below the default CI ``fail_on``
-# threshold (critical/major) so it stops blocking by default but still shows.
-_DEMOTED_SEVERITY = "minor"
-
-
-def demote_local_only_groups(groups: list[FindingGroup], vendor_by_reviewer: dict[str, str]) -> None:
-    """Cap severity for a finding raised only by local/free-model reviewers (issue #442).
-
-    A numeric per-reviewer trust weight was rejected in favor of this categorical
-    rule: it is auditable in one line ("local-only finding, demoted unless a cloud
-    reviewer concurs"), where a coefficient invites silent drift. A group is
-    demoted only when EVERY contributing reviewer resolves to vendor ``"local"``;
-    a group with at least one cloud-vendor reviewer, or with no reviewers at all
-    (e.g. an injected finding), is left untouched. Mutates ``groups`` in place and
-    is idempotent — safe to call more than once on the same groups.
-    """
-    for group in groups:
-        if not group.reviewers:
-            continue
-        if not all(vendor_by_reviewer.get(r) == "local" for r in group.reviewers):
-            continue
-        if SEVERITY_ORDER.get(group.severity, len(SEVERITY_ORDER)) < SEVERITY_ORDER[_DEMOTED_SEVERITY]:
-            group.severity = _DEMOTED_SEVERITY
-
-
 def group_findings(findings, reviewer_count: int) -> list[FindingGroup]:
     """Group findings that describe the same issue.
 

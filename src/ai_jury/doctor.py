@@ -24,7 +24,7 @@ from pathlib import Path
 
 from . import __version__
 from .adapters import make_adapter
-from .config import ConfigError, load_config
+from .config import load_config, ConfigError
 from .redaction import redact, redact_url_userinfo
 
 

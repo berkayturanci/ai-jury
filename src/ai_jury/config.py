@@ -194,8 +194,6 @@ KNOWN_JURY_KEYS = (
     "seed",
     "anonymize_debate",
     "prefer_non_reviewer_chair",
-    # Demote a local-only finding to non-blocking severity (issue #442).
-    "demote_local_only",
     # Execution controls (issue #30).
     "total_timeout",
     "phase_timeout",
@@ -507,12 +505,6 @@ class JuryConfig:
     # effect when chair == "rotate" (rotation already picks among usable agents)
     # or when an explicit usable chair name is configured.
     prefer_non_reviewer_chair: bool = False
-    # Demote a finding to non-blocking severity when every reviewer who raised it
-    # is vendor "local" and no cloud reviewer corroborates it (issue #442).
-    # Rejected alternative: a numeric per-reviewer trust weight — this categorical
-    # rule is auditable in one line where a coefficient invites silent drift.
-    # Off by default so the out-of-the-box CI gate is unchanged.
-    demote_local_only: bool = False
     # Execution controls (issue #30). All optional and off by default so the
     # out-of-the-box run is unchanged. ``total_timeout``/``phase_timeout`` cap the
     # whole run / a single phase (None = uncapped); the effective per-agent-call
@@ -674,7 +666,6 @@ def _from_dict(data: dict) -> JuryConfig:
         seed=_seed_from_dict(jury),
         anonymize_debate=bool(jury.get("anonymize_debate", True)),
         prefer_non_reviewer_chair=bool(jury.get("prefer_non_reviewer_chair", False)),
-        demote_local_only=bool(jury.get("demote_local_only", False)),
         total_timeout=_opt_positive_int(jury.get("total_timeout")),
         phase_timeout=_opt_positive_int(jury.get("phase_timeout")),
         retries=max(0, int(jury.get("retries", 0) or 0)),
@@ -721,7 +712,6 @@ def config_hash(config: JuryConfig) -> str:
         # them.
         "anonymize_debate": config.anonymize_debate,
         "prefer_non_reviewer_chair": config.prefer_non_reviewer_chair,
-        "demote_local_only": config.demote_local_only,
         "ci": {
             "fail_on": list(config.ci.fail_on),
             "ignore_unverified": config.ci.ignore_unverified,

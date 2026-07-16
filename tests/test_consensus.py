@@ -6,7 +6,6 @@ from ai_jury.consensus import (
     BUCKET_CONSENSUS,
     BUCKET_MAJORITY,
     BUCKET_SINGLE,
-    demote_local_only_groups,
     group_findings,
 )
 from ai_jury.findings import Finding
@@ -135,78 +134,6 @@ class GroupFindingsTests(unittest.TestCase):
                 for g in gb
             ],
         )
-
-
-class DemoteLocalOnlyGroupsTests(unittest.TestCase):
-    """demote_local_only_groups (issue #442)."""
-
-    VENDORS = {"local-model": "local", "claude": "anthropic", "codex": "openai"}
-
-    def test_local_only_critical_demoted_to_minor(self):
-        groups = group_findings([_f("local-model", severity="critical")], reviewer_count=1)
-        demote_local_only_groups(groups, self.VENDORS)
-        self.assertEqual(groups[0].severity, "minor")
-
-    def test_cloud_corroboration_leaves_severity_untouched(self):
-        findings = [
-            _f("local-model", severity="critical"),
-            _f("claude", severity="critical"),
-        ]
-        groups = group_findings(findings, reviewer_count=2)
-        demote_local_only_groups(groups, self.VENDORS)
-        self.assertEqual(groups[0].severity, "critical")
-
-    def test_already_low_severity_not_raised(self):
-        # A local-only "nit" must not be *escalated* to "minor" — demotion is a
-        # ceiling, never a floor.
-        groups = group_findings([_f("local-model", severity="nit")], reviewer_count=1)
-        demote_local_only_groups(groups, self.VENDORS)
-        self.assertEqual(groups[0].severity, "nit")
-
-    def test_unknown_reviewer_not_treated_as_local(self):
-        # A reviewer absent from the vendor map (e.g. a stale/renamed agent) must
-        # not be silently treated as "local" and demoted.
-        groups = group_findings([_f("ghost", severity="major")], reviewer_count=1)
-        demote_local_only_groups(groups, self.VENDORS)
-        self.assertEqual(groups[0].severity, "major")
-
-    def test_no_reviewers_left_untouched(self):
-        # A synthetic/injected finding can carry no reviewer at all.
-        f = Finding(severity="critical", file="a.py", claim="x", reviewer="")
-        groups = group_findings([f], reviewer_count=1)
-        self.assertEqual(groups[0].reviewers, [])
-        demote_local_only_groups(groups, self.VENDORS)
-        self.assertEqual(groups[0].severity, "critical")
-
-    def test_idempotent(self):
-        groups = group_findings([_f("local-model", severity="major")], reviewer_count=1)
-        demote_local_only_groups(groups, self.VENDORS)
-        demote_local_only_groups(groups, self.VENDORS)
-        self.assertEqual(groups[0].severity, "minor")
-
-    def test_demotion_flips_default_ci_gate_from_fail_to_pass(self):
-        # Proves the feature's actual purpose, not just that a field mutates:
-        # an uncorroborated local-only critical must stop blocking the default
-        # CI gate once demoted.
-        from ai_jury.ci import evaluate_ci
-
-        groups = group_findings([_f("local-model", severity="critical")], reviewer_count=1)
-        self.assertEqual(evaluate_ci(groups, ["critical", "major"], ignore_unverified=False)[0], 1)
-        demote_local_only_groups(groups, self.VENDORS)
-        self.assertEqual(evaluate_ci(groups, ["critical", "major"], ignore_unverified=False)[0], 0)
-
-    def test_demotion_softens_local_reviewers_own_tallied_vote(self):
-        # Proves the vote tally (not just the CI gate) reflects the demotion:
-        # the local reviewer's own ballot softens from blocking to non-blocking
-        # once its uncorroborated critical is capped at "minor" ("middling").
-        from ai_jury.voting import COMMENT, REQUEST_CHANGES, tally_votes
-
-        groups = group_findings([_f("local-model", severity="critical")], reviewer_count=1)
-        before = tally_votes(groups, ["local-model"])
-        self.assertEqual(before.verdict, REQUEST_CHANGES)
-        demote_local_only_groups(groups, self.VENDORS)
-        after = tally_votes(groups, ["local-model"])
-        self.assertEqual(after.verdict, COMMENT)
 
 
 if __name__ == "__main__":
