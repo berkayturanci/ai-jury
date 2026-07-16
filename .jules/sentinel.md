@@ -17,3 +17,8 @@
 **Vulnerability:** In an attempt to prevent standard output leaks from `gh` calls, redacting the successful `stdout` globally broke the AI's ability to see and review actual diffs, while simultaneously failing to address the actual log/print paths where successful output was printed to console (e.g. `dry_run` payload dumps).
 **Learning:** Redaction must be applied strictly to Error outputs and Log paths. Successful data pathways that feed downstream consumers MUST remain intact.
 **Prevention:** Always trace the data flow of the `stdout`. If the `stdout` is data consumed by the app (like a fetched diff), do NOT redact the return value. Apply redaction *only* at the specific points where that data is printed, logged, or bundled into an exception string that crosses the application boundary.
+
+## 2024-05-18 - [CRITICAL] Fix ConfigError unhandled exception in doctor
+**Vulnerability:** A `ConfigError` exception triggered by oversized config files (e.g. `jury.toml` exceeding limit) would cause `jury --doctor` to crash, leaking an unredacted exception message to `stderr`.
+**Learning:** Top-level diagnostic or CLI paths that load configurations must comprehensively catch domain exceptions (`ConfigError`) alongside underlying parser errors (`TOMLDecodeError`) to prevent unhandled crashes from exposing unredacted data.
+**Prevention:** Always verify that `ConfigError` is handled in try/except blocks surrounding `load_config` calls, and explicitly run `redact(str(exc))[0]` on the exception message.

@@ -361,7 +361,8 @@ class LiveAndFitTest(unittest.TestCase):
             before = buf.getvalue()
             # Real delay that the time.sleep patch does NOT affect, so the
             # background ticker gets wall-clock time to repaint.
-            threading.Event().wait(0.08)
+            # increased to 0.3s to prevent flaky thread scheduling on CI runners.
+            threading.Event().wait(0.3)
             self.assertGreater(len(buf.getvalue()), len(before))
             c.close()
         self.assertIsNone(c._tick_thread)                # joined/cleared on close
