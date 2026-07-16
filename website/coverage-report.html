@@ -249,9 +249,9 @@
       // toolbar
       html += '<div class="cr-toolbar"><h2>Per-file coverage</h2>'
         + '<div class="cr-sort">'
-        + '<button data-sort="worst" class="' + (sortMode === "worst" || !sortMode ? "on" : "") + '">Worst first</button>'
-        + '<button data-sort="best" class="' + (sortMode === "best" ? "on" : "") + '">Best first</button>'
-        + '<button data-sort="file" class="' + (sortMode === "file" ? "on" : "") + '">By file</button>'
+        + '<button data-sort="worst" class="' + (sortMode === "worst" || !sortMode ? "on" : "") + '" aria-pressed="' + (sortMode === "worst" || !sortMode ? "true" : "false") + '">Worst first</button>'
+        + '<button data-sort="best" class="' + (sortMode === "best" ? "on" : "") + '" aria-pressed="' + (sortMode === "best" ? "true" : "false") + '">Best first</button>'
+        + '<button data-sort="file" class="' + (sortMode === "file" ? "on" : "") + '" aria-pressed="' + (sortMode === "file" ? "true" : "false") + '">By file</button>'
         + "</div></div>";
 
       // table
