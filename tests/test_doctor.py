@@ -130,6 +130,22 @@ enabled = true
         self.assertIsNone(diag["config"])
         self.assertTrue(diag["config_warnings"])
 
+    def test_config_error_is_best_effort_and_redacted(self):
+        # Regression (sentinel #441): a bare ConfigError (e.g. an oversized
+        # config file, config.py's own _MAX_CONFIG_BYTES guard) was previously
+        # uncaught here and crashed `jury --doctor`. It must degrade to a
+        # captured, redacted warning like every other config-loading failure.
+        secret = "sk-ABCDEF0123456789ABCDEF0123456789secretvalue"
+        with mock.patch(
+            "ai_jury.doctor.load_config",
+            side_effect=doctor.ConfigError(f"config file 'x' exceeds the limit ({secret})"),
+        ):
+            diag = doctor.build_diagnostics("irrelevant.toml")
+        self.assertIsNone(diag["config"])
+        self.assertTrue(diag["config_warnings"])
+        joined = " ".join(diag["config_warnings"])
+        self.assertNotIn(secret, joined)
+
     def test_chair_mismatch_warning(self):
         config = """\
 [jury]
