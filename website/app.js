@@ -400,6 +400,12 @@
     };
     var LABEL = { claude: "Claude Code", codex: "Codex", agy: "Antigravity", qwen: "Local" };
     var SEV_RANK = { high: 3, medium: 2, low: 1 };
+    // Display label for a reviewer: a real loaded run carries its own labels
+    // map; the canned demo falls back to the fixed LABEL table, then the name.
+    function labelOf(run, a) { return (run.labels && run.labels[a]) || LABEL[a] || a; }
+    // Severity used for ranking/vote logic: real-run items carry the raw
+    // severity in .sev (e.g. "major") plus a bucketed .sevClass ("high").
+    function sevClassOf(f) { return f.sevClass || f.sev; }
 
     function selectedAgents() {
       return ["claude", "codex", "agy", "qwen"].filter(function (n) { return $("ag-" + n).checked; });
@@ -572,7 +578,7 @@
       { aspect: "scope / acceptance criteria", sev: "low", status: "missing", by: ["qwen"], evidence: "no definition of done to verify a fix against" }
     ];
     function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
-    function bySev(a, b) { return SEV_RANK[b.sev] - SEV_RANK[a.sev]; }
+    function bySev(a, b) { return (SEV_RANK[sevClassOf(b)] || 0) - (SEV_RANK[sevClassOf(a)] || 0); }
 
     // Each reviewer votes from the worst severity among the items they raised; the
     // vocabulary is mode-aware (matches the real CLI, #230):
@@ -587,7 +593,7 @@
     function agentVote(a, items, mode) {
       var v = VOTE_VOCAB[mode];
       var mine = items.filter(function (f) { return f.by.indexOf(a) !== -1; });
-      if (mine.some(function (f) { return f.sev === "high"; })) return v.blocking;
+      if (mine.some(function (f) { return sevClassOf(f) === "high"; })) return v.blocking;
       return mine.length ? v.middling : v.clear;
     }
     function tallyVote(ags, items, mode) {
@@ -719,7 +725,9 @@
       return '<div class="gh-verdict ' + verdictClass(run.verdict) + '">' + esc(run.verdict) + note + "</div>";
     }
     function findingRow(f) {
-      return '<li class="gh-finding"><span class="sev sev-' + f.sev + '">' + f.sev + '</span> <code>' + esc(f.file) + '</code> — ' + esc(f.title) + '<span class="why">why: ' + esc(f.evidence) + "</span></li>";
+      // f.sev/f.title/etc. may come from a user-loaded run file — escape all of
+      // them; the CSS class uses the bucketed severity (always our own value).
+      return '<li class="gh-finding"><span class="sev sev-' + esc(sevClassOf(f)) + '">' + esc(f.sev) + '</span> <code>' + esc(f.file) + '</code> — ' + esc(f.title) + '<span class="why">why: ' + esc(f.evidence) + "</span></li>";
     }
     function gapRow(g) {
       return '<li class="gh-finding"><span class="sev sev-' + g.sev + '">' + g.sev + '</span> <code>' + esc(g.aspect) + '</code> — ' + esc(g.status) + '<span class="why">why: ' + esc(g.evidence) + "</span></li>";
@@ -729,7 +737,7 @@
     }
     function renderComments(run) {
       var html = "";
-      var panel = run.ags.map(function (a) { return LABEL[a]; }).join(", ");
+      var panel = run.ags.map(function (a) { return labelOf(run, a); }).join(", ");
 
       if (run.mode === "issue") {
         var body = verdictBadge(run)
@@ -747,7 +755,7 @@
       if (run.pm === "phased") {
         var r1 = "<ul class='gh-list'>" + run.ags.map(function (a) {
           var fs = run.surfaced.filter(function (f) { return f.by.indexOf(a) !== -1; });
-          return "<li><b>" + esc(LABEL[a]) + "</b>: " + (fs.length ? fs.map(function (f) { return esc(f.file); }).join(", ") : "no findings") + "</li>";
+          return "<li><b>" + esc(labelOf(run, a)) + "</b>: " + (fs.length ? fs.map(function (f) { return esc(f.file); }).join(", ") : "no findings") + "</li>";
         }).join("") + "</ul>";
         html += commentCard("Round 1 · independent review", r1);
         var dbody = run.debate ? (run.dropped.length ? "Refuted <code>" + esc(run.dropped[0].file) + "</code> as a false positive; agreed on the rest." : "Reviewers cross-examined and agreed on the findings.") : "Skipped (1 round). With debate, the panel cross-examines and filters false positives.";
@@ -782,13 +790,13 @@
     function theaterBeats(run) {
       var beats = [], spoken = [], what = run.mode === "issue" ? "issue" : "diff";
       run.ags.forEach(function (a) {
-        beats.push({ phase: "review", speaker: a, spoken: spoken.slice(), center: LABEL[a] + " reviews the " + what + "…" });
+        beats.push({ phase: "review", speaker: a, spoken: spoken.slice(), center: labelOf(run, a) + " reviews the " + what + "…" });
         spoken.push(a);
       });
       var all = run.ags.slice();
       if (run.debate) beats.push({ phase: "debate", spoken: all, center: "the panel debates ⇄ (round 2)" });
-      if (run.verifyOn) beats.push({ phase: "verify", spoken: all, center: "verifying findings — chair " + LABEL[run.chair] });
-      var how = run.vm === "vote" ? "panel vote" : "chair: " + LABEL[run.chair];
+      if (run.verifyOn) beats.push({ phase: "verify", spoken: all, center: "verifying findings — chair " + labelOf(run, run.chair) });
+      var how = run.vm === "vote" ? "panel vote" : "chair: " + labelOf(run, run.chair);
       var note = run.verdictNote ? "  ·  " + run.verdictNote : "";
       beats.push({ phase: "decision", spoken: all, banner: true, center: run.verdict + note + "  ·  " + how });
       return beats;
@@ -798,7 +806,8 @@
       var stage = $("demo-theater"), ags = run.ags, mid = Math.ceil(ags.length / 2);
       function seatRow(list) {
         return list.map(function (a) {
-          return '<div class="seat" data-seat="' + a + '"><span class="dot d-' + a + '"></span><span class="snm">' + esc(LABEL[a]) + "</span></div>";
+          // seat names may come from a user-loaded run file — escape them
+          return '<div class="seat" data-seat="' + esc(a) + '"><span class="dot d-' + esc(a) + '"></span><span class="snm">' + esc(labelOf(run, a)) + "</span></div>";
         }).join("");
       }
       var strip = TH_PHASES.filter(function (p) {
@@ -894,5 +903,256 @@
       });
     }
     $("run-btn").addEventListener("click", runDemo);
+
+    /* ================================================================
+       Load a real run (issue #450)
+       Replay a serialized outcome JSON through the same theater. Accepts
+       exactly the shapes `jury replay` accepts: the bare outcome_to_dict
+       serialization (top-level "reviews" array) or a cache entry wrapping
+       it under "outcome". Fully client-side — the file never leaves the
+       browser, and every file-sourced string is escaped or textContent'd.
+       ================================================================ */
+    // Real severities are critical/major/minor/nit/info (findings.py);
+    // bucket them onto the site's three sev pills and the vote logic.
+    function sevBucket(sev) {
+      var s = String(sev || "").toLowerCase();
+      if (s === "critical" || s === "major" || s === "high") return "high";
+      if (s === "minor" || s === "medium") return "medium";
+      return "low"; // nit · info · unknown
+    }
+    function clip(s, n) { s = String(s === null || s === undefined ? "" : s); return s.length > n ? s.slice(0, n - 1) + "…" : s; }
+    // The chair synthesis opens with "## Verdict\n<HEADLINE> — …": pull the
+    // decision token out of it (PR and issue vocabularies both accepted).
+    function chairHeadline(text) {
+      if (typeof text !== "string" || !text) return null;
+      var m = /verdict[^a-z0-9]{0,12}(request[ _-]changes|needs[ _-]info|approve|comment|ready|unclear)\b/i.exec(text);
+      if (!m) return null;
+      var v = m[1].toUpperCase().replace(/[_-]+/g, " ");
+      return v === "NEEDS INFO" ? "NEEDS-INFO" : v;
+    }
+
+    // parseOutcomeJson(text, name) -> { run } on success, { error } otherwise.
+    // Pure: no DOM access, no side effects.
+    function parseOutcomeJson(text, name) {
+      function isObj(x) { return !!x && typeof x === "object" && !Array.isArray(x); }
+      var data;
+      try { data = JSON.parse(text); } catch (e) { return { error: "That file isn't valid JSON." }; }
+      // cache entry → unwrap the serialized outcome it carries
+      if (isObj(data) && isObj(data.outcome) && Array.isArray(data.outcome.reviews)) data = data.outcome;
+      if (isObj(data) && !Array.isArray(data.reviews) && data.schema_version && data.metadata) {
+        return { error: "That's a jury JSON report — load the serialized outcome that `jury replay` accepts instead." };
+      }
+      if (!isObj(data) || !Array.isArray(data.reviews) || !data.reviews.length) {
+        return { error: "That JSON doesn't look like a serialized jury outcome (no reviews found)." };
+      }
+
+      var ags = [], labels = {}, failed = {}, counts = {};
+      data.reviews.forEach(function (r) {
+        if (!isObj(r) || typeof r.agent !== "string" || !r.agent) return;
+        var a = r.agent;
+        if (ags.indexOf(a) === -1) { ags.push(a); labels[a] = clip(a, 40); counts[a] = 0; }
+        counts[a] += Array.isArray(r.findings) ? r.findings.length : 0;
+        if (r.ok === false) failed[a] = true;
+      });
+      if (!ags.length) return { error: "That outcome has no usable reviewers in its reviews list." };
+
+      function mkItem(sev, file, line, title, evidence, by, status) {
+        var loc = clip(file, 120);
+        if (loc && line !== null && line !== undefined && line !== "") loc += ":" + clip(line, 8);
+        return {
+          sev: clip(sev, 12) || "info", sevClass: sevBucket(sev),
+          file: loc || "(no file)", title: clip(title, 300), evidence: clip(evidence, 300),
+          by: by, status: typeof status === "string" ? status : ""
+        };
+      }
+      // findings: prefer the deduped consensus groups (severity/status/
+      // reviewers/representative); fall back to the flat findings list.
+      var groups = Array.isArray(data.groups) ? data.groups.filter(isObj) : [];
+      var items = groups.map(function (g) {
+        var rep = isObj(g.representative) ? g.representative : {};
+        var by = (Array.isArray(g.reviewers) ? g.reviewers : []).filter(function (x) { return typeof x === "string"; });
+        return mkItem(g.severity, rep.file, rep.line, rep.claim, rep.evidence, by, g.status);
+      });
+      if (!items.length && Array.isArray(data.findings)) {
+        items = data.findings.filter(isObj).map(function (f) {
+          return mkItem(f.severity, f.file, f.line, f.claim, f.evidence,
+            typeof f.reviewer === "string" && f.reviewer ? [f.reviewer] : [], "");
+        });
+      }
+      // verify results: verified → confirmed · unsupported → dropped ·
+      // needs_human_decision / unverified → kept (surfaced to the human)
+      var dropped = items.filter(function (it) { return it.status === "unsupported"; });
+      var finalF = items.filter(function (it) { return it.status !== "unsupported"; });
+
+      var rounds = parseInt(data.rounds_executed, 10) || 1;
+      var debate = rounds >= 2 || (Array.isArray(data.debate) && data.debate.length > 0);
+      var verifyOn = isObj(data.verify) || (Array.isArray(data.verdicts) && data.verdicts.length > 0);
+      var chair = typeof data.chair === "string" && data.chair ? data.chair : ags[0];
+      if (!labels[chair]) labels[chair] = clip(chair, 40);
+
+      // decision — mirror the CLI's two modes: prefer the chair-synthesis
+      // headline; without one, re-tally a panel vote from the group severities.
+      var okAgs = ags.filter(function (a) { return !failed[a]; });
+      var voters = okAgs.length ? okAgs : ags;
+      var verdict = chairHeadline(isObj(data.synthesis) ? data.synthesis.output : null);
+      var vm = "chair", tally = null, verdictNote = null;
+      if (!verdict) {
+        tally = tallyVote(voters, finalF, "pr");
+        verdict = tally.verdict; vm = "vote";
+        verdictNote = tally.for + " of " + tally.total + " voted";
+      }
+
+      var run = {
+        mode: "pr", real: true, ags: ags, labels: labels, chair: chair,
+        debate: debate, verifyOn: verifyOn, pm: "single", progress: false,
+        vm: vm, surfaced: items, dropped: dropped, finalF: finalF,
+        verdict: verdict, verdictNote: verdictNote, tally: tally,
+        r: rounds, auto: false
+      };
+      run.con = realCon(run, counts, failed, data, name);
+      return { run: run };
+    }
+
+    // Terminal transcript for a loaded run (all lines land via textContent).
+    function realCon(run, counts, failed, data, name) {
+      var con = [];
+      con.push(["$ jury replay " + clip(name || "run.json", 60), "cmd"]);
+      con.push(["→ real run · " + run.ags.length + " reviewer" + (run.ags.length === 1 ? "" : "s") + " · rounds executed: " + run.r + (data.from_cache ? " · from cache" : ""), "dim"]);
+      con.push(["round 1: independent review", "head"]);
+      run.ags.forEach(function (a) {
+        if (failed[a]) con.push(["  • " + labelOf(run, a) + " → failed", "bad"]);
+        else con.push(["  • " + labelOf(run, a) + " → " + counts[a] + " finding" + (counts[a] === 1 ? "" : "s"), ""]);
+      });
+      if (run.debate) con.push(["round 2: cross-examination", "head"]);
+      if (run.verifyOn) {
+        con.push(["verify: chair '" + labelOf(run, run.chair) + "' judged " + run.surfaced.length + " grouped finding" + (run.surfaced.length === 1 ? "" : "s"), "head"]);
+        run.surfaced.slice().sort(bySev).forEach(function (it) {
+          if (it.status === "verified") con.push(["  ✓ " + it.file + " confirmed (" + it.sev + ")", "ok"]);
+          else if (it.status === "unsupported") con.push(["  ✗ " + it.file + " dropped (unsupported)", "bad"]);
+          else if (it.status === "needs_human_decision") con.push(["  ◐ " + it.file + " — needs a human decision", "warn"]);
+          else con.push(["  • " + it.file + " (" + it.sev + ")", ""]);
+        });
+      }
+      if (run.tally) {
+        con.push(["decision: no chair headline in the artifact — re-tallying a panel vote", "head"]);
+        run.ags.forEach(function (a) { if (run.tally.votes[a]) con.push(["  • " + labelOf(run, a) + " → " + run.tally.votes[a], ""]); });
+        con.push(["decision: panel vote → " + run.verdict + " · " + run.verdictNote, "head"]);
+      } else {
+        con.push(["synthesis: chair '" + labelOf(run, run.chair) + "' → " + run.verdict, "head"]);
+      }
+      if (Array.isArray(data.warnings) && data.warnings.length) {
+        con.push(["⚠ " + data.warnings.length + " warning" + (data.warnings.length === 1 ? "" : "s") + " recorded in the run", "warn"]);
+      }
+      con.push(["replayed in the browser — nothing was executed", "dim"]);
+      return con;
+    }
+    // exposed for manual poking / future harnesses; the site never calls it
+    window.__juryDemo = { parseOutcomeJson: parseOutcomeJson };
+
+    /* ---- file input + drag-drop wiring -------------------------------- */
+    (function () {
+      var input = $("run-file"), zone = $("load-run-zone"), status = $("load-run-status"), backBtn = $("back-to-demo");
+      if (!input || !zone || !status) return;
+      var MAX = 8 * 1024 * 1024; // client-side cap — a real outcome is a few hundred KB at most
+      var realLoaded = false;
+
+      function setStatus(msg, kind) {
+        status.textContent = msg;
+        status.className = "load-run-status" + (kind ? " " + kind : "");
+      }
+      function playRealRun(run) {
+        if (runTimer) { clearTimeout(runTimer); runTimer = null; }
+        setTermTitle(run);
+        $("run-out").hidden = false;
+        $("term-body").innerHTML = "";
+        $("gh-comments").innerHTML = "";
+        if (reduce) {
+          // reduced motion: jump straight to the final beat + full transcript
+          playTheater(run, function () {});
+          run.con.forEach(function (l) { $("term-body").appendChild(consoleLine(l)); });
+          renderComments(run);
+          return;
+        }
+        playTheater(run, function () {
+          streamTerminal(run, function () { renderComments(run); });
+        });
+      }
+      function backToDemo() {
+        if (!realLoaded) return;
+        realLoaded = false;
+        if (runTimer) { clearTimeout(runTimer); runTimer = null; }
+        $("run-out").hidden = true;
+        $("term-body").innerHTML = "";
+        $("gh-comments").innerHTML = "";
+        var th = $("demo-theater");
+        if (th) { th.hidden = true; th.innerHTML = ""; }
+        if (backBtn) backBtn.hidden = true;
+        input.value = "";
+        setStatus("Back to the demo — pick a panel and hit Run review.", "");
+      }
+      function handleFile(file) {
+        if (!file) return;
+        if (file.size > MAX) {
+          setStatus("“" + clip(file.name, 60) + "” is too large (" + Math.ceil(file.size / (1024 * 1024)) + " MB — the cap is 8 MB). Sticking with the demo.", "err");
+          return;
+        }
+        var reader = new FileReader();
+        reader.onerror = function () { setStatus("Couldn't read “" + clip(file.name, 60) + "”. Sticking with the demo.", "err"); };
+        reader.onload = function () {
+          var res = parseOutcomeJson(String(reader.result), file.name);
+          if (res.error) {
+            setStatus(res.error + " Sticking with the demo.", "err");
+            return;
+          }
+          var run = res.run;
+          realLoaded = true;
+          if (backBtn) backBtn.hidden = false;
+          setStatus("Loaded “" + clip(file.name, 60) + "” — " + run.ags.length + " reviewer" + (run.ags.length === 1 ? "" : "s") + ", " +
+            run.finalF.length + " finding" + (run.finalF.length === 1 ? "" : "s") + " → " + run.verdict + ".", "ok");
+          playRealRun(run);
+        };
+        reader.readAsText(file);
+      }
+
+      input.addEventListener("change", function () {
+        handleFile(input.files && input.files[0]);
+        input.value = ""; // re-selecting the same file re-fires change
+      });
+      ["dragenter", "dragover"].forEach(function (ev) {
+        zone.addEventListener(ev, function (e) { e.preventDefault(); zone.classList.add("dragover"); });
+      });
+      ["dragleave", "dragend"].forEach(function (ev) {
+        zone.addEventListener(ev, function () { zone.classList.remove("dragover"); });
+      });
+      zone.addEventListener("drop", function (e) {
+        e.preventDefault();
+        zone.classList.remove("dragover");
+        handleFile(e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]);
+      });
+      if (backBtn) {
+        backBtn.addEventListener("click", function () { backToDemo(); input.focus(); });
+      }
+      // Escape backs out of a loaded run (unless the mobile menu owns Escape)
+      document.addEventListener("keydown", function (e) {
+        if (e.key !== "Escape" || !realLoaded) return;
+        var menu = $("nav-mobile");
+        if (menu && menu.classList.contains("open")) return;
+        backToDemo();
+        input.focus();
+      });
+      // touching the demo controls or Run review hands the stage back to the demo
+      ctrls.addEventListener("change", function () {
+        if (!realLoaded) return;
+        realLoaded = false;
+        if (backBtn) backBtn.hidden = true;
+        setStatus("", "");
+      });
+      $("run-btn").addEventListener("click", function () {
+        if (!realLoaded) return;
+        realLoaded = false;
+        if (backBtn) backBtn.hidden = true;
+        setStatus("", "");
+      });
+    })();
   })();
 })();
