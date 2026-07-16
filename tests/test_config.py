@@ -118,6 +118,23 @@ class TheaterConfigTests(unittest.TestCase):
         themed = _from_dict({"jury": {"theater": True, "theater_style": "pixel"}})
         self.assertEqual(config_hash(base), config_hash(themed))
 
+
+class DemoteLocalOnlyConfigTests(unittest.TestCase):
+    """jury.demote_local_only (issue #442)."""
+
+    def test_defaults_off(self):
+        cfg = _from_dict({})
+        self.assertFalse(cfg.demote_local_only)
+
+    def test_parsed_from_jury_table(self):
+        cfg = _from_dict({"jury": {"demote_local_only": True}})
+        self.assertTrue(cfg.demote_local_only)
+
+    def test_orchestration_affecting_included_in_config_hash(self):
+        base = _from_dict({})
+        on = _from_dict({"jury": {"demote_local_only": True}})
+        self.assertNotEqual(config_hash(base), config_hash(on))
+
     def test_validate_rejects_bad_values(self):
         bad = _valid()
         bad["jury"]["theater"] = "yes"
