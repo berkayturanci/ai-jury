@@ -33,6 +33,7 @@ class TestWebsiteAssets(unittest.TestCase):
             # hung. A hung toolchain is an environment problem, not an app.js
             # syntax error — degrade to a skip so the suite stays honest.
             self.skipTest("node --check hung; skipping syntax validation here")
+            return  # unreachable (skipTest raises) — pins proc as always-bound
         self.assertEqual(proc.returncode, 0, proc.stderr)
 
     def test_index_html_has_load_run_controls(self):
