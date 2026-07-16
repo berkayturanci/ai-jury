@@ -105,6 +105,7 @@ def load_outcome(path: Path | str) -> JuryOutcome:
             "top-level 'outcome' key)"
         )
 
+    _coerce_agent_results(inner)
     try:
         outcome = outcome_from_dict(inner)
     except (KeyError, TypeError, AttributeError, ValueError) as exc:
@@ -112,6 +113,41 @@ def load_outcome(path: Path | str) -> JuryOutcome:
     if not outcome.reviews:
         raise ReplayError(f"'{path}' contains no reviews — nothing to replay")
     return outcome
+
+
+def _coerce_agent_results(inner: dict) -> None:
+    """Coerce type-invalid AgentResult fields in place (untrusted file).
+
+    ``outcome_from_dict``/``cache._agent_result`` copy values without type
+    validation, so a hand-edited file with ``"output": null`` or a string
+    ``duration_s`` would pass loading and crash far later inside the render
+    loop with a raw traceback (review finding). Coerce the fields the render
+    path consumes: ``output`` to str, ``duration_s`` to float, ``ok`` to bool,
+    ``agent``/``vendor`` to str.
+    """
+    for key in ("reviews", "debate"):
+        items = inner.get(key)
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if isinstance(item, dict):
+                _coerce_one(item)
+    for key in ("synthesis", "verify"):
+        item = inner.get(key)
+        if isinstance(item, dict):
+            _coerce_one(item)
+
+
+def _coerce_one(item: dict) -> None:
+    item["agent"] = str(item.get("agent") or "")
+    item["vendor"] = str(item.get("vendor") or "")
+    item["ok"] = bool(item.get("ok"))
+    out = item.get("output")
+    item["output"] = out if isinstance(out, str) else ("" if out is None else str(out))
+    try:
+        item["duration_s"] = float(item.get("duration_s") or 0.0)
+    except (TypeError, ValueError):
+        item["duration_s"] = 0.0
 
 
 def replay_events(

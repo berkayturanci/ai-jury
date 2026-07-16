@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -150,9 +151,11 @@ class LoadOutcomeTest(unittest.TestCase):
             load_outcome(path)
 
     def test_rejects_malformed_outcome(self):
-        # A review record missing required AgentResult keys must not traceback.
+        # A review entry that is not an object at all must not traceback.
+        # (Key-missing dicts are healed by the type coercion — replay is
+        # presentation-only — so the malformed gate is the non-dict shape.)
         with self.assertRaisesRegex(ReplayError, "malformed outcome"):
-            load_outcome(self._write({"reviews": [{"agent": "claude"}]}))
+            load_outcome(self._write({"reviews": ["not-a-review"]}))
 
     def test_rejects_empty_reviews(self):
         with self.assertRaisesRegex(ReplayError, "no reviews"):
@@ -288,6 +291,71 @@ class CliReplayTest(unittest.TestCase):
     def test_unknown_flag_is_an_argparse_error(self):
         with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             cli.main(["replay", str(self.path), "--bogus"])
+
+
+class ReviewRegressionTests(unittest.TestCase):
+    """Regressions from the independent review of PR #451."""
+
+    def _write(self, data):
+        import json as _json
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", delete=False, encoding="utf-8"
+        ) as tmp:
+            tmp.write(_json.dumps(data))
+        self.addCleanup(os.unlink, tmp.name)
+        return tmp.name
+
+    def _outcome_dict(self, **review_overrides):
+        review = {
+            "agent": "claude", "vendor": "anthropic", "ok": True,
+            "output": "no findings; LGTM", "duration_s": 1.0,
+        }
+        review.update(review_overrides)
+        return {"reviews": [review], "debate": [], "synthesis": None,
+                "chair": "claude", "findings": [], "warnings": [], "groups": [],
+                "verify": None, "verdicts": []}
+
+    def test_null_output_replays_without_traceback(self):
+        # {"output": null, "ok": true} used to pass loading then crash in
+        # render_live_step with AttributeError (exit 1, raw traceback).
+        path = self._write(self._outcome_dict(output=None))
+        code = cli.main(["replay", path])
+        self.assertEqual(code, 0)
+
+    def test_string_duration_replays_without_traceback(self):
+        # "duration_s": "1.0" used to crash the f-string format far from load.
+        path = self._write(self._outcome_dict(duration_s="1.0"))
+        code = cli.main(["replay", path])
+        self.assertEqual(code, 0)
+
+    def test_vote_surfaces_on_transcript_fallback(self):
+        # --decision vote was computed then silently dropped without a theater.
+        import contextlib
+        import io
+
+        path = self._write(self._outcome_dict())
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = cli.main(["replay", path, "--decision", "vote"])
+        self.assertEqual(code, 0)
+        out = buf.getvalue()
+        self.assertIn("Panel vote", out)
+        self.assertIn("Verdict: APPROVE", out)
+
+    def test_issue_mode_vote_vocabulary(self):
+        # The outcome does not serialize the run mode; --mode issue selects the
+        # issue vocabulary instead of silently using code verdicts.
+        import contextlib
+        import io
+
+        path = self._write(self._outcome_dict())
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = cli.main(["replay", path, "--decision", "vote", "--mode", "issue"])
+        self.assertEqual(code, 0)
+        self.assertIn("Verdict: READY", buf.getvalue())
 
 
 if __name__ == "__main__":

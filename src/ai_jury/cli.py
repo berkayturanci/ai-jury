@@ -953,6 +953,14 @@ def _run_replay(rest: list[str]) -> int:
         help="finale mode: 'chair' shows the stored synthesis verdict (default); "
         "'vote' re-tallies the panel ballots for the vote finale",
     )
+    sub.add_argument(
+        "--mode",
+        choices=["code", "issue"],
+        default="code",
+        help="vote vocabulary for --decision vote (the serialized outcome does "
+        "not record the run mode): 'code' (APPROVE/COMMENT/REQUEST CHANGES, "
+        "default) or 'issue' (READY/UNCLEAR/NEEDS-INFO)",
+    )
     ns = sub.parse_args(rest)
 
     try:
@@ -970,7 +978,7 @@ def _run_replay(rest: list[str]) -> int:
         voters = [
             r.agent for r in outcome.reviews if r.ok and not is_abstention(getattr(r, "output", ""))
         ]
-        vote = tally_votes(outcome.groups, voters)
+        vote = tally_votes(outcome.groups, voters, mode=ns.mode)
 
     # Same TTY gate as the live path: the scene needs a wide TTY, otherwise
     # degrade to the plain --live step stream.
@@ -996,6 +1004,13 @@ def _run_replay(rest: list[str]) -> int:
         for kind, result, round_no in replay_events(outcome):
             title, body = render_live_step(kind, result, round_no)
             print(f"## {title}\n\n{body}\n", flush=True)
+        if vote is not None:
+            # The vote finale must survive the transcript fallback too (review
+            # finding: --decision vote was computed then silently dropped here).
+            print("## Panel vote\n", flush=True)
+            for ballot in vote.ballots:
+                print(f"- {ballot.reviewer}: {ballot.vote} ({ballot.reason})", flush=True)
+            print(f"\nVerdict: {vote.verdict}\n", flush=True)
     return 0
 
 
