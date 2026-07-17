@@ -57,8 +57,16 @@ def profile_diff(diff: str) -> DiffProfile:
     changed = diff_lines_changed(diff)
     file_count = len(files)
 
-    docs_only = bool(paths) and all(_is_doc_or_generated(p) for p in paths)
-    security = any(_path_is_security_sensitive(p) for p in paths)
+    # bolt: Consolidate multiple metrics into a single-pass O(N) explicit loop
+    docs_only = bool(paths)
+    security = False
+    for p in paths:
+        if not security and _path_is_security_sensitive(p):
+            security = True
+        if docs_only and not _is_doc_or_generated(p):
+            docs_only = False
+        if security and not docs_only:
+            break
 
     if security or changed > _HIGH_LINES or file_count > _HIGH_FILES:
         risk = RISK_HIGH
