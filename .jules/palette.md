@@ -58,3 +58,7 @@
 ## 2026-11-04 - Escape key for mobile menus
 **Learning:** Flyout menus and mobile hamburger menus often trap keyboard users if they cannot be dismissed with the `Escape` key. Users expect to be able to press `Escape` to close temporary navigation overlays and return focus to the trigger button.
 **Action:** Whenever implementing a custom flyout menu, modal, or mobile sidebar, always add a `keydown` event listener for the `Escape` key that closes the overlay and returns focus to the button that opened it.
+
+## 2026-11-10 - Fixed header overlaps on anchor links
+**Learning:** When using fixed headers (`position: fixed`), navigating to in-page anchor links (like "Skip to content" or `#main-content`) can cause the target content to be hidden underneath the fixed header.
+**Action:** Always apply `scroll-padding-top` to the `html` element equivalent to the header's height (and any desired padding) so that navigating to in-page anchor links scrolls the page just enough to keep the target element visible below the fixed header.
