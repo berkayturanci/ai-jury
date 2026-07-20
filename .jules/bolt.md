@@ -25,3 +25,7 @@
 ## 2025-06-13 - Avoid splitlines() memory allocation on large text
 **Learning:** Parsing large text or diffs using `splitlines()` allocates a huge list of strings, turning an O(1) memory operation into O(N). Iterating through it with Python generators is also significantly slower than C-optimized string operations.
 **Action:** When counting line prefix occurrences across a large body of text, use `str.count("\nprefix")` instead of `splitlines()` to avoid memory allocation and benefit from C-level speeds, handling the first line specifically if it lacks a newline.
+
+## 2025-06-14 - Limit Ruff Fixes to Modified Files
+**Learning:** Running `uv run ruff check --fix .` and `uv run ruff format .` applies project-wide formatting, which pollutes the git history with unrelated files and breaks the rule to keep Bolt optimizations under 50 lines.
+**Action:** When working on Bolt performance improvements, explicitly target only the files modified by the patch for ruff fixes and formatting (e.g., `uv run ruff format src/ai_jury/diffprofile.py`).
