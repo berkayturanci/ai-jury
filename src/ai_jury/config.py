@@ -35,7 +35,13 @@ def _read_toml_bounded(path: Path) -> dict:
         # UnicodeDecodeError (review of #316 — the prior tomllib.load crashed the
         # same way on bad bytes; now it's a ConfigError).
         raise ConfigError(f"config file '{path}' is not valid UTF-8.") from exc
-    return tomllib.loads(text)
+    try:
+        return tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
+        # SECURITY: Fail securely by catching TOML parse errors and wrapping them
+        # in our domain exception. This prevents unhandled exceptions from bubbling
+        # up and exposing internal stack traces to the user/logs.
+        raise ConfigError(f"config file '{path}' contains invalid TOML: {exc}") from exc
 
 
 def _is_relative_path_command(command: str) -> bool:
