@@ -58,3 +58,7 @@
 ## 2026-11-04 - Escape key for mobile menus
 **Learning:** Flyout menus and mobile hamburger menus often trap keyboard users if they cannot be dismissed with the `Escape` key. Users expect to be able to press `Escape` to close temporary navigation overlays and return focus to the trigger button.
 **Action:** Whenever implementing a custom flyout menu, modal, or mobile sidebar, always add a `keydown` event listener for the `Escape` key that closes the overlay and returns focus to the button that opened it.
+
+## 2024-07-23 - Tooltips on disabled form wrappers
+**Learning:** Using `pointer-events: none` to visually disable form wrappers (like labels or fieldsets) blocks all mouse events, which prevents native `title` tooltips from appearing. Users cannot see the tooltip explaining why the element is disabled.
+**Action:** Avoid `pointer-events: none` for disabling elements with tooltips. Instead, rely on the native `disabled` attribute on the inner form elements to block interaction, and use `cursor: not-allowed` on the wrappers and inputs for visual feedback.

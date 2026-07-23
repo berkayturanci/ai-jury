@@ -456,9 +456,11 @@ section[id], [id="top"] { scroll-margin-top: 84px; }
   border-color: transparent; white-space: nowrap; font-size: .68rem; font-weight: 600;
   padding: .12rem .5rem; box-shadow: 0 4px 12px -4px rgba(99,102,241,.6);
 }
-.opt.disabled { opacity: .6; pointer-events: none; }
+.opt.disabled { opacity: .6; cursor: not-allowed; }
+.opt.disabled input { cursor: not-allowed; }
 .fieldset.disabled { opacity: .5; }
-.fieldset.disabled .opt { pointer-events: none; }
+.fieldset.disabled .opt { cursor: not-allowed; }
+.fieldset.disabled input { cursor: not-allowed; }
 #opt-auto { white-space: nowrap; }
 
 .stage-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.2rem; display: flex; flex-direction: column; }
