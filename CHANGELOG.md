@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.11.1] - 2026-07-27
+
+### Fixed
+
+- **`jury --doctor` no longer leaks a stack trace on malformed TOML** (#464): an invalid
+  `jury.toml` surfaced the raw `TOMLDecodeError` traceback instead of the redacted
+  config-error warning every other load failure produces. The decode error is now wrapped in
+  `ConfigError` at the load boundary, so the doctor path reports it the same fail-soft way.
+- **Native tooltips show on disabled form options** (#460): `pointer-events: none` on the
+  disabled option wrapper blocked hover, so the `title` explaining *why* an option was
+  disabled never appeared. Replaced with `cursor: not-allowed`, which keeps the visual
+  affordance without suppressing the tooltip.
+- **In-page anchors clear the fixed header** (#456): added `scroll-padding-top` so a
+  deep-linked heading is not hidden behind the sticky site header.
+
+### Changed
+
+- **Faster diff-profile path handling** (#455): the per-path loops in `diffprofile` fold
+  into a single pass, avoiding repeated scans over the changed-file list.
+
 ## [1.11.0] - 2026-07-17
 
 ### Added
