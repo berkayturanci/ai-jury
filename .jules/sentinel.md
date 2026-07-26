@@ -22,3 +22,8 @@
 **Vulnerability:** A `ConfigError` exception triggered by oversized config files (e.g. `jury.toml` exceeding limit) would cause `jury --doctor` to crash, leaking an unredacted exception message to `stderr`.
 **Learning:** Top-level diagnostic or CLI paths that load configurations must comprehensively catch domain exceptions (`ConfigError`) alongside underlying parser errors (`TOMLDecodeError`) to prevent unhandled crashes from exposing unredacted data.
 **Prevention:** Always verify that `ConfigError` is handled in try/except blocks surrounding `load_config` calls, and explicitly run `redact(str(exc))[0]` on the exception message.
+
+## 2024-05-18 - [MEDIUM] Fix TOMLDecodeError stack trace leak in config loader
+**Vulnerability:** When loading `jury.toml`, invalid TOML syntax caused `tomllib.loads` to raise a `TOMLDecodeError` which was not caught in `_read_toml_bounded`, leading to an unhandled exception and stack trace leak.
+**Learning:** Top-level configuration loaders must explicitly catch underlying parsing exceptions (like `TOMLDecodeError`) and wrap them in domain exceptions (like `ConfigError`). Catching and securely wrapping the error prevents raw stack traces from exposing potentially sensitive internals or environment information to standard error.
+**Prevention:** Always ensure that data deserialization libraries (like `tomllib` or `json`) have their exceptions caught and wrapped inside domain-specific configuration errors in the loader function.
