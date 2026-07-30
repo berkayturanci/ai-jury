@@ -178,13 +178,13 @@
     /* ---- sidebar ---- */
     function buildSidebar(activeSlug) {
       var html = '<p class="ds-label">Documentation</p><nav class="ds-nav">';
-      html += '<a class="ds-link' + (!activeSlug ? " active" : "") + '" href="#">Home</a>';
+      html += '<a class="ds-link' + (!activeSlug ? " active\" aria-current=\"page" : "") + '" href="#">Home</a>';
       html += '<a class="ds-link" href="coverage.html">Test coverage</a>';
       html += "</nav>";
       GROUPS.forEach(function (g) {
         html += '<p class="ds-label">' + g.title + "</p><nav class=\"ds-nav\">";
         g.items.forEach(function (it) {
-          html += '<a class="ds-link' + (it.slug === activeSlug ? " active" : "") + '" href="#' + it.slug + '">' + it.title + "</a>";
+          html += '<a class="ds-link' + (it.slug === activeSlug ? " active\" aria-current=\"location" : "") + '" href="#' + it.slug + '">' + it.title + "</a>";
         });
         html += "</nav>";
       });
