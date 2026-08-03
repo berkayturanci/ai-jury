@@ -886,7 +886,7 @@
       btn.disabled = true;
       btn.setAttribute("title", "Review is currently running");
       btn.setAttribute("aria-busy", "true");
-      btn.textContent = "Running review...";
+      btn.innerHTML = '<svg class="spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> Running review...';
       playTheater(run, function () {
         streamTerminal(run, function () {
           renderComments(run);

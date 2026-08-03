@@ -215,6 +215,9 @@ a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visibl
 .btn.ghost { background: var(--surface-2); }
 .btn svg { width: 17px; height: 17px; }
 
+.spinner { animation: doc-spin 1s linear infinite; }
+@keyframes doc-spin { to { transform: rotate(360deg); } }
+
 /* ---- Hero ------------------------------------------------------------ */
 .hero { padding: clamp(3rem, 8vw, 6rem) 0 1rem; text-align: center; }
 .eyebrow {
@@ -447,6 +450,8 @@ section[id], [id="top"] { scroll-margin-top: 84px; }
 }
 .opt:hover { background: var(--surface-2); }
 .opt:has(input:checked) { background: var(--accent-soft); border-color: var(--accent-line); }
+.opt:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 10px; }
+.opt:has(input:focus-visible) input { outline: none; }
 .opt input { accent-color: var(--accent); width: 16px; height: 16px; cursor: pointer; }
 .opt .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
 .opt .tag { margin-left: auto; font-size: .66rem; color: var(--green-2); border: 1px solid var(--green); border-radius: 999px; padding: .02rem .42rem; }
