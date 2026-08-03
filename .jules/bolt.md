@@ -29,3 +29,8 @@
 ## 2025-06-14 - Limit Ruff Fixes to Modified Files
 **Learning:** Running `uv run ruff check --fix .` and `uv run ruff format .` applies project-wide formatting, which pollutes the git history with unrelated files and breaks the rule to keep Bolt optimizations under 50 lines.
 **Action:** When working on Bolt performance improvements, explicitly target only the files modified by the patch for ruff fixes and formatting (e.g., `uv run ruff format src/ai_jury/diffprofile.py`).
+
+
+## 2025-06-15 - Fast str.startswith with tuples
+**Learning:** Using `any(name.startswith(p) for p in prefixes)` forces Python to allocate a generator object and run a loop inside the interpreter. Python's native `str.startswith()` method can accept a tuple of strings directly, pushing the entire iteration into C-optimized code, which is significantly faster and more readable.
+**Action:** When checking if a string starts with any of a static set of prefixes, pass the tuple directly to `str.startswith(prefixes)` instead of using `any()` with a generator expression.
