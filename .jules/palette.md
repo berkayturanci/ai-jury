@@ -62,3 +62,7 @@
 ## 2024-05-18 - Allow pointer events on disabled elements with tooltips
 **Learning:** Using `pointer-events: none` to disable form wrappers or elements prevents mouse events, which completely blocks native `title` attribute tooltips from appearing on hover. This leaves users frustrated because they cannot see *why* an option is disabled.
 **Action:** Never use `pointer-events: none` on elements that carry a `title` attribute or need to display a tooltip. Instead, rely on the native `disabled` attribute on the element and use `cursor: not-allowed` on both the wrapper and the input for visual feedback.
+
+## 2024-05-18 - Container-sized focus rings for custom form wrappers
+**Learning:** For frontend accessibility with custom form wrappers (like styled labels `.opt` around tiny native inputs), relying on the global `input:focus-visible` outline results in a small, hard-to-see focus ring around just the radio button or checkbox. Keyboard users need larger, clearer visual indicators to track their focus across form options.
+**Action:** Use the `:has(input:focus-visible)` pseudo-class on the wrapper element to apply a clear, container-sized focus ring (`outline: 2px solid var(--accent)`), while simultaneously hiding the inner input's default outline (`outline: none`). This ensures robust keyboard navigation visibility.
