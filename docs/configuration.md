@@ -163,9 +163,45 @@ endpoint = "https://api.groq.com/openai/v1/chat/completions"
 api_key_env = "GROQ_API_KEY"
 ```
 
-#### Custom CLI Agent (e.g. Aider CLI) (`vendor = "cli"`)
+#### Grok / xAI API (`vendor = "openai-compatible"`)
 
 ```toml
+[[agent]]
+name = "grok"
+vendor = "openai-compatible"
+model = "grok-2-latest"
+endpoint = "https://api.x.ai/v1/chat/completions"
+api_key_env = "XAI_API_KEY"
+```
+
+#### Local Models (Ollama, LM Studio, vLLM, llama.cpp) (`vendor = "local"`)
+
+```toml
+# Ollama default (http://localhost:11434/v1)
+[[agent]]
+name = "local-qwen"
+vendor = "local"
+model = "qwen2.5-coder:14b"
+
+# LM Studio or vLLM custom port
+[[agent]]
+name = "local-lmstudio"
+vendor = "local"
+model = "local-model"
+endpoint = "http://localhost:1234/v1"
+```
+
+#### Cursor CLI / Arbitrary CLI Agent (`vendor = "cli"`)
+
+```toml
+# Cursor CLI
+[[agent]]
+name = "cursor"
+vendor = "cli"
+command = "cursor agent --print"
+prompt_mode = "arg"
+
+# Aider CLI
 [[agent]]
 name = "aider"
 vendor = "cli"
