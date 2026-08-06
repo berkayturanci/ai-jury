@@ -135,9 +135,7 @@ def diff_lines_changed(diff: str | None) -> int:
     # bolt: avoid allocating a huge list of strings from splitlines()
     # and generator overhead by using C-optimized string counting.
     c = diff.count("\n+") + diff.count("\n-") - diff.count("\n+++") - diff.count("\n---")
-    if diff.startswith("+") and not diff.startswith("+++"):
-        c += 1
-    elif diff.startswith("-") and not diff.startswith("---"):
+    if diff.startswith("+") and not diff.startswith("+++") or diff.startswith("-") and not diff.startswith("---"):
         c += 1
     return c
 

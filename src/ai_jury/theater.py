@@ -32,17 +32,27 @@ _RESET = "\033[0m"
 # website's vendor tokens: Anthropic coral, OpenAI teal, Google blue, local
 # violet. Terminals without truecolor degrade to the nearest available colour.
 _VENDOR_SGR = {
-    "anthropic": "38;2;217;119;87",   # Claude  #d97757
-    "openai": "38;2;16;163;127",      # Codex   #10a37f
-    "google": "38;2;66;133;244",      # Antigravity #4285f4
-    "local": "38;2;168;85;247",       # local / open-weight #a855f7
+    "anthropic": "38;2;217;119;87",         # Claude  #d97757
+    "anthropic-api": "38;2;217;119;87",     # Claude API
+    "openai": "38;2;16;163;127",            # Codex   #10a37f
+    "openai-api": "38;2;16;163;127",        # OpenAI API
+    "google": "38;2;66;133;244",            # Antigravity #4285f4
+    "google-api": "38;2;66;133;244",        # Gemini API
+    "local": "38;2;168;85;247",             # local / open-weight #a855f7
+    "openai-compatible": "38;2;139;92;246", # OpenRouter/DeepSeek/Groq #8b5cf6
+    "cli": "38;2;236;72;153",               # arbitrary CLI agent #ec4899
 }
 # Same brand palette as RGB tuples, for the pixel-art style (half-block render).
 _VENDOR_RGB = {
     "anthropic": (217, 119, 87),
+    "anthropic-api": (217, 119, 87),
     "openai": (16, 163, 127),
+    "openai-api": (16, 163, 127),
     "google": (66, 133, 244),
+    "google-api": (66, 133, 244),
     "local": (168, 85, 247),
+    "openai-compatible": (139, 92, 246),
+    "cli": (236, 72, 153),
 }
 # Pixel-art scene palette (RGB). The room is drawn into a pixel buffer and folded
 # to the terminal two rows at a time via the upper-half-block ▀ (fg = top pixel,

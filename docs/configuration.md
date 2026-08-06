@@ -113,3 +113,13 @@ log and in the report's "Run metadata" section (`served from local cache`).
 review/debate/synthesis text derived from the diff. Treat the cache directory as
 sensitive — the same trust level as the diff. It defaults to `$JURY_CACHE_DIR` or
 `~/.cache/ai-jury` (override with `--cache-dir`).
+
+## Universal Agent Provider Support
+
+`ai-jury` supports **any AI agent provider**:
+
+1. **Vendor Native CLIs**: `claude` (Anthropic Claude Code), `codex` (OpenAI Codex CLI), `agy` (Google Antigravity CLI).
+2. **Hosted OpenAI-Compatible APIs**: `vendor = "openai-compatible"` works with OpenRouter, DeepSeek, Groq, Mistral, Anyscale, LiteLLM, or Azure OpenAI proxies. Configurable via `endpoint`, `api_key_env`, and custom `headers`.
+3. **Local / Open-Weight Models**: `vendor = "local"` over Ollama, `llama.cpp`, vLLM, or LM Studio.
+4. **Arbitrary Coding CLI Agents**: `vendor = "cli"` (such as Aider, Goose, OpenHands) with `prompt_mode = "stdin"` or `"arg"`.
+5. **Pluggable Python Adapters**: Register custom adapters in Python via `ai_jury.adapters.register_adapter("my-vendor", MyAdapter)`.

@@ -43,20 +43,20 @@
 
   <!-- Open Graph -->
   <meta property="og:type" content="website" />
-  <meta property="og:site_name" content="ai-jury" />
+  <meta property="og:title" content="ai-jury — Universal Multi-Agent PR Review Jury" />
+  <meta property="og:description" content="Orchestrate universal AI agent providers (Claude Code, Codex, Antigravity, OpenRouter, DeepSeek, Groq, local models, Aider CLI) into an adversarial review panel. Debate, verify, one verdict." />
   <meta property="og:url" content="https://berkayturanci.github.io/ai-jury/" />
-  <meta property="og:title" content="ai-jury — cross-vendor multi-agent code review" />
-  <meta property="og:description" content="Install once. Run a cross-vendor review jury anywhere. Native coding-agent CLIs plus a free local model review the same diff, debate, verify, and synthesize one chair verdict." />
-  <meta property="og:image" content="assets/og-banner.png" />
+  <meta property="og:site_name" content="ai-jury" />
+  <meta property="og:image" content="https://berkayturanci.github.io/ai-jury/assets/og.png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
-  <meta property="og:image:alt" content="ai-jury — Claude Code, Codex, Antigravity and a free local model review the same diff, debate, and synthesize one verdict." />
+  <meta property="og:image:alt" content="ai-jury — Universal AI agent providers review the same diff, debate, and synthesize one verdict." />
 
   <!-- Twitter / X -->
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="ai-jury — cross-vendor multi-agent code review" />
-  <meta name="twitter:description" content="A stdlib-only Python CLI that runs Claude Code, Codex, Antigravity and a free local model as one review jury — debate, verify, one verdict." />
-  <meta name="twitter:image" content="assets/og-banner.png" />
+  <meta name="twitter:title" content="ai-jury — Universal Multi-Agent PR Review Jury" />
+  <meta name="twitter:description" content="A stdlib-only Python CLI that runs universal AI agent providers (Claude Code, Codex, Antigravity, OpenRouter, DeepSeek, Groq, local models, Aider) as one review jury — debate, verify, one verdict." />
+  <meta name="twitter:image" content="https://berkayturanci.github.io/ai-jury/assets/og.png" />
 
   <!-- Structured data -->
   <script type="application/ld+json">
@@ -65,14 +65,12 @@
     "@type": "SoftwareApplication",
     "name": "ai-jury",
     "applicationCategory": "DeveloperApplication",
-    "operatingSystem": "Linux, macOS, Windows",
-    "description": "Cross-vendor multi-agent PR review jury: orchestrates native coding-agent CLIs (Claude Code, Codex, Antigravity) plus an optional local/open-weight model to review the same diff, debate, verify, and synthesize one verdict. Stdlib-only, local-first.",
-    "url": "https://berkayturanci.github.io/ai-jury/",
-    "downloadUrl": "https://pypi.org/project/ai-jury/",
-    "codeRepository": "https://github.com/berkayturanci/ai-jury",
-    "author": { "@type": "Person", "name": "Berkay Turancı" },
+    "operatingSystem": "POSIX / Linux / macOS / Windows",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+    "description": "Cross-vendor multi-agent PR review jury: orchestrates universal AI agent providers (Claude Code, Codex, Antigravity, OpenRouter, DeepSeek, Groq, local models, Aider) to review the same diff, debate, verify, and synthesize one verdict. Stdlib-only, local-first.",
     "license": "https://opensource.org/licenses/MIT",
-    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    "codeRepository": "https://github.com/berkayturanci/ai-jury",
+    "author": { "@type": "Person", "name": "Berkay Turancı", "url": "https://github.com/berkayturanci" }
   }
   </script>
 
@@ -236,6 +234,8 @@
               <span><span class="dot d-claude" style="width:9px;height:9px;border-radius:50%"></span> Claude</span>
               <span><span class="dot d-codex" style="width:9px;height:9px;border-radius:50%"></span> Codex</span>
               <span><span class="dot d-agy" style="width:9px;height:9px;border-radius:50%"></span> Antigravity</span>
+              <span><span class="dot d-deepseek" style="width:9px;height:9px;border-radius:50%"></span> DeepSeek</span>
+              <span><span class="dot d-openrouter" style="width:9px;height:9px;border-radius:50%"></span> OpenRouter</span>
               <span><span class="dot d-qwen" style="width:9px;height:9px;border-radius:50%"></span> Local · free</span>
             </span>
           </div>
@@ -253,6 +253,8 @@
               <div class="rev-chip" data-rev="claude"><span class="dot d-claude"></span><span class="rname">Claude Code</span><span class="rcmd">claude -p</span></div>
               <div class="rev-chip" data-rev="codex"><span class="dot d-codex"></span><span class="rname">Codex</span><span class="rcmd">codex exec</span></div>
               <div class="rev-chip" data-rev="agy"><span class="dot d-agy"></span><span class="rname">Antigravity</span><span class="rcmd">agy</span></div>
+              <div class="rev-chip" data-rev="deepseek"><span class="dot d-deepseek"></span><span class="rname">DeepSeek</span><span class="rcmd">api</span></div>
+              <div class="rev-chip" data-rev="openrouter"><span class="dot d-openrouter"></span><span class="rname">OpenRouter</span><span class="rcmd">api</span></div>
               <div class="rev-chip" data-rev="qwen"><span class="dot d-qwen"></span><span class="rname">Local</span><span class="rev-tag">free</span></div>
             </div>
 
@@ -370,11 +372,15 @@
             <label class="opt" id="opt-vote"><input type="radio" name="verdict-mode" value="vote" /> Panel vote <span class="tag">majority</span></label>
           </fieldset>
           <fieldset class="fieldset">
-            <legend class="legend">Reviewers</legend>
+            <legend class="legend">Reviewers (Universal Support)</legend>
             <label class="opt"><input type="checkbox" id="ag-claude" checked /> <span class="dot d-claude"></span> Claude Code</label>
             <label class="opt"><input type="checkbox" id="ag-codex" checked /> <span class="dot d-codex"></span> Codex</label>
             <label class="opt"><input type="checkbox" id="ag-agy" /> <span class="dot d-agy"></span> Antigravity</label>
             <label class="opt"><input type="checkbox" id="ag-qwen" checked /> <span class="dot d-qwen"></span> Local / open-weight <span class="tag">free</span></label>
+            <label class="opt"><input type="checkbox" id="ag-deepseek" /> <span class="dot d-deepseek"></span> DeepSeek API <span class="tag accent">new</span></label>
+            <label class="opt"><input type="checkbox" id="ag-openrouter" /> <span class="dot d-openrouter"></span> OpenRouter <span class="tag accent">new</span></label>
+            <label class="opt"><input type="checkbox" id="ag-groq" /> <span class="dot d-groq"></span> Groq API <span class="tag accent">new</span></label>
+            <label class="opt"><input type="checkbox" id="ag-aider" /> <span class="dot d-aider"></span> Aider CLI <span class="tag accent">new</span></label>
           </fieldset>
           <fieldset class="fieldset">
             <legend class="legend">Depth</legend>
@@ -795,11 +801,11 @@ endpoint = <span class="s">"http://localhost:11434/v1"</span></code></pre>
         </details>
         <details class="qa">
           <summary>Are these real API calls to the models?<span class="chev"></span></summary>
-          <div class="qa-body"><p>By default, no — ai-jury drives each vendor's <strong>own coding-agent CLI</strong> (<code class="mono">claude</code>, <code class="mono">codex</code>, <code class="mono">agy</code>) as a subprocess, so each reviewer runs in its native environment with its own tooling and context; it's orchestration, not a raw model API call. For CI/container environments where installing an agent CLI isn't practical, an optional <strong>hosted-API adapter</strong> (<code class="mono">vendor = "anthropic-api"</code> / <code class="mono">"openai-api"</code> / <code class="mono">"google-api"</code>) trades that native tooling for a zero-install reviewer keyed by just an API key.</p></div>
+          <div class="qa-body"><p>ai-jury supports <strong>universal agent providers</strong>: vendor coding-agent CLIs (<code class="mono">claude</code>, <code class="mono">codex</code>, <code class="mono">agy</code>), hosted API providers (OpenRouter, DeepSeek, Groq, Anthropic, OpenAI, Gemini), local models (Ollama, llama.cpp, vLLM, LM Studio), and arbitrary coding CLI tools (<code class="mono">vendor = "cli"</code> like Aider, Goose, OpenHands).</p></div>
         </details>
         <details class="qa">
           <summary>What do I need installed?<span class="chev"></span></summary>
-          <div class="qa-body"><p>Python 3.11+ and at least one reviewer — an agent CLI (<code class="mono">claude</code>, <code class="mono">codex</code>, <code class="mono">agy</code>), a local model via Ollama, or a hosted-API key (<code class="mono">ANTHROPIC_API_KEY</code> / <code class="mono">OPENAI_API_KEY</code> / <code class="mono">GEMINI_API_KEY</code>) with no CLI at all. The <code class="mono">gh</code> CLI is needed for <code class="mono">--pr</code> / <code class="mono">--issue</code> and for posting comments. The tool itself is <strong>stdlib-only</strong> — no third-party Python dependencies.</p></div>
+          <div class="qa-body"><p>Python 3.11+ and at least one reviewer — an agent CLI (<code class="mono">claude</code>, <code class="mono">codex</code>, <code class="mono">agy</code>, <code class="mono">aider</code>), a local model via Ollama, or a hosted-API key (<code class="mono">OPENROUTER_API_KEY</code> / <code class="mono">DEEPSEEK_API_KEY</code> / <code class="mono">GROQ_API_KEY</code> / <code class="mono">ANTHROPIC_API_KEY</code> / <code class="mono">OPENAI_API_KEY</code> / <code class="mono">GEMINI_API_KEY</code>) with no CLI at all. The <code class="mono">gh</code> CLI is needed for <code class="mono">--pr</code> / <code class="mono">--issue</code> and for posting comments. The tool itself is <strong>stdlib-only</strong> — no third-party Python dependencies.</p></div>
         </details>
         <details class="qa">
           <summary>How does it keep secrets and untrusted diffs safe?<span class="chev"></span></summary>
