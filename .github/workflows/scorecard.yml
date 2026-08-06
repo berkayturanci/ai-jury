@@ -23,11 +23,11 @@ jobs:
       # Needed to publish results to the OpenSSF REST API (OIDC).
       id-token: write
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0 (updated 2026-06-21)
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.0 (updated 2026-06-21)
         with:
           persist-credentials: false
       - name: Run Scorecard analysis
-        uses: ossf/scorecard-action@4eaacf0543bb3f2c246792bd56e8cdeffafb205a  # v2.4.3 (pinned 2026-05-31)
+        uses: ossf/scorecard-action@2d1146689b8cda280b9bc96326124645441f03bc  # v2.4.3 (pinned 2026-05-31)
         with:
           results_file: results.sarif
           results_format: sarif
