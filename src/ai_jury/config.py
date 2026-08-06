@@ -175,11 +175,12 @@ DEFAULT_CONFIG: dict = {
 # `command`: `local` (a user-supplied OpenAI-compatible server, issue #43) and
 # the hosted-API adapters (a real vendor API keyed by an env-var API key,
 # issue #430/#432).
-_NO_COMMAND_VENDORS = ("local", "anthropic-api", "openai-api", "google-api")
+_NO_COMMAND_VENDORS = ("local", "anthropic-api", "openai-api", "google-api", "openai-compatible")
 
 KNOWN_VENDORS = (
     "anthropic", "openai", "google", "local",
     "anthropic-api", "openai-api", "google-api",
+    "openai-compatible", "cli",
 )
 
 KNOWN_TOP_LEVEL_KEYS = ("jury", "agent")
@@ -225,6 +226,10 @@ KNOWN_AGENT_KEYS = (
     "extra_args",
     # OpenAI-compatible local/open-weight endpoint (issue #43).
     "endpoint",
+    # Universal agent extensions
+    "api_key_env",
+    "prompt_mode",
+    "headers",
 )
 
 
@@ -360,21 +365,19 @@ def validate_config(data: dict, strict: bool = False) -> list:
         # requires a non-empty ``command``.
         command = agent.get("command", "")
         vendor_value = agent.get("vendor", "")
-        is_local = vendor_value == "local"
-        if vendor_value in _NO_COMMAND_VENDORS:
+        has_endpoint = bool(agent.get("endpoint"))
+        is_local_or_http = vendor_value in _NO_COMMAND_VENDORS or vendor_value.endswith("-api") or has_endpoint
+        if is_local_or_http:
             if not agent.get("model"):
-                kind = "local" if is_local else "hosted API"
-                verb = "server" if is_local else "call"
                 warnings.append(
                     f"agent '{label}' (vendor '{vendor_value}') has no 'model'; the "
-                    f"{kind} {verb} will likely reject the request."
+                    f"server or API call will likely reject the request."
                 )
-            if is_local:
-                endpoint = agent.get("endpoint")
-                if endpoint:
-                    e_errors, e_warnings = _endpoint_issues(endpoint, label)
-                    errors.extend(e_errors)
-                    warnings.extend(e_warnings)
+            endpoint = agent.get("endpoint")
+            if endpoint:
+                e_errors, e_warnings = _endpoint_issues(endpoint, label)
+                errors.extend(e_errors)
+                warnings.extend(e_warnings)
         elif not command:
             errors.append(f"agent '{label}' is missing a non-empty 'command'.")
         elif _is_relative_path_command(command):
@@ -444,9 +447,12 @@ class AgentSpec:
     timeout: int = 600
     enabled: bool = True
     extra_args: list[str] = field(default_factory=list)
-    # OpenAI-compatible base URL for a local/open-weight agent (issue #43).
-    # Ignored by CLI-backed vendors; defaults applied by the local adapter.
+    # OpenAI-compatible base URL for a local/open-weight or hosted API agent (issue #43).
     endpoint: str | None = None
+    # Universal agent extensions
+    api_key_env: str | None = None
+    prompt_mode: str | None = None
+    headers: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -648,6 +654,10 @@ def _from_dict(data: dict) -> JuryConfig:
     default_timeout = int(jury.get("timeout", 600))
     agents: list[AgentSpec] = []
     for raw in data.get("agent", []):
+        raw_headers = raw.get("headers", {})
+        headers_dict = {str(k): str(v) for k, v in raw_headers.items()} if isinstance(raw_headers, dict) else {}
+        api_key_env_val = str(raw["api_key_env"]) if raw.get("api_key_env") else None
+        prompt_mode_val = str(raw["prompt_mode"]) if raw.get("prompt_mode") else None
         agents.append(
             AgentSpec(
                 name=raw["name"],
@@ -659,6 +669,9 @@ def _from_dict(data: dict) -> JuryConfig:
                 enabled=bool(raw.get("enabled", True)),
                 extra_args=list(raw.get("extra_args", [])),
                 endpoint=raw.get("endpoint"),
+                api_key_env=api_key_env_val,
+                prompt_mode=prompt_mode_val,
+                headers=headers_dict,
             )
         )
     return JuryConfig(

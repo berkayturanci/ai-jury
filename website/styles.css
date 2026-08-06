@@ -33,6 +33,10 @@
   --c-codex:  #10a37f;
   --c-agy:    #4285f4;
   --c-qwen:   #a855f7;
+  --c-deepseek: #0066ff;
+  --c-openrouter: #8b5cf6;
+  --c-groq:   #f55036;
+  --c-aider:  #ec4899;
 
   --shadow-lg: 0 30px 80px -20px rgba(0,0,0,0.7);
   --shadow-md: 0 14px 40px -12px rgba(0,0,0,0.55);
@@ -356,10 +360,16 @@ a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visibl
 .rev-chip[data-rev="codex"].lit  { border-color: var(--c-codex);  box-shadow: 0 0 0 1px var(--c-codex),  0 8px 20px -10px var(--c-codex); }
 .rev-chip[data-rev="agy"].lit    { border-color: var(--c-agy);    box-shadow: 0 0 0 1px var(--c-agy),    0 8px 20px -10px var(--c-agy); }
 .rev-chip[data-rev="qwen"].lit   { border-color: var(--c-qwen);   box-shadow: 0 0 0 1px var(--c-qwen),   0 8px 20px -10px var(--c-qwen); }
+.rev-chip[data-rev="deepseek"].lit { border-color: var(--c-deepseek); box-shadow: 0 0 0 1px var(--c-deepseek), 0 8px 20px -10px var(--c-deepseek); }
+.rev-chip[data-rev="openrouter"].lit { border-color: var(--c-openrouter); box-shadow: 0 0 0 1px var(--c-openrouter), 0 8px 20px -10px var(--c-openrouter); }
+.rev-chip[data-rev="groq"].lit   { border-color: var(--c-groq);   box-shadow: 0 0 0 1px var(--c-groq),   0 8px 20px -10px var(--c-groq); }
+.rev-chip[data-rev="aider"].lit  { border-color: var(--c-aider);  box-shadow: 0 0 0 1px var(--c-aider),  0 8px 20px -10px var(--c-aider); }
 .rev-tag { margin-left: auto; font-size: .6rem; color: var(--green-2); border: 1px solid var(--green); border-radius: 999px; padding: 0 .35rem; }
 
 .dot.d-claude { background: var(--c-claude); } .dot.d-codex { background: var(--c-codex); }
 .dot.d-agy { background: var(--c-agy); } .dot.d-qwen { background: var(--c-qwen); }
+.dot.d-deepseek { background: var(--c-deepseek); } .dot.d-openrouter { background: var(--c-openrouter); }
+.dot.d-groq { background: var(--c-groq); } .dot.d-aider { background: var(--c-aider); }
 
 /* connectors */
 .conn { position: relative; height: 2px; min-width: 26px; background: var(--border); border-radius: 2px; align-self: center; overflow: visible; }

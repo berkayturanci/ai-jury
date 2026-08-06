@@ -393,16 +393,33 @@
     if (!ctrls) return;
 
     var AGENTS = {
-      claude: { vendor: "anthropic", command: "claude" },
-      codex:  { vendor: "openai", command: "codex" },
-      agy:    { vendor: "google", command: "agy" },
-      qwen:   { vendor: "local", model: "qwen2.5-coder:7b", endpoint: "http://localhost:11434/v1" }
+      claude:     { vendor: "anthropic", command: "claude" },
+      codex:      { vendor: "openai", command: "codex" },
+      agy:        { vendor: "google", command: "agy" },
+      qwen:       { vendor: "local", model: "qwen2.5-coder:7b", endpoint: "http://localhost:11434/v1" },
+      deepseek:   { vendor: "openai-compatible", endpoint: "https://api.deepseek.com/v1", api_key_env: "DEEPSEEK_API_KEY", model: "deepseek-coder" },
+      openrouter: { vendor: "openai-compatible", endpoint: "https://openrouter.ai/api/v1", api_key_env: "OPENROUTER_API_KEY", model: "anthropic/claude-3.5-sonnet" },
+      groq:       { vendor: "openai-compatible", endpoint: "https://api.groq.com/openai/v1", api_key_env: "GROQ_API_KEY", model: "llama-3.3-70b-versatile" },
+      aider:      { vendor: "cli", command: "aider", prompt_mode: "stdin" }
     };
-    var LABEL = { claude: "Claude Code", codex: "Codex", agy: "Antigravity", qwen: "Local" };
+    var LABEL = {
+      claude: "Claude Code",
+      codex: "Codex",
+      agy: "Antigravity",
+      qwen: "Local",
+      deepseek: "DeepSeek",
+      openrouter: "OpenRouter",
+      groq: "Groq",
+      aider: "Aider CLI"
+    };
     var SEV_RANK = { high: 3, medium: 2, low: 1 };
 
     function selectedAgents() {
-      return ["claude", "codex", "agy", "qwen"].filter(function (n) { return $("ag-" + n).checked; });
+      var all = ["claude", "codex", "agy", "qwen", "deepseek", "openrouter", "groq", "aider"];
+      return all.filter(function (n) {
+        var el = $("ag-" + n);
+        return el && el.checked;
+      });
     }
     function rounds() { return q('input[name="rounds"]:checked').value; }
     function postmode() { return q('input[name="postmode"]:checked').value; }
@@ -509,7 +526,9 @@
         lines.push('vendor = "' + a.vendor + '"');
         if (a.command) lines.push('command = "' + a.command + '"');
         if (a.endpoint) lines.push('endpoint = "' + a.endpoint + '"');
+        if (a.api_key_env) lines.push('api_key_env = "' + a.api_key_env + '"');
         if (a.model) lines.push('model = "' + a.model + '"');
+        if (a.prompt_mode) lines.push('prompt_mode = "' + a.prompt_mode + '"');
         lines.push("");
       });
       $("toml-out").textContent = lines.join("\n").trim() + "\n";

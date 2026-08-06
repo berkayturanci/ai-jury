@@ -796,8 +796,11 @@ class _HostedApiAdapter(Adapter):
     # Subclasses override.
     _API_KEY_ENV: str = ""
 
+    def _api_key_env(self) -> str:
+        return (getattr(self.spec, "api_key_env", None) or self._API_KEY_ENV) or "OPENAI_API_KEY"
+
     def _api_key(self) -> str:
-        return os.environ.get(self._API_KEY_ENV, "")
+        return os.environ.get(self._api_key_env(), "")
 
     def _api_url(self) -> str:  # pragma: no cover - overridden
         raise NotImplementedError
@@ -818,7 +821,7 @@ class _HostedApiAdapter(Adapter):
         """
         if any(ord(ch) < 0x20 or ord(ch) == 0x7F for ch in self._api_key()):
             return (
-                f"{self._API_KEY_ENV} contains a control character (e.g. a stray "
+                f"{self._api_key_env()} contains a control character (e.g. a stray "
                 f"trailing newline from how the secret was loaded) and cannot be "
                 f"used as an HTTP header value"
             )
@@ -862,7 +865,7 @@ class _HostedApiAdapter(Adapter):
         invalid_reason = self._invalid_key_reason() if key_set else None
         has_key = key_set and invalid_reason is None
         if not key_set:
-            warnings = [f"{self._API_KEY_ENV} is not set in the environment"]
+            warnings = [f"{self._api_key_env()} is not set in the environment"]
         elif invalid_reason:
             warnings = [invalid_reason]
         else:
@@ -899,7 +902,7 @@ class _HostedApiAdapter(Adapter):
                 False,
                 "",
                 0.0,
-                f"{self._API_KEY_ENV} is not set in the environment",
+                f"{self._api_key_env()} is not set in the environment",
                 error_code=ERR_MISSING_API_KEY,
             )
         invalid_reason = self._invalid_key_reason()
@@ -1174,6 +1177,167 @@ class MockAdapter(Adapter):
         return AgentResult(n, self.spec.vendor, True, body, 0.0)
 
 
+class GenericOpenAICompatibleAdapter(_HostedApiAdapter):
+    """Hosted OpenAI-compatible API reviewer (OpenRouter, DeepSeek, Groq, Mistral API, LiteLLM, etc.).
+
+    Supports custom ``endpoint``, custom ``api_key_env``, and extra HTTP ``headers``.
+    """
+
+    _API_KEY_ENV = "OPENAI_API_KEY"
+
+    def _api_url(self) -> str:
+        endpoint = (self.spec.endpoint or _OPENAI_API_URL).rstrip("/")
+        if endpoint.endswith("/chat/completions"):
+            return endpoint
+        return f"{endpoint}/chat/completions"
+
+    def build_payload(self, prompt: str) -> dict:
+        return {
+            "model": self.spec.model or "",
+            "messages": [{"role": "user", "content": prompt}],
+        }
+
+    def _headers(self) -> dict[str, str]:
+        hdrs = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self._api_key()}",
+        }
+        if self.spec.headers:
+            hdrs.update(self.spec.headers)
+        return hdrs
+
+    @staticmethod
+    def parse_content(data: dict) -> str:
+        if not isinstance(data, dict):
+            return ""
+        choices = data.get("choices") or []
+        if not choices or not isinstance(choices, list):
+            return ""
+        first = choices[0]
+        if not isinstance(first, dict):
+            return ""
+        msg = first.get("message") or {}
+        if not isinstance(msg, dict):
+            return ""
+        raw_content = msg.get("content")
+        if isinstance(raw_content, str):
+            return raw_content.strip()
+        if isinstance(raw_content, list):
+            parts = []
+            for item in raw_content:
+                if isinstance(item, dict):
+                    if (item.get("type") == "text" or "text" in item) and isinstance(item.get("text"), str):
+                        parts.append(item["text"])
+                elif isinstance(item, str):
+                    parts.append(item)
+            return "".join(parts).strip()
+        return ""
+
+
+class GenericCLIAdapter(Adapter):
+    """Generic CLI adapter for arbitrary coding-agent CLIs (Aider, Goose, OpenHands, Copilot CLI, etc.).
+
+    Supports configurable prompt delivery modes:
+    - ``prompt_mode = "stdin"`` (default): prompt passed via STDIN
+    - ``prompt_mode = "arg"``: prompt passed as positional argument on argv
+    """
+
+    def available(self) -> bool:
+        command = self.spec.command or ""
+        if not command:
+            return False
+        return shutil.which(command) is not None
+
+    def detect_capabilities(self) -> dict:
+        if not self.available():
+            return {
+                "version": None,
+                "supports_headless": None,
+                "supports_model_selection": None,
+                "raw_version_output": "",
+                "status": CAP_UNAVAILABLE,
+                "warnings": [f"command '{self.spec.command}' not found on PATH"],
+            }
+        return {
+            "version": "generic-cli",
+            "supports_headless": True,
+            "supports_model_selection": bool(self.spec.model),
+            "raw_version_output": "generic-cli",
+            "status": CAP_OK,
+            "warnings": [],
+        }
+
+    def run(self, prompt: str, phase: str = "review", timeout: int | None = None) -> AgentResult:
+        del phase
+        if not self.available():
+            return AgentResult.failed(
+                self.spec.name,
+                self.spec.vendor,
+                ERR_MISSING_CLI,
+                f"command '{self.spec.command}' not found on PATH.",
+            )
+        effective_timeout = timeout if timeout is not None else self.spec.timeout
+        extra_args = _read_only_extra_args(self.spec)
+        argv = [self.spec.command, *extra_args]
+
+        mode = (self.spec.prompt_mode or "stdin").lower()
+        stdin_content = None
+
+        if mode == "arg":
+            argv.append(prompt)
+        else:
+            stdin_content = prompt
+
+        start = time.monotonic()
+        try:
+            res = _spawn(argv, stdin_content, timeout=effective_timeout)
+        except subprocess.TimeoutExpired:
+            return AgentResult.failed(
+                self.spec.name,
+                self.spec.vendor,
+                ERR_TIMEOUT,
+                f"execution timed out after {effective_timeout}s.",
+            )
+        except Exception as exc:
+            return AgentResult.failed(
+                self.spec.name,
+                self.spec.vendor,
+                ERR_SPAWN_FAILED,
+                f"failed to spawn '{self.spec.command}': {exc}",
+            )
+
+        duration = time.monotonic() - start
+        out = (res.stdout or "").strip()
+        err = (res.stderr or "").strip()
+
+        if res.returncode != 0:
+            detail = err or out or f"exited with code {res.returncode}"
+            safe_detail = redaction.redact(detail)[0]
+            err_code = classify_stderr(res.returncode, err or out)
+            return AgentResult(
+                self.spec.name,
+                self.spec.vendor,
+                False,
+                "",
+                duration,
+                f"exit {res.returncode}: {safe_detail[:500]}",
+                error_code=err_code,
+            )
+
+        if not out:
+            return AgentResult(
+                self.spec.name,
+                self.spec.vendor,
+                False,
+                "",
+                duration,
+                "agent produced empty output",
+                error_code=ERR_EMPTY_OUTPUT,
+            )
+
+        return AgentResult(self.spec.name, self.spec.vendor, True, out, duration)
+
+
 _VENDOR_ADAPTERS: dict[str, type[Adapter]] = {
     "anthropic": ClaudeAdapter,
     "openai": CodexAdapter,
@@ -1182,14 +1346,25 @@ _VENDOR_ADAPTERS: dict[str, type[Adapter]] = {
     "anthropic-api": AnthropicApiAdapter,
     "openai-api": OpenAiApiAdapter,
     "google-api": GoogleApiAdapter,
+    "openai-compatible": GenericOpenAICompatibleAdapter,
+    "cli": GenericCLIAdapter,
 }
+
+
+def register_adapter(vendor: str, adapter_cls: type[Adapter]) -> None:
+    """Register a custom adapter class for a vendor string."""
+    _VENDOR_ADAPTERS[vendor.lower()] = adapter_cls
 
 
 def make_adapter(spec: AgentSpec, mock: bool = False) -> Adapter:
     if mock:
         return MockAdapter(spec)
-    cls = _VENDOR_ADAPTERS.get(spec.vendor)
-    if cls is None:
-        # Unknown vendor: treat command as a print-style CLI (prompt as last arg).
-        return AgyAdapter(spec)
-    return cls(spec)
+    cls = _VENDOR_ADAPTERS.get((spec.vendor or "").lower())
+    if cls is not None:
+        return cls(spec)
+    if spec.endpoint or (spec.api_key_env and not spec.command):
+        return GenericOpenAICompatibleAdapter(spec)
+    if spec.command:
+        return GenericCLIAdapter(spec)
+    return AgyAdapter(spec)
+
