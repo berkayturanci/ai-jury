@@ -13,7 +13,7 @@
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="docs/assets/hero-light.png">
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/hero.png">
-  <img alt="A diff or PR enters; four reviewers — Claude Code, Codex, Antigravity, and a free local/open-weight model — review it independently and debate each other's findings; a chair agent verifies and synthesizes one verdict (APPROVE / COMMENT / REQUEST CHANGES) plus a report and CI gate." src="docs/assets/hero.png">
+  <img alt="A diff or PR enters; universal reviewers — Claude Code, Codex, DeepSeek, OpenRouter, and a free local model — review it independently and debate each other's findings; a chair agent verifies and synthesizes one verdict (APPROVE / COMMENT / REQUEST CHANGES) plus a report and CI gate." src="docs/assets/hero.png">
 </picture>
 
 > **Install once. Run a cross-vendor review jury anywhere.**
