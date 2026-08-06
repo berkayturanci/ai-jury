@@ -218,9 +218,36 @@ jury --mock --diff-file examples/sample.diff   # offline demo, no live CLIs
 
 ```bash
 jury config show   # the effective resolved config + its source
-jury --doctor      # readiness check + actionable next steps
 ```
 
+### Universal Agent & Model Support
+
+`ai-jury` supports **any AI agent or LLM provider**: vendor-native CLIs, hosted OpenAI-compatible APIs, local offline models, and arbitrary coding CLIs:
+
+| Provider / Tool | Category | `vendor` | Example `model` / `command` | `endpoint` | `api_key_env` |
+|---|---|---|---|---|---|
+| **Claude Code** | Native CLI | `claude` | `claude` | — | `ANTHROPIC_API_KEY` |
+| **OpenAI Codex** | Native CLI | `codex` | `codex` | — | `OPENAI_API_KEY` |
+| **Google Antigravity** | Native CLI | `antigravity` | `agy` | — | `GEMINI_API_KEY` |
+| **OpenRouter** (200+ models) | Hosted API | `openai-compatible` | `deepseek/deepseek-r1` | `https://openrouter.ai/api/v1/chat/completions` | `OPENROUTER_API_KEY` |
+| **DeepSeek API** | Hosted API | `openai-compatible` | `deepseek-reasoner` | `https://api.deepseek.com/v1/chat/completions` | `DEEPSEEK_API_KEY` |
+| **Groq** | Hosted API | `openai-compatible` | `llama-3.3-70b-versatile` | `https://api.groq.com/openai/v1/chat/completions` | `GROQ_API_KEY` |
+| **xAI / Grok** | Hosted API | `openai-compatible` | `grok-2-latest` | `https://api.x.ai/v1/chat/completions` | `XAI_API_KEY` |
+| **Moonshot / Kimi** | Hosted API | `openai-compatible` | `moonshot-v1-8k` | `https://api.moonshot.cn/v1/chat/completions` | `MOONSHOT_API_KEY` |
+| **Alibaba Qwen Cloud** | Hosted API | `openai-compatible` | `qwen-max` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `DASHSCOPE_API_KEY` |
+| **Mistral AI** | Hosted API | `openai-compatible` | `mistral-large-latest` | `https://api.mistral.ai/v1/chat/completions` | `MISTRAL_API_KEY` |
+| **Ollama** (Local) | Local Server | `local` | `qwen2.5-coder:14b` | `http://localhost:11434/v1` (default) | — |
+| **LM Studio / vLLM** | Local Server | `local` | `local-model` | `http://localhost:1234/v1` | — |
+| **Cursor CLI** | CLI Tool | `cli` | `cursor agent --print` | — | — |
+| **Aider CLI** | CLI Tool | `cli` | `aider --message` | — | — |
+| **LiteLLM / LLM Proxy** | Gateway | `openai-compatible` | `bedrock/claude-3-5-sonnet` | `http://localhost:4000/v1` | `LITELLM_API_KEY` |
+
+Full configuration guides and examples: [`docs/configuration.md`](docs/configuration.md) and [`docs/cookbook.md`](docs/cookbook.md#13-configure-universal-agent-providers-openrouter-deepseek-groq-grok-cursor-cli-local-models).
+
+<!-- Universal provider matrix reference -->
+```bash
+jury --doctor      # readiness check + actionable next steps
+```
 
 A sample report is in [`docs/example-run.md`](docs/example-run.md). For a **real**
 four-vendor run where the jury reviews its own repository (with honest notes on

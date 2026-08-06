@@ -1,0 +1,136 @@
+# ==============================================================================
+# Comprehensive Production Example jury.toml Configuration for ai-jury
+# ==============================================================================
+# Place this file at .jury.toml or jury.toml in your repository root.
+# Learn more: https://github.com/berkayturanci/ai-jury/blob/main/docs/configuration.md
+# Official Example Configuration
+# ==============================================================================
+
+[jury]
+# Review panel roster (can contain native CLIs, hosted APIs, local models, and CLI tools)
+panel = [
+    "claude",
+    "codex",
+    "grok",
+    "local-qwen",
+]
+
+# Number of deliberation rounds (1 = review only, 2 = review + cross-examination debate)
+rounds = 2
+
+# Verification phase to re-test & confirm claims
+verify = true
+
+# Decision mode: "chair" (chair synthesis) or "vote" (panel majority vote)
+decision = "chair"
+
+
+# ------------------------------------------------------------------------------
+# 1. Vendor Native Agent CLIs
+# ------------------------------------------------------------------------------
+
+[[agent]]
+name = "claude"
+vendor = "claude"
+
+[[agent]]
+name = "codex"
+vendor = "codex"
+
+[[agent]]
+name = "antigravity"
+vendor = "antigravity"
+
+
+# ------------------------------------------------------------------------------
+# 2. Hosted OpenAI-Compatible REST APIs (vendor = "openai-compatible")
+# ------------------------------------------------------------------------------
+
+# xAI / Grok Direct API (https://api.x.ai/v1)
+[[agent]]
+name = "grok"
+vendor = "openai-compatible"
+model = "grok-2-latest"
+endpoint = "https://api.x.ai/v1/chat/completions"
+api_key_env = "XAI_API_KEY"
+
+# OpenRouter (Access 200+ models like DeepSeek-R1, Llama 3.3, Kimi)
+[[agent]]
+name = "openrouter"
+vendor = "openai-compatible"
+model = "deepseek/deepseek-r1"
+endpoint = "https://openrouter.ai/api/v1/chat/completions"
+api_key_env = "OPENROUTER_API_KEY"
+
+[agent.headers]
+HTTP-Referer = "https://github.com/berkayturanci/ai-jury"
+X-Title = "ai-jury"
+
+# DeepSeek Direct API
+[[agent]]
+name = "deepseek"
+vendor = "openai-compatible"
+model = "deepseek-reasoner"
+endpoint = "https://api.deepseek.com/v1/chat/completions"
+api_key_env = "DEEPSEEK_API_KEY"
+
+# Groq Ultra-Fast Llama Inference API
+[[agent]]
+name = "groq"
+vendor = "openai-compatible"
+model = "llama-3.3-70b-versatile"
+endpoint = "https://api.groq.com/openai/v1/chat/completions"
+api_key_env = "GROQ_API_KEY"
+
+# Moonshot / Kimi API Direct
+[[agent]]
+name = "kimi"
+vendor = "openai-compatible"
+model = "moonshot-v1-8k"
+endpoint = "https://api.moonshot.cn/v1/chat/completions"
+api_key_env = "MOONSHOT_API_KEY"
+
+# Alibaba Qwen Cloud / DashScope API
+[[agent]]
+name = "qwen-cloud"
+vendor = "openai-compatible"
+model = "qwen-max"
+endpoint = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+api_key_env = "DASHSCOPE_API_KEY"
+
+
+# ------------------------------------------------------------------------------
+# 3. Local / Open-Weight Model Servers (vendor = "local") - $0, Offline, 100% Private
+# ------------------------------------------------------------------------------
+
+# Ollama Default (http://localhost:11434/v1)
+[[agent]]
+name = "local-qwen"
+vendor = "local"
+model = "qwen2.5-coder:14b"
+
+# LM Studio or vLLM Custom Endpoint Port
+[[agent]]
+name = "local-lmstudio"
+vendor = "local"
+model = "local-model"
+endpoint = "http://localhost:1234/v1"
+
+
+# ------------------------------------------------------------------------------
+# 4. Terminal Coding CLI Agents (vendor = "cli")
+# ------------------------------------------------------------------------------
+
+# Cursor CLI Agent
+[[agent]]
+name = "cursor"
+vendor = "cli"
+command = "cursor agent --print"
+prompt_mode = "arg"
+
+# Aider CLI Agent
+[[agent]]
+name = "aider"
+vendor = "cli"
+command = "aider --message"
+prompt_mode = "arg"

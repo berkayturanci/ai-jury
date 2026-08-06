@@ -400,6 +400,8 @@
       deepseek:   { vendor: "openai-compatible", endpoint: "https://api.deepseek.com/v1", api_key_env: "DEEPSEEK_API_KEY", model: "deepseek-coder" },
       openrouter: { vendor: "openai-compatible", endpoint: "https://openrouter.ai/api/v1", api_key_env: "OPENROUTER_API_KEY", model: "anthropic/claude-3.5-sonnet" },
       groq:       { vendor: "openai-compatible", endpoint: "https://api.groq.com/openai/v1", api_key_env: "GROQ_API_KEY", model: "llama-3.3-70b-versatile" },
+      grok:       { vendor: "openai-compatible", endpoint: "https://api.x.ai/v1", api_key_env: "XAI_API_KEY", model: "grok-2-latest" },
+      cursor:     { vendor: "cli", command: "cursor agent --print", prompt_mode: "arg" },
       aider:      { vendor: "cli", command: "aider", prompt_mode: "stdin" }
     };
     var LABEL = {
@@ -410,6 +412,8 @@
       deepseek: "DeepSeek",
       openrouter: "OpenRouter",
       groq: "Groq",
+      grok: "Grok",
+      cursor: "Cursor CLI",
       aider: "Aider CLI"
     };
     var SEV_RANK = { high: 3, medium: 2, low: 1 };
@@ -421,7 +425,7 @@
     function sevClassOf(f) { return f.sevClass || f.sev; }
 
     function selectedAgents() {
-      var all = ["claude", "codex", "agy", "qwen", "deepseek", "openrouter", "groq", "aider"];
+      var all = ["claude", "codex", "agy", "qwen", "deepseek", "openrouter", "groq", "grok", "cursor", "aider"];
       return all.filter(function (n) {
         var el = $("ag-" + n);
         return el && el.checked;

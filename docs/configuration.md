@@ -122,7 +122,26 @@ sensitive — the same trust level as the diff. It defaults to `$JURY_CACHE_DIR`
 2. **Hosted OpenAI-Compatible APIs**: `vendor = "openai-compatible"` works with OpenRouter, DeepSeek, Groq, Mistral, Anyscale, LiteLLM, or Azure OpenAI proxies. Configurable via `endpoint`, `api_key_env`, and custom `headers`.
 3. **Local / Open-Weight Models**: `vendor = "local"` over Ollama, `llama.cpp`, vLLM, or LM Studio.
 4. **Arbitrary Coding CLI Agents**: `vendor = "cli"` (such as Aider, Goose, OpenHands) with `prompt_mode = "stdin"` or `"arg"`.
-5. **Pluggable Python Adapters**: Register custom adapters in Python via `ai_jury.adapters.register_adapter("my-vendor", MyAdapter)`.
+### Supported Providers Reference Matrix
+
+| Provider / Tool | Category | `vendor` | Example `model` or `command` | `endpoint` | `api_key_env` |
+|---|---|---|---|---|---|
+| **Claude Code** | Native CLI | `claude` | `claude` | — | `ANTHROPIC_API_KEY` |
+| **OpenAI Codex** | Native CLI | `codex` | `codex` | — | `OPENAI_API_KEY` |
+| **Google Antigravity** | Native CLI | `antigravity` | `agy` | — | `GEMINI_API_KEY` |
+| **OpenRouter** (200+ models) | Hosted API | `openai-compatible` | `deepseek/deepseek-r1` | `https://openrouter.ai/api/v1/chat/completions` | `OPENROUTER_API_KEY` |
+| **DeepSeek API** | Hosted API | `openai-compatible` | `deepseek-reasoner` | `https://api.deepseek.com/v1/chat/completions` | `DEEPSEEK_API_KEY` |
+| **Groq** | Hosted API | `openai-compatible` | `llama-3.3-70b-versatile` | `https://api.groq.com/openai/v1/chat/completions` | `GROQ_API_KEY` |
+| **xAI / Grok** | Hosted API | `openai-compatible` | `grok-2-latest` | `https://api.x.ai/v1/chat/completions` | `XAI_API_KEY` |
+| **Moonshot / Kimi** | Hosted API | `openai-compatible` | `moonshot-v1-8k` | `https://api.moonshot.cn/v1/chat/completions` | `MOONSHOT_API_KEY` |
+| **Alibaba Qwen Cloud** | Hosted API | `openai-compatible` | `qwen-max` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `DASHSCOPE_API_KEY` |
+| **Mistral AI** | Hosted API | `openai-compatible` | `mistral-large-latest` | `https://api.mistral.ai/v1/chat/completions` | `MISTRAL_API_KEY` |
+| **DeepInfra** | Hosted API | `openai-compatible` | `meta-llama/Llama-3.3-70B-Instruct` | `https://api.deepinfra.com/v1/openai/chat/completions` | `DEEPINFRA_API_KEY` |
+| **Ollama** (Local) | Local Server | `local` | `qwen2.5-coder:14b` | `http://localhost:11434/v1` (default) | — |
+| **LM Studio / vLLM** | Local Server | `local` | `local-model` | `http://localhost:1234/v1` | — |
+| **Cursor CLI** | CLI Tool | `cli` | `cursor agent --print` | — | — |
+| **Aider CLI** | CLI Tool | `cli` | `aider --message` | — | — |
+| **LiteLLM / LLM Proxy** (AWS Bedrock, Azure, Vertex) | Gateway | `openai-compatible` | `bedrock/claude-3-5-sonnet` | `http://localhost:4000/v1` | `LITELLM_API_KEY` |
 
 ### Configuration Examples (`jury.toml`)
 
@@ -163,9 +182,45 @@ endpoint = "https://api.groq.com/openai/v1/chat/completions"
 api_key_env = "GROQ_API_KEY"
 ```
 
-#### Custom CLI Agent (e.g. Aider CLI) (`vendor = "cli"`)
+#### Grok / xAI API (`vendor = "openai-compatible"`)
+
+# Direct xAI API (https://api.x.ai/v1)
+[[agent]]
+name = "grok"
+vendor = "openai-compatible"
+model = "grok-2-latest"
+endpoint = "https://api.x.ai/v1/chat/completions"
+api_key_env = "XAI_API_KEY"
+```
+
+#### Local Models (Ollama, LM Studio, vLLM, llama.cpp) (`vendor = "local"`)
 
 ```toml
+# Ollama default (http://localhost:11434/v1)
+[[agent]]
+name = "local-qwen"
+vendor = "local"
+model = "qwen2.5-coder:14b"
+
+# LM Studio or vLLM custom port
+[[agent]]
+name = "local-lmstudio"
+vendor = "local"
+model = "local-model"
+endpoint = "http://localhost:1234/v1"
+```
+
+#### Cursor CLI / Arbitrary CLI Agent (`vendor = "cli"`)
+
+```toml
+# Cursor CLI
+[[agent]]
+name = "cursor"
+vendor = "cli"
+command = "cursor agent --print"
+prompt_mode = "arg"
+
+# Aider CLI
 [[agent]]
 name = "aider"
 vendor = "cli"
