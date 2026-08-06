@@ -123,3 +123,72 @@ sensitive — the same trust level as the diff. It defaults to `$JURY_CACHE_DIR`
 3. **Local / Open-Weight Models**: `vendor = "local"` over Ollama, `llama.cpp`, vLLM, or LM Studio.
 4. **Arbitrary Coding CLI Agents**: `vendor = "cli"` (such as Aider, Goose, OpenHands) with `prompt_mode = "stdin"` or `"arg"`.
 5. **Pluggable Python Adapters**: Register custom adapters in Python via `ai_jury.adapters.register_adapter("my-vendor", MyAdapter)`.
+
+### Configuration Examples (`jury.toml`)
+
+#### OpenRouter API (`vendor = "openai-compatible"`)
+
+```toml
+[[agent]]
+name = "openrouter"
+vendor = "openai-compatible"
+model = "deepseek/deepseek-r1"
+endpoint = "https://openrouter.ai/api/v1/chat/completions"
+api_key_env = "OPENROUTER_API_KEY"
+
+[agent.headers]
+HTTP-Referer = "https://github.com/berkayturanci/ai-jury"
+X-Title = "ai-jury"
+```
+
+#### DeepSeek API (`vendor = "openai-compatible"`)
+
+```toml
+[[agent]]
+name = "deepseek"
+vendor = "openai-compatible"
+model = "deepseek-reasoner"
+endpoint = "https://api.deepseek.com/v1/chat/completions"
+api_key_env = "DEEPSEEK_API_KEY"
+```
+
+#### Groq API (`vendor = "openai-compatible"`)
+
+```toml
+[[agent]]
+name = "groq"
+vendor = "openai-compatible"
+model = "llama-3.3-70b-versatile"
+endpoint = "https://api.groq.com/openai/v1/chat/completions"
+api_key_env = "GROQ_API_KEY"
+```
+
+#### Custom CLI Agent (e.g. Aider CLI) (`vendor = "cli"`)
+
+```toml
+[[agent]]
+name = "aider"
+vendor = "cli"
+command = "aider --message"
+prompt_mode = "arg" # "arg" (appends prompt as last argument) or "stdin" (pipes prompt to stdin)
+```
+
+#### Custom Pluggable Python Adapter
+
+```python
+from ai_jury.adapters import BaseAdapter, register_adapter, AgentResult
+
+class CustomCompanyAdapter(BaseAdapter):
+    def invoke(self, prompt: str, timeout: float) -> AgentResult:
+        # Custom HTTP, gRPC, or CLI logic here
+        return AgentResult(ok=True, text="Response from custom adapter")
+
+# Register custom vendor
+register_adapter("company-llm", CustomCompanyAdapter)
+```
+```toml
+[[agent]]
+name = "internal-llm"
+vendor = "company-llm"
+model = "company-v1"
+```
