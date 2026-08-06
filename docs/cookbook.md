@@ -465,9 +465,9 @@ rejected. `--repo owner/name` targets another repo.
 
 ---
 
-## 13. Configure Universal Agent Providers (OpenRouter, DeepSeek, Groq, Aider CLI)
+## 13. Configure Universal Agent Providers (OpenRouter, DeepSeek, Groq, Grok, Cursor CLI, Local Models)
 
-**Prerequisites:** an API key for hosted providers (e.g., `export OPENROUTER_API_KEY="sk-or-v1-..."` or `export DEEPSEEK_API_KEY="sk-..."`) or installed CLI tools (`aider`).
+**Prerequisites:** an API key for hosted providers (e.g., `export OPENROUTER_API_KEY="sk-or-v1-..."`, `export DEEPSEEK_API_KEY="sk-..."`, or `export XAI_API_KEY="xai-..."`) or installed CLI tools (`cursor`, `aider`).
 
 Add any of these provider templates to your `jury.toml`:
 
@@ -496,7 +496,27 @@ model = "llama-3.3-70b-versatile"
 endpoint = "https://api.groq.com/openai/v1/chat/completions"
 api_key_env = "GROQ_API_KEY"
 
-# Generic CLI agent (Aider, Goose, OpenHands)
+# Grok / xAI API
+[[agent]]
+name = "grok"
+vendor = "openai-compatible"
+model = "grok-2-latest"
+endpoint = "https://api.x.ai/v1/chat/completions"
+api_key_env = "XAI_API_KEY"
+
+# Local models (Ollama, LM Studio, vLLM, llama.cpp)
+[[agent]]
+name = "local-qwen"
+vendor = "local"
+model = "qwen2.5-coder:14b"
+
+# Generic CLI agents (Cursor, Aider, Goose, OpenHands)
+[[agent]]
+name = "cursor"
+vendor = "cli"
+command = "cursor agent --print"
+prompt_mode = "arg"
+
 [[agent]]
 name = "aider"
 vendor = "cli"
