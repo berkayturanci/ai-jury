@@ -2,7 +2,7 @@
 
 > Install once. Run a cross-vendor review jury anywhere. A small, stdlib-only Python
 > CLI that orchestrates native coding-agent CLIs from different vendors (Claude Code,
-> OpenAI Codex, Google Antigravity) to review the *same* diff/PR, debate each other's
+> OpenAI Codex, Google Antigravity, Cursor CLI, DeepSeek, Groq, local models) to review the *same* diff/PR, debate each other's
 > findings, verify them against the code, and synthesize one chair verdict.
 
 Key facts:
