@@ -194,11 +194,12 @@ endpoint = "http://localhost:1234/v1"
 #### Cursor CLI / Arbitrary CLI Agent (`vendor = "cli"`)
 
 ```toml
-# Cursor CLI
+# Cursor CLI (using standalone cursor-agent binary & model selection)
 [[agent]]
 name = "cursor"
 vendor = "cli"
-command = "cursor agent --print"
+command = "cursor-agent"
+extra_args = ["--print", "--trust", "--model", "claude-4.6-sonnet-medium"]
 prompt_mode = "arg"
 
 # Aider CLI

@@ -514,7 +514,8 @@ model = "qwen2.5-coder:14b"
 [[agent]]
 name = "cursor"
 vendor = "cli"
-command = "cursor agent --print"
+command = "cursor-agent"
+extra_args = ["--print", "--trust", "--model", "claude-4.6-sonnet-medium"]
 prompt_mode = "arg"
 
 [[agent]]
