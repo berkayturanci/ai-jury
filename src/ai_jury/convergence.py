@@ -63,7 +63,8 @@ def _section_has_content(output: str, section_prefixes: tuple[str, ...]) -> bool
         header = _HEADER_RE.match(line)
         if header:
             name = re.sub(r"[^a-z]", "", header.group(1).lower())
-            in_section = any(name.startswith(p) for p in section_prefixes)
+            # bolt: avoid generator overhead by passing tuple directly to startswith
+            in_section = name.startswith(section_prefixes)
             continue
         if in_section and line:
             token = re.sub(r"[^a-z0-9]", "", line.lower())
