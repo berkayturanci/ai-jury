@@ -504,6 +504,14 @@ model = "grok-2-latest"
 endpoint = "https://api.x.ai/v1/chat/completions"
 api_key_env = "XAI_API_KEY"
 
+# OmniRoute / Unified LLM Gateways (LiteLLM, One API)
+[[agent]]
+name = "omni-claude"
+vendor = "openai-compatible"
+model = "anthropic/claude-3-5-sonnet"
+endpoint = "http://localhost:8000/v1/chat/completions"
+api_key_env = "OMNIROUTE_API_KEY"
+
 # Local models (Ollama, LM Studio, vLLM, llama.cpp)
 [[agent]]
 name = "local-qwen"
