@@ -2,7 +2,7 @@
 
 > Install once. Run a cross-vendor review jury anywhere. A small, stdlib-only Python
 > CLI that orchestrates native coding-agent CLIs from different vendors (Claude Code,
-> OpenAI Codex, Google Antigravity) to review the *same* diff/PR, debate each other's
+> OpenAI Codex, Google Antigravity, Cursor CLI, DeepSeek, Groq, local models) to review the *same* diff/PR, debate each other's
 > findings, verify them against the code, and synthesize one chair verdict.
 
 Key facts:
@@ -13,9 +13,7 @@ Key facts:
   (entry point: `jury`).
 - Differentiator: drives each vendor's **native CLI agent** as a headless subprocess,
   not API-level model calls. The research-backed lever is **vendor heterogeneity**.
-- Panel: Claude Code, OpenAI Codex, Google Antigravity (cloud CLIs), plus an optional
-  **local / open-weight** reviewer (`vendor = "local"`) over any OpenAI-compatible
-  server (Ollama, llama.cpp, vLLM, LM Studio) — free, offline, $0.
+- Panel: Universal agent provider support — Cloud CLIs (Claude Code, OpenAI Codex, Google Antigravity), hosted APIs (OpenRouter, DeepSeek, Groq, Anthropic, OpenAI, Gemini), free local open-weight models (Ollama, llama.cpp, vLLM, LM Studio), and arbitrary coding CLI tools (`vendor = "cli"` like Aider, Goose, OpenHands).
 - Pipeline: round 1 independent review → round 2 cross-examination/debate (adaptive
   early-stop) → optional verification pass → chair synthesis → one report. Large diffs
   are filtered + chunked; runs are bounded by an optional budget/retries and an optional

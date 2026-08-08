@@ -78,6 +78,9 @@ way, the orchestrator owns prompt content. Verified headless invocations (early 
 | Anthropic (hosted API) | `AnthropicApiAdapter` | HTTP `POST api.anthropic.com/v1/messages`, keyed by `ANTHROPIC_API_KEY` — stdlib `urllib`, no subprocess, no CLI needed |
 | OpenAI (hosted API) | `OpenAiApiAdapter` | HTTP `POST api.openai.com/v1/chat/completions`, keyed by `OPENAI_API_KEY` — stdlib `urllib`, no subprocess, no CLI needed |
 | Google (hosted API) | `GoogleApiAdapter` | HTTP `POST generativelanguage.googleapis.com/v1beta/models/{model}:generateContent`, keyed by `GEMINI_API_KEY` (header, not the `?key=...` query form) — stdlib `urllib`, no subprocess, no CLI needed |
+| OpenAI-Compatible (hosted API) | `GenericOpenAICompatibleAdapter` | HTTP `POST {endpoint}/chat/completions` (OpenRouter, DeepSeek, Groq, Mistral, LiteLLM) — stdlib `urllib`, custom `api_key_env` & `headers` |
+| Arbitrary CLI Agents | `GenericCLIAdapter` | Subprocess CLI adapter (Aider, Goose, OpenHands) with `prompt_mode = "stdin"` or `"arg"`, secret redaction & stderr error classification |
+| Custom Registered Vendors | `register_adapter()` | Dynamically registered Python adapter classes via `ai_jury.adapters.register_adapter("my-vendor", MyAdapter)` |
 | — (tests) | `MockAdapter` | deterministic, phase-aware output; no subprocess |
 
 Adapters fail soft: a missing CLI, **non-zero exit** (even with stdout), timeout, an

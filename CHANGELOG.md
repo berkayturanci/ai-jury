@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-08-06
+
+### Added
+
+- **Universal Agent Provider Support** (#478, #479, #480, #481, #482, #483, #484):
+  - **`GenericOpenAICompatibleAdapter`**: Hosted HTTP API reviewer for **OpenRouter**, **DeepSeek**, **Groq**, **Mistral**, **LiteLLM**, **Azure OpenAI**, etc. (`vendor = "openai-compatible"`, with custom `endpoint`, `api_key_env`, and `headers`). Supports polymorphic plain string and array message payload parsing.
+  - **`GenericCLIAdapter`**: Integration for arbitrary coding-agent CLIs (`vendor = "cli"`, e.g. Aider, Goose, OpenHands) with `prompt_mode = "stdin"` or `"arg"`, automatic secret redaction (`redaction.redact`), and exit-code error classification (`classify_stderr`).
+  - **Pluggable Provider Registry**: Dynamically register custom Python adapter classes via `ai_jury.adapters.register_adapter()`.
+  - **Decoupled Privilege Audit**: Subprocess sandbox enforcement rules in `privilege.py` decoupled from vendor name matches, exempting no-subprocess HTTP API calls while maintaining fail-closed protection for CLI subprocesses.
+  - **Doctor & Scaffold Extensions**: Dynamic PATH/endpoint probes in `doctor.py` and scaffolding templates in `scaffold.py` for `openrouter`, `deepseek`, `groq`, and `aider`.
+  - **Terminal Theater & Interactive Web Demo**: Added brand color styling (`--c-deepseek`, `--c-openrouter`, `--c-groq`, `--c-aider`) to terminal deliberation theater (`theater.py`) and website interactive controls.
+
 ## [1.11.1] - 2026-07-27
 
 ### Fixed

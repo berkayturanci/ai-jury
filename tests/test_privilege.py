@@ -274,6 +274,9 @@ class EnforceReadOnlyTest(unittest.TestCase):
     def test_local_vendor_is_left_untouched(self):
         self.assertEqual(privilege.enforce_read_only("local", "qwen", []), [])
 
+    def test_cli_vendor_is_left_untouched(self):
+        self.assertEqual(privilege.enforce_read_only("cli", "cursor", ["--print"]), ["--print"])
+
 
 if __name__ == "__main__":
     unittest.main()

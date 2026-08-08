@@ -24,7 +24,7 @@ from pathlib import Path
 
 from . import __version__
 from .adapters import make_adapter
-from .config import load_config, ConfigError
+from .config import ConfigError, load_config
 from .redaction import redact, redact_url_userinfo
 
 
@@ -83,7 +83,8 @@ def _resolved_command(spec):
     """
     command = getattr(spec, "command", "") or ""
     vendor = (getattr(spec, "vendor", "") or "").lower()
-    if not command or vendor == "local":
+    has_endpoint = bool(getattr(spec, "endpoint", None))
+    if not command or vendor in ("local", "anthropic-api", "openai-api", "google-api", "openai-compatible") or vendor.endswith("-api") or has_endpoint:
         return None
     try:
         return shutil.which(command)

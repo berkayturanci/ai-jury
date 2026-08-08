@@ -18,34 +18,22 @@
 
 > **Install once. Run a cross-vendor review jury anywhere.**
 
-Most "multi-model review" tools call models at the **API level**. This one drives each
-vendor's **native CLI agent** — `claude` (Claude Code), `codex` (OpenAI Codex CLI), and
-`agy` (Google Antigravity) — plus an optional **free, offline local / open-weight model**
-(via Ollama or any OpenAI-compatible server), so every reviewer runs in its own native
-environment with its own tooling. Each agent runs headless; the orchestrator owns the
-round structure.
+Most "multi-model review" tools call models at the **API level**. This one drives **any AI agent provider**: vendor native CLI agents (`claude`, `codex`, `agy`), hosted API providers (Anthropic, OpenAI, Gemini, OpenRouter, DeepSeek, Groq, Mistral), free local open-weight models (Ollama, llama.cpp, vLLM, LM Studio), and arbitrary coding-agent CLIs (`vendor = "cli"` like Aider, Goose, OpenHands) — so every reviewer runs in its own environment with its own tooling. Each agent runs headless; the orchestrator owns the round structure.
 
 ```
         ┌──────── round 1 ────────┐   ┌─ round 2 (adaptive) ─┐   ┌─ verify + synthesis ─┐
-diff ──▶ claude codex agy qwen (review) ▶ each rebuts the      ▶ chair verifies, then   ▶ verdict
+diff ──▶ claude codex agy deepseek  ▶ each rebuts the      ▶ chair verifies, then   ▶ verdict
          (parallel, independent)           others' findings       consolidates             + report
 ```
 
-Highlights: **free/offline** local reviews · **secure by default** (reviewers run
-sandboxed/read-only) · `jury init` setup · debate + verification · **chair verdict
-or a panel vote** · **review a PR, a diff, or an issue** · **live / full-transcript
-output** · CI gating · incremental review · suggested patches · large-diff chunking.
-Configure once in `jury.toml`; mix cloud CLIs and a local model however you like.
+Highlights: **universal agent provider support** (cloud CLIs, hosted APIs, local models, arbitrary CLI agents) · **free/offline** local reviews · **secure by default** (reviewers run sandboxed/read-only) · `jury init` setup · debate + verification · **chair verdict or a panel vote** · **review a PR, a diff, or an issue** · **live / full-transcript output** · CI gating · incremental review · suggested patches · large-diff chunking. Configure once in `jury.toml`; mix cloud CLIs, hosted APIs, and local models however you like.
 
 ## Why
 
 Different models miss different things. Running them as an adversarial panel — each
 seeing the others' findings and arguing — surfaces more real issues and filters more
 false positives than any single reviewer. The research-backed lever is **vendor
-heterogeneity**, not more rounds — and a free local/open-weight model adds a *different*
-perspective at **zero marginal cost**, so a jury needn't mean paying three vendors.
-See [`docs/architecture.md`](docs/architecture.md) and
-[`docs/feasibility.md`](docs/feasibility.md).
+heterogeneity**, not more rounds — and universal provider support lets you mix frontier cloud CLIs, hosted APIs (OpenRouter, DeepSeek, Groq), custom CLI agents (Aider), and free local models at zero marginal cost. See [`docs/architecture.md`](docs/architecture.md) and [`docs/feasibility.md`](docs/feasibility.md).
 
 ## Install
 
@@ -57,9 +45,8 @@ pipx install git+https://github.com/berkayturanci/ai-jury.git
 
 Requires Python 3.11+. Then scaffold a config with **`jury init`** (it detects your
 installed agents and local models). You need at least one reviewer: an agent CLI
-(`claude`, `codex`, `agy`), a free local model via Ollama, **or** a hosted-API reviewer
-keyed by just `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` (`jury init
---agents claude-api,codex-api,gemini-api`) — no CLI install or interactive login needed,
+(`claude`, `codex`, `agy`, `cursor`, `aider`), a free local model via Ollama, **or** a hosted-API reviewer
+(Anthropic, OpenAI, Gemini, OpenRouter, DeepSeek, Groq, xAI Grok, Moonshot Kimi) — no CLI install or interactive login needed,
 useful for CI and containers; missing/unreachable/unkeyed reviewers are skipped. `gh` is
 needed for `--pr` / `--post`.
 
