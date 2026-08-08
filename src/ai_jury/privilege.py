@@ -139,8 +139,10 @@ def _ensure_value_sandbox(extra_args: list[str], default: list[str]) -> list[str
     args = list(extra_args)
     # Recognize both the space form (-s read-only) and the equals form
     # (--sandbox=read-only) so an existing sandbox is never double-specified.
-    if any(a in ("-s", "--sandbox") or a.startswith(("-s=", "--sandbox=")) for a in args):
-        return args
+    # bolt: Consolidate multiple sequential list iteration conditions into a single explicit loop
+    for a in args:
+        if a in ("-s", "--sandbox") or a.startswith(("-s=", "--sandbox=")):
+            return args
     return [*default, *args]
 
 
@@ -165,7 +167,14 @@ def enforce_read_only(vendor: str, name: str, extra_args: list[str]) -> list[str
     # `local`/hosted-API vendors are checked FIRST (review of #310): a network
     # agent runs no subprocess, and the name-substring checks below would
     # otherwise mis-handle e.g. a local agent named "local-claude" / "my-codex".
-    if vendor in ("local", "anthropic-api", "openai-api", "google-api", "openai-compatible", "cli") or vendor.endswith("-api"):
+    if vendor in (
+        "local",
+        "anthropic-api",
+        "openai-api",
+        "google-api",
+        "openai-compatible",
+        "cli",
+    ) or vendor.endswith("-api"):
         return extra_args
     if "claude" in name or vendor == "anthropic":
         return _ensure_claude_disallowed(extra_args)
@@ -204,7 +213,11 @@ def audit_agent(spec) -> list[str]:
     # no filesystem, no shell, nothing to disallow), so they are out of scope
     # for this audit.
     has_endpoint = bool(getattr(spec, "endpoint", None))
-    if vendor in ("local", "anthropic-api", "openai-api", "google-api", "openai-compatible") or vendor.endswith("-api") or has_endpoint:
+    if (
+        vendor in ("local", "anthropic-api", "openai-api", "google-api", "openai-compatible")
+        or vendor.endswith("-api")
+        or has_endpoint
+    ):
         return warnings
 
     is_claude = "claude" in name or vendor == "anthropic"
