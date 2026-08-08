@@ -458,6 +458,8 @@ section[id], [id="top"] { scroll-margin-top: 84px; }
 .opt:hover { background: var(--surface-2); }
 .opt:has(input:checked) { background: var(--accent-soft); border-color: var(--accent-line); }
 .opt input { accent-color: var(--accent); width: 16px; height: 16px; cursor: pointer; }
+.opt:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.opt:has(input:focus-visible) input { outline: none; }
 .opt .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
 .opt .tag { margin-left: auto; font-size: .66rem; color: var(--green-2); border: 1px solid var(--green); border-radius: 999px; padding: .02rem .42rem; }
 .opt .tag.opt-hint { color: #fff; background: var(--amber); border-color: var(--amber); font-weight: 700; }
