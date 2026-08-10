@@ -29,6 +29,34 @@ _LOCAL_TEMPLATE = {
 _ANTHROPIC_API_TEMPLATE = {"name": "claude-api", "vendor": "anthropic-api", "model": ""}
 _OPENAI_API_TEMPLATE = {"name": "codex-api", "vendor": "openai-api", "model": ""}
 _GOOGLE_API_TEMPLATE = {"name": "gemini-api", "vendor": "google-api", "model": ""}
+_OPENROUTER_TEMPLATE = {
+    "name": "openrouter",
+    "vendor": "openai-compatible",
+    "endpoint": "https://openrouter.ai/api/v1",
+    "api_key_env": "OPENROUTER_API_KEY",
+    "model": "anthropic/claude-3.5-sonnet",
+}
+_DEEPSEEK_TEMPLATE = {
+    "name": "deepseek",
+    "vendor": "openai-compatible",
+    "endpoint": "https://api.deepseek.com/v1",
+    "api_key_env": "DEEPSEEK_API_KEY",
+    "model": "deepseek-coder",
+}
+_GROQ_TEMPLATE = {
+    "name": "groq",
+    "vendor": "openai-compatible",
+    "endpoint": "https://api.groq.com/openai/v1",
+    "api_key_env": "GROQ_API_KEY",
+    "model": "llama-3.3-70b-versatile",
+}
+_GENERIC_CLI_TEMPLATE = {
+    "name": "aider",
+    "vendor": "cli",
+    "command": "aider",
+    "prompt_mode": "stdin",
+    "extra_args": ["--no-auto-commits", "--read-only"],
+}
 
 
 def _from_default(name: str) -> dict | None:
@@ -49,6 +77,10 @@ def agent_templates() -> dict[str, dict]:
     templates["claude-api"] = dict(_ANTHROPIC_API_TEMPLATE)
     templates["codex-api"] = dict(_OPENAI_API_TEMPLATE)
     templates["gemini-api"] = dict(_GOOGLE_API_TEMPLATE)
+    templates["openrouter"] = dict(_OPENROUTER_TEMPLATE)
+    templates["deepseek"] = dict(_DEEPSEEK_TEMPLATE)
+    templates["groq"] = dict(_GROQ_TEMPLATE)
+    templates["aider"] = dict(_GENERIC_CLI_TEMPLATE)
     return templates
 
 

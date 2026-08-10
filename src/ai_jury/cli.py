@@ -477,6 +477,10 @@ _AGENT_BLURB = {
     "claude-api": "hosted Anthropic API (ANTHROPIC_API_KEY, no CLI needed)",
     "codex-api": "hosted OpenAI API (OPENAI_API_KEY, no CLI needed)",
     "gemini-api": "hosted Google Gemini API (GEMINI_API_KEY, no CLI needed)",
+    "openrouter": "hosted OpenRouter API (OPENROUTER_API_KEY)",
+    "deepseek": "hosted DeepSeek API (DEEPSEEK_API_KEY)",
+    "groq": "hosted Groq API (GROQ_API_KEY)",
+    "aider": "generic CLI coding agent (Aider)",
 }
 
 

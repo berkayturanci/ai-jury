@@ -165,7 +165,7 @@ def enforce_read_only(vendor: str, name: str, extra_args: list[str]) -> list[str
     # `local`/hosted-API vendors are checked FIRST (review of #310): a network
     # agent runs no subprocess, and the name-substring checks below would
     # otherwise mis-handle e.g. a local agent named "local-claude" / "my-codex".
-    if vendor in ("local", "anthropic-api", "openai-api", "google-api"):
+    if vendor in ("local", "anthropic-api", "openai-api", "google-api", "openai-compatible", "cli") or vendor.endswith("-api"):
         return extra_args
     if "claude" in name or vendor == "anthropic":
         return _ensure_claude_disallowed(extra_args)
@@ -203,7 +203,8 @@ def audit_agent(spec) -> list[str]:
     # (a hosted-API call has strictly less access than even a sandboxed CLI:
     # no filesystem, no shell, nothing to disallow), so they are out of scope
     # for this audit.
-    if vendor in ("local", "anthropic-api", "openai-api", "google-api"):
+    has_endpoint = bool(getattr(spec, "endpoint", None))
+    if vendor in ("local", "anthropic-api", "openai-api", "google-api", "openai-compatible") or vendor.endswith("-api") or has_endpoint:
         return warnings
 
     is_claude = "claude" in name or vendor == "anthropic"

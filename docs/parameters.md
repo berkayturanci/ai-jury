@@ -404,10 +404,13 @@ transcript = true   # default the markdown report to the full play-by-play
 | Key | Type | Default | Allowed / notes |
 | --- | --- | --- | --- |
 | `name` | string | — | **Required**, unique, non-empty. |
-| `vendor` | string | — | `anthropic` \| `openai` \| `google` \| `local` \| `anthropic-api` \| `openai-api` \| `google-api` (unknown → generic fallback + warning). |
-| `command` | string | — | Required CLI command (not required for `vendor = "local"` / `"anthropic-api"` / `"openai-api"` / `"google-api"`). |
-| `model` | string | unset | Model identifier. **Required** in practice for `google-api` — Gemini embeds it in the request URL path, so an unset `model` produces a malformed URL. |
-| `endpoint` | string | `http://localhost:11434/v1` (local) | OpenAI-compatible base URL for `vendor = "local"` only — the hosted-API vendors (`anthropic-api`/`openai-api`/`google-api`) use a fixed URL per vendor, not configurable. |
+| `vendor` | string | — | `anthropic` \| `openai` \| `google` \| `local` \| `anthropic-api` \| `openai-api` \| `google-api` \| `openai-compatible` \| `cli` \| custom registered vendor. |
+| `command` | string | — | CLI command (not required for HTTP/API vendors or when `endpoint` is set). |
+| `model` | string | unset | Model identifier. Required for API providers and local models. |
+| `endpoint` | string | `http://localhost:11434/v1` (local) | Base URL for OpenAI-compatible HTTP providers (Ollama, OpenRouter, DeepSeek, Groq, Mistral, LiteLLM). |
+| `api_key_env` | string | unset (`OPENAI_API_KEY` default) | Environment variable name holding the API key for `openai-compatible` vendors (e.g. `DEEPSEEK_API_KEY`, `OPENROUTER_API_KEY`). |
+| `prompt_mode` | string | `stdin` | Prompt delivery for `vendor = "cli"` (`stdin` \| `arg`). |
+| `headers` | table | `{}` | Custom HTTP headers map for `openai-compatible` API calls. |
 | `timeout` | int | `600` | Positive seconds (inherits `jury.timeout`). |
 | `enabled` | bool | `true` | Disabled agents are skipped. |
 | `extra_args` | list[str] | `[]` | Extra CLI args (e.g. the secure-default sandbox flags). |
@@ -436,10 +439,7 @@ ties resolve to the **stricter** stance.
 
 ### Vendors
 `anthropic` · `openai` · `google` · `local` (OpenAI-compatible: Ollama, llama.cpp, vLLM,
-LM Studio) · `anthropic-api` (hosted Anthropic Messages API, keyed by `ANTHROPIC_API_KEY`
-— no `claude` CLI needed) · `openai-api` (hosted OpenAI chat completions API, keyed by
-`OPENAI_API_KEY` — no `codex` CLI needed) · `google-api` (hosted Google Gemini API, keyed
-by `GEMINI_API_KEY` — no `agy` CLI needed).
+LM Studio) · `anthropic-api` · `openai-api` · `google-api` · `openai-compatible` (OpenRouter, DeepSeek, Groq, Mistral, LiteLLM) · `cli` (arbitrary CLI agents: Aider, Goose, OpenHands) · custom registered vendors via `register_adapter()`.
 
 ### Presets
 Set with `jury init --preset`.

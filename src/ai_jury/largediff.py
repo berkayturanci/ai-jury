@@ -194,9 +194,8 @@ def split_diff(diff: str) -> list[DiffFile]:
             if next_idx == -1:
                 parts.append(diff[idx:])
                 break
-            else:
-                parts.append(diff[idx:next_idx+1])
-                idx = next_idx + 1
+            parts.append(diff[idx:next_idx+1])
+            idx = next_idx + 1
 
     for part in parts:
         cur_path = None
@@ -204,10 +203,7 @@ def split_diff(diff: str) -> list[DiffFile]:
         p_idx = 0
         while p_idx < len(part):
             next_nl = part.find("\n", p_idx)
-            if next_nl == -1:
-                line = part[p_idx:]
-            else:
-                line = part[p_idx:next_nl+1]
+            line = part[p_idx:] if next_nl == -1 else part[p_idx : next_nl + 1]
 
             if line.startswith("diff --git "):
                 cur_path = _path_from_git_header(line)

@@ -1,6 +1,3 @@
-## 2025-02-14 - Semantic Form Grouping
-**Learning:** Using `div` elements with class names `fieldset` and `legend` for grouped form controls (like radio buttons or checkboxes) strips semantic meaning. Screen readers fail to announce the group context (e.g., "Target") when navigating between related inputs, making the form harder to understand for non-visual users.
-**Action:** Always use native `<fieldset>` and `<legend>` elements for related form controls to ensure screen readers announce the group name. Apply existing CSS classes to them to maintain visual consistency without sacrificing accessibility.
 
 ## 2024-06-11 - Missing keyboard focus & async disabled states
 **Learning:** Found that the custom button component (`.btn`) disabled state was missing entirely, which meant the async "Run review" action button looked visually identical and continued to receive hover translation animations even while running (and logically disabled by the script). In addition, interactive elements across the site lacked a globally visible `:focus-visible` ring, hindering keyboard navigation.
@@ -66,3 +63,9 @@
 ## 2024-05-18 - Container-sized focus rings for custom form wrappers
 **Learning:** For frontend accessibility with custom form wrappers (like styled labels `.opt` around tiny native inputs), relying on the global `input:focus-visible` outline results in a small, hard-to-see focus ring around just the radio button or checkbox. Keyboard users need larger, clearer visual indicators to track their focus across form options.
 **Action:** Use the `:has(input:focus-visible)` pseudo-class on the wrapper element to apply a clear, container-sized focus ring (`outline: 2px solid var(--accent)`), while simultaneously hiding the inner input's default outline (`outline: none`). This ensures robust keyboard navigation visibility.
+## 2026-06-07 - Fixed header anchor scrolling
+**Learning:** When using a fixed header (`position: fixed`), navigating to in-page anchor links (like `#faq`) causes the browser to scroll the element exactly to the top of the viewport, hiding it underneath the header.
+**Action:** Always apply `scroll-padding-top` to the `html` or `body` element equivalent to the fixed header's height (e.g. 64px) to ensure native anchor jumps preserve top visibility.
+## 2026-08-07 - Active Link aria-current
+**Learning:** While `.active` classes visually indicate the current page in navigation, screen readers need explicit semantic markup to announce it.
+**Action:** Ensure dynamically or statically active navigation links also receive `aria-current="page"` (or `"location"` for in-page anchors).
