@@ -334,15 +334,130 @@ class MakeAdapterTests(unittest.TestCase):
             adapters.make_adapter(_spec(vendor="local", command="", endpoint="http://x/v1")),
             adapters.LocalAdapter,
         )
+        self.assertIsInstance(
+            adapters.make_adapter(_spec(vendor="openai-compatible", endpoint="https://api.deepseek.com/v1")),
+            adapters.GenericOpenAICompatibleAdapter,
+        )
+        self.assertIsInstance(
+            adapters.make_adapter(_spec(vendor="cli", command="aider")),
+            adapters.GenericCLIAdapter,
+        )
 
     def test_unknown_vendor_falls_back(self):
         self.assertIsInstance(
-            adapters.make_adapter(_spec(vendor="acme", command="acme")), adapters.AgyAdapter
+            adapters.make_adapter(_spec(vendor="acme", command="acme")), adapters.GenericCLIAdapter
         )
+
+    def test_unknown_vendor_with_endpoint_falls_back_to_http(self):
+        self.assertIsInstance(
+            adapters.make_adapter(_spec(vendor="openrouter", endpoint="https://openrouter.ai/api/v1")),
+            adapters.GenericOpenAICompatibleAdapter,
+        )
+
+    def test_register_adapter(self):
+        class CustomAdapter(adapters.Adapter):
+            pass
+
+        adapters.register_adapter("custom-provider", CustomAdapter)
+        spec = _spec(vendor="custom-provider")
+        adapter = adapters.make_adapter(spec)
+        self.assertIsInstance(adapter, CustomAdapter)
 
     def test_mock_overrides(self):
         self.assertIsInstance(adapters.make_adapter(_spec(), mock=True), adapters.MockAdapter)
 
 
+class UniversalAdapterTests(unittest.TestCase):
+    def test_generic_openai_adapter_urls_and_headers(self):
+        spec = _spec(
+            name="deepseek",
+            vendor="openai-compatible",
+            endpoint="https://api.deepseek.com/v1",
+            api_key_env="DEEPSEEK_API_KEY",
+            headers={"HTTP-Referer": "https://ai-jury.org"},
+        )
+        a = adapters.GenericOpenAICompatibleAdapter(spec)
+        self.assertEqual(a._api_url(), "https://api.deepseek.com/v1/chat/completions")
+        with mock.patch.dict("os.environ", {"DEEPSEEK_API_KEY": "sk-secret-123"}):
+            self.assertEqual(a._api_key(), "sk-secret-123")
+            self.assertTrue(a.available())
+            hdrs = a._headers()
+            self.assertEqual(hdrs["Authorization"], "Bearer sk-secret-123")
+            self.assertEqual(hdrs["HTTP-Referer"], "https://ai-jury.org")
+
+    def test_generic_openai_adapter_parse_content(self):
+        data_str = {
+            "choices": [{"message": {"content": "  Review content here  "}}]
+        }
+        self.assertEqual(adapters.GenericOpenAICompatibleAdapter.parse_content(data_str), "Review content here")
+
+        data_list = {
+            "choices": [{"message": {"content": [{"type": "text", "text": "Part 1 "}, {"type": "text", "text": "Part 2"}]}}]
+        }
+        self.assertEqual(adapters.GenericOpenAICompatibleAdapter.parse_content(data_list), "Part 1 Part 2")
+
+        self.assertEqual(adapters.GenericOpenAICompatibleAdapter.parse_content({}), "")
+
+    @mock.patch("shutil.which", return_value="/usr/local/bin/aider")
+    @mock.patch("ai_jury.adapters._spawn")
+    def test_generic_cli_adapter_run_stdin(self, mock_spawn, _mock_which):
+        mock_spawn.return_value = _proc(0, "Aider review complete")
+        spec = _spec(name="aider", vendor="cli", command="aider", prompt_mode="stdin")
+        a = adapters.GenericCLIAdapter(spec)
+        self.assertTrue(a.available())
+
+        res = a.run("PROMPT", timeout=30)
+        self.assertTrue(res.ok)
+        self.assertEqual(res.output, "Aider review complete")
+        mock_spawn.assert_called_once()
+        argv, stdin = mock_spawn.call_args[0]
+        self.assertEqual(argv[0], "aider")
+        self.assertEqual(stdin, "PROMPT")
+
+    @mock.patch("shutil.which", return_value="/usr/local/bin/aider")
+    @mock.patch("ai_jury.adapters._spawn")
+    def test_generic_cli_adapter_run_arg(self, mock_spawn, _mock_which):
+        mock_spawn.return_value = _proc(0, "Arg review complete")
+        spec = _spec(name="aider", vendor="cli", command="aider", prompt_mode="arg")
+        a = adapters.GenericCLIAdapter(spec)
+
+        res = a.run("PROMPT", phase="debate", timeout=15)
+        self.assertTrue(res.ok)
+        self.assertEqual(res.output, "Arg review complete")
+        argv, stdin = mock_spawn.call_args[0]
+        self.assertIn("PROMPT", argv)
+        self.assertIsNone(stdin)
+
+    def test_generic_openai_adapter_missing_key_reporting(self):
+        spec = _spec(
+            name="openrouter",
+            vendor="openai-compatible",
+            endpoint="https://openrouter.ai/api/v1",
+            api_key_env="OPENROUTER_API_KEY",
+        )
+        a = adapters.GenericOpenAICompatibleAdapter(spec)
+        with mock.patch.dict("os.environ", {}, clear=True):
+            caps = a.detect_capabilities()
+            self.assertIn("OPENROUTER_API_KEY is not set in the environment", caps["warnings"])
+            res = a.run("PROMPT")
+            self.assertFalse(res.ok)
+            self.assertIn("OPENROUTER_API_KEY is not set in the environment", res.error)
+            self.assertEqual(res.error_code, adapters.ERR_MISSING_API_KEY)
+
+    @mock.patch("shutil.which", return_value="/usr/local/bin/aider")
+    @mock.patch("ai_jury.adapters._spawn")
+    def test_generic_cli_adapter_error_classification_and_redaction(self, mock_spawn, _mock_which):
+        mock_spawn.return_value = _proc(1, "", stderr="Error: unauthorized 401 secret sk-proj-1234567890abcdef")
+        spec = _spec(name="aider", vendor="cli", command="aider", prompt_mode="stdin")
+        a = adapters.GenericCLIAdapter(spec)
+
+        res = a.run("PROMPT")
+        self.assertFalse(res.ok)
+        self.assertEqual(res.error_code, adapters.ERR_AUTH_REQUIRED)
+        self.assertNotIn("sk-proj-1234567890abcdef", res.error)
+        self.assertIn("[REDACTED", res.error)
+
+
 if __name__ == "__main__":
     unittest.main()
+

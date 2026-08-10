@@ -9,8 +9,8 @@ rather than duplicating them.
 
 ## What it is / is not
 
-- **Is:** a local-first orchestrator that drives each vendor's native agent CLI
-  (`claude`, `codex`, `agy`) as headless subprocesses — plus an optional local /
+- **Is:** a local-first orchestrator that drives universal AI agent providers
+  (`claude`, `codex`, `agy`, `cursor`, `aider`, OpenRouter, DeepSeek, Groq, Ollama) — plus an optional local /
   open-weight reviewer over an OpenAI-compatible HTTP endpoint — through an adversarial
   review + debate + verification pipeline, and renders one report (markdown/JSON/SARIF).
 - **Is not:** a hosted review SaaS, a dashboard product, a general multi-agent

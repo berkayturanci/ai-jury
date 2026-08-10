@@ -465,9 +465,82 @@ rejected. `--repo owner/name` targets another repo.
 
 ---
 
+## 13. Configure Universal Agent Providers (OpenRouter, DeepSeek, Groq, Grok, Cursor CLI, Local Models)
+
+**Prerequisites:** an API key for hosted providers (e.g., `export OPENROUTER_API_KEY="sk-or-v1-..."`, `export DEEPSEEK_API_KEY="sk-..."`, or `export XAI_API_KEY="xai-..."`) or installed CLI tools (`cursor`, `aider`).
+
+Add any of these provider templates to your `jury.toml`:
+
+```toml
+# OpenRouter API (Access 200+ models like DeepSeek-R1, Llama 3.3)
+[[agent]]
+name = "openrouter"
+vendor = "openai-compatible"
+model = "deepseek/deepseek-r1"
+endpoint = "https://openrouter.ai/api/v1/chat/completions"
+api_key_env = "OPENROUTER_API_KEY"
+
+# DeepSeek API direct
+[[agent]]
+name = "deepseek"
+vendor = "openai-compatible"
+model = "deepseek-reasoner"
+endpoint = "https://api.deepseek.com/v1/chat/completions"
+api_key_env = "DEEPSEEK_API_KEY"
+
+# Groq ultra-fast Llama inference
+[[agent]]
+name = "groq"
+vendor = "openai-compatible"
+model = "llama-3.3-70b-versatile"
+endpoint = "https://api.groq.com/openai/v1/chat/completions"
+api_key_env = "GROQ_API_KEY"
+
+# Grok / xAI API
+[[agent]]
+name = "grok"
+vendor = "openai-compatible"
+model = "grok-2-latest"
+endpoint = "https://api.x.ai/v1/chat/completions"
+api_key_env = "XAI_API_KEY"
+
+# OmniRoute / Unified LLM Gateways (LiteLLM, One API)
+[[agent]]
+name = "omni-claude"
+vendor = "openai-compatible"
+model = "anthropic/claude-3-5-sonnet"
+endpoint = "http://localhost:8000/v1/chat/completions"
+api_key_env = "OMNIROUTE_API_KEY"
+
+# Local models (Ollama, LM Studio, vLLM, llama.cpp)
+[[agent]]
+name = "local-qwen"
+vendor = "local"
+model = "qwen2.5-coder:14b"
+
+# Generic CLI agents (Cursor, Aider, Goose, OpenHands)
+[[agent]]
+name = "cursor"
+vendor = "cli"
+command = "cursor-agent"
+extra_args = ["--print", "--trust", "--model", "claude-4.6-sonnet-medium"]
+prompt_mode = "arg"
+
+[[agent]]
+name = "aider"
+vendor = "cli"
+command = "aider --message"
+prompt_mode = "arg"
+```
+
+**Outcome:** `jury --config-validate` confirms provider readiness. Run `git diff main... | jury --diff-file -` to deliberate across your choice of hosted HTTP models, coding CLIs, and local models.
+
+---
+
 ## See also
 
 - [Architecture](architecture.md) — components, round structure, adapters.
+- [Configuration](configuration.md) — behavior, budgets, universal provider settings.
 - [Platform support matrix](platforms.md) — where you can install and run the jury.
 - [Example run](example-run.md) — a deterministic mock report end to end.
 - [Live four-vendor review](example-live-review.md) — a real run of the jury

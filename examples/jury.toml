@@ -1,0 +1,149 @@
+# ------------------------------------------------------------------------------
+# 🏛️ AI Jury — Universal Agent Provider Example Configuration
+# ------------------------------------------------------------------------------
+# This configuration demonstrates all supported agent provider types:
+# 1. Vendor CLIs (Claude, Codex, Antigravity)
+# 2. Hosted HTTP APIs (OpenRouter, DeepSeek, Groq, xAI Grok, Moonshot Kimi)
+# 3. Local Models (Ollama, LM Studio, vLLM)
+# 4. Terminal Coding CLI Agents (Cursor CLI, Aider CLI)
+# ------------------------------------------------------------------------------
+
+[jury]
+panel = ["claude", "codex", "grok", "cursor"]
+chair = "claude"
+rounds = 2
+verify = true
+timeout = 600
+parallel = true
+
+[jury.ci]
+fail_on = ["critical", "major"]
+ignore_unverified = true
+
+[jury.context]
+mode = "diff-only"
+redact_secrets = true
+
+
+# ------------------------------------------------------------------------------
+# 1. Native Vendor CLIs
+# ------------------------------------------------------------------------------
+
+# Anthropic Claude Code CLI
+[[agent]]
+name = "claude"
+vendor = "anthropic"
+command = "claude"
+extra_args = [
+  "--output-format",
+  "text",
+  "--disallowed-tools",
+  "Edit,Write,NotebookEdit,Bash",
+  "--dangerously-skip-permissions",
+]
+
+# OpenAI Codex CLI
+[[agent]]
+name = "codex"
+vendor = "openai"
+command = "codex"
+extra_args = ["-s", "read-only"]
+
+# Google Antigravity CLI
+[[agent]]
+name = "agy"
+vendor = "google"
+command = "agy"
+extra_args = ["--dangerously-skip-permissions", "--sandbox"]
+
+
+# ------------------------------------------------------------------------------
+# 2. Hosted OpenAI-Compatible REST APIs (vendor = "openai-compatible")
+# ------------------------------------------------------------------------------
+
+# OpenRouter (Unified API Gateway)
+[[agent]]
+name = "openrouter-claude"
+vendor = "openai-compatible"
+model = "anthropic/claude-3.5-sonnet"
+endpoint = "https://openrouter.ai/api/v1/chat/completions"
+api_key_env = "OPENROUTER_API_KEY"
+
+# DeepSeek API (Reasoner / V3)
+[[agent]]
+name = "deepseek"
+vendor = "openai-compatible"
+model = "deepseek-reasoner"
+endpoint = "https://api.deepseek.com/v1/chat/completions"
+api_key_env = "DEEPSEEK_API_KEY"
+
+# Groq Ultra-Fast Llama Inference API
+[[agent]]
+name = "groq"
+vendor = "openai-compatible"
+model = "llama-3.3-70b-versatile"
+endpoint = "https://api.groq.com/openai/v1/chat/completions"
+api_key_env = "GROQ_API_KEY"
+
+# xAI Grok API
+[[agent]]
+name = "grok"
+vendor = "openai-compatible"
+model = "grok-2-latest"
+endpoint = "https://api.x.ai/v1/chat/completions"
+api_key_env = "XAI_API_KEY"
+
+# Moonshot / Kimi API Direct
+[[agent]]
+name = "kimi"
+vendor = "openai-compatible"
+model = "moonshot-v1-8k"
+endpoint = "https://api.moonshot.cn/v1/chat/completions"
+api_key_env = "MOONSHOT_API_KEY"
+
+# OmniRoute / Unified LLM Gateway & Proxy (LiteLLM, One API)
+[[agent]]
+name = "omni-claude"
+vendor = "openai-compatible"
+model = "anthropic/claude-3-5-sonnet"
+endpoint = "http://localhost:8000/v1/chat/completions"
+api_key_env = "OMNIROUTE_API_KEY"
+
+
+# ------------------------------------------------------------------------------
+# 3. Local Model Servers (Ollama, LM Studio, vLLM)
+# ------------------------------------------------------------------------------
+
+# Local Ollama Server (vendor = "local")
+[[agent]]
+name = "local-ollama"
+vendor = "local"
+model = "qwen2.5-coder:14b"
+endpoint = "http://localhost:11434/v1"
+
+# LM Studio / vLLM Server
+[[agent]]
+name = "local-lmstudio"
+vendor = "local"
+model = "local-model"
+endpoint = "http://localhost:1234/v1"
+
+
+# ------------------------------------------------------------------------------
+# 4. Terminal Coding CLI Agents (vendor = "cli")
+# ------------------------------------------------------------------------------
+
+# Cursor CLI Agent (standalone cursor-agent binary with model selection)
+[[agent]]
+name = "cursor"
+vendor = "cli"
+command = "cursor-agent"
+extra_args = ["--print", "--trust", "--model", "claude-4.6-sonnet-medium"]
+prompt_mode = "arg"
+
+# Aider CLI Agent
+[[agent]]
+name = "aider"
+vendor = "cli"
+command = "aider --message"
+prompt_mode = "arg"
