@@ -165,6 +165,7 @@ api_key_env = "GROQ_API_KEY"
 
 #### Grok / xAI API (`vendor = "openai-compatible"`)
 
+```toml
 # Direct xAI API (https://api.x.ai/v1)
 [[agent]]
 name = "grok"
@@ -172,6 +173,18 @@ vendor = "openai-compatible"
 model = "grok-2-latest"
 endpoint = "https://api.x.ai/v1/chat/completions"
 api_key_env = "XAI_API_KEY"
+```
+
+#### Unified LLM Gateways & Proxies (OmniRoute, LiteLLM, One API) (`vendor = "openai-compatible"`)
+
+```toml
+# OmniRoute / Unified LLM Gateway
+[[agent]]
+name = "omni-claude"
+vendor = "openai-compatible"
+model = "anthropic/claude-3-5-sonnet"
+endpoint = "http://localhost:8000/v1/chat/completions"
+api_key_env = "OMNIROUTE_API_KEY"
 ```
 
 #### Local Models (Ollama, LM Studio, vLLM, llama.cpp) (`vendor = "local"`)
