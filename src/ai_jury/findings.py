@@ -127,6 +127,23 @@ class Finding:
         )
 
 
+def emitted_findings_block(text: str) -> bool:
+    """Did the agent emit a structured findings block at all? (issue #501)
+
+    This is the mechanical line between *reviewed and found nothing* and *never
+    produced a review*. Both currently arrive as zero findings, so the panel reports
+    the same size either way — and on keel PR #660 two of three reviewers returned
+    assistant-style chatter about a flag they saw in the diff, while the run still
+    described itself as a three-agent panel.
+
+    A reviewer that examined the diff and found nothing still emits ``[]`` in a
+    fenced json block, because that is what the prompt asks for. One that wandered
+    off emits prose and no block. Presence of the block is therefore the signal, and
+    it needs no judgement about *content* — which is what keeps this deterministic.
+    """
+    return bool(text) and bool(_JSON_BLOCK_RE.search(text))
+
+
 def parse_findings(text: str, reviewer: str) -> tuple[list[Finding], list[str]]:
     """Extract structured findings from an agent's raw output.
 
