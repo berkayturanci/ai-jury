@@ -223,6 +223,11 @@ class AgentResult:
     # Number of attempts made for this result (issue #30): 1 means no retry.
     # >1 records that a transient failure was retried before this outcome.
     attempts: int = 1
+    # Did this agent emit a structured findings block at all (issue #501)? A
+    # reviewer that examined the diff and found nothing still emits `[]`; one that
+    # produced no review emits prose and no block. Without this, both arrive as zero
+    # findings and the panel reports the same size either way.
+    structured: bool = False
 
 
 class Adapter:

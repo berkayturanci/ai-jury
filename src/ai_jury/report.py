@@ -114,6 +114,19 @@ def _metadata_block(metadata: dict) -> list[str]:
     retried = metadata.get("retried") or []
     if retried:
         lines.append(f"- retried agents: {', '.join(retried)}")
+    # A short panel is stated, not left to be inferred from the agent table (#501).
+    # Silence is the failure mode: a run with two non-reviewing slots described
+    # itself as a full panel, and only the chair's prose said otherwise.
+    panel = metadata.get("panel") or {}
+    if panel.get("short"):
+        lines.append(
+            f"- ⚠️ **effective panel: {panel.get('effective', 0)} of "
+            f"{panel.get('configured', 0)} reviewer(s)** "
+            f"({panel.get('abstained', 0)} returned no review, "
+            f"{panel.get('failed', 0)} failed) — "
+            f"{panel.get('vendors', 0)} vendor(s) contributed. An abstention is not "
+            "an approval; treat cross-vendor consensus accordingly."
+        )
     total = metadata["total_wall_clock_s"]
     lines.append(f"- total wall-clock (cost proxy, not $): {total:.0f}s")
     lines.append("")
@@ -122,6 +135,10 @@ def _metadata_block(metadata: dict) -> list[str]:
     for a in metadata["agents"]:
         code = a.get("error_code")
         status = a["status"] if not code else f"{a['status']} ({code})"
+        # "ok" alone hid a slot that returned nothing reviewable (#501).
+        review = a.get("review_status")
+        if review and review != "findings":
+            status = f"{status}, {review}"
         # Note a retried agent inline; attempts == 1 leaves the row unchanged.
         attempts = a.get("attempts", 1)
         if attempts and attempts > 1:

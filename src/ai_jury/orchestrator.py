@@ -17,7 +17,13 @@ from . import convergence, injection, largediff, prompts
 from .adapters import RETRYABLE_ERROR_CODES, Adapter, AgentResult, make_adapter
 from .config import JuryConfig
 from .consensus import FindingGroup, demote_local_only_groups, group_findings
-from .findings import Finding, Verdict, parse_findings, parse_verdicts
+from .findings import (
+    Finding,
+    Verdict,
+    emitted_findings_block,
+    parse_findings,
+    parse_verdicts,
+)
 from .policy import ReviewPolicy, render_policy_section
 from .privilege import audit_privilege
 from .redaction import redact
@@ -450,6 +456,7 @@ def run_jury(
         found, warns = parse_findings(r.output, r.agent)
         r.findings = found
         r.warnings = warns
+        r.structured = emitted_findings_block(r.output)
         all_findings.extend(found)
         all_warnings.extend(warns)
 

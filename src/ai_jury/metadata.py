@@ -22,7 +22,57 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 
 # v2 (issue #30/#40) added: stop_reason, skipped, retried, budget_exhausted,
 # execution{...}, and per-agent ``attempts``.
-SCHEMA_VERSION = 3
+# v4 (issue #501) added: ``panel`` (configured vs effective size, abstentions) and
+# per-agent ``review_status``. A slot that returns no review is an abstention, not an
+# approval, and until now nothing in the output said so.
+SCHEMA_VERSION = 4
+
+
+#: What a reviewer slot actually contributed (issue #501). ``clean`` and
+#: ``abstained`` both carry zero findings and used to be reported identically,
+#: which is how a run with two non-reviewing slots still described itself as a
+#: three-agent panel.
+REVIEW_STATUSES = ("findings", "clean", "abstained", "failed")
+
+
+def review_status(result) -> str:
+    """Classify one reviewer slot's contribution. Pure, and never judges content.
+
+    * ``failed``    — the adapter did not return a result at all.
+    * ``findings``  — produced at least one structured finding.
+    * ``clean``     — emitted a findings block that was empty: examined, found nothing.
+    * ``abstained`` — returned successfully with no findings block. Not an approval:
+      nothing reviewable came back, so this slot contributed no evidence either way.
+    """
+    if not getattr(result, "ok", False):
+        return "failed"
+    if getattr(result, "findings", None):
+        return "findings"
+    return "clean" if getattr(result, "structured", False) else "abstained"
+
+
+def panel_accounting(reviews) -> dict:
+    """Configured versus *effective* panel size, and the per-status breakdown.
+
+    A consumer gating on the panel needs the effective number — keel downgrades a
+    jury to advisory below two participating vendors, and can only do that if the
+    report says the panel was short. ``vendors`` counts distinct vendors that
+    actually contributed a review, which is the number that matters for
+    cross-vendor consensus: three slots from one vendor are not three perspectives.
+    """
+    reviews = list(reviews or [])
+    statuses = [review_status(r) for r in reviews]
+    contributing = [
+        r for r, st in zip(reviews, statuses, strict=True) if st in ("findings", "clean")
+    ]
+    return {
+        "configured": len(reviews),
+        "effective": len(contributing),
+        "vendors": len({getattr(r, "vendor", "") for r in contributing if getattr(r, "vendor", "")}),
+        "abstained": statuses.count("abstained"),
+        "failed": statuses.count("failed"),
+        "short": len(contributing) < len(reviews),
+    }
 
 
 def _agent_entry(result) -> dict:
@@ -40,6 +90,8 @@ def _agent_entry(result) -> dict:
         # Number of attempts made (issue #30): >1 means a transient failure was
         # retried before this outcome.
         "attempts": int(getattr(result, "attempts", 1) or 1),
+        # What this slot contributed, not merely whether the CLI exited 0 (#501).
+        "review_status": review_status(result),
     }
 
 
@@ -113,6 +165,9 @@ def build_run_metadata(
         "decision": decision,
         "vote": vote_meta,
         "agents": agents,
+        # Configured vs effective panel size (issue #501): a slot that returned no
+        # review is an abstention, not an approval, and must not inflate the panel.
+        "panel": panel_accounting(outcome.reviews),
         "rounds_executed": _rounds_executed(outcome),
         "from_cache": bool(getattr(outcome, "from_cache", False)),
         "stop_reason": getattr(outcome, "stop_reason", "") or "",
