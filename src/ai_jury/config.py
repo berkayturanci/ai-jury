@@ -12,6 +12,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from .redaction import redact
+
 # Hosts that are safe to reach over plaintext http and never an SSRF target.
 _LOOPBACK_HOSTS = ("localhost", "127.0.0.1", "::1", "[::1]")
 
@@ -38,7 +40,7 @@ def _read_toml_bounded(path: Path) -> dict:
     try:
         return tomllib.loads(text)
     except tomllib.TOMLDecodeError as exc:
-        raise ConfigError(f"invalid TOML in config file '{path}': {exc}") from exc
+        raise ConfigError(f"invalid TOML in config file '{path}': {redact(str(exc))[0]}") from exc
 
 
 def _is_relative_path_command(command: str) -> bool:

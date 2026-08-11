@@ -27,3 +27,7 @@
 **Vulnerability:** When loading `jury.toml`, invalid TOML syntax caused `tomllib.loads` to raise a `TOMLDecodeError` which was not caught in `_read_toml_bounded`, leading to an unhandled exception and stack trace leak.
 **Learning:** Top-level configuration loaders must explicitly catch underlying parsing exceptions (like `TOMLDecodeError`) and wrap them in domain exceptions (like `ConfigError`). Catching and securely wrapping the error prevents raw stack traces from exposing potentially sensitive internals or environment information to standard error.
 **Prevention:** Always ensure that data deserialization libraries (like `tomllib` or `json`) have their exceptions caught and wrapped inside domain-specific configuration errors in the loader function.
+## 2026-08-10 - [MEDIUM] Fix ReplayError exception leakage in replay.py
+**Vulnerability:** Unsanitized exception strings in `src/ai_jury/replay.py` (e.g. from JSON parse errors or file reading errors) could leak secrets into the standard error output when loading replay files.
+**Learning:** Replay errors, like config errors, require explicit redaction of the `str(exc)` before surfacing the error to users, as malformed or hostile files could cause parser exception messages to contain sensitive snippets.
+**Prevention:** Always wrap exception message interpolations with `redact(str(exc))[0]` when raising domain-specific exceptions, and ensure `redact` is properly imported.
