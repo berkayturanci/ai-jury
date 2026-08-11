@@ -52,6 +52,8 @@ DOCUMENTED_FLAGS = [
     "--issue",
     "--repo",
     "--diff-file",
+    "--commit",
+    "--commits",
     "--config",
     "--policy",
     "--context-mode",
@@ -238,11 +240,18 @@ class ErrorContractTests(unittest.TestCase):
     network or real `gh` is touched.
     """
 
+    def test_two_input_sources_are_refused_and_both_are_named(self):
+        code, _, _ = _run_cli(["--mock", "--commit", "HEAD", "--pr", "5"], stdin="")
+        self.assertIn("choose one input source", code)
+        self.assertIn("--pr", code)
+        self.assertIn("--commit", code)
+
     def test_no_input_source(self):
         code, _, _ = _run_cli(["--mock"], stdin="")
         self.assertEqual(
             code,
-            "error: provide one of --pr, --issue, --diff-file (or --diff-file - for stdin)",
+            "error: provide one of --pr, --issue, --diff-file, --commit, --commits "
+            "(or --diff-file - for stdin)",
         )
 
     def test_empty_diff(self):

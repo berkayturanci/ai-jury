@@ -100,12 +100,22 @@ jury --pr 123 --post --post-mode phased
 
 ### Input (choose one)
 
+Exactly one source. Giving two exits non-zero and names both — a silent precedence
+order would make it impossible to tell which one was actually reviewed.
+
+`--commit`/`--commits` resolve to a unified diff locally and then flow through the
+same pipeline as any other diff: large-diff filtering, redaction, rounds, verify and
+the report all apply unchanged. A revision may not begin with `-` (git would read it
+as an option) and an empty resolved diff is an error rather than a review of nothing.
+
 | Flag | Value | Description |
 | --- | --- | --- |
 | `--pr` | PR number or URL | Review a GitHub PR (uses `gh`). |
 | `--issue` | issue number or URL | Review a GitHub **issue** for completeness/clarity (uses `gh`). Runs the full jury with an issue-quality rubric (repro, expected/actual, scope, missing context); the verdict vocabulary is READY / NEEDS-INFO / UNCLEAR. |
 | `--repo` | `owner/name` | Repository for `--pr`/`--issue` (defaults to the current repo). |
 | `--diff-file` | path, or `-` for stdin | Review a diff file (or piped stdin). |
+| `--commit` | revision | Review the diff one commit introduces. Needs a git repo; no `gh`. |
+| `--commits` | range | Review a commit range, e.g. `origin/main..HEAD` or `HEAD~5..HEAD`. |
 
 Exactly one input source is required. `--repo` modifies `--pr`/`--issue`; all
 posting flags (`--post-summary`/`--post`, `--post-inline`, `--post-progress`,
@@ -332,7 +342,7 @@ early-stop config; `jury init --agents claude,codex,qwen --chair rotate
 Running bare `jury` with no arguments **in a terminal** prints a compact overview
 (what it does + the handful of commands most people use) and exits 0. In a
 non-interactive context (piped/CI) it still errors with `provide one of
---pr, --issue, --diff-file` and a non-zero exit, so a script that forgot an input
+--pr, --issue, --diff-file, --commit, --commits` and a non-zero exit, so a script that forgot an input
 fails loudly.
 
 ---

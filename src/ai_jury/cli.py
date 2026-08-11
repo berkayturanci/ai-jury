@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import io
 import json
 import sys
 from pathlib import Path
@@ -70,8 +71,58 @@ def _read_capped(fh, source: str) -> str:
     return data.decode("utf-8", errors="replace")
 
 
+def _checked_revision(value: str, flag: str) -> str:
+    """Reject a revision that cannot safely reach ``git``'s argv (issue #367).
+
+    ``run`` uses argv, never a shell, so quoting is not the risk — a value starting
+    with ``-`` is: git would read it as an option rather than a revision. Refused
+    rather than escaped, and ``--`` is passed at the call site as a second guard.
+    Empty is refused too, since it would silently widen the diff.
+    """
+    revision = (value or "").strip()
+    if not revision:
+        raise SystemExit(f"error: {flag} needs a revision")
+    if revision.startswith("-"):
+        raise SystemExit(
+            f"error: {flag} revision {revision!r} may not start with '-' "
+            "(git would read it as an option)"
+        )
+    return revision
+
+
+def _git_diff(argv: list[str], label: str) -> str:
+    """Run a read-only git command and return its stdout, or exit with its error."""
+    import subprocess  # local: keeps the module importable where git is absent
+
+    try:
+        proc = subprocess.run(argv, capture_output=True, text=True, timeout=120)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise SystemExit(f"error: could not run git for {label}: {exc}") from exc
+    if proc.returncode != 0:
+        detail = (proc.stderr or "").strip().splitlines()
+        raise SystemExit(
+            f"error: git could not resolve {label}"
+            + (f": {detail[0]}" if detail else "")
+        )
+    if not proc.stdout.strip():
+        raise SystemExit(f"error: {label} produced an empty diff — nothing to review")
+    # Same ingest ceiling every other source honours; _read_capped wants a handle.
+    return _read_capped(io.StringIO(proc.stdout), label)
+
+
 def _read_diff(args) -> tuple[str, str]:
     """Return (diff, context)."""
+    if getattr(args, "commit", None):
+        rev = _checked_revision(args.commit, "--commit")
+        # `git show` of a merge commit prints no diff by default; -m picks the
+        # first-parent view so a merge is reviewable rather than silently empty.
+        return _git_diff(
+            ["git", "show", "--format=", "--patch", "-m", "--first-parent", rev, "--"],
+            f"commit {rev}",
+        ), ""
+    if getattr(args, "commits", None):
+        rev = _checked_revision(args.commits, "--commits")
+        return _git_diff(["git", "diff", rev, "--"], f"range {rev}"), ""
     if args.pr:
         return pr_diff(args.pr, args.repo), pr_context(args.pr, args.repo)
     if args.issue:
@@ -86,7 +137,8 @@ def _read_diff(args) -> tuple[str, str]:
         with Path(args.diff_file).open("rb") as fh:
             return _read_capped(fh, args.diff_file), ""
     raise SystemExit(
-        "error: provide one of --pr, --issue, --diff-file (or --diff-file - for stdin)"
+        "error: provide one of --pr, --issue, --diff-file, --commit, --commits "
+        "(or --diff-file - for stdin)"
     )
 
 
@@ -104,6 +156,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     src.add_argument("--repo", help="owner/name for --pr/--issue (defaults to current repo)")
     src.add_argument("--diff-file", help="path to a diff file, or '-' for stdin")
+    src.add_argument("--commit", help="review the diff one commit introduces (needs a git repo)")
+    src.add_argument(
+        "--commits",
+        help="review a commit range, e.g. origin/main..HEAD or HEAD~5..HEAD "
+             "(needs a git repo)",
+    )
 
     p.add_argument("--config", help="path to jury.toml (default: ./jury.toml or built-in)")
     p.add_argument(
@@ -1309,8 +1367,18 @@ def main(argv: list[str] | None = None) -> int:
     # Issue mode (issue #221) reviews prose, not a diff, so the PR/diff-only
     # concepts below have no meaning. Reject them up front with a clear message
     # rather than silently ignoring them.
-    if args.issue and (args.pr or args.diff_file):
-        raise SystemExit("error: --issue cannot be combined with --pr or --diff-file")
+    # Exactly one source (issue #367). Listed rather than pairwise so adding a
+    # source cannot quietly skip the check.
+    _sources = [
+        ("--pr", args.pr), ("--issue", args.issue), ("--diff-file", args.diff_file),
+        ("--commit", getattr(args, "commit", None)),
+        ("--commits", getattr(args, "commits", None)),
+    ]
+    _given = [flag for flag, value in _sources if value]
+    if len(_given) > 1:
+        raise SystemExit(
+            f"error: choose one input source, got {', '.join(_given)}"
+        )
     if args.issue:
         for flag, on in (
             ("--post-inline", args.post_inline),
@@ -1439,7 +1507,10 @@ def main(argv: list[str] | None = None) -> int:
             chair_name = (config.chair if config.chair and config.chair != "rotate"
                           else (config.agents[0].name if config.agents else "chair"))
             case = (f"PR #{args.pr}" if args.pr else
-                    f"issue #{args.issue}" if args.issue else "local diff")
+                    f"issue #{args.issue}" if args.issue else
+                    f"commit {args.commit}" if getattr(args, "commit", None) else
+                    f"range {args.commits}" if getattr(args, "commits", None) else
+                    "local diff")
             court = _theater.Courtroom(
                 [(a.name, a.vendor) for a in config.agents],
                 chair_name,
