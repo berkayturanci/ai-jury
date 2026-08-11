@@ -66,9 +66,9 @@ def load_outcome(path: Path | str) -> JuryOutcome:
         with path.open("r", encoding="utf-8") as fh:
             raw = fh.read(_MAX_REPLAY_BYTES + 1)
     except OSError as exc:
-        raise ReplayError(f"cannot read '{path}': {redact(str(exc))[0]}") from exc
+        raise ReplayError(f"cannot read '{path}': {redact(str(exc))[0]}") from None
     except UnicodeDecodeError as exc:
-        raise ReplayError(f"'{path}' is not UTF-8 text: {redact(str(exc))[0]}") from exc
+        raise ReplayError(f"'{path}' is not UTF-8 text: {redact(str(exc))[0]}") from None
     if len(raw) > _MAX_REPLAY_BYTES:
         raise ReplayError(f"'{path}' exceeds the {_MAX_REPLAY_BYTES}-byte replay limit")
     try:
@@ -76,7 +76,7 @@ def load_outcome(path: Path | str) -> JuryOutcome:
     except (ValueError, RecursionError) as exc:
         # RecursionError on deeply nested JSON is not a ValueError; catch it so
         # a hostile file cannot crash the loader (mirrors cache.py).
-        raise ReplayError(f"'{path}' is not valid JSON: {redact(str(exc))[0]}") from exc
+        raise ReplayError(f"'{path}' is not valid JSON: {redact(str(exc))[0]}") from None
 
     if not isinstance(data, dict):
         raise ReplayError(f"'{path}' is not a JSON object")
@@ -108,7 +108,7 @@ def load_outcome(path: Path | str) -> JuryOutcome:
     try:
         outcome = outcome_from_dict(inner)
     except (KeyError, TypeError, AttributeError, ValueError) as exc:
-        raise ReplayError(f"'{path}' holds a malformed outcome: {redact(str(exc))[0]}") from exc
+        raise ReplayError(f"'{path}' holds a malformed outcome: {redact(str(exc))[0]}") from None
     if not outcome.reviews:
         raise ReplayError(f"'{path}' contains no reviews — nothing to replay")
     return outcome
