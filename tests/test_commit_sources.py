@@ -7,8 +7,8 @@ not the pipeline, which is already covered for `--diff-file`.
 
 import subprocess
 import unittest
+import unittest.mock as mock
 from types import SimpleNamespace
-from unittest import mock
 
 from ai_jury import cli
 
