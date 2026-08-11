@@ -630,7 +630,7 @@ accidental changes are caught in review.
 
 **Stable flags** (names, short aliases, and semantics), grouped by intent:
 
-- *Input:* `--pr`, `--issue`, `--repo`, `--diff-file`
+- *Input:* `--pr`, `--issue`, `--repo`, `--diff-file`, `--commit`, `--commits`
 - *Depth:* `--rounds`, `--max-rounds`, `--early-stop` / `--no-early-stop`,
   `--auto` / `--no-auto`, `--verify` / `--no-verify`
 - *Budget / reliability:* `--total-timeout`, `--phase-timeout`, `--retries`
@@ -660,7 +660,8 @@ documented and a documented flag can't silently disappear.
 
 | Condition | Behavior |
 | --- | --- |
-| No input source given | exits non-zero with `error: provide one of --pr, --issue, --diff-file (or --diff-file - for stdin)` |
+| No input source given | exits non-zero with `error: provide one of --pr, --issue, --diff-file, --commit, --commits (or --diff-file - for stdin)` |
+| More than one input source | exits non-zero with `error: choose one input source, got …`, naming each one given |
 | Empty diff | exits non-zero with `error: empty diff — nothing to review` |
 | `--post-summary` with no postable target (e.g. `--diff-file`; it works with `--pr` **or** `--issue`) | exits non-zero with `error: --post-summary requires --pr` |
 | `--post-inline` without `--pr` (PR-only; also `--post-progress`, `--label`, `--incremental`) | exits non-zero with `error: --post-inline requires --pr` |

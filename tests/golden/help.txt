@@ -1,5 +1,6 @@
 usage: jury [-h] [--pr PR] [--issue ISSUE] [--repo REPO]
-            [--diff-file DIFF_FILE] [--config CONFIG] [--policy POLICY]
+            [--diff-file DIFF_FILE] [--commit COMMIT] [--commits COMMITS]
+            [--config CONFIG] [--policy POLICY]
             [--context-mode {diff-only,expanded}] [--redact] [--no-redact]
             [--rounds ROUNDS] [--max-rounds MAX_ROUNDS] [--early-stop]
             [--no-early-stop] [--auto] [--no-auto]
@@ -145,3 +146,7 @@ input:
   --repo REPO           owner/name for --pr/--issue (defaults to current repo)
   --diff-file DIFF_FILE
                         path to a diff file, or '-' for stdin
+  --commit COMMIT       review the diff one commit introduces (needs a git
+                        repo)
+  --commits COMMITS     review a commit range, e.g. origin/main..HEAD or
+                        HEAD~5..HEAD (needs a git repo)
