@@ -97,7 +97,7 @@ def _git_diff(argv: list[str], label: str) -> str:
     try:
         proc = subprocess.run(argv, capture_output=True, text=True, timeout=120)
     except (OSError, subprocess.SubprocessError) as exc:
-        raise SystemExit(f"error: could not run git for {label}: {exc}") from exc
+        raise SystemExit(f"error: could not run git for {label}: {redact(str(exc))[0]}") from None
     if proc.returncode != 0:
         detail = (proc.stderr or "").strip().splitlines()
         raise SystemExit(
