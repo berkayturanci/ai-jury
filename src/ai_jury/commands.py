@@ -70,7 +70,7 @@ def parse_comment(text: str) -> ParsedCommand:
     try:
         tokens = shlex.split(match.group(1).strip())
     except ValueError as exc:
-        raise CommandError(f"could not parse command: {redact(str(exc))[0]}") from exc
+        raise CommandError(f"could not parse command: {redact(str(exc))[0]}") from None
 
     if not tokens:
         raise CommandError(f"missing subcommand; expected one of {', '.join(ALLOWED_COMMANDS)}")
@@ -97,8 +97,8 @@ def parse_comment(text: str) -> ParsedCommand:
             raise CommandError(f"unsupported argument '{tok}'; only --rounds is allowed")
         try:
             rounds = int(value)
-        except ValueError as exc:
-            raise CommandError(f"--rounds must be an integer (got {value!r})") from exc
+        except ValueError:
+            raise CommandError(f"--rounds must be an integer (got {value!r})") from None
         if not (_MIN_ROUNDS <= rounds <= _MAX_ROUNDS):
             raise CommandError(
                 f"--rounds must be between {_MIN_ROUNDS} and {_MAX_ROUNDS} (got {rounds})"
