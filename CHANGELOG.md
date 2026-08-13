@@ -7,8 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.13.0] - 2026-08-14
+
 ### Added
-- **`--commit` and `--commits` input sources** (#367): point the jury at one commit
+- **`--commit` and `--commits` input sources** (#367, #505): point the jury at one commit
   (`jury --commit abc1234`) or a range (`jury --commits origin/main..HEAD`) without
   producing a diff file first. Both resolve locally and flow through the existing
   pipeline unchanged — large-diff filtering, redaction, rounds, verify, verdict and the
@@ -16,11 +18,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (git would read it as an option, so it is refused rather than escaped), `--commit`
   uses `-m --first-parent` so a merge commit is reviewable instead of silently empty,
   and an empty resolved diff is an error rather than a verdict on nothing.
-- **Abstention accounting in the panel** (#501): a reviewer slot that returns no
+- **Abstention accounting in the panel** (#501, #504): a reviewer slot that returns no
   reviewable output is now recorded as an abstention rather than counted toward the
   panel. Run metadata carries `panel` (configured vs effective size, contributing
   vendors, abstained/failed counts) and a per-agent `review_status`; the report states a
   short panel explicitly. Metadata schema 3 → 4, additive.
+- **Universal Provider Documentation & Hero Visuals** (#494, #495, #509, #510):
+  - Updated high-resolution Retina diagrams for dark & light mode illustrating all 7+ universal agent providers (Claude, Codex, Antigravity, DeepSeek, Grok, Cursor CLI, Aider, Local models).
+  - Added Cursor CLI and Grok API controls to interactive web demo & terminal deliberation theater.
+  - Comprehensive documentation and recipes for OmniRoute & unified LLM gateways under `vendor = "openai-compatible"`.
+
+### Security
+- **Exception Context Chain Hardening** (#511, #507): Use `raise DomainError(...) from None` across config, replay, policy, command, and CLI modules to sever Python's `__cause__` exception chaining, preventing raw unredacted parsing snippets or stack traces from leaking to terminal logs.
+- **Replay JSON Secret Redaction** (#503): Enforce secret redaction on JSON and file reading errors when loading replay outcomes.
 
 ### Changed
 - The one-source rule is enforced from a list rather than pairwise, so the error names
