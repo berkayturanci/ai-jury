@@ -1311,18 +1311,25 @@ class GenericCLIAdapter(Adapter):
         try:
             res = _spawn(argv, stdin_content, timeout=effective_timeout)
         except subprocess.TimeoutExpired:
-            return AgentResult.failed(
+            return AgentResult(
                 self.spec.name,
                 self.spec.vendor,
-                ERR_TIMEOUT,
+                False,
+                "",
+                effective_timeout,
                 f"execution timed out after {effective_timeout}s.",
+                error_code=ERR_TIMEOUT,
             )
         except Exception as exc:
-            return AgentResult.failed(
+            duration = time.monotonic() - start
+            return AgentResult(
                 self.spec.name,
                 self.spec.vendor,
-                ERR_SPAWN_FAILED,
+                False,
+                "",
+                duration,
                 f"failed to spawn '{self.spec.command}': {redaction.redact(str(exc))[0]}",
+                error_code=ERR_SPAWN_FAILED,
             )
 
         duration = time.monotonic() - start
