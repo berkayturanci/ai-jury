@@ -37,6 +37,8 @@
   --c-openrouter: #8b5cf6;
   --c-groq:   #f55036;
   --c-aider:  #ec4899;
+  --c-cursor: #06b6d4;
+  --c-grok:   #f43f5e;
 
   --shadow-lg: 0 30px 80px -20px rgba(0,0,0,0.7);
   --shadow-md: 0 14px 40px -12px rgba(0,0,0,0.55);
@@ -364,12 +366,15 @@ a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visibl
 .rev-chip[data-rev="openrouter"].lit { border-color: var(--c-openrouter); box-shadow: 0 0 0 1px var(--c-openrouter), 0 8px 20px -10px var(--c-openrouter); }
 .rev-chip[data-rev="groq"].lit   { border-color: var(--c-groq);   box-shadow: 0 0 0 1px var(--c-groq),   0 8px 20px -10px var(--c-groq); }
 .rev-chip[data-rev="aider"].lit  { border-color: var(--c-aider);  box-shadow: 0 0 0 1px var(--c-aider),  0 8px 20px -10px var(--c-aider); }
+.rev-chip[data-rev="cursor"].lit { border-color: var(--c-cursor); box-shadow: 0 0 0 1px var(--c-cursor), 0 8px 20px -10px var(--c-cursor); }
+.rev-chip[data-rev="grok"].lit   { border-color: var(--c-grok);   box-shadow: 0 0 0 1px var(--c-grok),   0 8px 20px -10px var(--c-grok); }
 .rev-tag { margin-left: auto; font-size: .6rem; color: var(--green-2); border: 1px solid var(--green); border-radius: 999px; padding: 0 .35rem; }
 
 .dot.d-claude { background: var(--c-claude); } .dot.d-codex { background: var(--c-codex); }
 .dot.d-agy { background: var(--c-agy); } .dot.d-qwen { background: var(--c-qwen); }
 .dot.d-deepseek { background: var(--c-deepseek); } .dot.d-openrouter { background: var(--c-openrouter); }
 .dot.d-groq { background: var(--c-groq); } .dot.d-aider { background: var(--c-aider); }
+.dot.d-cursor { background: var(--c-cursor); } .dot.d-grok { background: var(--c-grok); }
 
 /* connectors */
 .conn { position: relative; height: 2px; min-width: 26px; background: var(--border); border-radius: 2px; align-self: center; overflow: visible; }
