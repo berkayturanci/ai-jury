@@ -241,9 +241,7 @@ class LocalAdapterRunTests(unittest.TestCase):
         # error text; if a token ends up embedded there it must be redacted
         # like the adjacent generic-Exception branch already is.
         leak = "refused token=ghp_" + "a" * 36
-        with mock.patch(
-            "ai_jury.adapters._open", side_effect=urllib.error.URLError(leak)
-        ):
+        with mock.patch("ai_jury.adapters._open", side_effect=urllib.error.URLError(leak)):
             r = self._adapter().run("p")
         self.assertFalse(r.ok)
         self.assertNotIn("ghp_" + "a" * 36, r.error)
@@ -271,7 +269,7 @@ class SpawnTests(unittest.TestCase):
             [sys.executable, "-c", "print('hi', end='')"],
             None,
             timeout=10,
-)
+        )
         self.assertEqual(proc.returncode, 0)
         self.assertEqual(proc.stdout, "hi")
 
@@ -335,7 +333,9 @@ class MakeAdapterTests(unittest.TestCase):
             adapters.LocalAdapter,
         )
         self.assertIsInstance(
-            adapters.make_adapter(_spec(vendor="openai-compatible", endpoint="https://api.deepseek.com/v1")),
+            adapters.make_adapter(
+                _spec(vendor="openai-compatible", endpoint="https://api.deepseek.com/v1")
+            ),
             adapters.GenericOpenAICompatibleAdapter,
         )
         self.assertIsInstance(
@@ -350,7 +350,9 @@ class MakeAdapterTests(unittest.TestCase):
 
     def test_unknown_vendor_with_endpoint_falls_back_to_http(self):
         self.assertIsInstance(
-            adapters.make_adapter(_spec(vendor="openrouter", endpoint="https://openrouter.ai/api/v1")),
+            adapters.make_adapter(
+                _spec(vendor="openrouter", endpoint="https://openrouter.ai/api/v1")
+            ),
             adapters.GenericOpenAICompatibleAdapter,
         )
 
@@ -386,15 +388,26 @@ class UniversalAdapterTests(unittest.TestCase):
             self.assertEqual(hdrs["HTTP-Referer"], "https://ai-jury.org")
 
     def test_generic_openai_adapter_parse_content(self):
-        data_str = {
-            "choices": [{"message": {"content": "  Review content here  "}}]
-        }
-        self.assertEqual(adapters.GenericOpenAICompatibleAdapter.parse_content(data_str), "Review content here")
+        data_str = {"choices": [{"message": {"content": "  Review content here  "}}]}
+        self.assertEqual(
+            adapters.GenericOpenAICompatibleAdapter.parse_content(data_str), "Review content here"
+        )
 
         data_list = {
-            "choices": [{"message": {"content": [{"type": "text", "text": "Part 1 "}, {"type": "text", "text": "Part 2"}]}}]
+            "choices": [
+                {
+                    "message": {
+                        "content": [
+                            {"type": "text", "text": "Part 1 "},
+                            {"type": "text", "text": "Part 2"},
+                        ]
+                    }
+                }
+            ]
         }
-        self.assertEqual(adapters.GenericOpenAICompatibleAdapter.parse_content(data_list), "Part 1 Part 2")
+        self.assertEqual(
+            adapters.GenericOpenAICompatibleAdapter.parse_content(data_list), "Part 1 Part 2"
+        )
 
         self.assertEqual(adapters.GenericOpenAICompatibleAdapter.parse_content({}), "")
 
@@ -446,8 +459,26 @@ class UniversalAdapterTests(unittest.TestCase):
 
     @mock.patch("shutil.which", return_value="/usr/local/bin/aider")
     @mock.patch("ai_jury.adapters._spawn")
+    def test_generic_cli_adapter_spawn_failure_redacts_secret_in_exception(
+        self, mock_spawn, _mock_which
+    ):
+        leak = "boom token=ghp_" + "a" * 36
+        mock_spawn.side_effect = RuntimeError(leak)
+        spec = _spec(name="aider", vendor="cli", command="aider", prompt_mode="stdin")
+        a = adapters.GenericCLIAdapter(spec)
+
+        res = a.run("PROMPT")
+        self.assertFalse(res.ok)
+        self.assertEqual(res.error_code, adapters.ERR_SPAWN_FAILED)
+        self.assertNotIn("ghp_" + "a" * 36, res.error)
+        self.assertIn("[REDACTED", res.error)
+
+    @mock.patch("shutil.which", return_value="/usr/local/bin/aider")
+    @mock.patch("ai_jury.adapters._spawn")
     def test_generic_cli_adapter_error_classification_and_redaction(self, mock_spawn, _mock_which):
-        mock_spawn.return_value = _proc(1, "", stderr="Error: unauthorized 401 secret sk-proj-1234567890abcdef")
+        mock_spawn.return_value = _proc(
+            1, "", stderr="Error: unauthorized 401 secret sk-proj-1234567890abcdef"
+        )
         spec = _spec(name="aider", vendor="cli", command="aider", prompt_mode="stdin")
         a = adapters.GenericCLIAdapter(spec)
 
@@ -460,4 +491,3 @@ class UniversalAdapterTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

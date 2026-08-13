@@ -36,3 +36,7 @@
 **Vulnerability:** When catching parsing/execution exceptions (e.g. `OSError`, `ValueError`, `tomllib.TOMLDecodeError`) and wrapping them in domain-specific exceptions (e.g. `ReplayError`, `ConfigError`, `CommandError`, `PolicyError`, `SystemExit`), using `from exc` retained the original unredacted exception in the `__cause__` attribute. This allowed raw stack traces, containing potentially sensitive parsing contents or file paths, to leak if the exception went unhandled.
 **Learning:** Just redacting the `str(exc)` in the new domain exception message is insufficient if `from exc` is used, because Python's exception chaining preserves the original, unredacted exception underneath.
 **Prevention:** Use `raise DomainError(...) from None` instead of `from exc` when wrapping exceptions in top-level library components to completely sever the chain and prevent unredacted stack trace leakage.
+## 2024-05-18 - [CRITICAL] Fix exception string secret leakage in GenericCLIAdapter spawn
+**Vulnerability:** Unsanitized exception strings (`str(exc)`) when a CLI spawn failed in `GenericCLIAdapter.run` could leak secrets into standard output logs/responses.
+**Learning:** External dependencies (CLIs) running outside the Python process boundary don't inherit the application's memory protections or logging filters. Their spawn errors must also be aggressively sanitized before crossing back into application exception/logging flows.
+**Prevention:** Always wrap `str(exc)` with `redaction.redact()[0]` before logging or returning it in the user report in adapter classes.
