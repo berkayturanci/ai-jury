@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" font-family="&#39;Space Grotesk&#39;, -apple-system, BlinkMacSystemFont, &#39;Segoe UI&#39;, Roboto, sans-serif" role="img" aria-label="ai-jury: a diff enters; four reviewers — Claude Code, Codex, Antigravity, and a free local model — review it, debate, and a chair verifies and synthesizes one verdict.">
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" font-family="'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" role="img" aria-label="ai-jury: a diff enters; universal agent providers — Claude Code, Codex, Antigravity, DeepSeek, Grok, Cursor CLI, and free local models — review it, debate, verify, and reach one verdict.">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#0b1020"></stop>
@@ -31,7 +31,7 @@
   <rect width="1200" height="630" fill="url(#glow)"></rect>
   <rect width="1200" height="630" fill="url(#glow2)"></rect>
 
-  
+  <!-- Logo + Title -->
   <g transform="translate(64,54)">
     <rect width="56" height="56" rx="14" fill="#0f172a" stroke="#25304b"></rect>
     <circle cx="28" cy="28" r="16.5" fill="none" stroke="#334155" stroke-width="1.5"></circle>
@@ -46,62 +46,80 @@
     <text x="72" y="38" fill="#f3f6fc" font-size="34" font-weight="700" letter-spacing="-0.5">ai-jury</text>
   </g>
 
-  
+  <!-- Hero Headings -->
   <text x="64" y="186" fill="#f3f6fc" font-size="52" font-weight="700" letter-spacing="-1.5">Install once. Run a</text>
   <text x="64" y="246" fill="url(#title)" font-size="52" font-weight="700" letter-spacing="-1.5">cross-vendor review jury</text>
   <text x="64" y="306" fill="#f3f6fc" font-size="52" font-weight="700" letter-spacing="-1.5">anywhere.</text>
-  <text x="66" y="350" fill="#9aa8c4" font-size="20" font-weight="400" font-family="&#39;IBM Plex Sans&#39;, sans-serif">Native coding-agent CLIs + a free local model review the same diff, debate, and synthesize one verdict.</text>
+  <text x="66" y="350" fill="#9aa8c4" font-size="20" font-weight="400" font-family="'IBM Plex Sans', sans-serif">Universal agent providers review the same diff, debate each other, and reach one verdict.</text>
 
-  
-  <g transform="translate(66,408) scale(0.925)">
-    
+  <!-- Interactive Pipeline -->
+  <g transform="translate(66,396) scale(0.925)">
+    <!-- Connecting flow lines -->
     <g stroke="#25304b" stroke-width="2" fill="none">
-      <line x1="150" y1="84" x2="196" y2="84"></line>
-      <line x1="470" y1="84" x2="516" y2="84"></line>
-      <line x1="640" y1="84" x2="686" y2="84"></line>
-      <line x1="810" y1="84" x2="856" y2="84"></line>
+      <line x1="150" y1="104" x2="196" y2="104"></line>
+      <line x1="470" y1="104" x2="516" y2="104"></line>
+      <line x1="640" y1="104" x2="686" y2="104"></line>
+      <line x1="810" y1="104" x2="856" y2="104"></line>
+      <line x1="980" y1="104" x2="996" y2="104"></line>
     </g>
-    <circle cx="173" cy="84" r="3.5" fill="#818cf8"></circle>
-    <circle cx="663" cy="84" r="3.5" fill="#818cf8"></circle>
-    <circle cx="833" cy="84" r="3.5" fill="#818cf8"></circle>
+    <circle cx="173" cy="104" r="3.5" fill="#818cf8"></circle>
+    <circle cx="663" cy="104" r="3.5" fill="#818cf8"></circle>
+    <circle cx="833" cy="104" r="3.5" fill="#818cf8"></circle>
 
-    
-    <rect x="0" y="48" width="150" height="72" rx="14" fill="#0f1526" stroke="#25304b"></rect>
-    <text x="75" y="80" fill="#5d6b89" font-size="11" font-weight="600" letter-spacing="1" text-anchor="middle" font-family="&#39;JetBrains Mono&#39;, monospace">INPUT</text>
-    <text x="75" y="102" fill="#f3f6fc" font-size="18" font-weight="600" text-anchor="middle">diff / PR</text>
+    <!-- Stage 0: INPUT -->
+    <rect x="0" y="68" width="150" height="72" rx="14" fill="#0f1526" stroke="#25304b"></rect>
+    <text x="75" y="100" fill="#5d6b89" font-size="11" font-weight="600" letter-spacing="1" text-anchor="middle" font-family="'JetBrains Mono', monospace">INPUT</text>
+    <text x="75" y="122" fill="#f3f6fc" font-size="18" font-weight="600" text-anchor="middle">diff / PR</text>
 
-    
+    <!-- Stage 1: REVIEWERS (Universal Providers) -->
     <g>
-      <rect x="196" y="2" width="274" height="40" rx="10" fill="#0f1526" stroke="#d97757"></rect>
-      <circle cx="216" cy="22" r="5" fill="#d97757"></circle><text x="230" y="27" fill="#f3f6fc" font-size="15" font-weight="600">Claude Code</text><text x="450" y="27" fill="#5d6b89" font-size="12" text-anchor="end" font-family="&#39;JetBrains Mono&#39;, monospace">claude</text>
-      <rect x="196" y="48" width="274" height="40" rx="10" fill="#0f1526" stroke="#10a37f"></rect>
-      <circle cx="216" cy="68" r="5" fill="#10a37f"></circle><text x="230" y="73" fill="#f3f6fc" font-size="15" font-weight="600">Codex</text><text x="450" y="73" fill="#5d6b89" font-size="12" text-anchor="end" font-family="&#39;JetBrains Mono&#39;, monospace">codex</text>
-      <rect x="196" y="94" width="274" height="40" rx="10" fill="#0f1526" stroke="#4285f4"></rect>
-      <circle cx="216" cy="114" r="5" fill="#4285f4"></circle><text x="230" y="119" fill="#f3f6fc" font-size="15" font-weight="600">Antigravity</text><text x="450" y="119" fill="#5d6b89" font-size="12" text-anchor="end" font-family="&#39;JetBrains Mono&#39;, monospace">agy</text>
-      <rect x="196" y="140" width="274" height="40" rx="10" fill="#0f1526" stroke="#a855f7"></rect>
-      <circle cx="216" cy="160" r="5" fill="#a855f7"></circle><text x="230" y="165" fill="#f3f6fc" font-size="15" font-weight="600">Local / open-weight</text><text x="452" y="165" fill="#34d399" font-size="11" text-anchor="end" font-family="&#39;JetBrains Mono&#39;, monospace">free</text>
+      <!-- Claude -->
+      <rect x="196" y="2" width="274" height="30" rx="8" fill="#0f1526" stroke="#d97757"></rect>
+      <circle cx="214" cy="17" r="4" fill="#d97757"></circle><text x="226" y="22" fill="#f3f6fc" font-size="13" font-weight="600">Claude Code</text><text x="452" y="22" fill="#5d6b89" font-size="11" text-anchor="end" font-family="'JetBrains Mono', monospace">claude</text>
+
+      <!-- Codex -->
+      <rect x="196" y="36" width="274" height="30" rx="8" fill="#0f1526" stroke="#10a37f"></rect>
+      <circle cx="214" cy="51" r="4" fill="#10a37f"></circle><text x="226" y="56" fill="#f3f6fc" font-size="13" font-weight="600">OpenAI Codex</text><text x="452" y="56" fill="#5d6b89" font-size="11" text-anchor="end" font-family="'JetBrains Mono', monospace">codex</text>
+
+      <!-- Antigravity -->
+      <rect x="196" y="70" width="274" height="30" rx="8" fill="#0f1526" stroke="#4285f4"></rect>
+      <circle cx="214" cy="85" r="4" fill="#4285f4"></circle><text x="226" y="90" fill="#f3f6fc" font-size="13" font-weight="600">Antigravity</text><text x="452" y="90" fill="#5d6b89" font-size="11" text-anchor="end" font-family="'JetBrains Mono', monospace">agy</text>
+
+      <!-- DeepSeek / Grok / APIs -->
+      <rect x="196" y="104" width="274" height="30" rx="8" fill="#0f1526" stroke="#06b6d4"></rect>
+      <circle cx="214" cy="119" r="4" fill="#06b6d4"></circle><text x="226" y="124" fill="#f3f6fc" font-size="13" font-weight="600">DeepSeek · Grok · APIs</text><text x="452" y="124" fill="#06b6d4" font-size="11" text-anchor="end" font-family="'JetBrains Mono', monospace">hosted</text>
+
+      <!-- Cursor CLI / Aider -->
+      <rect x="196" y="138" width="274" height="30" rx="8" fill="#0f1526" stroke="#ec4899"></rect>
+      <circle cx="214" cy="153" r="4" fill="#ec4899"></circle><text x="226" y="158" fill="#f3f6fc" font-size="13" font-weight="600">Cursor CLI · Aider</text><text x="452" y="158" fill="#ec4899" font-size="11" text-anchor="end" font-family="'JetBrains Mono', monospace">cli</text>
+
+      <!-- Local / Free -->
+      <rect x="196" y="172" width="274" height="30" rx="8" fill="#0f1526" stroke="#a855f7"></rect>
+      <circle cx="214" cy="187" r="4" fill="#a855f7"></circle><text x="226" y="192" fill="#f3f6fc" font-size="13" font-weight="600">Local (Ollama / LM Studio)</text><text x="452" y="192" fill="#34d399" font-size="11" text-anchor="end" font-family="'JetBrains Mono', monospace">free</text>
     </g>
 
-    
-    <rect x="516" y="48" width="124" height="72" rx="14" fill="#0f1526" stroke="#25304b"></rect>
-    <text x="578" y="80" fill="#5d6b89" font-size="11" font-weight="600" letter-spacing="1" text-anchor="middle" font-family="&#39;JetBrains Mono&#39;, monospace">ROUND 2</text>
-    <text x="578" y="102" fill="#f3f6fc" font-size="17" font-weight="600" text-anchor="middle">debate ⇄</text>
+    <!-- Stage 2: ROUND 2 (debate) -->
+    <rect x="516" y="68" width="124" height="72" rx="14" fill="#0f1526" stroke="#25304b"></rect>
+    <text x="578" y="100" fill="#5d6b89" font-size="11" font-weight="600" letter-spacing="1" text-anchor="middle" font-family="'JetBrains Mono', monospace">ROUND 2</text>
+    <text x="578" y="122" fill="#f3f6fc" font-size="17" font-weight="600" text-anchor="middle">debate ⇄</text>
 
-    <rect x="686" y="48" width="124" height="72" rx="14" fill="#0f1526" stroke="#25304b"></rect>
-    <text x="748" y="80" fill="#5d6b89" font-size="11" font-weight="600" letter-spacing="1" text-anchor="middle" font-family="&#39;JetBrains Mono&#39;, monospace">CHECK</text>
-    <text x="748" y="102" fill="#f3f6fc" font-size="17" font-weight="600" text-anchor="middle">verify</text>
+    <!-- Stage 3: CHECK (verify) -->
+    <rect x="686" y="68" width="124" height="72" rx="14" fill="#0f1526" stroke="#25304b"></rect>
+    <text x="748" y="100" fill="#5d6b89" font-size="11" font-weight="600" letter-spacing="1" text-anchor="middle" font-family="'JetBrains Mono', monospace">CHECK</text>
+    <text x="748" y="122" fill="#f3f6fc" font-size="17" font-weight="600" text-anchor="middle">verify</text>
 
-    
-    <rect x="856" y="48" width="124" height="72" rx="14" fill="#0f1526" stroke="#3a3f8a"></rect>
-    <text x="918" y="80" fill="#5d6b89" font-size="11" font-weight="600" letter-spacing="1" text-anchor="middle" font-family="&#39;JetBrains Mono&#39;, monospace">SYNTHESIS</text>
-    <text x="918" y="102" fill="#818cf8" font-size="18" font-weight="700" text-anchor="middle">chair</text>
+    <!-- Stage 4: SYNTHESIS (chair / vote) -->
+    <rect x="856" y="68" width="124" height="72" rx="14" fill="#0f1526" stroke="#3a3f8a"></rect>
+    <text x="918" y="100" fill="#5d6b89" font-size="11" font-weight="600" letter-spacing="1" text-anchor="middle" font-family="'JetBrains Mono', monospace">SYNTHESIS</text>
+    <text x="918" y="122" fill="#818cf8" font-size="18" font-weight="700" text-anchor="middle">chair</text>
 
-    
-    <rect x="996" y="48" width="156" height="72" rx="14" fill="#0f1526" stroke="#10b981"></rect>
-    <text x="1074" y="78" fill="#5d6b89" font-size="11" font-weight="600" letter-spacing="1" text-anchor="middle" font-family="&#39;JetBrains Mono&#39;, monospace">VERDICT</text>
-    <rect x="1018" y="86" width="112" height="26" rx="7" fill="url(#verd)"></rect>
-    <text x="1074" y="104" fill="#ffffff" font-size="14" font-weight="700" text-anchor="middle">✓ APPROVE</text>
+    <!-- Stage 5: VERDICT -->
+    <rect x="996" y="68" width="156" height="72" rx="14" fill="#0f1526" stroke="#10b981"></rect>
+    <text x="1074" y="98" fill="#5d6b89" font-size="11" font-weight="600" letter-spacing="1" text-anchor="middle" font-family="'JetBrains Mono', monospace">VERDICT</text>
+    <rect x="1018" y="106" width="112" height="26" rx="7" fill="url(#verd)"></rect>
+    <text x="1074" y="124" fill="#ffffff" font-size="14" font-weight="700" text-anchor="middle">✓ APPROVE</text>
   </g>
 
-  <text x="64" y="612" fill="#5d6b89" font-size="14" font-family="&#39;JetBrains Mono&#39;, monospace">stdlib-only Python · local-first · MIT · not API calls</text>
+  <!-- Footer tagline -->
+  <text x="64" y="612" fill="#5d6b89" font-size="14" font-family="'JetBrains Mono', monospace">stdlib-only Python · local-first · MIT · universal agent providers</text>
 </svg>
