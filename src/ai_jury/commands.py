@@ -97,7 +97,7 @@ def parse_comment(text: str) -> ParsedCommand:
             raise CommandError(f"unsupported argument '{tok}'; only --rounds is allowed")
         try:
             rounds = int(value)
-        except ValueError as exc:
+        except ValueError:
             raise CommandError(f"--rounds must be an integer (got {value!r})") from None
         if not (_MIN_ROUNDS <= rounds <= _MAX_ROUNDS):
             raise CommandError(

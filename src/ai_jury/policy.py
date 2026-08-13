@@ -101,7 +101,7 @@ def load_policy(path: Path | None = None) -> ReviewPolicy | None:
         data = tomllib.loads(raw.decode("utf-8"))
     except OSError as exc:
         raise PolicyError(f"could not read policy file {policy_path}: {redact(str(exc))[0]}") from None
-    except UnicodeDecodeError as exc:
+    except UnicodeDecodeError:
         # TOML is UTF-8 by spec (review of #316).
         raise PolicyError(f"policy file {policy_path} is not valid UTF-8.") from None
     except tomllib.TOMLDecodeError as exc:
