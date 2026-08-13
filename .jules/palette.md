@@ -73,3 +73,7 @@
 ## 2026-11-05 - Skip-to-content targets need tabindex
 **Learning:** When implementing a 'skip-to-content' link, if the target element (like `<main>`) does not have `tabindex="-1"`, native browsers will scroll to it but will not transfer keyboard focus. When the user presses 'Tab' again, focus erroneously resets to the top of the page.
 **Action:** Always add `tabindex="-1"` to the target container of a skip link (e.g., `<main id="main-content" tabindex="-1">`) to ensure the sequential keyboard navigation starting point is correctly moved.
+
+## 2026-11-06 - Faint text color contrast failure
+**Learning:** Using very low-contrast colors for supplementary text (like `--faint` used for meta text, timestamps, and table headers) makes the application unreadable for users with low vision or when viewed on poor displays. A 2.8:1 contrast ratio fails WCAG AA standards (4.5:1), even for secondary text.
+**Action:** Always ensure that even "faint" or "muted" text tokens in the design system meet the minimum 4.5:1 WCAG AA contrast ratio against their respective background colors in both light and dark themes.
