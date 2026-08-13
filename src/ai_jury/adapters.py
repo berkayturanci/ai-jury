@@ -310,7 +310,9 @@ class Adapter:
             return caps
         except Exception as exc:  # noqa: BLE001 - swallow any spawn failure
             caps["status"] = CAP_UNKNOWN_VERSION
-            caps["warnings"].append(f"version probe for '{self.spec.command}' failed: {redaction.redact(str(exc))[0]}")
+            caps["warnings"].append(
+                f"version probe for '{self.spec.command}' failed: {redaction.redact(str(exc))[0]}"
+            )
             return caps
 
         raw = ((proc.stdout or "") + (proc.stderr or "")).strip()
@@ -916,8 +918,13 @@ class _HostedApiAdapter(Adapter):
             # _invalid_key_reason for why post-hoc scrubbing can't be trusted
             # here. This message never echoes the key itself.
             return AgentResult(
-                self.name, self.spec.vendor, False, "", 0.0,
-                invalid_reason, error_code=ERR_INVALID_API_KEY,
+                self.name,
+                self.spec.vendor,
+                False,
+                "",
+                0.0,
+                invalid_reason,
+                error_code=ERR_INVALID_API_KEY,
             )
         effective_timeout = self.spec.timeout
         if timeout is not None:
@@ -929,8 +936,13 @@ class _HostedApiAdapter(Adapter):
         dur = time.monotonic() - start
         if err_msg is not None:
             return AgentResult(
-                self.name, self.spec.vendor, False, "", dur,
-                self._scrub_secret(err_msg), error_code=err_code,
+                self.name,
+                self.spec.vendor,
+                False,
+                "",
+                dur,
+                self._scrub_secret(err_msg),
+                error_code=err_code,
             )
         content = self.parse_content(data or {})
         if not content:
@@ -1231,7 +1243,9 @@ class GenericOpenAICompatibleAdapter(_HostedApiAdapter):
             parts = []
             for item in raw_content:
                 if isinstance(item, dict):
-                    if (item.get("type") == "text" or "text" in item) and isinstance(item.get("text"), str):
+                    if (item.get("type") == "text" or "text" in item) and isinstance(
+                        item.get("text"), str
+                    ):
                         parts.append(item["text"])
                 elif isinstance(item, str):
                     parts.append(item)
@@ -1308,7 +1322,7 @@ class GenericCLIAdapter(Adapter):
                 self.spec.name,
                 self.spec.vendor,
                 ERR_SPAWN_FAILED,
-                f"failed to spawn '{self.spec.command}': {exc}",
+                f"failed to spawn '{self.spec.command}': {redaction.redact(str(exc))[0]}",
             )
 
         duration = time.monotonic() - start
@@ -1372,4 +1386,3 @@ def make_adapter(spec: AgentSpec, mock: bool = False) -> Adapter:
     if spec.command:
         return GenericCLIAdapter(spec)
     return AgyAdapter(spec)
-
