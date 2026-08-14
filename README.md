@@ -597,12 +597,14 @@ it differs from hosted, API-level, and other native-CLI tools, and
 
 ## Status
 
-Active (v1.1.0). The full pipeline runs end-to-end with the real CLIs and the offline
+Active (v1.13.0). The full pipeline runs end-to-end with the real CLIs and the offline
 `--mock` path is covered by tests. **Shipped:** structured findings + tiered consensus
 (consensus / majority / single-reviewer), a verification pass that drops false positives,
-**chair verdict or panel vote** (`--decision vote`), **PR / diff / issue review**
-(`--issue`, with READY / NEEDS-INFO / UNCLEAR verdicts), **live play-by-play** (`--live`)
-and **full-transcript / verbose** output, anonymized debate, adaptive early-stop,
+**universal agent provider support** (cloud CLIs, hosted APIs, arbitrary coding-agent CLIs, local models),
+**chair verdict or panel vote** (`--decision vote`), **PR / diff / issue / commit review**
+(`--pr`, `--diff-file`, `--issue`, `--commit`, `--commits`), abstention accounting in the panel,
+**live play-by-play** (`--live`) and **full-transcript / verbose** output, animated deliberation theater
+(`--theater`, `--theater-style pixel`), anonymized debate, adaptive early-stop,
 severity-gated CI exit codes, secure-by-default sandboxing, run budget/retries, large-diff
 filtering + chunking, an optional result cache, incremental review, suggested patches,
 comment-command triggering, a **local / open-weight adapter** (free, offline), and
