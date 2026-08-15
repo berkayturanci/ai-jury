@@ -52,6 +52,7 @@ class MetadataShapeTest(unittest.TestCase):
             "vote",
             "agents",
             "panel",
+            "economics",
             "rounds_executed",
             "from_cache",
             "stop_reason",

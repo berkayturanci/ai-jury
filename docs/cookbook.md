@@ -581,6 +581,32 @@ jobs:
 
 ---
 
+## 16. Full delivery governance with Keel + AI Jury
+
+For teams using [Keel](https://github.com/berkayturanci/keel) to automate software delivery from issue intake to verified merge, `ai-jury` serves as the multi-agent review gate in Keel's review phase:
+
+```yaml
+# .keel/project.yaml
+review:
+  engine: ai-jury
+  preset: balanced
+  gating: true
+```
+
+When Keel executes `keel ship`, it convenes `ai-jury` cross-examination across your configured models to guarantee consensus before unlocking the merge window.
+
+---
+
+## 17. Add an AI Jury verified badge to your README
+
+Display your repository's multi-agent review posture with an SVG badge:
+
+```markdown
+[![AI Jury Reviewed](https://img.shields.io/badge/ai--jury-consensus%20verified-6366f1)](https://github.com/berkayturanci/ai-jury)
+```
+
+---
+
 ## See also
 
 - [Architecture](architecture.md) — components, round structure, adapters.
