@@ -570,6 +570,10 @@ class JuryConfig:
     # terminal (and ``pixel`` falls back to ``flat`` without truecolor/unicode).
     theater: bool = False
     theater_style: str = "flat"
+    # Risk-aware tiered model routing (issue #524): "standard" (uniform panel) | "tiered" (cost-optimized with frontier anchor)
+    routing: str = "standard"
+    # Pre-pass static analysis hints (issue #523): inject linter hints into prompt context
+    hints: bool = False
 
     @property
     def effective_max_rounds(self) -> int:
@@ -703,6 +707,8 @@ def _from_dict(data: dict) -> JuryConfig:
         decision=(str(jury.get("decision", "chair")).strip().lower() or "chair"),
         theater=bool(jury.get("theater", False)),
         theater_style=(str(jury.get("theater_style", "flat")).strip().lower() or "flat"),
+        routing=(str(jury.get("routing", "standard")).strip().lower() or "standard"),
+        hints=bool(jury.get("hints", False)),
     )
 
 

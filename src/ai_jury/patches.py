@@ -16,6 +16,7 @@ Pure and deterministic: given the same groups it renders the same markdown.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from .consensus import BUCKET_REJECTED, FindingGroup
 from .findings import fence_safe, flatten_inline
@@ -95,3 +96,69 @@ def render_patch_suggestions(groups: list[FindingGroup]) -> str:
         lines.append("```")
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
+
+
+def parse_patch_suggestions(text: str) -> list[PatchSuggestion]:
+    """Parse PatchSuggestion objects from a markdown report or suggested-patches block."""
+    import re
+
+    out: list[PatchSuggestion] = []
+    # Pattern matches: ### file.py:123 — [severity] claim
+    heading_re = re.compile(r"^###\s+([^—\n]+?)(?::(\d+))?\s+—\s+\[([^\]]+)\]\s+(.+)$", re.MULTILINE)
+    suggestion_block_re = re.compile(r"```suggestion\n(.*?)\n```", re.DOTALL)
+
+    matches = list(heading_re.finditer(text))
+    for i, m in enumerate(matches):
+        file_path = m.group(1).strip()
+        line_num = int(m.group(2)) if m.group(2) else None
+        severity = m.group(3).strip()
+        claim = m.group(4).strip()
+
+        start = m.end()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        sub_content = text[start:end]
+
+        fix_match = suggestion_block_re.search(sub_content)
+        if fix_match:
+            fix = fix_match.group(1).strip()
+            out.append(
+                PatchSuggestion(
+                    file=file_path,
+                    line=line_num,
+                    severity=severity,
+                    claim=claim,
+                    suggested_fix=fix,
+                )
+            )
+    return out
+
+
+def apply_patch_suggestion(
+    suggestion: PatchSuggestion, root_dir: Path | None = None
+) -> tuple[bool, str]:
+    """Safely apply a patch suggestion to the targeted file."""
+    root = root_dir or Path.cwd()
+    target = (root / suggestion.file).resolve()
+    if not target.exists() or not target.is_file():
+        return False, f"File not found: {suggestion.file}"
+
+    fix = suggestion.suggested_fix
+    if fix.startswith("---") or "@@" in fix:
+        import subprocess
+
+        proc = subprocess.run(
+            ["git", "apply", "-"], input=fix, text=True, cwd=str(root), capture_output=True
+        )
+        if proc.returncode == 0:
+            return True, f"Applied git patch to {suggestion.file}"
+        return False, f"Git apply failed: {proc.stderr.strip() or 'patch does not apply cleanly'}"
+
+    lines = target.read_text(encoding="utf-8").splitlines(keepends=True)
+    if suggestion.line is not None and 1 <= suggestion.line <= len(lines):
+        idx = suggestion.line - 1
+        lines[idx] = fix + ("\n" if not fix.endswith("\n") else "")
+        target.write_text("".join(lines), encoding="utf-8")
+        return True, f"Applied line replacement at {suggestion.file}:{suggestion.line}"
+
+    return False, f"Cannot apply non-diff suggestion without line match in {suggestion.file}"
+

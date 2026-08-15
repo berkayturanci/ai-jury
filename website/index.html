@@ -396,6 +396,17 @@
             <label class="opt"><input type="radio" name="postmode" value="phased" /> Phased (R1 / debate / decision)</label>
             <label class="opt"><input type="checkbox" id="progress" /> Live progress comment</label>
           </fieldset>
+          <fieldset class="fieldset">
+            <legend class="legend">Sandbox Fixture</legend>
+            <label class="opt"><input type="radio" name="fixture" value="sql-injection" checked /> SQL Injection (Python)</label>
+            <label class="opt"><input type="radio" name="fixture" value="race-condition" /> Concurrency Race (Go)</label>
+            <label class="opt"><input type="radio" name="fixture" value="jwt-bypass" /> Auth Bypass (TypeScript)</label>
+          </fieldset>
+          <fieldset class="fieldset">
+            <legend class="legend">Optimization</legend>
+            <label class="opt"><input type="checkbox" id="opt-tiered" /> <code>--tiered</code> <span class="tag accent">frugal</span></label>
+            <label class="opt"><input type="checkbox" id="opt-hints" /> <code>--hints</code> <span class="tag">linter pre-pass</span></label>
+          </fieldset>
         </form>
 
         <div class="stage-card">

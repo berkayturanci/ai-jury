@@ -474,8 +474,90 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="treat configuration warnings as errors",
     )
+    p.add_argument(
+        "--tiered",
+        action="store_true",
+        help="opt-in risk-aware tiered model routing with frontier anchor (issue #524)",
+    )
+    p.add_argument(
+        "--hints",
+        action="store_true",
+        help="run local static analysis pre-pass (Ruff/ESLint) to inject hints (issue #523)",
+    )
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return p
+
+
+def _run_apply(rest: list[str]) -> int:
+    """Handle `jury apply` (issue #521): apply verified patch suggestions."""
+    from .patches import apply_patch_suggestion, parse_patch_suggestions
+
+    sub = argparse.ArgumentParser(
+        prog="jury apply", description="Apply verified suggested patches to the repository."
+    )
+    sub.add_argument(
+        "index",
+        nargs="?",
+        default="all",
+        help="1-indexed patch suggestion number to apply, or 'all' (default: all)",
+    )
+    sub.add_argument(
+        "--report",
+        "-r",
+        help="Path to a markdown report file or patch file (defaults to stdin)",
+    )
+    ns = sub.parse_args(rest)
+
+    content = ""
+    if ns.report:
+        p = Path(ns.report)
+        if not p.exists():
+            print(f"Error: report file not found: {ns.report}", file=sys.stderr)
+            return 2
+        content = p.read_text(encoding="utf-8")
+    elif sys.stdin is not None and not sys.stdin.isatty():
+        content = sys.stdin.read()
+    else:
+        print(
+            "Error: provide a report file via --report <file> or pipe a report via stdin",
+            file=sys.stderr,
+        )
+        return 2
+
+    suggestions = parse_patch_suggestions(content)
+    if not suggestions:
+        print("No verified patch suggestions found in the provided report.", file=sys.stderr)
+        return 1
+
+    if ns.index.lower() == "all":
+        success_count = 0
+        for i, s in enumerate(suggestions, 1):
+            ok, msg = apply_patch_suggestion(s)
+            if ok:
+                success_count += 1
+                print(f"✓ [{i}/{len(suggestions)}] {msg}")
+            else:
+                print(f"✗ [{i}/{len(suggestions)}] {msg}", file=sys.stderr)
+        return 0 if success_count > 0 else 1
+
+    try:
+        target_idx = int(ns.index) - 1
+        if not (0 <= target_idx < len(suggestions)):
+            print(
+                f"Error: patch index {ns.index} out of range (found {len(suggestions)} suggestions)",
+                file=sys.stderr,
+            )
+            return 2
+        s = suggestions[target_idx]
+        ok, msg = apply_patch_suggestion(s)
+        if ok:
+            print(f"✓ {msg}")
+            return 0
+        print(f"✗ {msg}", file=sys.stderr)
+        return 1
+    except ValueError:
+        print(f"Error: invalid index '{ns.index}'", file=sys.stderr)
+        return 2
 
 
 def _run_comment_command(rest: list[str]) -> int:
@@ -1273,6 +1355,11 @@ def main(argv: list[str] | None = None) -> int:
     if raw[:1] == ["config"]:
         return _run_config(raw[1:])
 
+    # Apply verified suggested patches (issue #521): `jury apply` applies
+    # suggested patches directly to the working directory.
+    if raw[:1] == ["apply"]:
+        return _run_apply(raw[1:])
+
     # Theater replay (issue #449): `jury replay <outcome.json>` re-drives the
     # deliberation scene from a saved outcome — no agents, no network.
     # Intercepted before the main parser like the other subcommands.
@@ -1457,6 +1544,19 @@ def main(argv: list[str] | None = None) -> int:
         if args.verify is None:
             config.verify = verify
         log(describe(prof))
+
+    if getattr(args, "tiered", False):
+        config.routing = "tiered"
+    if getattr(args, "hints", False):
+        config.hints = True
+
+    if config.hints:
+        from .hints import collect_static_hints
+
+        sh = collect_static_hints()
+        if sh:
+            context = (context + "\n\n" + sh) if context else sh
+            log("injected static analysis hints into review context")
 
     # Optional local result cache (issue #33): a hit skips the run entirely; a
     # miss runs the jury and stores the outcome. The key covers the diff,
