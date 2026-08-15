@@ -38,9 +38,14 @@ heterogeneity**, not more rounds — and universal provider support lets you mix
 ## Install
 
 ```bash
-pipx install ai-jury         # once published; until then:
-pipx install git+https://github.com/berkayturanci/ai-jury.git
-# dev: pip install -e ".[dev]"
+# macOS & Linux (Homebrew — recommended):
+brew install berkayturanci/ai-jury/ai-jury
+
+# Or standalone curl installer:
+curl -fsSL https://berkayturanci.github.io/ai-jury/install.sh | sh
+
+# Or via pipx / pip:
+pipx install ai-jury
 ```
 
 Requires Python 3.11+. Then scaffold a config with **`jury init`** (it detects your

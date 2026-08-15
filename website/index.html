@@ -200,7 +200,7 @@
       </p>
       <div class="hero-install reveal" data-d="3">
         <span class="hi-prompt mono">$</span>
-        <code id="hero-install-cmd">pipx install ai-jury</code>
+        <code id="hero-install-cmd">brew install berkayturanci/ai-jury/ai-jury</code>
         <button class="hi-copy" id="hero-copy" type="button" aria-label="Copy install command" title="Copy install command">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
           <span>copy</span>
@@ -447,8 +447,8 @@
         <div class="step3">
           <div class="s3-n">1</div>
           <div class="s3-k">install</div>
-          <code class="s3-cmd">pipx install ai-jury</code>
-          <p>One command. Stdlib-only, no heavy dependency tree to resolve.</p>
+          <code class="s3-cmd">brew install berkayturanci/ai-jury/ai-jury</code>
+          <p>One command via Homebrew or <code>pipx install ai-jury</code>. Stdlib-only.</p>
         </div>
         <div class="step3">
           <div class="s3-n">2</div>
@@ -466,7 +466,9 @@
         </div>
       </div>
 
-      <p class="sec-kicker reveal" style="margin:2.4rem 0 .6rem">More commands</p>      <pre class="code reveal"><code><span class="cm"># install once</span>
+      <p class="sec-kicker reveal" style="margin:2.4rem 0 .6rem">More commands</p>      <pre class="code reveal"><code><span class="cm"># install once (Homebrew, curl, or pipx)</span>
+brew install berkayturanci/ai-jury/ai-jury
+curl -fsSL https://berkayturanci.github.io/ai-jury/install.sh | sh
 pipx install ai-jury
 
 jury init                             <span class="cm"># scaffold jury.toml (detects agents + local models)</span>
