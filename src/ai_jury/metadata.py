@@ -107,6 +107,66 @@ def _rounds_executed(outcome: JuryOutcome) -> int:
     return rounds
 
 
+def estimate_economics(results: list) -> dict:
+    """Estimate token counts and USD dollar cost across all executed agent slots (issue #528).
+
+    Uses conservative token heuristics (~4 chars/token from output + base context)
+    and published per-vendor pricing tiers. Local models (Ollama, local) are computed
+    at $0.00 (free offline).
+    """
+    vendor_rates_per_1m = {
+        "local": 0.0,
+        "ollama": 0.0,
+        "deepseek": 0.27,
+        "groq": 0.30,
+        "moonshot": 0.50,
+        "gemini": 1.25,
+        "google": 1.25,
+        "openai": 2.50,
+        "codex": 2.50,
+        "anthropic": 3.00,
+        "claude": 3.00,
+    }
+    breakdown = []
+    total_tokens = 0
+    total_cost_usd = 0.0
+
+    for r in results:
+        agent = getattr(r, "agent", "unknown")
+        vendor = (getattr(r, "vendor", "") or "").lower()
+        output_len = len(getattr(r, "output", "") or "")
+        # Heuristic: base prompt ~800 tokens + output tokens
+        tokens_est = max(100, 800 + (output_len // 4)) if getattr(r, "ok", False) else 200
+
+        # Match rate
+        rate_per_1m = 2.0  # default generic rate
+        for k, v in vendor_rates_per_1m.items():
+            if k in vendor or k in agent.lower():
+                rate_per_1m = v
+                break
+
+        cost_usd = (tokens_est / 1_000_000) * rate_per_1m
+        is_local = rate_per_1m == 0.0
+
+        total_tokens += tokens_est
+        total_cost_usd += cost_usd
+
+        breakdown.append({
+            "agent": agent,
+            "vendor": getattr(r, "vendor", ""),
+            "tokens_est": tokens_est,
+            "cost_usd_est": round(cost_usd, 6),
+            "is_local_free": is_local,
+        })
+
+    return {
+        "total_tokens_est": total_tokens,
+        "total_cost_usd_est": round(total_cost_usd, 4),
+        "local_free_slots": sum(1 for b in breakdown if b["is_local_free"]),
+        "breakdown": breakdown,
+    }
+
+
 def build_run_metadata(
     outcome: JuryOutcome, config: JuryConfig, *, decision=None, vote=None
 ) -> dict:
@@ -168,6 +228,7 @@ def build_run_metadata(
         # Configured vs effective panel size (issue #501): a slot that returned no
         # review is an abstention, not an approval, and must not inflate the panel.
         "panel": panel_accounting(outcome.reviews),
+        "economics": estimate_economics(all_results),
         "rounds_executed": _rounds_executed(outcome),
         "from_cache": bool(getattr(outcome, "from_cache", False)),
         "stop_reason": getattr(outcome, "stop_reason", "") or "",
