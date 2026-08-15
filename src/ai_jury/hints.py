@@ -33,7 +33,8 @@ def collect_static_hints(files: list[str] | None = None, root_dir: Path | None =
                 lines = [line.strip() for line in res.stdout.splitlines()[:5] if line.strip()]
                 if lines:
                     hints.append("Python linter (Ruff) warnings:\n" + "\n".join(f"- {item}" for item in lines))
-        except Exception:
+        except (subprocess.SubprocessError, OSError, Exception):
+            # Best-effort local Ruff linter invocation; gracefully ignore errors.
             pass
 
     # 2. Check for eslint
@@ -54,7 +55,8 @@ def collect_static_hints(files: list[str] | None = None, root_dir: Path | None =
                     lines = [line.strip() for line in res.stdout.splitlines()[:5] if line.strip()]
                     if lines:
                         hints.append("JS/TS linter (ESLint) warnings:\n" + "\n".join(f"- {item}" for item in lines))
-        except Exception:
+        except (subprocess.SubprocessError, OSError, Exception):
+            # Best-effort local ESLint invocation; gracefully ignore errors.
             pass
 
     if not hints:
