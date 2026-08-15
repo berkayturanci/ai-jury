@@ -16,7 +16,7 @@ usage: jury [-h] [--pr PR] [--issue ISSUE] [--repo REPO]
             [--dry-run] [--label] [--ci] [--fail-on FAIL_ON] [--cache]
             [--clear-cache] [--cache-dir CACHE_DIR] [--suggest-patches]
             [--patches-out PATH] [--incremental] [-q] [--config-validate]
-            [--strict-config] [--version]
+            [--strict-config] [--tiered] [--hints] [--version]
 
 Cross-vendor multi-agent PR review jury.
 
@@ -136,6 +136,10 @@ options:
   --config-validate     validate the resolved config and exit (0 valid, 2
                         invalid)
   --strict-config       treat configuration warnings as errors
+  --tiered              opt-in risk-aware tiered model routing with frontier
+                        anchor (issue #524)
+  --hints               run local static analysis pre-pass (Ruff/ESLint) to
+                        inject hints (issue #523)
   --version             show program's version number and exit
 
 input:
