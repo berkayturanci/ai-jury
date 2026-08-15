@@ -79,6 +79,20 @@ class PatchesApplyTests(unittest.TestCase):
             content = auth_file.read_text(encoding="utf-8")
             self.assertIn("(username,)", content)
 
+    def test_apply_patch_suggestion_path_traversal_rejection(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            s = PatchSuggestion(
+                file="../../etc/passwd",
+                line=1,
+                severity="critical",
+                claim="path traversal",
+                suggested_fix="root:x:0:0:::",
+            )
+            ok, msg = apply_patch_suggestion(s, root_dir=tmp_path)
+            self.assertFalse(ok)
+            self.assertIn("Path traversal rejected", msg)
+
     def test_apply_patch_suggestion_file_not_found(self):
         s = PatchSuggestion(
             file="nonexistent.py",
