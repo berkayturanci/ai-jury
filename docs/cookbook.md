@@ -553,6 +553,34 @@ repos:
 
 ---
 
+## 15. Zero-friction CI with the official GitHub Action
+
+Review every pull request automatically using the official composite action:
+
+```yaml
+# .github/workflows/ai-jury.yml
+name: ai-jury
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: berkayturanci/ai-jury@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          args: "--auto --post --ci"
+```
+
+---
+
 ## See also
 
 - [Architecture](architecture.md) — components, round structure, adapters.

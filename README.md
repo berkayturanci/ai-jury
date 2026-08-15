@@ -235,6 +235,22 @@ jury --doctor      # readiness check + actionable next steps
     - id: ai-jury
 ```
 
+**1-Click GitHub Action (`.github/workflows/ai-jury.yml`):**
+
+```yaml
+name: ai-jury
+on: [pull_request]
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: berkayturanci/ai-jury@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+```
+
 
 A sample report is in [`docs/example-run.md`](docs/example-run.md). For a **real**
 four-vendor run where the jury reviews its own repository (with honest notes on
