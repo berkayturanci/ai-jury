@@ -110,6 +110,8 @@ DOCUMENTED_FLAGS = [
     "--quiet",
     "--config-validate",
     "--strict-config",
+    "--tiered",
+    "--hints",
     "--version",
     "--help",
 ]

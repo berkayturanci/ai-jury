@@ -528,6 +528,8 @@
       // generate jury.toml
       var lines = ["[jury]", "rounds = " + r, 'chair = "' + (ags[0] || "claude") + '"', "verify = " + (verify ? "true" : "false")];
       if (auto) lines.push("auto_depth = true");
+      if ($("opt-tiered") && $("opt-tiered").checked) lines.push('routing = "tiered"');
+      if ($("opt-hints") && $("opt-hints").checked) lines.push("hints = true");
       lines.push("");
       ags.forEach(function (n) {
         var a = AGENTS[n];

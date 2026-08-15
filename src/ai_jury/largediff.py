@@ -265,18 +265,55 @@ def _matches_any(path: str, patterns) -> bool:
     return False
 
 
+def _split_file_at_hunk_boundaries(f: DiffFile, chunk_max_bytes: int) -> list[str]:
+    """Split a single large diff file across semantic hunk headers (issue #522).
+
+    Preserves the file header preamble on subsequent chunks so context is not lost.
+    """
+    text = f.text
+    hunk_pattern = re.compile(r"(?m)^(@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@.*)$")
+    parts = hunk_pattern.split(text)
+    if len(parts) <= 1:
+        return [text]
+
+    header = parts[0]
+    chunks: list[str] = []
+    current: list[str] = [header]
+    current_bytes = len(header.encode("utf-8"))
+
+    for i in range(1, len(parts), 2):
+        hunk = parts[i] + (parts[i + 1] if i + 1 < len(parts) else "")
+        hb = len(hunk.encode("utf-8"))
+        if current_bytes + hb > chunk_max_bytes and len(current) > 1:
+            chunks.append("".join(current))
+            current = [header, hunk]
+            current_bytes = len(header.encode("utf-8")) + hb
+        else:
+            current.append(hunk)
+            current_bytes += hb
+
+    if current:
+        chunks.append("".join(current))
+    return chunks
+
+
 def _chunk_files(kept: list[DiffFile], chunk_max_bytes: int) -> list[str]:
     """Greedily pack kept files into chunks no larger than the budget.
 
-    Files keep their order. A file that alone exceeds the budget becomes its own
-    chunk (it cannot be split without breaking the diff), so chunking degrades
-    gracefully rather than failing.
+    Files keep their order. Large files exceeding budget are semantically split
+    at hunk boundaries with file header preservation (issue #522).
     """
     chunks: list[str] = []
     current: list[str] = []
     current_bytes = 0
     for f in kept:
         fb = f.size_bytes
+        if fb > chunk_max_bytes:
+            if current:
+                chunks.append("".join(current))
+                current, current_bytes = [], 0
+            chunks.extend(_split_file_at_hunk_boundaries(f, chunk_max_bytes))
+            continue
         if current and current_bytes + fb > chunk_max_bytes:
             chunks.append("".join(current))
             current, current_bytes = [], 0

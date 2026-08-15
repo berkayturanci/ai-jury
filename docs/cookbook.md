@@ -605,6 +605,35 @@ Display your repository's multi-agent review posture with an SVG badge:
 [![AI Jury Reviewed](https://img.shields.io/badge/ai--jury-consensus%20verified-6366f1)](https://github.com/berkayturanci/ai-jury)
 ```
 
+## 18. Automatically apply verified suggested patches (`jury apply`)
+
+When reviewers identify a bug and verify a concrete fix, apply it safely with a single command:
+
+```bash
+# 1. Run jury with suggested patches enabled
+jury --pr 123 --suggest-patches -o report.md
+
+# 2. Review and apply all verified suggestions
+jury apply --report report.md
+
+# Or apply a specific patch suggestion by number:
+jury apply --report report.md 1
+```
+
+---
+
+## 19. Fast, frugal reviews with `--tiered` routing and `--hints`
+
+For cost optimization and noise reduction on large repositories:
+
+```bash
+# Combine fast linter pre-pass and tiered model routing with frontier protection
+jury --pr 123 --hints --tiered
+```
+
+- `--hints` runs fast local linters (Ruff, ESLint) and informs LLMs so they skip trivial formatting and focus on deep bugs.
+- `--tiered` routes routine code to economical models while keeping frontier models as anchors for complex or security-sensitive changes.
+
 ---
 
 ## See also
