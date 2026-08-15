@@ -1182,4 +1182,648 @@
       });
     })();
   })();
+
+  /* ---- Integrations & Ecosystem Grid -------------------------------- */
+  (function initIntegrations() {
+    var grid = $("integration-grid");
+    if (!grid) return;
+
+    function esc(s) {
+      return String(s).replace(/[&<>"'`]/g, function (c) {
+        return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;", "`": "&#96;" }[c];
+      });
+    }
+
+    var INTEGRATIONS = [
+      // 1. AI Assistants & CLIs
+      {
+        id: "claude-code",
+        name: "Claude Code",
+        vendor: "Anthropic",
+        cat: "assistants",
+        badge: "Native CLI",
+        badgeType: "accent",
+        monogram: "CC",
+        color: "var(--c-claude)",
+        desc: "Autonomous agent CLI by Anthropic with direct filesystem, bash, and git tools.",
+        config: '[[agent]]\nname = "claude"\nvendor = "anthropic"\ncommand = "claude"',
+        command: "jury --pr 123 --chair claude"
+      },
+      {
+        id: "codex-cli",
+        name: "Codex CLI",
+        vendor: "OpenAI",
+        cat: "assistants",
+        badge: "Native CLI",
+        badgeType: "green",
+        monogram: "CX",
+        color: "var(--c-codex)",
+        desc: "Official OpenAI terminal coding assistant and automated PR reviewer.",
+        config: '[[agent]]\nname = "codex"\nvendor = "openai"\ncommand = "codex"',
+        command: "jury --pr 123"
+      },
+      {
+        id: "antigravity",
+        name: "Google Antigravity",
+        vendor: "Google DeepMind",
+        cat: "assistants",
+        badge: "Native CLI",
+        badgeType: "accent",
+        monogram: "AG",
+        color: "var(--c-agy)",
+        desc: "Google DeepMind\'s autonomous agent framework and review orchestrator.",
+        config: '[[agent]]\nname = "agy"\nvendor = "google"\ncommand = "agy"',
+        command: "jury --pr 123"
+      },
+      {
+        id: "cursor-cli",
+        name: "Cursor CLI",
+        vendor: "Anysphere",
+        cat: "assistants",
+        badge: "Agent CLI",
+        badgeType: "",
+        monogram: "CU",
+        color: "var(--c-cursor)",
+        desc: "Headless CLI agent from the popular AI-native code editor.",
+        config: '[[agent]]\nname = "cursor"\nvendor = "cursor"\ncommand = "agent"',
+        command: "jury --pr 123"
+      },
+      {
+        id: "aider",
+        name: "Aider CLI",
+        vendor: "Paul Gauthier",
+        cat: "assistants",
+        badge: "Terminal Agent",
+        badgeType: "",
+        monogram: "AI",
+        color: "var(--c-aider)",
+        desc: "Popular terminal pair-programming agent driven in non-interactive review mode.",
+        config: '[[agent]]\nname = "aider"\nvendor = "aider"\ncommand = "aider --message"',
+        command: "jury --pr 123"
+      },
+      {
+        id: "grok-cli",
+        name: "Grok CLI",
+        vendor: "xAI",
+        cat: "assistants",
+        badge: "Agent CLI",
+        badgeType: "",
+        monogram: "GK",
+        color: "var(--c-grok)",
+        desc: "xAI official command-line interface for multi-turn adversarial code review.",
+        config: '[[agent]]\nname = "grok"\nvendor = "grok"\ncommand = "grok"',
+        command: "jury --pr 123"
+      },
+      {
+        id: "kimi-cli",
+        name: "Kimi CLI",
+        vendor: "Moonshot AI",
+        cat: "assistants",
+        badge: "Long Context",
+        badgeType: "",
+        monogram: "KM",
+        color: "#10b981",
+        desc: "Moonshot AI coding assistant optimized for large codebases and repos.",
+        config: '[[agent]]\nname = "kimi"\nvendor = "kimi"\ncommand = "kimi"',
+        command: "jury --pr 123"
+      },
+      {
+        id: "devin",
+        name: "Devin Agent",
+        vendor: "Cognition",
+        cat: "assistants",
+        badge: "Autonomous",
+        badgeType: "",
+        monogram: "DV",
+        color: "#6366f1",
+        desc: "Headless autonomous software engineer agent integration.",
+        config: '[[agent]]\nname = "devin"\nvendor = "devin"\ncommand = "devin run"',
+        command: "jury --pr 123"
+      },
+      {
+        id: "trae",
+        name: "Trae CLI",
+        vendor: "ByteDance",
+        cat: "assistants",
+        badge: "Agent CLI",
+        badgeType: "",
+        monogram: "TR",
+        color: "#06b6d4",
+        desc: "ByteDance adaptive AI coding partner and terminal reviewer.",
+        config: '[[agent]]\nname = "trae"\nvendor = "trae"\ncommand = "trae"',
+        command: "jury --pr 123"
+      },
+      {
+        id: "opencode",
+        name: "OpenCode",
+        vendor: "Open Source",
+        cat: "assistants",
+        badge: "Open Source",
+        badgeType: "green",
+        monogram: "OC",
+        color: "#10b981",
+        desc: "Community-driven open source terminal coding agent.",
+        config: '[[agent]]\nname = "opencode"\nvendor = "opencode"\ncommand = "opencode review"',
+        command: "jury --pr 123"
+      },
+      {
+        id: "hermes",
+        name: "Hermes Agent",
+        vendor: "Nous Research",
+        cat: "assistants",
+        badge: "Reasoning",
+        badgeType: "",
+        monogram: "HR",
+        color: "#8b5cf6",
+        desc: "Autonomous open-weights agent specialized in reasoning and tool orchestration.",
+        config: '[[agent]]\nname = "hermes"\nvendor = "local"\nmodel = "hermes-3:8b"',
+        command: "jury --pr 123"
+      },
+
+      // 2. LLM Backends & APIs
+      {
+        id: "anthropic-api",
+        name: "Anthropic Claude API",
+        vendor: "Hosted API",
+        cat: "backends",
+        badge: "Sonnet 3.7",
+        badgeType: "accent",
+        monogram: "AN",
+        color: "var(--c-claude)",
+        desc: "Direct Claude Sonnet/Opus API access without installing agent CLIs.",
+        config: '[[agent]]\nname = "claude-api"\nvendor = "anthropic-api"\napi_key_env = "ANTHROPIC_API_KEY"\nmodel = "claude-3-7-sonnet-20250219"',
+        command: "ANTHROPIC_API_KEY=... jury --pr 123"
+      },
+      {
+        id: "openai-api",
+        name: "OpenAI GPT-4o / o1",
+        vendor: "Hosted API",
+        cat: "backends",
+        badge: "o1 / GPT-4o",
+        badgeType: "green",
+        monogram: "OA",
+        color: "var(--c-codex)",
+        desc: "Direct OpenAI API integration for o1 reasoning and GPT-4o reviews.",
+        config: '[[agent]]\nname = "codex-api"\nvendor = "openai-api"\napi_key_env = "OPENAI_API_KEY"\nmodel = "gpt-4o"',
+        command: "OPENAI_API_KEY=... jury --pr 123"
+      },
+      {
+        id: "google-gemini",
+        name: "Google Gemini API",
+        vendor: "Hosted API",
+        cat: "backends",
+        badge: "2.5 Pro / Flash",
+        badgeType: "accent",
+        monogram: "GM",
+        color: "var(--c-agy)",
+        desc: "Direct Google AI Gemini 2.5 API access with 2M token context window.",
+        config: '[[agent]]\nname = "gemini-api"\nvendor = "google-api"\napi_key_env = "GEMINI_API_KEY"\nmodel = "gemini-2.5-pro"',
+        command: "GEMINI_API_KEY=... jury --pr 123"
+      },
+      {
+        id: "deepseek",
+        name: "DeepSeek API",
+        vendor: "DeepSeek",
+        cat: "backends",
+        badge: "$0.27 / 1M",
+        badgeType: "green",
+        monogram: "DS",
+        color: "var(--c-deepseek)",
+        desc: "DeepSeek-V3 and DeepSeek-R1 reasoning models via official API.",
+        config: '[[agent]]\nname = "deepseek"\nvendor = "deepseek"\napi_key_env = "DEEPSEEK_API_KEY"\nmodel = "deepseek-chat"',
+        command: "DEEPSEEK_API_KEY=... jury --pr 123"
+      },
+      {
+        id: "ollama-local",
+        name: "Ollama (local)",
+        vendor: "On-Device",
+        cat: "backends",
+        badge: "$0.00 Free Offline",
+        badgeType: "green",
+        monogram: "OL",
+        color: "var(--c-qwen)",
+        desc: "Run Qwen 2.5 Coder, Llama 3.3, and DeepSeek locally with 100% data privacy.",
+        config: '[[agent]]\nname = "qwen"\nvendor = "local"\nendpoint = "http://localhost:11434/v1/chat/completions"\nmodel = "qwen2.5-coder:7b"',
+        command: "jury --preset offline --pr 123"
+      },
+      {
+        id: "openrouter",
+        name: "OpenRouter",
+        vendor: "Unified Router",
+        cat: "backends",
+        badge: "200+ Models",
+        badgeType: "accent",
+        monogram: "OR",
+        color: "var(--c-openrouter)",
+        desc: "Unified routing gateway giving instant access to over 200 AI models.",
+        config: '[[agent]]\nname = "openrouter"\nvendor = "openrouter"\napi_key_env = "OPENROUTER_API_KEY"\nmodel = "anthropic/claude-3.7-sonnet"',
+        command: "OPENROUTER_API_KEY=... jury --pr 123"
+      },
+      {
+        id: "groq",
+        name: "Groq API",
+        vendor: "LPU Inference",
+        cat: "backends",
+        badge: "300+ tok/s",
+        badgeType: "accent",
+        monogram: "GQ",
+        color: "var(--c-groq)",
+        desc: "Ultra high-speed LPU inference engine for near-instant multi-agent debate.",
+        config: '[[agent]]\nname = "groq"\nvendor = "groq"\napi_key_env = "GROQ_API_KEY"\nmodel = "llama-3.3-70b-versatile"',
+        command: "GROQ_API_KEY=... jury --pr 123"
+      },
+      {
+        id: "xai-grok-api",
+        name: "xAI Grok API",
+        vendor: "xAI",
+        cat: "backends",
+        badge: "Grok-2",
+        badgeType: "",
+        monogram: "XG",
+        color: "var(--c-grok)",
+        desc: "Direct xAI REST API integration supporting Grok-2 and Grok-Vision.",
+        config: '[[agent]]\nname = "grok-api"\nvendor = "grok-api"\napi_key_env = "XAI_API_KEY"\nmodel = "grok-2-latest"',
+        command: "XAI_API_KEY=... jury --pr 123"
+      },
+      {
+        id: "together-ai",
+        name: "Together AI",
+        vendor: "Cloud Inference",
+        cat: "backends",
+        badge: "Open Endpoints",
+        badgeType: "",
+        monogram: "TG",
+        color: "#6366f1",
+        desc: "Cloud inference hosting for open-weights Llama 3.3, Qwen, and DeepSeek.",
+        config: '[[agent]]\nname = "together"\nvendor = "openai-compatible"\nendpoint = "https://api.together.xyz/v1/chat/completions"\napi_key_env = "TOGETHER_API_KEY"\nmodel = "meta-llama/Llama-3.3-70B-Instruct-Turbo"',
+        command: "jury --pr 123"
+      },
+      {
+        id: "aws-bedrock",
+        name: "AWS Bedrock",
+        vendor: "Amazon AWS",
+        cat: "backends",
+        badge: "Enterprise",
+        badgeType: "",
+        monogram: "AW",
+        color: "#f59e0b",
+        desc: "Enterprise cloud backend with IAM role authentication and VPC security.",
+        config: '[[agent]]\nname = "bedrock-claude"\nvendor = "aws-bedrock"\nmodel = "anthropic.claude-3-7-sonnet-20250219-v1:0"',
+        command: "jury --pr 123"
+      },
+      {
+        id: "azure-openai",
+        name: "Azure OpenAI",
+        vendor: "Microsoft Azure",
+        cat: "backends",
+        badge: "Enterprise",
+        badgeType: "",
+        monogram: "AZ",
+        color: "#0066ff",
+        desc: "Private enterprise GPT-4o deployments with SOC2 & HIPAA compliance.",
+        config: '[[agent]]\nname = "azure-gpt4o"\nvendor = "openai-compatible"\nendpoint = "https://my-resource.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-02-15-preview"\napi_key_env = "AZURE_OPENAI_KEY"',
+        command: "jury --pr 123"
+      },
+      {
+        id: "vllm-local",
+        name: "vLLM / LM Studio / llama.cpp",
+        vendor: "Self-Hosted",
+        cat: "backends",
+        badge: "Loopback",
+        badgeType: "green",
+        monogram: "VL",
+        color: "#10b981",
+        desc: "Compatible with any local OpenAI-compatible HTTP inference server.",
+        config: '[[agent]]\nname = "local-vllm"\nvendor = "local"\nendpoint = "http://localhost:8000/v1/chat/completions"\nmodel = "deepseek-ai/DeepSeek-Coder-V2-Lite"',
+        command: "jury --pr 123"
+      },
+
+      // 3. CI/CD & DevOps
+      {
+        id: "keel-gov",
+        name: "Keel Delivery Governance",
+        vendor: "Workflow Runner",
+        cat: "cicd",
+        badge: "Automated Ship",
+        badgeType: "accent",
+        monogram: "KL",
+        color: "var(--accent-2)",
+        desc: "Multi-agent review quality gate inside Keel autonomous software delivery.",
+        config: "# .keel/project.yaml\nreview:\n  engine: ai-jury\n  preset: balanced\n  gating: true",
+        command: "keel ship .keel/project.yaml --pr 123"
+      },
+      {
+        id: "github-action",
+        name: "GitHub Actions",
+        vendor: "CI / CD",
+        cat: "cicd",
+        badge: "1-Click Composite",
+        badgeType: "green",
+        monogram: "GA",
+        color: "#ffffff",
+        desc: "First-party composite action for automated PR review and sticky comments.",
+        config: "- uses: berkayturanci/ai-jury@v1\n  with:\n    pr: ${{ github.event.pull_request.number }}\n    post-summary: \'true\'\n    fail-on: \'critical,major\'",
+        command: "gh workflow run jury.yml"
+      },
+      {
+        id: "gitlab-ci",
+        name: "GitLab CI / CD",
+        vendor: "CI / CD",
+        cat: "cicd",
+        badge: "Pipeline Stage",
+        badgeType: "",
+        monogram: "GL",
+        color: "#f55036",
+        desc: "Simple non-blocking advisory review or strict merge request gate.",
+        config: "ai_jury_review:\n  image: python:3.12-slim\n  script:\n    - pip install ai-jury\n    - git diff $CI_MERGE_REQUEST_TARGET_BRANCH_SHA... | jury --diff-file - --ci",
+        command: "git push origin feat/branch"
+      },
+      {
+        id: "pre-commit",
+        name: "Git Pre-Commit Hooks",
+        vendor: "Local Git Hooks",
+        cat: "cicd",
+        badge: "Native Hook",
+        badgeType: "green",
+        monogram: "PC",
+        color: "#10b981",
+        desc: "Run consensus verification locally before commits or git pushes.",
+        config: "# .pre-commit-config.yaml\nrepos:\n  - repo: https://github.com/berkayturanci/ai-jury\n    rev: v1.13.0\n    hooks:\n      - id: ai-jury\n        stages: [pre-push]",
+        command: "git push"
+      },
+      {
+        id: "homebrew",
+        name: "Homebrew Tap",
+        vendor: "Package Manager",
+        cat: "cicd",
+        badge: "macOS / Linux",
+        badgeType: "accent",
+        monogram: "HB",
+        color: "#f59e0b",
+        desc: "Single-command package manager install with automatic path linking.",
+        config: "brew install berkayturanci/ai-jury/ai-jury",
+        command: "brew install berkayturanci/ai-jury/ai-jury && jury --version"
+      },
+      {
+        id: "curl-install",
+        name: "Standalone curl Installer",
+        vendor: "Universal Script",
+        cat: "cicd",
+        badge: "Zero Deps",
+        badgeType: "",
+        monogram: "SH",
+        color: "#9aa8c4",
+        desc: "Install isolated ai-jury binary with zero dependencies via curl.",
+        config: "curl -fsSL https://berkayturanci.github.io/ai-jury/install.sh | sh",
+        command: "curl -fsSL https://berkayturanci.github.io/ai-jury/install.sh | sh"
+      },
+      {
+        id: "docker-image",
+        name: "Docker & DevContainers",
+        vendor: "Container",
+        cat: "cicd",
+        badge: "OCI Container",
+        badgeType: "",
+        monogram: "DK",
+        color: "#0066ff",
+        desc: "Pre-packaged container with all standard agent CLIs and tools configured.",
+        config: "docker run --rm -v $(pwd):/repo ghcr.io/berkayturanci/ai-jury:latest --diff-file -",
+        command: "docker run --rm -it ghcr.io/berkayturanci/ai-jury"
+      },
+
+      // 4. Plugins & Protocols
+      {
+        id: "claude-skill",
+        name: "Claude Code Skill",
+        vendor: "Anthropic Skill",
+        cat: "skills",
+        badge: "Slash Command",
+        badgeType: "accent",
+        monogram: "CS",
+        color: "var(--c-claude)",
+        desc: "Ask Claude Code to convene the multi-agent jury directly in chat.",
+        config: "# .claude/skills/ai-jury/SKILL.md\nConvene the review jury on my current branch.",
+        command: "/jury review"
+      },
+      {
+        id: "codex-plugin",
+        name: "Codex Plugin",
+        vendor: "OpenAI Plugin",
+        cat: "skills",
+        badge: "Manifest Plugin",
+        badgeType: "green",
+        monogram: "CP",
+        color: "var(--c-codex)",
+        desc: "First-class OpenAI Codex CLI plugin registration.",
+        config: "# .codex-plugin/plugin.json\n{\n  \"name\": \"ai-jury\",\n  \"command\": \"jury\"\n}",
+        command: "codex plugins run ai-jury"
+      },
+      {
+        id: "agy-skill",
+        name: "Antigravity AGY Skill",
+        vendor: "Google Skill",
+        cat: "skills",
+        badge: "DeepMind Skill",
+        badgeType: "accent",
+        monogram: "AS",
+        color: "var(--c-agy)",
+        desc: "Google Antigravity custom skill for deliberative team reviews.",
+        config: "# .gemini/skills/ai-jury/SKILL.md\nRun ai-jury consensus against latest diff.",
+        command: "agy run ai-jury"
+      },
+      {
+        id: "mcp-protocol",
+        name: "Model Context Protocol (MCP)",
+        vendor: "Open Standard",
+        cat: "skills",
+        badge: "MCP Server",
+        badgeType: "green",
+        monogram: "MC",
+        color: "#10b981",
+        desc: "Expose multi-agent consensus verification as standard MCP tools.",
+        config: "# mcp.json\n{\n  \"mcpServers\": {\n    \"ai-jury\": {\n      \"command\": \"jury\",\n      \"args\": [\"--mcp\"]\n    }\n  }\n}",
+        command: "jury --help"
+      },
+      {
+        id: "pr-bot",
+        name: "GitHub Issue & PR Bot",
+        vendor: "Webhook / Bot",
+        cat: "skills",
+        badge: "Comment Trigger",
+        badgeType: "",
+        monogram: "BT",
+        color: "#ffffff",
+        desc: "Trigger review runs dynamically by typing \'/jury review\' in any PR comment.",
+        config: 'jury comment --text "/jury review --rounds 2" --pr 123',
+        command: 'jury comment --text "/jury review" --pr 123'
+      },
+      {
+        id: "vscode-cursor",
+        name: "VS Code & Cursor IDE",
+        vendor: "IDE Task",
+        cat: "skills",
+        badge: "Task Runner",
+        badgeType: "accent",
+        monogram: "VS",
+        color: "#0066ff",
+        desc: "One-click review tasks in VS Code / Cursor command palette.",
+        config: '// .vscode/tasks.json\n{\n  "label": "AI Jury Review",\n  "type": "shell",\n  "command": "jury"\n}',
+        command: "jury"
+      }
+    ];
+
+    var activeCat = "all";
+    var query = "";
+
+    var pills = qa(".int-pill");
+    var searchInput = $("int-search");
+    var countBadge = $("int-count-badge");
+    var modal = $("int-modal");
+    var modalClose = $("int-modal-close");
+    var mIcon = $("int-m-icon");
+    var mName = $("int-m-name");
+    var mSub = $("int-m-sub");
+    var mDesc = $("int-m-desc");
+    var mConfig = $("int-m-config");
+    var mCmd = $("int-m-cmd");
+    var copyConfigBtn = $("int-copy-config");
+    var copyCmdBtn = $("int-copy-cmd");
+
+    function renderCards() {
+      var filtered = INTEGRATIONS.filter(function (it) {
+        var matchCat = activeCat === "all" || it.cat === activeCat;
+        if (!matchCat) return false;
+        if (!query) return true;
+        var ql = query.toLowerCase();
+        return it.name.toLowerCase().indexOf(ql) !== -1 ||
+               it.vendor.toLowerCase().indexOf(ql) !== -1 ||
+               it.desc.toLowerCase().indexOf(ql) !== -1 ||
+               it.badge.toLowerCase().indexOf(ql) !== -1;
+      });
+
+      if (countBadge) {
+        countBadge.textContent = "Showing " + filtered.length + " of " + INTEGRATIONS.length + " integrations";
+      }
+
+      if (filtered.length === 0) {
+        grid.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; padding: 3rem 1rem; color: var(--muted);">' +
+          '<p style="font-size: 1.1rem; margin-bottom: 0.5rem;">No integrations found matching "' + esc(query) + '"</p>' +
+          '<p style="font-size: 0.85rem; color: var(--faint);">Try searching for Claude, Codex, Gemini, Ollama, Docker, or GitHub Actions.</p>' +
+          '</div>';
+        return;
+      }
+
+      var html = "";
+      filtered.forEach(function (it) {
+        var badgeClass = "int-badge" + (it.badgeType ? " " + it.badgeType : "");
+        html += '<div class="int-card" data-id="' + esc(it.id) + '" role="button" tabindex="0" aria-label="' + esc(it.name) + ' integration details">' +
+          '<div class="int-icon-wrap" style="color:' + esc(it.color) + '">' + esc(it.monogram) + '</div>' +
+          '<div class="int-card-body">' +
+            '<div class="int-card-header">' +
+              '<span class="int-card-name">' + esc(it.name) + '</span>' +
+              '<span class="' + badgeClass + '">' + esc(it.badge) + '</span>' +
+            '</div>' +
+            '<div class="int-card-sub">' + esc(it.vendor) + '</div>' +
+          '</div>' +
+        '</div>';
+      });
+
+      grid.innerHTML = html;
+
+      // Add click listeners to cards
+      qa(".int-card", grid).forEach(function (card) {
+        function open() {
+          var id = card.getAttribute("data-id");
+          var item = INTEGRATIONS.filter(function (x) { return x.id === id; })[0];
+          if (item) openModal(item);
+        }
+        card.addEventListener("click", open);
+        card.addEventListener("keydown", function (e) {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            open();
+          }
+        });
+      });
+    }
+
+    function openModal(item) {
+      if (!modal) return;
+      if (mIcon) {
+        mIcon.textContent = item.monogram;
+        mIcon.style.color = item.color;
+      }
+      if (mName) mName.textContent = item.name;
+      if (mSub) mSub.textContent = item.vendor + " • " + item.badge;
+      if (mDesc) mDesc.textContent = item.desc;
+      if (mConfig) mConfig.textContent = item.config;
+      if (mCmd) mCmd.textContent = item.command;
+
+      modal.classList.add("open");
+      modal.setAttribute("aria-hidden", "false");
+      if (modalClose) modalClose.focus();
+    }
+
+    function closeModal() {
+      if (!modal) return;
+      modal.classList.remove("open");
+      modal.setAttribute("aria-hidden", "true");
+    }
+
+    if (modalClose) {
+      modalClose.addEventListener("click", closeModal);
+    }
+    if (modal) {
+      modal.addEventListener("click", function (e) {
+        if (e.target === modal) closeModal();
+      });
+    }
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && modal && modal.classList.contains("open")) {
+        closeModal();
+      }
+    });
+
+    function setupCopy(btn, codeEl) {
+      if (!btn || !codeEl) return;
+      btn.addEventListener("click", function () {
+        var txt = codeEl.textContent || "";
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(txt).then(function () {
+            var orig = btn.textContent;
+            btn.textContent = "Copied! ✓";
+            btn.style.color = "var(--green-2)";
+            btn.style.borderColor = "var(--green)";
+            setTimeout(function () {
+              btn.textContent = orig;
+              btn.style.color = "";
+              btn.style.borderColor = "";
+            }, 2000);
+          });
+        }
+      });
+    }
+
+    setupCopy(copyConfigBtn, mConfig);
+    setupCopy(copyCmdBtn, mCmd);
+
+    pills.forEach(function (pill) {
+      pill.addEventListener("click", function () {
+        pills.forEach(function (p) { p.classList.remove("active"); });
+        pill.classList.add("active");
+        activeCat = pill.getAttribute("data-cat") || "all";
+        renderCards();
+      });
+    });
+
+    if (searchInput) {
+      searchInput.addEventListener("input", function () {
+        query = searchInput.value.trim();
+        renderCards();
+      });
+    }
+
+    renderCards();
+  })();
 })();
+
