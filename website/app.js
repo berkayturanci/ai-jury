@@ -1809,8 +1809,12 @@
 
     pills.forEach(function (pill) {
       pill.addEventListener("click", function () {
-        pills.forEach(function (p) { p.classList.remove("active"); });
+        pills.forEach(function (p) {
+          p.classList.remove("active");
+          p.setAttribute("aria-pressed", "false");
+        });
         pill.classList.add("active");
+        pill.setAttribute("aria-pressed", "true");
         activeCat = pill.getAttribute("data-cat") || "all";
         renderCards();
       });
