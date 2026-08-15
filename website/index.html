@@ -157,6 +157,7 @@
       </div>
       <div class="nav-links">
         <a class="nav-link hide-sm" href="#how">How it works</a>
+        <a class="nav-link hide-sm" href="#integrations">Integrations</a>
         <a class="nav-link hide-sm" href="#demo">Demo</a>
         <a class="nav-link hide-sm" href="#theater">Theater</a>
         <a class="nav-link hide-sm" href="#compare">Compare</a>
@@ -175,6 +176,7 @@
     </div>
     <div class="nav-mobile" id="nav-mobile">
       <a class="nav-mlink" href="#how">How it works</a>
+      <a class="nav-mlink" href="#integrations">Integrations</a>
       <a class="nav-mlink" href="#demo">Demo</a>
       <a class="nav-mlink" href="#theater">Theater</a>
       <a class="nav-mlink" href="#compare">Compare</a>
@@ -345,6 +347,63 @@
         </div>
       </div>
     </section>
+
+    <!-- ───────────────── Integrations & Ecosystem ───────────────── -->
+    <section id="integrations">
+      <div class="sec-head wide reveal">
+        <p class="sec-kicker">Integrations &amp; Ecosystem</p>
+        <h2>Installs into the tools you already use.</h2>
+        <p class="muted">
+          One unified multi-agent orchestrator: <strong>11 AI coding assistants</strong> &bull; <strong>12 LLM backends</strong> &bull; <strong>7 CI/CD workflows</strong> &bull; <strong>6 plugins &amp; protocols</strong>. Universal compatibility, on-device or cloud, MIT-licensed.
+        </p>
+      </div>
+
+      <!-- Filter Tabs -->
+      <div class="integration-filters reveal" role="tablist" aria-label="Filter integrations by category">
+        <button type="button" class="int-pill active" data-cat="all">All <span class="pill-count">36</span></button>
+        <button type="button" class="int-pill" data-cat="assistants">AI Assistants &amp; CLIs</button>
+        <button type="button" class="int-pill" data-cat="backends">LLM Backends &amp; APIs</button>
+        <button type="button" class="int-pill" data-cat="cicd">CI/CD &amp; Workflows</button>
+        <button type="button" class="int-pill" data-cat="skills">Plugins &amp; Protocols</button>
+      </div>
+
+      <!-- Search Bar -->
+      <div class="integration-search-bar reveal">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        <input type="text" id="int-search" placeholder="Search 36+ coding agents, model backends, CI tools, or plugins..." aria-label="Search integrations" />
+        <span class="search-hint" id="int-count-badge">Showing 36 integrations</span>
+      </div>
+
+      <!-- Grid Container -->
+      <div class="integration-grid reveal" id="integration-grid">
+        <!-- Rendered dynamically by app.js with live search and filtering -->
+      </div>
+    </section>
+
+    <!-- Integration Details Modal Dialog -->
+    <div class="int-modal-backdrop" id="int-modal" role="dialog" aria-modal="true" aria-hidden="true">
+      <div class="int-modal-box" id="int-modal-box">
+        <button type="button" class="int-modal-close" id="int-modal-close" aria-label="Close modal">&times;</button>
+        <div class="int-modal-title-row">
+          <div class="int-modal-icon" id="int-m-icon">AI</div>
+          <div class="int-modal-heading">
+            <h3 id="int-m-name">Provider Name</h3>
+            <p id="int-m-sub">Category &bull; Vendor</p>
+          </div>
+        </div>
+        <p class="int-modal-desc" id="int-m-desc">Description text</p>
+        <div class="int-modal-section-label">Configuration Snippet (jury.toml)</div>
+        <div class="int-modal-code-wrap">
+          <pre class="int-modal-code"><code id="int-m-config">[[agent]]</code></pre>
+          <button type="button" class="int-modal-copy-btn" id="int-copy-config">Copy Config</button>
+        </div>
+        <div class="int-modal-section-label">CLI Run Example</div>
+        <div class="int-modal-code-wrap">
+          <pre class="int-modal-code"><code id="int-m-cmd">jury --pr 123</code></pre>
+          <button type="button" class="int-modal-copy-btn" id="int-copy-cmd">Copy Command</button>
+        </div>
+      </div>
+    </div>
 
     <!-- ───────────────── Interactive demo ───────────────── -->
     <section id="demo">

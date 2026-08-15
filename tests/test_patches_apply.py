@@ -188,10 +188,12 @@ class PatchesApplyTests(unittest.TestCase):
         self.assertEqual(code, 2)
 
         # Empty report stdin
-        with patch("sys.stdin", io.StringIO("No patches here")):
-            with patch("sys.stdin.isatty", return_value=False):
-                code = main(["apply"])
-                self.assertEqual(code, 1)
+        with (
+            patch("sys.stdin", io.StringIO("No patches here")),
+            patch("sys.stdin.isatty", return_value=False),
+        ):
+            code = main(["apply"])
+            self.assertEqual(code, 1)
 
         # No report and isatty
         with patch("sys.stdin.isatty", return_value=True):
