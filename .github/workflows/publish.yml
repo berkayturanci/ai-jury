@@ -120,3 +120,26 @@ jobs:
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Homebrew formula sync (issue #527): update Formula/ai-jury.rb with the
+      # newly-published release tarball checksum and commit back to main.
+      - name: Update in-repo Homebrew Formula
+        run: |
+          set -euo pipefail
+          tag_version="${GITHUB_REF_NAME#v}"
+          sdist_file="$(ls dist/*.tar.gz | head -n 1)"
+          sdist_sha="$(sha256sum "$sdist_file" | awk '{print $1}')"
+          sdist_url="https://files.pythonhosted.org/packages/source/a/ai_jury/ai_jury-${tag_version}.tar.gz"
+
+          sed -i.bak "s|url \".*\"|url \"${sdist_url}\"|" Formula/ai-jury.rb
+          sed -i.bak "s|sha256 \".*\"|sha256 \"${sdist_sha}\"|" Formula/ai-jury.rb
+          sed -i.bak "s|jury .*\", shell_output|jury ${tag_version}\", shell_output|" Formula/ai-jury.rb
+          rm -f Formula/ai-jury.rb.bak
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/ai-jury.rb
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(homebrew): Update Formula/ai-jury.rb to v${tag_version} [skip ci]"
+            git push origin HEAD:main || true
+          fi
