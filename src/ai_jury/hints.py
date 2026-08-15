@@ -40,15 +40,20 @@ def collect_static_hints(files: list[str] | None = None, root_dir: Path | None =
     if shutil.which("npx") and (root / "package.json").exists():
         try:
             cmd = ["npx", "eslint", "--format", "compact"]
-            if files:
+            if files is not None:
                 js_files = [f for f in files if f.endswith((".js", ".ts", ".jsx", ".tsx"))]
-                if js_files:
+                if not js_files:
+                    cmd = []
+                else:
                     cmd.extend(js_files)
-                    res = subprocess.run(cmd, cwd=str(root), capture_output=True, text=True, timeout=5)
-                    if res.returncode != 0 and res.stdout.strip():
-                        lines = [line.strip() for line in res.stdout.splitlines()[:5] if line.strip()]
-                        if lines:
-                            hints.append("JS/TS linter (ESLint) warnings:\n" + "\n".join(f"- {item}" for item in lines))
+            else:
+                cmd.append(".")
+            if cmd:
+                res = subprocess.run(cmd, cwd=str(root), capture_output=True, text=True, timeout=5)
+                if res.returncode != 0 and res.stdout.strip():
+                    lines = [line.strip() for line in res.stdout.splitlines()[:5] if line.strip()]
+                    if lines:
+                        hints.append("JS/TS linter (ESLint) warnings:\n" + "\n".join(f"- {item}" for item in lines))
         except Exception:
             pass
 

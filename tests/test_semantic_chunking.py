@@ -9,7 +9,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from ai_jury.largediff import plan_diff  # noqa: E402
+from ai_jury.largediff import DiffFile, _split_file_at_hunk_boundaries, plan_diff  # noqa: E402
 
 LARGE_DIFF_MULTI_HUNK = """diff --git a/src/service.py b/src/service.py
 index 1111111..2222222 100644
@@ -38,6 +38,17 @@ class SemanticChunkingTests(unittest.TestCase):
         for chunk in plan.chunks:
             # Each chunk must preserve the file header preamble
             self.assertIn("diff --git a/src/service.py b/src/service.py", chunk)
+
+    def test_split_file_at_hunk_boundaries_single_or_no_hunk(self):
+        f = DiffFile(path="a.txt", text="diff --git a/a.txt b/a.txt\nplain text without hunks")
+        chunks = _split_file_at_hunk_boundaries(f, 100)
+        self.assertEqual(chunks, [f.text])
+
+    def test_chunking_with_preceding_small_files(self):
+        small_diff = "diff --git a/small.py b/small.py\n@@ -1,1 +1,1 @@\n-a\n+b\n"
+        combined = small_diff + LARGE_DIFF_MULTI_HUNK
+        plan = plan_diff(combined, max_bytes=200, chunk=True, chunk_max_bytes=250)
+        self.assertEqual(plan.mode, "chunked")
 
 
 if __name__ == "__main__":
