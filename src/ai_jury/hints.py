@@ -25,14 +25,20 @@ def collect_static_hints(files: list[str] | None = None, root_dir: Path | None =
         try:
             cmd = ["ruff", "check", "--select", "E,F", "--output-format", "concise"]
             if files:
-                cmd.extend([f for f in files if f.endswith(".py")])
+                py_files = [f for f in files if f.endswith(".py") and not f.startswith("-")]
+                if py_files:
+                    cmd.append("--")
+                    cmd.extend(py_files)
+                else:
+                    cmd = []
             else:
-                cmd.append(".")
-            res = subprocess.run(cmd, cwd=str(root), capture_output=True, text=True, timeout=5)
-            if res.returncode != 0 and res.stdout.strip():
-                lines = [line.strip() for line in res.stdout.splitlines()[:5] if line.strip()]
-                if lines:
-                    hints.append("Python linter (Ruff) warnings:\n" + "\n".join(f"- {item}" for item in lines))
+                cmd.extend(["--", "."])
+            if cmd:
+                res = subprocess.run(cmd, cwd=str(root), capture_output=True, text=True, timeout=5)
+                if res.returncode != 0 and res.stdout.strip():
+                    lines = [line.strip() for line in res.stdout.splitlines()[:5] if line.strip()]
+                    if lines:
+                        hints.append("Python linter (Ruff) warnings:\n" + "\n".join(f"- {item}" for item in lines))
         except (subprocess.SubprocessError, OSError, Exception):
             # Best-effort local Ruff linter invocation; gracefully ignore errors.
             pass
@@ -42,13 +48,14 @@ def collect_static_hints(files: list[str] | None = None, root_dir: Path | None =
         try:
             cmd = ["npx", "eslint", "--format", "compact"]
             if files is not None:
-                js_files = [f for f in files if f.endswith((".js", ".ts", ".jsx", ".tsx"))]
+                js_files = [f for f in files if f.endswith((".js", ".ts", ".jsx", ".tsx")) and not f.startswith("-")]
                 if not js_files:
                     cmd = []
                 else:
+                    cmd.append("--")
                     cmd.extend(js_files)
             else:
-                cmd.append(".")
+                cmd.extend(["--", "."])
             if cmd:
                 res = subprocess.run(cmd, cwd=str(root), capture_output=True, text=True, timeout=5)
                 if res.returncode != 0 and res.stdout.strip():

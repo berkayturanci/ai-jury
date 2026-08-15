@@ -137,8 +137,13 @@ def apply_patch_suggestion(
     suggestion: PatchSuggestion, root_dir: Path | None = None
 ) -> tuple[bool, str]:
     """Safely apply a patch suggestion to the targeted file."""
-    root = root_dir or Path.cwd()
-    target = (root / suggestion.file).resolve()
+    root = (root_dir or Path.cwd()).resolve()
+    try:
+        target = (root / suggestion.file).resolve()
+        target.relative_to(root)
+    except (ValueError, RuntimeError):
+        return False, f"Path traversal rejected: {suggestion.file}"
+
     if not target.exists() or not target.is_file():
         return False, f"File not found: {suggestion.file}"
 
