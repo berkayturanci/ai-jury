@@ -135,6 +135,8 @@ current branch from stdin.
 | `--max-rounds` | integer ≥ 1 | = `rounds` | Ceiling on adaptive rounds when early-stop is on. |
 | `--early-stop` / `--no-early-stop` | flag | from config (`false`) | Adaptive: stop after round 1 when reviewers agree; debate only on disagreement. |
 | `--auto` / `--no-auto` | flag | from config (`false`) | Risk-aware auto-depth: scale rounds/verify to the diff profile. |
+| `--tiered` | flag | from config (`routing = "standard"`) | Risk-aware tiered model routing: routes routine diffs to economical models while keeping frontier models as anchors for critical files. |
+| `--hints` / `--no-hints` | flag | from config (`hints = false`) | Static analysis pre-pass: runs fast local linters (Ruff, ESLint) and injects hints into Round 1 prompt context. |
 | `--verify` / `--no-verify` | flag | from config (`true`) | Run (or skip) the verification round. |
 | `--chair` | agent name, or `rotate` | from config (`claude`) | Which agent synthesizes the verdict (and runs verification). Must be an enabled agent. |
 | `--seed` | integer | from config (unset) | Reproducible orchestration; identical mock runs + seed ⇒ byte-identical reports. |

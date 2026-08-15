@@ -83,6 +83,19 @@ Theater is TTY-only: even with `theater = true` it falls back to the plain
 `--live` step stream off an interactive terminal, and `pixel` falls back to
 `flat` without a truecolor + unicode terminal.
 
+## Tiered Routing (`routing = "tiered"`) & Static Hints (`hints = true`)
+
+Control cost optimization and deterministic pre-pass linter checks:
+
+```toml
+[jury]
+routing = "tiered"   # "standard" (default) | "tiered" (risk-aware cost tiering)
+hints = true         # run local Ruff/ESLint pre-pass before Round 1 (default: false)
+```
+
+- **`routing = "tiered"`** (`--tiered`): Uses the diff risk classifier to route non-critical files to economical models while keeping frontier models as anchor reviewers for security-critical paths (`auth/`, `crypto/`).
+- **`hints = true`** (`--hints`): Runs fast local static linters (Ruff for Python, ESLint for JS/TS) on modified files and injects compact hints into Round 1 prompt context so reviewers focus strictly on deep logic bugs and security flaws.
+
 ## Large-diff handling (`[jury.diff]`)
 
 Before running, the diff is measured and filtered. The CLI logs the total and
