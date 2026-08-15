@@ -537,6 +537,22 @@ prompt_mode = "arg"
 
 ---
 
+## 14. Run local pre-commit and pre-push reviews with pre-commit
+
+Add `ai-jury` to your repository's `.pre-commit-config.yaml` to catch security issues and logic bugs locally before committing or pushing:
+
+```yaml
+repos:
+  - repo: https://github.com/berkayturanci/ai-jury
+    rev: v1.13.0
+    hooks:
+      - id: ai-jury
+        # Optional args: e.g. single round or fast preset
+        args: [--diff-file, -, --rounds, "1", --preset, fast]
+```
+
+---
+
 ## See also
 
 - [Architecture](architecture.md) — components, round structure, adapters.
