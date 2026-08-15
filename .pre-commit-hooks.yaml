@@ -1,0 +1,8 @@
+- id: ai-jury
+  name: ai-jury
+  description: "Cross-vendor multi-agent code review jury"
+  entry: jury
+  language: python
+  types: [text]
+  stages: [pre-commit, pre-push]
+  args: [--diff-file, -, --rounds, "1"]

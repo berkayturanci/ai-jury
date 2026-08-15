@@ -226,6 +226,15 @@ jury config show   # the effective resolved config + its source
 jury --doctor      # readiness check + actionable next steps
 ```
 
+**Pre-commit hook (`.pre-commit-config.yaml`):**
+
+```yaml
+- repo: https://github.com/berkayturanci/ai-jury
+  rev: v1.13.0
+  hooks:
+    - id: ai-jury
+```
+
 
 A sample report is in [`docs/example-run.md`](docs/example-run.md). For a **real**
 four-vendor run where the jury reviews its own repository (with honest notes on
