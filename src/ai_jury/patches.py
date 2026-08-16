@@ -20,6 +20,7 @@ from pathlib import Path
 
 from .consensus import BUCKET_REJECTED, FindingGroup
 from .findings import fence_safe, flatten_inline
+from .redaction import redact
 
 
 @dataclass
@@ -156,7 +157,7 @@ def apply_patch_suggestion(
         )
         if proc.returncode == 0:
             return True, f"Applied git patch to {suggestion.file}"
-        return False, f"Git apply failed: {proc.stderr.strip() or 'patch does not apply cleanly'}"
+        return False, f"Git apply failed: {redact(proc.stderr.strip())[0] or 'patch does not apply cleanly'}"
 
     lines = target.read_text(encoding="utf-8").splitlines(keepends=True)
     if suggestion.line is not None and 1 <= suggestion.line <= len(lines):
