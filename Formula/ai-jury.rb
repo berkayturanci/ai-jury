@@ -3,7 +3,7 @@ class AiJury < Formula
 
   desc "Cross-vendor multi-agent PR & code review jury"
   homepage "https://berkayturanci.github.io/ai-jury/"
-  url "https://files.pythonhosted.org/packages/c4/25/23ce4ebc54385cd8ce233da9ed07c48804421c5c25f3ab223908b1ce2163/ai_jury-1.13.0.tar.gz"
+  url "https://files.pythonhosted.org/packages/c4/25/23ce4ebc54385cd8ce233da9ed07c48804421c5c25f3ab223908b1ce2163/ai_jury-1.14.0.tar.gz"
   sha256 "dbc048b6955adee34bfdea435e7a31db133329e48b57a61b0688fc2f06270809"
   license "MIT"
 
@@ -14,7 +14,7 @@ class AiJury < Formula
   end
 
   test do
-    assert_match "jury 1.13.0", shell_output("#{bin}/jury --version")
+    assert_match "jury 1.14.0", shell_output("#{bin}/jury --version")
     assert_match "error: provide one of", shell_output("#{bin}/jury --mock 2>&1", 1)
   end
 end
