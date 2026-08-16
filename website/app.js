@@ -1238,6 +1238,7 @@
         badge: "Native CLI",
         badgeType: "accent",
         iconKey: "claude",
+        logo: "logos/claude.svg",
         color: "var(--c-claude)",
         desc: "Autonomous agent CLI by Anthropic with direct filesystem, bash, and git tools.",
         config: '[[agent]]\nname = "claude"\nvendor = "anthropic"\ncommand = "claude"',
@@ -1251,6 +1252,7 @@
         badge: "Native CLI",
         badgeType: "green",
         iconKey: "openai",
+        logo: "logos/openai.svg",
         color: "var(--c-codex)",
         desc: "Official OpenAI terminal coding assistant and automated PR reviewer.",
         config: '[[agent]]\nname = "codex"\nvendor = "openai"\ncommand = "codex"',
@@ -1264,6 +1266,7 @@
         badge: "Native CLI",
         badgeType: "accent",
         iconKey: "google",
+        logo: "logos/google-antigravity.png",
         color: "var(--c-agy)",
         desc: "Google DeepMind's autonomous agent framework and review orchestrator.",
         config: '[[agent]]\nname = "agy"\nvendor = "google"\ncommand = "agy"',
@@ -1277,6 +1280,7 @@
         badge: "Agent CLI",
         badgeType: "",
         iconKey: "cursor",
+        logo: "logos/cursor.svg",
         color: "var(--c-cursor)",
         desc: "Headless CLI agent from the popular AI-native code editor.",
         config: '[[agent]]\nname = "cursor"\nvendor = "generic_cli"\ncommand = "agent"',
@@ -1290,6 +1294,7 @@
         badge: "Terminal Agent",
         badgeType: "",
         iconKey: "aider",
+        logo: "logos/aider.svg",
         color: "var(--c-aider)",
         desc: "Popular terminal pair-programming agent driven in non-interactive review mode.",
         config: '[[agent]]\nname = "aider"\nvendor = "generic_cli"\ncommand = "aider --message"',
@@ -1303,6 +1308,7 @@
         badge: "Universal Adapter",
         badgeType: "green",
         iconKey: "bot",
+        logo: "logos/opencode.svg",
         color: "#10b981",
         desc: "Wrap any arbitrary coding CLI (Goose, OpenHands, Devin) as an autonomous juror.",
         config: '[[agent]]\nname = "my-agent"\nvendor = "generic_cli"\ncommand = "my-tool review"',
@@ -1318,6 +1324,7 @@
         badge: "Sonnet 3.7",
         badgeType: "accent",
         iconKey: "claude",
+        logo: "logos/anthropic.svg",
         color: "var(--c-claude)",
         desc: "Direct Claude Sonnet/Opus API access without installing agent CLIs.",
         config: '[[agent]]\nname = "claude-api"\nvendor = "anthropic-api"\napi_key_env = "ANTHROPIC_API_KEY"\nmodel = "claude-3-7-sonnet-20250219"',
@@ -1331,6 +1338,7 @@
         badge: "o1 / GPT-4o",
         badgeType: "green",
         iconKey: "openai",
+        logo: "logos/openai.svg",
         color: "var(--c-codex)",
         desc: "Direct OpenAI API integration for o1 reasoning and GPT-4o reviews.",
         config: '[[agent]]\nname = "codex-api"\nvendor = "openai-api"\napi_key_env = "OPENAI_API_KEY"\nmodel = "gpt-4o"',
@@ -1344,6 +1352,7 @@
         badge: "2.5 Pro / Flash",
         badgeType: "accent",
         iconKey: "google",
+        logo: "logos/googlegemini.svg",
         color: "var(--c-agy)",
         desc: "Direct Google AI Gemini 2.5 API access with 2M token context window.",
         config: '[[agent]]\nname = "gemini-api"\nvendor = "google-api"\napi_key_env = "GEMINI_API_KEY"\nmodel = "gemini-2.5-pro"',
@@ -1357,6 +1366,7 @@
         badge: "$0.27 / 1M",
         badgeType: "green",
         iconKey: "deepseek",
+        logo: "logos/deepseek.svg",
         color: "var(--c-deepseek)",
         desc: "DeepSeek-V3 and DeepSeek-R1 reasoning models via official API.",
         config: '[[agent]]\nname = "deepseek"\nvendor = "generic_openai_api"\nendpoint = "https://api.deepseek.com/v1/chat/completions"\napi_key_env = "DEEPSEEK_API_KEY"\nmodel = "deepseek-chat"',
@@ -1370,6 +1380,7 @@
         badge: "Grok-2",
         badgeType: "",
         iconKey: "xai",
+        logo: "logos/xai.svg",
         color: "var(--c-grok)",
         desc: "Direct REST API access to Grok reasoning and code models.",
         config: '[[agent]]\nname = "grok"\nvendor = "generic_openai_api"\nendpoint = "https://api.x.ai/v1/chat/completions"\napi_key_env = "XAI_API_KEY"\nmodel = "grok-2-latest"',
@@ -1383,6 +1394,7 @@
         badge: "300+ tok/s",
         badgeType: "accent",
         iconKey: "groq",
+        logo: "logos/groq.svg",
         color: "var(--c-groq)",
         desc: "Ultra high-speed LPU inference engine for near-instant multi-agent debate.",
         config: '[[agent]]\nname = "groq"\nvendor = "generic_openai_api"\nendpoint = "https://api.groq.com/openai/v1/chat/completions"\napi_key_env = "GROQ_API_KEY"\nmodel = "llama-3.3-70b-versatile"',
@@ -1396,6 +1408,7 @@
         badge: "200+ Models",
         badgeType: "accent",
         iconKey: "openrouter",
+        logo: "logos/openrouter.svg",
         color: "var(--c-openrouter)",
         desc: "Unified routing gateway giving instant access to over 200 AI models.",
         config: '[[agent]]\nname = "openrouter"\nvendor = "generic_openai_api"\nendpoint = "https://openrouter.ai/api/v1/chat/completions"\napi_key_env = "OPENROUTER_API_KEY"\nmodel = "anthropic/claude-3.7-sonnet"',
@@ -1409,6 +1422,7 @@
         badge: "Open Weights",
         badgeType: "",
         iconKey: "together",
+        logo: "logos/together.svg",
         color: "#6366f1",
         desc: "Cloud inference hosting for open-weights Llama 3.3, Qwen, and DeepSeek.",
         config: '[[agent]]\nname = "together"\nvendor = "generic_openai_api"\nendpoint = "https://api.together.xyz/v1/chat/completions"\napi_key_env = "TOGETHER_API_KEY"\nmodel = "meta-llama/Llama-3.3-70B-Instruct-Turbo"',
@@ -1424,6 +1438,7 @@
         badge: "$0.00 Free Offline",
         badgeType: "green",
         iconKey: "ollama",
+        logo: "logos/ollama.svg",
         color: "var(--c-qwen)",
         desc: "Run Qwen 2.5 Coder, Llama 3.3, and DeepSeek locally with 100% data privacy.",
         config: '[[agent]]\nname = "qwen"\nvendor = "local"\nendpoint = "http://localhost:11434/v1/chat/completions"\nmodel = "qwen2.5-coder:7b"',
@@ -1437,6 +1452,7 @@
         badge: "Local Loopback",
         badgeType: "green",
         iconKey: "vllm",
+        logo: "logos/vllm.svg",
         color: "#10b981",
         desc: "Compatible with any local OpenAI-compatible HTTP inference server.",
         config: '[[agent]]\nname = "local-vllm"\nvendor = "local"\nendpoint = "http://localhost:8000/v1/chat/completions"\nmodel = "deepseek-ai/DeepSeek-Coder-V2-Lite"',
@@ -1452,6 +1468,7 @@
         badge: "First-Party Action",
         badgeType: "green",
         iconKey: "github",
+        logo: "logos/githubactions.svg",
         color: "#ffffff",
         desc: "Official composite GitHub Action for automated PR reviews and sticky comments.",
         config: "- uses: berkayturanci/ai-jury@v1\n  with:\n    pr: ${{ github.event.pull_request.number }}\n    post-summary: 'true'\n    fail-on: 'critical,major'",
@@ -1465,6 +1482,7 @@
         badge: "Native Hook",
         badgeType: "green",
         iconKey: "precommit",
+        logo: "logos/precommit.svg",
         color: "#10b981",
         desc: "Run consensus verification locally before commits or git pushes.",
         config: "# .pre-commit-config.yaml\nrepos:\n  - repo: https://github.com/berkayturanci/ai-jury\n    rev: v1.13.0\n    hooks:\n      - id: ai-jury\n        stages: [pre-push]",
@@ -1478,6 +1496,7 @@
         badge: "Slash Command",
         badgeType: "accent",
         iconKey: "claude",
+        logo: "logos/claude.svg",
         color: "var(--c-claude)",
         desc: "First-class Claude Code plugin and skill for direct chat reviews.",
         config: "# .claude-plugin/plugin.json\n{\n  \"name\": \"ai-jury\",\n  \"description\": \"Multi-agent review jury\"\n}",
@@ -1491,6 +1510,7 @@
         badge: "Manifest Plugin",
         badgeType: "green",
         iconKey: "openai",
+        logo: "logos/openai.svg",
         color: "var(--c-codex)",
         desc: "First-class OpenAI Codex CLI plugin registration.",
         config: '# .codex-plugin/plugin.json\n{\n  "name": "ai-jury",\n  "command": "jury"\n}',
@@ -1504,6 +1524,7 @@
         badge: "macOS / Linux",
         badgeType: "accent",
         iconKey: "homebrew",
+        logo: "logos/homebrew.svg",
         color: "#f59e0b",
         desc: "Single-command package manager install with automatic path linking.",
         config: "brew install berkayturanci/ai-jury/ai-jury",
@@ -1517,6 +1538,7 @@
         badge: "Zero Deps",
         badgeType: "green",
         iconKey: "curl",
+        logo: "logos/pypi.svg",
         color: "#9aa8c4",
         desc: "Install isolated ai-jury binary with zero dependencies via pip, uv, or curl.",
         config: "pip install ai-jury\n# or\ncurl -fsSL https://berkayturanci.github.io/ai-jury/install.sh | sh",
@@ -1568,9 +1590,11 @@
       var html = "";
       filtered.forEach(function (it) {
         var badgeClass = "int-badge" + (it.badgeType ? " " + it.badgeType : "");
-        var iconSvg = SVG_ICONS[it.iconKey] || SVG_ICONS.generic;
+        var iconHtml = it.logo
+          ? '<img src="' + esc(it.logo) + '" alt="" width="26" height="26" loading="lazy" />'
+          : (SVG_ICONS[it.iconKey] || SVG_ICONS.generic);
         html += '<div class="int-card" data-id="' + esc(it.id) + '" role="button" tabindex="0" aria-label="' + esc(it.name) + ' integration details">' +
-          '<div class="int-icon-wrap" style="color:' + esc(it.color) + '">' + iconSvg + '</div>' +
+          '<div class="int-icon-wrap" style="color:' + esc(it.color) + '">' + iconHtml + '</div>' +
           '<div class="int-card-body">' +
             '<div class="int-card-header">' +
               '<span class="int-card-name">' + esc(it.name) + '</span>' +
@@ -1603,8 +1627,12 @@
     function openModal(item) {
       if (!modal) return;
       if (mIcon) {
-        mIcon.innerHTML = SVG_ICONS[item.iconKey] || SVG_ICONS.generic;
-        mIcon.style.color = item.color;
+        if (item.logo) {
+          mIcon.innerHTML = '<img src="' + esc(item.logo) + '" alt="" width="34" height="34" style="object-fit:contain;display:block;" />';
+        } else {
+          mIcon.innerHTML = SVG_ICONS[item.iconKey] || SVG_ICONS.generic;
+          mIcon.style.color = item.color;
+        }
       }
       if (mName) mName.textContent = item.name;
       if (mSub) mSub.textContent = item.vendor + " • " + item.badge;
