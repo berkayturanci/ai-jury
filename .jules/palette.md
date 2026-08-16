@@ -77,3 +77,6 @@
 ## 2026-11-06 - Faint text color contrast failure
 **Learning:** Using very low-contrast colors for supplementary text (like `--faint` used for meta text, timestamps, and table headers) makes the application unreadable for users with low vision or when viewed on poor displays. A 2.8:1 contrast ratio fails WCAG AA standards (4.5:1), even for secondary text.
 **Action:** Always ensure that even "faint" or "muted" text tokens in the design system meet the minimum 4.5:1 WCAG AA contrast ratio against their respective background colors in both light and dark themes.
+## 2026-08-16 - Focus indicators for custom interactive elements
+**Learning:** When creating custom interactive elements (e.g., `div` or `span` with `role="button"` and `tabindex="0"`), they often lack visual focus indicators because global CSS focus resets (like `button:focus-visible`) don't target them. This makes keyboard navigation very difficult for users who rely on visual focus.
+**Action:** Always ensure that custom interactive elements with a `tabindex` explicitly define a `:focus-visible` state in CSS (e.g., `.custom-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }`) that aligns with the site's global focus styles.
