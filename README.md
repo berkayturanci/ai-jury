@@ -230,7 +230,7 @@ jury --doctor      # readiness check + actionable next steps
 
 ```yaml
 - repo: https://github.com/berkayturanci/ai-jury
-  rev: v1.13.0
+  rev: v1.14.0
   hooks:
     - id: ai-jury
 ```
@@ -627,7 +627,7 @@ it differs from hosted, API-level, and other native-CLI tools, and
 
 ## Status
 
-Active (v1.13.0). The full pipeline runs end-to-end with the real CLIs and the offline
+Active (v1.14.0). The full pipeline runs end-to-end with the real CLIs and the offline
 `--mock` path is covered by tests. **Shipped:** structured findings + tiered consensus
 (consensus / majority / single-reviewer), a verification pass that drops false positives,
 **universal agent provider support** (cloud CLIs, hosted APIs, arbitrary coding-agent CLIs, local models),
@@ -636,7 +636,9 @@ Active (v1.13.0). The full pipeline runs end-to-end with the real CLIs and the o
 **live play-by-play** (`--live`) and **full-transcript / verbose** output, animated deliberation theater
 (`--theater`, `--theater-style pixel`), anonymized debate, adaptive early-stop,
 severity-gated CI exit codes, secure-by-default sandboxing, run budget/retries, large-diff
-filtering + chunking, an optional result cache, incremental review, suggested patches,
+filtering + semantic chunking, an optional result cache, incremental review, **interactive patch applier (`jury apply`)**,
+**static analysis hint injection (`--hints`)**, **frugal model tiering (`--tiered`)**,
+official **GitHub Action** and **pre-commit** hooks,
 comment-command triggering, a **local / open-weight adapter** (free, offline), and
 **`jury init`** scaffolding (with an opt-in **`--wizard`**). See
 [`docs/architecture.md`](docs/architecture.md) and the
