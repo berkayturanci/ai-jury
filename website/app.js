@@ -1510,19 +1510,6 @@
         command: "brew install berkayturanci/ai-jury/ai-jury && jury --version"
       },
       {
-        id: "docker-image",
-        name: "Docker & DevContainers",
-        vendor: "OCI Container",
-        cat: "cicd",
-        badge: "Official Image",
-        badgeType: "",
-        iconKey: "docker",
-        color: "#2496ed",
-        desc: "Pre-packaged container with all standard agent CLIs and tools configured.",
-        config: "docker run --rm -v $(pwd):/repo ghcr.io/berkayturanci/ai-jury:latest --diff-file -",
-        command: "docker run --rm -it ghcr.io/berkayturanci/ai-jury"
-      },
-      {
         id: "curl-install",
         name: "PyPI & Standalone Installer",
         vendor: "pip / uv / curl",
@@ -1573,7 +1560,7 @@
       if (filtered.length === 0) {
         grid.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; padding: 3rem 1rem; color: var(--muted);">' +
           '<p style="font-size: 1.1rem; margin-bottom: 0.5rem;">No integrations found matching "' + esc(query) + '"</p>' +
-          '<p style="font-size: 0.85rem; color: var(--faint);">Try searching for Claude, Codex, Gemini, Ollama, Docker, or GitHub Actions.</p>' +
+          '<p style="font-size: 0.85rem; color: var(--faint);">Try searching for Claude, Codex, Gemini, Ollama, or GitHub Actions.</p>' +
           '</div>';
         return;
       }
