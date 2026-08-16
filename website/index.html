@@ -17,13 +17,13 @@
       } catch (e) { document.documentElement.setAttribute("data-theme", "dark"); }
     })();
   </script>
-  <title>ai-jury — cross-vendor multi-agent code review</title>
-  <meta name="description" content="ai-jury is a stdlib-only Python CLI that orchestrates native coding-agent CLIs (Claude Code, Codex, Antigravity) plus a free local model to review the same diff or PR, debate, verify, and synthesize one chair verdict. See how it compares to hosted PR reviewers, a sample report, and the FAQ. Local-first, secure by default, MIT." />
-  <meta name="keywords" content="code review, AI code review, multi-agent, LLM, Claude Code, Codex, Antigravity, Ollama, local model, pull request, CI gating, Python CLI, code review comparison, CodeRabbit alternative, offline code review" />
+  <title>ai-jury — Universal Multi-Agent AI Code Review Jury</title>
+  <meta name="description" content="Convene a cross-vendor multi-agent PR review jury: native coding-agent CLIs (Claude Code, Codex, Antigravity, Cursor, Aider), hosted LLMs (DeepSeek, Groq, OpenRouter), and free local models (Ollama) review the same diff, debate, verify, and reach one verdict. Open source, local-first, zero-telemetry." />
+  <meta name="keywords" content="ai code review, multi agent code review, ai-jury, ai jury, coderabbit alternative, claude code pr review, openai codex review, google antigravity, ollama local code review, deepseek pr review, automated code review, cross-vendor llm review, github actions ai reviewer, offline code review" />
   <meta name="author" content="Berkay Turancı" />
   <meta name="theme-color" content="#6366f1" />
   <link rel="canonical" href="https://berkayturanci.github.io/ai-jury/" />
-  <meta name="robots" content="index, follow" />
+  <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
 
   <!-- Fonts: preconnect + preload the stylesheet so first paint isn't blocked -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -43,22 +43,22 @@
 
   <!-- Open Graph -->
   <meta property="og:type" content="website" />
-  <meta property="og:title" content="ai-jury — Universal Multi-Agent PR Review Jury" />
-  <meta property="og:description" content="Orchestrate universal AI agent providers (Claude Code, Codex, Antigravity, OpenRouter, DeepSeek, Groq, local models, Aider CLI) into an adversarial review panel. Debate, verify, one verdict." />
+  <meta property="og:title" content="ai-jury — Universal Multi-Agent AI Code Review Jury" />
+  <meta property="og:description" content="Convene cross-vendor AI agents (Claude Code, OpenAI Codex, Google Antigravity, DeepSeek, Groq, local Ollama models) into an adversarial review panel. Debate, verify, one consensus verdict." />
   <meta property="og:url" content="https://berkayturanci.github.io/ai-jury/" />
   <meta property="og:site_name" content="ai-jury" />
-  <meta property="og:image" content="https://berkayturanci.github.io/ai-jury/assets/og.png" />
+  <meta property="og:image" content="https://berkayturanci.github.io/ai-jury/assets/og-banner.png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta property="og:image:alt" content="ai-jury — Universal AI agent providers review the same diff, debate, and synthesize one verdict." />
 
   <!-- Twitter / X -->
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="ai-jury — Universal Multi-Agent PR Review Jury" />
+  <meta name="twitter:title" content="ai-jury — Universal Multi-Agent AI Code Review Jury" />
   <meta name="twitter:description" content="A stdlib-only Python CLI that runs universal AI agent providers (Claude Code, Codex, Antigravity, OpenRouter, DeepSeek, Groq, local models, Aider) as one review jury — debate, verify, one verdict." />
-  <meta name="twitter:image" content="https://berkayturanci.github.io/ai-jury/assets/og.png" />
+  <meta name="twitter:image" content="https://berkayturanci.github.io/ai-jury/assets/og-banner.png" />
 
-  <!-- Structured data -->
+  <!-- Structured data: SoftwareApplication -->
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -70,7 +70,18 @@
     "description": "Cross-vendor multi-agent PR review jury: orchestrates universal AI agent providers (Claude Code, Codex, Antigravity, OpenRouter, DeepSeek, Groq, local models, Aider) to review the same diff, debate, verify, and synthesize one verdict. Stdlib-only, local-first.",
     "license": "https://opensource.org/licenses/MIT",
     "codeRepository": "https://github.com/berkayturanci/ai-jury",
-    "author": { "@type": "Person", "name": "Berkay Turancı", "url": "https://github.com/berkayturanci" }
+    "url": "https://berkayturanci.github.io/ai-jury/",
+    "author": { "@type": "Person", "name": "Berkay Turancı", "url": "https://github.com/berkayturanci" },
+    "featureList": [
+      "Universal AI Agent Provider Support (CLIs, Hosted APIs, Local LLMs, Custom Agents)",
+      "Adversarial Multi-Agent Cross-Examination and Debate",
+      "Chair Verification & Consensus Pass (Filters False Positives)",
+      "Automated Patch Application (`jury apply`)",
+      "Risk-Aware Tiered Model Routing (`--tiered`)",
+      "Static Analysis Linter Pre-Pass (`--hints`)",
+      "100% Free & Offline Local Review via Ollama / llama.cpp",
+      "Zero Telemetry & Local-First Secret Redaction"
+    ]
   }
   </script>
 
