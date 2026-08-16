@@ -21,7 +21,7 @@ jobs:
       # Checkout so the check can read the PR template and discount any line the
       # author left verbatim (placeholders, checklists) — comparing against the
       # template is more robust than hard-coding placeholder strings.
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.0 (updated 2026-06-21)
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Check PR description
         env:
