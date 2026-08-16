@@ -518,9 +518,9 @@ a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visibl
   transform: translateY(-1px);
 }
 .int-icon-wrap {
-  width: 42px;
-  height: 42px;
-  border-radius: 10px;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
   display: grid;
   place-items: center;
   background: var(--surface-2);
@@ -528,10 +528,18 @@ a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visibl
   flex: none;
   overflow: hidden;
   transition: border-color 0.2s, transform 0.2s;
+  padding: 7px;
+  box-sizing: border-box;
+}
+.int-icon-wrap img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
 }
 .int-icon-wrap svg {
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   display: block;
 }
 .int-card:hover .int-icon-wrap {
@@ -661,6 +669,14 @@ a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visibl
   border: 1px solid var(--border);
   flex: none;
   overflow: hidden;
+  padding: 8px;
+  box-sizing: border-box;
+}
+.int-modal-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
 }
 .int-modal-icon svg {
   width: 28px;
