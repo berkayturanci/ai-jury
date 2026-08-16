@@ -43,6 +43,9 @@ jobs:
           python -m pip install -e .
       - name: Run offline (mock) unit tests
         run: python -m unittest discover -s tests -v
+      - name: Verify merge & version integrity (silent-revert guard)
+        shell: bash
+        run: python scripts/verify_merge.py --check-version
       - name: Smoke-test the CLI in mock mode
         # bash is available on all three runners (git-bash on Windows), keeping the
         # smoke assertions identical across operating systems.
