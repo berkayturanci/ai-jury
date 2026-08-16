@@ -105,6 +105,7 @@ def check_version_integrity(root: Path) -> list[str]:
                             f"is lower than existing tag {highest_tag} ({highest_semver})"
                         )
         except Exception:
+            # Non-fatal if git is unavailable or repo has no tags
             pass
 
     return errors
@@ -141,6 +142,7 @@ def check_pr_merge_drift(root: Path, pr_number: int) -> list[str]:
             intervening_files = {line.strip() for line in log_res.stdout.splitlines() if line.strip()}
             overlap = pr_files & intervening_files
             if overlap:
+                # Overlap between PR files and base branch commits is informational
                 pass
     except Exception as exc:
         errors.append(f"Merge drift check error: {exc}")
@@ -154,6 +156,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             sys.stdout.reconfigure(encoding="utf-8", errors="replace")
             sys.stderr.reconfigure(encoding="utf-8", errors="replace")
         except Exception:
+            # Reconfigure stdout/stderr encoding is best-effort
             pass
 
     parser = argparse.ArgumentParser(description="Verify merge and version integrity against silent reverts.")
