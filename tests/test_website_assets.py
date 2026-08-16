@@ -8,6 +8,7 @@ IDs / entry points so a refactor that drops them fails loudly. Network-free.
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import unittest
@@ -59,6 +60,61 @@ class TestWebsiteAssets(unittest.TestCase):
             'addEventListener("drop"',
         ):
             self.assertIn(needle, js)
+
+
+class IntegrationFilterAria(unittest.TestCase):
+    """The filter pills must expose their state, and must not claim to be tabs
+    while doing it (issue #550). ``.active`` is a visual cue only; without
+    aria-pressed a screen-reader user cannot tell which filter is on."""
+
+    def _filter_bar(self):
+        html = (WEBSITE / "index.html").read_text(encoding="utf-8")
+        match = re.search(r'<div class="integration-filters[^>]*>(.*?)</div>', html, re.S)
+        self.assertIsNotNone(match, "integration filter bar not found")
+        return html, match
+
+    def test_the_filter_bar_is_a_group_not_a_tablist(self):
+        # role="tablist" obliges role="tab" children with aria-selected and
+        # aria-controls. These are toggle buttons filtering a grid in place, so
+        # aria-pressed is the correct state — and the two cannot be combined.
+        html, match = self._filter_bar()
+        opening = html[match.start():match.start() + match.group(0).index(">") + 1]
+        self.assertIn('role="group"', opening)
+        self.assertNotIn('role="tablist"', opening)
+
+    def test_every_pill_declares_a_pressed_state(self):
+        _html, match = self._filter_bar()
+        pills = re.findall(r'<button[^>]*class="int-pill[^"]*"[^>]*>', match.group(1))
+        self.assertGreater(len(pills), 1, "no filter pills found to check")
+        for pill in pills:
+            with self.subTest(pill=pill[:60]):
+                self.assertRegex(pill, r'aria-pressed="(true|false)"')
+
+    def test_exactly_one_pill_starts_pressed(self):
+        # Two pressed pills announce two active filters; zero announces none,
+        # while the page visibly shows one.
+        _html, match = self._filter_bar()
+        self.assertEqual(1, match.group(1).count('aria-pressed="true"'))
+        self.assertEqual(1, match.group(1).count("int-pill active"))
+
+    def test_the_click_handler_moves_the_pressed_state(self):
+        # Static markup alone would freeze the state on "All" after the first
+        # click — correct at load, wrong from then on.
+        js = (WEBSITE / "app.js").read_text(encoding="utf-8")
+        handler = re.search(r"pills\.forEach\(function \(pill\).*?\n    \}\);", js, re.S)
+        self.assertIsNotNone(handler, "pill click handler not found")
+        self.assertIn('setAttribute("aria-pressed", "false")', handler.group(0))
+        self.assertIn('setAttribute("aria-pressed", "true")', handler.group(0))
+
+    def test_the_pipeline_tabs_are_still_a_real_tablist(self):
+        # Guards against applying the fix above to the wrong widget: the
+        # pipeline tabs *are* tabs (#436) and must keep tab semantics.
+        html = (WEBSITE / "index.html").read_text(encoding="utf-8")
+        pipe = re.search(r'<div class="pipe-tabs"[^>]*>(.*?)</div>', html, re.S)
+        self.assertIsNotNone(pipe, "pipeline tab strip not found")
+        self.assertIn('role="tablist"', html[pipe.start():pipe.start() + 120])
+        self.assertIn('role="tab"', pipe.group(1))
+        self.assertIn("aria-selected", pipe.group(1))
 
 
 class EscapeRegressionPins(unittest.TestCase):

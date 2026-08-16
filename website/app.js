@@ -1690,8 +1690,16 @@
 
     pills.forEach(function (pill) {
       pill.addEventListener("click", function () {
-        pills.forEach(function (p) { p.classList.remove("active"); });
+        // aria-pressed carries the state the .active class only shows visually,
+        // so a screen-reader user can tell which filter is on (issue #550). It
+        // has to be cleared on every pill, not just set on the new one, or the
+        // previous filter keeps announcing itself as pressed.
+        pills.forEach(function (p) {
+          p.classList.remove("active");
+          p.setAttribute("aria-pressed", "false");
+        });
         pill.classList.add("active");
+        pill.setAttribute("aria-pressed", "true");
         activeCat = pill.getAttribute("data-cat") || "all";
         renderCards();
       });
