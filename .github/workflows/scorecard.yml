@@ -23,11 +23,11 @@ jobs:
       # Needed to publish results to the OpenSSF REST API (OIDC).
       id-token: write
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.0 (updated 2026-06-21)
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
       - name: Run Scorecard analysis
-        uses: ossf/scorecard-action@2d1146689b8cda280b9bc96326124645441f03bc  # v2.4.3 (pinned 2026-05-31)
+        uses: ossf/scorecard-action@2d1146689b8cda280b9bc96326124645441f03bc  # v2.4.4
         with:
           results_file: results.sarif
           results_format: sarif
@@ -38,7 +38,7 @@ jobs:
           # Publish to the OpenSSF REST API so the README badge can resolve.
           publish_results: true
       - name: Upload results artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1 (updated 2026-05-31)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: scorecard-results
           path: results.sarif

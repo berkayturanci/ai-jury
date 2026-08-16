@@ -19,7 +19,7 @@ jobs:
       contents: write       # create the GitHub Release and upload assets
       attestations: write   # build-provenance attestations (issue #25)
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.0 (updated 2026-06-21)
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       # Hard guard against version drift across the release-version sources
       # of truth (issue #284): the tag we're publishing under (`v1.2.3` →
@@ -42,7 +42,7 @@ jobs:
           fi
 
       - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v6.2.0 (updated 2026-05-31)
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: "3.13"
 
@@ -91,7 +91,7 @@ jobs:
       # Build provenance (issue #25): cryptographic attestation binding the
       # artifacts to this workflow run, verifiable with `gh attestation verify`.
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.1.0 (pinned 2026-06-02)
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
         with:
           subject-path: "dist/*.whl, dist/*.tar.gz"
 
@@ -102,12 +102,12 @@ jobs:
       # idempotent. Requires a one-time trusted-publisher config on PyPI for this
       # repo+workflow (see docs/releasing.md).
       - name: Publish package to PyPI
-        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33  # v1.14.0 (updated 2026-05-31)
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33  # v1.14.2
         with:
           skip-existing: true
 
       - name: Create GitHub Release and Upload Packages
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228  # v3.0.1 (updated 2026-06-21)
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228  # v3.0.2
         with:
           files: |
             release/*.whl
