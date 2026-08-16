@@ -640,61 +640,81 @@ a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visibl
   font-size: 0.9rem;
 }
 .int-modal-close:hover {
-.int-modal-title-row {
+  background: var(--surface-3);
+  color: var(--text);
+}
+.int-modal-header {
   display: flex;
   align-items: center;
   gap: 1rem;
-  margin-bottom: 1rem;
+  margin-bottom: 1.5rem;
+  padding-right: 2.5rem;
 }
 .int-modal-icon {
-  width: 48px;
-  height: 48px;
+  width: 52px;
+  height: 52px;
   border-radius: 12px;
   display: grid;
   place-items: center;
   background: var(--surface-2);
   border: 1px solid var(--border);
-  font-weight: 700;
-  font-size: 1.1rem;
-  color: var(--accent-2);
+  flex: none;
+  overflow: hidden;
 }
-.int-modal-heading h3 {
-  margin: 0 0 0.2rem;
+.int-modal-icon svg {
+  width: 28px;
+  height: 28px;
+  display: block;
+}
+.int-modal-title-wrap {
+  flex: 1;
+  min-width: 0;
+}
+.int-modal-name {
   font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 0.2rem;
 }
-.int-modal-heading p {
-  margin: 0;
+.int-modal-vendor {
   font-size: 0.85rem;
   color: var(--muted);
 }
 .int-modal-desc {
-  font-size: 0.95rem;
+  font-size: 0.92rem;
+  line-height: 1.55;
   color: var(--text);
-  line-height: 1.5;
-  margin-bottom: 1.25rem;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border);
 }
 .int-modal-section-label {
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
+  font-size: 0.76rem;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--accent-2);
-  margin-bottom: 0.4rem;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin-bottom: 0.5rem;
 }
 .int-modal-code-wrap {
   position: relative;
   margin-bottom: 1.25rem;
+  max-width: 100%;
+  min-width: 0;
 }
 .int-modal-code {
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  margin: 0;
   padding: 0.85rem 1rem;
+  background: var(--surface-2);
+  border-radius: 8px;
   font-family: var(--font-mono);
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   color: var(--text);
   overflow-x: auto;
-  margin: 0;
+  white-space: pre;
+  border: 1px solid var(--border);
+  box-sizing: border-box;
+  max-width: 100%;
 }
 .int-modal-copy-btn {
   position: absolute;
@@ -702,16 +722,50 @@ a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visibl
   right: 0.5rem;
   background: var(--surface-3);
   border: 1px solid var(--border);
-  color: var(--muted);
+  color: var(--text);
   font-size: 0.75rem;
-  padding: 0.25rem 0.6rem;
+  font-family: var(--font-body);
+  font-weight: 500;
+  padding: 0.3rem 0.65rem;
   border-radius: 6px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s ease;
 }
 .int-modal-copy-btn:hover {
-  color: var(--text);
+  background: var(--accent);
+  color: #fff;
   border-color: var(--accent);
+}
+.int-modal-copy-btn.copied {
+  background: var(--green);
+  color: #fff;
+  border-color: var(--green);
+}
+
+@media (max-width: 600px) {
+  .int-modal-backdrop {
+    padding: 0.75rem;
+  }
+  .int-modal-box {
+    padding: 1.25rem 1rem;
+    border-radius: 14px;
+    max-height: 88vh;
+  }
+  .int-modal-header {
+    margin-bottom: 1.1rem;
+    padding-right: 2rem;
+  }
+  .int-modal-icon {
+    width: 44px;
+    height: 44px;
+  }
+  .int-modal-icon svg {
+    width: 24px;
+    height: 24px;
+  }
+  .int-modal-name {
+    font-size: 1.15rem;
+  }
 }
 
 .v-findings { font-size: .68rem; color: var(--muted); margin-top: .25rem; font-family: var(--font-mono); }
