@@ -369,13 +369,18 @@
         </p>
       </div>
 
-      <!-- Filter Tabs -->
-      <div class="integration-filters reveal" role="tablist" aria-label="Filter integrations by category">
-        <button type="button" class="int-pill active" data-cat="all">All <span class="pill-count">22</span></button>
-        <button type="button" class="int-pill" data-cat="assistants">AI Assistants &amp; CLIs</button>
-        <button type="button" class="int-pill" data-cat="backends">Hosted LLM APIs</button>
-        <button type="button" class="int-pill" data-cat="local">Local &amp; Offline ($0)</button>
-        <button type="button" class="int-pill" data-cat="cicd">CI/CD &amp; Dev Tools</button>
+      <!-- Filter buttons. Deliberately role="group", not role="tablist": these
+           filter one grid in place rather than switching between panels, and a
+           tablist obliges role="tab" children, aria-selected, aria-controls and
+           arrow-key roving focus — behaviour a filter row does not have and
+           users do not expect from it. The pipeline tabs above are a real
+           tablist and keep that role. See issue #550. -->
+      <div class="integration-filters reveal" role="group" aria-label="Filter integrations by category">
+        <button type="button" class="int-pill active" data-cat="all" aria-pressed="true">All <span class="pill-count">22</span></button>
+        <button type="button" class="int-pill" data-cat="assistants" aria-pressed="false">AI Assistants &amp; CLIs</button>
+        <button type="button" class="int-pill" data-cat="backends" aria-pressed="false">Hosted LLM APIs</button>
+        <button type="button" class="int-pill" data-cat="local" aria-pressed="false">Local &amp; Offline ($0)</button>
+        <button type="button" class="int-pill" data-cat="cicd" aria-pressed="false">CI/CD &amp; Dev Tools</button>
       </div>
 
       <!-- Search Bar -->
