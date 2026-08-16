@@ -149,6 +149,13 @@ def check_pr_merge_drift(root: Path, pr_number: int) -> list[str]:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
     parser = argparse.ArgumentParser(description="Verify merge and version integrity against silent reverts.")
     parser.add_argument("--root", type=Path, default=Path.cwd(), help="Repository root directory")
     parser.add_argument("--check-version", action="store_true", help="Assert version marker agreement & monotonicity")
@@ -168,17 +175,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         if v_errors:
             all_errors.extend(v_errors)
         else:
-            print("✓ Version integrity: pyproject.toml, __init__.py, and CHANGELOG.md agree and >= latest tag.")
+            print("[OK] Version integrity: pyproject.toml, __init__.py, and CHANGELOG.md agree and >= latest tag.")
 
     if run_pr and args.pr:
         m_errors = check_pr_merge_drift(root, args.pr)
         if m_errors:
             all_errors.extend(m_errors)
         else:
-            print(f"✓ Merge drift: PR #{args.pr} is clean.")
+            print(f"[OK] Merge drift: PR #{args.pr} is clean.")
 
     if all_errors:
-        print("\n❌ Verification Failed:", file=sys.stderr)
+        print("\n[FAIL] Verification Failed:", file=sys.stderr)
         for err in all_errors:
             print(f"  - {err}", file=sys.stderr)
         return 1
