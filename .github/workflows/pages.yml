@@ -52,6 +52,12 @@ jobs:
           )
           print(f"coverage badge: {msg} ({color})")
           PY
+      # README advertises `curl -fsSL https://ai-jury.dev/install.sh | sh`, but
+      # install.sh lives at the repo root while the artifact is built from
+      # website/, so the documented one-liner 404s until it is copied in.
+      # Copied rather than moved: the repo root stays the single source of truth.
+      - name: Stage the standalone installer
+        run: cp install.sh website/install.sh
       - name: Configure Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d  # v6.0.0
       - name: Upload site artifact
