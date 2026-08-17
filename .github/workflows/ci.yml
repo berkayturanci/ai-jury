@@ -43,9 +43,6 @@ jobs:
           python -m pip install -e .
       - name: Run offline (mock) unit tests
         run: python -m unittest discover -s tests -v
-      - name: Verify merge & version integrity (silent-revert guard)
-        shell: bash
-        run: python scripts/verify_merge.py --check-version
       - name: Smoke-test the CLI in mock mode
         # bash is available on all three runners (git-bash on Windows), keeping the
         # smoke assertions identical across operating systems.
@@ -54,6 +51,27 @@ jobs:
           python -m ai_jury --mock --diff-file examples/sample.diff -q | tee report.md
           grep -q "AI Jury" report.md
           grep -q "Chair verdict" report.md
+
+  version-integrity:
+    # Its own job, not a step in the test matrix, for one reason: the check needs
+    # the git tags, and fetching them means a full-history checkout. Paying that
+    # on five matrix combinations to run the same assertion five times is waste;
+    # paying it once here is not. #556 — before this, the step ran inside `test`
+    # with the default shallow checkout, so `git tag -l` was empty and the
+    # monotonicity comparison silently did nothing on every run.
+    name: Version integrity (silent-revert guard)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          # actions/checkout defaults to fetch-depth: 1 and fetch-tags: false.
+          # Without this the guard cannot see the released tag it compares against.
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Verify version markers agree and do not regress
+        run: python scripts/verify_merge.py --check-version
 
   coverage:
     name: Coverage gate
