@@ -174,20 +174,31 @@ jobs:
           fi
 
       - name: Publish the formula to the Homebrew tap
-        # The repo's copy is not the copy brew installs. keel shipped a fix to its
-        # own formula, went green, and users kept getting the broken one until the
-        # tap was synced by hand (keel#787). GITHUB_TOKEN cannot write to another
-        # repository, so this needs a PAT with `contents: write` on the tap, as
-        # HOMEBREW_TAP_TOKEN. It fails loudly when absent rather than skipping:
-        # a release that silently leaves the tap behind is the failure it prevents.
+        # The repo's copy is not the copy brew installs — keel fixed its own
+        # formula, went green, and users kept getting the broken one until the tap
+        # was synced by hand (keel#787). So the tap must be updated, but *this*
+        # step is no longer the only thing that can do it, and therefore no longer
+        # fails the release.
+        #
+        # A workflow's GITHUB_TOKEN is scoped to its own repository, so pushing to
+        # the tap needs a PAT. Rather than make every release depend on one being
+        # present, the tap pulls: berkayturanci/homebrew-ai-jury runs a scheduled
+        # workflow that fetches this formula, verifies its url and digest against
+        # the artifact, and commits when they differ. Reading a public repo needs
+        # no credential, and the token that writes the tap is the tap's own.
+        #
+        # This step stays as the *fast path*: with HOMEBREW_TAP_TOKEN set the tap
+        # updates within seconds instead of within the schedule interval. Without
+        # it the release completes and the tap catches up on its own, so the
+        # failure mode is latency rather than a red release or a stale tap.
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           TAP: berkayturanci/homebrew-ai-jury
         run: |
           set -euo pipefail
           if [ -z "${GH_TOKEN}" ]; then
-            echo "::error::HOMEBREW_TAP_TOKEN is not set; the tap would be left at the previous release."
-            exit 1
+            echo "::notice::HOMEBREW_TAP_TOKEN not set — the tap will pick this up on its own schedule."
+            exit 0
           fi
           gh api "repos/${TAP}/contents/Formula/ai-jury.rb" --jq .sha > .tap-sha || echo "" > .tap-sha
           gh api -X PUT "repos/${TAP}/contents/Formula/ai-jury.rb" \

@@ -155,6 +155,44 @@ class FormulaResolvesToARealArtifact(unittest.TestCase):
         except (urllib.error.URLError, OSError) as exc:
             raise self.skipTest(f"cannot reach GitHub: {exc}") from exc
 
+    def test_the_tap_publishes_the_same_formula(self):
+        """The tap is what `brew` reads; this repo's copy is not.
+
+        keel fixed its own formula, every check went green, and users kept
+        installing the broken one until the tap was synced by hand (keel#787).
+        The tap pulls on a schedule, so a brief lag after a release is expected
+        and is not what this catches — a permanent divergence is.
+        """
+        if not ONLINE:
+            self.skipTest("set AI_JURY_CHECK_EXTERNAL=1 to compare against the tap")
+        request = urllib.request.Request(
+            f"https://api.github.com/repos/{HOMEBREW_TAP}/contents/Formula/ai-jury.rb",
+            headers={"Accept": "application/vnd.github.raw", "User-Agent": "ai-jury-tests"},
+        )
+        token = os.environ.get("GITHUB_TOKEN")
+        if token:
+            request.add_header("Authorization", f"Bearer {token}")
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                published = response.read().decode("utf-8")
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                self.fail(f"{HOMEBREW_TAP} has no Formula/ai-jury.rb; brew install would fail")
+            raise self.skipTest(f"cannot reach the tap: {exc}") from exc
+        except (urllib.error.URLError, OSError) as exc:
+            raise self.skipTest(f"cannot reach the tap: {exc}") from exc
+        if published != self._formula():
+            # A release just landed and the tap has not pulled yet. Distinguish
+            # "behind" from "wrong": a tap serving an installable older formula is
+            # a lag, and failing on it would make every release briefly red.
+            published_version = re.search(r"ai_jury-([0-9.]+)\.tar\.gz", published)
+            self.assertIsNotNone(published_version, "the tap's formula names no version")
+            self.assertNotEqual(
+                published_version.group(1),
+                __version__,
+                "the tap claims this version but its formula differs from this repo's",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
