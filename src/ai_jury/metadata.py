@@ -68,7 +68,9 @@ def panel_accounting(reviews) -> dict:
     return {
         "configured": len(reviews),
         "effective": len(contributing),
-        "vendors": len({getattr(r, "vendor", "") for r in contributing if getattr(r, "vendor", "")}),
+        "vendors": len(
+            {getattr(r, "vendor", "") for r in contributing if getattr(r, "vendor", "")}
+        ),
         "abstained": statuses.count("abstained"),
         "failed": statuses.count("failed"),
         "short": len(contributing) < len(reviews),
@@ -130,6 +132,8 @@ def estimate_economics(results: list) -> dict:
     breakdown = []
     total_tokens = 0
     total_cost_usd = 0.0
+    # bolt: Consolidate multiple metrics into a single-pass O(N) explicit loop
+    local_free_slots = 0
 
     for r in results:
         agent = getattr(r, "agent", "unknown")
@@ -150,19 +154,23 @@ def estimate_economics(results: list) -> dict:
 
         total_tokens += tokens_est
         total_cost_usd += cost_usd
+        if is_local:
+            local_free_slots += 1
 
-        breakdown.append({
-            "agent": agent,
-            "vendor": getattr(r, "vendor", ""),
-            "tokens_est": tokens_est,
-            "cost_usd_est": round(cost_usd, 6),
-            "is_local_free": is_local,
-        })
+        breakdown.append(
+            {
+                "agent": agent,
+                "vendor": getattr(r, "vendor", ""),
+                "tokens_est": tokens_est,
+                "cost_usd_est": round(cost_usd, 6),
+                "is_local_free": is_local,
+            }
+        )
 
     return {
         "total_tokens_est": total_tokens,
         "total_cost_usd_est": round(total_cost_usd, 4),
-        "local_free_slots": sum(1 for b in breakdown if b["is_local_free"]),
+        "local_free_slots": local_free_slots,
         "breakdown": breakdown,
     }
 
