@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script>
+    (function () {
+      try { var __mq = matchMedia("(prefers-color-scheme: dark)"); document.documentElement.setAttribute("data-theme", localStorage.getItem("theme") || (__mq.matches ? "dark" : "light")); __mq.addEventListener("change", function (e) { if (!localStorage.getItem("theme")) document.documentElement.setAttribute("data-theme", e.matches ? "dark" : "light"); }); }
+      catch (e) { document.documentElement.setAttribute("data-theme", "dark"); }
+    })();
+  </script>
+  <title>An agent's PR said one line. It changed five files.</title>
+  <meta name="description" content="An AI agent pushed after review and the squash carried a silent revert. What re-reading the diff before merge would have caught." />
+  <meta name="keywords" content="ai agent pull request review, reviewing agent generated code, ai code review, agent pushed after approval, squash merge revert, multi agent code review, claude code review" />
+  <meta name="author" content="Berkay Turancı" />
+  <link rel="canonical" href="https://berkayturanci.github.io/ai-jury/agent-pr-said-one-line.html" />
+  <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large" />
+  <meta property="og:type" content="article" />
+  <meta property="og:title" content="An agent's PR said one line. It changed five files." />
+  <meta property="og:description" content="An AI agent pushed after review and the squash carried a silent revert. What would have caught it." />
+  <meta property="og:url" content="https://berkayturanci.github.io/ai-jury/agent-pr-said-one-line.html" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="An agent's PR said one line. It changed five files." />
+  <meta name="twitter:description" content="An AI agent pushed after review and the squash carried a silent revert. What would have caught it." />
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="docs.css" />
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    "headline": "An agent's PR said one line. It changed five files.",
+    "description": "An AI agent pushed after review and the squash carried a silent revert of unrelated work.",
+    "datePublished": "2026-08-17",
+    "author": { "@type": "Person", "name": "Berkay Turancı" },
+    "mainEntityOfPage": "https://berkayturanci.github.io/ai-jury/agent-pr-said-one-line.html",
+    "about": ["code review", "ai agents", "git", "continuous integration"]
+  }
+  </script>
+  <style>
+    .art-wrap { max-width: 72ch; margin: 0 auto; padding: 3rem 1.25rem 5rem; }
+    .art-wrap h1 { font-size: clamp(1.7rem, 4vw, 2.4rem); line-height: 1.2; margin: 0 0 .75rem; }
+    .art-wrap h2 { font-size: clamp(1.2rem, 2.4vw, 1.5rem); margin: 2.5rem 0 .75rem; }
+    .art-wrap p, .art-wrap li { line-height: 1.7; }
+    .art-wrap pre { overflow-x: auto; padding: 1rem; border-radius: 8px;
+                    background: var(--bg-soft, #12141c); border: 1px solid var(--border-soft, #2a2f3d); }
+    .art-wrap code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .92em; }
+    .art-meta { color: var(--muted); font-size: .9rem; margin-bottom: 2rem; }
+    .art-callout { border-left: 3px solid var(--accent, #6366f1); padding: .75rem 1rem; margin: 1.5rem 0;
+                   background: color-mix(in srgb, var(--accent, #6366f1) 8%, transparent); border-radius: 0 8px 8px 0; }
+    .art-back { display: inline-block; margin-bottom: 2rem; color: var(--muted); text-decoration: none; }
+    .art-back:hover { color: var(--accent, #6366f1); }
+  </style>
+</head>
+<body>
+<main class="art-wrap">
+  <a class="art-back" href="./">← ai-jury</a>
+
+  <h1>An agent's PR said one line. It changed five files.</h1>
+  <p class="art-meta">17 August 2026 · a real incident from reviewing agent-authored pull requests</p>
+
+  <p>A coding agent opened a pull request titled <em>"harden: redact git stderr before surfacing it"</em>. I read it. One file, one line — route an error message through a redaction helper before showing it to the user. Good change, obviously safe, merged it.</p>
+
+  <p>The squash commit looked like this:</p>
+
+  <pre><code>.github/workflows/ci.yml    |  24 +-----
+scripts/verify_merge.py     | 114 +++-------------
+src/ai_jury/patches.py      |   3 +-
+tests/test_verify_merge.py  | 170 +++---------------------
+uv.lock                     |   2 +-</code></pre>
+
+  <p>The one line I reviewed is in there. So are 300 deleted lines I never saw — a CI guard, its tests, and the job that ran it, all removed under a commit message about redacting an error string.</p>
+
+  <h2>How it happened</h2>
+
+  <p>Nothing malicious, and nothing exotic. The order of events:</p>
+
+  <ol>
+    <li><strong>08:18</strong> — I read the PR. Its file list was one file. I left a review comment asking for a retitle.</li>
+    <li><strong>11:01</strong> — the agent pushed a new commit responding to that comment. Its working tree was stale — it predated a guard that had merged in between — so the push carried that guard's removal along with the retitle.</li>
+    <li><strong>later</strong> — I merged, on the strength of the review I had done three hours earlier.</li>
+  </ol>
+
+  <p>I approved one change and merged a different one.</p>
+
+  <h2>Why nothing objected</h2>
+
+  <p>Three things could have caught it, and each failed for its own reason:</p>
+
+  <ul>
+    <li><strong>The file list I had read was three hours old.</strong> GitHub does not re-notify you that the diff you reviewed has been replaced. The PR page shows the current state; my memory showed the old one.</li>
+    <li><strong>CI was green.</strong> Deleting a guard and its tests together leaves a self-consistent repository. There was nothing left to fail.</li>
+    <li><strong>The guard that would have flagged it was the thing being deleted.</strong> It could not report its own removal.</li>
+  </ul>
+
+  <div class="art-callout">
+    <p>This is the shape worth remembering: <strong>agent PRs are not static.</strong> A human contributor who pushes after review usually says so. An agent responding to a comment pushes silently, and whatever is in its working tree comes with it.</p>
+  </div>
+
+  <h2>What would have caught it</h2>
+
+  <p>Ordered by how cheap they are.</p>
+
+  <h3>1. Re-read the diff at merge time, not at review time</h3>
+
+  <p>Free, and it is the one that would have worked. If any commit landed after your approval, the review is stale — treat it as unreviewed. GitHub can enforce this for you: branch protection has <em>"Dismiss stale pull request approvals when new commits are pushed"</em>. For agent-authored PRs it should be on.</p>
+
+  <h3>2. Compare the declared change to the actual change</h3>
+
+  <p>The PR body said one file. The squash touched five. That mismatch is mechanically checkable before merging:</p>
+
+  <pre><code>gh pr view "$PR" --json files --jq '.files[].path'</code></pre>
+
+  <p>Run it <em>at merge</em> and compare it to what the description claims. A PR whose stated scope and real scope disagree is worth a second look regardless of who wrote it.</p>
+
+  <h3>3. Have something read the diff that was not the thing that wrote it</h3>
+
+  <p>The deeper problem is that a single reader — human or model — is checking work against the same assumptions that produced it. I had already decided this PR was a one-line hardening change; every later glance confirmed the belief instead of testing it.</p>
+
+  <p>A reviewer with no stake in that belief, looking at the diff cold, would have asked why a stderr-redaction change deletes a CI job. That is not a clever question. It just needs someone who was not there for the first conversation.</p>
+
+  <h2>The honest limit</h2>
+
+  <p>None of this is specific to AI agents. A human can force-push after approval too, and this failure has existed for as long as code review has. What changed is the rate: agents open more PRs, push more often in response to comments, and their working trees go stale faster than a person's would.</p>
+
+  <p>So the old advice — <em>re-read before you merge</em> — stops being good hygiene and starts being load-bearing.</p>
+
+  <h2>What we changed</h2>
+
+  <ul>
+    <li>Restored the guard, and added assertions that fail when it is <em>missing</em> rather than when it is wrong — so deleting it now takes a diff that visibly removes assertions.</li>
+    <li>Kept the one-line redaction change. It was a good change; it just was not the whole change.</li>
+  </ul>
+
+  <p><a href="https://github.com/berkayturanci/ai-jury">ai-jury</a> exists for the third point above: it runs several coding agents over the same diff independently — Claude Code, Codex, Gemini, Cursor and others — and reconciles what they find into one verdict. Not because models are better readers than people, but because they have not already decided what the change is.</p>
+
+  <pre><code>pipx install ai-jury
+jury --pr 555</code></pre>
+
+  <p>It is open source, and it would not have caught this one on its own either — the diff was correct in isolation. What catches this class is re-reading at merge time. The tool helps with the reading; the discipline is the part that matters.</p>
+
+  <p><a class="art-back" href="./">← back to ai-jury</a></p>
+</main>
+</body>
+</html>
