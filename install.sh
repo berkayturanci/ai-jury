@@ -1,6 +1,6 @@
 #!/bin/sh
 # ai-jury standalone installer script
-# Usage: curl -fsSL https://berkayturanci.github.io/ai-jury/install.sh | sh
+# Usage: curl -fsSL https://ai-jury.dev/install.sh | sh
 set -eu
 
 echo "🏛️  Installing ai-jury (cross-vendor multi-agent code review jury)..."

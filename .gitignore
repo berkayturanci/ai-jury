@@ -31,3 +31,7 @@ cache/
 website/coverage/
 website/coverage-badge.json
 coverage.json
+
+# Copied from the repo root into the Pages artifact at build time; the root
+# install.sh stays the single source of truth.
+website/install.sh
