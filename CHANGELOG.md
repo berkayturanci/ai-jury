@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.14.1] - 2026-08-17
+
+### Security
+- **Git Apply Stderr Secret Redaction** (#555): Enforce `redact()` filtering on `git apply` standard error before surfacing patch failure diagnostics to users, preventing potential credential leakage.
+
+### Fixed
+- **CI Silent-Revert Guard Validation** (#553, #557): Run `scripts/verify_merge.py` in a dedicated CI job with `fetch-depth: 0` to accurately evaluate semver tag monotonicity and prevent stale branches from silently reverting releases.
+- **Website Accessibility & Focus Indicators** (#552, #554): Added explicit `:focus-visible` styling for interactive `.int-card` elements and converted filter buttons to semantic toggle groups with `aria-pressed` state.
+- **Workflow Action Pin Annotations** (#551): Corrected GitHub Action SHA comment descriptions and added a dedicated test suite (`tests/test_action_pins.py`) to prevent action pin drift.
+
 ## [1.14.0] - 2026-08-16
 
 ### Added
