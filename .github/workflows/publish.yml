@@ -127,14 +127,43 @@ jobs:
         run: |
           set -euo pipefail
           tag_version="${GITHUB_REF_NAME#v}"
-          sdist_file="$(ls dist/*.tar.gz | head -n 1)"
-          sdist_sha="$(sha256sum "$sdist_file" | awk '{print $1}')"
-          sdist_url="https://files.pythonhosted.org/packages/source/a/ai_jury/ai_jury-${tag_version}.tar.gz"
+
+          # Both values come from PyPI, neither is constructed. The previous
+          # version guessed the url as /packages/source/a/ai_jury/… — a layout
+          # PyPI no longer serves, so it 404'd — and took the digest from the
+          # locally built sdist, which is not byte-identical to the uploaded one.
+          # Every release produced an uninstallable formula that way (#562).
+          # PyPI is the only authority for either: the path is content-addressed
+          # and cannot be derived, and the digest has to belong to the artifact
+          # brew will download.
+          for attempt in 1 2 3 4 5 6; do
+            curl -fsSL "https://pypi.org/pypi/ai-jury/${tag_version}/json" -o /tmp/pypi.json && break
+            echo "PyPI has not indexed ${tag_version} yet (attempt ${attempt}); retrying…"
+            sleep 10
+          done
+
+          read -r sdist_url sdist_sha <<EOF
+          $(python3 -c "
+          import json
+          urls = json.load(open('/tmp/pypi.json'))['urls']
+          sdist = next(f for f in urls if f['packagetype'] == 'sdist')
+          print(sdist['url'], sdist['digests']['sha256'])")
+          EOF
 
           sed -i.bak "s|url \".*\"|url \"${sdist_url}\"|" Formula/ai-jury.rb
           sed -i.bak "s|sha256 \".*\"|sha256 \"${sdist_sha}\"|" Formula/ai-jury.rb
           sed -i.bak "s|jury .*\", shell_output|jury ${tag_version}\", shell_output|" Formula/ai-jury.rb
           rm -f Formula/ai-jury.rb.bak
+
+          # Prove it before publishing anywhere. A tap one release behind still
+          # installs; a tap holding an uninstallable formula does not.
+          curl -fsSL "$sdist_url" -o /tmp/sdist.tar.gz
+          got="$(sha256sum /tmp/sdist.tar.gz | cut -d' ' -f1)"
+          if [ "$got" != "$sdist_sha" ]; then
+            echo "::error::formula sha256 does not match the artifact it points at"
+            exit 1
+          fi
+          echo "formula verified against ${sdist_url}"
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -143,3 +172,28 @@ jobs:
             git commit -m "chore(homebrew): Update Formula/ai-jury.rb to v${tag_version} [skip ci]"
             git push origin HEAD:main || true
           fi
+
+      - name: Publish the formula to the Homebrew tap
+        # The repo's copy is not the copy brew installs. keel shipped a fix to its
+        # own formula, went green, and users kept getting the broken one until the
+        # tap was synced by hand (keel#787). GITHUB_TOKEN cannot write to another
+        # repository, so this needs a PAT with `contents: write` on the tap, as
+        # HOMEBREW_TAP_TOKEN. It fails loudly when absent rather than skipping:
+        # a release that silently leaves the tap behind is the failure it prevents.
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          TAP: berkayturanci/homebrew-ai-jury
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN}" ]; then
+            echo "::error::HOMEBREW_TAP_TOKEN is not set; the tap would be left at the previous release."
+            exit 1
+          fi
+          gh api "repos/${TAP}/contents/Formula/ai-jury.rb" --jq .sha > .tap-sha || echo "" > .tap-sha
+          gh api -X PUT "repos/${TAP}/contents/Formula/ai-jury.rb" \
+            -f message="chore: sync formula for ${GITHUB_REF_NAME} (from ${GITHUB_REPOSITORY}@${GITHUB_SHA})" \
+            -f content="$(base64 -w0 Formula/ai-jury.rb)" \
+            $( [ -s .tap-sha ] && echo -f sha="$(cat .tap-sha)" )
+          # A 200 from the push is not proof the tap serves the new bytes.
+          gh api "repos/${TAP}/contents/Formula/ai-jury.rb" --jq .content | base64 -d > tap-formula.rb
+          diff Formula/ai-jury.rb tap-formula.rb
