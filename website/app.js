@@ -1541,7 +1541,7 @@
         logo: "logos/pypi.svg",
         color: "#9aa8c4",
         desc: "Install isolated ai-jury binary with zero dependencies via pip, uv, or curl.",
-        config: "pip install ai-jury\n# or\ncurl -fsSL https://berkayturanci.github.io/ai-jury/install.sh | sh",
+        config: "pip install ai-jury\n# or\ncurl -fsSL https://ai-jury.dev/install.sh | sh",
         command: "pipx install ai-jury && jury --doctor"
       }
     ];

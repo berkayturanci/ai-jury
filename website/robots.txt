@@ -1,4 +1,4 @@
-# ai-jury — https://berkayturanci.github.io/ai-jury/
+# ai-jury — https://ai-jury.dev/
 # Cross-vendor multi-agent code review jury (stdlib-only Python CLI).
 
 User-agent: *
@@ -46,5 +46,5 @@ Allow: /
 User-agent: CCBot
 Allow: /
 
-Sitemap: https://berkayturanci.github.io/ai-jury/sitemap.xml
-# LLM-friendly summary: https://berkayturanci.github.io/ai-jury/llms.txt
+Sitemap: https://ai-jury.dev/sitemap.xml
+# LLM-friendly summary: https://ai-jury.dev/llms.txt

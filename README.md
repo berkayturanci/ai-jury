@@ -5,7 +5,7 @@
 > verify, and reach **one verdict** — a chair's synthesis or a **panel vote**.
 
 [![CI](https://github.com/berkayturanci/ai-jury/actions/workflows/ci.yml/badge.svg)](https://github.com/berkayturanci/ai-jury/actions/workflows/ci.yml)
-[![coverage](https://img.shields.io/endpoint?url=https://berkayturanci.github.io/ai-jury/coverage-badge.json)](https://berkayturanci.github.io/ai-jury/coverage/)
+[![coverage](https://img.shields.io/endpoint?url=https://ai-jury.dev/coverage-badge.json)](https://ai-jury.dev/coverage/)
 [![CodeQL](https://github.com/berkayturanci/ai-jury/actions/workflows/codeql.yml/badge.svg)](https://github.com/berkayturanci/ai-jury/actions/workflows/codeql.yml)
 [![PyPI](https://img.shields.io/pypi/v/ai-jury)](https://pypi.org/project/ai-jury/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -42,7 +42,7 @@ heterogeneity**, not more rounds — and universal provider support lets you mix
 brew install berkayturanci/ai-jury/ai-jury
 
 # Or standalone curl installer:
-curl -fsSL https://berkayturanci.github.io/ai-jury/install.sh | sh
+curl -fsSL https://ai-jury.dev/install.sh | sh
 
 # Or via pipx / pip:
 pipx install ai-jury
@@ -330,7 +330,7 @@ only legitimate finding fields — never raw diff or prompt text.
 
 This JSON is also a **replayable artifact**: feed it to `jury replay` (above) to re-watch
 the run in the terminal theater, or drag it onto the **"Load a real run"** panel on the
-[website](https://berkayturanci.github.io/ai-jury/) to play the real reviewers, findings,
+[website](https://ai-jury.dev/) to play the real reviewers, findings,
 and verdict through the in-browser theater (fully client-side — nothing is uploaded).
 
 ### SARIF

@@ -25,7 +25,7 @@ One-time repository setup (Settings → Pages):
 
 1. Set **Source** to **GitHub Actions**.
 2. Trigger the *Deploy website* workflow (push to `main` or run it manually).
-3. The default URL is `https://berkayturanci.github.io/ai-jury/`.
+3. The default URL is `https://ai-jury.dev/`.
 
 ## Analytics
 

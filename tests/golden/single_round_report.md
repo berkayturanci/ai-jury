@@ -106,4 +106,4 @@ REQUEST CHANGES — one confirmed major issue.
 
 ---
 
-<sub>🏛️ Synthesized by [ai-jury](https://github.com/berkayturanci/ai-jury) — Cross-vendor multi-agent code review · [⭐ Star on GitHub](https://github.com/berkayturanci/ai-jury) · [Add to your repo](https://berkayturanci.github.io/ai-jury/)</sub>
+<sub>🏛️ Synthesized by [ai-jury](https://github.com/berkayturanci/ai-jury) — Cross-vendor multi-agent code review · [⭐ Star on GitHub](https://github.com/berkayturanci/ai-jury) · [Add to your repo](https://ai-jury.dev/)</sub>

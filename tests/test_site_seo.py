@@ -21,7 +21,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SITE = REPO_ROOT / "website"
-BASE = "https://berkayturanci.github.io/ai-jury/"
+BASE = "https://ai-jury.dev/"
 SITEMAP_NS = "{http://www.sitemaps.org/schemas/sitemap/0.9}"
 
 #: Deliberately a list rather than a glob: 404.html must *not* be indexed, and a

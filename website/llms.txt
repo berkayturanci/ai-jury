@@ -9,9 +9,9 @@
 
 ## Docs
 
-- [Home](https://berkayturanci.github.io/ai-jury/): overview, how the jury works, and quick start
-- [Documentation](https://berkayturanci.github.io/ai-jury/docs.html): configuration, adapters, consensus modes, and CLI reference
-- [Coverage report](https://berkayturanci.github.io/ai-jury/coverage.html): live test-coverage dashboard
+- [Home](https://ai-jury.dev/): overview, how the jury works, and quick start
+- [Documentation](https://ai-jury.dev/docs.html): configuration, adapters, consensus modes, and CLI reference
+- [Coverage report](https://ai-jury.dev/coverage.html): live test-coverage dashboard
 
 ## Source
 
