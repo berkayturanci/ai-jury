@@ -15,6 +15,16 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
+#: Every file that carries the project's version. A marker missing from here is a
+#: marker nothing watches — `uv.lock` was outside it and sat a release behind on
+#: main while the check reported agreement (#556).
+VERSION_MARKERS = ("pyproject.toml", "src/ai_jury/__init__.py", "CHANGELOG.md", "uv.lock")
+
+#: Rendered form, so a test can assert the watched set by *reading the file*.
+#: Importing would not help on a checkout where the guard has been reverted
+#: away, which is the state these assertions exist to catch (#560).
+VERSION_MARKERS_TEXT = ", ".join(VERSION_MARKERS)
+
 
 def parse_semver(v: str) -> tuple[int, int, int]:
     """Parse a 'X.Y.Z' or 'vX.Y.Z' string into integer tuple (major, minor, patch)."""
@@ -67,46 +77,73 @@ def check_version_integrity(root: Path) -> list[str]:
     else:
         errors.append("CHANGELOG.md not found")
 
+    # 4. uv.lock — it carries the project's own version under `name = "ai-jury"`,
+    # and the v1.14.0 release did not update it. A marker left out of this set is
+    # a marker nothing watches, which is how that drift sat on main while this
+    # script reported every marker in agreement (#556).
+    lock_path = root / "uv.lock"
+    lock_version = None
+    if lock_path.is_file():
+        m = re.search(
+            r'name\s*=\s*"ai-jury"\s*\nversion\s*=\s*"([^"]+)"',
+            lock_path.read_text(encoding="utf-8"),
+        )
+        if m:
+            lock_version = m.group(1)
+        else:
+            errors.append("uv.lock: no ai-jury version entry found")
+    # uv.lock itself is optional — a checkout without one is not drift.
+
     # Agreement check
     versions = {
         "pyproject.toml": pyproject_version,
         "src/ai_jury/__init__.py": init_version,
         "CHANGELOG.md": changelog_version,
+        "uv.lock": lock_version,
     }
     distinct_versions = {v for v in versions.values() if v is not None}
     if len(distinct_versions) > 1:
         errors.append(f"Version mismatch among markers: {versions}")
 
-    # Monotonicity check against git tags
+    # Monotonicity check against git tags. This is the assertion that catches the
+    # #547 shape - a stale branch writing an older version over a released one -
+    # so "I could not check" must not be reported the same way as "I checked".
     current_ver = pyproject_version or init_version or changelog_version
     if current_ver:
-        try:
-            res = subprocess.run(
-                ["git", "tag", "-l", "v*"],
-                cwd=root,
-                capture_output=True,
-                text=True,
-                check=False,
+        res = subprocess.run(
+            ["git", "tag", "-l", "v*"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if res.returncode != 0:
+            errors.append(
+                "cannot list git tags, so the released version is unknown: "
+                f"{res.stderr.strip() or 'git failed'}"
             )
-            if res.returncode == 0:
-                tags = [t.strip() for t in res.stdout.splitlines() if t.strip()]
-                parsed_tags = []
-                for t in tags:
-                    try:
-                        parsed_tags.append((parse_semver(t), t))
-                    except ValueError:
-                        continue
-                if parsed_tags:
-                    highest_semver, highest_tag = max(parsed_tags, key=lambda x: x[0])
-                    current_semver = parse_semver(current_ver)
-                    if current_semver < highest_semver:
-                        errors.append(
-                            f"Silent revert detected: current version {current_ver} "
-                            f"is lower than existing tag {highest_tag} ({highest_semver})"
-                        )
-        except Exception:
-            # Non-fatal if git is unavailable or repo has no tags
-            pass
+        else:
+            parsed_tags = []
+            for tag in (t.strip() for t in res.stdout.splitlines() if t.strip()):
+                try:
+                    parsed_tags.append((parse_semver(tag), tag))
+                except ValueError:
+                    continue
+            if not parsed_tags:
+                # A shallow checkout has no tags, which is what actions/checkout
+                # gives you by default (fetch-depth: 1, fetch-tags: false). Left
+                # as a pass, this check reported success on a reverted version.
+                errors.append(
+                    "no v* tags found, so the version cannot be compared against the "
+                    "last release - the checkout is probably shallow (fetch-depth: 0?)"
+                )
+            else:
+                highest_semver, highest_tag = max(parsed_tags, key=lambda x: x[0])
+                if parse_semver(current_ver) < highest_semver:
+                    errors.append(
+                        f"Silent revert detected: current version {current_ver} "
+                        f"is lower than existing tag {highest_tag} ({highest_semver})"
+                    )
 
     return errors
 
@@ -138,12 +175,22 @@ def check_pr_merge_drift(root: Path, pr_number: int) -> list[str]:
             text=True,
             check=False,
         )
-        if log_res.returncode == 0:
-            intervening_files = {line.strip() for line in log_res.stdout.splitlines() if line.strip()}
-            overlap = pr_files & intervening_files
-            if overlap:
-                # Overlap between PR files and base branch commits is informational
-                pass
+        if log_res.returncode != 0:
+            return [f"cannot read {base_branch} history: {log_res.stderr.strip() or 'git log failed'}"]
+
+        intervening_files = {line.strip() for line in log_res.stdout.splitlines() if line.strip()}
+        overlap = pr_files & intervening_files
+        if overlap:
+            # This is the whole point of the check, and it used to be computed and
+            # then discarded with `pass` (#556), so the function could only ever
+            # report "clean". A PR that edits a file the base branch changed after
+            # the PR branched is the exact shape that reverted a release: the
+            # squash writes the branch's whole version of the file back over it.
+            errors.append(
+                f"Merge drift: PR #{pr_number} edits {len(overlap)} file(s) that "
+                f"{base_branch} changed after it branched - a squash merge would "
+                f"overwrite that work: {', '.join(sorted(overlap))}"
+            )
     except Exception as exc:
         errors.append(f"Merge drift check error: {exc}")
 
@@ -178,7 +225,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         if v_errors:
             all_errors.extend(v_errors)
         else:
-            print("[OK] Version integrity: pyproject.toml, __init__.py, and CHANGELOG.md agree and >= latest tag.")
+            # Name what was compared, not a fixed list. The old message hard-coded
+            # three files and claimed ">= latest tag" even in the shallow-checkout
+            # case where no tag was ever read (#556) — a success line asserting a
+            # check that did not run is worse than no line at all.
+            print(f"[OK] Version integrity: {VERSION_MARKERS} agree and do not regress on the last tag.")
 
     if run_pr and args.pr:
         m_errors = check_pr_merge_drift(root, args.pr)
