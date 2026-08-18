@@ -33,3 +33,6 @@
 ## 2025-02-19 - Avoid Generator Overhead in startswith/endswith
 **Learning:** Using an `any()` generator expression with `startswith` or `endswith` (e.g., `any(s.startswith(p) for p in prefixes)`) incurs significant Python interpreter overhead compared to passing a tuple of prefixes directly to the method.
 **Action:** For string prefix/suffix checking against multiple candidates, always pass a tuple directly to `.startswith()` or `.endswith()` to utilize the fast C-optimized iteration.
+## 2025-06-16 - Consolidate Multiple Iterations into Explicit O(N) Loops
+**Learning:** Generator expressions inside aggregators like `sum()` when looping over collections iteratively force Python interpreter overhead. Attempting multiple sequential generator loops through the same list (e.g. `sum(1 for x in collection)`) forces Python to traverse the list multiple times, which reduces performance.
+**Action:** Bypass generator evaluation overhead and secondary O(N) evaluations by explicitly tracking sequential or aggregated metrics directly inside the primary loop traversing a list, computing multiple variables in a single-pass O(N) operation instead.
