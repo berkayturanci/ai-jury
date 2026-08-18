@@ -14,6 +14,7 @@ Offline and cheap: these are facts about the files, not about Google.
 
 from __future__ import annotations
 
+import pathlib
 import re
 import unittest
 import xml.etree.ElementTree as ET
@@ -202,6 +203,72 @@ class TestAdvertisedUrlsResolve(unittest.TestCase):
         ):
             with self.subTest(path=path.relative_to(REPO_ROOT)):
                 self.assertNotIn(stale, path.read_text(encoding="utf-8"))
+
+
+class TestIndexNow(unittest.TestCase):
+    """The IndexNow key must agree in three places or submissions bounce.
+
+    IndexNow proves host ownership by fetching the key back from ``keyLocation``
+    and comparing it to the key in the payload. So the filename, the file's
+    contents, and the key the workflow sends all have to match. Rotate one and
+    forget another and every submission is rejected — silently, because the
+    deploy step is ``continue-on-error`` by design (a search-engine ping must
+    never fail a deploy that already succeeded).
+
+    The key is public on purpose; it is served at the site root. It is not a
+    secret and must not be moved into repository secrets.
+    """
+
+    WORKFLOW = REPO_ROOT / ".github/workflows/pages.yml"
+
+    def _key_files(self) -> list[pathlib.Path]:
+        return [f for f in sorted(SITE.glob("*.txt")) if f.name not in {"llms.txt", "robots.txt"}]
+
+    def test_exactly_one_key_file_is_published(self):
+        keys = [f.name for f in self._key_files()]
+        self.assertEqual(
+            len(keys),
+            1,
+            "IndexNow needs exactly one published key; a stale second file makes "
+            f"host ownership ambiguous. Found: {keys}",
+        )
+
+    def test_the_key_file_contains_its_own_name(self):
+        key_file = self._key_files()[0]
+        self.assertEqual(
+            key_file.read_text(encoding="utf-8").strip(),
+            key_file.stem,
+            "IndexNow fetches this file and compares it to the filename",
+        )
+
+    def test_the_key_is_well_formed(self):
+        stem = self._key_files()[0].stem
+        # IndexNow: 8-128 chars, [a-zA-Z0-9-] only.
+        self.assertRegex(stem, r"^[A-Za-z0-9-]{8,128}$")
+
+    def test_the_workflow_sends_the_published_key(self):
+        workflow = self.WORKFLOW.read_text(encoding="utf-8")
+        stem = self._key_files()[0].stem
+        self.assertIn(
+            f'KEY = "{stem}"',
+            workflow,
+            "pages.yml would submit a key that is not the one published at the "
+            "site root, so every IndexNow submission would be rejected",
+        )
+
+    def test_the_ping_runs_after_the_deploy(self):
+        """Announcing a URL before it is live invites a crawl of the old page."""
+        workflow = self.WORKFLOW.read_text(encoding="utf-8")
+        deploy = workflow.find("- name: Deploy to GitHub Pages")
+        ping = workflow.find("- name: Notify IndexNow")
+        self.assertNotEqual(deploy, -1, "the deploy step is gone")
+        self.assertNotEqual(ping, -1, "the IndexNow step is gone")
+        self.assertLess(deploy, ping, "IndexNow is pinged before the deploy publishes")
+
+    def test_a_failed_ping_cannot_fail_the_deploy(self):
+        workflow = self.WORKFLOW.read_text(encoding="utf-8")
+        step = workflow[workflow.find("- name: Notify IndexNow") :]
+        self.assertIn("continue-on-error: true", step.split("- name:")[1])
 
 
 if __name__ == "__main__":
