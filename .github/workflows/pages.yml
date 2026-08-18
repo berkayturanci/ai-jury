@@ -67,3 +67,41 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128  # v5.0.0
+      # Tell IndexNow-participating engines (Bing — and through Bing, ChatGPT and
+      # Copilot search — plus Yandex, Seznam, Naver) that the site changed,
+      # instead of waiting to be crawled. Runs *after* the deploy so we never
+      # announce content that is not live yet, and never fails a good deploy.
+      #
+      # The key is public by design: the engine fetches it from keyLocation to
+      # prove we control the host, so it is committed rather than a secret.
+      # Cloudflare's Crawler Hints would do this for us, but only for proxied
+      # traffic — the apex is DNS-only, so Cloudflare never sees it.
+      - name: Notify IndexNow
+        continue-on-error: true
+        run: |
+          python - <<'PY'
+          import json, urllib.request, xml.etree.ElementTree as ET
+
+          KEY = "011e96787808013452d77fdb5bc186215332078a0bd6bde72d6d6f103e24f19c"
+          HOST = "ai-jury.dev"
+          NS = "{http://www.sitemaps.org/schemas/sitemap/0.9}"
+
+          root = ET.parse("website/sitemap.xml").getroot()
+          urls = [e.text.strip() for e in root.iter(NS + "loc") if e.text]
+          if not urls:
+              raise SystemExit("sitemap listed no URLs - nothing to submit")
+
+          body = json.dumps({
+              "host": HOST,
+              "key": KEY,
+              "keyLocation": f"https://{HOST}/{KEY}.txt",
+              "urlList": urls,
+          }).encode()
+          req = urllib.request.Request(
+              "https://api.indexnow.org/indexnow",
+              data=body,
+              headers={"Content-Type": "application/json; charset=utf-8"},
+          )
+          with urllib.request.urlopen(req, timeout=30) as r:
+              print(f"IndexNow: HTTP {r.status} for {len(urls)} URL(s)")
+          PY
