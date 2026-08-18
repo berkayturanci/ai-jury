@@ -61,19 +61,32 @@ def panel_accounting(reviews) -> dict:
     cross-vendor consensus: three slots from one vendor are not three perspectives.
     """
     reviews = list(reviews or [])
-    statuses = [review_status(r) for r in reviews]
-    contributing = [
-        r for r, st in zip(reviews, statuses, strict=True) if st in ("findings", "clean")
-    ]
+
+    # bolt: Consolidate multiple metrics into a single-pass O(N) explicit loop
+    effective_count = 0
+    abstained_count = 0
+    failed_count = 0
+    contributing_vendors = set()
+
+    for r in reviews:
+        st = review_status(r)
+        if st in ("findings", "clean"):
+            effective_count += 1
+            vendor = getattr(r, "vendor", "")
+            if vendor:
+                contributing_vendors.add(vendor)
+        elif st == "abstained":
+            abstained_count += 1
+        elif st == "failed":
+            failed_count += 1
+
     return {
         "configured": len(reviews),
-        "effective": len(contributing),
-        "vendors": len(
-            {getattr(r, "vendor", "") for r in contributing if getattr(r, "vendor", "")}
-        ),
-        "abstained": statuses.count("abstained"),
-        "failed": statuses.count("failed"),
-        "short": len(contributing) < len(reviews),
+        "effective": effective_count,
+        "vendors": len(contributing_vendors),
+        "abstained": abstained_count,
+        "failed": failed_count,
+        "short": effective_count < len(reviews),
     }
 
 
