@@ -271,5 +271,25 @@ class TestIndexNow(unittest.TestCase):
         self.assertIn("continue-on-error: true", step.split("- name:")[1])
 
 
+class TestAnalyticsCoverage(unittest.TestCase):
+    """Every indexed page must carry the analytics beacon.
+
+    The long-tail article existed to attract search traffic and was the one
+    page without a beacon — so the single page whose performance mattered most
+    was the single page not measured. The sibling repo had the identical gap on
+    its own article. This pin keeps the next added page from repeating it.
+    """
+
+    def test_every_indexed_page_carries_the_beacon(self):
+        for page in INDEXED_PAGES:
+            with self.subTest(page=page):
+                self.assertIn(
+                    "beacon.min.js",
+                    (SITE / page).read_text(encoding="utf-8"),
+                    f"{page} is indexed but unmeasured — add the standard "
+                    "Cloudflare Web Analytics tag",
+                )
+
+
 if __name__ == "__main__":
     unittest.main()
