@@ -3,7 +3,7 @@ description: "Convene a cross-vendor multi-agent code review jury on pull reques
 author: "Berkay Turancı"
 branding:
   icon: "check-circle"
-  color: "indigo"
+  color: "purple"
 
 inputs:
   github-token:
