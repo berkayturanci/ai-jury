@@ -225,6 +225,11 @@ class PatchesApplyTests(unittest.TestCase):
         code = main(["apply", "--report", "/nonexistent/report.md"])
         self.assertEqual(code, 2)
 
+        # Directory given as report
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            code_dir = main(["apply", "--report", tmp_dir])
+            self.assertEqual(code_dir, 2)
+
         # Empty report stdin
         with (
             patch("sys.stdin", io.StringIO("No patches here")),
