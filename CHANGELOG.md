@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.14.4] - 2026-08-19
+
+### Fixed
+- **Graceful Error Handling for Missing / Unreadable Input Files** (#587, #588): Handled `FileNotFoundError`, `IsADirectoryError`, `OSError`, and `UnicodeDecodeError` in `jury --diff-file <path>` and `jury apply --report <path>` gracefully with clean exit codes and error messages instead of raw Python tracebacks.
+- **Universal Provider Template Suggestions in Config Scaffold** (#589, #590): Updated `build_config` in `src/ai_jury/scaffold.py` to list all supported universal provider templates (`openrouter`, `deepseek`, `groq`, `aider`) when an invalid agent name is provided.
+
 ## [1.14.3] - 2026-08-19
 
 ### Security
