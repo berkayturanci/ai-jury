@@ -152,6 +152,20 @@ def apply_patch_suggestion(
     if fix.startswith("---") or "@@" in fix:
         import subprocess
 
+        # Ensure unified diff headers do not attempt path traversal or target outside suggestion.file
+        for line in fix.splitlines():
+            if line.startswith("--- ") or line.startswith("+++ "):
+                path_part = line[4:].strip().split("\t")[0]
+                if path_part and path_part != "/dev/null":
+                    clean_path = path_part.removeprefix("a/").removeprefix("b/").strip()
+                    try:
+                        diff_target = (root / clean_path).resolve()
+                        diff_target.relative_to(root)
+                    except (ValueError, RuntimeError):
+                        return False, f"Path traversal rejected in diff header: {clean_path}"
+                    if diff_target != target:
+                        return False, f"Diff header target mismatch: {clean_path} != {suggestion.file}"
+
         proc = subprocess.run(
             ["git", "apply", "-"], input=fix, text=True, cwd=str(root), capture_output=True
         )

@@ -145,6 +145,30 @@ class PatchesApplyTests(unittest.TestCase):
                 self.assertFalse(ok)
                 self.assertIn("Git apply failed", msg)
 
+            # Test target mismatch in diff header
+            s_mismatch = PatchSuggestion(
+                file="test.py",
+                line=None,
+                severity="minor",
+                claim="test",
+                suggested_fix="--- a/other.py\n+++ b/other.py\n@@ -1,1 +1,1 @@\n-x = 1\n+x = 2\n",
+            )
+            ok, msg = apply_patch_suggestion(s_mismatch, root_dir=tmp_path)
+            self.assertFalse(ok)
+            self.assertIn("Diff header target mismatch", msg)
+
+            # Test path traversal in diff header
+            s_traversal = PatchSuggestion(
+                file="test.py",
+                line=None,
+                severity="minor",
+                claim="test",
+                suggested_fix="--- a/../../etc/passwd\n+++ b/../../etc/passwd\n@@ -1,1 +1,1 @@\n-x\n+y\n",
+            )
+            ok, msg = apply_patch_suggestion(s_traversal, root_dir=tmp_path)
+            self.assertFalse(ok)
+            self.assertIn("Path traversal rejected", msg)
+
     def test_cli_apply_subcommand_dispatch(self):
         with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as f:
             f.write(SAMPLE_PATCH_REPORT)

@@ -1289,11 +1289,14 @@ class GenericCLIAdapter(Adapter):
     def run(self, prompt: str, phase: str = "review", timeout: int | None = None) -> AgentResult:
         del phase
         if not self.available():
-            return AgentResult.failed(
-                self.spec.name,
-                self.spec.vendor,
-                ERR_MISSING_CLI,
-                f"command '{self.spec.command}' not found on PATH.",
+            return AgentResult(
+                agent=self.spec.name,
+                vendor=self.spec.vendor,
+                ok=False,
+                output="",
+                duration_s=0.0,
+                error=f"command '{self.spec.command}' not found on PATH.",
+                error_code=ERR_MISSING_CLI,
             )
         effective_timeout = timeout if timeout is not None else self.spec.timeout
         extra_args = _read_only_extra_args(self.spec)
