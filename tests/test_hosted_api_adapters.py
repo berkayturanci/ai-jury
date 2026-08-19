@@ -35,7 +35,7 @@ from ai_jury.config import (  # noqa: E402
     validate_config,
 )
 from ai_jury.privilege import audit_agent, enforce_read_only  # noqa: E402
-from ai_jury.scaffold import KNOWN_AGENTS, agent_templates  # noqa: E402
+from ai_jury.scaffold import KNOWN_AGENTS, agent_templates, build_config  # noqa: E402
 
 
 def _anthropic_spec(**kw):
@@ -665,6 +665,15 @@ class ScaffoldTemplateTest(unittest.TestCase):
         self.assertIn("claude-api", KNOWN_AGENTS)
         self.assertIn("codex-api", KNOWN_AGENTS)
         self.assertIn("gemini-api", KNOWN_AGENTS)
+        templates = agent_templates()
+        self.assertIn("openrouter", templates)
+        self.assertIn("deepseek", templates)
+        self.assertIn("groq", templates)
+        self.assertIn("aider", templates)
+        with self.assertRaises(ValueError) as ctx:
+            build_config(["invalid_agent_xyz"])
+        self.assertIn("openrouter", str(ctx.exception))
+        self.assertIn("deepseek", str(ctx.exception))
 
 
 if __name__ == "__main__":

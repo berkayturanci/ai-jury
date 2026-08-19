@@ -153,7 +153,7 @@ def build_config(
             continue
         tmpl = templates.get(name)
         if tmpl is None:
-            raise ValueError(f"unknown agent '{name}'; choose from {', '.join(KNOWN_AGENTS)}")
+            raise ValueError(f"unknown agent '{name}'; choose from {', '.join(templates.keys())}")
         entry = dict(tmpl)
         if entry.get("vendor") == "local":
             if local_model:
