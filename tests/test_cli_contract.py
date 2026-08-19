@@ -273,6 +273,11 @@ class ErrorContractTests(unittest.TestCase):
         code, _, _ = _run_cli(["--definitely-not-a-flag"])
         self.assertEqual(code, 2)
 
+    def test_missing_diff_file_exits_with_clean_error(self):
+        code, _, err = _run_cli(["--mock", "--diff-file", "/nonexistent/diff.patch"])
+        self.assertNotEqual(code, 0)
+        self.assertIn("error reading diff file", str(code) + err)
+
 
 class MockPipelineTests(unittest.TestCase):
     """Lock the deterministic offline pipeline behavior and report headings."""

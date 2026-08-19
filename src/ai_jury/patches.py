@@ -173,11 +173,18 @@ def apply_patch_suggestion(
             return True, f"Applied git patch to {suggestion.file}"
         return False, f"Git apply failed: {redact(proc.stderr.strip())[0] or 'patch does not apply cleanly'}"
 
-    lines = target.read_text(encoding="utf-8").splitlines(keepends=True)
+    try:
+        lines = target.read_text(encoding="utf-8").splitlines(keepends=True)
+    except (OSError, UnicodeDecodeError) as exc:
+        return False, f"Cannot read {suggestion.file}: {exc}"
+
     if suggestion.line is not None and 1 <= suggestion.line <= len(lines):
         idx = suggestion.line - 1
         lines[idx] = fix + ("\n" if not fix.endswith("\n") else "")
-        target.write_text("".join(lines), encoding="utf-8")
+        try:
+            target.write_text("".join(lines), encoding="utf-8")
+        except OSError as exc:
+            return False, f"Cannot write {suggestion.file}: {exc}"
         return True, f"Applied line replacement at {suggestion.file}:{suggestion.line}"
 
     return False, f"Cannot apply non-diff suggestion without line match in {suggestion.file}"

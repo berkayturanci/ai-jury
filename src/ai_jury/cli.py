@@ -134,8 +134,11 @@ def _read_diff(args) -> tuple[str, str]:
             # Prefer the byte stream so the cap is exact; fall back to the text
             # stream (e.g. a StringIO test double) which lacks ``.buffer``.
             return _read_capped(getattr(sys.stdin, "buffer", sys.stdin), "stdin"), ""
-        with Path(args.diff_file).open("rb") as fh:
-            return _read_capped(fh, args.diff_file), ""
+        try:
+            with Path(args.diff_file).open("rb") as fh:
+                return _read_capped(fh, args.diff_file), ""
+        except (OSError, UnicodeDecodeError) as exc:
+            raise SystemExit(f"error reading diff file '{args.diff_file}': {exc}") from None
     raise SystemExit(
         "error: provide one of --pr, --issue, --diff-file, --commit, --commits "
         "(or --diff-file - for stdin)"
@@ -511,10 +514,14 @@ def _run_apply(rest: list[str]) -> int:
     content = ""
     if ns.report:
         p = Path(ns.report)
-        if not p.exists():
-            print(f"Error: report file not found: {ns.report}", file=sys.stderr)
+        try:
+            if not p.is_file():
+                print(f"Error: report file not found: {ns.report}", file=sys.stderr)
+                return 2
+            content = p.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            print(f"Error reading report file '{ns.report}': {exc}", file=sys.stderr)
             return 2
-        content = p.read_text(encoding="utf-8")
     elif sys.stdin is not None and not sys.stdin.isatty():
         content = sys.stdin.read()
     else:
