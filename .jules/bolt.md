@@ -36,3 +36,6 @@
 ## 2025-06-16 - Consolidate Multiple Iterations into Explicit O(N) Loops
 **Learning:** Generator expressions inside aggregators like `sum()` when looping over collections iteratively force Python interpreter overhead. Attempting multiple sequential generator loops through the same list (e.g. `sum(1 for x in collection)`) forces Python to traverse the list multiple times, which reduces performance.
 **Action:** Bypass generator evaluation overhead and secondary O(N) evaluations by explicitly tracking sequential or aggregated metrics directly inside the primary loop traversing a list, computing multiple variables in a single-pass O(N) operation instead.
+## 2025-06-17 - Avoid .count() on lists during multi-metric aggregations
+**Learning:** Using `list.count()` multiple times sequentially on the same list forces multiple O(N) traversals.
+**Action:** Consolidate multiple sequential `list.count()` calls into a single explicit loop that tallies all metrics simultaneously to achieve single-pass O(N) evaluation.
