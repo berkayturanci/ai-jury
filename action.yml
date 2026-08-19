@@ -55,10 +55,12 @@ runs:
         OPENAI_API_KEY: ${{ inputs.openai-api-key }}
         ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
         GEMINI_API_KEY: ${{ inputs.gemini-api-key }}
+        INPUT_ARGS: ${{ inputs.args }}
+        PR_NUM: ${{ github.event.pull_request.number }}
+        BASE_REF: ${{ github.base_ref }}
       run: |
-        PR_NUM="${{ github.event.pull_request.number }}"
         if [ -n "$PR_NUM" ] && [ "$PR_NUM" != "null" ]; then
-          jury --pr "$PR_NUM" ${{ inputs.args }}
+          jury --pr "$PR_NUM" $INPUT_ARGS
         else
-          git diff "origin/${{ github.base_ref }}...HEAD" | jury --diff-file - ${{ inputs.args }}
+          git diff "origin/$BASE_REF...HEAD" | jury --diff-file - $INPUT_ARGS
         fi

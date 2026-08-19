@@ -488,6 +488,15 @@ class UniversalAdapterTests(unittest.TestCase):
         self.assertNotIn("sk-proj-1234567890abcdef", res.error)
         self.assertIn("[REDACTED", res.error)
 
+    @mock.patch("shutil.which", return_value=None)
+    def test_generic_cli_adapter_unavailable_returns_missing_cli(self, _mock_which):
+        spec = _spec(name="aider", vendor="cli", command="aider", prompt_mode="stdin")
+        a = adapters.GenericCLIAdapter(spec)
+        res = a.run("PROMPT")
+        self.assertFalse(res.ok)
+        self.assertEqual(res.error_code, adapters.ERR_MISSING_CLI)
+        self.assertIn("command 'aider' not found on PATH", res.error)
+
 
 if __name__ == "__main__":
     unittest.main()
