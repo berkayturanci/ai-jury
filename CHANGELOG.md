@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.14.2] - 2026-08-19
+
+### Performance
+- **Single-Pass Panel Accounting & Aggregations** (#574, #580): Consolidated sequential list comprehensions and `.count()` calls in `panel_accounting()` and `consensus` into explicit single-pass O(N) loops, eliminating redundant list iterations and interpreter overhead.
+
+### Fixed
+- **Homebrew Formula Dynamic PyPI Sync & Verification** (#563, #564): Resolved formula 404 and checksum mismatch by fetching PyPI's content-addressed sdist URL and SHA-256 digest at publish time. Pushed live formula to `berkayturanci/homebrew-ai-jury` tap and added unit tests (`tests/test_homebrew_formula.py`).
+- **GitHub Action Marketplace Branding** (#579): Fixed action branding color in `action.yml` to conform to GitHub Marketplace color palette.
+- **Website & Documentation Infrastructure** (#566, #567, #572, #573, #576, #578): Migrated canonical domain to `ai-jury.dev`, published `install.sh` to prevent 404s, added IndexNow search engine notification automation, and added native tooltips for modal close buttons.
+- **CI Silent-Revert Guard Restoration** (#561): Restored release monotonicity validation job in CI.
+
 ## [1.14.1] - 2026-08-17
 
 ### Security

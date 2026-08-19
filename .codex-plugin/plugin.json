@@ -1,6 +1,6 @@
 {
   "name": "ai-jury",
-  "version": "1.14.1",
+  "version": "1.14.2",
   "description": "Convene a cross-vendor multi-agent review jury (Claude Code + Codex + Antigravity + an optional free local model) on a diff, PR, or issue: independent review, cross-examination, verification, and one verdict — a chair's synthesis or a panel vote.",
   "author": {
     "name": "Berkay Turancı",

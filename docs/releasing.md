@@ -38,19 +38,56 @@ is now configured (v1.0.0 and v1.1.0 were published this way). The publish step 
 **not** `continue-on-error`: a failed upload fails the release loudly so a broken
 publish can't pass silently. `skip-existing` keeps re-runs idempotent.
 
+## Semantic Versioning (SemVer 2.0.0) Policy
+
+`ai-jury` strictly adheres to [Semantic Versioning 2.0.0](https://semver.org/):
+
+Given a version number `MAJOR.MINOR.PATCH`:
+
+1. **MAJOR (`X.0.0`)** — Increment when making incompatible API or CLI changes (e.g., removing CLI flags, breaking config schema in `jury.toml`, or breaking adapter protocol).
+2. **MINOR (`x.Y.0`)** — Increment when adding functionality in a backward-compatible manner (e.g., adding new CLI commands like `jury apply`, introducing `--hints` or `--tiered`, adding new LLM provider adapters, or extending structured finding schema).
+3. **PATCH (`x.y.Z`)** — Increment when making backward-compatible bug fixes, internal performance optimizations (e.g., single-pass aggregations in `metadata.py`), security hardening (e.g., stderr secret redactions), documentation synchronization, or distribution/packaging improvements (Homebrew tap, GitHub Action Marketplace).
+
+### How to Calculate the Next Version
+
+Before preparing a release PR:
+- Inspect changes since the last release tag: `git log $(git describe --tags --abbrev=0)..HEAD --oneline`
+- If **any** change is breaking / backward-incompatible → Bump `MAJOR` (reset `MINOR` and `PATCH` to 0).
+- Else if **any** change adds a new user-facing feature/flag/adapter → Bump `MINOR` (reset `PATCH` to 0).
+- Else (purely bug fixes, performance improvements, security hardening, docs, CI, packaging) → Bump `PATCH`.
+
+## Distribution Channels
+
+Every release is automatically published across three primary distribution channels:
+
+1. **PyPI (Python Package Index)**:
+   - Automated via OIDC Trusted Publishing in `.github/workflows/publish.yml`.
+   - Installable via `pip install ai-jury` or `pipx install ai-jury`.
+2. **GitHub Releases & GitHub Action Marketplace**:
+   - Automated via `publish.yml` using `softprops/action-gh-release`.
+   - GitHub Action is consumable as `uses: berkayturanci/ai-jury@v1` or pinned to release tags.
+3. **Homebrew Tap (`berkayturanci/homebrew-ai-jury`)**:
+   - Automated formula synchronization: `publish.yml` queries PyPI for the uploaded sdist's immutable URL and SHA-256 digest, updates `Formula/ai-jury.rb`, and syncs to `berkayturanci/homebrew-ai-jury`.
+   - Installable via `brew install berkayturanci/ai-jury/ai-jury` or `brew install ai-jury`.
+
 ## How to verify a release
 
-Download the artifacts and `SHA256SUMS` from the GitHub Release, then:
+After the release workflow completes, verify each distribution channel:
 
 ```bash
-# 1. Integrity — checksums must match.
+# 1. Verify PyPI & Local installation
+pipx install --force ai-jury==<version>
+jury --version
+jury --doctor
+
+# 2. Verify Homebrew Tap
+brew update
+brew info berkayturanci/ai-jury/ai-jury
+brew fetch --formula berkayturanci/ai-jury/ai-jury
+
+# 3. Verify Supply-Chain Metadata
 sha256sum -c SHA256SUMS
-
-# 2. Provenance — verify the attestation against this repository.
-gh attestation verify ai_jury-<version>-py3-none-any.whl \
-  --repo berkayturanci/ai-jury
-
-# 3. SBOM — inspect the bill of materials.
+gh attestation verify ai_jury-<version>-py3-none-any.whl --repo berkayturanci/ai-jury
 cat sbom.cdx.json | jq '.components[].name'
 ```
 
