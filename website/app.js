@@ -1485,7 +1485,7 @@
         logo: "logos/precommit.svg",
         color: "#10b981",
         desc: "Run consensus verification locally before commits or git pushes.",
-        config: "# .pre-commit-config.yaml\nrepos:\n  - repo: https://github.com/berkayturanci/ai-jury\n    rev: v1.14.2\n    hooks:\n      - id: ai-jury\n        stages: [pre-push]",
+        config: "# .pre-commit-config.yaml\nrepos:\n  - repo: https://github.com/berkayturanci/ai-jury\n    rev: v1.14.3\n    hooks:\n      - id: ai-jury\n        stages: [pre-push]",
         command: "git push"
       },
       {
