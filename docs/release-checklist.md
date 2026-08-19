@@ -52,25 +52,30 @@ true to announce/publish) and **Nice-to-have** (improves polish, not a blocker).
 
 ## Versioning policy
 
-- Semantic Versioning. Pre-1.0: minor versions may include breaking changes; document
-  them in `CHANGELOG.md` under the new version.
-- The `[Unreleased]` section accumulates changes; renamed to the version + date at release.
+- Strict **Semantic Versioning 2.0.0** (`MAJOR.MINOR.PATCH`).
+- Pre-1.0: minor versions may include breaking changes. Post-1.0: breaking changes require a `MAJOR` bump.
+- Calculate next version according to the rules in [docs/releasing.md](releasing.md#semantic-versioning-semver-200-policy).
+- The `[Unreleased]` section in `CHANGELOG.md` accumulates changes; renamed to the version + date at release.
 
 ## Manual release steps
 
 1. Confirm every **Required before public** box above is checked.
-2. Update `CHANGELOG.md`: rename `[Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD`.
-3. Bump the version in `pyproject.toml`, `src/ai_jury/__init__.py`, **and
-   `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json`**.
-4. Open a release PR; wait for green CI; merge.
-5. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
-6. Create the GitHub Release from the tag (paste the changelog section). This triggers
-   `publish.yml` to build sdist+wheel, generate the SBOM and `SHA256SUMS`, attest build
-   provenance, publish to PyPI via trusted publishing, and attach all assets.
-7. Verify the artifact: `pipx install ai-jury==X.Y.Z` then
-   `jury --version` and `jury --mock --diff-file examples/sample.diff`.
-8. Verify supply-chain metadata per [docs/releasing.md](releasing.md): `sha256sum -c
-   SHA256SUMS` and `gh attestation verify <wheel> --repo berkayturanci/ai-jury`.
+2. Determine target version (`MAJOR`, `MINOR`, or `PATCH`) per SemVer rules.
+3. Update `CHANGELOG.md`: rename `[Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD`.
+4. Bump the version in `pyproject.toml`, `src/ai_jury/__init__.py`, `uv.lock`,
+   `.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`, `Formula/ai-jury.rb`,
+   `website/index.html`, and `website/app.js`.
+5. Open a release PR (`release/vX.Y.Z`); wait for green CI; merge to `main`.
+6. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
+7. Creating the tag triggers `.github/workflows/publish.yml`, which:
+   - Builds sdist + wheel, generates SBOM and `SHA256SUMS`, and attests build provenance.
+   - Publishes to PyPI via OIDC Trusted Publishing.
+   - Creates the GitHub Release with attached assets.
+   - Queries PyPI for the immutable sdist URL and SHA-256 digest, updates `Formula/ai-jury.rb`, and syncs to `berkayturanci/homebrew-ai-jury`.
+8. Verify all channels:
+   - PyPI & CLI: `pipx install --force ai-jury==X.Y.Z && jury --version && jury --doctor`
+   - Homebrew: `brew update && brew info berkayturanci/ai-jury/ai-jury && brew fetch --formula berkayturanci/ai-jury/ai-jury`
+   - Supply-chain: `sha256sum -c SHA256SUMS` and `gh attestation verify <wheel> --repo berkayturanci/ai-jury`
 9. Confirm the PyPI page, README rendering, and badges.
 
 ## Rollback notes
