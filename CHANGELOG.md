@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.14.3] - 2026-08-19
+
+### Security
+- **Patch Smuggling & Path Traversal Containment in `jury apply`** (#584): Strictly validate unified diff header paths (`--- a/...`, `+++ b/...`) against directory traversal and ensure they cannot target files outside the verified finding's targeted file.
+- **GitHub Action Shell Injection Hardening** (#584): Safely pass `inputs.args` and PR metadata through environment variable indirection (`$INPUT_ARGS`) instead of inline template substitution in `action.yml`.
+
+### Fixed
+- **GenericCLIAdapter Crash on Missing CLI Executable** (#584): Fixed `AttributeError` by replacing non-existent `AgentResult.failed()` with proper `AgentResult` instantiation carrying `ERR_MISSING_CLI`.
+
 ## [1.14.2] - 2026-08-19
 
 ### Performance

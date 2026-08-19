@@ -371,6 +371,11 @@ fails loudly.
 | `auto_depth` | bool | `false` | Risk-aware auto-depth (CLI `--auto`). |
 | `transcript` | bool | `false` | Default the markdown report to the full play-by-play transcript (CLI `--transcript` / `--no-transcript`). Rendering-only — not part of the config hash or cache key. |
 | `decision` | `"chair"` \| `"vote"` | `"chair"` | Final-verdict source: chair synthesis or a panel vote (CLI `--decision`). Rendering-only — not part of the config hash or cache key. |
+| `theater` | bool | `false` | Enable live interactive terminal animation. |
+| `theater_style` | `"flat"` \| `"pixel"` | `"flat"` | Visual aesthetic for terminal animation. |
+| `routing` | `"standard"` \| `"tiered"` | `"standard"` | Risk-aware tiered model routing with frontier anchor (CLI `--tiered`). |
+| `hints` | bool | `false` | Run fast static linter pre-pass to inject hints into Round 1 (CLI `--hints`). |
+| `demote_local_only` | bool | `false` | Demote uncorroborated single-local-model findings to minor advisory status. |
 
 **Example:**
 

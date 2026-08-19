@@ -51,8 +51,9 @@ def _is_relative_path_command(command: str) -> bool:
     separator (``./tools/codex``, ``bin/agy``) is rejected because it resolves a
     binary from an attacker-influenceable working-directory-relative location.
     """
-    has_sep = "/" in command or "\\" in command or (os.altsep is not None and os.altsep in command)
-    return has_sep and not Path(command).is_absolute()
+    cmd_str = str(command or "")
+    has_sep = "/" in cmd_str or "\\" in cmd_str or (os.altsep is not None and os.altsep in cmd_str)
+    return has_sep and not Path(cmd_str).is_absolute()
 
 
 # Env opt-in for a non-loopback local endpoint. It lives in the environment, NOT
@@ -83,6 +84,9 @@ def _endpoint_issues(endpoint: str, label: str) -> tuple[list[str], list[str]]:
     """
     errors: list[str] = []
     warnings: list[str] = []
+    if not isinstance(endpoint, str):
+        errors.append(f"agent '{label}' endpoint must be a string (got {endpoint!r}).")
+        return errors, warnings
     # `urlsplit` raises ValueError on a malformed URL (e.g. `http://[::1`,
     # "Invalid IPv6 URL"). Convert that to a hard config error (issue #315) so
     # `validate_config` reports it cleanly instead of crashing with a stack trace
@@ -90,7 +94,7 @@ def _endpoint_issues(endpoint: str, label: str) -> tuple[list[str], list[str]]:
     try:
         parsed = urlsplit(endpoint)
         parsed.hostname  # noqa: B018 - also raises ValueError on a bad IPv6 host
-    except ValueError:
+    except (ValueError, TypeError, AttributeError):
         errors.append(f"agent '{label}' endpoint '{endpoint}' is not a valid URL.")
         return errors, warnings
     scheme = (parsed.scheme or "").lower()
