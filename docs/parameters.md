@@ -486,7 +486,15 @@ Used by `jury comment`: `review` (full review) · `summary` (fast single-round p
 
 | Variable | Purpose |
 | --- | --- |
+| `JURY_CONFIG` | Custom path to `jury.toml` config file (overridden by `--config`). |
 | `JURY_CACHE_DIR` | Cache directory (default `~/.cache/ai-jury`); overridden by `--cache-dir`. |
+| `JURY_ALLOW_REMOTE_ENDPOINT` | Set to `1` to allow non-loopback HTTP/HTTPS endpoints for `vendor = "local"` and `openai-compatible`. |
+| `ANTHROPIC_API_KEY` | API key used by `vendor = "anthropic-api"`. |
+| `OPENAI_API_KEY` | API key used by `vendor = "openai-api"` and default for `openai-compatible`. |
+| `GEMINI_API_KEY` | API key used by `vendor = "google-api"`. |
+| `OPENROUTER_API_KEY` | Default API key for `openrouter` template. |
+| `DEEPSEEK_API_KEY` | Default API key for `deepseek` template. |
+| `GROQ_API_KEY` | Default API key for `groq` template. |
 | `JURY_LIVE` | `1` enables opt-in live native-CLI tests. |
 | `JURY_LOCAL_LIVE` | `1` enables opt-in live local-model tests. |
 | `JURY_BENCH_LIVE` | `1` runs the benchmark against live agents instead of recorded fixtures. |
