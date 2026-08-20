@@ -80,3 +80,7 @@
 ## 2026-08-16 - Focus indicators for custom interactive elements
 **Learning:** When creating custom interactive elements (e.g., `div` or `span` with `role="button"` and `tabindex="0"`), they often lack visual focus indicators because global CSS focus resets (like `button:focus-visible`) don't target them. This makes keyboard navigation very difficult for users who rely on visual focus.
 **Action:** Always ensure that custom interactive elements with a `tabindex` explicitly define a `:focus-visible` state in CSS (e.g., `.custom-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }`) that aligns with the site's global focus styles.
+
+## 2026-08-20 - Global search shortcuts for discovery
+**Learning:** For long lists of items (like integrations) that have a search bar, power users naturally try to press `/` or `Cmd+K` to start typing immediately. Providing a visible shortcut hint (`<kbd>`) not only speeds up workflows but also educates users about the app's keyboard accessibility, improving overall perceived usability.
+**Action:** Whenever implementing a prominent text filter or search bar, add a `/` keyboard event listener to focus it, and include a visual `<kbd>` hint in the input container to make the shortcut discoverable.

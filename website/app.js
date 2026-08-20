@@ -1710,6 +1710,17 @@
         query = searchInput.value.trim();
         renderCards();
       });
+
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "/") {
+          var ae = document.activeElement;
+          var isTextInput = ae && (ae.tagName === "TEXTAREA" || (ae.tagName === "INPUT" && (ae.type === "text" || ae.type === "search")));
+          if (!isTextInput && searchInput) {
+            e.preventDefault();
+            searchInput.focus();
+          }
+        }
+      });
     }
 
     renderCards();
