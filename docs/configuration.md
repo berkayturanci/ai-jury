@@ -217,6 +217,8 @@ model = "local-model"
 endpoint = "http://localhost:1234/v1"
 ```
 
+> **Remote Endpoint Security Note:** By default, endpoints for `vendor = "local"` and `openai-compatible` are restricted to loopback interfaces (`localhost`, `127.0.0.1`, `::1`) to guard against unintended SSRF. If pointing to a trusted remote host, set `JURY_ALLOW_REMOTE_ENDPOINT=1` in your environment.
+
 #### Cursor CLI / Arbitrary CLI Agent (`vendor = "cli"`)
 
 ```toml

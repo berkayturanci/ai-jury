@@ -636,6 +636,43 @@ jury --pr 123 --hints --tiered
 
 ---
 
+## 20. Headless CI & Containerized Reviews via Hosted APIs
+
+For lightweight CI runners or Docker containers without Node.js or native CLI agent installations, configure universal hosted API reviewers directly in `jury.toml`:
+
+```toml
+# jury.toml
+[jury]
+rounds = 2
+chair = "deepseek"
+
+[[agent]]
+name = "deepseek"
+vendor = "openai-compatible"
+endpoint = "https://api.deepseek.com/v1"
+api_key_env = "DEEPSEEK_API_KEY"
+model = "deepseek-coder"
+
+[[agent]]
+name = "groq"
+vendor = "openai-compatible"
+endpoint = "https://api.groq.com/openai/v1"
+api_key_env = "GROQ_API_KEY"
+model = "llama-3.3-70b-versatile"
+```
+
+Then run in any container or GitHub Actions workflow:
+
+```bash
+export DEEPSEEK_API_KEY="sk-..."
+export GROQ_API_KEY="gsk-..."
+export JURY_ALLOW_REMOTE_ENDPOINT=1
+
+jury --pr 123 --ci
+```
+
+---
+
 ## See also
 
 - [Architecture](architecture.md) — components, round structure, adapters.
