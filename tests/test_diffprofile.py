@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 import unittest
+import unittest.mock as mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -76,7 +77,6 @@ class AutoDepthCliTest(unittest.TestCase):
         # Patch review_diff to capture the resolved config instead of running.
         import contextlib
         import io
-        from unittest import mock
 
         import ai_jury.cli as cli
 
