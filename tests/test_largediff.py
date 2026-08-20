@@ -11,6 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
+from ai_jury import orchestrator as orch  # noqa: E402
 from ai_jury.config import _from_dict  # noqa: E402
 from ai_jury.largediff import (  # noqa: E402
     MODE_CHUNKED,
@@ -19,7 +20,6 @@ from ai_jury.largediff import (  # noqa: E402
     plan_diff,
     split_diff,
 )
-from ai_jury.orchestrator import review_diff  # noqa: E402
 
 
 def _file_segment(path: str, added_lines: int = 1) -> str:
@@ -223,7 +223,7 @@ class ChunkedPipelineTest(unittest.TestCase):
             }
         )
         diff = _file_segment("src/a.py", 20) + _file_segment("src/b.py", 20)
-        outcome, plan = review_diff(cfg, diff, mock=True)
+        outcome, plan = orch.review_diff(cfg, diff, mock=True)
         self.assertEqual(plan.mode, MODE_CHUNKED)
         self.assertGreaterEqual(len(plan.chunks), 2)
         # The merged outcome is renderable and reflects multiple chunks.
@@ -249,7 +249,7 @@ class ChunkedPipelineTest(unittest.TestCase):
         # The diff carries no secrets, so every redaction comes from the context.
         diff = _file_segment("src/a.py", 20) + _file_segment("src/b.py", 20)
         context = "deploy key AKIAABCDEFGHIJKLMNOP used here"
-        outcome, plan = review_diff(cfg, diff, context=context, mock=True)
+        outcome, plan = orch.review_diff(cfg, diff, context=context, mock=True)
         self.assertEqual(plan.mode, MODE_CHUNKED)
         self.assertGreaterEqual(len(plan.chunks), 2)
         # One secret in the context → counted once, independent of chunk count.
@@ -268,7 +268,7 @@ class ChunkedPipelineTest(unittest.TestCase):
                 "agent": [{"name": "claude", "vendor": "anthropic", "command": "claude"}],
             }
         )
-        outcome, plan = review_diff(
+        outcome, plan = orch.review_diff(
             cfg,
             _file_segment("src/a.py", 2),
             context="token AKIAABCDEFGHIJKLMNOP here",
@@ -281,8 +281,6 @@ class ChunkedPipelineTest(unittest.TestCase):
         # Regression: total_timeout must bound the WHOLE chunked review, not reset
         # per chunk. Verify review_diff passes the SAME budget object to every
         # chunk's run_jury call.
-        import ai_jury.orchestrator as orch
-
         cfg = _from_dict(
             {
                 "jury": {
@@ -322,7 +320,7 @@ class ChunkedPipelineTest(unittest.TestCase):
         )
         diff = _file_segment("src/a.py", 200)
         with self.assertRaises(RuntimeError):
-            review_diff(cfg, diff, mock=True)
+            orch.review_diff(cfg, diff, mock=True)
 
 
 if __name__ == "__main__":

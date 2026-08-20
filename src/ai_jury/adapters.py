@@ -35,12 +35,10 @@ _MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 
 def _kill_process_group(proc: subprocess.Popen) -> None:
     """Best-effort kill of the child's whole process group (issue #293/F-7)."""
-    try:
-        if hasattr(os, "killpg"):
+    if hasattr(os, "killpg"):
+        with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
             os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
             return
-    except (ProcessLookupError, PermissionError, OSError):
-        pass
     with contextlib.suppress(OSError):
         proc.kill()
 

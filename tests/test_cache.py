@@ -11,6 +11,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
@@ -195,8 +196,6 @@ class CacheHitMissTest(unittest.TestCase):
     def test_key_mismatch_is_a_miss(self):
         # Issue #293/F-10: an entry whose embedded cache_key doesn't match the
         # filename/key (e.g. a forged verdict copied from another key) is a miss.
-        import json
-
         with tempfile.TemporaryDirectory() as tmp:
             cache = Cache(tmp)
             cfg = _config()
@@ -245,8 +244,6 @@ class CacheHitMissTest(unittest.TestCase):
     def test_load_fails_closed_when_hmac_key_unavailable(self):
         # Issue #295: if the MAC key can't be read/created, load() must NOT fall
         # back to accepting an unsigned/unverified entry — it must miss.
-        from unittest import mock
-
         with tempfile.TemporaryDirectory() as tmp:
             cache = Cache(tmp)
             cfg = _config()
@@ -259,8 +256,6 @@ class CacheHitMissTest(unittest.TestCase):
     def test_store_fails_closed_when_hmac_key_unavailable(self):
         # Issue #295: if the MAC key can't be obtained, store() must NOT write an
         # unsigned entry.
-        from unittest import mock
-
         with tempfile.TemporaryDirectory() as tmp:
             cache = Cache(tmp)
             cfg = _config()
@@ -296,8 +291,6 @@ class CacheHitMissTest(unittest.TestCase):
 
     @unittest.skipIf(os.name == "nt", "POSIX permission semantics")
     def test_store_refuses_dir_it_cannot_tighten(self):
-        from unittest import mock
-
         with tempfile.TemporaryDirectory() as tmp:
             d = Path(tmp) / "shared-cache"
             d.mkdir()
