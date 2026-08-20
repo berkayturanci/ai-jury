@@ -11,8 +11,8 @@ import importlib.util
 import subprocess
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
-from unittest import mock
 
 # Dynamically import verify_merge script
 script_path = Path(__file__).resolve().parent.parent / "scripts" / "verify_merge.py"
@@ -151,7 +151,7 @@ class MergeDriftTests(unittest.TestCase):
                 return subprocess.CompletedProcess(cmd, 0, payload, "")
             return subprocess.CompletedProcess(cmd, 0, listed, "")
 
-        with mock.patch.object(verify_merge.subprocess, "run", side_effect=fake_run):
+        with unittest.mock.patch.object(verify_merge.subprocess, "run", side_effect=fake_run):
             return verify_merge.check_pr_merge_drift(Path.cwd(), 1)
 
     def test_overlap_is_reported_not_swallowed(self):

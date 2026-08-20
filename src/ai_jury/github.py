@@ -104,14 +104,17 @@ def issue_body(number: str, repo: str | None = None) -> str:
     :func:`pr_context`'s error handling: any ``gh`` failure degrades to a minimal
     string (the bare number) rather than crashing the run.
     """
+    jq_expr = (
+        '"# " + .title + "\\n\\n_labels: " '
+        '+ ((.labels | map(.name)) | join(", ")) + "_\\n\\n" + (.body // "")'
+    )
     args = [
         "issue",
         "view",
         "--json",
         "title,body,labels",
         "--jq",
-        '"# " + .title + "\\n\\n_labels: " '
-        '+ ((.labels | map(.name)) | join(", ")) + "_\\n\\n" + (.body // "")',
+        jq_expr,
     ]
     if repo:
         args += ["--repo", repo]

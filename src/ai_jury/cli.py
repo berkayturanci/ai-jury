@@ -1654,8 +1654,7 @@ def main(argv: list[str] | None = None) -> int:
             if args.issue:
                 # Issue prose bypasses large-diff planning (filter/size/chunk is
                 # meaningless for an issue body); run the jury directly with the
-                # issue-quality rubric. ``_plan`` stays None — there is no diff plan.
-                _plan = None
+                # issue-quality rubric.
                 outcome = run_jury(
                     config,
                     diff,
