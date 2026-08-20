@@ -10,8 +10,8 @@ import os
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
-from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
@@ -250,7 +250,7 @@ class CacheHitMissTest(unittest.TestCase):
             key = cache_key(cfg, SAMPLE_DIFF)
             cache.store(key, run_jury(cfg, SAMPLE_DIFF, mock=True))
             self.assertIsNotNone(cache.load(key))  # sanity: signed entry hits
-            with mock.patch("ai_jury.cache._hmac_key", return_value=None):
+            with unittest.mock.patch("ai_jury.cache._hmac_key", return_value=None):
                 self.assertIsNone(cache.load(key))  # key unavailable -> fail closed
 
     def test_store_fails_closed_when_hmac_key_unavailable(self):
@@ -260,7 +260,7 @@ class CacheHitMissTest(unittest.TestCase):
             cache = Cache(tmp)
             cfg = _config()
             key = cache_key(cfg, SAMPLE_DIFF)
-            with mock.patch("ai_jury.cache._hmac_key", return_value=None):
+            with unittest.mock.patch("ai_jury.cache._hmac_key", return_value=None):
                 cache.store(key, run_jury(cfg, SAMPLE_DIFF, mock=True))
             self.assertFalse((cache.dir / f"{key}.json").exists())  # nothing written
 
@@ -300,7 +300,7 @@ class CacheHitMissTest(unittest.TestCase):
             key = cache_key(cfg, SAMPLE_DIFF)
             # Simulate "we don't own it": the tighten chmod fails, so the dir
             # stays world-writable and store must fail closed.
-            with mock.patch.object(Path, "chmod", side_effect=PermissionError):
+            with unittest.mock.patch.object(Path, "chmod", side_effect=PermissionError):
                 cache.store(key, run_jury(cfg, SAMPLE_DIFF, mock=True))
             self.assertFalse((d / f"{key}.json").exists())  # store was a no-op
 

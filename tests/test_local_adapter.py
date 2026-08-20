@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import sys
 import unittest
+import unittest.mock as mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -93,7 +94,6 @@ class RunHttpTest(unittest.TestCase):
 
     def test_success(self):
         import json
-        from unittest import mock
 
         payload = json.dumps(
             {"choices": [{"message": {"content": "a review with a finding"}}]}
@@ -105,7 +105,6 @@ class RunHttpTest(unittest.TestCase):
 
     def test_empty_content_is_failure(self):
         import json
-        from unittest import mock
 
         payload = json.dumps({"choices": [{"message": {"content": "   "}}]}).encode()
         with mock.patch("ai_jury.adapters._open", return_value=_FakeResp(payload)):
@@ -115,7 +114,6 @@ class RunHttpTest(unittest.TestCase):
 
     def test_connection_error(self):
         import urllib.error
-        from unittest import mock
 
         with mock.patch("ai_jury.adapters._open", side_effect=urllib.error.URLError("refused")):
             result = LocalAdapter(_spec()).run("prompt")
@@ -125,7 +123,6 @@ class RunHttpTest(unittest.TestCase):
     def test_http_error_maps_to_rate_limit(self):
         import io
         import urllib.error
-        from unittest import mock
 
         err = urllib.error.HTTPError(
             url="x", code=429, msg="Too Many Requests", hdrs=None, fp=io.BytesIO(b"slow down")

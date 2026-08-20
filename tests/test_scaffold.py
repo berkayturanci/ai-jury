@@ -8,6 +8,7 @@ import sys
 import tempfile
 import tomllib
 import unittest
+import unittest.mock as mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -211,7 +212,6 @@ class LocalModelDiscoveryTest(unittest.TestCase):
     def test_list_local_models_parses_openai_shape(self):
         # Parse the OpenAI-compatible /v1/models response shape offline.
         import json
-        from unittest import mock
 
         from ai_jury.adapters import list_local_models
 
@@ -233,7 +233,6 @@ class LocalModelDiscoveryTest(unittest.TestCase):
 
     def test_list_local_models_empty_on_failure(self):
         import urllib.error
-        from unittest import mock
 
         from ai_jury.adapters import list_local_models
 
@@ -292,8 +291,6 @@ class OfflineFallbackTest(unittest.TestCase):
         return type("A", (), {"config": config, "mock": mock})()
 
     def test_adds_local_agent_when_nothing_else_available(self):
-        from unittest import mock
-
         import ai_jury.adapters as adapters
         import ai_jury.cli as climod
         from ai_jury.config import DEFAULT_CONFIG, _from_dict
