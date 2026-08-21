@@ -1710,6 +1710,26 @@
         query = searchInput.value.trim();
         renderCards();
       });
+
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+          if (modal && modal.classList.contains("open")) return;
+          var ae = document.activeElement;
+          var isInput = ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || ae.tagName === "SELECT" || ae.isContentEditable);
+          if (!isInput && searchInput) {
+            e.preventDefault();
+            searchInput.focus();
+            searchInput.select();
+          }
+        } else if (e.key === "Escape" && document.activeElement === searchInput) {
+          if (searchInput.value) {
+            searchInput.value = "";
+            query = "";
+            renderCards();
+          }
+          searchInput.blur();
+        }
+      });
     }
 
     renderCards();
