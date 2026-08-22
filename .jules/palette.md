@@ -84,3 +84,7 @@
 ## 2026-08-20 - Global search shortcuts for discovery
 **Learning:** For long lists of items (like integrations) that have a search bar, power users naturally try to press `/` or `Cmd+K` to start typing immediately. Providing a visible shortcut hint (`<kbd>`) not only speeds up workflows but also educates users about the app's keyboard accessibility, improving overall perceived usability.
 **Action:** Whenever implementing a prominent text filter or search bar, add a `/` keyboard event listener to focus it, and include a visual `<kbd>` hint in the input container to make the shortcut discoverable.
+
+## 2026-11-08 - Modal Focus Restoration
+**Learning:** We implemented `Escape` to close the integration modal, but forgot to return focus to the integration card that opened it. When keyboard users closed the modal, they lost their place in the grid.
+**Action:** Always store `document.activeElement` before opening a modal and restore focus to it inside the generic `closeModal()` function so that `Escape`, click-outside, and close button actions all correctly return the user to their previous context.
