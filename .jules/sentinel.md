@@ -40,3 +40,8 @@
 **Vulnerability:** Unsanitized exception strings (`str(exc)`) when a CLI spawn failed in `GenericCLIAdapter.run` could leak secrets into standard output logs/responses.
 **Learning:** External dependencies (CLIs) running outside the Python process boundary don't inherit the application's memory protections or logging filters. Their spawn errors must also be aggressively sanitized before crossing back into application exception/logging flows.
 **Prevention:** Always wrap `str(exc)` with `redaction.redact()[0]` before logging or returning it in the user report in adapter classes.
+
+## 2024-05-24 - Fix workspace-write sandbox bypass in Codex
+**Vulnerability:** Codex reviewers configured with '-s workspace-write' escaped least-privilege warnings and the '--strict' flag.
+**Learning:** The audited variable '_DANGEROUS_FLAGS' was missing 'workspace-write', despite documentation explicitly stating it was flagged. Discrepancies between documentation and actual flag arrays can lead to silent sandbox bypasses.
+**Prevention:** Ensure that all documented restricted flags are explicitly included in the audit array and covered by tests.
