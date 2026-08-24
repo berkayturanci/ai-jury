@@ -134,6 +134,72 @@ def parse_patch_suggestions(text: str) -> list[PatchSuggestion]:
     return out
 
 
+def _patch_body(fix: str) -> str:
+    """The patch text as a patch *file* would hold it — newline-terminated.
+
+    ``parse_patch_suggestions`` strips the fenced block, which takes the trailing
+    newline with it. Git then rejects bodies whose last line is a header rather
+    than content ("git diff header lacks filename information"), so a suggestion
+    carrying a rename or mode section could never be read at all — including by
+    the preview, which would report "nothing git could read" for a patch that is
+    merely missing its terminator. Content semantics are unaffected: a file whose
+    last line has no newline is expressed by git's own ``\\ No newline at end of
+    file`` marker, not by the patch text's terminator.
+    """
+    return fix if fix.endswith("\n") else fix + "\n"
+
+
+def _probe_patch(fix: str, root: Path):
+    """Ask git what ``fix`` would do, writing nothing (``--check``)."""
+    import subprocess
+
+    return subprocess.run(
+        ["git", "apply", "--numstat", "-z", "--summary", "--check", "-"],
+        input=_patch_body(fix), text=True, cwd=str(root), capture_output=True,
+    )
+
+
+def preview_patch_suggestion(
+    suggestion: PatchSuggestion, root_dir: Path | None = None
+) -> tuple[list[str], str | None]:
+    """Paths ``suggestion`` would touch, and why it would be refused (if it would).
+
+    The operator-facing half of the containment check, sharing its probe so the
+    preview cannot disagree with what an apply would do (#605). Any hand-rolled
+    containment check is a bet that every way a patch can name a file was
+    enumerated; showing the operator git's own answer before writing is what makes
+    losing that bet survivable rather than silent.
+
+    Returns ``(paths, refusal)``. ``refusal`` is ``None`` when the suggestion would
+    be applied; ``paths`` is what git says it would touch, which for a refused
+    patch is exactly the evidence the operator needs to see.
+    """
+    root = (root_dir or Path.cwd()).resolve()
+    try:
+        target = (root / suggestion.file).resolve()
+        target.relative_to(root)
+    except (ValueError, RuntimeError):
+        return [], f"Path traversal rejected: {suggestion.file}"
+    if not target.exists() or not target.is_file():
+        return [], f"File not found: {suggestion.file}"
+
+    fix = suggestion.suggested_fix
+    if not _looks_like_patch(fix):
+        # A literal line replacement touches exactly the file it names.
+        return [suggestion.file], None
+
+    probe = _probe_patch(fix, root)
+    if probe.returncode != 0:
+        detail = redact(probe.stderr.strip())[0] or "patch does not apply cleanly"
+        return [], f"Git apply failed: {detail}"
+    paths = [
+        record.split("\t", 2)[2]
+        for record in probe.stdout.split("\0")[:-1]
+        if len(record.split("\t", 2)) == 3
+    ]
+    return paths, _containment_refusal(fix, root=root, target=target, file=suggestion.file)
+
+
 def _containment_refusal(
     fix: str, *, root: Path, target: Path, file: str
 ) -> str | None:
@@ -155,12 +221,7 @@ def _containment_refusal(
     touch, and ``--summary`` names the operations. Validation and application now
     share one parser, which is what closes the gap rather than narrowing it.
     """
-    import subprocess
-
-    probe = subprocess.run(
-        ["git", "apply", "--numstat", "-z", "--summary", "--check", "-"],
-        input=fix, text=True, cwd=str(root), capture_output=True,
-    )
+    probe = _probe_patch(fix, root)
     if probe.returncode != 0:
         detail = redact(probe.stderr.strip())[0] or "patch does not apply cleanly"
         return f"Git apply failed: {detail}"
@@ -244,8 +305,11 @@ def apply_patch_suggestion(
         if refusal is not None:
             return False, refusal
 
+        # Same body the probe validated — a different one here would mean the
+        # containment check answered a question about a patch that is not applied.
         proc = subprocess.run(
-            ["git", "apply", "-"], input=fix, text=True, cwd=str(root), capture_output=True
+            ["git", "apply", "-"], input=_patch_body(fix), text=True,
+            cwd=str(root), capture_output=True,
         )
         if proc.returncode == 0:
             return True, f"Applied git patch to {suggestion.file}"
