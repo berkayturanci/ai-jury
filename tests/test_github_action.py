@@ -36,18 +36,44 @@ class NoCallerInputReachesAShellBody(unittest.TestCase):
     step someone adds is the same coin flip.
     """
 
-    def _steps(self) -> list[dict]:
-        import yaml
+    def _blocks(self, key: str) -> list[tuple[int, list[str]]]:
+        """Bodies of every ``<key>:`` block in action.yml, as (line number, lines).
 
-        action = yaml.safe_load((REPO_ROOT / "action.yml").read_text(encoding="utf-8"))
-        return action["runs"]["steps"]
+        A block scalar's body is the run of following lines indented deeper than
+        the key that opened it, blank lines included — plus whatever trails the
+        key on its own line, so a one-line ``run: cmd`` is swept like a ``run: |``
+        block rather than read as an empty body. That is all this test needs
+        from the file, so it reads it directly rather than through a YAML parser:
+        ai-jury declares ``dependencies = []`` and three dev tools, and a test is
+        not a good enough reason to make PyYAML the exception.
+
+        The cost of hand-reading is that a restructured ``action.yml`` could go
+        unrecognised and quietly sweep nothing, so
+        :meth:`test_the_sweep_covers_every_run_body_in_the_file` pins the counts
+        against the file's own text instead of trusting this scan.
+        """
+        lines = (REPO_ROOT / "action.yml").read_text(encoding="utf-8").splitlines()
+        blocks: list[tuple[int, list[str]]] = []
+        for index, line in enumerate(lines):
+            stripped = line.lstrip()
+            if not stripped.startswith(f"{key}:"):
+                continue
+            indent = len(line) - len(stripped)
+            inline = stripped[len(key) + 1:].strip()
+            body: list[str] = [inline] if inline not in ("", "|", ">", "|-", ">-") else []
+            for following in lines[index + 1:]:
+                if following.strip() and len(following) - len(following.lstrip()) <= indent:
+                    break
+                body.append(following)
+            blocks.append((index + 1, body))
+        return blocks
 
     def test_no_step_interpolates_an_expression_into_its_run_body(self):
         offenders = [
-            (step.get("name", "(unnamed)"), line.strip())
-            for step in self._steps()
-            for line in (step.get("run") or "").splitlines()
-            if "${{" in line
+            (line_number, body_line.strip())
+            for line_number, body in self._blocks("run")
+            for body_line in body
+            if "${{" in body_line
         ]
         self.assertEqual(
             [], offenders,
@@ -55,17 +81,29 @@ class NoCallerInputReachesAShellBody(unittest.TestCase):
             f"`env:` and reference it as a shell variable instead: {offenders}",
         )
 
-    def test_the_sweep_has_something_to_sweep(self):
-        """Keeps the assertion above from passing vacuously after a refactor."""
-        with_run = [s for s in self._steps() if s.get("run")]
-        self.assertTrue(with_run, "no step has a run body; the guard checks nothing")
+    def test_the_sweep_covers_every_run_body_in_the_file(self):
+        """Keeps the assertion above from passing vacuously after a refactor.
+
+        Counted against the raw text, not the scan: if a restructured action.yml
+        left a `run:` the block reader could not see, "no offenders" would be an
+        artefact of reading nothing. Both numbers must move together.
+        """
+        text = (REPO_ROOT / "action.yml").read_text(encoding="utf-8")
+        blocks = self._blocks("run")
+        self.assertEqual(
+            text.count("\n      run:"), len(blocks),
+            "the block reader did not find every run: in action.yml; the sweep "
+            "is checking less of the file than it appears to",
+        )
+        self.assertTrue(
+            all(any(body_line.strip() for body_line in body) for _, body in blocks),
+            "a run: block read as empty; the sweep would pass over it vacuously",
+        )
 
     def test_every_caller_supplied_input_arrives_through_env(self):
         """The positive half: inputs must still reach the script, just safely."""
-        env_values = " ".join(
-            str(value)
-            for step in self._steps()
-            for value in (step.get("env") or {}).values()
+        env_values = "\n".join(
+            "\n".join(body) for _, body in self._blocks("env")
         )
         for name in ("inputs.version", "inputs.args", "inputs.github-token"):
             with self.subTest(input=name):
