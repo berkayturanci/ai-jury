@@ -1652,7 +1652,7 @@
       if (!modal) return;
       modal.classList.remove("open");
       modal.setAttribute("aria-hidden", "true");
-      if (lastModalFocus) {
+      if (lastModalFocus && typeof lastModalFocus.focus === "function") {
         lastModalFocus.focus();
         lastModalFocus = null;
       }
