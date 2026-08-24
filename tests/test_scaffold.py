@@ -11,6 +11,8 @@ import unittest
 import unittest.mock as mock
 from pathlib import Path
 
+from ai_jury import scaffold
+
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from ai_jury import cli  # noqa: E402
@@ -272,9 +274,16 @@ class PresetTest(unittest.TestCase):
             path = Path(tmp) / "jury.toml"
             self._run(["init", "--preset", "thorough", "-o", str(path)])
             data = tomllib.loads(path.read_text(encoding="utf-8"))
-            self.assertEqual(
-                [a["name"] for a in data["agent"]],
-                ["claude", "codex", "agy", "qwen", "claude-api", "codex-api", "gemini-api"],
+            # Derived, not listed: a hardcoded roster here is a second copy of
+            # KNOWN_AGENTS, and two copies drifting apart is what #589 was about.
+            expected = [
+                n for n in scaffold.KNOWN_AGENTS
+                if n not in set(scaffold.agents_needing_remote_opt_in())
+            ]
+            self.assertEqual([a["name"] for a in data["agent"]], expected)
+            self.assertNotEqual(
+                expected, list(scaffold.KNOWN_AGENTS),
+                "no agent needs the remote opt-in, so this case proves nothing",
             )
 
     def test_explicit_flag_overrides_preset(self):
@@ -358,6 +367,83 @@ class ConfigShowTest(unittest.TestCase):
             code, _, err = self._run(["config", "show", "--config", str(path)])
             self.assertEqual(code, 2)
             self.assertIn("error", err)
+
+
+class KnownAgentsMatchesTheTemplates(unittest.TestCase):
+    """The two lists of agents must be one list.
+
+    #589 asked for exactly this assertion and #590 shipped without it, so four
+    templates existed that `jury init` could not offer. The symptom a user hit
+    was the CLI naming agents in an error message that its own `--list-agents`
+    never printed.
+    """
+
+    def test_known_agents_is_exactly_the_template_set(self):
+        self.assertEqual(set(scaffold.KNOWN_AGENTS), set(scaffold.agent_templates()))
+
+    def test_no_agent_is_listed_twice(self):
+        self.assertEqual(len(scaffold.KNOWN_AGENTS), len(set(scaffold.KNOWN_AGENTS)))
+
+    def test_every_agent_the_error_suggests_can_actually_be_chosen(self):
+        """The behavioural half — this is what the user actually ran into.
+
+        `build_config` rejects an unknown agent by listing `templates.keys()`.
+        If that list is wider than `KNOWN_AGENTS`, the CLI is telling people to
+        pick options it never offers; if it is narrower, a scaffoldable agent is
+        undiscoverable. Either way the two must agree.
+        """
+        with self.assertRaises(ValueError) as caught:
+            scaffold.build_config(["definitely-not-an-agent"])
+        message = str(caught.exception)
+        suggested = {
+            part.strip()
+            for part in message.split("choose from", 1)[1].split(",")
+        }
+        self.assertEqual(suggested, set(scaffold.KNOWN_AGENTS))
+
+    def test_every_listed_agent_scaffolds(self):
+        """A name offered by the CLI must produce a config, not an exception."""
+        for name in scaffold.KNOWN_AGENTS:
+            with self.subTest(agent=name):
+                config = scaffold.build_config([name])
+                self.assertTrue(config, f"{name} is offered but scaffolds nothing")
+
+
+class RemoteAgentsAreOfferedButNotForcedIntoPresets(unittest.TestCase):
+    """Three hosted templates point at real vendor hosts.
+
+    `config` refuses a non-loopback endpoint unless `JURY_ALLOW_REMOTE_ENDPOINT`
+    is set — a deliberate default-closed posture, since a config-supplied URL is
+    otherwise a request-forgery primitive. So adding them to `KNOWN_AGENTS`
+    naively made `jury init --preset thorough` produce a config it then refused
+    to write, and the command failed outright.
+
+    The line is: listed and selectable by name always, included in "all" only
+    once the opt-in is present.
+    """
+
+    def test_the_remote_set_is_derived_from_the_templates(self):
+        needs = set(scaffold.agents_needing_remote_opt_in())
+        self.assertTrue(needs, "no template has a remote endpoint; this guard is vacuous")
+        for name in needs:
+            with self.subTest(agent=name):
+                endpoint = scaffold.agent_templates()[name].get("endpoint", "")
+                self.assertTrue(endpoint, f"{name} is flagged remote but has no endpoint")
+                self.assertNotIn("localhost", endpoint)
+                self.assertNotIn("127.0.0.1", endpoint)
+
+    def test_a_loopback_template_is_not_flagged_remote(self):
+        """The counterweight: `qwen` points at a local Ollama and must stay in."""
+        self.assertNotIn("qwen", scaffold.agents_needing_remote_opt_in())
+
+    def test_every_remote_agent_is_still_listed_and_selectable(self):
+        for name in scaffold.agents_needing_remote_opt_in():
+            with self.subTest(agent=name):
+                self.assertIn(name, scaffold.KNOWN_AGENTS, "not discoverable")
+                self.assertTrue(
+                    scaffold.build_config([name]),
+                    f"{name} is offered but cannot be chosen by name",
+                )
 
 
 if __name__ == "__main__":

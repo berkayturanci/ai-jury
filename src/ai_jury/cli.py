@@ -16,6 +16,7 @@ import argparse
 import contextlib
 import io
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -903,7 +904,13 @@ def _init_wizard(available: dict, input_fn=input, local_endpoint=None, models_fn
 def _run_init(rest: list[str]) -> int:
     """Handle ``jury init`` (issue #107): scaffold a jury.toml."""
     from .config import ConfigError, validate_config
-    from .scaffold import KNOWN_AGENTS, PRESETS, build_config, render_toml
+    from .scaffold import (
+        KNOWN_AGENTS,
+        PRESETS,
+        agents_needing_remote_opt_in,
+        build_config,
+        render_toml,
+    )
 
     sub = argparse.ArgumentParser(prog="jury init")
     sub.add_argument(
@@ -972,11 +979,26 @@ def _run_init(rest: list[str]) -> int:
     def _detected_agents():
         return [n for n in KNOWN_AGENTS if available.get(n)]
 
+    def _selectable_agents():
+        """Every known agent whose template scaffolds to a *valid* config here.
+
+        Three hosted templates point at real vendor hosts, and `config` refuses
+        a non-loopback endpoint unless `JURY_ALLOW_REMOTE_ENDPOINT` is set. A
+        preset that silently includes them writes a config `jury init` then
+        rejects — so `--preset thorough` failed outright rather than producing
+        something usable. They stay in `--list-agents` and remain selectable by
+        name; they are only excluded from "all" until the opt-in is present.
+        """
+        if os.environ.get("JURY_ALLOW_REMOTE_ENDPOINT"):
+            return list(KNOWN_AGENTS)
+        needs_opt_in = set(agents_needing_remote_opt_in())
+        return [n for n in KNOWN_AGENTS if n not in needs_opt_in]
+
     def _resolve_preset_agents(spec):
         if spec == "all":
-            return list(KNOWN_AGENTS)
+            return _selectable_agents()
         if spec == "detected":
-            return _detected_agents() or list(KNOWN_AGENTS)
+            return _detected_agents() or _selectable_agents()
         return list(spec)
 
     # rounds / verify / early_stop: explicit flag > preset > built-in default.

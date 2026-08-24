@@ -13,6 +13,8 @@ availability detection, and writing the file.
 
 from __future__ import annotations
 
+from urllib.parse import urlsplit
+
 from .config import DEFAULT_CONFIG
 
 _LOCAL_TEMPLATE = {
@@ -84,9 +86,45 @@ def agent_templates() -> dict[str, dict]:
     return templates
 
 
-KNOWN_AGENTS: tuple[str, ...] = (
-    "claude", "codex", "agy", "qwen", "claude-api", "codex-api", "gemini-api",
-)
+_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", "[::1]"})
+
+
+def agents_needing_remote_opt_in() -> tuple[str, ...]:
+    """Templates whose endpoint the config validator refuses without an opt-in.
+
+    `config` accepts a loopback endpoint and refuses every other host unless
+    ``JURY_ALLOW_REMOTE_ENDPOINT`` is set — a deliberate default-closed posture,
+    since a config-supplied URL is otherwise a request-forgery primitive. Three
+    hosted templates point at real vendors, so a preset that silently includes
+    them produces a config `jury init` then refuses to write.
+
+    Derived from the templates rather than listed, so a new hosted template is
+    covered the day it lands.
+    """
+    remote = []
+    for name, template in agent_templates().items():
+        endpoint = template.get("endpoint")
+        if not endpoint:
+            continue
+        host = urlsplit(endpoint).hostname or ""
+        if host.lower() not in _LOOPBACK_HOSTS:
+            remote.append(name)
+    return tuple(remote)
+
+
+#: Every agent `jury init` can scaffold, in the order it offers them.
+#:
+#: Derived from :func:`agent_templates` rather than listed, because a second
+#: hand-written copy of the same set is what #589 asked to be fixed and #590
+#: did not: four templates — ``openrouter``, ``deepseek``, ``groq``, ``aider`` —
+#: shipped without ever reaching this tuple, so ``jury init --list-agents``, the
+#: wizard, and ``--preset all`` could not see them, while the error message for
+#: an unknown agent named them. The CLI told users to choose from four options
+#: it never offered.
+#:
+#: ``agent_templates`` reads only module constants, so this costs no I/O at
+#: import and is deterministic.
+KNOWN_AGENTS: tuple[str, ...] = tuple(agent_templates())
 
 # Substrings that hint a local model is code-oriented (preferred for reviews).
 _CODER_HINTS: tuple[str, ...] = ("coder", "code", "deepseek", "qwen")
