@@ -263,6 +263,7 @@ class ContainmentAgainstARealGitRepository(unittest.TestCase):
             ["git", "init", "-q", "."],
             ["git", "config", "user.email", "t@example.com"],
             ["git", "config", "user.name", "t"],
+            ["git", "config", "core.autocrlf", "false"],
         ):
             subprocess.run(argv, cwd=self.root, check=True, capture_output=True)
         (self.root / "target.py").write_text("x = 1\n", encoding="utf-8")
@@ -304,14 +305,26 @@ class ContainmentAgainstARealGitRepository(unittest.TestCase):
         self.assertEqual("x = 1\n", (self.root / "target.py").read_text(encoding="utf-8"))
 
     def test_a_mode_change_on_another_file_cannot_ride_along(self):
+        # The mode change is paired with a content hunk so the section parses
+        # identically everywhere: Windows git ignores file modes, and a
+        # mode-only section is rejected there as lacking filename information —
+        # which would make this pass for git's reason rather than the guard's.
         ok, msg = self._apply(
             self.EDIT
-            + "diff --git a/victim.py b/victim.py\nold mode 100644\nnew mode 100755\n"
+            + "diff --git a/victim.py b/victim.py\n"
+            "old mode 100644\n"
+            "new mode 100755\n"
+            "--- a/victim.py\n"
+            "+++ b/victim.py\n"
+            "@@ -1 +1 @@\n"
+            "-secret = 1\n"
+            "+secret = 2\n"
         )
 
         self.assertFalse(ok)
         self.assertIn("victim.py", msg)
         self.assertEqual("x = 1\n", (self.root / "target.py").read_text(encoding="utf-8"))
+        self.assertEqual("secret = 1\n", (self.root / "victim.py").read_text(encoding="utf-8"))
 
     def test_a_new_file_cannot_ride_along(self):
         ok, msg = self._apply(
