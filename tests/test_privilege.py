@@ -132,6 +132,18 @@ class AuditPrivilegeTest(unittest.TestCase):
         # One warning per dangerous agent.
         self.assertEqual(len(warnings), 3)
 
+    def test_codex_workspace_write_produces_dangerous_flag_warning(self):
+        spec = AgentSpec(
+            name="codex",
+            vendor="openai",
+            command="codex",
+            extra_args=["-s", "workspace-write"],
+        )
+        warnings = privilege.audit_agent(spec)
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("workspace-write", warnings[0])
+        self.assertIn("granting write/tool/network powers", warnings[0])
+
     def test_locked_down_config_has_no_warnings(self):
         specs = [
             AgentSpec(
