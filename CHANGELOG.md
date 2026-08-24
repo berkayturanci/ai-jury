@@ -13,6 +13,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - The guard is a rule over every step, not an assertion about one line: no `run:` body may contain a `${{ }}` expression, with a vacuity check so it cannot pass when there are no run bodies left, and a positive counterpart asserting each input still reaches the script through `env:`.
 
 
+### Security
+- **`jury apply` Previews And Confirms Before It Writes** (#605): a destructive command no longer writes unannounced.
+  - `--dry-run` prints the paths each suggestion would touch and writes nothing.
+  - The preview is printed **before** any write, and comes from the same `git apply --check` probe the containment check uses — so it cannot disagree with what an apply would do, and it names a path the suggestion itself never claims (a rename target). Previously the per-suggestion output appeared *after* the write had happened.
+  - Applying now requires confirmation, or `--yes` for scripted use. When stdin is not a terminal and `--yes` was not passed, the command refuses rather than assuming consent — piping a report in is exactly the unattended case, and stdin may already be consumed by the report itself.
+  - The `index` argument no longer defaults to `all`. A bare `jury apply --report r.md` rewrote the working tree with every suggestion in the report; it now names the range and points at `--dry-run`.
+  - Independent of #603: any hand-rolled containment check is a bet that every way a patch can name a file was enumerated. This is what makes losing that bet survivable rather than silent.
+  - Found while building the preview: `parse_patch_suggestions` strips the fenced block's trailing newline, and git rejects a patch body whose last line is a header rather than content. A suggestion carrying a rename or mode section could not be read at all — the preview reported "nothing git could read" for a patch that was merely missing its terminator. The body is newline-terminated for both the probe and the apply, which are now guaranteed to see identical input.
+  - Every new test asserts against `git status --porcelain`, not just the exit code: the defect being fixed is precisely a command that reported one thing and wrote another.
+- **Patch Containment Now Asks Git Instead Of Reading Headers** (#603): `apply_patch_suggestion` derives the set of paths a patch would touch from `git apply --numstat -z --summary --check`, and refuses unless it is exactly the suggested file.
+  - The check added by #584 inspected only `--- `/`+++ ` header lines. Git carries filenames in several other constructs and honours all of them — `rename from`/`rename to`, `copy from`/`copy to`, `old mode`/`new mode`, and a `GIT binary patch` section that has no `---`/`+++` lines at all. A patch whose headers named the suggested file could rename an unrelated path and still return "Applied git patch to <file>". Reproduced against a throwaway repository.
+  - It failed because it was a **blocklist**: enumerate the dangerous header forms and reject them. Adding `rename from` to the same loop repeats the design and misses the next construct. Validation and application now go through the same parser, which closes the gap rather than narrowing it.
+  - `--numstat` reports a rename's destination but never its source, so a patch can remove a path no numstat record mentions. `rename` and `copy` are therefore refused as operations — a single-file suggestion has no business doing either — rather than having their paths re-derived from `--summary` prose. This is not belt-and-braces: a patch that deletes the target and then renames another file onto it is accepted by git, and numstat reports *only* the suggested file, twice. The path set matches exactly and the `--summary` line is the sole evidence the other file was destroyed.
+  - **Found while fixing this, one step earlier:** the diff detection was `startswith("---") or "@@" in fix`. A rename-only or binary-only body has neither, so it never reached the git branch at all — it fell through to the line-replacement path, which wrote the diff *text* into the target file and reported success. Anything git can read as a patch now reaches the branch where containment is decided.
+  - The previous test passed for the wrong reason: the secondary target did not exist in the fixture, so `git apply` failed on its own and the assertion landed on the error string — removing the guard entirely left it green. Every new fixture creates the secondary target, so the patch would otherwise apply cleanly.
+  - Reachable only via `jury apply` run locally against a report derived from an untrusted diff; `action.yml` does not invoke it.
+
 ## [1.14.4] - 2026-08-19
 
 ### Fixed

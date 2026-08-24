@@ -493,7 +493,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 def _run_apply(rest: list[str]) -> int:
     """Handle `jury apply` (issue #521): apply verified patch suggestions."""
-    from .patches import apply_patch_suggestion, parse_patch_suggestions
+    from .patches import (
+        apply_patch_suggestion,
+        parse_patch_suggestions,
+        preview_patch_suggestion,
+    )
 
     sub = argparse.ArgumentParser(
         prog="jury apply", description="Apply verified suggested patches to the repository."
@@ -501,13 +505,26 @@ def _run_apply(rest: list[str]) -> int:
     sub.add_argument(
         "index",
         nargs="?",
-        default="all",
-        help="1-indexed patch suggestion number to apply, or 'all' (default: all)",
+        default=None,
+        help="1-indexed patch suggestion number to apply, or 'all'. Required — "
+             "applying every suggestion is the wrong default for a command that "
+             "writes to the working tree",
     )
     sub.add_argument(
         "--report",
         "-r",
         help="Path to a markdown report file or patch file (defaults to stdin)",
+    )
+    sub.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the paths each suggestion would touch and write nothing",
+    )
+    sub.add_argument(
+        "--yes",
+        "-y",
+        action="store_true",
+        help="Skip the confirmation prompt; required when stdin is not a terminal",
     )
     ns = sub.parse_args(rest)
 
@@ -536,35 +553,72 @@ def _run_apply(rest: list[str]) -> int:
         print("No verified patch suggestions found in the provided report.", file=sys.stderr)
         return 1
 
-    if ns.index.lower() == "all":
-        success_count = 0
-        for i, s in enumerate(suggestions, 1):
-            ok, msg = apply_patch_suggestion(s)
-            if ok:
-                success_count += 1
-                print(f"✓ [{i}/{len(suggestions)}] {msg}")
-            else:
-                print(f"✗ [{i}/{len(suggestions)}] {msg}", file=sys.stderr)
-        return 0 if success_count > 0 else 1
+    if ns.index is None:
+        print(
+            f"Error: choose what to apply — an index from 1 to {len(suggestions)}, or 'all'.\n"
+            "       `jury apply --dry-run all` shows what each one would touch.",
+            file=sys.stderr,
+        )
+        return 2
 
-    try:
-        target_idx = int(ns.index) - 1
+    if ns.index.lower() == "all":
+        selected = list(enumerate(suggestions, 1))
+    else:
+        try:
+            target_idx = int(ns.index) - 1
+        except ValueError:
+            print(f"Error: invalid index '{ns.index}'", file=sys.stderr)
+            return 2
         if not (0 <= target_idx < len(suggestions)):
             print(
                 f"Error: patch index {ns.index} out of range (found {len(suggestions)} suggestions)",
                 file=sys.stderr,
             )
             return 2
-        s = suggestions[target_idx]
-        ok, msg = apply_patch_suggestion(s)
+        selected = [(target_idx + 1, suggestions[target_idx])]
+
+    # Preview before writing, always. The report is derived from a diff that may be
+    # attacker-influenced and its suggestions were written by an LLM, so the
+    # operator gets git's own answer about what would change *before* anything
+    # changes. The old output was printed after the write had happened (#605).
+    print("These suggestions would touch:", file=sys.stderr)
+    for number, suggestion in selected:
+        paths, refusal = preview_patch_suggestion(suggestion)
+        listed = ", ".join(paths) if paths else "(nothing git could read)"
+        print(f"  [{number}] {suggestion.file}: {listed}", file=sys.stderr)
+        if refusal is not None:
+            print(f"        would be refused: {refusal}", file=sys.stderr)
+
+    if ns.dry_run:
+        print("Dry run: nothing was written.", file=sys.stderr)
+        return 0
+
+    if not ns.yes:
+        # Piping a report in is exactly the unattended case, and stdin may already
+        # be consumed by the report itself — so silence is refused rather than read
+        # as consent.
+        if sys.stdin is None or not sys.stdin.isatty():
+            print(
+                "Error: refusing to write without confirmation. Re-run with --yes to "
+                "confirm, or --dry-run to preview.",
+                file=sys.stderr,
+            )
+            return 2
+        answer = input(f"Apply {len(selected)} suggestion(s)? [y/N] ").strip().lower()
+        if answer not in ("y", "yes"):
+            print("Aborted; nothing was written.", file=sys.stderr)
+            return 1
+
+    success_count = 0
+    total = len(selected)
+    for number, suggestion in selected:
+        ok, msg = apply_patch_suggestion(suggestion)
         if ok:
-            print(f"✓ {msg}")
-            return 0
-        print(f"✗ {msg}", file=sys.stderr)
-        return 1
-    except ValueError:
-        print(f"Error: invalid index '{ns.index}'", file=sys.stderr)
-        return 2
+            success_count += 1
+            print(f"✓ [{number}/{total}] {msg}")
+        else:
+            print(f"✗ [{number}/{total}] {msg}", file=sys.stderr)
+    return 0 if success_count > 0 else 1
 
 
 def _run_comment_command(rest: list[str]) -> int:
