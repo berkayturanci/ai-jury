@@ -598,7 +598,13 @@ class ErrorBranchesThatNothingExecuted(unittest.TestCase):
             self.assertIn("Cannot read", message)
             self.assertIn("t.py", message)
 
-    @unittest.skipIf(os.geteuid() == 0, "root ignores the write bit")
+    # `hasattr` first: os.geteuid is POSIX-only, and a decorator argument is
+    # evaluated when the class body runs — so calling it unguarded raised
+    # AttributeError at *import* time on Windows, failing the whole module
+    # rather than this one test. Windows has no root to skip for, and chmod
+    # there sets the read-only attribute, so the test itself still applies.
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0,
+                     "root ignores the write bit")
     def test_a_file_that_cannot_be_written_reports_cannot_write(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
