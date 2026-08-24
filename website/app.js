@@ -1624,8 +1624,11 @@
       });
     }
 
+    var lastModalFocus = null;
+
     function openModal(item) {
       if (!modal) return;
+      lastModalFocus = document.activeElement;
       if (mIcon) {
         if (item.logo) {
           mIcon.innerHTML = '<img src="' + esc(item.logo) + '" alt="" width="34" height="34" style="object-fit:contain;display:block;" />';
@@ -1649,6 +1652,10 @@
       if (!modal) return;
       modal.classList.remove("open");
       modal.setAttribute("aria-hidden", "true");
+      if (lastModalFocus && typeof lastModalFocus.focus === "function") {
+        lastModalFocus.focus();
+        lastModalFocus = null;
+      }
     }
 
     if (modalClose) {
