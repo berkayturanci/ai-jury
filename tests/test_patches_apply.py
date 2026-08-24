@@ -564,6 +564,87 @@ class ContainmentAgainstARealGitRepository(unittest.TestCase):
         self.assertFalse(ok)
         self.assertFalse((self.root / "copy.py").exists())
 
+class ErrorBranchesThatNothingExecuted(unittest.TestCase):
+    """The three `try`/`except` arms #588 added and #587 asked to be tested.
+
+    Its body said "Added regression tests in test_cli_contract.py and
+    test_patches_apply.py" — literally true, one test in each file, and between
+    them they covered two of five new branches. The test placed in *this* file
+    exercised `cli.py`'s `_run_apply`, not `patches.py` at all, so the filename
+    made it look as though the `patches.py` bullet above it was guarded.
+
+    Nothing in the repository referenced the strings `Cannot read` or
+    `Cannot write`, and the 98% coverage floor had room for three uncovered
+    branches (#607).
+    """
+
+    def _suggestion(self, path: Path, fix: str = "x = 2\n"):
+        return PatchSuggestion(
+            file=path.name, line=1, claim="c", suggested_fix=fix, severity="minor"
+        )
+
+    def test_a_file_that_cannot_be_decoded_reports_cannot_read(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "t.py"
+            # Valid UTF-8 has no lone continuation byte, so read_text raises
+            # UnicodeDecodeError — a real shape for a file the agent picked up
+            # from a binary or differently-encoded tree.
+            target.write_bytes(b"\xff\xfe not utf-8 \x80")
+
+            ok, message = apply_patch_suggestion(self._suggestion(target), root_dir=root)
+
+            self.assertFalse(ok)
+            self.assertIn("Cannot read", message)
+            self.assertIn("t.py", message)
+
+    # `hasattr` first: os.geteuid is POSIX-only, and a decorator argument is
+    # evaluated when the class body runs — so calling it unguarded raised
+    # AttributeError at *import* time on Windows, failing the whole module
+    # rather than this one test. Windows has no root to skip for, and chmod
+    # there sets the read-only attribute, so the test itself still applies.
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0,
+                     "root ignores the write bit")
+    def test_a_file_that_cannot_be_written_reports_cannot_write(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "t.py"
+            target.write_text("x = 1\n", encoding="utf-8")
+            target.chmod(0o444)
+            try:
+                ok, message = apply_patch_suggestion(self._suggestion(target), root_dir=root)
+            finally:
+                target.chmod(0o644)
+
+            self.assertFalse(ok)
+            self.assertIn("Cannot write", message)
+            self.assertIn("t.py", message)
+
+    def test_the_read_failure_leaves_the_file_alone(self):
+        """A refused apply must not be a partial apply."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "t.py"
+            original = b"\xff\xfe not utf-8 \x80"
+            target.write_bytes(original)
+
+            apply_patch_suggestion(self._suggestion(target), root_dir=root)
+
+            self.assertEqual(target.read_bytes(), original)
+
+    def test_an_undecodable_report_reports_the_read_error(self):
+        """`cli.py`'s own read arm — the third branch, in the other file."""
+        with tempfile.TemporaryDirectory() as tmp:
+            report = Path(tmp) / "report.md"
+            report.write_bytes(b"\xff\xfe \x80")
+
+            err = io.StringIO()
+            with patch.object(sys, "stderr", err):
+                code = main(["apply", "--report", str(report)])
+
+            self.assertEqual(code, 2)
+            self.assertIn("Error reading report file", err.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()
