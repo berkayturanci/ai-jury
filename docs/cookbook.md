@@ -613,12 +613,27 @@ When reviewers identify a bug and verify a concrete fix, apply it safely with a 
 # 1. Run jury with suggested patches enabled
 jury --pr 123 --suggest-patches -o report.md
 
-# 2. Review and apply all verified suggestions
-jury apply --report report.md
+# 2. See what would change — writes nothing
+jury apply --report report.md all --dry-run
 
-# Or apply a specific patch suggestion by number:
+# 3. Apply, confirming at the prompt
+jury apply --report report.md all
+
+# Or a specific suggestion by number:
 jury apply --report report.md 1
 ```
+
+`jury apply` writes to your working tree, so it asks first:
+
+- The paths each suggestion would touch are printed **before** anything is
+  written, and they come from git itself — not from what the suggestion claims
+  to change. A patch that quietly renames a second file shows that second path
+  here.
+- The index is required. There is no "apply everything" default; pass `all`
+  explicitly when that is what you mean.
+- In a script, pass `--yes`. With stdin not a terminal and no `--yes`, the
+  command refuses rather than treating silence as consent — which also means
+  `cat report.md | jury apply all` needs `--yes`.
 
 ---
 

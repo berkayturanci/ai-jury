@@ -184,11 +184,11 @@ class PatchesApplyTests(unittest.TestCase):
             try:
                 os.chdir(tmp_path)
                 # Apply specific index
-                code = main(["apply", "--report", report_path, "1"])
+                code = main(["apply", "--report", report_path, "1", "--yes"])
                 self.assertEqual(code, 0)
 
                 # Apply all
-                code_all = main(["apply", "--report", report_path, "all"])
+                code_all = main(["apply", "--report", report_path, "all", "--yes"])
                 self.assertEqual(code_all, 0)
 
                 # Invalid index
@@ -212,10 +212,10 @@ class PatchesApplyTests(unittest.TestCase):
             old_cwd = Path.cwd()
             try:
                 os.chdir(tmp_path)
-                code_fail_all = main(["apply", "--report", report_path, "all"])
+                code_fail_all = main(["apply", "--report", report_path, "all", "--yes"])
                 self.assertEqual(code_fail_all, 1)
 
-                code_fail_single = main(["apply", "--report", report_path, "1"])
+                code_fail_single = main(["apply", "--report", report_path, "1", "--yes"])
                 self.assertEqual(code_fail_single, 1)
             finally:
                 os.chdir(old_cwd)
@@ -242,6 +242,139 @@ class PatchesApplyTests(unittest.TestCase):
         with patch("sys.stdin.isatty", return_value=True):
             code = main(["apply"])
             self.assertEqual(code, 2)
+
+
+class ApplyPreviewsAndConfirmsBeforeWriting(unittest.TestCase):
+    """#605: `jury apply` wrote with no preview, no confirmation, and defaulted to
+    applying every suggestion.
+
+    Independent of #603: any hand-rolled containment check is a bet that every way
+    a patch can name a file was enumerated. A preview-and-confirm step is what
+    makes losing that bet survivable rather than silent.
+
+    Every assertion here checks the **working tree**, not just the exit code — the
+    defect being fixed is precisely a command that reported one thing and wrote
+    another.
+    """
+
+    REPORT = (
+        "# 🏛️ AI Jury\n\n## Suggested patches\n\n"
+        "### target.py:1 — [major] tighten this\n\n> Verified by the jury.\n\n"
+        "```suggestion\nx = 2\n```\n"
+    )
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name)
+        for argv in (
+            ["git", "init", "-q", "."],
+            ["git", "config", "user.email", "t@example.com"],
+            ["git", "config", "user.name", "t"],
+        ):
+            subprocess.run(argv, cwd=self.root, check=True, capture_output=True)
+        (self.root / "target.py").write_text("x = 1\n", encoding="utf-8")
+        (self.root / "victim.py").write_text("secret = 1\n", encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=self.root, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-qm", "init"], cwd=self.root,
+                       check=True, capture_output=True)
+        # Outside the repo: a report inside it shows as untracked and would
+        # make every `git status --porcelain` assertion pass or fail for the
+        # wrong reason.
+        self._reports = tempfile.TemporaryDirectory()
+        self.addCleanup(self._reports.cleanup)
+        self.report = Path(self._reports.name) / "report.md"
+        self.report.write_text(self.REPORT, encoding="utf-8")
+
+        old = Path.cwd()
+        os.chdir(self.root)
+        self.addCleanup(os.chdir, old)
+
+    def _porcelain(self):
+        return subprocess.run(
+            ["git", "status", "--porcelain"], cwd=self.root,
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+
+    def _run(self, argv):
+        err = io.StringIO()
+        with patch.object(sys, "stderr", err):
+            code = main(argv)
+        return code, err.getvalue()
+
+    def test_dry_run_writes_nothing(self):
+        code, err = self._run(["apply", "--report", str(self.report), "all", "--dry-run"])
+
+        self.assertEqual(0, code)
+        self.assertIn("would touch", err)
+        self.assertIn("target.py", err)
+        # The tree is the assertion, not the exit code.
+        self.assertEqual("", self._porcelain())
+
+    def test_a_non_tty_without_yes_refuses_and_writes_nothing(self):
+        # Piping a report in is exactly the unattended case, and stdin may already
+        # be consumed by the report — silence must not read as consent.
+        with patch.object(sys.stdin, "isatty", return_value=False):
+            code, err = self._run(["apply", "--report", str(self.report), "all"])
+
+        self.assertEqual(2, code)
+        self.assertIn("refusing to write without confirmation", err)
+        self.assertEqual("", self._porcelain())
+
+    def test_declining_the_prompt_writes_nothing(self):
+        with (
+            patch.object(sys.stdin, "isatty", return_value=True),
+            patch("builtins.input", return_value="n"),
+        ):
+            code, err = self._run(["apply", "--report", str(self.report), "all"])
+
+        self.assertEqual(1, code)
+        self.assertIn("Aborted", err)
+        self.assertEqual("", self._porcelain())
+
+    def test_accepting_the_prompt_writes(self):
+        with (
+            patch.object(sys.stdin, "isatty", return_value=True),
+            patch("builtins.input", return_value="y"),
+        ):
+            code, _ = self._run(["apply", "--report", str(self.report), "all"])
+
+        self.assertEqual(0, code)
+        self.assertNotEqual("", self._porcelain(), "nothing was written after a yes")
+
+    def test_a_bare_apply_no_longer_applies_everything(self):
+        # The old default was `all`, so `jury apply --report r.md` rewrote the tree.
+        code, err = self._run(["apply", "--report", str(self.report)])
+
+        self.assertEqual(2, code)
+        self.assertIn("choose what to apply", err)
+        self.assertEqual("", self._porcelain())
+
+    def test_the_preview_names_a_path_the_suggestion_does_not_claim(self):
+        """Proves the preview reflects git's answer, not the suggestion's own claim.
+
+        The suggestion names `target.py`; the patch body renames `victim.py`. A
+        preview built from `suggestion.file` would show only `target.py` and hide
+        exactly the thing the operator needs to see.
+        """
+        report = (
+            "# 🏛️ AI Jury\n\n## Suggested patches\n\n"
+            "### target.py:1 — [major] tighten this\n\n> Verified by the jury.\n\n"
+            "```suggestion\n"
+            "diff --git a/target.py b/target.py\n"
+            "--- a/target.py\n+++ b/target.py\n@@ -1 +1 @@\n-x = 1\n+x = 2\n"
+            "diff --git a/victim.py b/pwned.py\n"
+            "similarity index 100%\nrename from victim.py\nrename to pwned.py\n"
+            "```\n"
+        )
+        self.report.write_text(report, encoding="utf-8")
+
+        code, err = self._run(["apply", "--report", str(self.report), "all", "--dry-run"])
+
+        self.assertEqual(0, code)
+        self.assertIn("pwned.py", err, "the preview hid a path the patch would create")
+        self.assertIn("would be refused", err)
+        self.assertEqual("", self._porcelain())
 
 
 class ContainmentAgainstARealGitRepository(unittest.TestCase):
