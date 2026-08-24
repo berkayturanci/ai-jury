@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- **Patch Containment Now Asks Git Instead Of Reading Headers** (#603): `apply_patch_suggestion` derives the set of paths a patch would touch from `git apply --numstat -z --summary --check`, and refuses unless it is exactly the suggested file.
+  - The check added by #584 inspected only `--- `/`+++ ` header lines. Git carries filenames in several other constructs and honours all of them — `rename from`/`rename to`, `copy from`/`copy to`, `old mode`/`new mode`, and a `GIT binary patch` section that has no `---`/`+++` lines at all. A patch whose headers named the suggested file could rename an unrelated path and still return "Applied git patch to <file>". Reproduced against a throwaway repository.
+  - It failed because it was a **blocklist**: enumerate the dangerous header forms and reject them. Adding `rename from` to the same loop repeats the design and misses the next construct. Validation and application now go through the same parser, which closes the gap rather than narrowing it.
+  - `--numstat` reports a rename's destination but never its source, so a patch can remove a path no numstat record mentions. `rename` and `copy` are therefore refused as operations — a single-file suggestion has no business doing either — rather than having their paths re-derived from `--summary` prose. This is not belt-and-braces: a patch that deletes the target and then renames another file onto it is accepted by git, and numstat reports *only* the suggested file, twice. The path set matches exactly and the `--summary` line is the sole evidence the other file was destroyed.
+  - **Found while fixing this, one step earlier:** the diff detection was `startswith("---") or "@@" in fix`. A rename-only or binary-only body has neither, so it never reached the git branch at all — it fell through to the line-replacement path, which wrote the diff *text* into the target file and reported success. Anything git can read as a patch now reaches the branch where containment is decided.
+  - The previous test passed for the wrong reason: the secondary target did not exist in the fixture, so `git apply` failed on its own and the assertion landed on the error string — removing the guard entirely left it green. Every new fixture creates the secondary target, so the patch would otherwise apply cleanly.
+  - Reachable only via `jury apply` run locally against a report derived from an untrusted diff; `action.yml` does not invoke it.
+
 ## [1.14.4] - 2026-08-19
 
 ### Fixed

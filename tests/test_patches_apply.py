@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -133,41 +134,40 @@ class PatchesApplyTests(unittest.TestCase):
                 claim="test",
                 suggested_fix="--- a/test.py\n+++ b/test.py\n@@ -1,1 +1,1 @@\n-x = 1\n+x = 2\n",
             )
-            mock_ok = MagicMock(returncode=0)
-            with patch("subprocess.run", return_value=mock_ok):
+            # Two subprocess calls now: the --check probe, then the real apply.
+            probe_ok = MagicMock(returncode=0, stdout="1\t1\ttest.py\0", stderr="")
+            apply_ok = MagicMock(returncode=0, stdout="", stderr="")
+            with patch("subprocess.run", side_effect=[probe_ok, apply_ok]):
                 ok, msg = apply_patch_suggestion(s, root_dir=tmp_path)
                 self.assertTrue(ok)
                 self.assertIn("Applied git patch", msg)
 
-            mock_fail = MagicMock(returncode=1, stderr="error: corrupt patch")
+            mock_fail = MagicMock(returncode=1, stdout="", stderr="error: corrupt patch")
             with patch("subprocess.run", return_value=mock_fail):
                 ok, msg = apply_patch_suggestion(s, root_dir=tmp_path)
                 self.assertFalse(ok)
                 self.assertIn("Git apply failed", msg)
 
-            # Test target mismatch in diff header
-            s_mismatch = PatchSuggestion(
-                file="test.py",
-                line=None,
-                severity="minor",
-                claim="test",
-                suggested_fix="--- a/other.py\n+++ b/other.py\n@@ -1,1 +1,1 @@\n-x = 1\n+x = 2\n",
-            )
-            ok, msg = apply_patch_suggestion(s_mismatch, root_dir=tmp_path)
-            self.assertFalse(ok)
-            self.assertIn("Diff header target mismatch", msg)
+            # A patch git reads as touching nothing is not the fix it claims to be.
+            probe_empty = MagicMock(returncode=0, stdout="", stderr="")
+            with patch("subprocess.run", return_value=probe_empty):
+                ok, msg = apply_patch_suggestion(s, root_dir=tmp_path)
+                self.assertFalse(ok)
+                self.assertIn("touches no files", msg)
 
-            # Test path traversal in diff header
-            s_traversal = PatchSuggestion(
-                file="test.py",
-                line=None,
-                severity="minor",
-                claim="test",
-                suggested_fix="--- a/../../etc/passwd\n+++ b/../../etc/passwd\n@@ -1,1 +1,1 @@\n-x\n+y\n",
-            )
-            ok, msg = apply_patch_suggestion(s_traversal, root_dir=tmp_path)
-            self.assertFalse(ok)
-            self.assertIn("Path traversal rejected", msg)
+            # A record git emits in a shape this parser does not understand is a
+            # path that went unchecked, so it is refused rather than skipped.
+            probe_odd = MagicMock(returncode=0, stdout="garbage\0", stderr="")
+            with patch("subprocess.run", return_value=probe_odd):
+                ok, msg = apply_patch_suggestion(s, root_dir=tmp_path)
+                self.assertFalse(ok)
+                self.assertIn("Unrecognized patch summary", msg)
+
+            probe_escape = MagicMock(returncode=0, stdout="1\t1\t../../etc/passwd\0", stderr="")
+            with patch("subprocess.run", return_value=probe_escape):
+                ok, msg = apply_patch_suggestion(s, root_dir=tmp_path)
+                self.assertFalse(ok)
+                self.assertIn("Path traversal rejected", msg)
 
     def test_cli_apply_subcommand_dispatch(self):
         with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as f:
@@ -242,6 +242,181 @@ class PatchesApplyTests(unittest.TestCase):
         with patch("sys.stdin.isatty", return_value=True):
             code = main(["apply"])
             self.assertEqual(code, 2)
+
+
+class ContainmentAgainstARealGitRepository(unittest.TestCase):
+    """#603: the check read only ---/+++ headers, so git's other filename-bearing
+    constructs reached `git apply` unvalidated.
+
+    Every fixture here **creates the secondary target**. The old test passed for
+    the wrong reason: the second path did not exist, so `git apply` failed on its
+    own and the assertion landed on the resulting error string — remove the guard
+    entirely and it still passed. Here the patch would apply cleanly, so the only
+    thing keeping these green is the guard.
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name)
+        for argv in (
+            ["git", "init", "-q", "."],
+            ["git", "config", "user.email", "t@example.com"],
+            ["git", "config", "user.name", "t"],
+        ):
+            subprocess.run(argv, cwd=self.root, check=True, capture_output=True)
+        (self.root / "target.py").write_text("x = 1\n", encoding="utf-8")
+        # The secondary target exists, so a patch reaching it would succeed.
+        (self.root / "victim.py").write_text("secret = 1\n", encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=self.root, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-qm", "init"], cwd=self.root,
+                       check=True, capture_output=True)
+
+    def _apply(self, fix):
+        return apply_patch_suggestion(
+            PatchSuggestion(file="target.py", line=1, severity="major",
+                            claim="c", suggested_fix=fix),
+            root_dir=self.root,
+        )
+
+    EDIT = "--- a/target.py\n+++ b/target.py\n@@ -1 +1 @@\n-x = 1\n+x = 2\n"
+
+    def test_a_legitimate_single_file_patch_still_applies(self):
+        ok, msg = self._apply(self.EDIT)
+
+        self.assertTrue(ok, msg)
+        self.assertEqual("x = 2\n", (self.root / "target.py").read_text(encoding="utf-8"))
+
+    def test_a_rename_section_cannot_ride_along(self):
+        ok, msg = self._apply(
+            self.EDIT
+            + "diff --git a/victim.py b/pwned.py\n"
+            "similarity index 100%\n"
+            "rename from victim.py\n"
+            "rename to pwned.py\n"
+        )
+
+        self.assertFalse(ok)
+        self.assertIn("pwned.py", msg)
+        # Nothing was written — not the rename, and not the edit that carried it.
+        self.assertTrue((self.root / "victim.py").exists())
+        self.assertFalse((self.root / "pwned.py").exists())
+        self.assertEqual("x = 1\n", (self.root / "target.py").read_text(encoding="utf-8"))
+
+    def test_a_mode_change_on_another_file_cannot_ride_along(self):
+        ok, msg = self._apply(
+            self.EDIT
+            + "diff --git a/victim.py b/victim.py\nold mode 100644\nnew mode 100755\n"
+        )
+
+        self.assertFalse(ok)
+        self.assertIn("victim.py", msg)
+        self.assertEqual("x = 1\n", (self.root / "target.py").read_text(encoding="utf-8"))
+
+    def test_a_new_file_cannot_ride_along(self):
+        ok, msg = self._apply(
+            self.EDIT
+            + "diff --git a/planted.py b/planted.py\n"
+            "new file mode 100644\n"
+            "--- /dev/null\n"
+            "+++ b/planted.py\n"
+            "@@ -0,0 +1 @@\n"
+            "+import os\n"
+        )
+
+        self.assertFalse(ok)
+        self.assertFalse((self.root / "planted.py").exists())
+
+    def test_renaming_the_target_itself_is_refused(self):
+        # numstat reports a rename's destination but never its source, so a rename
+        # whose destination is the suggested file would look contained while
+        # destroying the source. The operation is refused, not its paths re-derived.
+        ok, msg = self._apply(
+            "diff --git a/target.py b/renamed.py\n"
+            "similarity index 100%\n"
+            "rename from target.py\n"
+            "rename to renamed.py\n"
+        )
+
+        self.assertFalse(ok)
+        self.assertTrue((self.root / "target.py").exists())
+        self.assertFalse((self.root / "renamed.py").exists())
+
+    def test_a_rename_only_body_is_not_written_into_the_file_as_text(self):
+        """Found while fixing #603, one step earlier than the reported hole.
+
+        The diff detection was `startswith("---") or "@@" in fix`. A rename-only
+        body has neither, so it never reached the git branch at all — it fell
+        through to the line-replacement path, which wrote the diff *text* into
+        target.py and returned "Applied line replacement". A body git can read as
+        a patch must reach the branch where containment is decided.
+        """
+        original = (self.root / "target.py").read_text(encoding="utf-8")
+
+        ok, _ = self._apply(
+            "diff --git a/target.py b/renamed.py\n"
+            "similarity index 100%\n"
+            "rename from target.py\n"
+            "rename to renamed.py\n"
+        )
+
+        self.assertFalse(ok)
+        self.assertEqual(original, (self.root / "target.py").read_text(encoding="utf-8"))
+        self.assertNotIn("rename from", (self.root / "target.py").read_text(encoding="utf-8"))
+
+    def test_a_binary_section_reaches_the_containment_check(self):
+        # A binary patch has no ---/+++ lines at all, so under the old detection it
+        # was literal text too.
+        ok, _ = self._apply(
+            "diff --git a/blob.bin b/blob.bin\n"
+            "new file mode 100644\n"
+            "GIT binary patch\n"
+            "literal 4\n"
+            "Lc$@aOOaK4?\n\n"
+        )
+
+        self.assertFalse(ok)
+        self.assertFalse((self.root / "blob.bin").exists())
+
+    def test_a_rename_hidden_behind_a_matching_path_set_is_refused(self):
+        """The case that makes `--numstat` alone insufficient.
+
+        Delete target.py, then rename victim.py onto target.py. Git accepts the
+        patch, and numstat reports *only* `target.py` — twice — because it names a
+        rename's destination and never its source. The path set therefore equals
+        the suggested file exactly, and the containment check passes it. The only
+        evidence that victim.py is destroyed is the `--summary` rename line, which
+        is why `rename`/`copy` are refused as operations rather than having their
+        paths re-derived.
+        """
+        ok, msg = self._apply(
+            "diff --git a/target.py b/target.py\n"
+            "deleted file mode 100644\n"
+            "--- a/target.py\n"
+            "+++ /dev/null\n"
+            "@@ -1 +0,0 @@\n"
+            "-x = 1\n"
+            "diff --git a/victim.py b/target.py\n"
+            "similarity index 100%\n"
+            "rename from victim.py\n"
+            "rename to target.py\n"
+        )
+
+        self.assertFalse(ok)
+        self.assertIn("rename", msg)
+        self.assertTrue((self.root / "victim.py").exists(), "victim.py was destroyed")
+        self.assertEqual("x = 1\n", (self.root / "target.py").read_text(encoding="utf-8"))
+
+    def test_a_copy_cannot_ride_along(self):
+        ok, _ = self._apply(
+            "diff --git a/target.py b/copy.py\n"
+            "similarity index 100%\n"
+            "copy from target.py\n"
+            "copy to copy.py\n"
+        )
+
+        self.assertFalse(ok)
+        self.assertFalse((self.root / "copy.py").exists())
 
 
 if __name__ == "__main__":

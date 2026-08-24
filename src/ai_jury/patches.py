@@ -134,6 +134,94 @@ def parse_patch_suggestions(text: str) -> list[PatchSuggestion]:
     return out
 
 
+def _containment_refusal(
+    fix: str, *, root: Path, target: Path, file: str
+) -> str | None:
+    """Why ``fix`` may not be applied, or ``None`` when it touches only ``target``.
+
+    Asks git, rather than reading the patch by hand. The previous check inspected
+    only ``---``/``+++`` header lines, but git carries filenames in several other
+    constructs and honours all of them: ``rename from``/``rename to``,
+    ``copy from``/``copy to``, ``old mode``/``new mode``, and a ``GIT binary
+    patch`` section which has no ``---``/``+++`` lines at all. A patch whose
+    headers named the suggested file could rename an unrelated path and still be
+    reported as "Applied git patch to <file>" (#603, reproduced).
+
+    That check was a **blocklist** — enumerate the dangerous header forms — and it
+    missed because git has more of them than the enumeration covered. Adding
+    ``rename from`` to the same loop repeats the design and misses the next one.
+    So the question goes to the parser that will actually apply the patch:
+    ``--check`` writes nothing, ``--numstat -z`` lists every path the patch would
+    touch, and ``--summary`` names the operations. Validation and application now
+    share one parser, which is what closes the gap rather than narrowing it.
+    """
+    import subprocess
+
+    probe = subprocess.run(
+        ["git", "apply", "--numstat", "-z", "--summary", "--check", "-"],
+        input=fix, text=True, cwd=str(root), capture_output=True,
+    )
+    if probe.returncode != 0:
+        detail = redact(probe.stderr.strip())[0] or "patch does not apply cleanly"
+        return f"Git apply failed: {detail}"
+
+    # NUL-terminated numstat records, then the summary block as trailing text.
+    chunks = probe.stdout.split("\0")
+    summary = chunks.pop() if chunks else ""
+    if not chunks:
+        # An allowlist answers "which paths does this touch?" — and "none that I
+        # could see" is not the same answer as "only the target". A patch git reads
+        # as touching nothing cannot be the fix this suggestion claims to be.
+        return f"Patch touches no files; nothing to apply to {file}"
+    for record in chunks:
+        fields = record.split("\t", 2)
+        if len(fields) != 3:
+            # Not a shape this parser understands. Refusing is the only safe
+            # reading: an unparsed record is a path that went unchecked.
+            return f"Unrecognized patch summary from git, refusing to apply to {file}"
+        try:
+            touched = (root / fields[2]).resolve()
+            touched.relative_to(root)
+        except (ValueError, RuntimeError):
+            return f"Path traversal rejected in patch: {fields[2]}"
+        if touched != target:
+            return f"Patch touches {fields[2]}, not {file}"
+
+    # `--numstat` reports a rename's *destination* but never its source, so a patch
+    # can delete a path that no numstat record mentions. A single-file suggestion
+    # has no business renaming or copying anything, so the operation itself is
+    # refused rather than its paths re-derived from prose.
+    for line in summary.splitlines():
+        operation = line.strip().split(" ", 1)[0]
+        if operation in ("rename", "copy"):
+            return f"Patch {operation}s a file; a suggestion for {file} may only edit it"
+    return None
+
+
+#: Line prefixes that mean "git will read this body as a patch".
+#:
+#: The old test — ``startswith("---") or "@@" in fix`` — recognised only a plain
+#: unified diff. A rename-only or binary-only body has neither, so it missed the
+#: git branch entirely and fell through to the line-replacement path, which wrote
+#: the diff *text* into the file and reported success (found while fixing #603).
+#: That is the same blocklist mistake as the containment check, one step earlier:
+#: a form this list does not name is not merely unvalidated, it is written
+#: literally. Everything git can read as a patch must reach the git branch, where
+#: :func:`_containment_refusal` decides whether it may be applied.
+_PATCH_MARKERS = ("diff --git ", "--- ", "+++ ", "@@", "GIT binary patch")
+
+
+def _looks_like_patch(fix: str) -> bool:
+    """Whether ``fix`` should be handled as a git patch rather than as literal text."""
+    if fix.startswith("---") or "@@" in fix:
+        return True
+    return any(
+        line.startswith(marker)
+        for line in fix.splitlines()
+        for marker in _PATCH_MARKERS
+    )
+
+
 def apply_patch_suggestion(
     suggestion: PatchSuggestion, root_dir: Path | None = None
 ) -> tuple[bool, str]:
@@ -149,22 +237,12 @@ def apply_patch_suggestion(
         return False, f"File not found: {suggestion.file}"
 
     fix = suggestion.suggested_fix
-    if fix.startswith("---") or "@@" in fix:
+    if _looks_like_patch(fix):
         import subprocess
 
-        # Ensure unified diff headers do not attempt path traversal or target outside suggestion.file
-        for line in fix.splitlines():
-            if line.startswith("--- ") or line.startswith("+++ "):
-                path_part = line[4:].strip().split("\t")[0]
-                if path_part and path_part != "/dev/null":
-                    clean_path = path_part.removeprefix("a/").removeprefix("b/").strip()
-                    try:
-                        diff_target = (root / clean_path).resolve()
-                        diff_target.relative_to(root)
-                    except (ValueError, RuntimeError):
-                        return False, f"Path traversal rejected in diff header: {clean_path}"
-                    if diff_target != target:
-                        return False, f"Diff header target mismatch: {clean_path} != {suggestion.file}"
+        refusal = _containment_refusal(fix, root=root, target=target, file=suggestion.file)
+        if refusal is not None:
+            return False, refusal
 
         proc = subprocess.run(
             ["git", "apply", "-"], input=fix, text=True, cwd=str(root), capture_output=True
