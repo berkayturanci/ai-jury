@@ -1,0 +1,15 @@
+# Revisions that changed formatting only, and should not surface in `git blame`.
+#
+# Enable locally with:
+#     git config blame.ignoreRevsFile .git-blame-ignore-revs
+# GitHub's blame view reads this file automatically.
+#
+# Add a revision here only when it is a pure mechanical reformat — one that can
+# be reproduced by re-running the tool, and whose parse tree is unchanged. A
+# commit that also changes behaviour must never be listed, or the line that
+# broke something becomes unattributable, which is worse than noisy blame.
+
+# ci(ruff): bump the hook, format the tree, and gate it in CI (#622)
+# 38 files, ruff 0.16.3. Verified before merge: all 36 changed Python files
+# parse to byte-identical syntax trees, so nothing here is a behaviour change.
+4d446337fca8d3779e941ac4887d7058f19ea4b7
