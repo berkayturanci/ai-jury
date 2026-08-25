@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.15.0] - 2026-08-25
+
 ### Added
 - **`--min-vendors`: fail when the panel collapsed** (#625). `--strict` fails when a configured agent CLI is *missing*; it does not fail when one is present, probes clean, and then returns nothing — which is how a three-vendor panel silently becomes one.
   - Observed on a real run: `effective panel: 1 of 3 reviewer(s)` — `claude` failed on an expired session, `agy`'s launcher ate the prompt, `codex` reviewed alone. `jury --doctor` had reported all three `[available]` with `probe: ok` beforehand and was right; they were installed. The run still exited 0 and emitted a verdict.
