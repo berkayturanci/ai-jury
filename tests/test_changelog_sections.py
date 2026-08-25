@@ -90,9 +90,20 @@ class EachSectionAppearsOnce(unittest.TestCase):
         }
         self.assertEqual(unknown, {}, f"unrecognised changelog sections: {unknown}")
 
-    def test_the_unreleased_block_has_content(self):
-        """An empty Unreleased block at release time means entries went missing."""
-        self.assertTrue(
-            self.blocks["Unreleased"],
-            "## [Unreleased] carries no sections; a release cut from it would be blank",
+    def test_no_released_version_is_empty(self):
+        """A published version with no sections is a release that says nothing.
+
+        Deliberately *not* asserted on `Unreleased`. The first draft did, and it
+        failed the moment a release was actually cut — `## [Unreleased]` is
+        correctly empty from the cut until the next change lands, so the guard
+        fired on the one behaviour it was meant to protect. The state worth
+        refusing is a *released* block with nothing under it.
+        """
+        empty = sorted(
+            v for v, sections in self.blocks.items() if v != "Unreleased" and not sections
+        )
+        self.assertEqual(
+            empty,
+            [],
+            f"released versions carry no sections, so their notes are blank: {empty}",
         )
