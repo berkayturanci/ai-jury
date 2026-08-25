@@ -7,16 +7,17 @@ usage: jury [-h] [--pr PR] [--issue ISSUE] [--repo REPO]
             [--total-timeout TOTAL_TIMEOUT] [--phase-timeout PHASE_TIMEOUT]
             [--retries RETRIES] [--max-diff-bytes MAX_DIFF_BYTES] [--chunk]
             [--no-chunk] [--exclude GLOB] [--include GLOB] [--seed SEED]
-            [--chair CHAIR] [--mock] [--strict] [--verify] [--no-verify]
-            [--doctor] [--write WRITE] [-o OUTPUT] [--metadata-json PATH]
-            [--format {markdown,json,sarif}] [--decision {chair,vote}]
-            [--transcript] [--no-transcript] [--verbose] [--live] [--theater]
-            [--no-theater] [--theater-style {flat,pixel}] [--post-summary]
-            [--post-inline] [--post-progress] [--post-mode {single,phased}]
-            [--dry-run] [--label] [--ci] [--fail-on FAIL_ON] [--cache]
-            [--clear-cache] [--cache-dir CACHE_DIR] [--suggest-patches]
-            [--patches-out PATH] [--incremental] [-q] [--config-validate]
-            [--strict-config] [--tiered] [--hints] [--version]
+            [--chair CHAIR] [--mock] [--strict] [--min-vendors N] [--verify]
+            [--no-verify] [--doctor] [--write WRITE] [-o OUTPUT]
+            [--metadata-json PATH] [--format {markdown,json,sarif}]
+            [--decision {chair,vote}] [--transcript] [--no-transcript]
+            [--verbose] [--live] [--theater] [--no-theater]
+            [--theater-style {flat,pixel}] [--post-summary] [--post-inline]
+            [--post-progress] [--post-mode {single,phased}] [--dry-run]
+            [--label] [--ci] [--fail-on FAIL_ON] [--cache] [--clear-cache]
+            [--cache-dir CACHE_DIR] [--suggest-patches] [--patches-out PATH]
+            [--incremental] [-q] [--config-validate] [--strict-config]
+            [--tiered] [--hints] [--version]
 
 Cross-vendor multi-agent PR review jury.
 
@@ -62,6 +63,10 @@ options:
   --chair CHAIR         override the synthesizing chair agent
   --mock                offline demo: use deterministic mock agents
   --strict              fail if any configured agent CLI is missing
+  --min-vendors N       fail (exit 3) unless at least N distinct vendors
+                        contributed a review; 0 disables. --strict checks
+                        availability at startup, this checks participation at
+                        the end
   --verify              run the verification round (default: from config)
   --no-verify           skip the verification round
   --doctor              print a local readiness diagnostics report and exit
