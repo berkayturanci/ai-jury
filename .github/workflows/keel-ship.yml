@@ -1,0 +1,259 @@
+name: keel-ship
+
+# The consumer copy of keel's own keel-ship workflow (#602). ai-jury declared
+# `tier3_globs` — adapters, privilege, redaction, injection, config — but nothing
+# read that declaration at merge time, so 16 consecutive PRs merged with zero
+# review verdicts. The `gates: [build, lint]` line was never the gap: keel's own
+# config says exactly the same. There was no workflow to run the gate.
+#
+# keel is installed **pinned**, and from `keel-workflow`. The PyPI name `keel` is
+# an unrelated package at 0.1 — installing that would give this job someone
+# else's code, or no `keel` command at all. The version is bumped deliberately
+# rather than floated, so a keel release cannot change this repo's merge
+# contract without a reviewed diff here.
+
+on:
+  pull_request:
+  # A verdict is the event this gate waits for, so it must re-evaluate when one
+  # arrives. Without this the published check stays incomplete forever: the only
+  # other retrigger is a new commit, which changes the head SHA and invalidates
+  # the very verdicts that would let it pass.
+  #
+  # `issue_comment` specifically, because that is what keel posts:
+  # `keel post-comment` calls POST /issues/{n}/comments. Formal reviews and
+  # inline review comments are not what a verdict arrives as, so subscribing to
+  # `pull_request_review*` instead — which reads like the tidier choice — would
+  # fire exactly never.
+  #
+  # It does fire for comments on plain issues too; the jobs below filter for a
+  # pull request. `issue_comment` also always runs the workflow from the default
+  # branch and checks out that branch rather than the PR head, so no
+  # contributor-authored code executes on this path.
+  issue_comment:
+    types: [created, edited]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "PR number to assess (optional)"
+        required: false
+      deferral:
+        description: "Optional evidence deferral id, kind, or all"
+        required: false
+
+# One evaluation per pull request at a time. Two overlapping runs would both
+# GET-then-PATCH the same check-run, and the slower one would overwrite the
+# newer verdict — routine once a comment can trigger a run.
+concurrency:
+  group: keel-ship-${{ github.event.pull_request.number || github.event.issue.number || github.event.inputs.pr || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+  checks: write
+
+jobs:
+  ship:
+    name: keel ship (assessment)
+    # Not on a comment: this job assesses the diff, and a comment does not change
+    # it. Only the evidence gate needs to re-read the PR when a verdict lands.
+    if: ${{ github.event_name != 'issue_comment' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0          # full history so keel can diff against the base branch
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install keel (pinned)
+        run: python -m pip install --upgrade pip && pip install "keel-workflow==1.19.0"
+      - name: Make base branch available locally
+        env:
+          BASE: ${{ github.base_ref || 'main' }}
+        run: git fetch --no-tags origin "$BASE:$BASE" || true
+      - name: Run keel ship (informational)
+        id: ship
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number || github.event.inputs.pr }}
+        run: |
+          set +e
+          ARGS=(.keel/project.yaml --root .)
+          if [ -n "$PR" ]; then
+            ARGS+=(--pr "$PR")
+          fi
+          keel ship "${ARGS[@]}" | tee ship.txt
+          echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+          { echo '### 🚢 keel ship'; echo '```'; cat ship.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - name: Comment assessment on the PR
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          CODE: ${{ steps.ship.outputs.code }}
+        run: |
+          {
+            echo '### 🚢 keel ship'
+            echo
+            echo '```'
+            cat ship.txt
+            echo '```'
+            echo
+            echo "_decision exit code: ${CODE} (0 = not BLOCK). Informational — not a required gate._"
+          } > body.md
+          gh pr comment "$PR" --body-file body.md
+
+  evidence:
+    # Deliberately NOT "keel evidence (required)". Actions names this job's own
+    # check after the job, and that check is driven by the exit code — it can only
+    # ever say "the job ran". The gating signal is the check-run the step below
+    # publishes under that name, and two same-named checks on one commit would be
+    # indistinguishable to branch protection, which matches by name.
+    name: keel evidence (verify)
+    runs-on: ubuntu-latest
+    # Ordered after `ship` on purpose. Arming falls through to the ship-assessment
+    # comment for any branch outside evidence._SHIP_BRANCH_RE, and that comment is
+    # written by the `ship` job — running the two in parallel let this gate read the
+    # PR before the comment existed and pass having checked nothing.
+    needs: ship
+    # Written on the event name, not on `github.event.inputs.pr`. On any event
+    # without a `workflow_dispatch` payload that expression is `null`, and
+    # GitHub coerces both `null` and `''` to 0 — so `null != ''` is **false**
+    # and this job would be silently skipped on every event but `pull_request`.
+    if: >-
+      ${{ !cancelled() && (
+        github.event_name == 'pull_request' ||
+        (github.event_name == 'issue_comment' && github.event.issue.pull_request) ||
+        (github.event_name == 'workflow_dispatch' && github.event.inputs.pr != '')
+      ) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install keel (pinned)
+        run: python -m pip install --upgrade pip && pip install "keel-workflow==1.19.0"
+      - name: Verify posted ship evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number || github.event.issue.number || github.event.inputs.pr }}
+          DEFERRAL: ${{ github.event.inputs.deferral }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          # Not `head.repo.fork`, which means "the head repo is itself a fork of
+          # something" — true for every same-repo PR in a downstream fork. What
+          # matters is whether the head lives somewhere else.
+          IS_FORK: ${{ github.event.pull_request.head.repo.full_name != '' && github.event.pull_request.head.repo.full_name != github.repository }}
+          CHECK_NAME: keel evidence (required)
+        run: |
+          # --phase pre-merge: the closure comments are an s11 artifact, posted after
+          # the merge this gate authorizes, so requiring them here is unsatisfiable.
+          # --require-armed: an unarmed gate must not report success, or a green check
+          # cannot be told apart from one that never evaluated anything.
+          ARGS=(.keel/project.yaml --root . --pr "$PR" --phase pre-merge --require-armed)
+          if [ -n "$DEFERRAL" ]; then
+            ARGS+=(--deferral "$DEFERRAL")
+          fi
+
+          # On workflow_dispatch there is no pull_request payload. Falling back to
+          # $GITHUB_SHA would stamp the verdict for PR $PR onto whatever ref the run
+          # was dispatched from — normally the default branch — and check-runs cannot
+          # be deleted. Resolve the PR's real head instead.
+          HEAD_SHA="$PR_HEAD_SHA"
+          if [ -z "$HEAD_SHA" ]; then
+            HEAD_SHA=$(gh pr view "$PR" --json headRefOid -q .headRefOid)
+          fi
+
+          set +e
+          keel evidence-verify "${ARGS[@]}"
+          RC=$?
+          set -e
+
+          # Upsert, never blind POST. The check-runs API has no upsert on
+          # (name, head_sha): every run would stack another check under the gating
+          # name, at least one of them permanently incomplete. Branch protection
+          # matches by name, so which of several same-named checks it reads is
+          # exactly the ambiguity the job rename above exists to avoid.
+          publish_check() {
+            local status="$1" conclusion="$2" title="$3" summary="$4"
+            local body=(-f "status=${status}"
+                        -f "output[title]=${title}"
+                        -f "output[summary]=${summary}")
+            if [ -n "$conclusion" ]; then
+              body+=(-f "conclusion=${conclusion}")
+            fi
+            local existing
+            # --method GET is required: `-f` alone switches gh to POST, which
+            # 404s on this endpoint and would make every upsert look like "no
+            # existing run" — quietly restoring the stacking this replaces.
+            existing=$(gh api --method GET \
+              "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}/check-runs" \
+              -f "check_name=${CHECK_NAME}" \
+              --jq '.check_runs[0].id // empty' 2>/dev/null) || existing=""
+            if [ -n "$existing" ]; then
+              gh api -X PATCH "repos/${GITHUB_REPOSITORY}/check-runs/${existing}" \
+                "${body[@]}" >/dev/null
+            else
+              gh api -X POST "repos/${GITHUB_REPOSITORY}/check-runs" \
+                -f "name=${CHECK_NAME}" -f "head_sha=${HEAD_SHA}" "${body[@]}" >/dev/null
+            fi
+          }
+
+          # One verdict, three shapes. Kept as assignments rather than three copies of
+          # the publish call so the reporting path is single and the arms differ only
+          # in what they report.
+          #
+          # FALLBACK_EXIT is what this job exits with when the check-run could not be
+          # published at all. On a pull request from a fork the token is read-only
+          # whatever `permissions:` declares, so the gating check cannot be created —
+          # and exiting 1 unconditionally there would leave every fork contribution
+          # red with no route forward, including one whose evidence passed. The job's
+          # own exit code becomes the fallback channel instead: green when the
+          # evidence verified, red otherwise. Never green-while-unverified.
+          case "$RC" in
+            0)
+              STATUS=completed; CONCLUSION=success; FALLBACK_EXIT=0
+              TITLE="Evidence verified"
+              SUMMARY="All required evidence for the pre-merge phase is present and pinned to \`$HEAD_SHA\`."
+              echo "Evidence verification passed."
+              ;;
+            2)
+              STATUS=in_progress; CONCLUSION=""; FALLBACK_EXIT=1
+              TITLE="Waiting for review evidence"
+              SUMMARY="Pre-verdict state: required reviewer verdicts are not posted yet. This check stays incomplete, which blocks a merge, until the evidence resolves."
+              echo "::notice title=Waiting for review evidence::Evidence gate is in pre-verdict state (waiting for review evidence). Merge remains blocked until all required verdicts pass."
+              {
+                echo "### ⏳ keel evidence (waiting)"
+                echo
+                echo "Evidence gate is in pre-verdict state — waiting for required reviewer verdicts."
+                echo "_Merge remains blocked until required evidence is posted and verified._"
+              } >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            *)
+              STATUS=completed; CONCLUSION=failure; FALLBACK_EXIT=1
+              TITLE="Evidence verification failed"
+              SUMMARY="Explicit evidence violation: a closure comment that does not match the ledger record, a missing attribution label, or an unarmed gate. Run \`keel evidence-verify\` locally for the itemised report."
+              echo "::error title=Evidence verification failed::Explicit evidence violation or finding detected."
+              ;;
+          esac
+
+          if publish_check "$STATUS" "$CONCLUSION" "$TITLE" "$SUMMARY"; then
+            # The named check carries the verdict, so this job reports only that
+            # the verification ran — 0 while the gate is waiting, because the
+            # incomplete check is what blocks. A hard evidence violation still
+            # fails the job: that is not a state anything is waiting on.
+            if [ "$RC" -ne 0 ] && [ "$RC" -ne 2 ]; then
+              exit 1
+            fi
+            exit 0
+          fi
+
+          if [ "$IS_FORK" = "true" ]; then
+            echo "::warning title=Evidence check-run unavailable::A pull request from a fork gets a read-only token, so \"$CHECK_NAME\" cannot be published. This job's exit code carries the verdict instead; to publish it, use Run workflow (workflow_dispatch) from the base repository with this PR number — Re-run all jobs replays the same read-only token."
+            exit "$FALLBACK_EXIT"
+          fi
+          echo "::error title=Could not publish the evidence check-run::Reporting the verdict to GitHub failed, so this step fails rather than leaving the gate unreported."
+          exit 1

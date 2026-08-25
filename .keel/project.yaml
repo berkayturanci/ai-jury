@@ -18,6 +18,16 @@ knobs:
     - "src/ai_jury/config.py"
     - ".github/workflows/**"
 
+# The review-evidence chain is NOT configured here, and its absence from this
+# list is not the gap #602 looked for — keel's own `projects/keel.yaml` declares
+# the same two gates. The reviewer contract is derived from `tier3_globs` above
+# and enforced by `.github/workflows/keel-ship.yml`, which runs
+# `keel evidence-verify --phase pre-merge --require-armed` and publishes the
+# result as the `keel evidence (required)` check-run.
+#
+# That check must also be *required* in branch protection to block a merge;
+# until an operator does that it reports without gating. Tracked separately —
+# changing branch protection is not an agent action.
 gates: [build, lint]
 extensions: {}
 extensions_dir: .keel/extensions

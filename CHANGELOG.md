@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **The Review-Evidence Chain Is Wired Up** (#602): of the 16 PRs merged into `main` between 2026-08-19 and 2026-08-24, none carried a review verdict — including changes to the modules `tier3_globs` already lists as highest-risk.
+  - The cause was **not** the `gates: [build, lint]` line the issue pointed at: keel's own `projects/keel.yaml` declares exactly the same two. The gate is driven by a workflow, and this repo had none. Confirmed by running `keel evidence-verify` against a real PR here before writing anything — it works against the existing config unmodified, deriving a tier-2 two-reviewer requirement from `tier3_globs`.
+  - `.github/workflows/keel-ship.yml` is the consumer copy of keel's own, running `keel evidence-verify --phase pre-merge --require-armed` and publishing the verdict as the `keel evidence (required)` check-run.
+  - keel is installed **pinned**, and from `keel-workflow`. The PyPI name `keel` is an unrelated package at version 0.1; installing it would have given the job someone else's code and a failure that reads like a keel bug. A test asserts the package name as a rule over every install line — `keel-workflow` legitimately contains `keel`, so asserting the absence of a string would not have worked.
+  - The gate reports but does not yet block: making the check *required* is a branch-protection change, which is an operator action. `.keel/project.yaml` now says so next to `gates:`, so the next reader does not re-derive this issue from an unexplained two-item list.
+  - **Two of the first mutations against the new tests passed, and that is why the tests changed shape.** Every flag asserted on is also *described* in a comment a few lines above it, so `assertIn("--require-armed", body)` held with the flag deleted; and `assertIn("issue_comment:", body)` matched `_disabled_issue_comment:`. The assertions are now line-anchored over comment-stripped text, with a guard asserting the stripping actually strips. Seven mutations — dropping `--require-armed`, `--phase`, the trigger, the gate call, the version pin, the package name, and colliding the job name with the check name — each fail.
+
 ### Security
 
 - **Shell Injection via `inputs.version`** (#604):
