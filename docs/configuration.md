@@ -243,10 +243,12 @@ prompt_mode = "arg" # "arg" (appends prompt as last argument) or "stdin" (pipes 
 ```python
 from ai_jury.adapters import BaseAdapter, register_adapter, AgentResult
 
+
 class CustomCompanyAdapter(BaseAdapter):
     def invoke(self, prompt: str, timeout: float) -> AgentResult:
         # Custom HTTP, gRPC, or CLI logic here
         return AgentResult(ok=True, text="Response from custom adapter")
+
 
 # Register custom vendor
 register_adapter("company-llm", CustomCompanyAdapter)

@@ -135,7 +135,12 @@ def diff_lines_changed(diff: str | None) -> int:
     # bolt: avoid allocating a huge list of strings from splitlines()
     # and generator overhead by using C-optimized string counting.
     c = diff.count("\n+") + diff.count("\n-") - diff.count("\n+++") - diff.count("\n---")
-    if diff.startswith("+") and not diff.startswith("+++") or diff.startswith("-") and not diff.startswith("---"):
+    if (
+        diff.startswith("+")
+        and not diff.startswith("+++")
+        or diff.startswith("-")
+        and not diff.startswith("---")
+    ):
         c += 1
     return c
 
@@ -166,7 +171,9 @@ def is_security_finding(finding: Any) -> bool:
     return bool(_COMBINED_RX.search(blob))
 
 
-def _risk_level_from_stats(has_critical: bool, has_major: bool, has_minor: bool, groups: list) -> str:
+def _risk_level_from_stats(
+    has_critical: bool, has_major: bool, has_minor: bool, groups: list
+) -> str:
     """Derive the risk level from precomputed severity stats.
 
     Thresholds (deterministic):

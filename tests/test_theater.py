@@ -33,8 +33,7 @@ _AGENTS = [("claude", "anthropic"), ("codex", "openai"), ("qwen", "local")]
 
 
 def _court(**kw):
-    return Courtroom(_AGENTS, "codex", animate=False, cols=92, rows=30,
-                     capture=[], **kw)
+    return Courtroom(_AGENTS, "codex", animate=False, cols=92, rows=30, capture=[], **kw)
 
 
 def _ar(agent, vendor="anthropic", *, ok=True, output="", error=None):
@@ -73,7 +72,7 @@ class ScreenTest(unittest.TestCase):
             self.assertNotIn(bad, plain)
         self.assertIn("x", plain)
         self.assertIn("z", plain)
-        self.assertNotIn("\x1b[2J", s.to_ansi())   # injected control seq gone from terminal output
+        self.assertNotIn("\x1b[2J", s.to_ansi())  # injected control seq gone from terminal output
 
 
 class CourtroomTest(unittest.TestCase):
@@ -93,9 +92,9 @@ class CourtroomTest(unittest.TestCase):
         for name in ("claude", "codex", "qwen"):
             self.assertIn(name, frame)
         self.assertIn("PR #142", frame)
-        self.assertIn("REQUEST CHANGES", frame)        # decision banner
+        self.assertIn("REQUEST CHANGES", frame)  # decision banner
         self.assertIn("DECISION", frame)
-        self.assertIn("chair: codex", frame)           # chair recorded, no judge
+        self.assertIn("chair: codex", frame)  # chair recorded, no judge
 
     def test_debate_round_shown_in_strip(self):
         court = _court()
@@ -129,10 +128,10 @@ class CourtroomTest(unittest.TestCase):
         court.set_vote(vote)
         court.close()
         frame = court.screen.to_plain()
-        self.assertIn("panel vote", frame)              # title + interior label
+        self.assertIn("panel vote", frame)  # title + interior label
         self.assertIn("DECISION by panel vote", frame)
-        self.assertIn("REQUEST", frame)                 # ballot chips / banner
-        self.assertIn("request changes", frame)         # tally line
+        self.assertIn("REQUEST", frame)  # ballot chips / banner
+        self.assertIn("request changes", frame)  # tally line
 
     def test_issue_mode_case_label(self):
         court = _court(mode="issue", case="issue #88")
@@ -151,8 +150,9 @@ class CourtroomTest(unittest.TestCase):
     def test_ascii_fallback_no_unicode(self):
         # With unicode off, the renderer's own chrome must be pure ASCII (agent
         # CONTENT may still carry unicode; we drive ASCII-only content here).
-        court = Courtroom(_AGENTS, "codex", animate=False, cols=92, rows=30,
-                          capture=[], unicode=False)
+        court = Courtroom(
+            _AGENTS, "codex", animate=False, cols=92, rows=30, capture=[], unicode=False
+        )
         ascii_review = (
             'Findings:\n```json\n[{"severity":"critical","file":"auth.py",'
             '"line":42,"claim":"missing auth check"}]\n```'
@@ -165,8 +165,10 @@ class CourtroomTest(unittest.TestCase):
         court.screen.to_plain().encode("ascii")  # raises if chrome leaked non-ascii
 
     def test_scales_to_two_and_five_agents(self):
-        for agents in ([("a", "anthropic"), ("b", "openai")],
-                       [(f"a{i}", "local") for i in range(5)]):
+        for agents in (
+            [("a", "anthropic"), ("b", "openai")],
+            [(f"a{i}", "local") for i in range(5)],
+        ):
             court = Courtroom(agents, agents[0][0], animate=False, cols=92, rows=30, capture=[])
             court.open()
             court.step("review", _ar(agents[0][0], output=_REVIEW))
@@ -219,13 +221,13 @@ class CourtroomTest(unittest.TestCase):
         self.assertIn("claude", court.screen.to_plain())
 
 
-_PIX_AGENTS = [("claude", "anthropic"), ("codex", "openai"),
-               ("agy", "google"), ("qwen", "local")]
+_PIX_AGENTS = [("claude", "anthropic"), ("codex", "openai"), ("agy", "google"), ("qwen", "local")]
 
 
 def _pix_court(**kw):
-    return Courtroom(_PIX_AGENTS, "claude", animate=False, cols=92, rows=30,
-                     capture=[], style="pixel", **kw)
+    return Courtroom(
+        _PIX_AGENTS, "claude", animate=False, cols=92, rows=30, capture=[], style="pixel", **kw
+    )
 
 
 class PixelSceneTest(unittest.TestCase):
@@ -244,10 +246,10 @@ class PixelSceneTest(unittest.TestCase):
         self._drive(court)
         court.close()
         plain = court.screen.to_plain()
-        self.assertIn("▀", plain)                       # half-block band drawn
+        self.assertIn("▀", plain)  # half-block band drawn
         for name in ("claude", "codex", "agy", "qwen"):
             self.assertIn(name, plain)
-        self.assertIn("REQUEST CHANGES", plain)         # chair decision banner
+        self.assertIn("REQUEST CHANGES", plain)  # chair decision banner
         self.assertIn("DECISION (chair)", plain)
         # truecolor fg+bg per half-block cell
         self.assertIn("48;2;", court.screen.to_ansi())
@@ -269,8 +271,8 @@ class PixelSceneTest(unittest.TestCase):
         court.close()
         plain = court.screen.to_plain()
         self.assertIn("DECISION by panel vote", plain)
-        self.assertIn("request changes", plain)         # tally on the banner
-        self.assertIn("[REQUEST", plain)                # a top-edge ballot chip
+        self.assertIn("request changes", plain)  # tally on the banner
+        self.assertIn("[REQUEST", plain)  # a top-edge ballot chip
 
     def test_pixel_verify_overlay(self):
         court = _pix_court()
@@ -283,8 +285,16 @@ class PixelSceneTest(unittest.TestCase):
 
     def test_pixel_ascii_falls_back_to_flat(self):
         # unicode off → no half-block; pixel transparently uses the flat scene.
-        court = Courtroom(_PIX_AGENTS, "claude", animate=False, cols=92, rows=30,
-                          capture=[], style="pixel", unicode=False)
+        court = Courtroom(
+            _PIX_AGENTS,
+            "claude",
+            animate=False,
+            cols=92,
+            rows=30,
+            capture=[],
+            style="pixel",
+            unicode=False,
+        )
         court.open()
         court.step("review", _ar("claude", output=_REVIEW))
         court.close()
@@ -294,21 +304,21 @@ class PixelSceneTest(unittest.TestCase):
 
     def test_pixel_many_jurors_falls_back_to_roster(self):
         agents = [(f"j{i}", "local") for i in range(16)]
-        court = Courtroom(agents, agents[0][0], animate=False, cols=92, rows=30,
-                          capture=[], style="pixel")
+        court = Courtroom(
+            agents, agents[0][0], animate=False, cols=92, rows=30, capture=[], style="pixel"
+        )
         court.open()
         court.close()
         plain = court.screen.to_plain()
         self.assertIn("JURY:", plain)
-        self.assertNotIn("▀", plain)        # no pixel band when seats don't fit
+        self.assertNotIn("▀", plain)  # no pixel band when seats don't fit
 
     def test_pix_slots_empty(self):
         self.assertEqual(_pix_court()._pix_slots(0, 92), [])
 
 
 _DISPUTE = (
-    "```json\n"
-    '[{"file":"a.py","line":1,"claim":"unclear","status":"needs_human_decision"}]\n```'
+    '```json\n[{"file":"a.py","line":1,"claim":"unclear","status":"needs_human_decision"}]\n```'
 )
 
 
@@ -330,9 +340,9 @@ class AnimateTest(unittest.TestCase):
             c.step("synthesis", _ar("codex", "openai", output="no verdict header at all"))
             c.close()
         out = buf.getvalue()
-        self.assertIn("\033[", out)        # styled output written
-        self.assertIn("\033[?25l", out)    # open() hides the cursor
-        self.assertIn("\033[?25h", out)    # close() restores it
+        self.assertIn("\033[", out)  # styled output written
+        self.assertIn("\033[?25l", out)  # open() hides the cursor
+        self.assertIn("\033[?25h", out)  # close() restores it
 
     def test_animate_failed_agent(self):
         import unittest.mock as mock
@@ -354,9 +364,9 @@ class LiveAndFitTest(unittest.TestCase):
         import unittest.mock as mock
 
         buf = io.StringIO()
-        with mock.patch("ai_jury.theater.time.sleep"):   # no real beat sleeps
+        with mock.patch("ai_jury.theater.time.sleep"):  # no real beat sleeps
             c = Courtroom(_AGENTS, "codex", animate=True, stream=buf)
-            c.tick_interval = 0.01                        # Event.wait stays real
+            c.tick_interval = 0.01  # Event.wait stays real
             c.open()
             before = buf.getvalue()
             # Real delay that the time.sleep patch does NOT affect, so the
@@ -365,10 +375,10 @@ class LiveAndFitTest(unittest.TestCase):
             threading.Event().wait(0.3)
             self.assertGreater(len(buf.getvalue()), len(before))
             c.close()
-        self.assertIsNone(c._tick_thread)                # joined/cleared on close
+        self.assertIsNone(c._tick_thread)  # joined/cleared on close
 
     def test_ticker_noop_when_not_animating(self):
-        c = _court()           # animate=False
+        c = _court()  # animate=False
         c._start_ticker()
         self.assertIsNone(c._tick_thread)
 
@@ -381,12 +391,13 @@ class LiveAndFitTest(unittest.TestCase):
     def test_decision_transcript_line_is_short(self):
         court = _court()
         court.open()
-        court.step("synthesis", _ar("codex", "openai",
-                   output="## Verdict\nNEEDS-INFO — " + "blah " * 60))
+        court.step(
+            "synthesis", _ar("codex", "openai", output="## Verdict\nNEEDS-INFO — " + "blah " * 60)
+        )
         court.close()
         log = " ".join(court.log)
         self.assertIn("DECISION -> NEEDS-INFO", log)
-        self.assertNotIn("blah", " ".join(court.log[-1:]))   # rationale not in the log line
+        self.assertNotIn("blah", " ".join(court.log[-1:]))  # rationale not in the log line
 
     def test_fit_truncates_with_ellipsis(self):
         c = _court()
@@ -395,27 +406,32 @@ class LiveAndFitTest(unittest.TestCase):
         self.assertTrue(out.endswith("…"))
         self.assertLessEqual(len(out), 12)
         self.assertEqual(c._fit("x", 0), "")
-        ascii_court = Courtroom(_AGENTS, "codex", animate=False, cols=92, rows=30,
-                                capture=[], unicode=False)
+        ascii_court = Courtroom(
+            _AGENTS, "codex", animate=False, cols=92, rows=30, capture=[], unicode=False
+        )
         self.assertTrue(ascii_court._fit("y" * 40, 8).endswith("..."))
 
     def test_long_verdict_banner_is_truncated(self):
         court = _court(case="issue #264", mode="issue")
         court.open()
-        court.step("synthesis", _ar("codex", "openai",
-                   output="## Verdict\nNEEDS-INFO — " + "blah " * 80))
+        court.step(
+            "synthesis", _ar("codex", "openai", output="## Verdict\nNEEDS-INFO — " + "blah " * 80)
+        )
         court.close()
         plain = court.screen.to_plain()
-        self.assertIn("…", plain)                        # banner ellipsised
-        self.assertNotIn("… …", plain)                   # but not doubled
+        self.assertIn("…", plain)  # banner ellipsised
+        self.assertNotIn("… …", plain)  # but not doubled
         for line in plain.split("\n"):
-            self.assertLessEqual(len(line), court.cols)   # nothing overflows
+            self.assertLessEqual(len(line), court.cols)  # nothing overflows
 
     def test_full_verdict_readable_via_wrapped_banner(self):
         court = _court()
         court.open()
-        verdict = ("## Verdict\nNEEDS-INFO — "
-                   + "scope and acceptance criteria are undefined " * 3 + "ZEBRA_END")
+        verdict = (
+            "## Verdict\nNEEDS-INFO — "
+            + "scope and acceptance criteria are undefined " * 3
+            + "ZEBRA_END"
+        )
         court.step("synthesis", _ar("codex", "openai", output=verdict))
         court.close()
         plain = court.screen.to_plain()
@@ -449,8 +465,8 @@ class HelpersTest(unittest.TestCase):
 
     def test_screen_out_of_bounds_is_safe(self):
         s = Screen(4, 1)
-        s.put(9, 0, "x")     # row out of range
-        s.put(0, -3, "yy")   # negative col
+        s.put(9, 0, "x")  # row out of range
+        s.put(0, -3, "yy")  # negative col
         self.assertEqual(s.to_plain(), "")
 
 

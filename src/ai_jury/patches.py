@@ -105,7 +105,9 @@ def parse_patch_suggestions(text: str) -> list[PatchSuggestion]:
 
     out: list[PatchSuggestion] = []
     # Pattern matches: ### file.py:123 — [severity] claim
-    heading_re = re.compile(r"^###\s+([^—\n]+?)(?::(\d+))?\s+—\s+\[([^\]]+)\]\s+(.+)$", re.MULTILINE)
+    heading_re = re.compile(
+        r"^###\s+([^—\n]+?)(?::(\d+))?\s+—\s+\[([^\]]+)\]\s+(.+)$", re.MULTILINE
+    )
     suggestion_block_re = re.compile(r"```suggestion\n(.*?)\n```", re.DOTALL)
 
     matches = list(heading_re.finditer(text))
@@ -155,7 +157,10 @@ def _probe_patch(fix: str, root: Path):
 
     return subprocess.run(
         ["git", "apply", "--numstat", "-z", "--summary", "--check", "-"],
-        input=_patch_body(fix), text=True, cwd=str(root), capture_output=True,
+        input=_patch_body(fix),
+        text=True,
+        cwd=str(root),
+        capture_output=True,
     )
 
 
@@ -200,9 +205,7 @@ def preview_patch_suggestion(
     return paths, _containment_refusal(fix, root=root, target=target, file=suggestion.file)
 
 
-def _containment_refusal(
-    fix: str, *, root: Path, target: Path, file: str
-) -> str | None:
+def _containment_refusal(fix: str, *, root: Path, target: Path, file: str) -> str | None:
     """Why ``fix`` may not be applied, or ``None`` when it touches only ``target``.
 
     Asks git, rather than reading the patch by hand. The previous check inspected
@@ -276,11 +279,7 @@ def _looks_like_patch(fix: str) -> bool:
     """Whether ``fix`` should be handled as a git patch rather than as literal text."""
     if fix.startswith("---") or "@@" in fix:
         return True
-    return any(
-        line.startswith(marker)
-        for line in fix.splitlines()
-        for marker in _PATCH_MARKERS
-    )
+    return any(line.startswith(marker) for line in fix.splitlines() for marker in _PATCH_MARKERS)
 
 
 def apply_patch_suggestion(
@@ -308,12 +307,18 @@ def apply_patch_suggestion(
         # Same body the probe validated — a different one here would mean the
         # containment check answered a question about a patch that is not applied.
         proc = subprocess.run(
-            ["git", "apply", "-"], input=_patch_body(fix), text=True,
-            cwd=str(root), capture_output=True,
+            ["git", "apply", "-"],
+            input=_patch_body(fix),
+            text=True,
+            cwd=str(root),
+            capture_output=True,
         )
         if proc.returncode == 0:
             return True, f"Applied git patch to {suggestion.file}"
-        return False, f"Git apply failed: {redact(proc.stderr.strip())[0] or 'patch does not apply cleanly'}"
+        return (
+            False,
+            f"Git apply failed: {redact(proc.stderr.strip())[0] or 'patch does not apply cleanly'}",
+        )
 
     try:
         lines = target.read_text(encoding="utf-8").splitlines(keepends=True)
@@ -330,4 +335,3 @@ def apply_patch_suggestion(
         return True, f"Applied line replacement at {suggestion.file}:{suggestion.line}"
 
     return False, f"Cannot apply non-diff suggestion without line match in {suggestion.file}"
-

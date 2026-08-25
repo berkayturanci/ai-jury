@@ -1441,6 +1441,7 @@ Here is a simplified version of how some of these components might be implemente
 ```python
 import random
 
+
 def resolve_chair(cfg, usable_agents, reviewed_by, rng):
     if cfg.chair in usable_agents:
         return cfg.chair
@@ -1449,6 +1450,7 @@ def resolve_chair(cfg, usable_agents, reviewed_by, rng):
         return rng.choice(non_reviewers)
     else:
         return usable_agents[0]
+
 
 def run_jury(cfg, diff, mock=False, seed=None):
     rng = random.Random(seed) if seed is not None else random
@@ -1459,6 +1461,7 @@ def run_jury(cfg, diff, mock=False, seed=None):
     synthesis = simulate_synthesis(reviews, chair, rng)
     return Outcome(chair, reviews, debate, synthesis)
 
+
 class Outcome:
     def __init__(self, chair, reviews, debate, synthesis):
         self.chair = chair
@@ -1466,22 +1469,26 @@ class Outcome:
         self.debate = debate
         self.synthesis = synthesis
 
+
 def simulate_reviews(diff, chair, rng):
     # Simulate review process
     return [f"Review by {chair}"]
+
 
 def simulate_debate(reviews, rng):
     # Simulate debate process
     return "Debate outcome"
 
+
 def simulate_synthesis(reviews, chair, rng):
     # Simulate synthesis process
     return f"Synthesis by {chair}"
 
+
 # Example usage
 cfg = {
-    'chair': 'rotate',
-    'prefer_non_reviewer_chair': True,
+    "chair": "rotate",
+    "prefer_non_reviewer_chair": True,
 }
 diff = "Sample diff"
 outcome = run_jury(cfg, diff, seed=42)

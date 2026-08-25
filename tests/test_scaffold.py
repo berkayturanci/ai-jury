@@ -277,12 +277,14 @@ class PresetTest(unittest.TestCase):
             # Derived, not listed: a hardcoded roster here is a second copy of
             # KNOWN_AGENTS, and two copies drifting apart is what #589 was about.
             expected = [
-                n for n in scaffold.KNOWN_AGENTS
+                n
+                for n in scaffold.KNOWN_AGENTS
                 if n not in set(scaffold.agents_needing_remote_opt_in())
             ]
             self.assertEqual([a["name"] for a in data["agent"]], expected)
             self.assertNotEqual(
-                expected, list(scaffold.KNOWN_AGENTS),
+                expected,
+                list(scaffold.KNOWN_AGENTS),
                 "no agent needs the remote opt-in, so this case proves nothing",
             )
 
@@ -395,10 +397,7 @@ class KnownAgentsMatchesTheTemplates(unittest.TestCase):
         with self.assertRaises(ValueError) as caught:
             scaffold.build_config(["definitely-not-an-agent"])
         message = str(caught.exception)
-        suggested = {
-            part.strip()
-            for part in message.split("choose from", 1)[1].split(",")
-        }
+        suggested = {part.strip() for part in message.split("choose from", 1)[1].split(",")}
         self.assertEqual(suggested, set(scaffold.KNOWN_AGENTS))
 
     def test_every_listed_agent_scaffolds(self):

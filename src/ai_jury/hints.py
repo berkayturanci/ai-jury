@@ -38,7 +38,10 @@ def collect_static_hints(files: list[str] | None = None, root_dir: Path | None =
                 if res.returncode != 0 and res.stdout.strip():
                     lines = [line.strip() for line in res.stdout.splitlines()[:5] if line.strip()]
                     if lines:
-                        hints.append("Python linter (Ruff) warnings:\n" + "\n".join(f"- {item}" for item in lines))
+                        hints.append(
+                            "Python linter (Ruff) warnings:\n"
+                            + "\n".join(f"- {item}" for item in lines)
+                        )
         except (subprocess.SubprocessError, OSError, Exception):
             # Best-effort local Ruff linter invocation; gracefully ignore errors.
             pass
@@ -48,7 +51,11 @@ def collect_static_hints(files: list[str] | None = None, root_dir: Path | None =
         try:
             cmd = ["npx", "eslint", "--format", "compact"]
             if files is not None:
-                js_files = [f for f in files if f.endswith((".js", ".ts", ".jsx", ".tsx")) and not f.startswith("-")]
+                js_files = [
+                    f
+                    for f in files
+                    if f.endswith((".js", ".ts", ".jsx", ".tsx")) and not f.startswith("-")
+                ]
                 if not js_files:
                     cmd = []
                 else:
@@ -61,7 +68,10 @@ def collect_static_hints(files: list[str] | None = None, root_dir: Path | None =
                 if res.returncode != 0 and res.stdout.strip():
                     lines = [line.strip() for line in res.stdout.splitlines()[:5] if line.strip()]
                     if lines:
-                        hints.append("JS/TS linter (ESLint) warnings:\n" + "\n".join(f"- {item}" for item in lines))
+                        hints.append(
+                            "JS/TS linter (ESLint) warnings:\n"
+                            + "\n".join(f"- {item}" for item in lines)
+                        )
         except (subprocess.SubprocessError, OSError, Exception):
             # Best-effort local ESLint invocation; gracefully ignore errors.
             pass

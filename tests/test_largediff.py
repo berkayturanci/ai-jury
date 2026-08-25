@@ -97,10 +97,7 @@ class SplitDiffTest(unittest.TestCase):
     def test_modechange_quoted_spaced_path_recovered(self):
         # Quoted symmetric header (git C-quotes spaced/special paths) with no
         # +++/--- markers must still recover the full path (audit r5/L).
-        seg = (
-            'diff --git "a/evil file.py" "b/evil file.py"\n'
-            "old mode 100644\nnew mode 100755\n"
-        )
+        seg = 'diff --git "a/evil file.py" "b/evil file.py"\nold mode 100644\nnew mode 100755\n'
         files = split_diff(seg)
         self.assertEqual(files[0].path, "evil file.py")
 
@@ -108,16 +105,13 @@ class SplitDiffTest(unittest.TestCase):
         # A mode-change-only segment (no +++/--- or rename marker) whose path
         # contains the literal " b/" must not be truncated/hidden (audit r4/L).
         seg = (
-            "diff --git a/weird b/secret.py b/weird b/secret.py\n"
-            "old mode 100644\nnew mode 100755\n"
+            "diff --git a/weird b/secret.py b/weird b/secret.py\nold mode 100644\nnew mode 100755\n"
         )
         files = split_diff(seg)
         self.assertEqual(files[0].path, "weird b/secret.py")
 
     def test_quoted_unicode_path_unquoted(self):
-        seg = _file_segment("src/a.py").replace(
-            "+++ b/src/a.py", '+++ "b/src/\\303\\251.py"'
-        )
+        seg = _file_segment("src/a.py").replace("+++ b/src/a.py", '+++ "b/src/\\303\\251.py"')
         files = split_diff(seg)
         self.assertEqual(files[0].path, "src/é.py")
 

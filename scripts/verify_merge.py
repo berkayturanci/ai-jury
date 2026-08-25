@@ -69,7 +69,11 @@ def check_version_integrity(root: Path) -> list[str]:
     changelog_path = root / "CHANGELOG.md"
     changelog_version = None
     if changelog_path.is_file():
-        m = re.search(r"^##\s*\[(\d+\.\d+\.\d+)\]", changelog_path.read_text(encoding="utf-8"), flags=re.MULTILINE)
+        m = re.search(
+            r"^##\s*\[(\d+\.\d+\.\d+)\]",
+            changelog_path.read_text(encoding="utf-8"),
+            flags=re.MULTILINE,
+        )
         if m:
             changelog_version = m.group(1)
         else:
@@ -153,7 +157,14 @@ def check_pr_merge_drift(root: Path, pr_number: int) -> list[str]:
     errors: list[str] = []
     try:
         res = subprocess.run(
-            ["gh", "pr", "view", str(pr_number), "--json", "baseRefName,headRefOid,files,mergedAt,createdAt"],
+            [
+                "gh",
+                "pr",
+                "view",
+                str(pr_number),
+                "--json",
+                "baseRefName,headRefOid,files,mergedAt,createdAt",
+            ],
             cwd=root,
             capture_output=True,
             text=True,
@@ -169,14 +180,24 @@ def check_pr_merge_drift(root: Path, pr_number: int) -> list[str]:
 
         base_branch = data.get("baseRefName", "main")
         log_res = subprocess.run(
-            ["git", "log", f"origin/{base_branch}", "--since", data.get("createdAt", ""), "--name-only", "--pretty=format:"],
+            [
+                "git",
+                "log",
+                f"origin/{base_branch}",
+                "--since",
+                data.get("createdAt", ""),
+                "--name-only",
+                "--pretty=format:",
+            ],
             cwd=root,
             capture_output=True,
             text=True,
             check=False,
         )
         if log_res.returncode != 0:
-            return [f"cannot read {base_branch} history: {log_res.stderr.strip() or 'git log failed'}"]
+            return [
+                f"cannot read {base_branch} history: {log_res.stderr.strip() or 'git log failed'}"
+            ]
 
         intervening_files = {line.strip() for line in log_res.stdout.splitlines() if line.strip()}
         overlap = pr_files & intervening_files
@@ -206,9 +227,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             # Reconfigure stdout/stderr encoding is best-effort
             pass
 
-    parser = argparse.ArgumentParser(description="Verify merge and version integrity against silent reverts.")
+    parser = argparse.ArgumentParser(
+        description="Verify merge and version integrity against silent reverts."
+    )
     parser.add_argument("--root", type=Path, default=Path.cwd(), help="Repository root directory")
-    parser.add_argument("--check-version", action="store_true", help="Assert version marker agreement & monotonicity")
+    parser.add_argument(
+        "--check-version",
+        action="store_true",
+        help="Assert version marker agreement & monotonicity",
+    )
     parser.add_argument("--pr", type=int, help="PR number to verify for merge drift")
     parser.add_argument("--all", action="store_true", help="Run all verification checks")
 
@@ -229,7 +256,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             # three files and claimed ">= latest tag" even in the shallow-checkout
             # case where no tag was ever read (#556) — a success line asserting a
             # check that did not run is worse than no line at all.
-            print(f"[OK] Version integrity: {VERSION_MARKERS} agree and do not regress on the last tag.")
+            print(
+                f"[OK] Version integrity: {VERSION_MARKERS} agree and do not regress on the last tag."
+            )
 
     if run_pr and args.pr:
         m_errors = check_pr_merge_drift(root, args.pr)

@@ -29,8 +29,9 @@ class _Stream:
 class _FakePopen:
     """Minimal Popen double for the streaming, byte-capped `_gh`."""
 
-    def __init__(self, stdout: bytes = b"", returncode: int = 0,
-                 stderr: bytes = b"", block: bool = False):
+    def __init__(
+        self, stdout: bytes = b"", returncode: int = 0, stderr: bytes = b"", block: bool = False
+    ):
         self.stdout = _Stream(stdout, block=block)
         self.stderr = _Stream(stderr)
         self.returncode = returncode

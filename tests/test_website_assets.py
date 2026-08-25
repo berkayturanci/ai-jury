@@ -78,7 +78,7 @@ class IntegrationFilterAria(unittest.TestCase):
         # aria-controls. These are toggle buttons filtering a grid in place, so
         # aria-pressed is the correct state — and the two cannot be combined.
         html, match = self._filter_bar()
-        opening = html[match.start():match.start() + match.group(0).index(">") + 1]
+        opening = html[match.start() : match.start() + match.group(0).index(">") + 1]
         self.assertIn('role="group"', opening)
         self.assertNotIn('role="tablist"', opening)
 
@@ -112,7 +112,7 @@ class IntegrationFilterAria(unittest.TestCase):
         html = (WEBSITE / "index.html").read_text(encoding="utf-8")
         pipe = re.search(r'<div class="pipe-tabs"[^>]*>(.*?)</div>', html, re.S)
         self.assertIsNotNone(pipe, "pipeline tab strip not found")
-        self.assertIn('role="tablist"', html[pipe.start():pipe.start() + 120])
+        self.assertIn('role="tablist"', html[pipe.start() : pipe.start() + 120])
         self.assertIn('role="tab"', pipe.group(1))
         self.assertIn("aria-selected", pipe.group(1))
 

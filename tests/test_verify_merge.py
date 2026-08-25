@@ -32,9 +32,7 @@ def _git(root: Path, *args: str) -> None:
 
 def _repo(root: Path, version: str = "1.14.0", *, lock: str | None = "1.14.0") -> None:
     """A minimal repo carrying every version marker, committed."""
-    (root / "pyproject.toml").write_text(
-        f'[project]\nversion = "{version}"\n', encoding="utf-8"
-    )
+    (root / "pyproject.toml").write_text(f'[project]\nversion = "{version}"\n', encoding="utf-8")
     (root / "src" / "ai_jury").mkdir(parents=True, exist_ok=True)
     (root / "src" / "ai_jury" / "__init__.py").write_text(
         f'__version__ = "{version}"\n', encoding="utf-8"

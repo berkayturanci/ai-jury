@@ -62,7 +62,10 @@ class PatchesApplyTests(unittest.TestCase):
             auth_file = tmp_path / "src" / "auth.py"
             auth_file.parent.mkdir(parents=True)
             auth_file.write_text(
-                "\n".join([f"# line {i}" for i in range(1, 10)] + ['cursor.execute(f"SELECT * FROM users WHERE username = {username}")'])
+                "\n".join(
+                    [f"# line {i}" for i in range(1, 10)]
+                    + ['cursor.execute(f"SELECT * FROM users WHERE username = {username}")']
+                )
                 + "\n",
                 encoding="utf-8",
             )
@@ -276,8 +279,9 @@ class ApplyPreviewsAndConfirmsBeforeWriting(unittest.TestCase):
         (self.root / "target.py").write_text("x = 1\n", encoding="utf-8")
         (self.root / "victim.py").write_text("secret = 1\n", encoding="utf-8")
         subprocess.run(["git", "add", "-A"], cwd=self.root, check=True, capture_output=True)
-        subprocess.run(["git", "commit", "-qm", "init"], cwd=self.root,
-                       check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-qm", "init"], cwd=self.root, check=True, capture_output=True
+        )
         # Outside the repo: a report inside it shows as untracked and would
         # make every `git status --porcelain` assertion pass or fail for the
         # wrong reason.
@@ -292,8 +296,11 @@ class ApplyPreviewsAndConfirmsBeforeWriting(unittest.TestCase):
 
     def _porcelain(self):
         return subprocess.run(
-            ["git", "status", "--porcelain"], cwd=self.root,
-            capture_output=True, text=True, check=True,
+            ["git", "status", "--porcelain"],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            check=True,
         ).stdout.strip()
 
     def _run(self, argv):
@@ -403,13 +410,15 @@ class ContainmentAgainstARealGitRepository(unittest.TestCase):
         # The secondary target exists, so a patch reaching it would succeed.
         (self.root / "victim.py").write_text("secret = 1\n", encoding="utf-8")
         subprocess.run(["git", "add", "-A"], cwd=self.root, check=True, capture_output=True)
-        subprocess.run(["git", "commit", "-qm", "init"], cwd=self.root,
-                       check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-qm", "init"], cwd=self.root, check=True, capture_output=True
+        )
 
     def _apply(self, fix):
         return apply_patch_suggestion(
-            PatchSuggestion(file="target.py", line=1, severity="major",
-                            claim="c", suggested_fix=fix),
+            PatchSuggestion(
+                file="target.py", line=1, severity="major", claim="c", suggested_fix=fix
+            ),
             root_dir=self.root,
         )
 
@@ -423,8 +432,7 @@ class ContainmentAgainstARealGitRepository(unittest.TestCase):
 
     def test_a_rename_section_cannot_ride_along(self):
         ok, msg = self._apply(
-            self.EDIT
-            + "diff --git a/victim.py b/pwned.py\n"
+            self.EDIT + "diff --git a/victim.py b/pwned.py\n"
             "similarity index 100%\n"
             "rename from victim.py\n"
             "rename to pwned.py\n"
@@ -443,8 +451,7 @@ class ContainmentAgainstARealGitRepository(unittest.TestCase):
         # mode-only section is rejected there as lacking filename information —
         # which would make this pass for git's reason rather than the guard's.
         ok, msg = self._apply(
-            self.EDIT
-            + "diff --git a/victim.py b/victim.py\n"
+            self.EDIT + "diff --git a/victim.py b/victim.py\n"
             "old mode 100644\n"
             "new mode 100755\n"
             "--- a/victim.py\n"
@@ -461,8 +468,7 @@ class ContainmentAgainstARealGitRepository(unittest.TestCase):
 
     def test_a_new_file_cannot_ride_along(self):
         ok, msg = self._apply(
-            self.EDIT
-            + "diff --git a/planted.py b/planted.py\n"
+            self.EDIT + "diff --git a/planted.py b/planted.py\n"
             "new file mode 100644\n"
             "--- /dev/null\n"
             "+++ b/planted.py\n"
@@ -564,6 +570,7 @@ class ContainmentAgainstARealGitRepository(unittest.TestCase):
         self.assertFalse(ok)
         self.assertFalse((self.root / "copy.py").exists())
 
+
 class ErrorBranchesThatNothingExecuted(unittest.TestCase):
     """The three `try`/`except` arms #588 added and #587 asked to be tested.
 
@@ -603,8 +610,7 @@ class ErrorBranchesThatNothingExecuted(unittest.TestCase):
     # AttributeError at *import* time on Windows, failing the whole module
     # rather than this one test. Windows has no root to skip for, and chmod
     # there sets the read-only attribute, so the test itself still applies.
-    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0,
-                     "root ignores the write bit")
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "root ignores the write bit")
     def test_a_file_that_cannot_be_written_reports_cannot_write(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -37,7 +37,8 @@ def code_lines() -> list[str]:
     line-anchored instead.
     """
     return [
-        line for line in WORKFLOW.read_text(encoding="utf-8").splitlines()
+        line
+        for line in WORKFLOW.read_text(encoding="utf-8").splitlines()
         if line.strip() and not line.lstrip().startswith("#")
     ]
 
@@ -48,8 +49,10 @@ class TheCommentStrippingWorks(unittest.TestCase):
     def test_comments_are_removed_and_code_is_not(self):
         stripped = code_lines()
         self.assertTrue(
-            any(line.lstrip().startswith("#")
-                for line in WORKFLOW.read_text(encoding="utf-8").splitlines()),
+            any(
+                line.lstrip().startswith("#")
+                for line in WORKFLOW.read_text(encoding="utf-8").splitlines()
+            ),
             "the workflow has no comment lines, so this guard proves nothing",
         )
         self.assertFalse([line for line in stripped if line.lstrip().startswith("#")])
@@ -71,7 +74,8 @@ class TheEvidenceWorkflowIsPresent(unittest.TestCase):
         rather than silently picking the other job's line.
         """
         matches = [
-            line for line in self.code
+            line
+            for line in self.code
             if "ARGS=(.keel/project.yaml" in line and '--pr "$PR"' in line
         ]
         self.assertEqual(len(matches), 1, f"expected one gate ARGS line, saw {matches}")

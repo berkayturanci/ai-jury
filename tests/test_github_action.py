@@ -59,9 +59,9 @@ class NoCallerInputReachesAShellBody(unittest.TestCase):
             if not stripped.startswith(f"{key}:"):
                 continue
             indent = len(line) - len(stripped)
-            inline = stripped[len(key) + 1:].strip()
+            inline = stripped[len(key) + 1 :].strip()
             body: list[str] = [inline] if inline not in ("", "|", ">", "|-", ">-") else []
-            for following in lines[index + 1:]:
+            for following in lines[index + 1 :]:
                 if following.strip() and len(following) - len(following.lstrip()) <= indent:
                     break
                 body.append(following)
@@ -76,7 +76,8 @@ class NoCallerInputReachesAShellBody(unittest.TestCase):
             if "${{" in body_line
         ]
         self.assertEqual(
-            [], offenders,
+            [],
+            offenders,
             "a GitHub expression is substituted into a shell body; pass it through "
             f"`env:` and reference it as a shell variable instead: {offenders}",
         )
@@ -91,7 +92,8 @@ class NoCallerInputReachesAShellBody(unittest.TestCase):
         text = (REPO_ROOT / "action.yml").read_text(encoding="utf-8")
         blocks = self._blocks("run")
         self.assertEqual(
-            text.count("\n      run:"), len(blocks),
+            text.count("\n      run:"),
+            len(blocks),
             "the block reader did not find every run: in action.yml; the sweep "
             "is checking less of the file than it appears to",
         )
@@ -102,13 +104,12 @@ class NoCallerInputReachesAShellBody(unittest.TestCase):
 
     def test_every_caller_supplied_input_arrives_through_env(self):
         """The positive half: inputs must still reach the script, just safely."""
-        env_values = "\n".join(
-            "\n".join(body) for _, body in self._blocks("env")
-        )
+        env_values = "\n".join("\n".join(body) for _, body in self._blocks("env"))
         for name in ("inputs.version", "inputs.args", "inputs.github-token"):
             with self.subTest(input=name):
                 self.assertIn(
-                    name, env_values,
+                    name,
+                    env_values,
                     f"{name} no longer reaches any step through env:",
                 )
 

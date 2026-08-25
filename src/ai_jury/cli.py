@@ -66,9 +66,7 @@ def _read_capped(fh, source: str) -> str:
             )
         return data
     if len(data) > _MAX_DIFF_INGEST_BYTES:
-        raise SystemExit(
-            f"error: {source} exceeds the {_MAX_DIFF_INGEST_BYTES}-byte ingest limit"
-        )
+        raise SystemExit(f"error: {source} exceeds the {_MAX_DIFF_INGEST_BYTES}-byte ingest limit")
     return data.decode("utf-8", errors="replace")
 
 
@@ -102,8 +100,7 @@ def _git_diff(argv: list[str], label: str) -> str:
     if proc.returncode != 0:
         detail = (proc.stderr or "").strip().splitlines()
         raise SystemExit(
-            f"error: git could not resolve {label}"
-            + (f": {detail[0]}" if detail else "")
+            f"error: git could not resolve {label}" + (f": {detail[0]}" if detail else "")
         )
     if not proc.stdout.strip():
         raise SystemExit(f"error: {label} produced an empty diff — nothing to review")
@@ -163,8 +160,7 @@ def build_parser() -> argparse.ArgumentParser:
     src.add_argument("--commit", help="review the diff one commit introduces (needs a git repo)")
     src.add_argument(
         "--commits",
-        help="review a commit range, e.g. origin/main..HEAD or HEAD~5..HEAD "
-             "(needs a git repo)",
+        help="review a commit range, e.g. origin/main..HEAD or HEAD~5..HEAD (needs a git repo)",
     )
 
     p.add_argument("--config", help="path to jury.toml (default: ./jury.toml or built-in)")
@@ -508,8 +504,8 @@ def _run_apply(rest: list[str]) -> int:
         nargs="?",
         default=None,
         help="1-indexed patch suggestion number to apply, or 'all'. Required — "
-             "applying every suggestion is the wrong default for a command that "
-             "writes to the working tree",
+        "applying every suggestion is the wrong default for a command that "
+        "writes to the working tree",
     )
     sub.add_argument(
         "--report",
@@ -1540,15 +1536,15 @@ def main(argv: list[str] | None = None) -> int:
     # Exactly one source (issue #367). Listed rather than pairwise so adding a
     # source cannot quietly skip the check.
     _sources = [
-        ("--pr", args.pr), ("--issue", args.issue), ("--diff-file", args.diff_file),
+        ("--pr", args.pr),
+        ("--issue", args.issue),
+        ("--diff-file", args.diff_file),
         ("--commit", getattr(args, "commit", None)),
         ("--commits", getattr(args, "commits", None)),
     ]
     _given = [flag for flag, value in _sources if value]
     if len(_given) > 1:
-        raise SystemExit(
-            f"error: choose one input source, got {', '.join(_given)}"
-        )
+        raise SystemExit(f"error: choose one input source, got {', '.join(_given)}")
     if args.issue:
         for flag, on in (
             ("--post-inline", args.post_inline),
@@ -1687,13 +1683,22 @@ def main(argv: list[str] | None = None) -> int:
             # Display-only chair label for the scene title. The run resolves the
             # REAL chair internally (resolve_chair needs the usable/reviewer sets
             # and run RNG, which don't exist yet here), so use a best-effort name.
-            chair_name = (config.chair if config.chair and config.chair != "rotate"
-                          else (config.agents[0].name if config.agents else "chair"))
-            case = (f"PR #{args.pr}" if args.pr else
-                    f"issue #{args.issue}" if args.issue else
-                    f"commit {args.commit}" if getattr(args, "commit", None) else
-                    f"range {args.commits}" if getattr(args, "commits", None) else
-                    "local diff")
+            chair_name = (
+                config.chair
+                if config.chair and config.chair != "rotate"
+                else (config.agents[0].name if config.agents else "chair")
+            )
+            case = (
+                f"PR #{args.pr}"
+                if args.pr
+                else f"issue #{args.issue}"
+                if args.issue
+                else f"commit {args.commit}"
+                if getattr(args, "commit", None)
+                else f"range {args.commits}"
+                if getattr(args, "commits", None)
+                else "local diff"
+            )
             court = _theater.Courtroom(
                 [(a.name, a.vendor) for a in config.agents],
                 chair_name,

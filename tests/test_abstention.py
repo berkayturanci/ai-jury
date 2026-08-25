@@ -16,8 +16,13 @@ from ai_jury.metadata import REVIEW_STATUSES, panel_accounting, review_status
 
 def _result(agent="claude", vendor="anthropic", *, ok=True, findings=(), structured=False):
     return AgentResult(
-        agent=agent, vendor=vendor, ok=ok, output="", duration_s=0.1,
-        findings=list(findings), structured=structured,
+        agent=agent,
+        vendor=vendor,
+        ok=ok,
+        output="",
+        duration_s=0.1,
+        findings=list(findings),
+        structured=structured,
     )
 
 
@@ -33,8 +38,10 @@ class TestEmittedFindingsBlock(unittest.TestCase):
 
     def test_prose_with_no_block_is_not_a_review(self):
         # The actual shape from #660: responsive to text in the diff, not to the diff.
-        text = ("Hi! I notice you mentioned --dangerously-skip-permissions. "
-                "I can't help with bypassing safety controls.")
+        text = (
+            "Hi! I notice you mentioned --dangerously-skip-permissions. "
+            "I can't help with bypassing safety controls."
+        )
         self.assertFalse(emitted_findings_block(text))
 
     def test_empty_output_is_not_a_review(self):
@@ -64,8 +71,12 @@ class TestReviewStatus(unittest.TestCase):
         self.assertEqual(review_status(_result(ok=False, findings=[1])), "failed")
 
     def test_every_status_is_in_the_documented_vocabulary(self):
-        cases = [_result(findings=[1], structured=True), _result(structured=True),
-                 _result(structured=False), _result(ok=False)]
+        cases = [
+            _result(findings=[1], structured=True),
+            _result(structured=True),
+            _result(structured=False),
+            _result(ok=False),
+        ]
         for result in cases:
             self.assertIn(review_status(result), REVIEW_STATUSES)
 
@@ -82,10 +93,17 @@ class TestPanelAccounting(unittest.TestCase):
             _result("codex", "openai", structured=False),
             _result("agy", "google", structured=False),
         ]
-        self.assertEqual(panel_accounting(panel), {
-            "configured": 3, "effective": 1, "vendors": 1,
-            "abstained": 2, "failed": 0, "short": True,
-        })
+        self.assertEqual(
+            panel_accounting(panel),
+            {
+                "configured": 3,
+                "effective": 1,
+                "vendors": 1,
+                "abstained": 2,
+                "failed": 0,
+                "short": True,
+            },
+        )
 
     def test_a_full_panel_is_not_short(self):
         panel = [
@@ -123,10 +141,17 @@ class TestPanelAccounting(unittest.TestCase):
         self.assertEqual(accounting["effective"], 0)
 
     def test_an_empty_panel_is_not_short(self):
-        self.assertEqual(panel_accounting([]), {
-            "configured": 0, "effective": 0, "vendors": 0,
-            "abstained": 0, "failed": 0, "short": False,
-        })
+        self.assertEqual(
+            panel_accounting([]),
+            {
+                "configured": 0,
+                "effective": 0,
+                "vendors": 0,
+                "abstained": 0,
+                "failed": 0,
+                "short": False,
+            },
+        )
 
     def test_none_is_tolerated(self):
         self.assertEqual(panel_accounting(None)["configured"], 0)
@@ -136,7 +161,9 @@ class TestShortPanelIsStatedInTheReport(unittest.TestCase):
     """Silence was the failure mode, so the human report must say it too (#501)."""
 
     BASE = {
-        "rounds_executed": 2, "verify_enabled": True, "context_mode": "diff-only",
+        "rounds_executed": 2,
+        "verify_enabled": True,
+        "context_mode": "diff-only",
         "total_wall_clock_s": 205.0,
     }
 
@@ -144,18 +171,38 @@ class TestShortPanelIsStatedInTheReport(unittest.TestCase):
         return {**self.BASE, "panel": panel, "agents": agents}
 
     def _agent(self, name, vendor, review_status):
-        return {"name": name, "vendor": vendor, "status": "ok", "duration_s": 1.0,
-                "error_code": None, "attempts": 1, "review_status": review_status}
+        return {
+            "name": name,
+            "vendor": vendor,
+            "status": "ok",
+            "duration_s": 1.0,
+            "error_code": None,
+            "attempts": 1,
+            "review_status": review_status,
+        }
 
     def test_a_short_panel_is_called_out(self):
         from ai_jury.report import _metadata_block
-        text = "\n".join(_metadata_block(self._meta(
-            {"configured": 3, "effective": 1, "vendors": 1,
-             "abstained": 2, "failed": 0, "short": True},
-            [self._agent("claude", "anthropic", "findings"),
-             self._agent("codex", "openai", "abstained"),
-             self._agent("agy", "google", "abstained")],
-        )))
+
+        text = "\n".join(
+            _metadata_block(
+                self._meta(
+                    {
+                        "configured": 3,
+                        "effective": 1,
+                        "vendors": 1,
+                        "abstained": 2,
+                        "failed": 0,
+                        "short": True,
+                    },
+                    [
+                        self._agent("claude", "anthropic", "findings"),
+                        self._agent("codex", "openai", "abstained"),
+                        self._agent("agy", "google", "abstained"),
+                    ],
+                )
+            )
+        )
         self.assertIn("effective panel: 1 of 3", text)
         self.assertIn("2 returned no review", text)
         self.assertIn("An abstention is not an approval", text)
@@ -164,12 +211,25 @@ class TestShortPanelIsStatedInTheReport(unittest.TestCase):
 
     def test_a_full_panel_adds_no_warning_and_no_row_noise(self):
         from ai_jury.report import _metadata_block
-        text = "\n".join(_metadata_block(self._meta(
-            {"configured": 2, "effective": 2, "vendors": 2,
-             "abstained": 0, "failed": 0, "short": False},
-            [self._agent("claude", "anthropic", "findings"),
-             self._agent("codex", "openai", "findings")],
-        )))
+
+        text = "\n".join(
+            _metadata_block(
+                self._meta(
+                    {
+                        "configured": 2,
+                        "effective": 2,
+                        "vendors": 2,
+                        "abstained": 0,
+                        "failed": 0,
+                        "short": False,
+                    },
+                    [
+                        self._agent("claude", "anthropic", "findings"),
+                        self._agent("codex", "openai", "findings"),
+                    ],
+                )
+            )
+        )
         self.assertNotIn("effective panel", text)
         self.assertNotIn("abstained", text)
 
@@ -177,22 +237,45 @@ class TestShortPanelIsStatedInTheReport(unittest.TestCase):
         # `clean` is a real review, so it annotates the row but never shortens
         # the panel.
         from ai_jury.report import _metadata_block
-        text = "\n".join(_metadata_block(self._meta(
-            {"configured": 1, "effective": 1, "vendors": 1,
-             "abstained": 0, "failed": 0, "short": False},
-            [self._agent("claude", "anthropic", "clean")],
-        )))
+
+        text = "\n".join(
+            _metadata_block(
+                self._meta(
+                    {
+                        "configured": 1,
+                        "effective": 1,
+                        "vendors": 1,
+                        "abstained": 0,
+                        "failed": 0,
+                        "short": False,
+                    },
+                    [self._agent("claude", "anthropic", "clean")],
+                )
+            )
+        )
         self.assertIn("ok, clean", text)
         self.assertNotIn("effective panel", text)
 
     def test_metadata_without_a_panel_block_still_renders(self):
         # Replayed outcomes from an older schema carry no panel key.
         from ai_jury.report import _metadata_block
-        text = "\n".join(_metadata_block({
-            **self.BASE, "agents": [
-                {"name": "claude", "vendor": "anthropic", "status": "ok",
-                 "duration_s": 1.0, "error_code": None, "attempts": 1},
-            ],
-        }))
+
+        text = "\n".join(
+            _metadata_block(
+                {
+                    **self.BASE,
+                    "agents": [
+                        {
+                            "name": "claude",
+                            "vendor": "anthropic",
+                            "status": "ok",
+                            "duration_s": 1.0,
+                            "error_code": None,
+                            "attempts": 1,
+                        },
+                    ],
+                }
+            )
+        )
         self.assertIn("claude", text)
         self.assertNotIn("effective panel", text)

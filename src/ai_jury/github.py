@@ -362,7 +362,9 @@ def _gh_with_input(args: list[str], stdin_data: str) -> str:
             timeout=_GH_TIMEOUT_S,
         )
     except subprocess.TimeoutExpired:
-        raise RuntimeError(f"gh {redact(' '.join(args))[0]} timed out after {_GH_TIMEOUT_S}s") from None
+        raise RuntimeError(
+            f"gh {redact(' '.join(args))[0]} timed out after {_GH_TIMEOUT_S}s"
+        ) from None
     if proc.returncode != 0:
         err = proc.stderr.strip()
         out_err = proc.stdout.strip()
