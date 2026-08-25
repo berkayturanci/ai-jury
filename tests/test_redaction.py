@@ -159,18 +159,60 @@ class RedactionTests(unittest.TestCase):
         self.assertIn("[REDACTED:jwt]", out)
         self.assertNotIn(jwt, out)
 
-    def test_no_redos_on_long_key_like_input(self):
-        # The two `[A-Za-z0-9_]*` are split by a literal keyword anchor; a long
-        # adversarial identifier without a trailing `=` must not hang. The bound
-        # is generous (3 s) so it tolerates coverage instrumentation + slow CI
-        # while still catching a quadratic blowup (which would take minutes).
+    def test_a_long_key_like_input_is_not_an_assignment(self):
+        """The correctness half of the old ReDoS test, kept separate."""
+        _out, n = redact("secret_" + "a" * 200_000)
+        self.assertEqual(n, 0)  # no separator/value -> not an assignment
+
+    def test_secret_assignment_scan_scales_linearly(self):
+        # `secret_assignment` puts a bounded identifier run (`{0,40}`) on each
+        # side of the keyword. Unbounded (`*`) they overlap, and a long
+        # adversarial identifier with no separator makes the scan quadratic.
+        #
+        # This asserts the *growth*, not a wall-clock ceiling. A ceiling on one
+        # input size cannot tell quadratic from linear-but-slow, and #614
+        # measured the old 3 s bound as pure scheduler noise: 200 000 chars came
+        # out faster than 50 000, and the test failed under `coverage` for
+        # reasons unrelated to the code.
+        #
+        # `process_time` is this process's CPU time, so load elsewhere on the
+        # machine cannot inflate it, and `min` over repeats is the standard
+        # estimator for a timed body — noise only ever adds. Measured here:
+        # linear 1.7-2.2x per doubling (identical under `coverage`), the `*`
+        # mutation 3.9x. The 3.0 threshold sits between with room either way.
         import time as _t
 
-        text = "secret_" + "a" * 200_000
-        start = _t.monotonic()
-        _out, n = redact(text)
-        self.assertLess(_t.monotonic() - start, 3.0)
-        self.assertEqual(n, 0)  # no separator/value -> not an assignment
+        def cpu_min(size: int, repeats: int = 3) -> float:
+            text = "secret_" + "a" * size
+            best = float("inf")
+            for _ in range(repeats):
+                start = _t.process_time()
+                redact(text)
+                best = min(best, _t.process_time() - start)
+            return best
+
+        # A ratio between two sub-millisecond numbers measures the clock, not
+        # the regex. Grow until the base case is comfortably above that floor,
+        # so a faster future machine raises the sizes instead of going flaky.
+        size = 6_000
+        for _ in range(5):
+            base = cpu_min(size)
+            if base >= 0.005:
+                break
+            size *= 4
+        else:  # pragma: no cover - only on a machine ~1000x faster than 2026's
+            self.skipTest(f"redact is too fast to time at {size} chars")
+
+        doubled = cpu_min(size * 2)
+        ratio = doubled / base
+        self.assertLess(
+            ratio,
+            3.0,
+            f"doubling the input multiplied the scan by {ratio:.2f}x "
+            f"({base:.4f}s -> {doubled:.4f}s at {size} chars); linear is ~2x "
+            "and quadratic ~4x, so the bounded identifier runs in "
+            "`secret_assignment` have probably become unbounded",
+        )
 
     # Issue #302: basic-auth URLs, Azure AccountKey, GCP JSON keys.
     def test_basic_auth_url_password_redacted(self):

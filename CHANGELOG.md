@@ -38,6 +38,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `docs/live-review-report.md` is annotated at all three assertions rather than edited: how four independent passes converged on the same wrong reading is the part worth keeping.
 
 ### Fixed
+- **A ReDoS Test That Measured Machine Load** (#614): `test_no_redos_on_long_key_like_input` asserted a 3-second wall-clock ceiling on one input size. It failed whenever the suite ran under `coverage` — which is how CI and the pre-push check run it — for reasons unrelated to the code.
+  - The number it asserted on was dominated by scheduler noise, not input size: measured on a loaded machine, 200 000 characters came out *faster* than 50 000. A non-monotonic series is not measuring the thing it names.
+  - It also could not catch what it claimed to. A ceiling on a single size cannot distinguish quadratic from linear-but-slow; a blowup appearing below the tested size would have passed.
+  - Replaced by an assertion on the **growth ratio** across a doubling, which is what "not quadratic" actually means. `process_time` measures this process's CPU only, so load elsewhere cannot inflate it, and `min` over repeats is the right estimator for a timed body — noise only ever adds.
+  - Verified in both directions, which the old test never was: it passes under `coverage` with eight CPUs deliberately saturated, and reverting the `{0,40}` bound to `*` fails it at 4.04x with a message naming the cause. Linear measures 1.7–2.2x, identical under `coverage`; the 3.0 threshold has room on both sides.
+  - Sizes grow automatically if the base measurement lands near clock resolution, so a faster machine raises the input instead of going flaky. The correctness half — a long key-like input is not an assignment — is now its own test, unaffected by timing.
 - **Conflict Markers Published In The Changelog** (#615):
   - Three unresolved git conflict markers sat in `CHANGELOG.md` on `main` from #601 (2026-08-24) until now, rendered in the published changelog. No content was lost — the #606 and #607 entries were both present and correctly placed; the three lines were residue from a resolution that kept both sides and never removed the scaffolding.
   - The markers are the symptom. The defect is that nothing asserted their absence, so every CI run in between was green on a file containing `>>>>>>>`.
