@@ -187,9 +187,15 @@ DEFAULT_CONFIG: dict = {
 _NO_COMMAND_VENDORS = ("local", "anthropic-api", "openai-api", "google-api", "openai-compatible")
 
 KNOWN_VENDORS = (
-    "anthropic", "openai", "google", "local",
-    "anthropic-api", "openai-api", "google-api",
-    "openai-compatible", "cli",
+    "anthropic",
+    "openai",
+    "google",
+    "local",
+    "anthropic-api",
+    "openai-api",
+    "google-api",
+    "openai-compatible",
+    "cli",
 )
 
 KNOWN_TOP_LEVEL_KEYS = ("jury", "agent")
@@ -375,7 +381,9 @@ def validate_config(data: dict, strict: bool = False) -> list:
         command = agent.get("command", "")
         vendor_value = agent.get("vendor", "")
         has_endpoint = bool(agent.get("endpoint"))
-        is_local_or_http = vendor_value in _NO_COMMAND_VENDORS or vendor_value.endswith("-api") or has_endpoint
+        is_local_or_http = (
+            vendor_value in _NO_COMMAND_VENDORS or vendor_value.endswith("-api") or has_endpoint
+        )
         if is_local_or_http:
             if not agent.get("model"):
                 warnings.append(
@@ -668,7 +676,11 @@ def _from_dict(data: dict) -> JuryConfig:
     agents: list[AgentSpec] = []
     for raw in data.get("agent", []):
         raw_headers = raw.get("headers", {})
-        headers_dict = {str(k): str(v) for k, v in raw_headers.items()} if isinstance(raw_headers, dict) else {}
+        headers_dict = (
+            {str(k): str(v) for k, v in raw_headers.items()}
+            if isinstance(raw_headers, dict)
+            else {}
+        )
         api_key_env_val = str(raw["api_key_env"]) if raw.get("api_key_env") else None
         prompt_mode_val = str(raw["prompt_mode"]) if raw.get("prompt_mode") else None
         agents.append(

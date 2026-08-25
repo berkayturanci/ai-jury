@@ -84,7 +84,12 @@ def _resolved_command(spec):
     command = getattr(spec, "command", "") or ""
     vendor = (getattr(spec, "vendor", "") or "").lower()
     has_endpoint = bool(getattr(spec, "endpoint", None))
-    if not command or vendor in ("local", "anthropic-api", "openai-api", "google-api", "openai-compatible") or vendor.endswith("-api") or has_endpoint:
+    if (
+        not command
+        or vendor in ("local", "anthropic-api", "openai-api", "google-api", "openai-compatible")
+        or vendor.endswith("-api")
+        or has_endpoint
+    ):
         return None
     try:
         return shutil.which(command)

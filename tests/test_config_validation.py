@@ -213,14 +213,18 @@ class CommandPathValidation(unittest.TestCase):
     # Issue #296: opt-in strict absolute-path mode.
     def test_strict_mode_rejects_bare_name(self):
         with (
-            unittest.mock.patch.dict(os.environ, {"JURY_REQUIRE_ABSOLUTE_COMMAND": "1"}, clear=True),
+            unittest.mock.patch.dict(
+                os.environ, {"JURY_REQUIRE_ABSOLUTE_COMMAND": "1"}, clear=True
+            ),
             self.assertRaises(ConfigError),
         ):
             validate_config(self._agent("claude"))
 
     def test_strict_mode_allows_absolute(self):
         abs_path = "C:\\bin\\claude" if os.name == "nt" else "/usr/local/bin/claude"
-        with unittest.mock.patch.dict(os.environ, {"JURY_REQUIRE_ABSOLUTE_COMMAND": "1"}, clear=True):
+        with unittest.mock.patch.dict(
+            os.environ, {"JURY_REQUIRE_ABSOLUTE_COMMAND": "1"}, clear=True
+        ):
             validate_config(self._agent(abs_path))
 
     def test_bare_name_allowed_without_strict_mode(self):

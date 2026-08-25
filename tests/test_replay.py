@@ -229,9 +229,10 @@ class CliReplayTest(unittest.TestCase):
         rc, out, _ = self._run(["replay", str(self.path)])
         self.assertEqual(rc, 0)
         self.assertEqual(out.count("## 🏛️ AI Jury"), 6)
-        pos = [out.index(s) for s in
-               ("Round 1 review", "Cross-examination · round 2",
-                "Verification", "Decision")]
+        pos = [
+            out.index(s)
+            for s in ("Round 1 review", "Cross-examination · round 2", "Verification", "Decision")
+        ]
         self.assertEqual(pos, sorted(pos))
 
     def test_theater_degrades_to_transcript_off_tty(self):
@@ -249,11 +250,21 @@ class CliReplayTest(unittest.TestCase):
 
     def test_theater_path_drives_courtroom(self):
         _FakeCourt.instances.clear()
-        with mock.patch.object(theater, "supports_scene", return_value=True), \
-                mock.patch.object(theater, "Courtroom", _FakeCourt):
+        with (
+            mock.patch.object(theater, "supports_scene", return_value=True),
+            mock.patch.object(theater, "Courtroom", _FakeCourt),
+        ):
             rc, _, _ = self._run(
-                ["replay", str(self.path), "--theater", "--theater-style",
-                 "pixel", "--decision", "vote"])
+                [
+                    "replay",
+                    str(self.path),
+                    "--theater",
+                    "--theater-style",
+                    "pixel",
+                    "--decision",
+                    "vote",
+                ]
+            )
         self.assertEqual(rc, 0)
         self.assertEqual(len(_FakeCourt.instances), 1)
         court = _FakeCourt.instances[0]
@@ -309,13 +320,24 @@ class ReviewRegressionTests(unittest.TestCase):
 
     def _outcome_dict(self, **review_overrides):
         review = {
-            "agent": "claude", "vendor": "anthropic", "ok": True,
-            "output": "no findings; LGTM", "duration_s": 1.0,
+            "agent": "claude",
+            "vendor": "anthropic",
+            "ok": True,
+            "output": "no findings; LGTM",
+            "duration_s": 1.0,
         }
         review.update(review_overrides)
-        return {"reviews": [review], "debate": [], "synthesis": None,
-                "chair": "claude", "findings": [], "warnings": [], "groups": [],
-                "verify": None, "verdicts": []}
+        return {
+            "reviews": [review],
+            "debate": [],
+            "synthesis": None,
+            "chair": "claude",
+            "findings": [],
+            "warnings": [],
+            "groups": [],
+            "verify": None,
+            "verdicts": [],
+        }
 
     def test_null_output_replays_without_traceback(self):
         # {"output": null, "ok": true} used to pass loading then crash in

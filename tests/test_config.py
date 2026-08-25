@@ -111,7 +111,7 @@ class TheaterConfigTests(unittest.TestCase):
     def test_parsed_from_jury_table(self):
         cfg = _from_dict({"jury": {"theater": True, "theater_style": "PIXEL"}})
         self.assertTrue(cfg.theater)
-        self.assertEqual(cfg.theater_style, "pixel")   # normalised lower
+        self.assertEqual(cfg.theater_style, "pixel")  # normalised lower
 
     def test_rendering_only_excluded_from_config_hash(self):
         base = _from_dict({})

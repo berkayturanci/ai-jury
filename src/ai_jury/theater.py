@@ -32,15 +32,15 @@ _RESET = "\033[0m"
 # website's vendor tokens: Anthropic coral, OpenAI teal, Google blue, local
 # violet. Terminals without truecolor degrade to the nearest available colour.
 _VENDOR_SGR = {
-    "anthropic": "38;2;217;119;87",         # Claude  #d97757
-    "anthropic-api": "38;2;217;119;87",     # Claude API
-    "openai": "38;2;16;163;127",            # Codex   #10a37f
-    "openai-api": "38;2;16;163;127",        # OpenAI API
-    "google": "38;2;66;133;244",            # Antigravity #4285f4
-    "google-api": "38;2;66;133;244",        # Gemini API
-    "local": "38;2;168;85;247",             # local / open-weight #a855f7
-    "openai-compatible": "38;2;139;92;246", # OpenRouter/DeepSeek/Groq #8b5cf6
-    "cli": "38;2;236;72;153",               # arbitrary CLI agent #ec4899
+    "anthropic": "38;2;217;119;87",  # Claude  #d97757
+    "anthropic-api": "38;2;217;119;87",  # Claude API
+    "openai": "38;2;16;163;127",  # Codex   #10a37f
+    "openai-api": "38;2;16;163;127",  # OpenAI API
+    "google": "38;2;66;133;244",  # Antigravity #4285f4
+    "google-api": "38;2;66;133;244",  # Gemini API
+    "local": "38;2;168;85;247",  # local / open-weight #a855f7
+    "openai-compatible": "38;2;139;92;246",  # OpenRouter/DeepSeek/Groq #8b5cf6
+    "cli": "38;2;236;72;153",  # arbitrary CLI agent #ec4899
 }
 # Same brand palette as RGB tuples, for the pixel-art style (half-block render).
 _VENDOR_RGB = {
@@ -59,17 +59,43 @@ _VENDOR_RGB = {
 # bg = bottom pixel), so it needs a truecolor + unicode terminal.
 _HALF = "▀"  # ▀
 _PIX = {
-    "bg": (16, 16, 20), "floor_a": (208, 170, 120), "floor_b": (196, 156, 108),
-    "rug": (34, 36, 54), "table": (176, 110, 38), "table_edge": (150, 92, 28),
-    "glow": (210, 210, 210), "skin": (226, 208, 182), "spk": (255, 255, 255),
+    "bg": (16, 16, 20),
+    "floor_a": (208, 170, 120),
+    "floor_b": (196, 156, 108),
+    "rug": (34, 36, 54),
+    "table": (176, 110, 38),
+    "table_edge": (150, 92, 28),
+    "glow": (210, 210, 210),
+    "skin": (226, 208, 182),
+    "spk": (255, 255, 255),
 }
-_PHASES = (("review", "REVIEW"), ("debate", "DEBATE"), ("verify", "VERIFY"),
-           ("synthesis", "DECISION"))
+_PHASES = (
+    ("review", "REVIEW"),
+    ("debate", "DEBATE"),
+    ("verify", "VERIFY"),
+    ("synthesis", "DECISION"),
+)
 
-_GLYPHS = {"caret": "▲", "ok": "✓", "no": "✗", "dispute": "⚖", "play": "⏵",
-           "idle": "•", "speak": "●", "table": "═"}
-_ASCII_GLYPHS = {"caret": "^", "ok": "v", "no": "x", "dispute": "?", "play": ">",
-                 "idle": ".", "speak": "*", "table": "="}
+_GLYPHS = {
+    "caret": "▲",
+    "ok": "✓",
+    "no": "✗",
+    "dispute": "⚖",
+    "play": "⏵",
+    "idle": "•",
+    "speak": "●",
+    "table": "═",
+}
+_ASCII_GLYPHS = {
+    "caret": "^",
+    "ok": "v",
+    "no": "x",
+    "dispute": "?",
+    "play": ">",
+    "idle": ".",
+    "speak": "*",
+    "table": "=",
+}
 # Positive / negative / neutral verdict vocab for code AND issue modes.
 _VERDICT_POS = ("APPROVE", "READY")
 _VERDICT_NEG = ("REQUEST", "BLOCK", "NEEDS-INFO", "NEEDS INFO", "CHANGES")
@@ -78,10 +104,10 @@ _VERDICT_NEG = ("REQUEST", "BLOCK", "NEEDS-INFO", "NEEDS INFO", "CHANGES")
 def _banner_sgr(verdict: str) -> str:
     up = verdict.upper()
     if any(k in up for k in _VERDICT_NEG):
-        return "97;41;1"   # white on red
+        return "97;41;1"  # white on red
     if any(k in up for k in _VERDICT_POS):
-        return "30;42;1"   # black on green
-    return "30;43;1"       # black on yellow (COMMENT / UNCLEAR / neutral)
+        return "30;42;1"  # black on green
+    return "30;43;1"  # black on yellow (COMMENT / UNCLEAR / neutral)
 
 
 def supports_scene(stream) -> bool:
@@ -102,9 +128,13 @@ def _unsafe_cell_char(ch: str) -> bool:
     argument, so any of these in the *content* is an injection/spoof attempt."""
     o = ord(ch)
     return (
-        o < 0x20 or o == 0x7F or 0x80 <= o <= 0x9F          # C0 / DEL / C1
-        or 0x200B <= o <= 0x200F or 0x202A <= o <= 0x202E   # zero-width / bidi
-        or 0x2066 <= o <= 0x2069 or o == 0xFEFF             # bidi isolates / BOM
+        o < 0x20
+        or o == 0x7F
+        or 0x80 <= o <= 0x9F  # C0 / DEL / C1
+        or 0x200B <= o <= 0x200F
+        or 0x202A <= o <= 0x202E  # zero-width / bidi
+        or 0x2066 <= o <= 0x2069
+        or o == 0xFEFF  # bidi isolates / BOM
     )
 
 
@@ -158,7 +188,7 @@ class Screen:
 # Table geometry (rows on the fixed grid).
 _TABLE_TOP = 8
 _TABLE_BOT = 14
-_SEAT_SLOT = 14   # min horizontal room per seat before we fall back to a roster
+_SEAT_SLOT = 14  # min horizontal room per seat before we fall back to a roster
 
 # Pixel-art band geometry (terminal rows occupied by the half-block scene).
 _PIX_TOP = 5
@@ -171,10 +201,22 @@ class Courtroom:
     (Class name kept for back-compat; the scene is a round-table deliberation.)
     """
 
-    def __init__(self, agents, chair: str, *, case: str = "", stream=None,
-                 animate: bool = True, cols: int | None = None, rows: int = 30,
-                 capture=None, mode: str = "code", decision: str = "chair",
-                 unicode: bool = True, style: str = "flat"):
+    def __init__(
+        self,
+        agents,
+        chair: str,
+        *,
+        case: str = "",
+        stream=None,
+        animate: bool = True,
+        cols: int | None = None,
+        rows: int = 30,
+        capture=None,
+        mode: str = "code",
+        decision: str = "chair",
+        unicode: bool = True,
+        style: str = "flat",
+    ):
         # agents: list of (name, vendor); chair: the synthesizer (records the
         # decision in chair mode). mode: "code"/"issue". decision: "chair" or
         # "vote" (the panel tallies ballots) — different decision beat. style:
@@ -192,7 +234,7 @@ class Courtroom:
         self.unicode = unicode
         # Pixel-art needs the half-block glyph + truecolor; with unicode off it
         # transparently falls back to the flat line scene.
-        self.pixel = (style == "pixel" and unicode)
+        self.pixel = style == "pixel" and unicode
         self.g = _GLYPHS if unicode else _ASCII_GLYPHS
         self.hr = "─" if unicode else "-"
         self.dot = "·" if unicode else "."
@@ -223,7 +265,7 @@ class Courtroom:
         """Split jurors into the top edge and bottom edge of the table."""
         n = len(self.agents)
         top = self.agents[: (n + 1) // 2]
-        bottom = self.agents[(n + 1) // 2:]
+        bottom = self.agents[(n + 1) // 2 :]
         return top, bottom
 
     def _slots(self, count: int):
@@ -301,27 +343,29 @@ class Courtroom:
             figure = "!"
         plate = f"{name[:10]}"
         if self.chair == name and self.decision != "vote":
-            plate += "*"           # chair/moderator marker
+            plate += "*"  # chair/moderator marker
         ballot = self.ballots.get(name)
         plate_x = x - len(plate) // 2
         fig = f"({figure})"
         fx = x - 1
-        if facing == "down":      # top edge: nameplate above, figure toward table
+        if facing == "down":  # top edge: nameplate above, figure toward table
             s.put(_TABLE_TOP - 3, plate_x, plate, vsgr)
             s.put(_TABLE_TOP - 2, fx, fig, "96;1" if hi else "2")
             if ballot:
-                s.put(_TABLE_TOP - 4, x - len(ballot) // 2 - 1, f"[{ballot[:8]}]",
-                      _banner_sgr(ballot))
+                s.put(
+                    _TABLE_TOP - 4, x - len(ballot) // 2 - 1, f"[{ballot[:8]}]", _banner_sgr(ballot)
+                )
             if hi:
                 s.put(_TABLE_TOP - 1, x, self.g["caret"], "96")
-        else:                      # bottom edge: figure toward table, nameplate below
+        else:  # bottom edge: figure toward table, nameplate below
             if hi:
                 s.put(_TABLE_BOT, x, self.g["caret"], "96")
             s.put(_TABLE_BOT + 1, fx, fig, "96;1" if hi else "2")
             s.put(_TABLE_BOT + 2, plate_x, plate, vsgr)
             if ballot:
-                s.put(_TABLE_BOT + 3, x - len(ballot) // 2 - 1, f"[{ballot[:8]}]",
-                      _banner_sgr(ballot))
+                s.put(
+                    _TABLE_BOT + 3, x - len(ballot) // 2 - 1, f"[{ballot[:8]}]", _banner_sgr(ballot)
+                )
 
     def _table_and_seats(self) -> None:
         s = self.screen
@@ -346,15 +390,15 @@ class Courtroom:
         if self.verdict:
             extra = ""
             if self.decision == "vote" and self.vote is not None:
-                extra = "  (" + " · ".join(
-                    f"{n} {lbl.lower()}" for lbl, n in self.vote.tally.items()
-                ) + ")"
-            label = ("DECISION by panel vote" if self.decision == "vote"
-                     else "DECISION (chair)")
+                extra = (
+                    "  ("
+                    + " · ".join(f"{n} {lbl.lower()}" for lbl, n in self.vote.tally.items())
+                    + ")"
+                )
+            label = "DECISION by panel vote" if self.decision == "vote" else "DECISION (chair)"
             s.center(_TABLE_TOP + 1, label, "2")
             sgr = _banner_sgr(self.verdict)
-            for j, ln in enumerate(self._wrap_banner(self.verdict + extra,
-                                                     self.cols - 16, 3)):
+            for j, ln in enumerate(self._wrap_banner(self.verdict + extra, self.cols - 16, 3)):
                 s.center(_TABLE_TOP + 3 + j, f" {ln} ", sgr)
             return
         if self.phase == "verify" and self.verifies:
@@ -369,8 +413,12 @@ class Courtroom:
         # Compact fallback (many jurors / narrow terminal): a wrapped row of
         # juror chips with state marks, no clipping.
         s = self.screen
-        marks = {"speaking": self.g["caret"], "arguing": self.g["caret"],
-                 "done": self.g["ok"], "error": "!"}
+        marks = {
+            "speaking": self.g["caret"],
+            "arguing": self.g["caret"],
+            "done": self.g["ok"],
+            "error": "!",
+        }
         s.put(_TABLE_TOP, 2, "JURY:", "2")
         row, x = _TABLE_TOP + 1, 4
         for name, vendor in self.agents:
@@ -381,8 +429,12 @@ class Courtroom:
                 x = 4
             if row > _TABLE_BOT:
                 break
-            s.put(row, x, label, _VENDOR_SGR.get(vendor, "1")
-                  + (";1" if st in ("speaking", "arguing") else ""))
+            s.put(
+                row,
+                x,
+                label,
+                _VENDOR_SGR.get(vendor, "1") + (";1" if st in ("speaking", "arguing") else ""),
+            )
             x += len(label) + 2
         self._table_interior()
 
@@ -443,7 +495,7 @@ class Courtroom:
                 for x in range(max(0, x0), min(pw, x1 + 1)):
                     rowp[x] = c
 
-        for y in range(ph):                       # warm checkerboard floor
+        for y in range(ph):  # warm checkerboard floor
             for x in range(pw):
                 px[y][x] = _PIX["floor_a"] if (x // 2 + y // 2) % 2 else _PIX["floor_b"]
         mx = 4
@@ -458,16 +510,16 @@ class Courtroom:
 
         def figure(axc, heady, vendor, name):
             body = _VENDOR_RGB.get(vendor, (180, 180, 190))
-            hair = tuple(int(c * 0.55) for c in body)        # darker vendor tint
+            hair = tuple(int(c * 0.55) for c in body)  # darker vendor tint
             hi = self.state.get(name) in ("speaking", "arguing")
-            rect(axc - 2, heady, axc + 2, heady + 2, _PIX["skin"])   # head (5×3)
-            rect(axc - 2, heady, axc + 2, heady, hair)              # hair on top
-            rect(axc - 1, heady + 1, axc - 1, heady + 1, eye)        # left eye
-            rect(axc + 1, heady + 1, axc + 1, heady + 1, eye)        # right eye
-            rect(axc - 2, heady + 3, axc + 2, heady + 5, body)      # torso (5×3)
-            rect(axc - 3, heady + 3, axc - 3, heady + 4, body)      # left arm
-            rect(axc + 3, heady + 3, axc + 3, heady + 4, body)      # right arm
-            if hi:                                                  # speaking halo
+            rect(axc - 2, heady, axc + 2, heady + 2, _PIX["skin"])  # head (5×3)
+            rect(axc - 2, heady, axc + 2, heady, hair)  # hair on top
+            rect(axc - 1, heady + 1, axc - 1, heady + 1, eye)  # left eye
+            rect(axc + 1, heady + 1, axc + 1, heady + 1, eye)  # right eye
+            rect(axc - 2, heady + 3, axc + 2, heady + 5, body)  # torso (5×3)
+            rect(axc - 3, heady + 3, axc - 3, heady + 4, body)  # left arm
+            rect(axc + 3, heady + 3, axc + 3, heady + 4, body)  # right arm
+            if hi:  # speaking halo
                 rect(axc - 3, heady - 1, axc + 3, heady - 1, _PIX["spk"])
 
         top, bottom = self._split_seats()
@@ -506,14 +558,15 @@ class Courtroom:
         if self.verdict:
             extra = ""
             if self.decision == "vote" and self.vote is not None:
-                extra = "  (" + " · ".join(
-                    f"{n} {lbl.lower()}" for lbl, n in self.vote.tally.items()) + ")"
-            label = ("DECISION by panel vote" if self.decision == "vote"
-                     else "DECISION (chair)")
+                extra = (
+                    "  ("
+                    + " · ".join(f"{n} {lbl.lower()}" for lbl, n in self.vote.tally.items())
+                    + ")"
+                )
+            label = "DECISION by panel vote" if self.decision == "vote" else "DECISION (chair)"
             s.center(mid - 1, f" {label} ", "97;1")
             sgr = _banner_sgr(self.verdict)
-            for j, ln in enumerate(self._wrap_banner(self.verdict + extra,
-                                                     self.cols - 8, 3)):
+            for j, ln in enumerate(self._wrap_banner(self.verdict + extra, self.cols - 8, 3)):
                 s.center(mid + j, f" {ln} ", sgr)
         elif self.phase == "verify" and self.verifies:
             s.center(mid - 1, " verifying findings ", "97;1")
@@ -528,18 +581,17 @@ class Courtroom:
         plate = name[:10]
         if self.chair == name and self.decision != "vote":
             plate += "*"
-        plate = f" {plate} "      # padding for the dark pill
+        plate = f" {plate} "  # padding for the dark pill
         # Vendor-coloured, bold, on a dark pill so the name reads over the floor.
         speaking = st in ("speaking", "arguing")
         sgr = _VENDOR_SGR.get(vendor, "37") + ";48;2;22;22;32;1"
         if speaking:
-            sgr = "30;47;1"       # invert (black on white) while speaking
+            sgr = "30;47;1"  # invert (black on white) while speaking
         self.screen.put(row, max(0, x - len(plate) // 2), plate, sgr)
         ballot = self.ballots.get(name)
         if ballot and ballot_row is not None:
             chip = f"[{ballot[:8]}]"
-            self.screen.put(ballot_row, max(0, x - len(chip) // 2), chip,
-                            _banner_sgr(ballot))
+            self.screen.put(ballot_row, max(0, x - len(chip) // 2), chip, _banner_sgr(ballot))
 
     def _speaking_area(self) -> None:
         s = self.screen
@@ -647,7 +699,7 @@ class Courtroom:
             self._speak(kind, result, round_no)
         elif kind == "verify":
             self._verify(result)
-        else:                       # synthesis (the four phases are exhaustive)
+        else:  # synthesis (the four phases are exhaustive)
             self._synthesize(result)
 
     @staticmethod
@@ -752,7 +804,7 @@ def _verdict_headline(text: str) -> str:
     lines = text.splitlines()
     for i, line in enumerate(lines):
         if line.strip().lower().startswith("## verdict"):
-            for nxt in lines[i + 1:]:
+            for nxt in lines[i + 1 :]:
                 if nxt.strip():
                     return flatten_inline(nxt)
     return _gist(text)

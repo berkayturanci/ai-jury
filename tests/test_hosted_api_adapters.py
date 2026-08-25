@@ -157,9 +157,7 @@ class ParseAndErrorMappingTest(unittest.TestCase):
 
     def test_google_parse_concatenates_multiple_parts(self):
         data = {
-            "candidates": [
-                {"content": {"parts": [{"text": "part one. "}, {"text": "part two."}]}}
-            ]
+            "candidates": [{"content": {"parts": [{"text": "part one. "}, {"text": "part two."}]}}]
         }
         self.assertEqual(GoogleApiAdapter.parse_content(data), "part one. part two.")
 
@@ -168,7 +166,10 @@ class ParseAndErrorMappingTest(unittest.TestCase):
 
     def test_google_parse_blocked_prompt_has_no_content(self):
         # A safety-filter block yields no `content` key on the candidate.
-        data = {"candidates": [{"finishReason": "SAFETY"}], "promptFeedback": {"blockReason": "SAFETY"}}
+        data = {
+            "candidates": [{"finishReason": "SAFETY"}],
+            "promptFeedback": {"blockReason": "SAFETY"},
+        }
         self.assertEqual(GoogleApiAdapter.parse_content(data), "")
 
     def test_connection_error_is_retryable(self):
@@ -437,9 +438,7 @@ class RunHttpTest(unittest.TestCase):
             def read(self, *_args):
                 raise OSError("body already consumed")
 
-        err = _UnreadableHTTPError(
-            url="x", code=500, msg="Server Error", hdrs=None, fp=None
-        )
+        err = _UnreadableHTTPError(url="x", code=500, msg="Server Error", hdrs=None, fp=None)
         with (
             mock.patch.dict("os.environ", {"ANTHROPIC_API_KEY": "x"}, clear=False),
             mock.patch("ai_jury.adapters._open", side_effect=err),
@@ -485,7 +484,9 @@ class RunHttpTest(unittest.TestCase):
 
         payload = json.dumps({"content": [{"type": "text", "text": "ok"}]}).encode()
         with (
-            mock.patch.dict("os.environ", {"ANTHROPIC_API_KEY": "sk-ant-perfectly-normal"}, clear=False),
+            mock.patch.dict(
+                "os.environ", {"ANTHROPIC_API_KEY": "sk-ant-perfectly-normal"}, clear=False
+            ),
             mock.patch("ai_jury.adapters._open", return_value=_FakeResp(payload)) as opened,
         ):
             result = AnthropicApiAdapter(_anthropic_spec()).run("prompt")

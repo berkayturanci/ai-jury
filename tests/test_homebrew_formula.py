@@ -50,8 +50,6 @@ class HomebrewFormulaTests(unittest.TestCase):
         self.assertIn("pipx install ai-jury", content)
 
 
-
-
 #: The tap `brew install berkayturanci/ai-jury/ai-jury` resolves to.
 HOMEBREW_TAP = "berkayturanci/homebrew-ai-jury"
 ONLINE = os.environ.get("AI_JURY_CHECK_EXTERNAL") == "1"

@@ -535,17 +535,27 @@ class VerdictMatching(unittest.TestCase):
         from ai_jury.ci import evaluate_ci
 
         crit = Finding(
-            severity="critical", file="db.py", line=300,
-            claim="alpha beta gamma delta epsilon kappa", reviewer="r1",
+            severity="critical",
+            file="db.py",
+            line=300,
+            claim="alpha beta gamma delta epsilon kappa",
+            reviewer="r1",
         )
         decoy = Finding(
-            severity="info", file="db.py", line=5,
-            claim="alpha beta gamma delta zeta omega", reviewer="r2",
+            severity="info",
+            file="db.py",
+            line=5,
+            claim="alpha beta gamma delta zeta omega",
+            reviewer="r2",
         )
         groups = group_findings([crit, decoy], 2)
         _apply_verdicts(
             groups,
-            [Verdict(file="db.py", line=None, claim="alpha beta gamma delta", status="unsupported")],
+            [
+                Verdict(
+                    file="db.py", line=None, claim="alpha beta gamma delta", status="unsupported"
+                )
+            ],
         )
         # critical stays un-rejected → strict gate still FAILs.
         self.assertEqual(evaluate_ci(groups, ["critical"], ignore_unverified=False)[0], 1)
@@ -557,12 +567,18 @@ class VerdictMatching(unittest.TestCase):
         from ai_jury.ci import evaluate_ci
 
         crit = Finding(
-            severity="critical", file="x.py", line=10,
-            claim="alpha beta gamma delta epsilon kappa", reviewer="r1",
+            severity="critical",
+            file="x.py",
+            line=10,
+            claim="alpha beta gamma delta epsilon kappa",
+            reviewer="r1",
         )
         decoy = Finding(
-            severity="info", file="x.py", line=10,
-            claim="alpha beta gamma delta zeta omega", reviewer="r2",
+            severity="info",
+            file="x.py",
+            line=10,
+            claim="alpha beta gamma delta zeta omega",
+            reviewer="r2",
         )
         groups = group_findings([crit, decoy], 2)
         _apply_verdicts(
@@ -579,24 +595,37 @@ class VerdictMatching(unittest.TestCase):
         from ai_jury.ci import evaluate_ci
 
         crit = Finding(
-            severity="critical", file="h.py", line=42,
-            claim="missing authentication check on admin endpoint", reviewer="r1",
+            severity="critical",
+            file="h.py",
+            line=42,
+            claim="missing authentication check on admin endpoint",
+            reviewer="r1",
         )
         crit2 = Finding(
-            severity="critical", file="h.py", line=42,
-            claim="missing authentication check on admin endpoint", reviewer="r2",
+            severity="critical",
+            file="h.py",
+            line=42,
+            claim="missing authentication check on admin endpoint",
+            reviewer="r2",
         )
         nit = Finding(
-            severity="minor", file="h.py", line=44,
-            claim="missing check on admin endpoint logging", reviewer="r3",
+            severity="minor",
+            file="h.py",
+            line=44,
+            claim="missing check on admin endpoint logging",
+            reviewer="r3",
         )
         groups = group_findings([crit, crit2, nit], 3)
         _apply_verdicts(
             groups,
-            [Verdict(
-                file="h.py", line=44,
-                claim="missing check on admin endpoint logging", status="unsupported",
-            )],
+            [
+                Verdict(
+                    file="h.py",
+                    line=44,
+                    claim="missing check on admin endpoint logging",
+                    status="unsupported",
+                )
+            ],
         )
         self.assertEqual(evaluate_ci(groups, ["critical"], ignore_unverified=False)[0], 1)
 
@@ -613,24 +642,37 @@ class VerdictMatching(unittest.TestCase):
         from ai_jury.ci import evaluate_ci
 
         crit = Finding(
-            severity="critical", file="h.py", line=42,
-            claim="missing authentication check on admin endpoint", reviewer="local-1",
+            severity="critical",
+            file="h.py",
+            line=42,
+            claim="missing authentication check on admin endpoint",
+            reviewer="local-1",
         )
         crit2 = Finding(
-            severity="critical", file="h.py", line=42,
-            claim="missing authentication check on admin endpoint", reviewer="local-2",
+            severity="critical",
+            file="h.py",
+            line=42,
+            claim="missing authentication check on admin endpoint",
+            reviewer="local-2",
         )
         nit = Finding(
-            severity="minor", file="h.py", line=44,
-            claim="missing check on admin endpoint logging", reviewer="local-3",
+            severity="minor",
+            file="h.py",
+            line=44,
+            claim="missing check on admin endpoint logging",
+            reviewer="local-3",
         )
         groups = group_findings([crit, crit2, nit], 3)
         _apply_verdicts(
             groups,
-            [Verdict(
-                file="h.py", line=44,
-                claim="missing check on admin endpoint logging", status="unsupported",
-            )],
+            [
+                Verdict(
+                    file="h.py",
+                    line=44,
+                    claim="missing check on admin endpoint logging",
+                    status="unsupported",
+                )
+            ],
         )
         # Guard must have already refused the collateral rejection before any
         # demotion touches severity.
@@ -654,17 +696,27 @@ class VerdictMatching(unittest.TestCase):
         from ai_jury.ci import evaluate_ci
 
         crit = Finding(
-            severity="critical", file="p.py", line=10,
-            claim="buffer overflow in parse_v2", reviewer="r1",
+            severity="critical",
+            file="p.py",
+            line=10,
+            claim="buffer overflow in parse_v2",
+            reviewer="r1",
         )
         decoy = Finding(
-            severity="minor", file="p.py", line=10,
-            claim="buffer overflow in parse_v3", reviewer="r2",
+            severity="minor",
+            file="p.py",
+            line=10,
+            claim="buffer overflow in parse_v3",
+            reviewer="r2",
         )
         groups = group_findings([crit, decoy], 2)
         _apply_verdicts(
             groups,
-            [Verdict(file="p.py", line=10, claim="buffer overflow in parse_v3", status="unsupported")],
+            [
+                Verdict(
+                    file="p.py", line=10, claim="buffer overflow in parse_v3", status="unsupported"
+                )
+            ],
         )
         self.assertEqual(evaluate_ci(groups, ["critical"], ignore_unverified=False)[0], 1)
 
@@ -674,15 +726,20 @@ class VerdictMatching(unittest.TestCase):
         from ai_jury.ci import evaluate_ci
 
         c = Finding(
-            severity="critical", file="a.py", line=5,
-            claim="sql injection in query builder", reviewer="r",
+            severity="critical",
+            file="a.py",
+            line=5,
+            claim="sql injection in query builder",
+            reviewer="r",
         )
         for order in (("unsupported", "verified"), ("verified", "unsupported")):
             groups = group_findings([c], 1)
             _apply_verdicts(
                 groups,
-                [Verdict(file="a.py", line=5, claim="sql injection in query builder", status=s)
-                 for s in order],
+                [
+                    Verdict(file="a.py", line=5, claim="sql injection in query builder", status=s)
+                    for s in order
+                ],
             )
             self.assertEqual(groups[0].status, "verified")
             self.assertEqual(evaluate_ci(groups, ["critical"], ignore_unverified=True)[0], 1)
@@ -699,8 +756,11 @@ class VerdictMatching(unittest.TestCase):
         from ai_jury.ci import evaluate_ci
 
         crit = Finding(
-            severity="critical", file="a.py", line=88,
-            claim="auth bypass token signature never checked", reviewer="r",
+            severity="critical",
+            file="a.py",
+            line=88,
+            claim="auth bypass token signature never checked",
+            reviewer="r",
         )
         groups = group_findings([crit], 1)
         _apply_verdicts(
@@ -717,8 +777,11 @@ class VerdictMatching(unittest.TestCase):
         from ai_jury.ci import evaluate_ci
 
         crit = Finding(
-            severity="critical", file="pay.py", line=42,
-            claim="auth bypass token check skipped", reviewer="r1",
+            severity="critical",
+            file="pay.py",
+            line=42,
+            claim="auth bypass token check skipped",
+            reviewer="r1",
         )
         nit = Finding(severity="nit", file="pay.py", line=42, claim="unused import", reviewer="r2")
         groups = group_findings([crit, nit], 2)
@@ -746,17 +809,28 @@ class VerdictMatching(unittest.TestCase):
 
         rev = AgentResult("r", "v", True, "ok", 0.0)
         crit = Finding(
-            severity="critical", file="auth.py", line=10,
-            claim="auth bypass token check skipped", reviewer="r",
+            severity="critical",
+            file="auth.py",
+            line=10,
+            claim="auth bypass token check skipped",
+            reviewer="r",
         )
         nit = Finding(severity="nit", file="other.py", line=10, claim="unused import", reviewer="r")
         chunk_a = JuryOutcome(reviews=[rev], debate=[], synthesis=None, chair="c", findings=[crit])
         chunk_b = JuryOutcome(
-            reviews=[rev], debate=[], synthesis=None, chair="c", findings=[nit],
-            verdicts=[Verdict(
-                file="auth.py", line=10,
-                claim="auth bypass token check skipped", status="unsupported",
-            )],
+            reviews=[rev],
+            debate=[],
+            synthesis=None,
+            chair="c",
+            findings=[nit],
+            verdicts=[
+                Verdict(
+                    file="auth.py",
+                    line=10,
+                    claim="auth bypass token check skipped",
+                    status="unsupported",
+                )
+            ],
         )
         merged = _merge_chunk_outcomes([chunk_a, chunk_b], _cfg())
         code, _ = evaluate_ci(merged.groups, ["critical"], ignore_unverified=False)
@@ -768,17 +842,23 @@ class VerdictMatching(unittest.TestCase):
         from ai_jury.ci import evaluate_ci
 
         crit = Finding(
-            severity="critical", file="Config.py", line=10,
-            claim="auth bypass token signature never checked", reviewer="r",
+            severity="critical",
+            file="Config.py",
+            line=10,
+            claim="auth bypass token signature never checked",
+            reviewer="r",
         )
         groups = group_findings([crit], 1)
         _apply_verdicts(
             groups,
-            [Verdict(
-                file="config.py", line=10,
-                claim="auth bypass token signature never checked",
-                status="unsupported",
-            )],
+            [
+                Verdict(
+                    file="config.py",
+                    line=10,
+                    claim="auth bypass token signature never checked",
+                    status="unsupported",
+                )
+            ],
         )
         code, _ = evaluate_ci(groups, ["critical", "major"], ignore_unverified=False)
         self.assertEqual(code, 1)
@@ -946,14 +1026,24 @@ class ChunkMerge(unittest.TestCase):
 
         rev = AgentResult("r", "v", True, "ok", 0.0)
         chunk_a = JuryOutcome(
-            reviews=[rev], debate=[], synthesis=None, chair="c",
-            redaction_count=2, injection_hits=["hit-a"],
-            budget_exhausted=False, rounds_executed=3,
+            reviews=[rev],
+            debate=[],
+            synthesis=None,
+            chair="c",
+            redaction_count=2,
+            injection_hits=["hit-a"],
+            budget_exhausted=False,
+            rounds_executed=3,
         )
         chunk_b = JuryOutcome(
-            reviews=[rev], debate=[], synthesis=None, chair="c",
-            redaction_count=5, injection_hits=["hit-b"],
-            budget_exhausted=True, rounds_executed=1,
+            reviews=[rev],
+            debate=[],
+            synthesis=None,
+            chair="c",
+            redaction_count=5,
+            injection_hits=["hit-b"],
+            budget_exhausted=True,
+            rounds_executed=1,
         )
         merged = _merge_chunk_outcomes([chunk_a, chunk_b], _cfg())
         self.assertEqual(merged.redaction_count, 7)
@@ -969,8 +1059,11 @@ class ChunkMerge(unittest.TestCase):
 
         rev = AgentResult("r", "v", True, "ok", 0.0)
         finding = Finding(
-            severity="critical", file="a.py", line=1,
-            claim="unchecked return value", reviewer="local-model",
+            severity="critical",
+            file="a.py",
+            line=1,
+            claim="unchecked return value",
+            reviewer="local-model",
         )
         chunk = JuryOutcome(reviews=[rev], debate=[], synthesis=None, chair="c", findings=[finding])
         cfg = _cfg(demote_local_only=True)
@@ -987,12 +1080,18 @@ class ChunkMerge(unittest.TestCase):
 
         rev = AgentResult("r", "v", True, "ok", 0.0)
         local_finding = Finding(
-            severity="critical", file="a.py", line=1,
-            claim="unchecked return value", reviewer="local-model",
+            severity="critical",
+            file="a.py",
+            line=1,
+            claim="unchecked return value",
+            reviewer="local-model",
         )
         cloud_finding = Finding(
-            severity="critical", file="a.py", line=1,
-            claim="unchecked return value", reviewer="claude",
+            severity="critical",
+            file="a.py",
+            line=1,
+            claim="unchecked return value",
+            reviewer="claude",
         )
         chunk_a = JuryOutcome(
             reviews=[rev], debate=[], synthesis=None, chair="c", findings=[local_finding]

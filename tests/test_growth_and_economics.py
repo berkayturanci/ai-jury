@@ -16,9 +16,23 @@ from ai_jury.report import render  # noqa: E402
 
 class GrowthAndEconomicsTests(unittest.TestCase):
     def test_estimate_economics_with_local_and_cloud_models(self):
-        r1 = AgentResult(agent="claude", vendor="anthropic", output="Found a minor bug in auth.py.", duration_s=2.5, ok=True)
-        r2 = AgentResult(agent="deepseek", vendor="deepseek", output="Looks clean to me.", duration_s=1.8, ok=True)
-        r3 = AgentResult(agent="local-qwen", vendor="local", output="No issues found.", duration_s=3.0, ok=True)
+        r1 = AgentResult(
+            agent="claude",
+            vendor="anthropic",
+            output="Found a minor bug in auth.py.",
+            duration_s=2.5,
+            ok=True,
+        )
+        r2 = AgentResult(
+            agent="deepseek",
+            vendor="deepseek",
+            output="Looks clean to me.",
+            duration_s=1.8,
+            ok=True,
+        )
+        r3 = AgentResult(
+            agent="local-qwen", vendor="local", output="No issues found.", duration_s=3.0, ok=True
+        )
 
         econ = estimate_economics([r1, r2, r3])
         self.assertGreater(econ["total_tokens_est"], 1000)
@@ -31,8 +45,16 @@ class GrowthAndEconomicsTests(unittest.TestCase):
         self.assertGreater(breakdown["claude"]["cost_usd_est"], 0.0)
 
     def test_report_renders_economics_and_viral_footer(self):
-        r1 = AgentResult(agent="claude", vendor="anthropic", output="Everything looks good.", duration_s=2.0, ok=True)
-        r2 = AgentResult(agent="local-qwen", vendor="local", output="Agree.", duration_s=2.0, ok=True)
+        r1 = AgentResult(
+            agent="claude",
+            vendor="anthropic",
+            output="Everything looks good.",
+            duration_s=2.0,
+            ok=True,
+        )
+        r2 = AgentResult(
+            agent="local-qwen", vendor="local", output="Agree.", duration_s=2.0, ok=True
+        )
         econ = estimate_economics([r1, r2])
 
         metadata = {

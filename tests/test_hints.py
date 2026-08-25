@@ -25,7 +25,10 @@ class HintsTests(unittest.TestCase):
         mock_proc.stdout = "src/main.py:10:1: F401 `os` imported but unused\nsrc/main.py:12:1: E501 line too long\n"
 
         with (
-            patch("shutil.which", side_effect=lambda name: "/usr/bin/" + name if name == "ruff" else None),
+            patch(
+                "shutil.which",
+                side_effect=lambda name: "/usr/bin/" + name if name == "ruff" else None,
+            ),
             patch("subprocess.run", return_value=mock_proc),
         ):
             hints = collect_static_hints(files=["src/main.py"], root_dir=REPO_ROOT)
@@ -36,7 +39,10 @@ class HintsTests(unittest.TestCase):
     def test_collect_static_hints_with_ruff_no_files_and_clean(self):
         mock_clean = MagicMock(returncode=0, stdout="")
         with (
-            patch("shutil.which", side_effect=lambda name: "/usr/bin/" + name if name == "ruff" else None),
+            patch(
+                "shutil.which",
+                side_effect=lambda name: "/usr/bin/" + name if name == "ruff" else None,
+            ),
             patch("subprocess.run", return_value=mock_clean),
         ):
             hints = collect_static_hints(files=None, root_dir=REPO_ROOT)
@@ -48,7 +54,10 @@ class HintsTests(unittest.TestCase):
         mock_proc.stdout = "src/app.ts: line 5, col 10, Error - Unexpected any (no-explicit-any)\n"
 
         with (
-            patch("shutil.which", side_effect=lambda name: "/usr/bin/" + name if name == "npx" else None),
+            patch(
+                "shutil.which",
+                side_effect=lambda name: "/usr/bin/" + name if name == "npx" else None,
+            ),
             patch("pathlib.Path.exists", return_value=True),
             patch("subprocess.run", return_value=mock_proc),
         ):
@@ -59,7 +68,10 @@ class HintsTests(unittest.TestCase):
     def test_collect_static_hints_with_eslint_clean_or_no_js(self):
         mock_clean = MagicMock(returncode=0, stdout="")
         with (
-            patch("shutil.which", side_effect=lambda name: "/usr/bin/" + name if name == "npx" else None),
+            patch(
+                "shutil.which",
+                side_effect=lambda name: "/usr/bin/" + name if name == "npx" else None,
+            ),
             patch("pathlib.Path.exists", return_value=True),
             patch("subprocess.run", return_value=mock_clean),
         ):
@@ -69,7 +81,10 @@ class HintsTests(unittest.TestCase):
     def test_collect_static_hints_with_eslint_no_files(self):
         mock_proc = MagicMock(returncode=1, stdout="app.js:1:1: error\n")
         with (
-            patch("shutil.which", side_effect=lambda name: "/usr/bin/" + name if name == "npx" else None),
+            patch(
+                "shutil.which",
+                side_effect=lambda name: "/usr/bin/" + name if name == "npx" else None,
+            ),
             patch("pathlib.Path.exists", return_value=True),
             patch("subprocess.run", return_value=mock_proc),
         ):
@@ -85,7 +100,10 @@ class HintsTests(unittest.TestCase):
             self.assertEqual(hints, "")
 
         with (
-            patch("shutil.which", side_effect=lambda name: "/usr/bin/" + name if name == "npx" else None),
+            patch(
+                "shutil.which",
+                side_effect=lambda name: "/usr/bin/" + name if name == "npx" else None,
+            ),
             patch("pathlib.Path.exists", return_value=True),
             patch("subprocess.run", side_effect=RuntimeError("boom")),
         ):

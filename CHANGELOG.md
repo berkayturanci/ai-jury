@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **`ruff-format` Rewrote 38 Files Under Anyone Who Installed The Hooks** (#621): `.pre-commit-config.yaml` declared `ruff-format` as a **rewriting** hook, pinned to `v0.4.4`, on a tree 35 files from formatted.
+  - A contributor who installed the hooks and committed a one-line change got 38 unrelated files rewritten into it — silently, already staged by the time they looked. CI never noticed: it ran **no ruff step at all**, neither lint nor format.
+  - The pin made it worse than plain drift. `v0.4.4` and current `0.16.3` format *differently* — different `ruff format --diff` output, and they disagree on five files about whether those are already formatted. The hook and any modern ruff actively undid each other.
+  - Hook bumped to `0.16.3`, tree formatted, and a `Lint + format (ruff)` job added to CI so it stays true.
+  - **CI's ruff is pinned to the same version as the hook**, and `tests/test_ruff_pin.py` asserts they match. The dev extra is `ruff>=0.6`, which is right for linting — new rules are worth picking up — but a format gate on a floating formatter goes red the day ruff changes its style, for reasons unrelated to the change under review.
+  - **Verified at the syntax-tree level, not by the suite passing.** All 36 changed Python files parse to byte-identical trees before and after: zero semantic differences. At this size "the tests passed" is weak evidence, since most of these files have no test that would notice a changed string.
+  - Mutation-tested: drifting the hook version, dropping CI's pin, and removing either ruff step each fail.
+
 ### Added
 - **The Review-Evidence Chain Is Wired Up** (#602): of the 16 PRs merged into `main` between 2026-08-19 and 2026-08-24, none carried a review verdict — including changes to the modules `tier3_globs` already lists as highest-risk.
   - The cause was **not** the `gates: [build, lint]` line the issue pointed at: keel's own `projects/keel.yaml` declares exactly the same two. The gate is driven by a workflow, and this repo had none. Confirmed by running `keel evidence-verify` against a real PR here before writing anything — it works against the existing config unmodified, deriving a tier-2 two-reviewer requirement from `tier3_globs`.

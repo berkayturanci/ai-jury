@@ -28,9 +28,7 @@ WORKFLOWS = Path(__file__).parent.parent / ".github" / "workflows"
 ONLINE = os.environ.get("AI_JURY_CHECK_PINS") == "1"
 
 # owner/repo[/subpath]@<40-hex>  # vX.Y.Z
-_PIN = re.compile(
-    r"uses:\s*([\w.-]+/[\w.-]+(?:/[\w.-]+)*)@([0-9a-f]{40})[ \t]*#[ \t]*(\S+)"
-)
+_PIN = re.compile(r"uses:\s*([\w.-]+/[\w.-]+(?:/[\w.-]+)*)@([0-9a-f]{40})[ \t]*#[ \t]*(\S+)")
 _UNPINNED = re.compile(r"uses:\s*([\w.-]+/[\w.-]+(?:/[\w.-]+)*)@(?![0-9a-f]{40})(\S+)")
 
 
@@ -110,9 +108,7 @@ class TestActionPinsMatchUpstream(unittest.TestCase):
             if not tags:
                 wrong.append(f"{name}: {action}@{sha[:8]} is not any released tag")
             elif claim not in tags:
-                wrong.append(
-                    f"{name}: {action}@{sha[:8]} says {claim}, is {sorted(tags)}"
-                )
+                wrong.append(f"{name}: {action}@{sha[:8]} says {claim}, is {sorted(tags)}")
         self.assertEqual([], wrong)
 
 

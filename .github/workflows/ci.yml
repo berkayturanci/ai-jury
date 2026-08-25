@@ -52,6 +52,29 @@ jobs:
           grep -q "AI Jury" report.md
           grep -q "Chair verdict" report.md
 
+  lint:
+    name: Lint + format (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.13"
+      # Pinned, and pinned to the SAME version as the `ruff-format` hook in
+      # .pre-commit-config.yaml — `tests/test_ruff_pin.py` asserts they match.
+      # The dev extra is `ruff>=0.6`, and a format gate on a floating formatter
+      # goes red on ruff's release schedule rather than on anything in this
+      # repository. That is the failure that teaches people to ignore a check.
+      - name: Install ruff (pinned to the pre-commit hook)
+        run: python -m pip install --upgrade pip && pip install "ruff==0.16.3"
+      - name: Lint
+        run: ruff check .
+      # Without this the tree drifts back: `ruff-format` is a *rewriting* hook,
+      # so before #621 anyone who installed the hooks got 38 unrelated files
+      # rewritten into their next commit, silently (#621).
+      - name: Format
+        run: ruff format --check .
+
   version-integrity:
     # Its own job, not a step in the test matrix, for one reason: the check needs
     # the git tags, and fetching them means a full-history checkout. Paying that

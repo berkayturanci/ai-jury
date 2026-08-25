@@ -14,8 +14,14 @@ from ai_jury import cli
 
 
 def _args(**kw):
-    base = {"pr": None, "issue": None, "diff_file": None, "repo": None,
-            "commit": None, "commits": None}
+    base = {
+        "pr": None,
+        "issue": None,
+        "diff_file": None,
+        "repo": None,
+        "commit": None,
+        "commits": None,
+    }
     base.update(kw)
     return SimpleNamespace(**base)
 
@@ -77,35 +83,39 @@ class TestResolution(unittest.TestCase):
 
     def test_a_bad_revision_surfaces_gits_own_message(self):
         bad = _proc(stderr="fatal: bad revision 'nope'\n", code=128)
-        with mock.patch("subprocess.run", return_value=bad), \
-                self.assertRaises(SystemExit) as ctx:
+        with mock.patch("subprocess.run", return_value=bad), self.assertRaises(SystemExit) as ctx:
             cli._read_diff(_args(commit="nope"))
         self.assertIn("bad revision", str(ctx.exception))
 
     def test_an_empty_diff_is_an_error_not_an_empty_review(self):
         # Reviewing nothing and reporting a verdict would be worse than failing.
-        with mock.patch("subprocess.run", return_value=_proc("   \n")), \
-                self.assertRaises(SystemExit) as ctx:
+        with (
+            mock.patch("subprocess.run", return_value=_proc("   \n")),
+            self.assertRaises(SystemExit) as ctx,
+        ):
             cli._read_diff(_args(commits="HEAD..HEAD"))
         self.assertIn("empty diff", str(ctx.exception))
 
     def test_git_missing_fails_cleanly(self):
-        with mock.patch("subprocess.run", side_effect=OSError("no git")), \
-                self.assertRaises(SystemExit) as ctx:
+        with (
+            mock.patch("subprocess.run", side_effect=OSError("no git")),
+            self.assertRaises(SystemExit) as ctx,
+        ):
             cli._read_diff(_args(commit="HEAD"))
         self.assertIn("could not run git", str(ctx.exception))
 
     def test_a_timeout_fails_cleanly(self):
         boom = subprocess.TimeoutExpired(cmd="git", timeout=120)
-        with mock.patch("subprocess.run", side_effect=boom), \
-                self.assertRaises(SystemExit) as ctx:
+        with mock.patch("subprocess.run", side_effect=boom), self.assertRaises(SystemExit) as ctx:
             cli._read_diff(_args(commit="HEAD"))
         self.assertIn("could not run git", str(ctx.exception))
 
     def test_the_ingest_cap_applies_to_git_output_too(self):
         huge = "x" * (cli._MAX_DIFF_INGEST_BYTES + 10)
-        with mock.patch("subprocess.run", return_value=_proc(huge)), \
-                self.assertRaises(SystemExit) as ctx:
+        with (
+            mock.patch("subprocess.run", return_value=_proc(huge)),
+            self.assertRaises(SystemExit) as ctx,
+        ):
             cli._read_diff(_args(commit="HEAD"))
         self.assertIn("ingest limit", str(ctx.exception))
 

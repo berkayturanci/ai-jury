@@ -148,11 +148,7 @@ def _path_from_git_header(line: str) -> str:
     if rest.startswith("a/"):
         body = rest[2:]
         half = (len(body) - 3) // 2
-        if (
-            len(body) >= 3
-            and body[half : half + 3] == " b/"
-            and body[:half] == body[half + 3 :]
-        ):
+        if len(body) >= 3 and body[half : half + 3] == " b/" and body[:half] == body[half + 3 :]:
             return _unquote_git_path(body[:half])
     idx = rest.rfind(" b/")
     if idx != -1:
@@ -194,7 +190,7 @@ def split_diff(diff: str) -> list[DiffFile]:
             if next_idx == -1:
                 parts.append(diff[idx:])
                 break
-            parts.append(diff[idx:next_idx+1])
+            parts.append(diff[idx : next_idx + 1])
             idx = next_idx + 1
 
     for part in parts:

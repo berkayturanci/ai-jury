@@ -134,7 +134,9 @@ def _classify(reviewer_count: int, distinct_reviewers: int) -> str:
 _DEMOTED_SEVERITY = "minor"
 
 
-def demote_local_only_groups(groups: list[FindingGroup], vendor_by_reviewer: dict[str, str]) -> None:
+def demote_local_only_groups(
+    groups: list[FindingGroup], vendor_by_reviewer: dict[str, str]
+) -> None:
     """Cap severity for a finding raised only by local/free-model reviewers (issue #442).
 
     A numeric per-reviewer trust weight was rejected in favor of this categorical
@@ -150,7 +152,10 @@ def demote_local_only_groups(groups: list[FindingGroup], vendor_by_reviewer: dic
             continue
         if not all(vendor_by_reviewer.get(r) == "local" for r in group.reviewers):
             continue
-        if SEVERITY_ORDER.get(group.severity, len(SEVERITY_ORDER)) < SEVERITY_ORDER[_DEMOTED_SEVERITY]:
+        if (
+            SEVERITY_ORDER.get(group.severity, len(SEVERITY_ORDER))
+            < SEVERITY_ORDER[_DEMOTED_SEVERITY]
+        ):
             group.severity = _DEMOTED_SEVERITY
 
 
