@@ -39,3 +39,7 @@
 ## 2025-06-17 - Avoid .count() on lists during multi-metric aggregations
 **Learning:** Using `list.count()` multiple times sequentially on the same list forces multiple O(N) traversals.
 **Action:** Consolidate multiple sequential `list.count()` calls into a single explicit loop that tallies all metrics simultaneously to achieve single-pass O(N) evaluation.
+## 2025-06-18 - Avoid splitlines() for multi-line prefix matching
+**Learning:** Using `splitlines()` to check if any line starts with a prefix allocates a huge list of strings, slowing down processing of large text blocks.
+**Action:** Bypass `splitlines()` memory allocation by checking if the text directly `.startswith()` the prefix tuple, and then searching for occurrences of `
+prefix` using `in`.
