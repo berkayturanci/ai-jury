@@ -34,7 +34,7 @@ from .github import (
     pr_context,
     pr_diff,
 )
-from .metadata import build_run_metadata
+from .metadata import build_run_metadata, panel_accounting
 from .orchestrator import review_diff, run_jury
 from .policy import PolicyError, load_policy
 from .redaction import redact
@@ -287,6 +287,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--strict", action="store_true", help="fail if any configured agent CLI is missing"
+    )
+    p.add_argument(
+        "--min-vendors",
+        type=int,
+        default=0,
+        metavar="N",
+        help=(
+            "fail (exit 3) unless at least N distinct vendors contributed a "
+            "review; 0 disables. --strict checks availability at startup, this "
+            "checks participation at the end"
+        ),
     )
     p.add_argument(
         "--verify",
@@ -1859,6 +1870,20 @@ def main(argv: list[str] | None = None) -> int:
         log(f"metadata written to {args.metadata_json}")
 
     ci_exit = 0
+    # A run whose panel collapsed is a different thing wearing the same output
+    # (#625). `--strict` fails when a configured CLI is *missing*; this fails
+    # when one was present, probed fine, and returned nothing — which is how a
+    # three-vendor panel silently becomes one. Opt-in, so the default is
+    # unchanged, and exit 3 so it is distinguishable from a findings failure.
+    if getattr(args, "min_vendors", 0) > 0:
+        contributed = panel_accounting(outcome.reviews).get("vendors", 0)
+        if contributed < args.min_vendors:
+            log(
+                f"panel collapsed: {contributed} vendor(s) contributed a review, "
+                f"--min-vendors {args.min_vendors} required. An abstention is not "
+                "an approval; cross-vendor consensus was not formed."
+            )
+            ci_exit = 3
     if args.ci:
         fail_on = config.ci.fail_on
         if args.fail_on:
