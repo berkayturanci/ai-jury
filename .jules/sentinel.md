@@ -41,7 +41,44 @@
 **Learning:** External dependencies (CLIs) running outside the Python process boundary don't inherit the application's memory protections or logging filters. Their spawn errors must also be aggressively sanitized before crossing back into application exception/logging flows.
 **Prevention:** Always wrap `str(exc)` with `redaction.redact()[0]` before logging or returning it in the user report in adapter classes.
 
-## 2026-08-22 - [HIGH] Fix workspace-write sandbox bypass in Codex
-**Vulnerability:** Codex reviewers configured with '-s workspace-write' escaped least-privilege warnings and the '--strict' flag.
-**Learning:** The audited variable '_DANGEROUS_FLAGS' was missing 'workspace-write', despite documentation explicitly stating it was flagged. Discrepancies between documentation and actual flag arrays can lead to silent sandbox bypasses.
-**Prevention:** Ensure that all documented restricted flags are explicitly included in the audit array and covered by tests.
+## 2026-08-22 - [WITHDRAWN] "workspace-write sandbox bypass in Codex" (#600)
+
+**This entry recorded a vulnerability that did not exist.** Retained rather than
+deleted so the false finding is not re-derived by the next reader. Withdrawn by
+#608 on 2026-08-25.
+
+**Original claim:** Codex reviewers configured with `-s workspace-write` escaped
+least-privilege warnings and the `--strict` flag, because `_DANGEROUS_FLAGS` was
+missing `workspace-write`.
+
+**Why it was wrong:** `_DANGEROUS_FLAGS` was never the only path to a warning.
+`audit_agent` also emits a catch-all for any non-claude agent not under a
+*restricting* sandbox — a value sandbox like `workspace-write` does not restrict,
+so it fell through to the catch-all. That catch-all was added in `f5797cf`
+(2026-06-07), two and a half months before #600. Measured at `3cc3623^` and
+`3cc3623`, a `-s workspace-write` spec produces **exactly one warning either
+way**; only its wording changed. `--strict` promotes any warning to a failure,
+so the configuration already failed. There was nothing to escape.
+
+**What #600 actually did, and it was worth doing:** replaced the generic
+"no recognized sandbox" message with one naming `workspace-write` and the
+powers it grants. That is a `docs`/`chore` improvement in operator-facing
+wording, not a security fix, and it should not have carried a [HIGH].
+
+**Learning — the one that generalises:** a missing entry in a denylist is only
+a vulnerability if the denylist is the *sole* control. Before filing, run the
+allegedly-bypassing input against the code as it stood, and against the parent
+of your own fix. Four review passes asserted this bypass; none of them ran it.
+
+**The refutation was already in the tree, green, in the file under review:**
+`tests/test_privilege.py::test_codex_no_sandbox_no_dangerous_flag_warns` asserts
+that a codex agent with no sandbox *and no dangerous flag* warns. It was added
+alongside the catch-all in the same commit. A claimed bypass whose negation is
+a passing test in the diff should not survive one pass, let alone four — so
+read the tests around the code you are indicting, and treat a green test that
+contradicts your finding as the finding.
+
+**Prevention:** a [HIGH] or [CRITICAL] sentinel entry must record the observed
+before-behaviour — the command run and its output on the unfixed code — not
+only the reasoning that predicted it. Reasoning about a control in isolation
+cannot see the control that sits behind it.

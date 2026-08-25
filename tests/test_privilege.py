@@ -96,8 +96,34 @@ class AuditAgentTest(unittest.TestCase):
         self.assertIn("sandbox", warnings[0].lower())
 
     def test_codex_no_sandbox_no_dangerous_flag_warns(self):
+        # Not being sandboxed is itself the warning condition. `_DANGEROUS_FLAGS`
+        # only selects which message is emitted — it is not a second gate an
+        # agent can slip past by using a flag that is not on the list.
+        #
+        # This test existed and was green throughout the #600 review, in the
+        # file under review, while four passes asserted the opposite (see #608).
+        # `assertTrue` was too quiet to be read as the refutation it was, so the
+        # catch-all is now named.
         spec = AgentSpec(name="codex", vendor="openai", command="codex", extra_args=[])
-        self.assertTrue(privilege.audit_agent(spec))
+        warnings = privilege.audit_agent(spec)
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("not running under a recognized read-only sandbox", warnings[0])
+
+    def test_an_unlisted_wide_sandbox_still_warns(self):
+        """The generalisation: no `_DANGEROUS_FLAGS` entry is needed to warn.
+
+        A value sandbox that restricts nothing and appears on no list is the
+        exact shape #600 believed was a bypass. One warning, via the catch-all.
+        """
+        spec = AgentSpec(
+            name="codex",
+            vendor="openai",
+            command="codex",
+            extra_args=["-s", "some-future-mode-nobody-listed"],
+        )
+        warnings = privilege.audit_agent(spec)
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("not running under a recognized read-only sandbox", warnings[0])
 
     def test_local_vendor_is_not_audited(self):
         # A local/HTTP agent runs no subprocess to sandbox — out of scope.
