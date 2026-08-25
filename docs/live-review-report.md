@@ -558,6 +558,24 @@ None rose to multi-reviewer consensus on the merits. Reviewer A produced the onl
 
 ## Consensus findings
 
+> **[CORRECTION — #608, 2026-08-25] Finding 1 below is false, and so is the
+> "verified" mark on it.** All three reviewers and the verifier shared one
+> mis-reading: they took `audit_agent` to exonerate a non-claude agent when
+> *either* `_is_sandboxed()` is true *or* no dangerous flag matches. Only the
+> first is an exit. When not sandboxed, `_DANGEROUS_FLAGS` selects the *wording*
+> of the warning and a catch-all issues one regardless — a catch-all present
+> since `f5797cf` (2026-06-07), before this review ran. Measured: a
+> `-s workspace-write` spec yields exactly one warning both before and after
+> the "fix" (#600), and `--strict` already failed on it. #600 was a
+> message-wording improvement, reclassified from [HIGH] to `docs`. The text is
+> kept unedited because *how four independent passes converged on the same
+> wrong disjunction* is the part worth keeping. See #608.
+>
+> The refutation was in the diff they were reading:
+> `tests/test_privilege.py::test_codex_no_sandbox_no_dangerous_flag_warns`
+> asserts that a codex agent with no sandbox **and no dangerous flag** warns.
+> It was added alongside the catch-all in `f5797cf` and was green throughout.
+
 1. **[major] `src/ai_jury/privilege.py:27` — `workspace-write` not flagged** (raised by claude, codex, qwen; verified). `_DANGEROUS_FLAGS` omits `workspace-write` and `_is_sandboxed()` treats only `read-only` (or bare `--sandbox`) as safe, so a Codex reviewer run with `-s workspace-write` — filesystem-write power over attacker-controlled diffs — draws **no warning and escapes `--strict`**, directly contradicting the module docstring (lines 17–19) that promises wider sandboxes "are flagged." Clear behaviour/doc mismatch. **Fix:** add `workspace-write` to `_DANGEROUS_FLAGS`, or flag any Codex `-s` mode other than `read-only`. This is the one finding I'd gate the merge on.
 
 2. **[major→cluster] Anonymization is applied inconsistently** (raised by agy; affirmed by claude and codex in debate; verified). The `#37`/`#38` identity-hiding guardrails are applied only to the round-1 reviews block in synthesis. Three sibling paths still leak real identities to a chair/debater who shouldn't see authorship:
@@ -834,6 +852,19 @@ I reviewed the diff. It's a large initial drop of the `ai_jury` package (CLI + p
 
 #### chunk 4
 I reviewed this diff (a bulk add of the orchestrator, prompts, policy, privilege, redaction, report, scaffold, and voting modules plus tests/goldens). The code is mature and well-tested; I focused on correctness, security defense-in-depth, and determinism (a stated hard constraint).
+
+> **[CORRECTION — #608, 2026-08-25]** The `privilege.py:27` finding below is
+> false. The sentence "a non-claude agent is exonerated when either
+> `_is_sandboxed()` is true **or** no dangerous flag matches" is the error, and
+> it is the same sentence the consensus block and the verifier record carry —
+> the wrong disjunction propagated verbatim. Not being sandboxed is itself the
+> warning condition; `_DANGEROUS_FLAGS` only picks which message is emitted.
+> Left in place as evidence of the shared mis-reading.
+>
+> The refutation was in the diff they were reading:
+> `tests/test_privilege.py::test_codex_no_sandbox_no_dangerous_flag_warns`
+> asserts that a codex agent with no sandbox **and no dangerous flag** warns.
+> It was added alongside the catch-all in `f5797cf` and was green throughout.
 
 - **[major]** `src/ai_jury/privilege.py:27` — The least-privilege audit fails to flag codex `-s workspace-write`, contradicting the module's own documented behavior. `_DANGEROUS_FLAGS` lists `--dangerously-skip-permissions`, `--yolo`, `danger-full-access`, `--full-auto`, but **not** `workspace-write`. In `audit_agent`, a non-claude agent is exonerated when either `_is_sandboxed()` is true or no dangerous flag matches. `_is_sandboxed()` returns True only for `read-only` (it explicitly rejects any other `-s <mode>`), and `workspace-write` is absent from `_DANGEROUS_FLAGS`, so a codex reviewer configured with `-s workspace-write` produces **no warning** — even though that mode grants filesystem-write power while the agent processes attacker-controlled diffs. The docstring at `:17-19` states a wider sandbox (`workspace-write`/`danger-full-access`) "is flagged here so operators opt in knowingly," so this is a real gap between documented intent and behavior. It also means `--strict` gives false assurance: a write-capable reviewer will not be promoted to a hard failure. Fix: add `workspace-write` to `_DANGEROUS_FLAGS` (or have `audit_agent` flag any codex `-s` mode other than `read-only`).
 - **[minor]** `src/ai_jury/orchestrator.py:684` — `_synthesize` falls back to an *unseeded* RNG when anonymizing without a seed: `peer_rng = random.Random(rng.random()) if rng is not None else random.Random()`. `run_jury` always threads `run_rng` through, so this path is unreachable today, but it's a latent violation of the project's determinism invariant (identical inputs ⇒ identical output): any future/internal caller passing `anonymize_reviews=True` without `rng` would get nondeterministic review ordering. Consider seeding deterministically (e.g. `random.Random(0)`) or requiring `rng`.
@@ -2039,6 +2070,19 @@ No blocking issues found.
 The diff includes significant changes to multiple modules within the `ai_jury` project, including orchestrator, prompts, policy, privilege, redaction, report, scaffold, and voting modules, along with tests and goldens. The code is mature and well-tested, focusing on correctness, security defense-in-depth, and determinism.
 
 ### Major Issues Identified
+
+> **[CORRECTION — #608, 2026-08-25]** Issue 1 below is false. This is the
+> *fourth* pass to state it, and its Evidence field reproduces the same wrong
+> disjunction as the other three — "exonerated when either `_is_sandboxed()` is
+> true or no dangerous flag matches". A non-sandboxed non-claude agent always
+> warns. That four passes agreed is not corroboration here: three of them were
+> re-reading the same prose, and the verifier confirmed the reasoning rather
+> than running the code. Kept as the record of that failure mode.
+>
+> The refutation was in the diff they were reading:
+> `tests/test_privilege.py::test_codex_no_sandbox_no_dangerous_flag_warns`
+> asserts that a codex agent with no sandbox **and no dangerous flag** warns.
+> It was added alongside the catch-all in `f5797cf` and was green throughout.
 
 1. **Least-Privilege Audit Failure**:
    - **File**: `src/ai_jury/privilege.py`

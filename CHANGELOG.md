@@ -30,6 +30,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - The previous test passed for the wrong reason: the secondary target did not exist in the fixture, so `git apply` failed on its own and the assertion landed on the error string — removing the guard entirely left it green. Every new fixture creates the secondary target, so the patch would otherwise apply cleanly.
   - Reachable only via `jury apply` run locally against a report derived from an untrusted diff; `action.yml` does not invoke it.
 
+### Changed
+- **#600 Withdrawn: The `workspace-write` Sandbox Bypass Never Existed** (#608): shipped as `[HIGH]` security, reclassified as a docs/wording change.
+  - The claim was that `_DANGEROUS_FLAGS` omitting `workspace-write` let a Codex reviewer configured with `-s workspace-write` escape all warnings and `--strict`. Measured at the fix commit and its parent, that spec produces **exactly one warning either way** — only the wording differs. `audit_agent` warns for any non-claude agent not under a *restricting* sandbox, and that catch-all had been in the file since `f5797cf` (2026-06-07), two and a half months earlier. `--strict` promotes any warning to a failure, so the configuration already failed. There was nothing to escape.
+  - What #600 actually did was replace a generic "no recognized sandbox" message with one naming `workspace-write` and the powers it grants — worth doing, and not a security fix. The release history never carried the `[HIGH]`: #600 touched no changelog. The only record was `.jules/sentinel.md`, which is where the correction goes.
+  - The shared error was one disjunction: all four passes read `audit_agent` as exonerating an agent when *either* it is sandboxed *or* no dangerous flag matches. Only the first is an exit; the flag list selects the message, not the verdict. **The refutation was a green test in the file they were reviewing** — `test_codex_no_sandbox_no_dangerous_flag_warns`, added alongside the catch-all. It said `assertTrue(...)`, too quiet to be read as a refutation; it now names the catch-all message, with a companion asserting that an unlisted wide sandbox warns for the same reason.
+  - `docs/live-review-report.md` is annotated at all three assertions rather than edited: how four independent passes converged on the same wrong reading is the part worth keeping.
+
 ### Fixed
 - **Conflict Markers Published In The Changelog** (#615):
   - Three unresolved git conflict markers sat in `CHANGELOG.md` on `main` from #601 (2026-08-24) until now, rendered in the published changelog. No content was lost — the #606 and #607 entries were both present and correctly placed; the three lines were residue from a resolution that kept both sides and never removed the scaffolding.
