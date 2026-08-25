@@ -153,7 +153,13 @@ jobs:
           # the merge this gate authorizes, so requiring them here is unsatisfiable.
           # --require-armed: an unarmed gate must not report success, or a green check
           # cannot be told apart from one that never evaluated anything.
-          ARGS=(.keel/project.yaml --root . --pr "$PR" --phase pre-merge --require-armed)
+          # --no-jury: #602's decision. keel auto-enables a *gating* jury verdict at
+          # tier-3, and this repo's jury runs against real vendor APIs — a paid run
+          # per PR is not the cost posture, and a gate nobody can afford to satisfy
+          # is a gate that gets waived. It drops only the jury verdict: tier-3 still
+          # requires three distinct reviewer verdicts, which is where the review
+          # value is. Revisit if tier-3 changes warrant it.
+          ARGS=(.keel/project.yaml --root . --pr "$PR" --phase pre-merge --require-armed --no-jury)
           if [ -n "$DEFERRAL" ]; then
             ARGS+=(--deferral "$DEFERRAL")
           fi

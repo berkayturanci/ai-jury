@@ -97,6 +97,32 @@ class TheEvidenceWorkflowIsPresent(unittest.TestCase):
         """Closure comments are posted *after* the merge this gate authorizes."""
         self.assertIn("--phase pre-merge", self._verify_argv())
 
+    def test_the_paid_jury_verdict_is_not_required(self):
+        """#602's decision: start without it.
+
+        keel auto-enables a *gating* jury verdict at tier-3, and this repo's
+        jury runs against real vendor APIs. A per-PR paid run is not the cost
+        posture, and a gate nobody can afford to satisfy is one that gets
+        waived — which is worse than not having it.
+        """
+        self.assertIn("--no-jury", self._verify_argv())
+
+    def test_dropping_the_jury_did_not_drop_the_reviewers(self):
+        """The narrow-disarm check: `--no-jury` must not become `--reviewers 1`.
+
+        Tier-3 still requires three distinct reviewer verdicts. Nothing may
+        override the count the tier derives, or the gate quietly becomes a
+        formality on exactly the files `tier3_globs` marks as riskiest.
+        """
+        argv = self._verify_argv()
+        self.assertNotIn("--reviewers", argv)
+        self.assertNotIn("--jury-advisory", argv)
+        self.assertNotIn("--deferral all", argv)
+        # A blanket deferral is the other way to hollow this out. The workflow
+        # accepts one only as an explicit `workflow_dispatch` input, never
+        # baked into the argument line.
+        self.assertNotIn("--dry-run", argv)
+
     def test_a_posted_verdict_retriggers_the_gate(self):
         """The event the gate waits for must be an event it listens to.
 
