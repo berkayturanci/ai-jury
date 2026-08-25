@@ -89,6 +89,16 @@ unreachable local endpoint (`connection_error`), or an unset hosted-API key
 continues with whoever is available unless `--strict` is passed; the report lists
 skipped / failed / retried / timed-out agents.
 
+`--strict` checks **availability at startup**. An agent that is installed, probes
+clean, and then returns nothing still leaves the panel short — and cross-vendor
+consensus is the premise, so a run that collapses to one vendor is a different
+thing wearing the same output. `--min-vendors N` fails such a run (exit 3,
+distinct from a findings failure), counting **distinct vendors that contributed a
+review**: three agents from one vendor are one perspective, and an abstention is
+not one at all. It is off by default — failing closed on a flaky vendor CLI turns
+a degraded second opinion into no second opinion, which is a trade for whoever
+runs the panel to make.
+
 **Read-only by default (secure):** reviewers read attacker-controlled diffs, so the
 shipped defaults run them sandboxed — Claude with `--disallowed-tools
 Edit,Write,NotebookEdit,Bash`, Codex with `-s read-only`, Antigravity with

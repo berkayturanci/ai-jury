@@ -83,6 +83,7 @@ DOCUMENTED_FLAGS = [
     "--chair",
     "--mock",
     "--strict",
+    "--min-vendors",
     "--verify",
     "--no-verify",
     "--doctor",

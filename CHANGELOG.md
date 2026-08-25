@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`--min-vendors`: fail when the panel collapsed** (#625). `--strict` fails when a configured agent CLI is *missing*; it does not fail when one is present, probes clean, and then returns nothing — which is how a three-vendor panel silently becomes one.
+  - Observed on a real run: `effective panel: 1 of 3 reviewer(s)` — `claude` failed on an expired session, `agy`'s launcher ate the prompt, `codex` reviewed alone. `jury --doctor` had reported all three `[available]` with `probe: ok` beforehand and was right; they were installed. The run still exited 0 and emitted a verdict.
+  - Cross-vendor consensus is the premise, so a single-vendor run is a different thing wearing the same output — and the difference was only visible to someone who scrolled to Run metadata.
+  - Counts **distinct vendors that contributed a review**, not slots: three agents from one vendor are one perspective, and an abstention is not one at all. `panel_accounting` already computed this; nothing consumed it as a gate.
+  - **Opt-in (default 0), and the default is deliberately not decided.** Failing closed on a flaky vendor CLI turns a degraded second opinion into no second opinion; that trade belongs to whoever runs the panel.
+  - Exits **3**, distinct from `evaluate_ci`'s 0/1, so a caller can tell "the reviewers disagreed with you" from "the reviewers never ran".
+  - Tested on agents that are configured and available but return nothing — never a missing CLI, which is the case `--strict` already covers and which would pass whatever this change does. Four mutations fail: defaulting it on, dropping the flag guard, reusing exit 1, and counting reviews instead of vendors.
+
 ### Changed
 - **`ruff-format` Rewrote 38 Files Under Anyone Who Installed The Hooks** (#621): `.pre-commit-config.yaml` declared `ruff-format` as a **rewriting** hook, pinned to `v0.4.4`, on a tree 35 files from formatted.
   - A contributor who installed the hooks and committed a one-line change got 38 unrelated files rewritten into it — silently, already staged by the time they looked. CI never noticed: it ran **no ruff step at all**, neither lint nor format.
