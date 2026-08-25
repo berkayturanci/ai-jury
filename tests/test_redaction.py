@@ -182,7 +182,7 @@ class RedactionTests(unittest.TestCase):
         # mutation 3.9x. The 3.0 threshold sits between with room either way.
         import time as _t
 
-        def cpu_min(size: int, repeats: int = 3) -> float:
+        def cpu_min(size: int, repeats: int) -> float:
             text = "secret_" + "a" * size
             best = float("inf")
             for _ in range(repeats):
@@ -191,19 +191,50 @@ class RedactionTests(unittest.TestCase):
                 best = min(best, _t.process_time() - start)
             return best
 
-        # A ratio between two sub-millisecond numbers measures the clock, not
-        # the regex. Grow until the base case is comfortably above that floor,
-        # so a faster future machine raises the sizes instead of going flaky.
+        def clock_step() -> float:
+            """The smallest change `process_time` can actually report.
+
+            Not `get_clock_info().resolution`, which advertises the API's
+            precision rather than the counter's: Windows reports 1e-7 while
+            `process_time` in fact advances in 15.625 ms steps. Measured, so
+            the floor below tracks the platform instead of guessing at it.
+            """
+            step = float("inf")
+            for _ in range(5):
+                start = _t.process_time()
+                delta = 0.0
+                while delta <= 0.0:
+                    delta = _t.process_time() - start
+                step = min(step, delta)
+            return step
+
+        # A ratio between two measurements a few clock ticks apart reports the
+        # quantisation, not the regex. That is not hypothetical: the first cut
+        # of this test used a fixed 0.005 s floor, below one Windows tick, and
+        # CI measured 0.0156s -> 0.0469s — one tick against three — reading
+        # that 3.00x as quadratic growth. Reproduced by quantising
+        # `process_time` to 15.625 ms and scaling the machine speed: the fixed
+        # floor fails at 1.7x with CI's exact message, and divides by a
+        # zero-quantised base at 0.5x. This floor passes across 0.5x-3.0x.
+        #
+        # Ten ticks of headroom bounds the base error at 10% and the ratio's at
+        # ~15%, so linear reads at most ~2.3x and quadratic at least ~3.4x. The
+        # input grows until it gets there, which also means a faster machine
+        # raises the size instead of going flaky.
+        floor = max(10 * clock_step(), 0.005)
         size = 6_000
         for _ in range(5):
-            base = cpu_min(size)
-            if base >= 0.005:
+            # One sample while calibrating; the extra repeats only pay off on
+            # the size actually used, and at the top end they are not cheap.
+            base = cpu_min(size, repeats=1)
+            if base >= floor:
                 break
             size *= 4
-        else:  # pragma: no cover - only on a machine ~1000x faster than 2026's
-            self.skipTest(f"redact is too fast to time at {size} chars")
+        else:  # pragma: no cover - a clock this coarse or a machine this fast
+            self.skipTest(f"cannot time redact above the clock step at {size} chars")
 
-        doubled = cpu_min(size * 2)
+        base = cpu_min(size, repeats=3)
+        doubled = cpu_min(size * 2, repeats=3)
         ratio = doubled / base
         self.assertLess(
             ratio,
