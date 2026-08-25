@@ -25,9 +25,15 @@ knobs:
 # `keel evidence-verify --phase pre-merge --require-armed` and publishes the
 # result as the `keel evidence (required)` check-run.
 #
-# That check must also be *required* in branch protection to block a merge;
-# until an operator does that it reports without gating. Tracked separately —
-# changing branch protection is not an agent action.
+# That check is *required* in branch protection, so it blocks (#620). It was
+# advisory for a day between #602 landing and the operator requiring it, which
+# is the state to watch for: a gate that reports and does not gate looks
+# identical to one that works.
+#
+# `--no-jury` is passed at the call site: tier-3 auto-enables a gating jury
+# verdict, and a paid cross-vendor panel per PR is not this repository's cost
+# posture. It drops only that verdict — tier-3 still requires three distinct
+# reviewer verdicts.
 gates: [build, lint]
 extensions: {}
 extensions_dir: .keel/extensions
