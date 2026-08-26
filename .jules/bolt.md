@@ -39,3 +39,7 @@
 ## 2025-06-17 - Avoid .count() on lists during multi-metric aggregations
 **Learning:** Using `list.count()` multiple times sequentially on the same list forces multiple O(N) traversals.
 **Action:** Consolidate multiple sequential `list.count()` calls into a single explicit loop that tallies all metrics simultaneously to achieve single-pass O(N) evaluation.
+
+## 2025-06-18 - Avoid Generator Overhead in starts-with validation
+**Learning:** In string inclusion checks involving `.startswith()`, nested generators inside `any()` on large dynamically created array components like `splitlines()` allocate massive strings to memory causing slow speeds.
+**Action:** Use C-optimized multi-argument checks like `fix.startswith(markers)` instead of generating new loops through substrings. For searching mid-text matching strings for prefixing, prefer string slice matching using the `in` operator rather than full split iterations for optimal performance.

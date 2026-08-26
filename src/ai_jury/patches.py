@@ -277,9 +277,10 @@ _PATCH_MARKERS = ("diff --git ", "--- ", "+++ ", "@@", "GIT binary patch")
 
 def _looks_like_patch(fix: str) -> bool:
     """Whether ``fix`` should be handled as a git patch rather than as literal text."""
-    if fix.startswith("---") or "@@" in fix:
+    if fix.startswith(("---", "@@")) or "@@" in fix:
         return True
-    return any(line.startswith(marker) for line in fix.splitlines() for marker in _PATCH_MARKERS)
+    # bolt: avoid splitlines() memory allocation on large text by using C-optimized startswith and substring search
+    return fix.startswith(_PATCH_MARKERS) or any("\n" + marker in fix for marker in _PATCH_MARKERS)
 
 
 def apply_patch_suggestion(
