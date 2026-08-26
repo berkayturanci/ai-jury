@@ -37,7 +37,7 @@ from .github import (
 from .metadata import build_run_metadata, panel_accounting
 from .orchestrator import review_diff, run_jury
 from .policy import PolicyError, load_policy
-from .redaction import redact
+from .redaction import redact, redact_url_userinfo
 from .report import render, render_live_step, render_transcript
 
 # Hard ceiling on raw diff ingestion. The per-run ``diff.max_bytes`` budget is
@@ -100,7 +100,7 @@ def _git_diff(argv: list[str], label: str) -> str:
     if proc.returncode != 0:
         detail = (proc.stderr or "").strip().splitlines()
         raise SystemExit(
-            f"error: git could not resolve {label}" + (f": {detail[0]}" if detail else "")
+            f"error: git could not resolve {label}" + (f": {redact(detail[0])[0]}" if detail else "")
         )
     if not proc.stdout.strip():
         raise SystemExit(f"error: {label} produced an empty diff — nothing to review")

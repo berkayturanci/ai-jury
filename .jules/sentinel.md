@@ -82,3 +82,8 @@ contradicts your finding as the finding.
 before-behaviour — the command run and its output on the unfixed code — not
 only the reasoning that predicted it. Reasoning about a control in isolation
 cannot see the control that sits behind it.
+
+## 2024-08-26 - [CRITICAL] Prevented git CLI stderr Secret Leakage
+**Vulnerability:** In `cli.py`, when a `git` command failed in `_git_diff`, the first line of its raw `stderr` was appended to the `SystemExit` exception message without redaction, potentially leaking secrets if the git output contained sensitive paths or repository URLs.
+**Learning:** Raw `stderr` from external processes must always be sanitized before being raised in exceptions, even if the error seems like a simple git lookup failure, because the output might echo attacker-controlled paths or environment details.
+**Prevention:** Always apply `redact(...)[0]` to external command output strings before incorporating them into exception messages.
