@@ -159,7 +159,7 @@ jobs:
           # is a gate that gets waived. It drops only the jury verdict: tier-3 still
           # requires three distinct reviewer verdicts, which is where the review
           # value is. Revisit if tier-3 changes warrant it.
-          ARGS=(.keel/project.yaml --root . --pr "$PR" --phase pre-merge --require-armed --no-jury)
+          ARGS=(.keel/project.yaml --root . --pr "$PR" --phase pre-merge --require-armed --no-jury --pr-label "agent:anthropic")
           if [ -n "$DEFERRAL" ]; then
             ARGS+=(--deferral "$DEFERRAL")
           fi
