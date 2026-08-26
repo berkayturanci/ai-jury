@@ -951,7 +951,6 @@ def _run_init(rest: list[str]) -> int:
     ns = sub.parse_args(rest)
 
     from .adapters import list_local_models
-    from .redaction import redact_url_userinfo
 
     endpoint = ns.local_endpoint or "http://localhost:11434/v1"
     # Strip any userinfo credentials before echoing the endpoint to stdout/CI
