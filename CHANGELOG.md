@@ -16,8 +16,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Verified end to end against agy **1.1.22**, not against the issue's description: the argv, the frame shape (a message without `event` is rejected outright), and the parse of the `result` event. A live run now returns `ok=True`.
   - A stream with no `result` frame falls back to the raw text rather than returning empty. An empty review is counted as an abstention, and #625 exists because an abstention read as an approval is the expensive failure.
   - Mutation-tested four ways: restoring `--print`, moving the prompt to argv, sending the bare prompt on stdin, and allowing an empty response each fail.
-
-### Fixed
 - **The Homebrew Tap Refused Every Sync Since 1.15.0** (#633): the formula carried 1.14.4's digest under a 1.15.0 url, so the tap guard refused to publish and `brew upgrade` could not see the release. The scheduled retry failed roughly every 30 minutes — in a different repository, hours after the release.
   - `publish.yml` computed the digest correctly, committed it, and pushed with `git push origin HEAD:main || true`. Branch protection had been added the same day (#620), so the push was rejected and the `|| true` reported success.
   - The next step's fallback — *"the tap will pick this up on its own schedule"* — is sound only if the in-repo formula is right, which the swallowed push had just failed to make it. Two silent degradations, one hard failure.
