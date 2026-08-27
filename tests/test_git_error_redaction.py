@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import subprocess
 import unittest
-from unittest import mock
+import unittest.mock
 
 from ai_jury import cli
 
@@ -36,7 +36,7 @@ def failing_git(stderr: str):
 class TheGitErrorPathRedacts(unittest.TestCase):
     def _message(self, stderr: str) -> str:
         with (
-            mock.patch.object(subprocess, "run", failing_git(stderr)),
+            unittest.mock.patch.object(subprocess, "run", failing_git(stderr)),
             self.assertRaises(SystemExit) as caught,
         ):
             cli._git_diff(["git", "diff", "HEAD"], "range HEAD")
