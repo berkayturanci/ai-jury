@@ -59,18 +59,15 @@ class BuildArgvTests(unittest.TestCase):
             _spec(name="codex", vendor="openai", command="codex", extra_args=["-s", "read-only"])
         )
         self.assertEqual(a.build_argv("P"), ["codex", "exec", "-s", "read-only"])
-        self.assertIn("P", a._stdin_for("P"))  # the prompt travels on stdin (#287)
+        self.assertEqual(a._stdin_for("P"), "P")
 
     def test_agy_argv(self):
         # Prompt on stdin, not argv (issue #287); --sandbox is injected (#288).
         a = adapters.AgyAdapter(_spec(name="agy", vendor="google", command="agy"))
         argv = a.build_argv("P")
-        self.assertEqual(
-            argv,
-            ["agy", "--input-format", "stream-json", "--output-format", "stream-json", "--sandbox"],
-        )
+        self.assertEqual(argv, ["agy", "--print", "--sandbox"])
         self.assertNotIn("P", argv)
-        self.assertIn("P", a._stdin_for("P"))  # the prompt travels on stdin (#287)
+        self.assertEqual(a._stdin_for("P"), "P")
 
 
 class AdapterRunTests(unittest.TestCase):

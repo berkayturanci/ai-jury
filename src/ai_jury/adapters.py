@@ -16,7 +16,6 @@ real adapter so it is not exposed in the process list (issue #287):
 from __future__ import annotations
 
 import contextlib
-import json
 import os
 import re
 import shutil
@@ -260,14 +259,6 @@ class Adapter:
         del prompt
         return None
 
-    def _text_from_stdout(self, raw: str) -> str:
-        """The reviewer's prose, given the CLI's raw stdout.
-
-        Plain text for every adapter but one. `agy` speaks NDJSON events, so it
-        overrides this rather than teaching `run` about event streams.
-        """
-        return raw
-
     def _version_argv(self) -> list[str]:
         """Argv used to probe the CLI's version."""
         return [self.spec.command, *self._VERSION_ARGS]
@@ -379,7 +370,7 @@ class Adapter:
                 error_code=ERR_SPAWN_FAILED,
             )
         dur = time.monotonic() - start
-        out = self._text_from_stdout((proc.stdout or "").strip()).strip()
+        out = (proc.stdout or "").strip()
         # A nonzero exit is ALWAYS a failure, even with stdout (issue #101): a
         # crashing CLI can still print partial or error output, and counting that
         # as a clean review would silently feed it into consensus, synthesis, and
@@ -451,61 +442,18 @@ class CodexAdapter(Adapter):
 
 
 class AgyAdapter(Adapter):
-    # Prompt on STDIN, not argv (issue #287): the redacted diff must not appear in
-    # the process list, where any local user can read it.
-    #
-    # `agy --print` used to read the prompt from stdin (verified against 1.0.6).
-    # On 1.1.x `--print` takes a value, so that invocation dies before the model
-    # is reached — `flag needs an argument: -print` with an empty `extra_args`,
-    # and "took --dangerously-skip-permissions as its prompt" with a non-empty
-    # one (#635). The agent passed every availability check and contributed
-    # nothing to the panel.
-    #
-    # The obvious repair — put the prompt in argv — silently undoes #287. So the
-    # prompt moves to agy's own stdin channel instead: `--input-format
-    # stream-json` reads one NDJSON message per line and requires
-    # `--output-format stream-json`. `--print` is not passed at all; the input
-    # format implies print mode, and passing it would reintroduce the arity
-    # problem. Verified end to end against agy 1.1.22.
-    _STREAM_ARGS = ("--input-format", "stream-json", "--output-format", "stream-json")
-
+    # Prompt on STDIN, not argv (issue #287): `agy --print` reads the prompt from
+    # stdin when no positional prompt is given (verified against agy 1.0.6), so the
+    # redacted diff is not exposed in the process list.
     def build_argv(self, prompt: str) -> list[str]:
         del prompt
-        argv = [self.spec.command, *self._STREAM_ARGS]
+        argv = [self.spec.command, "--print"]
         if self.spec.model:
             argv += ["--model", self.spec.model]
         return argv + _read_only_extra_args(self.spec)
 
     def _stdin_for(self, prompt: str) -> str | None:
-        """One NDJSON frame carrying the prompt. Shape verified against 1.1.22."""
-        return json.dumps({"event": "user", "message": {"role": "user", "content": prompt}}) + "\n"
-
-    def _text_from_stdout(self, raw: str) -> str:
-        """The `result` event's response, out of the NDJSON stream.
-
-        Falls back to the raw stream when no `result` frame is present rather
-        than returning empty: a truncated stream should surface as an
-        unparseable review the operator can read, not as a silent abstention —
-        an empty review is counted as one, and #625 exists because an
-        abstention read as an approval is the expensive failure.
-        """
-        response, saw_result = None, False
-        for line in raw.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                event = json.loads(line)
-            except ValueError:
-                continue
-            if isinstance(event, dict) and event.get("event") == "result":
-                saw_result = True
-                result = event.get("result")
-                if isinstance(result, dict):
-                    response = result.get("response")
-        if saw_result and isinstance(response, str):
-            return response
-        return raw
+        return prompt
 
 
 _DEFAULT_LOCAL_ENDPOINT = "http://localhost:11434/v1"

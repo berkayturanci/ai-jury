@@ -72,18 +72,9 @@ class AdaptersCoverageTests(unittest.TestCase):
         a = adapters.AgyAdapter(_spec(name="agy", vendor="google", command="agy", model="gemini-x"))
         self.assertEqual(
             a.build_argv("P"),
-            [
-                "agy",
-                "--input-format",
-                "stream-json",
-                "--output-format",
-                "stream-json",
-                "--model",
-                "gemini-x",
-                "--sandbox",
-            ],
+            ["agy", "--print", "--model", "gemini-x", "--sandbox"],
         )
-        self.assertIn("P", a._stdin_for("P"))  # the prompt travels on stdin (#287)
+        self.assertEqual(a._stdin_for("P"), "P")
 
     def test_list_local_models_data_not_list(self):
         # Line 357: a well-formed dict whose "data" is not a list -> [].

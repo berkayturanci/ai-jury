@@ -7,23 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-- **`agy` Contributed Nothing To Any Panel** (#635): `AgyAdapter` built `agy --print` and wrote the prompt to stdin — verified against agy 1.0.6, and broken on 1.1.x where `--print` takes a value.
-  - With an empty `extra_args` the run died on `flag needs an argument: -print`; with a non-empty one agy consumed the first flag as the prompt. Either way the agent passed every availability check and returned nothing, so a three-vendor panel silently became two — or one.
-  - **`--doctor` could not see it.** The probe establishes that the binary exists and answers `--version`; the failure is in the argv the adapter builds, which the probe never exercises.
-  - The obvious repair — put the prompt in argv — would have silently reverted #287, which moved it to stdin so the redacted diff is not readable in `ps` by any local user. That decision was recorded with an issue number in the adapter's own comment, and undoing it there would have been the worst place to do it.
-  - The prompt moves to agy's own stdin channel instead: `--input-format stream-json` reads one NDJSON message per line and requires `--output-format stream-json`. `--print` is not passed at all — the input format implies print mode, and passing it would reintroduce the arity problem.
-  - Verified end to end against agy **1.1.22**, not against the issue's description: the argv, the frame shape (a message without `event` is rejected outright), and the parse of the `result` event. A live run now returns `ok=True`.
-  - A stream with no `result` frame falls back to the raw text rather than returning empty. An empty review is counted as an abstention, and #625 exists because an abstention read as an approval is the expensive failure.
-  - Mutation-tested four ways: restoring `--print`, moving the prompt to argv, sending the bare prompt on stdin, and allowing an empty response each fail.
-- **The Homebrew Tap Refused Every Sync Since 1.15.0** (#633): the formula carried 1.14.4's digest under a 1.15.0 url, so the tap guard refused to publish and `brew upgrade` could not see the release. The scheduled retry failed roughly every 30 minutes — in a different repository, hours after the release.
-  - `publish.yml` computed the digest correctly, committed it, and pushed with `git push origin HEAD:main || true`. Branch protection had been added the same day (#620), so the push was rejected and the `|| true` reported success.
-  - The next step's fallback — *"the tap will pick this up on its own schedule"* — is sound only if the in-repo formula is right, which the swallowed push had just failed to make it. Two silent degradations, one hard failure.
-  - **The guard already existed and had never run.** `tests/test_homebrew_formula.py` has asserted the url-to-digest match all along, gated on `AI_JURY_CHECK_EXTERNAL` — a variable set nowhere in CI. The sibling repo is the mirror image: a network-enabled job and no formula test. Each had half.
-  - The push now emits a loud `::error::` naming the follow-up instead of swallowing. Deliberately not a non-zero exit: PyPI and the GitHub Release have already succeeded by that point, and failing there would report a good release as broken. The hard stop is CI.
-  - The formula tests run in `Action pins match upstream`, which already has network and is already a required check. That job **keeps its name**: renaming it would leave a required context that never reports, blocking every merge permanently.
-  - Mutation-tested against the real mistake: restoring 1.14.4's digest fails 2 tests, pointing at a nonexistent version fails 3.
-
 ## [1.15.0] - 2026-08-25
 
 ### Added
@@ -59,11 +42,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `docs/live-review-report.md` is annotated at all three assertions rather than edited: how four independent passes converged on the same wrong reading is the part worth keeping.
 
 ### Fixed
-- **git stderr Reached An Exception Unredacted** (#631): `_git_diff` had two adjacent error paths and only one redacted — the spawn failure did, the non-zero exit did not.
-  - `redact()` does catch the payload this is aimed at: a token in a remote URL becomes `[REDACTED:github_token]`. The inconsistency was worth closing.
-  - **Filed as `[CRITICAL]`, corrected to `[LOW]` on review.** Only `git show` and `git diff` reach this path and both are purely local — they never contact a remote, so they cannot print a URL carrying a credential. The stderr they actually produce is `fatal: ambiguous argument`. No path was demonstrated by which a secret reaches the string. #600/#608 is the precedent: an overstated entry in `.jules/sentinel.md` becomes established fact for the next reader.
-  - The entry was also dated 2024-08-26, two years out.
-  - Guarded rather than left as a one-liner: a token in stderr must not survive, an ordinary `ambiguous argument` must still reach the operator unmangled, and only the first stderr line is quoted. Reverting the `redact(...)` call fails the first of those.
 - **Duplicate Changelog Sections Shipped Into The Release Notes** (#627): `## [Unreleased]` carried `### Added` and `### Changed` twice each, and `## [1.0.0]` repeats `Changed` and `Fixed` in released history.
   - Nothing was lost — each entry was inserted above the previous top section, so the document grew alternating headings. `## [Unreleased]` becomes `## [x.y.z]` verbatim at release, so the duplication would have shipped to PyPI's description and the GitHub Release notes, where a reader looking for "what changed" finds two lists of the same kind.
   - Consolidated across every version block. The entry count is identical before and after (216 lines beginning `- `), which is the check that separates a merge from a deletion.

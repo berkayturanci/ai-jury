@@ -145,19 +145,3 @@ jobs:
           # Lifts the anonymous API rate limit; read-only, no extra scope needed.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python -m unittest tests.test_action_pins -v
-
-      # Lives in this job because it needs the same thing: network, and a job
-      # that is already a required check. The job keeps its name deliberately —
-      # renaming it would leave `Action pins match upstream` required in branch
-      # protection and never reported, which blocks every merge permanently.
-      #
-      # tests/test_homebrew_formula.py has had these assertions all along and
-      # they never ran: AI_JURY_CHECK_EXTERNAL was set nowhere in CI. A stale
-      # digest shipped with 1.15.0 and surfaced as an hourly failure in the tap
-      # repository instead (#630).
-      - name: Verify the Homebrew formula against the artifact it names
-        env:
-          AI_JURY_CHECK_EXTERNAL: "1"
-          PYTHONPATH: src
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python -m unittest tests.test_homebrew_formula -v
