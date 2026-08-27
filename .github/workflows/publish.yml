@@ -209,6 +209,15 @@ jobs:
                      "The tap syncs from \`main\`, so until this merges \`brew upgrade\`" \
                      "does not see v${tag_version}.")" 2>/tmp/pr.err; then
                 echo "formula follow-up PR opened on ${branch}"
+                # Arm it to land on its own once CI has re-verified the digest
+                # against the published sdist. main requires no approvals, only
+                # checks, so nothing is bypassed — this removes the wait between
+                # "green" and "someone noticed", which is the last manual step
+                # in the chain and the one that left the tap failing every half
+                # hour for a day (#633). Best-effort: with the repository
+                # setting off, the pull request simply waits for a person.
+                gh pr merge --auto --squash "$branch" \
+                  || echo "::notice::auto-merge unavailable; land ${branch} to unblock the tap"
               else
                 sed 's/^/  /' /tmp/pr.err
                 echo "::notice::Branch ${branch} is pushed; a pull request for it already exists."
