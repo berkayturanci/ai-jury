@@ -7,7 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.15.1] - 2026-08-27
+
 ### Fixed
+- **The Release Gate Blocked The Only Sequence That Could Satisfy It** (#638): the formula must name the version in `pyproject.toml` — an offline test demands it — and that version's sdist does not exist until the tag is pushed, so between the release pull request and the tag the formula's url legitimately 404s.
+  - The external check turned that 404 into a failure, which made every release pull request unmergeable from the moment the check was wired into CI earlier the same day. It is also what left #637 sitting blocked for hours, looking like a broken security fix while the real cause was a version bump riding along in the same commit.
+  - A 404 is now read against PyPI: if the version is not published yet the formula is ahead of it by design and the check skips, saying so. Once the version *is* published a 404 means the url names an artifact that should exist and does not — #562 — and that still fails.
+  - The decision is a plain function taking a lookup, so both readings are exercised offline with a stub instead of by choosing a moment in the release cycle to run the suite. Four mutations — inverting it, pinning it true, pinning it false, and asking about the wrong version — each fail.
+  - The sibling repository hit the identical bind and resolved it the same way (its #839); this follows that precedent rather than inventing a second answer.
 - **git stderr Reached An Exception Unredacted** (#631): `_git_diff` had two adjacent error paths and only one redacted — the spawn failure did, the non-zero exit did not.
   - `redact()` does catch what this is aimed at: a token in a remote URL becomes `[REDACTED:github_token]`. Verified, not assumed.
   - **Raised as `[CRITICAL]`, recorded as `[LOW]`.** Only `git show` and `git diff` reach that path and both are purely local — they cannot print a URL carrying a credential; their real stderr is `fatal: ambiguous argument`. No path was demonstrated by which a secret arrives. #600/#608 is the precedent for why an overstated sentinel entry is expensive.

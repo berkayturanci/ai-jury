@@ -55,6 +55,63 @@ HOMEBREW_TAP = "berkayturanci/homebrew-ai-jury"
 ONLINE = os.environ.get("AI_JURY_CHECK_EXTERNAL") == "1"
 
 
+def missing_artifact_is_a_defect(version: str, pypi_has) -> bool:
+    """Whether a 404 on the formula's url is a real defect.
+
+    The formula must name the version in `pyproject.toml` — the offline test
+    demands it — but that version's sdist does not exist until the tag is pushed.
+    Between the release pull request and the tag, the formula is therefore ahead
+    of PyPI *by design*, and its url legitimately 404s. Failing there makes the
+    release pull request unmergeable, which is a gate that blocks the only
+    sequence able to satisfy it.
+
+    A 404 is still a real defect once the version is published: then the url
+    names an artifact that should be there and is not, which is what `brew` will
+    hit. #562 is that case, and it must keep failing.
+
+    The sibling repository hit the identical bind and resolved it the same way
+    (its #839): its formula url is pinned to the declared version, that version's
+    tag does not exist until the release commit is made, and no value of the
+    formula satisfies both tests at once inside that window. Only the window is
+    exempt.
+
+    Returns True when the 404 means the formula is wrong.
+    """
+    return pypi_has(version)
+
+
+class TheMissingArtifactRuleDistinguishesTwoCases(unittest.TestCase):
+    """Offline, because the rule itself is what can be wrong — not the network.
+
+    Both cases below are 404s on the formula's url and they must be read
+    oppositely, so the decision is pulled out where it can be exercised with a
+    stub instead of by choosing a moment in the release cycle to run the suite.
+    """
+
+    def test_a_404_before_the_version_is_published_is_not_a_defect(self):
+        """The state every release passes through, between the PR and the tag.
+
+        The offline test requires the formula to name the version in
+        `pyproject.toml`; that version's sdist does not exist until the tag is
+        pushed. Failing here would make the release pull request unmergeable —
+        a gate that blocks the only sequence able to satisfy it.
+        """
+        self.assertFalse(missing_artifact_is_a_defect("9.9.9", lambda _: False))
+
+    def test_a_404_on_a_published_version_is_a_defect(self):
+        """#562: the url returned 404 and the digest belonged to nothing.
+
+        Once PyPI has the version, a dead url is what `brew install` hits.
+        """
+        self.assertTrue(missing_artifact_is_a_defect("1.0.0", lambda _: True))
+
+    def test_the_question_is_asked_about_the_version_in_hand(self):
+        """A rule that asked about some other version would pass both cases above."""
+        asked = []
+        missing_artifact_is_a_defect("4.5.6", lambda version: asked.append(version) or False)
+        self.assertEqual(asked, ["4.5.6"])
+
+
 class FormulaResolvesToARealArtifact(unittest.TestCase):
     """The formula must point at something that exists and hashes to what it says.
 
@@ -72,6 +129,19 @@ class FormulaResolvesToARealArtifact(unittest.TestCase):
 
     def _formula(self):
         return (REPO_ROOT / "Formula" / "ai-jury.rb").read_text(encoding="utf-8")
+
+    def _pypi_has(self, version: str) -> bool:
+        """Whether PyPI has published `version` at all."""
+        try:
+            with urllib.request.urlopen(
+                f"https://pypi.org/pypi/ai-jury/{version}/json", timeout=30
+            ) as response:
+                json.load(response)
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                return False
+            raise
+        return True
 
     def test_the_formula_names_a_url_and_a_digest(self):
         # Offline, and guards the online cases from passing vacuously.
@@ -116,7 +186,14 @@ class FormulaResolvesToARealArtifact(unittest.TestCase):
                 payload = response.read()
         except urllib.error.HTTPError as exc:
             if exc.code == 404:
-                self.fail(f"the formula points at {url}, which does not exist")
+                self.assertFalse(
+                    missing_artifact_is_a_defect(__version__, self._pypi_has),
+                    f"the formula points at {url}, which does not exist",
+                )
+                raise self.skipTest(
+                    f"{__version__} is not on PyPI yet, so the formula is ahead of it "
+                    "— the state between the release PR and the tag"
+                ) from exc
             raise self.skipTest(f"cannot fetch the artifact: {exc}") from exc
         except (urllib.error.URLError, OSError) as exc:
             raise self.skipTest(f"cannot fetch the artifact: {exc}") from exc
