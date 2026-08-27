@@ -189,7 +189,11 @@ jobs:
             # request, opened here rather than remembered by a human. The
             # sibling repo forgot exactly this follow-up for its own 1.19.1.
             branch="chore/formula-${tag_version}"
-            if git push -f origin "HEAD:${branch}" 2>/tmp/push.err; then
+            # Fully qualified. `HEAD:${branch}` is refused from the detached HEAD
+            # a tag build checks out: git cannot infer the remote namespace
+            # when the source is a bare commit rather than a branch, so it
+            # asks to be told, and the first live run of this step hit it.
+            if git push -f origin "HEAD:refs/heads/${branch}" 2>/tmp/push.err; then
               if gh pr create --base main --head "$branch" \
                    --title "chore(homebrew): Formula digest for v${tag_version}" \
                    --body "$(printf '%s\n' \

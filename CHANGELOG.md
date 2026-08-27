@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The Automatic Formula PR Could Not Push, On Its First Live Run** (#641): `git push -f origin "HEAD:${branch}"` is refused from the detached HEAD a tag build checks out. Git will not guess the remote namespace when a refspec's source is a bare commit rather than a branch — *"The destination refspec neither matches an existing ref … nor begins with refs/"* — so the branch was never created and no pull request was opened.
+  - It failed in the good direction: 1.15.1 reached PyPI and the GitHub Release, the `::error::` path fired with the correct digest, and the step summary carried it. The release was not reported as broken. The tap was stale anyway, which is the outcome #638 exists to prevent.
+  - Fully qualified as `HEAD:refs/heads/${branch}`, and pinned by a test asserting that any push whose source is `HEAD` names the full destination ref. The sibling repository avoids the same trap the other way, by creating a real local branch first; either is correct, pushing `HEAD:` to a bare name is not.
+  - The formula digest for 1.15.1 is set here by hand, since the run that should have proposed it could not. Verified end to end against the published sdist: `AI_JURY_CHECK_EXTERNAL=1` now downloads the artifact and re-hashes it, rather than skipping.
+
 ## [1.15.1] - 2026-08-27
 
 ### Fixed

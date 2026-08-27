@@ -3,8 +3,8 @@ class AiJury < Formula
 
   desc "Cross-vendor multi-agent PR & code review jury"
   homepage "https://ai-jury.dev/"
-  url "https://files.pythonhosted.org/packages/source/a/ai-jury/ai_jury-1.15.1.tar.gz"
-  sha256 "a2deb5d4ed63aa4930f68a6d379c684ced9afbf855761a547794bd6678073934"
+  url "https://files.pythonhosted.org/packages/1a/64/ec5bc1828ed3d66307884a839862cb5c64448d577013b80eed1663114e88/ai_jury-1.15.1.tar.gz"
+  sha256 "9dfe787e174510f61e1fe4736b3d358e70c2d7fb522123009043e9067b649ce8"
   license "MIT"
 
   depends_on "python@3.13"

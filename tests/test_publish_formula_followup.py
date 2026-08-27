@@ -135,6 +135,32 @@ class TheFormulaStepOpensAPullRequest(unittest.TestCase):
                 f"the commit heading the pull request carries {skip}",
             )
 
+    def test_a_push_from_a_detached_head_names_the_full_ref(self):
+        """`HEAD:${branch}` is refused on a tag build, which is every build here.
+
+        `actions/checkout` leaves a tag build on a detached HEAD. Git will not
+        guess the remote namespace when the source of a refspec is a bare commit
+        rather than a branch — it asks to be told — so the push fails with
+        *"The destination refspec neither matches an existing ref ... nor begins
+        with refs/"*. The first live run of this step hit exactly that, after
+        1.15.1 was already on PyPI: the release succeeded, the error path fired
+        as designed, and the tap stayed stale anyway.
+
+        The sibling repository avoids this a different way, by creating a real
+        local branch with `git checkout -b` before pushing it by name. Either is
+        correct; what is not correct is pushing `HEAD:` to a bare name.
+        """
+        pushes = [line for line in self.code.splitlines() if "git push" in line]
+        self.assertTrue(pushes, "the step pushes nothing")
+        for push in pushes:
+            if "HEAD:" not in push:
+                continue
+            self.assertIn(
+                "HEAD:refs/heads/",
+                push,
+                f"a push whose source is HEAD must name the full destination ref: {push.strip()}",
+            )
+
     def test_the_job_may_actually_open_one(self):
         """`gh pr create` without the permission fails at the API, after the tag.
 
