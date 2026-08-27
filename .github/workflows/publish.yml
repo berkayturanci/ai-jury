@@ -170,7 +170,26 @@ jobs:
           git add Formula/ai-jury.rb
           if ! git diff --cached --quiet; then
             git commit -m "chore(homebrew): Update Formula/ai-jury.rb to v${tag_version} [skip ci]"
-            git push origin HEAD:main || true
+            # NOT `|| true`. Branch protection refuses a direct push to main
+            # (10 required checks), and the silent swallow is why a stale digest
+            # shipped with 1.15.0 and the tap then refused every sync for a day
+            # — in a different repository, hourly, long after the release.
+            #
+            # An `::error::` rather than a non-zero exit: PyPI and the GitHub
+            # Release have already succeeded by this point, and failing here
+            # would report a good release as broken. The hard stop is the
+            # formula digest test in CI, which turns the next pull request red.
+            if ! git push origin HEAD:main 2>/tmp/push.err; then
+              echo "::error title=Formula not committed::Could not push the updated Formula to main:"
+              sed 's/^/  /' /tmp/push.err
+              echo "::error::Open a follow-up PR setting sha256 to the value above, or the tap will refuse to sync."
+              {
+                echo "### ⚠️ Homebrew formula not committed"
+                echo
+                echo "The digest was computed correctly but could not be pushed to \`main\`."
+                echo "Open a follow-up PR with it, or \`brew upgrade\` will not see this release."
+              } >> "$GITHUB_STEP_SUMMARY"
+            fi
           fi
 
       - name: Publish the formula to the Homebrew tap
