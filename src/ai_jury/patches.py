@@ -275,15 +275,18 @@ def _containment_refusal(fix: str, *, root: Path, target: Path, file: str) -> st
 _PATCH_MARKERS = ("diff --git ", "--- ", "+++ ", "@@", "GIT binary patch")
 
 
+import re
+
+_PATCH_MARKER_PATTERN = r"^(?:%s)" % "|".join(map(re.escape, ("diff --git ", "--- ", "+++ ", "@@", "GIT binary patch")))
+_PATCH_MARKER_RE = re.compile(_PATCH_MARKER_PATTERN, re.MULTILINE)
+
 def _looks_like_patch(fix: str) -> bool:
     """Whether ``fix`` should be handled as a git patch rather than as literal text."""
     if fix.startswith("---") or "@@" in fix:
         return True
     # bolt: avoid allocating a huge list of strings from splitlines()
-    # and generator overhead by using C-optimized string matching
-    if fix.startswith(_PATCH_MARKERS):
-        return True
-    return any(f"\n{m}" in fix for m in _PATCH_MARKERS)
+    # and generator overhead by using C-optimized regex finding.
+    return bool(_PATCH_MARKER_RE.search(fix))
 
 
 def apply_patch_suggestion(
