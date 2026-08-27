@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The Homebrew Tap Refused Every Sync Since 1.15.0** (#633): the formula carried 1.14.4's digest under a 1.15.0 url, so the tap guard refused to publish and `brew upgrade` could not see the release. The scheduled retry failed roughly every 30 minutes — in a different repository, hours after the release.
+  - `publish.yml` computed the digest correctly, committed it, and pushed with `git push origin HEAD:main || true`. Branch protection had been added the same day (#620), so the push was rejected and the `|| true` reported success.
+  - The next step's fallback — *"the tap will pick this up on its own schedule"* — is sound only if the in-repo formula is right, which the swallowed push had just failed to make it. Two silent degradations, one hard failure.
+  - **The guard already existed and had never run.** `tests/test_homebrew_formula.py` has asserted the url-to-digest match all along, gated on `AI_JURY_CHECK_EXTERNAL` — a variable set nowhere in CI. The sibling repo is the mirror image: a network-enabled job and no formula test. Each had half.
+  - The push now emits a loud `::error::` naming the follow-up instead of swallowing. Deliberately not a non-zero exit: PyPI and the GitHub Release have already succeeded by that point, and failing there would report a good release as broken. The hard stop is CI.
+  - The formula tests run in `Action pins match upstream`, which already has network and is already a required check. That job **keeps its name**: renaming it would leave a required context that never reports, blocking every merge permanently.
+  - Mutation-tested against the real mistake: restoring 1.14.4's digest fails 2 tests, pointing at a nonexistent version fails 3.
+
 ## [1.15.0] - 2026-08-25
 
 ### Added
