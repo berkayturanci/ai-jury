@@ -17,6 +17,7 @@ jobs:
     permissions:
       id-token: write       # PyPI trusted publishing (OIDC) + provenance attestation
       contents: write       # create the GitHub Release and upload assets
+      pull-requests: write # open the formula follow-up when main refuses a push (#638)
       attestations: write   # build-provenance attestations (issue #25)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -124,6 +125,9 @@ jobs:
       # Homebrew formula sync (issue #527): update Formula/ai-jury.rb with the
       # newly-published release tarball checksum and commit back to main.
       - name: Update in-repo Homebrew Formula
+        env:
+          # `gh pr create` below; scoped to this repo.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           tag_version="${GITHUB_REF_NAME#v}"
@@ -170,24 +174,49 @@ jobs:
           git add Formula/ai-jury.rb
           if ! git diff --cached --quiet; then
             git commit -m "chore(homebrew): Update Formula/ai-jury.rb to v${tag_version} [skip ci]"
-            # NOT `|| true`. Branch protection refuses a direct push to main
-            # (10 required checks), and the silent swallow is why a stale digest
-            # shipped with 1.15.0 and the tap then refused every sync for a day
-            # — in a different repository, hourly, long after the release.
+            # Branch protection refuses a direct push to main (10 required
+            # checks), and the `|| true` that used to swallow that refusal is
+            # why a stale digest shipped with 1.15.0 and the tap then refused
+            # every sync for a day — in a different repository, hourly, long
+            # after anyone was still watching the release.
             #
-            # An `::error::` rather than a non-zero exit: PyPI and the GitHub
-            # Release have already succeeded by this point, and failing here
-            # would report a good release as broken. The hard stop is the
-            # formula digest test in CI, which turns the next pull request red.
-            if ! git push origin HEAD:main 2>/tmp/push.err; then
-              echo "::error title=Formula not committed::Could not push the updated Formula to main:"
+            # So the fix arrives the only way it can pass protection: as a pull
+            # request, opened here rather than remembered by a human. The
+            # sibling repo forgot exactly this follow-up for its own 1.19.1.
+            branch="chore/formula-${tag_version}"
+            if git push -f origin "HEAD:${branch}" 2>/tmp/push.err; then
+              if gh pr create --base main --head "$branch" \
+                   --title "chore(homebrew): Formula digest for v${tag_version}" \
+                   --body "$(printf '%s\n' \
+                     "Opened by the publish workflow: the sdist digest is only knowable" \
+                     "once the release exists, so the formula in the repo is one release" \
+                     "behind until this merges." \
+                     "" \
+                     "| | |" \
+                     "|---|---|" \
+                     "| url | \`${sdist_url}\` |" \
+                     "| sha256 | \`${sdist_sha}\` |" \
+                     "" \
+                     "The tap syncs from \`main\`, so until this merges \`brew upgrade\`" \
+                     "does not see v${tag_version}.")" 2>/tmp/pr.err; then
+                echo "formula follow-up PR opened on ${branch}"
+              else
+                sed 's/^/  /' /tmp/pr.err
+                echo "::notice::Branch ${branch} is pushed; a pull request for it already exists."
+              fi
+            else
+              echo "::error title=Formula not committed::Could not push ${branch}:"
               sed 's/^/  /' /tmp/push.err
-              echo "::error::Open a follow-up PR setting sha256 to the value above, or the tap will refuse to sync."
+              # An `::error::` rather than a non-zero exit: PyPI and the GitHub
+              # Release have already succeeded by this point, and failing here
+              # would report a good release as broken. The hard stop is the
+              # formula digest test in CI, which turns the next pull request red.
               {
                 echo "### ⚠️ Homebrew formula not committed"
                 echo
-                echo "The digest was computed correctly but could not be pushed to \`main\`."
-                echo "Open a follow-up PR with it, or \`brew upgrade\` will not see this release."
+                echo "The digest was computed correctly but could not be pushed."
+                echo "Set \`sha256\` in \`Formula/ai-jury.rb\` to \`${sdist_sha}\`,"
+                echo "or \`brew upgrade\` will not see this release."
               } >> "$GITHUB_STEP_SUMMARY"
             fi
           fi
