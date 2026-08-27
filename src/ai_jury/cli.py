@@ -100,7 +100,8 @@ def _git_diff(argv: list[str], label: str) -> str:
     if proc.returncode != 0:
         detail = (proc.stderr or "").strip().splitlines()
         raise SystemExit(
-            f"error: git could not resolve {label}" + (f": {detail[0]}" if detail else "")
+            f"error: git could not resolve {label}"
+            + (f": {redact(detail[0])[0]}" if detail else "")
         )
     if not proc.stdout.strip():
         raise SystemExit(f"error: {label} produced an empty diff — nothing to review")
