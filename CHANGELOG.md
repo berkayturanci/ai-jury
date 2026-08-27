@@ -59,6 +59,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `docs/live-review-report.md` is annotated at all three assertions rather than edited: how four independent passes converged on the same wrong reading is the part worth keeping.
 
 ### Fixed
+- **git stderr Reached An Exception Unredacted** (#631): `_git_diff` had two adjacent error paths and only one redacted — the spawn failure did, the non-zero exit did not.
+  - `redact()` does catch the payload this is aimed at: a token in a remote URL becomes `[REDACTED:github_token]`. The inconsistency was worth closing.
+  - **Filed as `[CRITICAL]`, corrected to `[LOW]` on review.** Only `git show` and `git diff` reach this path and both are purely local — they never contact a remote, so they cannot print a URL carrying a credential. The stderr they actually produce is `fatal: ambiguous argument`. No path was demonstrated by which a secret reaches the string. #600/#608 is the precedent: an overstated entry in `.jules/sentinel.md` becomes established fact for the next reader.
+  - The entry was also dated 2024-08-26, two years out.
+  - Guarded rather than left as a one-liner: a token in stderr must not survive, an ordinary `ambiguous argument` must still reach the operator unmangled, and only the first stderr line is quoted. Reverting the `redact(...)` call fails the first of those.
 - **Duplicate Changelog Sections Shipped Into The Release Notes** (#627): `## [Unreleased]` carried `### Added` and `### Changed` twice each, and `## [1.0.0]` repeats `Changed` and `Fixed` in released history.
   - Nothing was lost — each entry was inserted above the previous top section, so the document grew alternating headings. `## [Unreleased]` becomes `## [x.y.z]` verbatim at release, so the duplication would have shipped to PyPI's description and the GitHub Release notes, where a reader looking for "what changed" finds two lists of the same kind.
   - Consolidated across every version block. The entry count is identical before and after (216 lines beginning `- `), which is the check that separates a merge from a deletion.
