@@ -108,6 +108,20 @@ class TheFormulaStepOpensAPullRequest(unittest.TestCase):
     def test_a_pull_request_is_opened(self):
         self.assertIn("gh pr create", self.code)
 
+    def test_the_pull_request_is_armed_to_land_on_its_own(self):
+        """Opening it is not the goal; the tap only recovers when it merges.
+
+        `main` requires checks and no approvals, so the pull request can land
+        the moment CI has re-verified the digest against the published artifact.
+        Without this the chain is automatic up to the last step and then waits
+        for someone to notice — which is the gap that left the tap failing on a
+        schedule for a day, with the release itself long since green.
+
+        Asserted separately from `gh pr create`: the two are one line apart and
+        deleting the second leaves a change that still looks complete.
+        """
+        self.assertIn("gh pr merge --auto", self.code)
+
     def test_nothing_is_pushed_straight_to_main(self):
         """Protection refuses it, and the refusal is trivially easy to swallow.
 
