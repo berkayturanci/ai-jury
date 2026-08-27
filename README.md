@@ -727,6 +727,7 @@ flag-presence checks run on all supported versions (3.11–3.13).
 - [Platform support matrix](docs/platforms.md) — where you can install/run the jury and how.
 - [Skill packaging & install](docs/skill.md) — install/version the review jury as a reusable skill artifact.
 - [Release readiness checklist](docs/release-checklist.md) — the bar before a public release.
+- [The Homebrew release chain](docs/homebrew-release-chain.md) — how a release reaches `brew install`, every guard on the way, and what has already gone wrong.
 - [Report format contract](docs/report-format.md) — the golden-file snapshot tests and how to regenerate them.
 - [SECURITY.md](SECURITY.md) — data-flow and secret-redaction reference.
 - Agent-readable: [`llms.txt`](llms.txt) (concise) and [`llms-full.txt`](llms-full.txt) (full reference).
