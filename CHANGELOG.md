@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **`agy` Contributed Nothing To Any Panel** (#635): `AgyAdapter` built `agy --print` and wrote the prompt to stdin — verified against agy 1.0.6, and broken on 1.1.x where `--print` takes a value.
+  - With an empty `extra_args` the run died on `flag needs an argument: -print`; with a non-empty one agy consumed the first flag as the prompt. Either way the agent passed every availability check and returned nothing, so a three-vendor panel silently became two — or one.
+  - **`--doctor` could not see it.** The probe establishes that the binary exists and answers `--version`; the failure is in the argv the adapter builds, which the probe never exercises.
+  - The obvious repair — put the prompt in argv — would have silently reverted #287, which moved it to stdin so the redacted diff is not readable in `ps` by any local user. That decision was recorded with an issue number in the adapter's own comment, and undoing it there would have been the worst place to do it.
+  - The prompt moves to agy's own stdin channel instead: `--input-format stream-json` reads one NDJSON message per line and requires `--output-format stream-json`. `--print` is not passed at all — the input format implies print mode, and passing it would reintroduce the arity problem.
+  - Verified end to end against agy **1.1.22**, not against the issue's description: the argv, the frame shape (a message without `event` is rejected outright), and the parse of the `result` event. A live run now returns `ok=True`.
+  - A stream with no `result` frame falls back to the raw text rather than returning empty. An empty review is counted as an abstention, and #625 exists because an abstention read as an approval is the expensive failure.
+  - Mutation-tested four ways: restoring `--print`, moving the prompt to argv, sending the bare prompt on stdin, and allowing an empty response each fail.
 - **The Homebrew Tap Refused Every Sync Since 1.15.0** (#633): the formula carried 1.14.4's digest under a 1.15.0 url, so the tap guard refused to publish and `brew upgrade` could not see the release. The scheduled retry failed roughly every 30 minutes — in a different repository, hours after the release.
   - `publish.yml` computed the digest correctly, committed it, and pushed with `git push origin HEAD:main || true`. Branch protection had been added the same day (#620), so the push was rejected and the `|| true` reported success.
   - The next step's fallback — *"the tap will pick this up on its own schedule"* — is sound only if the in-repo formula is right, which the swallowed push had just failed to make it. Two silent degradations, one hard failure.
