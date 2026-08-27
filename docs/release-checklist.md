@@ -59,6 +59,11 @@ true to announce/publish) and **Nice-to-have** (improves polish, not a blocker).
 
 ## Manual release steps
 
+> The steps below are the *what*. For the *why* — the reason the formula's
+> url and digest cannot both be correct at the same moment, which guard
+> catches which failure, and what has already gone wrong four ways — see
+> [The Homebrew release chain](homebrew-release-chain.md).
+
 1. Confirm every **Required before public** box above is checked.
 2. Determine target version (`MAJOR`, `MINOR`, or `PATCH`) per SemVer rules.
 3. Update `CHANGELOG.md`: rename `[Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD`.

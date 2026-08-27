@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **The Website Told Visitors The Wrong Release, For Two Releases** (#646): `website/index.html` and `website/app.js` sat at v1.14.4 through 1.15.0 and 1.15.1 while the package, both plugin manifests, the README and the cookbook were all current.
+  - It looked automatic. The element carries `id="site-version"` and links to `/releases/latest`, so a reader would reasonably assume it resolves the version rather than hard-coding it.
+  - The release checklist asks for those two files by name. A checklist line is a request that someone remember, and for two releases nobody did — the same failure mode as the formula digest note, on a different surface.
+  - Pinned by `NoUserFacingSurfaceCarriesAStaleVersion`, which checks every surface that names a version against `pyproject.toml`. Anchored on surrounding context rather than scanning for version-shaped strings: `app.js` contains numbers like `1.19.214` in its demo data, and a blanket scan would have to be weakened until it caught nothing.
 - **The Last Step In The Formula Chain Was Still A Person** (#643): #638 made the release open a pull request with the digest instead of erroring about it. Opening it is not the goal — the tap only recovers when it *merges*, and until then it retries and fails roughly every half hour while the release itself is long since green.
   - The pull request is now armed to land on its own once CI has re-verified the digest against the published sdist. `main` requires status checks and no approvals, so nothing is bypassed: the wait removed is the one between "green" and "someone noticed".
   - Best-effort. With auto-merge disabled the step prints a notice and the pull request waits for a person, exactly as before.
@@ -16,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - It failed in the good direction: 1.15.1 reached PyPI and the GitHub Release, the `::error::` path fired with the correct digest, and the step summary carried it. The release was not reported as broken. The tap was stale anyway, which is the outcome #638 exists to prevent.
   - Fully qualified as `HEAD:refs/heads/${branch}`, and pinned by a test asserting that any push whose source is `HEAD` names the full destination ref. The sibling repository avoids the same trap the other way, by creating a real local branch first; either is correct, pushing `HEAD:` to a bare name is not.
   - The formula digest for 1.15.1 is set here by hand, since the run that should have proposed it could not. Verified end to end against the published sdist: `AI_JURY_CHECK_EXTERNAL=1` now downloads the artifact and re-hashes it, rather than skipping.
+
+### Documentation
+- **The Homebrew release chain, written down** (#646): `docs/homebrew-release-chain.md`. Between 25 and 27 August this chain failed four separate ways and each was diagnosed from scratch, because nothing recorded how the pieces fit.
+  - Covers the contradiction the whole design is arranged around (the formula's url and digest cannot both be correct at once), every guard and where it lives, what has already gone wrong and what each fix added, the two settings that still require a manual step, and a symptom-to-cause table for the next failure.
+  - Linked from the README and from the release checklist, which is the *what* to this document's *why*.
 
 ## [1.15.1] - 2026-08-27
 
