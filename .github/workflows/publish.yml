@@ -173,7 +173,12 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add Formula/ai-jury.rb
           if ! git diff --cached --quiet; then
-            git commit -m "chore(homebrew): Update Formula/ai-jury.rb to v${tag_version} [skip ci]"
+            # No `[skip ci]`. It was right while this commit went straight to
+            # `main` — a formula bump needs no re-run. It is wrong now that the
+            # commit heads a pull request: with CI skipped the ten required
+            # checks never report, the PR can never merge, and the tap keeps
+            # failing hourly. That is the failure this whole step exists to end.
+            git commit -m "chore(homebrew): Update Formula/ai-jury.rb to v${tag_version}"
             # Branch protection refuses a direct push to main (10 required
             # checks), and the `|| true` that used to swallow that refusal is
             # why a stale digest shipped with 1.15.0 and the tap then refused

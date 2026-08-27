@@ -116,6 +116,25 @@ class TheFormulaStepOpensAPullRequest(unittest.TestCase):
         self.assertNotIn("HEAD:main", self.code)
         self.assertNotIn("push origin main", self.code)
 
+    def test_the_commit_does_not_tell_ci_to_skip_the_pull_request(self):
+        """`[skip ci]` was right for a push to `main` and is fatal on a PR.
+
+        A formula bump going straight to `main` needs no re-run, so the commit
+        carried `[skip ci]`. As the head commit of a pull request the same token
+        suppresses every workflow, so the ten required checks never report and
+        the PR can never merge — leaving the tap failing hourly, which is the
+        exact outcome this step exists to prevent. The token is invisible at the
+        end of a long commit-message line and reads as leftover housekeeping.
+        """
+        commits = [line for line in self.code.splitlines() if "git commit" in line]
+        self.assertTrue(commits, "the step does not commit anything")
+        for skip in ("[skip ci]", "[ci skip]", "skip-checks"):
+            self.assertEqual(
+                [c for c in commits if skip in c],
+                [],
+                f"the commit heading the pull request carries {skip}",
+            )
+
     def test_the_job_may_actually_open_one(self):
         """`gh pr create` without the permission fails at the API, after the tag.
 
