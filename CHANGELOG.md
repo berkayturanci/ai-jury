@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **git stderr Reached An Exception Unredacted** (#631): `_git_diff` had two adjacent error paths and only one redacted — the spawn failure did, the non-zero exit did not.
+  - `redact()` does catch what this is aimed at: a token in a remote URL becomes `[REDACTED:github_token]`. Verified, not assumed.
+  - **Raised as `[CRITICAL]`, recorded as `[LOW]`.** Only `git show` and `git diff` reach that path and both are purely local — they cannot print a URL carrying a credential; their real stderr is `fatal: ambiguous argument`. No path was demonstrated by which a secret arrives. #600/#608 is the precedent for why an overstated sentinel entry is expensive.
+  - Guarded rather than left as a one-liner: a token must not survive, an ordinary `ambiguous argument` must still reach the operator **unmangled** — over-redaction is how this class of fix usually breaks — and only the first stderr line is quoted. Reverting the `redact(...)` call fails the first.
+  - Reapplied from current `main`: the original branch had drifted to where its diff removed 261 lines of the day's work, including the `agy` fix.
 - **The Formula Fix Could Not Reach `main`, So It Was Never Applied** (#638): the follow-up to #633 hardened the swallowed push into a loud `::error::`, which makes the failure visible but still leaves the repair to whoever reads the release log.
   - `publish.yml` now pushes the digest to a branch and opens a pull request for it — the only write to a protected `main` that can succeed. The error path remains for the case where even that push fails.
   - `tests/test_publish_formula_followup.py` pins it: no `HEAD:main`, a pull request is opened, and the job carries `pull-requests: write`. The assertions run over the step's code with comment lines removed, since the workflow's own comments describe the direct push it no longer performs.

@@ -82,3 +82,20 @@ contradicts your finding as the finding.
 before-behaviour — the command run and its output on the unfixed code — not
 only the reasoning that predicted it. Reasoning about a control in isolation
 cannot see the control that sits behind it.
+
+## 2026-08-27 - [LOW] Redact git stderr before it reaches an exception message
+
+**Gap (not an observed leak):** `cli.py`'s `_git_diff` passed the first line of raw
+git stderr into `SystemExit` unredacted, while the adjacent error path in the same
+function redacted. `redact()` does catch the payload this is aimed at — a token in a
+remote URL becomes `[REDACTED:github_token]` — so the fix is worth having.
+**Severity is [LOW], deliberately.** Only two commands reach this path,
+`git show --format= --patch -m --first-parent <rev> --` and `git diff <rev> --`, and
+both are purely local: they never contact a remote, so they cannot print a URL with an
+embedded credential. The stderr they actually produce is `fatal: ambiguous argument`.
+No path was demonstrated by which a secret reaches this string. Raised as CRITICAL
+(#631) and corrected on review — see #600/#608 for why an overstated entry here is
+expensive: the next reader takes this file as established fact.
+**Prevention:** apply `redact(...)[0]` to external command output before embedding it
+in an exception, and check the call sites before assigning a severity — "stderr could
+contain a secret" is a property of the command, not of stderr.
