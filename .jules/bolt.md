@@ -39,3 +39,8 @@
 ## 2025-06-17 - Avoid .count() on lists during multi-metric aggregations
 **Learning:** Using `list.count()` multiple times sequentially on the same list forces multiple O(N) traversals.
 **Action:** Consolidate multiple sequential `list.count()` calls into a single explicit loop that tallies all metrics simultaneously to achieve single-pass O(N) evaluation.
+
+## 2025-06-18 - Fast Substring Checks for Multiline String Prefixes
+**Learning:** Using `splitlines()` with a generator expression like `any(line.startswith(x) for line in text.splitlines())` incurs massive O(N) memory allocation and python iteration overhead on large texts.
+**Action:** Optimize line prefix checks by avoiding `splitlines()` entirely. Use `text.startswith(x) or f"
+{x}" in text` to achieve fast, C-optimized multiline prefix detection.
