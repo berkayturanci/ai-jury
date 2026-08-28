@@ -88,3 +88,7 @@
 ## 2026-08-22 - Modal Focus Restoration
 **Learning:** We implemented `Escape` to close the integration modal, but forgot to return focus to the integration card that opened it. When keyboard users closed the modal, they lost their place in the grid.
 **Action:** Always store `document.activeElement` before opening a modal and restore focus to it inside the generic `closeModal()` function so that `Escape`, click-outside, and close button actions all correctly return the user to their previous context.
+
+## 2026-11-07 - Dynamic state masking with aria-labels
+**Learning:** When dynamically changing text on custom interactive elements (like a copy button turning to 'Copied!'), any preexisting static `aria-label` (like 'Copy config') will completely override the new visual text for screen readers. The user misses the state change feedback.
+**Action:** When temporarily changing visible text to indicate success or state, always save and remove the element's `aria-label` and `title` attributes, then restore them when the visual text reverts.

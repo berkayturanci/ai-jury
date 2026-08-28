@@ -388,6 +388,10 @@ a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visibl
   font-weight: 600;
   box-shadow: 0 4px 14px -4px rgba(99, 102, 241, 0.6);
 }
+.int-pill:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 .int-pill .pill-count {
   font-size: 0.72rem;
   background: rgba(0, 0, 0, 0.2);
@@ -668,6 +672,10 @@ a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visibl
 .int-modal-close:hover {
   background: var(--surface-3);
   color: var(--text);
+}
+.int-modal-close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 .int-modal-header {
   display: flex;

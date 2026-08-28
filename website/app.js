@@ -1674,6 +1674,8 @@
 
     function setupCopy(btn, codeEl) {
       if (!btn || !codeEl) return;
+      var baseAria = btn.getAttribute("aria-label");
+      var baseTitle = btn.getAttribute("title");
       btn.addEventListener("click", function () {
         var txt = codeEl.textContent || "";
         if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -1682,10 +1684,14 @@
             btn.textContent = "Copied! ✓";
             btn.style.color = "var(--green-2)";
             btn.style.borderColor = "var(--green)";
+            btn.removeAttribute("aria-label");
+            btn.removeAttribute("title");
             setTimeout(function () {
               btn.textContent = orig;
               btn.style.color = "";
               btn.style.borderColor = "";
+              if (baseAria !== null) btn.setAttribute("aria-label", baseAria);
+              if (baseTitle !== null) btn.setAttribute("title", baseTitle);
             }, 2000);
           });
         }
