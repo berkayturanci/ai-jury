@@ -88,3 +88,7 @@
 ## 2026-08-22 - Modal Focus Restoration
 **Learning:** We implemented `Escape` to close the integration modal, but forgot to return focus to the integration card that opened it. When keyboard users closed the modal, they lost their place in the grid.
 **Action:** Always store `document.activeElement` before opening a modal and restore focus to it inside the generic `closeModal()` function so that `Escape`, click-outside, and close button actions all correctly return the user to their previous context.
+
+## 2026-08-29 - Missing skip-to-content CSS in docs
+**Learning:** Found that while the skip-to-content anchor tag was correctly placed in the HTML for the documentation page (`website/docs.html`), its corresponding CSS rules were missing from `website/docs.css`. This caused the link to be permanently visible instead of visually hidden until focused by keyboard users.
+**Action:** When implementing a skip-to-content link, always verify that its associated CSS class (e.g., `.skip-to-content`) is present in the specific stylesheet loaded by that page, especially if the site uses multiple independent stylesheets.
