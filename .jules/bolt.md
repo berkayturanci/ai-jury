@@ -39,3 +39,8 @@
 ## 2025-06-17 - Avoid .count() on lists during multi-metric aggregations
 **Learning:** Using `list.count()` multiple times sequentially on the same list forces multiple O(N) traversals.
 **Action:** Consolidate multiple sequential `list.count()` calls into a single explicit loop that tallies all metrics simultaneously to achieve single-pass O(N) evaluation.
+
+## 2025-06-18 - C-optimized Substring Checks for Patch Markers
+**Learning:** Parsing large texts with `splitlines()` and iterating with `any()` is slow and memory-intensive. For simple line prefix matches across large bodies of text, using C-optimized string inclusion checks (`in`) is significantly faster.
+**Action:** Use `fix.startswith(markers)` for the first line and `f'
+{marker}' in fix` for subsequent lines to bypass generator overhead and list allocations.
