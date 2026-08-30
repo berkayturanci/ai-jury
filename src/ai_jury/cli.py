@@ -138,7 +138,7 @@ def _read_diff(args) -> tuple[str, str]:
             with Path(args.diff_file).open("rb") as fh:
                 return _read_capped(fh, args.diff_file), ""
         except (OSError, UnicodeDecodeError) as exc:
-            raise SystemExit(f"error reading diff file '{args.diff_file}': {exc}") from None
+            raise SystemExit(f"error reading diff file '{args.diff_file}': {redact(str(exc))[0]}") from None
     raise SystemExit(
         "error: provide one of --pr, --issue, --diff-file, --commit, --commits "
         "(or --diff-file - for stdin)"
@@ -564,7 +564,7 @@ def _run_apply(rest: list[str]) -> int:
                 return 2
             content = p.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as exc:
-            print(f"Error reading report file '{ns.report}': {exc}", file=sys.stderr)
+            print(f"Error reading report file '{ns.report}': {redact(str(exc))[0]}", file=sys.stderr)
             return 2
     elif sys.stdin is not None and not sys.stdin.isatty():
         content = sys.stdin.read()
