@@ -39,3 +39,7 @@
 ## 2025-06-17 - Avoid .count() on lists during multi-metric aggregations
 **Learning:** Using `list.count()` multiple times sequentially on the same list forces multiple O(N) traversals.
 **Action:** Consolidate multiple sequential `list.count()` calls into a single explicit loop that tallies all metrics simultaneously to achieve single-pass O(N) evaluation.
+## 2025-06-18 - Optimize splitlines() in multi-marker prefix search
+**Learning:** Checking if any line in a large string starts with any of several markers using `any(line.startswith(marker) for line in fix.splitlines() for marker in _PATCH_MARKERS)` is very slow. It allocates a huge O(N) list from `splitlines()` and suffers from python generator iteration overhead.
+**Action:** Use a combination of `.startswith(_PATCH_MARKERS)` for the first line and an explicit for loop checking `f"
+{marker}" in fix` for subsequent lines to bypass generator overhead and list allocation.

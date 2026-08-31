@@ -279,7 +279,14 @@ def _looks_like_patch(fix: str) -> bool:
     """Whether ``fix`` should be handled as a git patch rather than as literal text."""
     if fix.startswith("---") or "@@" in fix:
         return True
-    return any(line.startswith(marker) for line in fix.splitlines() for marker in _PATCH_MARKERS)
+
+    # bolt: avoid allocating a huge list of strings from splitlines() and python generator overhead
+    if fix.startswith(_PATCH_MARKERS):
+        return True
+    for marker in _PATCH_MARKERS:  # noqa: SIM110 - avoiding any() generator overhead is intentional
+        if f"\n{marker}" in fix:
+            return True
+    return False
 
 
 def apply_patch_suggestion(
