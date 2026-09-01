@@ -39,3 +39,6 @@
 ## 2025-06-17 - Avoid .count() on lists during multi-metric aggregations
 **Learning:** Using `list.count()` multiple times sequentially on the same list forces multiple O(N) traversals.
 **Action:** Consolidate multiple sequential `list.count()` calls into a single explicit loop that tallies all metrics simultaneously to achieve single-pass O(N) evaluation.
+## 2025-06-18 - Avoid Generator Overhead with splitlines() string processing
+**Learning:** Checking for prefixes across many lines of a string utilizing `fix.splitlines()` with `any(line.startswith(...))` produces substantial overhead because it creates a giant intermediate array of strings and relies on python generators.
+**Action:** Instead of parsing multiline text by constructing generator expressions over large string arrays from `splitlines()`, execute C-optimized substring checks over the raw multiline text string natively (e.g. `f"\n{marker}" in fix`).
