@@ -283,6 +283,19 @@ class ErrorContractTests(unittest.TestCase):
         self.assertNotEqual(code, 0)
         self.assertIn("error reading diff file", str(code) + err)
 
+    def test_missing_diff_file_error_redacts_the_exception_text(self):
+        # The OSError repeats the path; a token-shaped component in it must
+        # come back as the placeholder (#658). The prefix quotes the argument
+        # verbatim, so the raw token appears exactly once — in the user's own
+        # input — and never in the interpolated exception.
+        token_dir = "ghp_" + "B" * 36
+        path = f"/nonexistent/{token_dir}/diff.patch"
+        code, _, err = _run_cli(["--mock", "--diff-file", path])
+        text = str(code) + err
+        self.assertIn("error reading diff file", text)
+        self.assertIn("[REDACTED:github_token]", text)
+        self.assertEqual(text.count(token_dir), 1)
+
 
 class MockPipelineTests(unittest.TestCase):
     """Lock the deterministic offline pipeline behavior and report headings."""
