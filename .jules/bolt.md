@@ -39,3 +39,7 @@
 ## 2025-06-17 - Avoid .count() on lists during multi-metric aggregations
 **Learning:** Using `list.count()` multiple times sequentially on the same list forces multiple O(N) traversals.
 **Action:** Consolidate multiple sequential `list.count()` calls into a single explicit loop that tallies all metrics simultaneously to achieve single-pass O(N) evaluation.
+## 2026-09-02 - Optimize _looks_like_patch with string in checks and explicit loops
+**Learning:** Using `any()` with `splitlines()` causes massive O(N) memory allocation and generator overhead.
+**Action:** Use `fix.startswith(m) or f'
+{m}' in fix` inside an explicit for loop to check for line prefixes in large text bodies instead of `splitlines()` or `any()`.
