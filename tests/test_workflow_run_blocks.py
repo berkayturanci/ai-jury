@@ -677,17 +677,37 @@ jobs:
         self.assertEqual(github_script_blocks_in("name: nothing\n", "none.yml"), [])
 
     def test_a_steps_key_inside_a_script_is_script(self):
+        # The script is a heredoc writing a *second* workflow, so the text holds
+        # a real `steps:` key — at an indent of its own choosing — plus a step
+        # item and a `script:` under it. None of that is this file's structure.
         nested = """\
 jobs:
   only:
     steps:
       - name: Write a workflow
-        uses: actions/github-script@v8
-        with:
-          script: |
-            core.info(`${{ github.head_ref }}`)
+        run: |
+          cat > w.yml <<'YAML'
+          jobs:
+            inner:
+              steps:
+                - uses: actions/github-script@v8
+                  with:
+                    script: core.info("${{ github.head_ref }}")
+          YAML
 """
-        self.assertEqual([label for label, _, _ in steps_in(nested)], ["Write a workflow"])
+        lines = nested.splitlines()
+        inner = lines.index("              steps:")
+        self.assertEqual(lines[inner].strip(), "steps:", "the fixture has no nested steps: key")
+
+        found = steps_in(nested)
+        self.assertEqual([label for label, _, _ in found], ["Write a workflow"])
+        # The nested key falls *inside* the one real step, which is what makes it
+        # content: the walk anchors on the enclosing `steps:` and never reopens.
+        _label, start, end = found[0]
+        self.assertLess(start, inner)
+        self.assertGreater(end, inner)
+        # Read as content, and still caught: the expression is substituted into
+        # this script by *this* run, before the file it writes exists.
         caught = github_script_blocks_in(nested, "nested.yml")
         self.assertEqual(len(caught), 1)
         self.assertIn(EXPRESSION, caught[0].text)
