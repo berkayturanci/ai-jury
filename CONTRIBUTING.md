@@ -56,6 +56,28 @@ implemented as a project-specific wrapper outside this package.
    private workflow, or organization-specific process unless it is clearly framed as
    an external example.
 
+## Bot-owned branches are read-only
+
+A pull request branch opened by an automation — `bolt-…`, `palette/…`,
+`sentinel/…`, `jules/…`, `dependabot/…` — is a **read-only input**. Do not rebase
+it, amend it, or push fixes to it: the bot pushes from its own checkout, so its
+next push replaces the branch with that stale copy and silently reverts anything
+that landed in between. On #648 that cost 25 files and two already-merged pull
+requests. Instead, re-land the reviewed changes on a fresh `fix/`, `perf/` or
+`docs/` branch cut from `main`, and close the bot's pull request with a link to
+the replacement.
+
+The `Bot push guard` job in [`ci.yml`](.github/workflows/ci.yml) enforces the
+half of this a machine can see: `scripts/bot_push_after_human_push_check.py`
+fails the run when a bot commit lands after a human commit on such a branch, and
+names both in the job summary. Note that these bots commit *as the repository
+owner*, so the guard recognises them by the branch prefix and by the subject
+marker each stamps (`⚡ Bolt:`, `🎨 Palette:`, `🛡️ Sentinel:`) rather than by the
+account. Adding a new automation means one entry in that script's
+`BOT_BRANCH_PREFIXES` and one in its `BOT_SUBJECT_MARKER`. Branches a person
+drives from a working copy (`claude/…`, `codex/…`, `fix/…`) are deliberately not
+covered — the rule is about a branch something else holds the only copy of.
+
 ## Dependency and tooling updates
 
 This project pins GitHub Actions to commit SHAs and keeps its runtime dependency

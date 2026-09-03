@@ -96,6 +96,36 @@ jobs:
       - name: Verify version markers agree and do not regress
         run: python scripts/verify_merge.py --check-version
 
+  bot-push-guard:
+    # A bot-owned pull request branch is a read-only input (CONTRIBUTING.md). The
+    # bot pushes from its own checkout, so once a human has touched the branch the
+    # bot's next push replaces the reviewed tree with its stale copy — that is how
+    # #648 silently reverted two merged PRs on 2026-09-03 while the only signal was
+    # an unexplained red suite. This job names both commits instead (#676).
+    #
+    # Pull requests only: there is no branch to reason about on a push to main.
+    name: Bot push guard (bot-owned branch is read-only)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # The commit list is read from the API, not from the checkout, so a
+      # force-pushed branch is described by what GitHub has rather than by what a
+      # shallow clone happens to contain.
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Detect a bot push following a human push
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python scripts/bot_push_after_human_push_check.py \
+            --repo "${{ github.repository }}" \
+            --pr "${{ github.event.pull_request.number }}"
+
   coverage:
     name: Coverage gate
     # One dedicated job on a single OS/Python keeps the matrix cheap and avoids
