@@ -10,14 +10,15 @@ usage: jury [-h] [--pr PR] [--issue ISSUE] [--repo REPO]
             [--chair CHAIR] [--mock] [--strict] [--min-vendors N] [--verify]
             [--no-verify] [--doctor] [--json] [--write WRITE]
             [--effort {low,medium,high}] [-o OUTPUT] [--metadata-json PATH]
-            [--format {markdown,json,sarif}] [--decision {chair,vote}]
-            [--transcript] [--no-transcript] [--verbose] [--live] [--theater]
-            [--no-theater] [--theater-style {flat,pixel}] [--post-summary]
-            [--post-inline] [--post-progress] [--post-mode {single,phased}]
-            [--dry-run] [--label] [--ci] [--fail-on FAIL_ON] [--cache]
-            [--clear-cache] [--cache-dir CACHE_DIR] [--suggest-patches]
-            [--patches-out PATH] [--incremental] [-q] [--config-validate]
-            [--strict-config] [--tiered] [--hints] [--version]
+            [--format {markdown,json,sarif,keel-reviews}]
+            [--decision {chair,vote}] [--transcript] [--no-transcript]
+            [--verbose] [--live] [--theater] [--no-theater]
+            [--theater-style {flat,pixel}] [--post-summary] [--post-inline]
+            [--post-progress] [--post-mode {single,phased}] [--dry-run]
+            [--label] [--ci] [--fail-on FAIL_ON] [--cache] [--clear-cache]
+            [--cache-dir CACHE_DIR] [--suggest-patches] [--patches-out PATH]
+            [--incremental] [-q] [--config-validate] [--strict-config]
+            [--tiered] [--hints] [--version]
 
 Cross-vendor multi-agent PR review jury.
 
@@ -83,8 +84,10 @@ options:
   -o, --output OUTPUT   write the report to a file instead of stdout
   --metadata-json PATH  write machine-readable run metadata (durations,
                         status, rounds) as JSON
-  --format {markdown,json,sarif}
-                        output format for stdout/--output (default: markdown)
+  --format {markdown,json,sarif,keel-reviews}
+                        output format for stdout/--output (default: markdown);
+                        'keel-reviews' emits one review record per panelist
+                        plus the chair
   --decision {chair,vote}
                         final verdict: 'chair' synthesis (default) or panel
                         'vote' (tally the reviewers); overrides [jury]

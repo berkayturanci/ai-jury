@@ -5,6 +5,8 @@ adds structured outputs intended for tooling:
 
 * :func:`to_json` -- a structured JSON report (schema documented in the README).
 * :func:`to_sarif` -- a SARIF 2.1.0 document for CI / code scanning upload.
+* :func:`to_keel_reviews` -- a per-reviewer review bundle (issue #663) for a
+  consumer that renders one head-pinned verdict per panelist.
 
 Both renderers are deterministic for a deterministic outcome (e.g. under
 ``mock=True``) and only emit legitimate finding fields -- never raw diff or
@@ -21,7 +23,11 @@ from .findings import SEVERITIES, Finding
 from .metadata import build_run_metadata
 
 #: Version of the JSON report schema produced by :func:`to_json`.
-JSON_SCHEMA_VERSION = "1.0"
+#:
+#: 1.1 (issue #663) ADDED the top-level ``reviewers`` array. Nothing was removed,
+#: renamed or reshaped, so every existing consumer of ``findings``/``consensus``/
+#: ``verdicts``/``verdict``/``metadata`` reads an identical document.
+JSON_SCHEMA_VERSION = "1.1"
 
 #: Canonical SARIF schema URI and version emitted by :func:`to_sarif`.
 SARIF_SCHEMA = "https://json.schemastore.org/sarif-2.1.0.json"
@@ -74,17 +80,20 @@ def _group_dict(g: Any) -> dict[str, Any]:
     }
 
 
-def to_json(outcome: Any, config: Any, *, decision=None, vote=None) -> str:
+def to_json(outcome: Any, config: Any, *, decision=None, vote=None, mode: str = "code") -> str:
     """Render the jury outcome as a structured, pretty-printed JSON report.
 
     Top-level keys: ``schema_version``, ``metadata`` (from
-    :func:`build_run_metadata`), ``findings``, ``consensus``, ``verdicts`` and
-    ``verdict`` (the chair synthesis text, if any). The result is deterministic
-    for a deterministic outcome and contains only legitimate finding fields.
+    :func:`build_run_metadata`), ``findings``, ``consensus``, ``reviewers``,
+    ``verdicts`` and ``verdict`` (the chair synthesis text, if any). The result is
+    deterministic for a deterministic outcome and contains only legitimate finding
+    fields.
 
     ``decision``/``vote`` are threaded into the metadata so the JSON report
     reflects an effective ``--decision vote`` override (issue #248); when omitted
-    the metadata falls back to ``config.decision`` as before.
+    the metadata falls back to ``config.decision`` as before. ``mode`` selects the
+    ballot vocabulary (``code`` → APPROVE/COMMENT/REQUEST_CHANGES, ``issue`` →
+    READY/UNCLEAR/NEEDS_INFO), matching ``--issue``.
     """
     synthesis = getattr(outcome, "synthesis", None)
     verdict_text = ""
@@ -98,6 +107,7 @@ def to_json(outcome: Any, config: Any, *, decision=None, vote=None) -> str:
 
     # Surface the deterministic PR-level classification (issue #7) at the top
     # level for easy machine consumption (it is also embedded in ``metadata``).
+    from .ballots import reviewer_ballots
     from .classification import classify
 
     doc: dict[str, Any] = {
@@ -106,6 +116,9 @@ def to_json(outcome: Any, config: Any, *, decision=None, vote=None) -> str:
         "classification": classify(outcome),
         "findings": [_finding_dict(f) for f in outcome.findings],
         "consensus": [_group_dict(g) for g in outcome.groups],
+        # Per-reviewer ballots (issue #663): who said what, with vendor/model
+        # provenance. Purely additive — every key above is unchanged.
+        "reviewers": reviewer_ballots(outcome, config, vote=vote, mode=mode),
         "verdicts": [
             {
                 "file": v.file,
@@ -119,6 +132,29 @@ def to_json(outcome: Any, config: Any, *, decision=None, vote=None) -> str:
         "verdict": verdict_text,
     }
     return json.dumps(doc, indent=2, sort_keys=False, ensure_ascii=False)
+
+
+def to_keel_reviews(outcome: Any, config: Any, *, vote=None, mode: str = "code") -> str:
+    """Render the panel as a per-reviewer review bundle (issue #663).
+
+    A JSON **array** — not an object — of
+    ``{reviewer, verdict, scope, findings, testing, vendor, model}`` records, one
+    per panelist that returned output plus the chair as ``reviewer: "chair"``.
+    That is the payload keel's ``keel review --reviews <file>`` accepts, so a
+    panel run can *be* the review rather than merely inform one.
+
+    Deterministic for a deterministic outcome. Free text lifted from agent replies
+    (``scope``, ``testing``) is flattened and capped in :mod:`ai_jury.ballots`; no
+    diff text, prompt text or secret ever reaches this document.
+    """
+    from .ballots import keel_reviews
+
+    return json.dumps(
+        keel_reviews(outcome, config, vote=vote, mode=mode),
+        indent=2,
+        sort_keys=False,
+        ensure_ascii=False,
+    )
 
 
 def _sarif_result(f: Finding) -> dict[str, Any]:

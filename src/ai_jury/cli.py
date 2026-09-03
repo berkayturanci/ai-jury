@@ -350,9 +350,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--format",
-        choices=["markdown", "json", "sarif"],
+        choices=["markdown", "json", "sarif", "keel-reviews"],
         default="markdown",
-        help="output format for stdout/--output (default: markdown)",
+        help="output format for stdout/--output (default: markdown); "
+        "'keel-reviews' emits one review record per panelist plus the chair",
     )
     p.add_argument(
         "--decision",
@@ -1875,14 +1876,23 @@ def main(argv: list[str] | None = None) -> int:
 
     metadata = build_run_metadata(outcome, config, decision=decision, vote=vote)
 
+    # Ballot vocabulary follows the review mode, exactly as the vote tally does:
+    # an issue review votes on completeness (READY/UNCLEAR/NEEDS_INFO), not on a
+    # diff's correctness.
+    ballot_mode = "issue" if args.issue else "code"
+
     if args.format == "json":
         from .formats import to_json
 
-        report = to_json(outcome, config, decision=decision, vote=vote)
+        report = to_json(outcome, config, decision=decision, vote=vote, mode=ballot_mode)
     elif args.format == "sarif":
         from .formats import to_sarif
 
         report = to_sarif(outcome, config)
+    elif args.format == "keel-reviews":
+        from .formats import to_keel_reviews
+
+        report = to_keel_reviews(outcome, config, vote=vote, mode=ballot_mode)
     else:
         # Output mode (issue: full transcript). --verbose => summary + transcript;
         # --transcript (or [jury] transcript, unless --no-transcript) => the
