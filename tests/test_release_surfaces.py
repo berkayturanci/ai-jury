@@ -15,7 +15,11 @@ which is the failure this issue exists to make impossible (#665).
 
 The three are `check_version_integrity` (the merge gate), `check_release_surfaces`
 (`make release-check`, which is a different command with a different failure mode
-— it does not require git tags) and `tests/test_release_metadata.py`. The formula
+— it does not require git tags) and `tests/test_release_metadata.py`. Three entry
+points, two readers: the last two both call `release_surfaces.mismatches()` and
+differ only in where the expected version comes from, so what the tests below
+prove is that every *entry point* follows the table, not that three independent
+scanners exist — every reader funnels through `_scan`, by design (#665). The formula
 test was the third until #666 deleted `Formula/ai-jury.rb`: a committed formula
 names an sdist url and digest that cannot be known before the tag, so the file
 could not be made correct and was removed rather than repaired again. Nothing in
@@ -113,7 +117,9 @@ def _guard_failures(root: Path) -> dict[str, list[str]]:
     `check_version_integrity` and `check_release_surfaces` are separate commands
     with separate failure modes — the merge gate also compares against git tags,
     `make release-check` deliberately does not — so a table read by one and not
-    the other would still let a surface go unwatched from a shallow clone.
+    the other would still let a surface go unwatched from a shallow clone. (The
+    release-check and the metadata test share `mismatches()`; they are two entry
+    points over one reader, see the module docstring.)
 
     The test-module guard is executed as the real `TestCase` method it is, with
     its `REPO_ROOT` pointed at the fixture. Re-deriving what it would have said
@@ -187,7 +193,7 @@ class TheTableDescribesThisTree(unittest.TestCase):
         self.assertFalse((REPO_ROOT / "Formula" / "ai-jury.rb").exists())
         template = REPO_ROOT / "packaging" / "homebrew" / "ai-jury.rb.template"
         self.assertIn("@VERSION@", template.read_text(encoding="utf-8"))
-        self.assertEqual(release_surfaces.find_versions(REPO_ROOT).get(str(template)), None)
+        self.assertNotIn("packaging/homebrew/ai-jury.rb.template", release_surfaces.SURFACE_PATHS)
 
     def test_the_fixture_covers_every_surface(self):
         """Otherwise a new surface would be silently untested by everything below."""
