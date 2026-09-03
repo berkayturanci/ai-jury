@@ -88,6 +88,7 @@ jury --pr 123 --suggest-patches --patches-out fixes.patch
 # Machine-readable output for tooling
 jury --pr 123 --format json -o review.json     # JSON document to a file
 jury --pr 123 --format sarif -o review.sarif   # SARIF for code-scanning upload
+jury --pr 123 --format keel-reviews -o rv.json # one review record per panelist
 
 # Phased posting — Round 1 / debate / decision as separate comments
 jury --pr 123 --post --post-mode phased
@@ -203,7 +204,7 @@ sends the PR description/context alongside the diff and applies a repo policy.
 
 | Flag | Value | Default | Description |
 | --- | --- | --- | --- |
-| `--format` | `markdown` \| `json` \| `sarif` | `markdown` | Output format for stdout/`--output`. |
+| `--format` | `markdown` \| `json` \| `sarif` \| `keel-reviews` | `markdown` | Output format for stdout/`--output`. `keel-reviews` emits a JSON array of per-panelist review records (plus the chair) for a consumer that renders one head-pinned verdict per reviewer — see [report-format.md](report-format.md#the-keel-reviews-bundle). |
 | `--decision` | `chair` \| `vote` | from config (`chair`) | Final verdict source. `chair` = the chair's synthesis is the verdict (default). `vote` = a **panel vote**: each reviewer votes from the worst finding they raised, majority wins, ties resolve to the stricter stance; the chair's synthesis is then shown as supporting reasoning. The vocabulary is mode-aware — a diff/PR votes **REQUEST CHANGES > COMMENT > APPROVE**; an `--issue` votes **NEEDS-INFO > UNCLEAR > READY**. Rendering-only — does not change the run, the cache key, or the severity-based `--ci` gate. Example: `jury --pr 123 --decision vote`. |
 | `--transcript` / `--no-transcript` | flag | from config | Render the full play-by-play transcript (each agent's review, the debate, and the chair's reasoning) instead of the consensus-first summary. `--no-transcript` forces the summary even if `[jury] transcript` is set. Markdown only; rendering-only (does not change the run or its cache key). |
 | `--verbose` | flag | off | Summary report **and** the full transcript, in one document. Implies a transcript even with `--no-transcript`. |
@@ -216,7 +217,7 @@ sends the PR description/context alongside the diff and applies a repo policy.
 report. Phased posting (`--post-mode phased`) always posts the per-round
 sections regardless, since it is already a round-by-round layout.
 
-`--format` accepts `markdown` | `json` | `sarif`. `--transcript` and `--verbose`
+`--format` accepts `markdown` | `json` | `sarif` | `keel-reviews`. `--transcript` and `--verbose`
 apply to **markdown only**; `--live` streams markdown steps to stdout (and, with
 `--pr --post`, posts each step). `--no-transcript` forces the summary even when
 `[jury] transcript = true`.

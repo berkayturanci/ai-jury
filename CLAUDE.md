@@ -74,7 +74,8 @@ Live agent tests are opt-in: `JURY_LIVE=1` (CLIs) / `JURY_LOCAL_LIVE=1`
 `largediff` (filter + chunk) · `cache` · `incremental` · `patches` · `commands`
 (comment parsing) · `scaffold` (`jury init`) · `doctor` · `privilege` ·
 `redaction` · `injection` · `classification` · `metadata` · `report`/`formats`
-(markdown/json/sarif) · `ci` · `github` · `policy`.
+(markdown/json/sarif/keel-reviews) · `ballots` (per-reviewer ballots + the
+keel-reviews bundle) · `ci` · `github` · `policy`.
 
 ## Git / PR workflow
 

@@ -85,7 +85,7 @@ Input (choose one): `--pr <num/url>` (+ optional `--repo owner/name`), `--diff-f
 - `--suggest-patches`, `--patches-out <path>` — inspectable patches for verified findings (#10).
 - `--cache`, `--cache-dir <path>`, `--clear-cache` — optional result cache (#33).
 - `--context-mode diff-only|expanded`, `--redact` / `--no-redact` — what leaves your machine.
-- `--format markdown|json|sarif`, `-o/--output <path>`, `--metadata-json <path>`.
+- `--format markdown|json|sarif|keel-reviews`, `-o/--output <path>`, `--metadata-json <path>`.
 - `--post-summary` (alias `--post`), `--post-inline`, `--dry-run`, `--label` — GitHub output.
 - `--post-progress` — live sticky PR status comment updated each round/chunk (#125; needs `--pr`).
 - `--post-mode single|phased` — `phased` posts Round 1 / debate / decision as separate comments (#126).
