@@ -500,12 +500,18 @@ def pid_alive(pid) -> bool | None:
     return True
 
 
-def list_runs(cache_dir=None, alive_fn=pid_alive) -> list[dict]:
+def list_runs(cache_dir=None, alive_fn=None) -> list[dict]:
     """Every recorded run, newest first, as summary dicts.
 
     Summaries only: the full agent text stays in the state file, so ``--status``
     on a busy machine prints a listing rather than every transcript it ever ran.
+
+    ``alive_fn`` defaults to :func:`pid_alive` resolved at call time (see
+    :func:`wait_for_run` for why it is not a default argument). Note the
+    difference from :func:`run_summary`, which is pure: there ``alive_fn=None``
+    means "do not probe at all".
     """
+    probe = pid_alive if alive_fn is None else alive_fn
     directory = runs_dir(cache_dir)
     try:
         names = sorted(p.stem for p in directory.glob("*.json"))
@@ -516,7 +522,7 @@ def list_runs(cache_dir=None, alive_fn=pid_alive) -> list[dict]:
         state = read_state(run_id, cache_dir)
         if state is None:
             continue
-        runs.append(run_summary(state, alive_fn=alive_fn))
+        runs.append(run_summary(state, alive_fn=probe))
     runs.sort(key=lambda r: (r.get("started_at") or 0, r.get("run_id") or ""), reverse=True)
     return runs
 
@@ -595,12 +601,13 @@ def wait_for_run(
     poll_s: float = 0.25,
     sleep=time.sleep,
     clock=time.monotonic,
-    alive_fn=pid_alive,
+    alive_fn=None,
 ) -> tuple[dict | None, bool]:
     """Block until a detached run finishes. Returns ``(state, timed_out)``.
 
     ``sleep``, ``clock`` and ``alive_fn`` are injected so the lifecycle is
-    testable against a fake clock instead of real seconds. A missing state file
+    testable against a fake clock instead of real seconds; ``alive_fn=None``
+    means :func:`pid_alive`, looked up when this is *called*. A missing state file
     is treated as "not finished yet", not as an error: a caller may legitimately
     start waiting before the child has written anything.
 
@@ -612,12 +619,18 @@ def wait_for_run(
     the window between our read and the probe, and a real answer always wins
     over an inference about a pid.
     """
+    # Resolved at CALL time, not bound as a default: a default argument would
+    # capture this module's `pid_alive` when the def executes, and a test that
+    # patches `runagent.pid_alive` would then patch nothing while appearing to
+    # work — which is exactly how a Windows-only infinite wait reached CI green
+    # on every other platform.
+    probe = pid_alive if alive_fn is None else alive_fn
     deadline = None if timeout is None else clock() + float(timeout)
     while True:
         state = read_state(run_id, cache_dir)
         if state is not None and state.get("status") != STATUS_RUNNING:
             return state, False
-        if state is not None and alive_fn is not None and alive_fn(state.get("pid")) is False:
+        if state is not None and probe(state.get("pid")) is False:
             confirmed = read_state(run_id, cache_dir)
             if confirmed is not None and confirmed.get("status") != STATUS_RUNNING:
                 return confirmed, False

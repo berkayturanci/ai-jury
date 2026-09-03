@@ -232,13 +232,25 @@ class SpawnDetachedTests(unittest.TestCase):
 
     @staticmethod
     def _spawn_and_reap(out_path: Path) -> int:
-        """Run a trivial detached child to completion, returning its pid."""
+        """Run a trivial detached child to completion, returning its pid.
+
+        Bounded by construction — a fixed number of polls, never a blocking
+        read on a pipe — so a child that never writes makes this FAIL rather
+        than wedge the suite. The child's stdout goes to a file, not a pipe,
+        precisely so nothing here has to drain one.
+        """
         pid = _spawn_detached([sys.executable, "-c", "print('detached')"], out_path)
-        for _ in range(200):
-            if out_path.exists() and out_path.read_text(encoding="utf-8").strip():
-                break
+        for _ in range(200):  # <= 10s, then give up and let the assertion speak
+            # Windows may briefly deny the read while the child holds the file
+            # open; a transient error is another reason to poll again, not to
+            # blow up the test.
+            with contextlib.suppress(OSError):
+                if out_path.exists() and out_path.read_text(encoding="utf-8").strip():
+                    break
             time.sleep(0.05)
         # Reap it, so the suite does not warn about a still-running subprocess.
+        # Windows has no waitpid for a process it did not keep a handle on; the
+        # Popen object in `cli._DETACHED_CHILDREN` owns that there.
         if os.name != "nt":
             with contextlib.suppress(ChildProcessError, OSError):
                 os.waitpid(pid, 0)
@@ -1502,10 +1514,13 @@ class LivenessTests(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertEqual(json.loads(out)["runs"][0]["status"], "lost")
 
+    @unittest.skipIf(os.name == "nt", "POSIX signal semantics")
     def test_pid_alive_knows_this_process_is_running(self):
         self.assertTrue(runagent.pid_alive(os.getpid()))
 
     def test_pid_alive_is_unknown_for_a_bad_pid(self):
+        # True on every platform, for two different reasons: POSIX rejects the
+        # pid as unusable, Windows refuses to probe at all.
         for pid in (None, 0, -1, "x"):
             self.assertIsNone(runagent.pid_alive(pid))
 
@@ -1528,10 +1543,12 @@ class LivenessTests(unittest.TestCase):
             self.assertIsNone(runagent.pid_alive(4242))
             killed.assert_not_called()
 
+    @unittest.skipIf(os.name == "nt", "POSIX signal semantics")
     def test_a_permission_error_means_alive(self):
         with mock.patch.object(runagent.os, "kill", side_effect=PermissionError):
             self.assertTrue(runagent.pid_alive(4242))
 
+    @unittest.skipIf(os.name == "nt", "POSIX signal semantics")
     def test_an_unexpected_oserror_is_unknown(self):
         with mock.patch.object(runagent.os, "kill", side_effect=OSError):
             self.assertIsNone(runagent.pid_alive(4242))
@@ -1751,7 +1768,14 @@ class WaitTimeoutTests(unittest.TestCase):
     def test_a_dead_run_is_reported_at_once_not_at_the_deadline(self):
         # Previously this blocked for the whole deadline for a result that was
         # never coming, while `--status` already called the same run lost.
+        #
+        # The clock ADVANCES on every call, by more than the deadline. That is
+        # deliberate: `slept == []` still proves the run was reported without
+        # waiting, but if the dead-pid branch ever regresses this test fails on
+        # its assertions instead of spinning forever. A constant clock here is
+        # what turned a Windows-only regression into a 60-minute CI hang.
         slept = []
+        ticking = iter(range(0, 10_000_000, 1_000_000))
         with tempfile.TemporaryDirectory() as tmp:
             cache = Path(tmp)
             runagent.write_state(
@@ -1761,7 +1785,7 @@ class WaitTimeoutTests(unittest.TestCase):
                 code, out, err = _run_run_agent_capture(
                     ["--wait", "gone", "--cache-dir", str(cache), "--wait-timeout", "600"],
                     sleep=slept.append,
-                    clock=lambda: 0.0,
+                    clock=lambda: float(next(ticking)),
                 )
         self.assertEqual(code, 1)
         self.assertEqual(slept, [])  # returned without waiting at all
@@ -1822,6 +1846,114 @@ class WaitTimeoutTests(unittest.TestCase):
         self.assertIn("--wait-timeout", help_text)
         self.assertIn("This bounds the agent, never the wait", help_text)
         self.assertIn("seconds --wait will block before giving up", help_text)
+
+
+class UnprobeablePlatformTests(unittest.TestCase):
+    """Where a pid cannot be probed, every wait must still terminate.
+
+    `pid_alive` answers None on Windows by design — `os.kill(pid, 0)` there
+    terminates the process instead of probing it. That makes the dead-pid
+    shortcut unavailable, so the deadline is the only thing that ends the wait.
+    A test that combined a patched probe with a clock that never advanced span
+    forever on Windows while passing everywhere else, and CI took 60 minutes to
+    say so; these pin both halves.
+    """
+
+    #: What `pid_alive` returns where a pid cannot be probed (Windows).
+    _unprobeable = staticmethod(lambda _pid: None)
+
+    def test_the_liveness_probe_is_resolved_at_call_time(self):
+        # The bug underneath the hang: `alive_fn=pid_alive` as a DEFAULT
+        # argument captures the function when the def runs, so patching
+        # `runagent.pid_alive` patched nothing while appearing to work. On
+        # POSIX the real probe happened to give the expected answer, so the
+        # tests passed for the wrong reason.
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp)
+            runagent.write_state(
+                "late", {"run_id": "late", "status": "running", "pid": 999999}, cache
+            )
+            with mock.patch.object(runagent, "pid_alive", return_value=False) as patched:
+                state, timed_out = runagent.wait_for_run(
+                    "late", cache_dir=cache, timeout=5, clock=lambda: 0.0
+                )
+            self.assertTrue(patched.called, "wait_for_run ignored the patched probe")
+        self.assertFalse(timed_out)
+        self.assertEqual(state["status"], runagent.STATUS_LOST)
+
+    def test_list_runs_also_resolves_the_probe_at_call_time(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp)
+            runagent.write_state(
+                "late2", {"run_id": "late2", "status": "running", "pid": 999999}, cache
+            )
+            with mock.patch.object(runagent, "pid_alive", return_value=False) as patched:
+                runs = runagent.list_runs(cache)
+            self.assertTrue(patched.called, "list_runs ignored the patched probe")
+        self.assertEqual(runs[0]["status"], runagent.STATUS_LOST)
+
+    def test_a_wait_still_ends_at_the_deadline_when_the_pid_cannot_be_probed(self):
+        # The Windows path: no early exit is possible, so the deadline must fire.
+        now = {"t": 0.0}
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp)
+            runagent.write_state(
+                "unprobeable", {"run_id": "unprobeable", "status": "running", "pid": 999999}, cache
+            )
+            state, timed_out = runagent.wait_for_run(
+                "unprobeable",
+                cache_dir=cache,
+                timeout=3,
+                sleep=lambda _s: now.update(t=now["t"] + 1),
+                clock=lambda: now["t"],
+                alive_fn=self._unprobeable,
+            )
+        self.assertTrue(timed_out)
+        self.assertEqual(state["status"], "running")
+
+    def test_an_unprobeable_run_is_never_reported_lost(self):
+        # "We cannot tell" must never be read as "dead".
+        state = {"run_id": "r", "status": "running", "pid": 999999}
+        summary = runagent.run_summary(state, alive_fn=self._unprobeable)
+        self.assertEqual(summary["status"], "running")
+
+    def test_the_cli_warns_that_it_cannot_check_liveness(self):
+        now = {"t": 0.0}
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp)
+            runagent.write_state(
+                "silent", {"run_id": "silent", "status": "running", "pid": 999999}, cache
+            )
+            with mock.patch.object(runagent, "pid_alive", return_value=None):
+                code, _, err = _run_run_agent_capture(
+                    ["--wait", "silent", "--cache-dir", str(cache), "--wait-timeout", "3"],
+                    sleep=lambda _s: now.update(t=now["t"] + 1),
+                    clock=lambda: now["t"],
+                )
+        self.assertEqual(code, 2)
+        self.assertIn("cannot check whether run 'silent' is still alive", err)
+        self.assertIn("did not finish within 3s", err)
+
+    def test_no_warning_when_liveness_is_known(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp)
+            runagent.write_state("known", {"run_id": "known", "status": "done", "ok": True}, cache)
+            code, _, err = _run(["--wait", "known", "--cache-dir", str(cache)])
+        self.assertEqual(code, 0)
+        self.assertNotIn("cannot check", err)
+
+    def test_every_injected_clock_in_this_module_can_reach_a_deadline(self):
+        # A guard on the tests themselves. `wait_for_run` ends either because a
+        # run finishes, because a probe says the pid is gone, or because the
+        # clock passes the deadline. A clock that cannot advance removes the
+        # third, and if the first two are unavailable on some platform the loop
+        # spins with no way out — which is precisely what happened here.
+        source = Path(__file__).read_text(encoding="utf-8")
+        self.assertNotIn(
+            "clock=lambda: 0.0,\n                    sleep=",
+            source,
+            "a constant clock paired with a no-op sleep can hang instead of failing",
+        )
 
 
 class CredentialLeakTests(unittest.TestCase):

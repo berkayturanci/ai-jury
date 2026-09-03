@@ -883,7 +883,8 @@ one-directional: a stale pid leaves a finished-looking run marked `running`
 (and its `started_at` shows how old the claim is), never the reverse, so a live
 run is never declared dead. Liveness is probed on POSIX only; on Windows a pid
 cannot be probed without terminating it, so every unfinished run there reads as
-`running`. If you share a cache directory, treat `running` from another host as
+`running` and `--wait` says so once on stderr before falling back to its
+deadline — the wait is still bounded, it just cannot end early. If you share a cache directory, treat `running` from another host as
 unknown and read the state file's `started_at` yourself.
 
 State lives in `<cache-dir>/run-agent/<run-id>.json` (0600, in a 0700 directory)
