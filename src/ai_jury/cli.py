@@ -1387,18 +1387,18 @@ def _run_run_agent(rest: list[str], spawn=None, sleep=None, clock=None) -> int:
         deadline = ns.wait_timeout
         if deadline is None:
             deadline = runagent.default_wait_timeout(known)
-        # Where a pid cannot be probed (Windows: `os.kill(pid, 0)` terminates
-        # rather than probes), a run that has already died can only be noticed
-        # when the deadline expires. Say so once, so a long silence reads as a
-        # known limitation rather than a hung command. The deadline itself
-        # always applies, so the wait is bounded on every platform.
-        if (
-            known.get("status") == runagent.STATUS_RUNNING
-            and runagent.pid_alive(known.get("pid")) is None
-        ):
+        # When liveness cannot be determined, a run that has already died can
+        # only be noticed when the deadline expires. Say so once, so a long
+        # silence reads as a known limitation rather than a hung command. The
+        # opening is cause-neutral and the reason names which case it is —
+        # "this platform cannot probe" is false on POSIX for a run that simply
+        # has not been claimed yet. The deadline always applies regardless, so
+        # the wait is bounded either way.
+        unknown = runagent.liveness_unknown_reason(known)
+        if unknown:
             print(
-                f"warning: cannot check whether run '{ns.wait}' is still alive on "
-                f"this platform; waiting up to {deadline:g}s for it to report",
+                f"warning: cannot tell whether run '{ns.wait}' is still alive — "
+                f"{unknown}; waiting up to {deadline:g}s for it to report",
                 file=sys.stderr,
             )
         state, timed_out = runagent.wait_for_run(

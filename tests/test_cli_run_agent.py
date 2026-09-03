@@ -10,6 +10,7 @@ Run with: python -m unittest discover -s tests
 
 from __future__ import annotations
 
+import ast
 import contextlib
 import io
 import json
@@ -1873,11 +1874,23 @@ class UnprobeablePlatformTests(unittest.TestCase):
             runagent.write_state(
                 "late", {"run_id": "late", "status": "running", "pid": 999999}, cache
             )
+            # The clock advances past the deadline and the sleep is a no-op, so
+            # if the regression ever returns this FAILS on `patched.called`
+            # instead of spinning. Resting termination on the patched probe is
+            # the very defect under test: with the default-argument binding back
+            # and a platform that answers None, nothing would end the loop.
+            slept = []
+            ticking = iter(range(0, 10_000_000, 1_000_000))
             with mock.patch.object(runagent, "pid_alive", return_value=False) as patched:
                 state, timed_out = runagent.wait_for_run(
-                    "late", cache_dir=cache, timeout=5, clock=lambda: 0.0
+                    "late",
+                    cache_dir=cache,
+                    timeout=5,
+                    sleep=slept.append,
+                    clock=lambda: float(next(ticking)),
                 )
             self.assertTrue(patched.called, "wait_for_run ignored the patched probe")
+        self.assertEqual(slept, [])  # the probe answered before any waiting
         self.assertFalse(timed_out)
         self.assertEqual(state["status"], runagent.STATUS_LOST)
 
@@ -1917,6 +1930,63 @@ class UnprobeablePlatformTests(unittest.TestCase):
         summary = runagent.run_summary(state, alive_fn=self._unprobeable)
         self.assertEqual(summary["status"], "running")
 
+    def test_no_warning_for_a_running_run_whose_pid_is_alive(self):
+        # The case that actually matters: liveness IS known, so stay quiet.
+        # A `done` state returns before the warning branch and proves nothing.
+        now = {"t": 0.0}
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp)
+            runagent.write_state(
+                "alive", {"run_id": "alive", "status": "running", "pid": 4242}, cache
+            )
+            with mock.patch.object(runagent, "pid_alive", return_value=True):
+                code, _, err = _run_run_agent_capture(
+                    ["--wait", "alive", "--cache-dir", str(cache), "--wait-timeout", "3"],
+                    sleep=lambda _s: now.update(t=now["t"] + 1),
+                    clock=lambda: now["t"],
+                )
+        self.assertEqual(code, 2)  # it timed out, but that is not the point
+        self.assertNotIn("cannot tell", err)
+
+    def test_a_running_run_with_no_pid_is_not_blamed_on_the_platform(self):
+        # The ordinary window right after --detach, before the child claims the
+        # run. Saying "this platform cannot probe" here is false on POSIX.
+        now = {"t": 0.0}
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp)
+            runagent.write_state(
+                "unclaimed", {"run_id": "unclaimed", "status": "running", "pid": None}, cache
+            )
+            code, _, err = _run_run_agent_capture(
+                ["--wait", "unclaimed", "--cache-dir", str(cache), "--wait-timeout", "3"],
+                sleep=lambda _s: now.update(t=now["t"] + 1),
+                clock=lambda: now["t"],
+            )
+        self.assertEqual(code, 2)
+        self.assertIn("has not recorded a process id yet", err)
+        self.assertNotIn("platform", err)
+
+    def test_liveness_unknown_reason_separates_the_two_causes(self):
+        unclaimed = {"status": "running", "pid": None}
+        self.assertIn("not recorded a process id", runagent.liveness_unknown_reason(unclaimed))
+        unprobeable = {"status": "running", "pid": 4242}
+        self.assertIn(
+            "platform",
+            runagent.liveness_unknown_reason(unprobeable, alive_fn=self._unprobeable),
+        )
+        # Known-alive, and finished runs, have nothing to report.
+        self.assertIsNone(runagent.liveness_unknown_reason(unprobeable, alive_fn=lambda _p: True))
+        self.assertIsNone(runagent.liveness_unknown_reason({"status": "done", "pid": None}))
+        self.assertIsNone(runagent.liveness_unknown_reason(None))
+
+    def test_a_bogus_pid_is_treated_as_unrecorded(self):
+        for pid in (0, -1, "x", True):
+            self.assertIn(
+                "not recorded a process id",
+                runagent.liveness_unknown_reason({"status": "running", "pid": pid}),
+                repr(pid),
+            )
+
     def test_the_cli_warns_that_it_cannot_check_liveness(self):
         now = {"t": 0.0}
         with tempfile.TemporaryDirectory() as tmp:
@@ -1931,29 +2001,85 @@ class UnprobeablePlatformTests(unittest.TestCase):
                     clock=lambda: now["t"],
                 )
         self.assertEqual(code, 2)
-        self.assertIn("cannot check whether run 'silent' is still alive", err)
+        self.assertIn("cannot tell whether run 'silent' is still alive", err)
+        self.assertIn("platform", err)
         self.assertIn("did not finish within 3s", err)
 
-    def test_no_warning_when_liveness_is_known(self):
+    def test_no_warning_for_a_finished_run(self):
+        # Weak on its own — a `done` state returns before the warning branch is
+        # even reached. Kept as the trivial case; the load-bearing one is
+        # `test_no_warning_for_a_running_run_whose_pid_is_alive`.
         with tempfile.TemporaryDirectory() as tmp:
             cache = Path(tmp)
             runagent.write_state("known", {"run_id": "known", "status": "done", "ok": True}, cache)
             code, _, err = _run(["--wait", "known", "--cache-dir", str(cache)])
         self.assertEqual(code, 0)
-        self.assertNotIn("cannot check", err)
+        self.assertNotIn("cannot tell", err)
 
-    def test_every_injected_clock_in_this_module_can_reach_a_deadline(self):
-        # A guard on the tests themselves. `wait_for_run` ends either because a
-        # run finishes, because a probe says the pid is gone, or because the
-        # clock passes the deadline. A clock that cannot advance removes the
-        # third, and if the first two are unavailable on some platform the loop
-        # spins with no way out — which is precisely what happened here.
+    def test_every_wait_call_in_this_module_can_terminate(self):
+        """Static guard: no wait in this file can spin if a probe stops answering.
+
+        `wait_for_run` ends for exactly three reasons — the run reaches a
+        terminal state, the probe says the pid is gone, or the clock passes the
+        deadline. A call that relies solely on the probe has no way out on a
+        platform that answers "unknown", which is how a Windows-only spin hid
+        behind a green POSIX suite for five heads.
+
+        So every call here must keep at least one *platform-independent* exit:
+
+        * an **advancing** clock (a lambda returning a constant cannot ever
+          reach a deadline), or
+        * an injected ``alive_fn`` (its answer does not depend on the platform), or
+        * **no timeout** plus an injected ``sleep`` that drives the run to a
+          terminal state.
+
+        Walking the AST rather than grepping for a literal: the previous version
+        matched one exact spelling and indentation, and missed the very call
+        that this docstring's history is about.
+        """
         source = Path(__file__).read_text(encoding="utf-8")
-        self.assertNotIn(
-            "clock=lambda: 0.0,\n                    sleep=",
-            source,
-            "a constant clock paired with a no-op sleep can hang instead of failing",
+        tree = ast.parse(source)
+        watched = {"wait_for_run", "_run_run_agent_capture"}
+        offenders = []
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
+            if name not in watched:
+                continue
+            kw = {k.arg: k.value for k in node.keywords if k.arg}
+            clock, sleep = kw.get("clock"), kw.get("sleep")
+            # A lambda whose whole body is a literal can never move.
+            constant_clock = isinstance(clock, ast.Lambda) and isinstance(clock.body, ast.Constant)
+            advancing_clock = clock is not None and not constant_clock
+            injects_probe = "alive_fn" in kw
+            # `_run_run_agent_capture` goes through the CLI, which always
+            # computes a deadline, so "no timeout" is not an escape there.
+            unbounded_but_driven = (
+                name == "wait_for_run" and "timeout" not in kw and sleep is not None
+            )
+            if not (advancing_clock or injects_probe or unbounded_but_driven):
+                offenders.append(f"{name}() at line {node.lineno}")
+
+        self.assertEqual(
+            offenders,
+            [],
+            "these waits can only terminate via the liveness probe, so they "
+            "hang instead of failing where a pid cannot be probed: " + ", ".join(offenders),
         )
+
+    def test_the_guard_above_would_catch_the_regression_it_exists_for(self):
+        """The guard must fail on the exact shape that hung Windows CI."""
+        bad = "runagent.wait_for_run('x', cache_dir=c, timeout=5, clock=lambda: 0.0)\n"
+        node = next(n for n in ast.walk(ast.parse(bad)) if isinstance(n, ast.Call))
+        kw = {k.arg: k.value for k in node.keywords if k.arg}
+        clock = kw.get("clock")
+        constant_clock = isinstance(clock, ast.Lambda) and isinstance(clock.body, ast.Constant)
+        self.assertTrue(constant_clock, "a constant-returning lambda must be recognised")
+        self.assertNotIn("alive_fn", kw)
+        self.assertIn("timeout", kw)  # so the 'unbounded but driven' escape does not apply
 
 
 class CredentialLeakTests(unittest.TestCase):

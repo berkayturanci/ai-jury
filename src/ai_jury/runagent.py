@@ -466,6 +466,29 @@ def read_state(run_id, cache_dir=None) -> dict | None:
     return data if isinstance(data, dict) else None
 
 
+class _DefaultProbe:
+    """Sentinel: resolve :func:`pid_alive` when the call happens.
+
+    Distinct from ``None`` on purpose. ``alive_fn=None`` used to mean "use the
+    default" in :func:`wait_for_run`/:func:`list_runs` but "do not probe at all"
+    in :func:`run_summary` — the same value with opposite meanings, one function
+    apart. Now ``None`` means "do not probe" everywhere and this means "use the
+    default", which cannot be confused for a caller-supplied probe.
+    """
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid
+        return "<default probe>"
+
+
+#: See :class:`_DefaultProbe`.
+DEFAULT_PROBE = _DefaultProbe()
+
+
+def _resolve_probe(alive_fn):
+    """The probe to call: the module-level default, a caller's, or none."""
+    return pid_alive if alive_fn is DEFAULT_PROBE else alive_fn
+
+
 def pid_alive(pid) -> bool | None:
     """Is that process still running? ``None`` when we cannot safely tell.
 
@@ -500,18 +523,18 @@ def pid_alive(pid) -> bool | None:
     return True
 
 
-def list_runs(cache_dir=None, alive_fn=None) -> list[dict]:
+def list_runs(cache_dir=None, alive_fn=DEFAULT_PROBE) -> list[dict]:
     """Every recorded run, newest first, as summary dicts.
 
     Summaries only: the full agent text stays in the state file, so ``--status``
     on a busy machine prints a listing rather than every transcript it ever ran.
 
-    ``alive_fn`` defaults to :func:`pid_alive` resolved at call time (see
-    :func:`wait_for_run` for why it is not a default argument). Note the
-    difference from :func:`run_summary`, which is pure: there ``alive_fn=None``
-    means "do not probe at all".
+    ``alive_fn`` defaults to :data:`DEFAULT_PROBE`, which resolves to
+    :func:`pid_alive` at call time (see :func:`wait_for_run` for why that is not
+    a default argument). Passing ``None`` means "do not probe", the same as it
+    does everywhere else.
     """
-    probe = pid_alive if alive_fn is None else alive_fn
+    probe = _resolve_probe(alive_fn)
     directory = runs_dir(cache_dir)
     try:
         names = sorted(p.stem for p in directory.glob("*.json"))
@@ -575,6 +598,33 @@ def initial_state(
     }
 
 
+def liveness_unknown_reason(state, alive_fn=DEFAULT_PROBE) -> str | None:
+    """Why a running run's liveness cannot be determined, or None when it can.
+
+    Two genuinely different situations reach the same ``pid_alive`` answer of
+    ``None``, and telling a POSIX operator that "this platform cannot probe"
+    when the truth is "the child has not claimed the run yet" is simply false:
+
+    * **No process id recorded.** The ordinary window between ``--detach``
+      writing the state file and the child claiming it — and also where a child
+      died before it could claim. Happens on every platform.
+    * **The platform cannot probe one.** Windows, where ``os.kill(pid, 0)``
+      terminates rather than probes.
+
+    A finished run has nothing to determine, so it returns None.
+    """
+    state = state or {}
+    if state.get("status") != STATUS_RUNNING:
+        return None
+    pid = state.get("pid")
+    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
+        return "it has not recorded a process id yet"
+    probe = _resolve_probe(alive_fn)
+    if probe is not None and probe(pid) is None:
+        return "this platform cannot check a process id without terminating it"
+    return None
+
+
 #: Head-room added to a run's own timeout to get a default ``--wait`` deadline:
 #: the agent has until its timeout, and the child needs a moment after that to
 #: write its state file.
@@ -601,13 +651,14 @@ def wait_for_run(
     poll_s: float = 0.25,
     sleep=time.sleep,
     clock=time.monotonic,
-    alive_fn=None,
+    alive_fn=DEFAULT_PROBE,
 ) -> tuple[dict | None, bool]:
     """Block until a detached run finishes. Returns ``(state, timed_out)``.
 
     ``sleep``, ``clock`` and ``alive_fn`` are injected so the lifecycle is
-    testable against a fake clock instead of real seconds; ``alive_fn=None``
-    means :func:`pid_alive`, looked up when this is *called*. A missing state file
+    testable against a fake clock instead of real seconds; ``alive_fn`` defaults
+    to :data:`DEFAULT_PROBE`, i.e. :func:`pid_alive` looked up when this is
+    *called*, and ``None`` disables probing. A missing state file
     is treated as "not finished yet", not as an error: a caller may legitimately
     start waiting before the child has written anything.
 
@@ -624,13 +675,13 @@ def wait_for_run(
     # patches `runagent.pid_alive` would then patch nothing while appearing to
     # work — which is exactly how a Windows-only infinite wait reached CI green
     # on every other platform.
-    probe = pid_alive if alive_fn is None else alive_fn
+    probe = _resolve_probe(alive_fn)
     deadline = None if timeout is None else clock() + float(timeout)
     while True:
         state = read_state(run_id, cache_dir)
         if state is not None and state.get("status") != STATUS_RUNNING:
             return state, False
-        if state is not None and probe(state.get("pid")) is False:
+        if state is not None and probe is not None and probe(state.get("pid")) is False:
             confirmed = read_state(run_id, cache_dir)
             if confirmed is not None and confirmed.get("status") != STATUS_RUNNING:
                 return confirmed, False
