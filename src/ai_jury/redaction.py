@@ -171,6 +171,10 @@ _ENV_NAME_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz012345
 # A real env var name is short; refuse anything longer rather than echoing it.
 _MAX_ENV_NAME_LEN = 128
 
+#: Human-readable statement of what :func:`safe_env_var_name` accepts. Lives here
+#: so a diagnostic can describe the rule without quoting the value that broke it.
+ENV_VAR_NAME_RULE = f"[A-Za-z_][A-Za-z0-9_]*, at most {_MAX_ENV_NAME_LEN} characters"
+
 
 def safe_env_var_name(raw, fallback: str) -> str:
     """A syntactically valid environment-variable NAME, safe to display.

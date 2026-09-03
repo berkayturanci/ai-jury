@@ -159,6 +159,25 @@ class ApiKeyEnvNameValidation(unittest.TestCase):
         self.assertEqual(len(warnings), 1)
         self.assertIn("is not a valid environment variable name", warnings[0])
 
+    def test_the_rejected_value_is_never_quoted_back(self):
+        # Reaching this branch means the value holds characters outside the safe
+        # set — the very class that must not be written to a terminal. The
+        # message locates the problem (agent name + rule) without reproducing it.
+        for hostile, marker in (
+            ('EVIL", "injected": "yes', "injected"),
+            ("TWO\nLINES", "TWO"),
+            ("ansi\x1b[31mred", "\x1b"),
+        ):
+            warning = validate_config(self._with(hostile))[0]
+            self.assertNotIn(marker, warning, hostile)
+            self.assertIn("api_key_env", warning)
+            self.assertIn("agent 'a'", warning)
+
+    def test_the_message_states_the_rule_it_enforces(self):
+        from ai_jury.redaction import ENV_VAR_NAME_RULE
+
+        self.assertIn(ENV_VAR_NAME_RULE, validate_config(self._with("bad name"))[0])
+
     def test_a_newline_in_the_name_warns(self):
         self.assertTrue(validate_config(self._with("TWO\nLINES")))
 
