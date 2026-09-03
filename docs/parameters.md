@@ -440,7 +440,7 @@ transcript = true   # default the markdown report to the full play-by-play
 | `command` | string | — | CLI command (not required for HTTP/API vendors or when `endpoint` is set). |
 | `model` | string | unset | Model identifier. Required for API providers and local models. |
 | `endpoint` | string | `http://localhost:11434/v1` (local) | Base URL for OpenAI-compatible HTTP providers (Ollama, OpenRouter, DeepSeek, Groq, Mistral, LiteLLM). |
-| `api_key_env` | string | unset (`OPENAI_API_KEY` default) | Environment variable name holding the API key for `openai-compatible` vendors (e.g. `DEEPSEEK_API_KEY`, `OPENROUTER_API_KEY`). |
+| `api_key_env` | string | unset (`OPENAI_API_KEY` default) | Environment variable **name** holding the API key for `openai-compatible` vendors (e.g. `DEEPSEEK_API_KEY`, `OPENROUTER_API_KEY`). Must match `[A-Za-z_][A-Za-z0-9_]*`; anything else warns and falls back to the vendor default, because this name is echoed into `jury --doctor` and its JSON export. The key's **value** is read from the environment and never displayed. |
 | `prompt_mode` | string | `stdin` | Prompt delivery for `vendor = "cli"` (`stdin` \| `arg`). |
 | `headers` | table | `{}` | Custom HTTP headers map for `openai-compatible` API calls. |
 | `effort` | string | unset | `low` \| `medium` \| `high`. Reasoning effort, mapped per vendor (see [effort](configuration.md#reasoning-effort-agent-effort----effort)). An unknown value is a hard config error; a vendor with no effort control warns once and ignores it. Overridden by `--effort`. |

@@ -131,6 +131,43 @@ class HardErrors(unittest.TestCase):
             validate_config({"jury": {"rounds": 1}, "agent": []})
 
 
+class ApiKeyEnvNameValidation(unittest.TestCase):
+    """`api_key_env` names an env var and is displayed, so it is bounded (#669)."""
+
+    @staticmethod
+    def _with(value):
+        return {
+            "jury": {"rounds": 1, "chair": "a"},
+            "agent": [
+                {
+                    "name": "a",
+                    "vendor": "openai-compatible",
+                    "model": "m",
+                    "endpoint": "http://localhost:9/v1",
+                    "api_key_env": value,
+                }
+            ],
+        }
+
+    def test_a_valid_name_is_accepted_silently(self):
+        self.assertEqual(validate_config(self._with("MY_TOKEN_VAR")), [])
+
+    def test_a_malformed_name_warns_rather_than_failing(self):
+        # Soft, not hard: the vendor default still works, but a silent fallback
+        # would leave the operator wondering why their variable is ignored.
+        warnings = validate_config(self._with('EVIL", "injected": "yes'))
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("is not a valid environment variable name", warnings[0])
+
+    def test_a_newline_in_the_name_warns(self):
+        self.assertTrue(validate_config(self._with("TWO\nLINES")))
+
+    def test_absent_key_produces_no_warning(self):
+        data = self._with("X")
+        del data["agent"][0]["api_key_env"]
+        self.assertEqual(validate_config(data), [])
+
+
 class EffortValidation(unittest.TestCase):
     """`[[agent]] effort` is a closed enum — a typo is a hard error (issue #662)."""
 

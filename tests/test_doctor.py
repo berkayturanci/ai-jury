@@ -795,5 +795,73 @@ class DoctorPureHelperTests(unittest.TestCase):
         self.assertNotIn("pw", endpoint)
 
 
+class ExportNeverCarriesACredentialTests(unittest.TestCase):
+    """The export names the env var; it never carries the value (CodeQL #669).
+
+    `py/clear-text-logging-sensitive-data` fired on the `--doctor --json` print
+    with a flow from `spec.api_key_env` — a credential-SHAPED config field that
+    holds an env var name. These tests pin the property the analyzer was really
+    asking about: what reaches stdout is a name, and only ever a valid one.
+    """
+
+    SECRET = "sk-or-v1-DOCTOREXPORT0123456789abcdefSECRETVALUE"
+
+    CONFIG = """\
+[jury]
+rounds = 1
+chair = "router"
+
+[[agent]]
+name = "router"
+vendor = "openai-compatible"
+endpoint = "http://localhost:9/v1"
+api_key_env = "MY_CUSTOM_TOKEN_VAR"
+model = "m"
+"""
+
+    def _export(self, config_text=None, env=None):
+        path = _write_config(config_text or self.CONFIG)
+        self.addCleanup(os.unlink, path)
+        with (
+            mock.patch.dict(os.environ, env or {}, clear=True),
+            mock.patch.object(doctor, "_probe_models", return_value=None),
+        ):
+            diag = doctor.build_diagnostics(path)
+        return diag, doctor.doctor_report_dict(diag)
+
+    def test_configured_env_var_name_is_reported_when_unset(self):
+        _diag, report = self._export()
+        blob = json.dumps(report)
+        self.assertIn("MY_CUSTOM_TOKEN_VAR", blob)
+        self.assertIn("MY_CUSTOM_TOKEN_VAR", report["agents"][0]["reason"])
+
+    def test_the_credential_value_never_reaches_the_export(self):
+        _diag, report = self._export(env={"MY_CUSTOM_TOKEN_VAR": self.SECRET})
+        self.assertNotIn(self.SECRET, json.dumps(report))
+
+    def test_the_credential_value_never_reaches_the_text_report(self):
+        diag, _report = self._export(env={"MY_CUSTOM_TOKEN_VAR": self.SECRET})
+        self.assertNotIn(self.SECRET, doctor.render_report(diag))
+
+    def test_the_credential_value_never_reaches_the_full_diagnostics_dict(self):
+        # --write dumps this one; it is a superset of the export.
+        diag, _report = self._export(env={"MY_CUSTOM_TOKEN_VAR": self.SECRET})
+        self.assertNotIn(self.SECRET, json.dumps(diag))
+
+    def test_a_malformed_env_var_name_cannot_reshape_the_document(self):
+        hostile = self.CONFIG.replace('"MY_CUSTOM_TOKEN_VAR"', '"EVIL\\", \\"injected\\": \\"yes"')
+        _diag, report = self._export(config_text=hostile)
+        blob = json.dumps(report)
+        self.assertNotIn("injected", blob)
+        # It falls back to the vendor default rather than echoing the config value.
+        self.assertIn("OPENAI_API_KEY", report["agents"][0]["reason"])
+        self.assertEqual(json.loads(blob), report)  # still a well-formed document
+
+    def test_a_newline_in_the_env_var_name_cannot_break_the_text_report(self):
+        hostile = self.CONFIG.replace('"MY_CUSTOM_TOKEN_VAR"', '"BROKEN\\nAgents"')
+        diag, _report = self._export(config_text=hostile)
+        self.assertNotIn("BROKEN", doctor.render_report(diag))
+
+
 if __name__ == "__main__":
     unittest.main()

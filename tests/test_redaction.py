@@ -9,7 +9,7 @@ from ai_jury.config import (
     _from_dict,
 )
 from ai_jury.orchestrator import run_jury
-from ai_jury.redaction import redact, redact_url_userinfo
+from ai_jury.redaction import redact, redact_url_userinfo, safe_env_var_name
 
 
 class RedactionTests(unittest.TestCase):
@@ -431,6 +431,58 @@ class ContextSelectionTests(unittest.TestCase):
         )
         self.assertFalse(outcome.redact_secrets)
         self.assertEqual(outcome.redaction_count, 0)
+
+
+class SafeEnvVarNameTests(unittest.TestCase):
+    """`api_key_env` is displayed, so it is rebuilt rather than passed through."""
+
+    FALLBACK = "OPENAI_API_KEY"
+
+    def _safe(self, raw):
+        return safe_env_var_name(raw, self.FALLBACK)
+
+    def test_a_valid_name_survives_unchanged(self):
+        for name in ("OPENAI_API_KEY", "_private", "A1", "a_b_9", "_"):
+            self.assertEqual(self._safe(name), name)
+
+    def test_result_is_rebuilt_not_the_input_object(self):
+        # The point of the function: the returned characters come from a module
+        # constant, so nothing derived from the config field survives into it.
+        # A separately-constructed equal string proves the identity is not reused.
+        raw = "".join(["OPEN", "AI_API_KEY"])
+        result = self._safe(raw)
+        self.assertEqual(result, raw)
+        self.assertIsNot(result, raw)
+
+    def test_structural_injection_is_refused(self):
+        # A name spliced into a JSON export or a terminal report must not be able
+        # to carry structure or control characters.
+        for hostile in (
+            'EVIL", "injected": "yes',
+            "LINE\nBREAK",
+            "TAB\tSEP",
+            "ansi\x1b[31m",
+            "quote'name",
+            "semi;colon",
+            "sp ace",
+            "uniçode",
+        ):
+            self.assertEqual(self._safe(hostile), self.FALLBACK, hostile)
+
+    def test_empty_and_non_string_fall_back(self):
+        for raw in ("", None, 7, [], {"a": 1}, True):
+            self.assertEqual(self._safe(raw), self.FALLBACK)
+
+    def test_leading_digit_is_not_a_valid_name(self):
+        self.assertEqual(self._safe("9LIVES"), self.FALLBACK)
+        self.assertEqual(self._safe("L9IVES"), "L9IVES")
+
+    def test_over_long_names_fall_back(self):
+        self.assertEqual(self._safe("A" * 128), "A" * 128)
+        self.assertEqual(self._safe("A" * 129), self.FALLBACK)
+
+    def test_fallback_is_returned_verbatim(self):
+        self.assertEqual(safe_env_var_name("no good!", "GEMINI_API_KEY"), "GEMINI_API_KEY")
 
 
 if __name__ == "__main__":

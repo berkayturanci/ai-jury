@@ -1073,14 +1073,35 @@ class _HostedApiAdapter(Adapter):
     SUPPORTS_HEADLESS = True
     SUPPORTS_MODEL_SELECTION = True
 
+    # The environment variable this vendor's credential is read FROM. A name,
+    # never a value — deliberately not called `_API_KEY_*`: the constant holds
+    # public configuration, and a credential-shaped name on a non-credential is
+    # how both a reader and a static analyzer end up misreading this path.
     # Subclasses override.
-    _API_KEY_ENV: str = ""
+    _ENV_VAR_NAME: str = "OPENAI_API_KEY"
 
-    def _api_key_env(self) -> str:
-        return (getattr(self.spec, "api_key_env", None) or self._API_KEY_ENV) or "OPENAI_API_KEY"
+    def _env_var_name(self) -> str:
+        """Name of the environment variable holding this agent's credential.
+
+        Rebuilt through :func:`redaction.safe_env_var_name`, because this value
+        is *displayed* — it reaches ``jury --doctor``, its JSON export, and
+        warning text — while ``[[agent]] api_key_env`` is an arbitrary operator
+        string. The sanitizer both bounds it to a real env var name (so a config
+        value cannot splice a newline into a JSON document) and severs it from
+        the credential-shaped config field it came from. The credential VALUE
+        never travels this way; see :meth:`_api_key`.
+        """
+        return redaction.safe_env_var_name(
+            getattr(self.spec, "api_key_env", None), self._ENV_VAR_NAME
+        )
 
     def _api_key(self) -> str:
-        return os.environ.get(self._api_key_env(), "")
+        """The credential itself. NEVER rendered — only compared and sent.
+
+        Kept under a deliberately sensitive name so any future flow from here
+        into a log or an export is reported rather than blending in.
+        """
+        return os.environ.get(self._env_var_name(), "")
 
     def _api_url(self) -> str:  # pragma: no cover - overridden
         raise NotImplementedError
@@ -1101,7 +1122,7 @@ class _HostedApiAdapter(Adapter):
         """
         if any(ord(ch) < 0x20 or ord(ch) == 0x7F for ch in self._api_key()):
             return (
-                f"{self._api_key_env()} contains a control character (e.g. a stray "
+                f"{self._env_var_name()} contains a control character (e.g. a stray "
                 f"trailing newline from how the secret was loaded) and cannot be "
                 f"used as an HTTP header value"
             )
@@ -1145,7 +1166,7 @@ class _HostedApiAdapter(Adapter):
         invalid_reason = self._invalid_key_reason() if key_set else None
         has_key = key_set and invalid_reason is None
         if not key_set:
-            warnings = [f"{self._api_key_env()} is not set in the environment"]
+            warnings = [f"{self._env_var_name()} is not set in the environment"]
         elif invalid_reason:
             warnings = [invalid_reason]
         else:
@@ -1182,7 +1203,7 @@ class _HostedApiAdapter(Adapter):
                 False,
                 "",
                 0.0,
-                f"{self._api_key_env()} is not set in the environment",
+                f"{self._env_var_name()} is not set in the environment",
                 error_code=ERR_MISSING_API_KEY,
             )
         invalid_reason = self._invalid_key_reason()
@@ -1239,7 +1260,7 @@ class AnthropicApiAdapter(_HostedApiAdapter):
     CLI install or interactive login needed.
     """
 
-    _API_KEY_ENV = "ANTHROPIC_API_KEY"
+    _ENV_VAR_NAME = "ANTHROPIC_API_KEY"
 
     def _api_url(self) -> str:
         return _ANTHROPIC_API_URL
@@ -1294,7 +1315,7 @@ class OpenAiApiAdapter(_HostedApiAdapter):
     against the real hosted API with an ``Authorization`` header.
     """
 
-    _API_KEY_ENV = "OPENAI_API_KEY"
+    _ENV_VAR_NAME = "OPENAI_API_KEY"
 
     def _api_url(self) -> str:
         return _OPENAI_API_URL
@@ -1354,7 +1375,7 @@ class GoogleApiAdapter(_HostedApiAdapter):
     not required for parity with the other two adapters.
     """
 
-    _API_KEY_ENV = "GEMINI_API_KEY"
+    _ENV_VAR_NAME = "GEMINI_API_KEY"
 
     def _api_url(self) -> str:
         # Escape the model id as a single path segment (issue #432 review): an
@@ -1488,7 +1509,7 @@ class GenericOpenAICompatibleAdapter(_HostedApiAdapter):
     Supports custom ``endpoint``, custom ``api_key_env``, and extra HTTP ``headers``.
     """
 
-    _API_KEY_ENV = "OPENAI_API_KEY"
+    _ENV_VAR_NAME = "OPENAI_API_KEY"
 
     def _api_url(self) -> str:
         endpoint = (self.spec.endpoint or _OPENAI_API_URL).rstrip("/")

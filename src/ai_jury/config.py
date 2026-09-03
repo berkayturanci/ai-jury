@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from .redaction import redact
+from .redaction import redact, safe_env_var_name
 
 # Hosts that are safe to reach over plaintext http and never an SSRF target.
 _LOOPBACK_HOSTS = ("localhost", "127.0.0.1", "::1", "[::1]")
@@ -428,6 +428,18 @@ def validate_config(data: dict, strict: bool = False) -> list:
         if not isinstance(a_timeout, int) or isinstance(a_timeout, bool) or a_timeout <= 0:
             errors.append(
                 f"agent '{label}' timeout must be a positive integer (got {a_timeout!r})."
+            )
+
+        # `api_key_env` names an environment variable and is echoed into
+        # diagnostics, so it is bounded to a real env var name (see
+        # redaction.safe_env_var_name). Warn rather than fail: the vendor
+        # default still works, but the operator should not discover the
+        # silent fallback by wondering why their variable is ignored.
+        key_env = agent.get("api_key_env")
+        if key_env is not None and safe_env_var_name(key_env, "") != key_env:
+            warnings.append(
+                f"agent '{label}' api_key_env {key_env!r} is not a valid environment "
+                f"variable name; the vendor default will be used."
             )
 
         # Reasoning effort (hard when present and not a known level, issue
