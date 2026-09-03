@@ -130,7 +130,9 @@ BOT_SUBJECT_MARKER = re.compile(
 )
 
 #: ``Merge branch 'main' into <branch>`` — GitHub's "Update branch" click, and
-#: ``git merge main`` by hand. Group 1 is the branch that was merged *in*.
+#: ``git merge main`` by hand. Group 1 is the ref that was merged *in*, kept whole:
+#: ``topic/main`` is a topic branch somebody wrote, not the base branch, and
+#: reading only the last path segment excused it as routine.
 MERGE_OF_BRANCH = re.compile(
     r"^merge\s+(?:remote-tracking\s+)?branch\s+'?([^\s']+)'?",
     re.IGNORECASE,
@@ -223,9 +225,22 @@ class Commit:
         return len(self.parents) > 1
 
     def merges_in(self) -> str:
-        """The branch this commit merged in, from its subject, or ``""``."""
+        """The whole ref this commit merged in, from its subject, or ``""``."""
         found = MERGE_OF_BRANCH.match(self.subject.strip())
-        return found.group(1).rsplit("/", 1)[-1].lower() if found else ""
+        return found.group(1).strip().lower() if found else ""
+
+    def merges_in_the_base(self, base_ref: str) -> bool:
+        """Whether this commit merged *the base branch* in, and nothing else.
+
+        Compared against an explicit set — the base, and the two remote spellings
+        git writes for it — rather than by taking the last path segment of
+        whatever was merged. ``Merge branch 'topic/main' into bolt-x`` ends in the
+        base's name while being somebody's topic branch, and excusing it as
+        routine is a hole a subject line can be written straight through.
+        """
+        base = base_ref.strip().lower()
+        merged = self.merges_in()
+        return bool(base and merged) and merged in {base, f"origin/{base}", f"upstream/{base}"}
 
     def taken_over_by_a_person(self) -> bool:
         """Whether somebody other than the author created this commit object.
@@ -250,13 +265,18 @@ class Commit:
         of the bot pull requests in the history. Only that shape is excused — any
         other merge is classified like any other commit, so a merge of some third
         branch, or one whose subject was rewritten, still registers as a person.
+
+        The exemption is applied **last**, after the bot signals: a push made *as*
+        a merge of the base branch is still a push. Testing it first excused a
+        merge commit authored by a bot account, which is the incident's own shape
+        wearing a routine subject line.
         """
-        if self.is_merge() and base_ref and self.merges_in() == base_ref.rsplit("/", 1)[-1].lower():
-            return "neutral"
         if self.taken_over_by_a_person():
             return "human"
         if BOT_SUBJECT_MARKER.match(self.subject) or self.author.is_bot_account():
             return "bot"
+        if self.is_merge() and self.merges_in_the_base(base_ref):
+            return "neutral"
         if self.author.is_neutral():
             return "neutral"
         return "human"

