@@ -3,7 +3,7 @@
 `RELEASE_SURFACES` replaced three disjoint lists — `VERSION_MARKERS` in
 `scripts/verify_merge.py`, `SITE_SURFACES` in `tests/test_release_metadata.py`,
 and two hard-coded assertions in `tests/test_homebrew_formula.py`. Consolidating
-them is only worth anything if all three really read the table, so the tests
+them is only worth anything if every reader really reads the table, so the tests
 below monkeypatch it and run the guards themselves:
 
 * remove an entry and every guard must stop looking at that file, even when it
@@ -12,6 +12,16 @@ below monkeypatch it and run the guards themselves:
 
 A guard that kept a private copy would pass one direction and fail the other,
 which is the failure this issue exists to make impossible (#665).
+
+The three are `check_version_integrity` (the merge gate), `check_release_surfaces`
+(`make release-check`, which is a different command with a different failure mode
+— it does not require git tags) and `tests/test_release_metadata.py`. The formula
+test was the third until #666 deleted `Formula/ai-jury.rb`: a committed formula
+names an sdist url and digest that cannot be known before the tag, so the file
+could not be made correct and was removed rather than repaired again. Nothing in
+`tests/test_homebrew_formula.py` reads the table now — it checks that rendering
+`packaging/homebrew/ai-jury.rb.template` produces a formula, and a template whose
+version is the literal `@VERSION@` cannot go stale.
 
 The fixture is a miniature repository — one file per surface, all naming the
 same version, with a matching git tag — so the guards can be pointed at it
@@ -38,23 +48,13 @@ import verify_merge  # noqa: E402
 
 from ai_jury import __version__  # noqa: E402
 
-FORMULA_TEMPLATE = """class AiJury < Formula
-  include Language::Python::Virtualenv
-
-  desc "Cross-vendor multi-agent PR & code review jury"
-  url "https://files.pythonhosted.org/packages/aa/bb/ai_jury-{v}.tar.gz"
-  sha256 "{sha}"
-
-  # A version-bearing string the table does not list. Unlisted is unwatched,
-  # which is the whole failure class — `test_adding_an_entry_...` registers it
-  # and every guard has to start objecting to it.
-  head "https://github.com/berkayturanci/ai-jury/archive/refs/tags/v9.9.9.tar.gz"
-
-  test do
-    assert_match "jury {v}", shell_output("#{{bin}}/jury --version")
-  end
-end
-"""
+#: A version-bearing string the table does not list, planted in a file the table
+#: *does* list. Unlisted is unwatched, which is the whole failure class —
+#: `test_adding_an_entry_...` registers it and every guard has to start objecting.
+#:
+#: It lived in the fixture formula until #666 deleted the real one; any listed
+#: file does as well, now that no guard reads a single file of its own.
+UNLISTED_MARKER = "pinned: ai-jury==9.9.9"
 
 #: One file per surface path in the table, each naming `{v}`. Written out rather
 #: than derived from the patterns: a fixture generated from the thing under test
@@ -69,22 +69,18 @@ FIXTURE_FILES = {
     "website/index.html": '<a class="ver" id="site-version" href="/latest">v{v}</a>\n',
     "website/app.js": 'config: "repo: x\\n    rev: v{v}\\n"\n',
     "README.md": "    rev: v{v}\n\nActive (v{v}).\n",
-    "docs/cookbook.md": "    rev: v{v}\n",
-    "Formula/ai-jury.rb": FORMULA_TEMPLATE,
+    "docs/cookbook.md": "    rev: v{v}\n\n" + UNLISTED_MARKER + "\n",
 }
 
-#: The unlisted marker planted in the fixture formula above, and the entry that
-#: would register it. Kept inside a file the table already lists so that all
-#: three guards — including the formula test, which only looks at the formula —
-#: are in a position to notice it once it is added.
-UNLISTED_PATH = "Formula/ai-jury.rb"
-UNLISTED_ENTRY = ("Formula/ai-jury.rb", "formula", r"refs/tags/v(\d+\.\d+\.\d+)\.tar\.gz")
+#: Where that marker sits, and the entry that would register it.
+UNLISTED_PATH = "docs/cookbook.md"
+UNLISTED_ENTRY = ("docs/cookbook.md", "site", r"pinned: ai-jury==(\d+\.\d+\.\d+)")
 
 
 def _write(root: Path, rel: str, version: str) -> None:
     path = root / rel
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(FIXTURE_FILES[rel].format(v=version, sha="0" * 64), encoding="utf-8")
+    path.write_text(FIXTURE_FILES[rel].format(v=version), encoding="utf-8")
 
 
 def _git(root: Path, *args: str) -> None:
@@ -114,21 +110,24 @@ def _fixture(root: Path, version: str = __version__) -> None:
 def _guard_failures(root: Path) -> dict[str, list[str]]:
     """Run all three guards against `root` and collect what each objected to.
 
-    The two test-module guards are executed as the real `TestCase` methods they
-    are, with their `REPO_ROOT` pointed at the fixture. Re-deriving what they
-    would have said would be testing a paraphrase of them.
+    `check_version_integrity` and `check_release_surfaces` are separate commands
+    with separate failure modes — the merge gate also compares against git tags,
+    `make release-check` deliberately does not — so a table read by one and not
+    the other would still let a surface go unwatched from a shallow clone.
+
+    The test-module guard is executed as the real `TestCase` method it is, with
+    its `REPO_ROOT` pointed at the fixture. Re-deriving what it would have said
+    would be testing a paraphrase of it.
     """
-    failures = {"verify_merge": verify_merge.check_version_integrity(root)}
+    failures = {
+        "verify_merge": verify_merge.check_version_integrity(root),
+        "release_check": verify_merge.check_release_surfaces(root),
+    }
     for module_name, case_name, method in (
         (
             "test_release_metadata",
             "NoUserFacingSurfaceCarriesAStaleVersion",
             "test_every_surface_names_the_current_version",
-        ),
-        (
-            "test_homebrew_formula",
-            "HomebrewFormulaTests",
-            "test_formula_file_exists_and_matches_version",
         ),
     ):
         module = importlib.import_module(module_name)
@@ -170,10 +169,25 @@ class TheTableDescribesThisTree(unittest.TestCase):
             "website/app.js",  # #646
             ".claude-plugin/plugin.json",  # #284
             ".codex-plugin/plugin.json",  # #437
-            "Formula/ai-jury.rb",  # #562
         ):
             with self.subTest(path=path):
                 self.assertIn(path, covered)
+
+    def test_the_formula_is_not_a_surface_because_there_is_no_formula(self):
+        """#562 was a formula surface; #666 removed the file rather than the symptom.
+
+        A committed formula names an sdist url and digest that cannot be known
+        until the tag is pushed, so it could not be correct and needed a second
+        write to `main` after every release. What is left is a template naming
+        `@VERSION@`, which no guard needs to watch because a placeholder cannot
+        go stale. Listing it would fail every run.
+        """
+        covered = {surface.path for surface in release_surfaces.RELEASE_SURFACES}
+        self.assertNotIn("Formula/ai-jury.rb", covered)
+        self.assertFalse((REPO_ROOT / "Formula" / "ai-jury.rb").exists())
+        template = REPO_ROOT / "packaging" / "homebrew" / "ai-jury.rb.template"
+        self.assertIn("@VERSION@", template.read_text(encoding="utf-8"))
+        self.assertEqual(release_surfaces.find_versions(REPO_ROOT).get(str(template)), None)
 
     def test_the_fixture_covers_every_surface(self):
         """Otherwise a new surface would be silently untested by everything below."""
@@ -268,7 +282,8 @@ class AllThreeGuardsReadTheSameTable(unittest.TestCase):
 
     def test_removing_an_entry_makes_every_guard_ignore_that_file(self):
         _write(self.root, "website/app.js", "9.9.9")
-        _write(self.root, "Formula/ai-jury.rb", "9.9.9")
+        # Listed twice under one path, so dropping the path must drop both rows.
+        _write(self.root, "README.md", "9.9.9")
 
         with_it = _guard_failures(self.root)
         for guard, failures in with_it.items():
@@ -279,7 +294,7 @@ class AllThreeGuardsReadTheSameTable(unittest.TestCase):
             tuple(
                 surface
                 for surface in release_surfaces.RELEASE_SURFACES
-                if surface.path not in ("website/app.js", "Formula/ai-jury.rb")
+                if surface.path not in ("website/app.js", "README.md")
             )
         )
         for guard, failures in _guard_failures(self.root).items():
@@ -287,9 +302,9 @@ class AllThreeGuardsReadTheSameTable(unittest.TestCase):
                 self.assertEqual(failures, [], f"{guard} still checks a file the table dropped")
 
     def test_adding_an_entry_makes_every_guard_check_that_file(self):
-        # The fixture formula already carries a stale `head` url; nothing looks at
-        # it, because looking at it is what registering it means.
-        self.assertIn("v9.9.9", (self.root / UNLISTED_PATH).read_text(encoding="utf-8"))
+        # The fixture cookbook already carries a stale pin; nothing looks at it,
+        # because looking at it is what registering it means.
+        self.assertIn(UNLISTED_MARKER, (self.root / UNLISTED_PATH).read_text(encoding="utf-8"))
         for guard, failures in _guard_failures(self.root).items():
             with self.subTest(guard=guard, listed=False):
                 self.assertEqual(failures, [], f"{guard} objected before the marker was listed")

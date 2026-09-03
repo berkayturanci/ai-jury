@@ -295,7 +295,10 @@ class ThePublishedReleaseIsInstalledAndRun(WorkflowScan):
         the mistake the online formula check already made once.
         """
         body = "\n".join(self.verify)
-        self.assertIn("contents/Formula/ai-jury.rb", self.verify_code)
+        # Anchored on the tap's path, not a bare `Formula/ai-jury.rb`: this
+        # repository no longer has that file, and an assertion that would also
+        # match a re-added local copy is not asserting what it says.
+        self.assertIn("repos/${TAP}/contents/Formula/ai-jury.rb", self.verify_code)
         self.assertIn("does not serve ${version}", self.verify_code)
         self.assertIn("if: needs.build-n-publish.outputs.pushed-to-tap == 'true'", body)
         self.assertIn("if: needs.build-n-publish.outputs.pushed-to-tap != 'true'", body)

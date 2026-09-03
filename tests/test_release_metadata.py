@@ -18,8 +18,8 @@ Worse, it looked automatic: the element carries `id="site-version"` and links to
 rather than hard-coding it.
 
 Which files those are is no longer decided here. `scripts/release_surfaces.py`
-holds the one table, shared with `scripts/verify_merge.py` and
-`tests/test_homebrew_formula.py`; this module used to keep a third copy called
+holds the one table, shared with `scripts/verify_merge.py` and its
+`--check-surfaces` entry point; this module used to keep a third copy called
 `SITE_SURFACES`, and a surface registered in one list and not the others is
 exactly how the website went stale (#665).
 

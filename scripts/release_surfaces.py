@@ -11,9 +11,20 @@ disagreed about which list was authoritative.
 `RELEASE_SURFACES` is now that single list, and #665 is the change that made
 adding a surface a one-line edit reviewed once. All three guards read it:
 
-* `scripts/verify_merge.py` — cross-file agreement plus monotonicity vs. git tags.
+* `scripts/verify_merge.py` — cross-file agreement plus monotonicity vs. git tags,
+  run on every merge.
+* `scripts/verify_merge.py --check-surfaces` (`make release-check`) — the same
+  table without the git-tag requirement, so a maintainer can run it from a
+  shallow clone before cutting a release.
 * `tests/test_release_metadata.py` — every surface names what `pyproject.toml` does.
-* `tests/test_homebrew_formula.py` — the formula's own version markers.
+
+The formula was a fourth reader until #666, which deleted `Formula/ai-jury.rb`
+outright: a committed formula names an sdist url and digest that are unknowable
+until the tag is pushed, so it could never be right. What remains is
+`packaging/homebrew/ai-jury.rb.template`, whose version is the literal `@VERSION@`
+until the release renders it. A placeholder cannot go stale, so the template is
+not a surface, and `tests/test_homebrew_formula.py` checks the rendering rather
+than a version.
 
 Patterns are anchored on surrounding context rather than scanning for anything
 shaped like a version: `website/app.js` contains numbers such as `1.19.214` and
@@ -65,8 +76,8 @@ class Surface(NamedTuple):
     #: Repository-relative path, POSIX separators.
     path: str
     #: What kind of surface this is — package metadata, a lock file, a plugin
-    #: manifest, something a user reads, or the Homebrew formula. Informational
-    #: for humans and for error messages; the guards check every kind.
+    #: manifest, or something a user reads. Informational for humans and for
+    #: error messages; the guards check every kind.
     kind: str
     #: Regex with one group, or a callable over the file's text.
     pattern: Pattern
@@ -88,10 +99,11 @@ class Surface(NamedTuple):
 #: behind on main while the check reported agreement (#556); the website sat two
 #: releases behind (#646).
 #:
-#: `Formula/ai-jury.rb` is listed for its *version* markers only. Its `url` and
-#: `sha256` are checked by `tests/test_homebrew_formula.py`, which knows why they
-#: legitimately disagree with the tree between the release PR and the tag — see
-#: `missing_artifact_is_a_defect` there. That logic is referenced, not restated.
+#: The Homebrew formula is deliberately absent. It used to be listed for its
+#: version markers, and it was also the one surface that could not be made
+#: correct: its url and digest are unknowable until the tag exists. #666 deleted
+#: it rather than keep repairing it, so there is no file left to list — the
+#: template names `@VERSION@` and the release renders it.
 RELEASE_SURFACES: tuple[Surface, ...] = (
     Surface("pyproject.toml", "package", rf'^version\s*=\s*"{SEMVER}"', required=True),
     Surface("src/ai_jury/__init__.py", "package", rf'__version__\s*=\s*"{SEMVER}"', required=True),
@@ -104,8 +116,6 @@ RELEASE_SURFACES: tuple[Surface, ...] = (
     Surface("README.md", "site", rf"rev: v{SEMVER}"),
     Surface("README.md", "site", rf"Active \(v{SEMVER}\)"),
     Surface("docs/cookbook.md", "site", rf"rev: v{SEMVER}"),
-    Surface("Formula/ai-jury.rb", "formula", rf"ai_jury-{SEMVER}\.tar\.gz"),
-    Surface("Formula/ai-jury.rb", "formula", rf"jury {SEMVER}"),
 )
 
 #: The distinct paths, in table order, so a guard's success line can name what it

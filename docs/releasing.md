@@ -62,8 +62,14 @@ can't pass silently. `skip-existing` keeps re-runs idempotent.
 
 One table, [`scripts/release_surfaces.py`](../scripts/release_surfaces.py), lists
 every file that names the release — package metadata, `uv.lock`, both plugin
-manifests, the website, the README, the cookbook, and the Homebrew formula —
-together with the pattern that reads the version out of each.
+manifests, the website, the README, and the cookbook — together with the pattern
+that reads the version out of each.
+
+The Homebrew formula is not on that list, and its absence is deliberate: #666
+deleted `Formula/ai-jury.rb` rather than keep repairing a file whose url and
+digest cannot be known before the tag. What is left is
+`packaging/homebrew/ai-jury.rb.template`, which names `@VERSION@` until the
+release renders it — a placeholder cannot go stale, so nothing needs to watch it.
 
 Three guards read that table, and none of them keeps its own copy:
 
@@ -71,7 +77,7 @@ Three guards read that table, and none of them keeps its own copy:
 | --- | --- |
 | `scripts/verify_merge.py --check-version` (CI, `fetch-depth: 0`) | Do the surfaces present agree, and has the version not gone backwards from the last `v*` tag? |
 | `scripts/verify_merge.py --check-surfaces` (`make release-check`) | Does **every** listed surface name what `pyproject.toml` declares? |
-| `tests/test_release_metadata.py`, `tests/test_homebrew_formula.py` | The same question, in the unit suite, plus the formula's url and digest. |
+| `tests/test_release_metadata.py` | The same question, in the unit suite, on every pull request. |
 
 Registering a new surface is one line in that table (#665). It used to be three
 lines in three files, and the surface that was missed is the one that went stale:

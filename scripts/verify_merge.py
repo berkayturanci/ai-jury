@@ -37,8 +37,8 @@ def _load_release_surfaces():
 
 
 #: Every file that carries the project's version lives in one table, shared with
-#: `tests/test_release_metadata.py` and `tests/test_homebrew_formula.py`. A marker
-#: missing from it is a marker nothing watches — `uv.lock` was outside the set and
+#: `tests/test_release_metadata.py` and with this script's own `--check-surfaces`
+#: entry point. A marker missing from it is a marker nothing watches — `uv.lock` was outside the set and
 #: sat a release behind on main while the check reported agreement (#556), and the
 #: website sat two releases behind because registering a surface meant editing
 #: three disjoint lists (#646, #665).
