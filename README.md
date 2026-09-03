@@ -81,12 +81,22 @@ python3 -m coverage run -m unittest discover -s tests
 python3 -m coverage report
 ```
 
-**Threshold.** The minimum total coverage is **99%**, configured once in
-`pyproject.toml` under `[tool.coverage.report] fail_under` and enforced by a
+**Threshold.** The enforced minimum total coverage is **98%** — one number,
+`fail_under` in `pyproject.toml` under `[tool.coverage.report]`, enforced by a
 dedicated `coverage` job in CI (`.github/workflows/ci.yml`, Ubuntu / Python
 3.13). CI fails if total coverage drops below that floor. The gate runs in a
 single job rather than across the whole test matrix to keep CI cheap and free of
-cross-OS path noise.
+cross-OS path noise. `tests/test_docs_coverage_gate.py` asserts the percentage in
+this paragraph is still the one `pyproject.toml` sets, because the two were out
+of step for several releases.
+
+**The floor is not the measurement.** The gate is deliberately set below what the
+suite actually reaches, so that an unrelated refactor moving the total by a
+fraction of a point is caught in review rather than by a red CI job, and it is
+raised on purpose as coverage improves. For the current *measured* total see the
+comment directly above `fail_under` in `pyproject.toml`, the live
+[coverage badge](https://ai-jury.dev/coverage/), or your own `make coverage` run
+— not this paragraph, which would go stale.
 
 **Measurement method.** Branch coverage is enabled (`branch = true`) and the
 package is measured by import name (`source = ["ai_jury"]`).
