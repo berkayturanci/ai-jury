@@ -14,6 +14,13 @@ jobs:
   build-n-publish:
     name: Build, Publish to PyPI, and Create GitHub Release
     runs-on: ubuntu-latest
+    outputs:
+      # Whether the formula was pushed to the tap synchronously. The `verify`
+      # job below asks a different question of the tap depending on the answer:
+      # with a push, the tap must already carry this release; without one, the
+      # tap is eventually consistent on its own schedule and demanding it now
+      # would fail every release.
+      pushed-to-tap: ${{ steps.tap.outputs.has_tap_token }}
     permissions:
       id-token: write       # PyPI trusted publishing (OIDC) + provenance attestation
       contents: write       # create the GitHub Release and upload assets
@@ -196,6 +203,40 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # `if:` cannot read `secrets.*`, so the presence of the token becomes a
+      # step output that both the push below and the `verify` job can gate on.
+      #
+      # Without this the push step ran unconditionally, `gh` was handed an empty
+      # token, and `gh api -X PUT` returned 401 under `set -euo pipefail` — which
+      # fails the release job *after* PyPI and the GitHub Release have succeeded,
+      # reporting a good release as broken. Exactly the failure mode #633 warns
+      # about, arriving from the other direction.
+      - name: Decide whether the tap can be pushed directly
+        id: tap
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -n "${TAP_TOKEN}" ]; then
+            echo "has_tap_token=true" >> "$GITHUB_OUTPUT"
+            echo "HOMEBREW_TAP_TOKEN is set; the tap will be updated by this run."
+            exit 0
+          fi
+          echo "has_tap_token=false" >> "$GITHUB_OUTPUT"
+          echo "::warning title=Homebrew tap not updated by this release::HOMEBREW_TAP_TOKEN is not set, so this run cannot write berkayturanci/homebrew-ai-jury. brew will keep serving the previous release until the tap catches up. Two ways to fix it, either is sufficient: (1) set the HOMEBREW_TAP_TOKEN repository secret to a PAT with contents:write on the tap, which makes every release update it within seconds; or (2) repoint the tap's .github/workflows/sync-formula.yml at https://github.com/berkayturanci/ai-jury/releases/latest/download/ai-jury.rb, which needs no credential at either end (a ready-to-apply patch is in packaging/homebrew/)."
+          {
+            echo "### ⚠️ Homebrew tap not updated by this release"
+            echo
+            echo "\`HOMEBREW_TAP_TOKEN\` is not set, so this run cannot push to the tap."
+            echo "The formula is attached to this release as \`ai-jury.rb\` and is correct;"
+            echo "only its delivery is pending. Either:"
+            echo
+            echo "1. set \`HOMEBREW_TAP_TOKEN\` (a PAT with \`contents:write\` on the tap), or"
+            echo "2. repoint the tap's \`sync-formula.yml\` at"
+            echo "   \`https://github.com/berkayturanci/ai-jury/releases/latest/download/ai-jury.rb\`"
+            echo "   — see \`packaging/homebrew/tap-sync-formula.patch\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Publish the formula to the Homebrew tap
         # The repo's copy is not the copy brew installs — keel fixed its own
         # formula, went green, and users kept getting the broken one until the tap
@@ -210,15 +251,12 @@ jobs:
         # With HOMEBREW_TAP_TOKEN set the tap updates within seconds instead of
         # within its schedule interval, so the failure mode without it is latency
         # rather than a red release or a stale tap.
+        if: steps.tap.outputs.has_tap_token == 'true'
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           TAP: berkayturanci/homebrew-ai-jury
         run: |
           set -euo pipefail
-          if [ -z "${GH_TOKEN}" ]; then
-            echo "::notice::HOMEBREW_TAP_TOKEN not set — the tap will pick this up on its own schedule."
-            exit 0
-          fi
           gh api "repos/${TAP}/contents/Formula/ai-jury.rb" --jq .sha > .tap-sha || echo "" > .tap-sha
           gh api -X PUT "repos/${TAP}/contents/Formula/ai-jury.rb" \
             -f message="chore: sync formula for ${GITHUB_REF_NAME} (from ${GITHUB_REPOSITORY}@${GITHUB_SHA})" \
@@ -308,14 +346,13 @@ jobs:
       - name: The installed CLI runs its own diagnostics
         run: /tmp/verify-venv/bin/jury --doctor
 
-      # No `brew` here on purpose: installing Homebrew on a Linux runner to read
-      # one field is slower and more fragile than reading the field. What matters
-      # is that the digest the tap tells `brew` to expect is the digest of the
-      # sdist PyPI actually serves.
-      - name: The tap's formula carries the digest of the published sdist
+      # The formula this release actually shipped, checked against the artifact
+      # it points at. This is the authoritative check and it is unconditional:
+      # the release asset is written by the job above, in this run, so there is
+      # nothing to wait for and nothing that can be eventually consistent.
+      - name: The formula this release published names the sdist it published
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAP: berkayturanci/homebrew-ai-jury
         run: |
           set -euo pipefail
           version="${GITHUB_REF_NAME#v}"
@@ -334,6 +371,38 @@ jobs:
             exit 1
           fi
 
+          gh release download "${GITHUB_REF_NAME}" --pattern ai-jury.rb --dir . --clobber
+          asset_url="$(grep -m1 -oE 'url "[^"]+"' ai-jury.rb | cut -d'"' -f2)"
+          asset_sha="$(grep -m1 -oE 'sha256 "[0-9a-f]{64}"' ai-jury.rb | cut -d'"' -f2)"
+          if [ "$asset_url" != "$sdist_url" ]; then
+            echo "::error::the published formula points at ${asset_url}, not ${sdist_url}"
+            exit 1
+          fi
+          if [ "$asset_sha" != "$got" ]; then
+            echo "::error::the published formula expects ${asset_sha}; the sdist hashes to ${got}"
+            exit 1
+          fi
+          echo "$got" > sdist.sha256
+          echo "the published formula is verified against ${sdist_url}"
+
+      # Only when this run pushed the tap. Without HOMEBREW_TAP_TOKEN nothing
+      # wrote the tap in this run, and it catches up on a schedule measured in
+      # tens of minutes — so polling it here for 150 seconds would fail every
+      # release over latency that is by design. The tap is not unchecked in that
+      # case: `ci.yml` runs the tap's own online tests on every pull request, and
+      # the tap runs its own.
+      #
+      # No `brew` here on purpose: installing Homebrew on a Linux runner to read
+      # one field is slower and more fragile than reading the field.
+      - name: The tap serves what this release published
+        if: needs.build-n-publish.outputs.pushed-to-tap == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAP: berkayturanci/homebrew-ai-jury
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          got="$(cat sdist.sha256)"
           tap_sha=""
           for attempt in $(seq 1 10); do
             gh api "repos/${TAP}/contents/Formula/ai-jury.rb" \
@@ -353,7 +422,12 @@ jobs:
             echo "::error::the tap tells brew to expect ${tap_sha}; the sdist hashes to ${got}"
             exit 1
           fi
-          echo "the tap is verified against ${sdist_url}"
+          echo "the tap is verified against the published sdist"
+
+      - name: Note that the tap is still catching up
+        if: needs.build-n-publish.outputs.pushed-to-tap != 'true'
+        run: |
+          echo "::notice title=Tap not checked::This run did not push the tap (HOMEBREW_TAP_TOKEN is unset), so brew will not see ${GITHUB_REF_NAME} until the tap syncs. The formula this release published is verified above; only its delivery is pending. See packaging/homebrew/README.md."
 
       # A failed check that only reddens a workflow nobody is watching is the
       # failure mode this whole chain kept repeating. So the failure becomes a

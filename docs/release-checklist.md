@@ -93,8 +93,8 @@ true to announce/publish) and **Nice-to-have** (improves polish, not a blocker).
      to run, and compares the tap's digest with the published sdist's. On failure
      it opens or updates a `release-broken: vX.Y.Z` issue.
    - **Commits nothing.** Step 5 above is the only write to `main` a release makes.
-8. Read the `verify` job's log — it is the machine-checked half of step 9 — and
-   spot-check what it cannot see:
+8. Read the `verify` job's log — it has already installed the release and run it —
+   then spot-check what it cannot see:
    - Homebrew: `brew update && brew info berkayturanci/ai-jury/ai-jury && brew fetch --formula berkayturanci/ai-jury/ai-jury`
    - Supply-chain: `sha256sum -c SHA256SUMS` and `gh attestation verify <wheel> --repo berkayturanci/ai-jury`
 9. Confirm the PyPI page, README rendering, and badges.

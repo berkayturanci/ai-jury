@@ -68,21 +68,40 @@ Step 1 is the only write to `main`. Nothing after the tag commits anything here.
 This repo's tap has no `main` copy to pull, so the formula travels as a release
 asset (credential-free at both ends) with a direct push as the fast path.
 
-### The one thing the tap still has to be told
+### The one thing the tap has to be told, and the gate that enforces it
 
-`berkayturanci/homebrew-ai-jury`'s `sync-formula.yml` currently pulls
+`berkayturanci/homebrew-ai-jury`'s `sync-formula.yml` pulled
 `berkayturanci/ai-jury` → `main` → `Formula/ai-jury.rb`, which no longer exists.
-Its source must move to the release asset:
+With the file gone that curl 404s, `curl -fsSL` exits 22, and the tap's sync job
+fails every thirty minutes forever — the shape of #630, arriving from a new
+direction.
+
+So the source moves to the release asset:
 
 ```
 https://github.com/berkayturanci/ai-jury/releases/latest/download/ai-jury.rb
 ```
 
-Until it does, the tap keeps serving the formula it already has — installs keep
-working, they simply do not advance — and the tap's sync job fails visibly rather
-than quietly reverting the tap to an older release. Setting `HOMEBREW_TAP_TOKEN`
-in this repository makes the push path carry every release to the tap within
-seconds and is the other half of the same fix.
+That change cannot be made from this repository, so the *ordering* is enforced
+from here instead. `packaging/homebrew/tap-sync-formula.patch` is the change,
+ready to `git apply`, and `tests/test_homebrew_formula.py` **fails while
+`Formula/ai-jury.rb` is absent and `packaging/homebrew/TAP_REPOINTED` does not
+exist**. The deletion cannot merge until someone records that the tap has been
+repointed; with `AI_JURY_CHECK_EXTERNAL=1` the same file reads the tap's live
+workflow and refuses the retired path, so the marker records something checked
+rather than something claimed.
+
+This is a gate a person must satisfy deliberately, and it is satisfiable at any
+moment — unlike the digest gate that used to block every release pull request,
+where no value of the file could pass. It and the marker are single-use and can
+be deleted once the tap has been repointed for a release or two.
+
+Setting `HOMEBREW_TAP_TOKEN` in this repository is complementary: it makes the
+push path carry every release to the tap within seconds instead of within the
+tap's schedule. Until it is set, `publish.yml` skips the push (guarded on a step
+output, since `if:` cannot read `secrets.*`), emits a `::warning::` naming both
+fixes, and the `verify` job checks the *release asset* rather than polling a tap
+nothing pushed.
 
 ## Every guard, and what it catches
 
@@ -94,6 +113,8 @@ seconds and is the other half of the same fix.
 | the url belongs to this project and names the declared version | `tests/test_homebrew_formula.py` | offline rule | a url that resolves but to the wrong file (#562) |
 | the tap's url downloads and hashes to its digest | `tests/test_homebrew_formula.py` | online | a tap `brew` would refuse (#633) |
 | the release path writes nothing to `main` | `tests/test_publish_release_chain.py` | offline | the second write being reintroduced |
+| the tap push is gated on its token | `tests/test_publish_release_chain.py` | offline | a 401 failing a release that already succeeded |
+| the tap was repointed before the formula went | `tests/test_homebrew_formula.py` | offline + online | the tap's sync 404ing every 30 minutes |
 | the published release installs and runs | `publish.yml` `verify` | online | a green release nobody can install (#666) |
 | what the tap actually serves | tap's `tests/` | online | anything the sync produced that cannot install |
 
@@ -149,6 +170,7 @@ Three patterns run through all of these:
 | Symptom | Look here first |
 |---|---|
 | The release is green but `pip install ai-jury==X.Y.Z` fails | The `verify` job, and the `release-broken: vX.Y.Z` issue it opens. PyPI does not allow re-uploading a version — yank and ship the next patch. |
+| The release log says the tap was not updated | `HOMEBREW_TAP_TOKEN` is unset, so the push was skipped by design. The formula is on the release; the tap's own sync delivers it. |
 | `brew upgrade` sees nothing new | The tap's sync source. It must be the release asset, not `main`. |
 | The tap fails on a schedule, hours after a green release | The formula's digest. Compare it against the sdist PyPI actually serves. |
 | A pull request shows **no runs at all** for its head | The head commit's message. A CI-skip marker in it — even quoted in prose — suppresses every workflow. |

@@ -37,6 +37,15 @@ TEMPLATE = REPO_ROOT / "packaging" / "homebrew" / "ai-jury.rb.template"
 HOMEBREW_TAP = "berkayturanci/homebrew-ai-jury"
 ONLINE = os.environ.get("AI_JURY_CHECK_EXTERNAL") == "1"
 
+#: Written by the operator once the tap no longer pulls `main:Formula/ai-jury.rb`.
+TAP_REPOINTED = REPO_ROOT / "packaging" / "homebrew" / "TAP_REPOINTED"
+TAP_PATCH = REPO_ROOT / "packaging" / "homebrew" / "tap-sync-formula.patch"
+
+#: The path the tap used to pull, and must not pull any more.
+RETIRED_TAP_SOURCE = "contents/Formula/ai-jury.rb"
+#: What it must pull instead.
+RELEASE_ASSET = "releases/latest/download/ai-jury.rb"
+
 URL_RE = re.compile(r'url "(https://\S+)"')
 SHA_RE = re.compile(r'sha256 "([0-9a-f]{64})"')
 TEST_VERSION_RE = re.compile(r'assert_match "jury ([0-9][^"]*)"')
@@ -141,6 +150,58 @@ class TheUrlRuleReadsTheVersionInHand(unittest.TestCase):
             url_is_this_projects_sdist(
                 "https://files.pythonhosted.org/packages/1a/64/ec/keel-1.15.1.tar.gz", "1.15.1"
             )
+        )
+
+
+class TheTapIsRepointedBeforeTheFormulaMayGo(unittest.TestCase):
+    """Deleting the formula breaks a consumer in another repository.
+
+    `berkayturanci/homebrew-ai-jury`'s `sync-formula.yml` curls
+    `repos/berkayturanci/ai-jury/contents/Formula/ai-jury.rb` every thirty
+    minutes. With the file gone that is a 404 forever — `curl -fsSL` exits 22 and
+    the tap's sync job fails on a schedule, which is the exact shape of #630 and
+    the reason `docs/homebrew-release-chain.md` exists.
+
+    The tap cannot be changed from this repository, so the ordering is enforced
+    from here instead: the deletion is only allowed once someone records that the
+    tap has been repointed. `packaging/homebrew/tap-sync-formula.patch` is the
+    change, ready to apply; `packaging/homebrew/TAP_REPOINTED` is the record.
+
+    This is a gate that a person must satisfy, deliberately, and it is satisfiable
+    at any time — unlike the digest gate that used to block every release pull
+    request, where no value of the file could pass. It exists for exactly one
+    merge and can be deleted with the marker afterwards.
+    """
+
+    def test_the_repointing_patch_ships_with_the_deletion(self):
+        """A note saying "change the tap" is a message nobody is required to act on."""
+        self.assertTrue(TAP_PATCH.exists(), f"{TAP_PATCH.name} is missing")
+        patch = TAP_PATCH.read_text(encoding="utf-8")
+        self.assertIn("sync-formula.yml", patch)
+        self.assertIn(RELEASE_ASSET, patch, "the patch does not point the tap at the asset")
+        self.assertIn(f'-{" " * 12}"https://api.github.com/repos/', patch)
+
+    def test_the_formula_may_only_be_absent_once_the_tap_is_repointed(self):
+        formula_gone = not (REPO_ROOT / "Formula" / "ai-jury.rb").exists()
+        if not formula_gone:
+            self.skipTest("the formula is still committed, so the tap's pull still resolves")
+        self.assertTrue(
+            TAP_REPOINTED.exists(),
+            "Formula/ai-jury.rb is gone but the tap still pulls it every 30 minutes.\n"
+            "Apply packaging/homebrew/tap-sync-formula.patch to "
+            f"{HOMEBREW_TAP} (or set HOMEBREW_TAP_TOKEN here and make the push the\n"
+            "only path), then record it:\n"
+            "    echo '<tap commit sha> repointed at the release asset' "
+            "> packaging/homebrew/TAP_REPOINTED",
+        )
+
+    def test_the_marker_says_what_was_done(self):
+        """An empty file records that someone touched a file, not that they did the work."""
+        if not TAP_REPOINTED.exists():
+            self.skipTest("the marker is not present yet")
+        self.assertTrue(
+            TAP_REPOINTED.read_text(encoding="utf-8").strip(),
+            "TAP_REPOINTED is empty; record what was changed and where",
         )
 
 
@@ -254,6 +315,40 @@ class TheTapServesSomethingInstallable(unittest.TestCase):
         self.assertEqual(sdists[0]["url"], url, "the tap's url is not that version's sdist")
         self.assertEqual(
             sdists[0]["digests"]["sha256"], digest, "the tap's sha256 is not that sdist's"
+        )
+
+    def test_the_tap_does_not_pull_a_path_this_repository_no_longer_has(self):
+        """The marker is a promise; this is the check.
+
+        A workflow file that is simply gone is fine — a tap fed only by the push
+        pulls nothing. What is not fine is one that still curls
+        `contents/Formula/ai-jury.rb`, which now 404s on every run.
+        """
+        try:
+            workflow = self._get(
+                f"https://api.github.com/repos/{HOMEBREW_TAP}"
+                "/contents/.github/workflows/sync-formula.yml",
+                headers={
+                    "Accept": "application/vnd.github.raw",
+                    "User-Agent": "ai-jury-tests",
+                },
+            ).decode("utf-8")
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                self.skipTest("the tap has no sync workflow, so it pulls nothing")
+            raise self.skipTest(f"cannot reach the tap: {exc}") from exc
+        except (urllib.error.URLError, OSError) as exc:
+            raise self.skipTest(f"cannot reach the tap: {exc}") from exc
+        self.assertNotIn(
+            RETIRED_TAP_SOURCE,
+            workflow,
+            "the tap still pulls Formula/ai-jury.rb from this repository, which no "
+            "longer has it; apply packaging/homebrew/tap-sync-formula.patch",
+        )
+        self.assertIn(
+            RELEASE_ASSET,
+            workflow,
+            "the tap's sync names no source this repository still publishes",
         )
 
     def test_the_taps_url_downloads_and_hashes_to_its_declared_digest(self):

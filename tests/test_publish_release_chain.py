@@ -189,6 +189,31 @@ class ReleasingWritesNothingToThisRepository(WorkflowScan):
         """`sed` reports success whether or not it substituted anything."""
         self.assertIn("unrendered placeholder", self.publish_code)
 
+    def test_the_tap_push_is_gated_on_the_token_it_needs(self):
+        """`if:` cannot read `secrets.*`, so the answer has to become an output.
+
+        Run unconditionally, the push hands `gh` an empty token and `gh api -X
+        PUT` returns 401 under `set -euo pipefail` — failing the release job
+        *after* PyPI and the GitHub Release have succeeded, which reports a good
+        release as broken. `HOMEBREW_TAP_TOKEN` is not configured today, so this
+        is the default path, not the edge case.
+        """
+        body = "\n".join(self.publish)
+        self.assertIn("has_tap_token=true", self.publish_code)
+        self.assertIn("has_tap_token=false", self.publish_code)
+        self.assertIn("if: steps.tap.outputs.has_tap_token == 'true'", body)
+
+    def test_the_missing_token_is_a_warning_that_says_what_to_do(self):
+        """A `::notice::` inside a step nobody opens is not a safeguard (#638)."""
+        self.assertIn("::warning title=Homebrew tap not updated", self.publish_code)
+        self.assertIn("HOMEBREW_TAP_TOKEN repository secret", self.publish_code)
+        self.assertIn("releases/latest/download/ai-jury.rb", self.publish_code)
+
+    def test_whether_the_tap_was_pushed_is_visible_to_the_next_job(self):
+        outputs = "\n".join(self.publish)
+        self.assertIn("pushed-to-tap:", outputs)
+        self.assertIn("steps.tap.outputs.has_tap_token", outputs)
+
     def test_the_rendered_formula_leaves_the_release(self):
         """Two credential-free routes out, neither of them `main`.
 
@@ -235,10 +260,27 @@ class ThePublishedReleaseIsInstalledAndRun(WorkflowScan):
     def test_the_installed_cli_must_run_its_diagnostics(self):
         self.assertIn("jury --doctor", self.verify_code)
 
-    def test_the_taps_digest_is_compared_with_the_published_sdist(self):
-        """`brew` refuses on a digest mismatch, hours later, in another repository."""
+    def test_the_published_formula_is_checked_against_the_published_sdist(self):
+        """The release asset, unconditionally: this run wrote it, so nothing lags.
+
+        `brew` refuses on a digest mismatch, hours later, in another repository.
+        """
+        self.assertIn("gh release download", self.verify_code)
+        self.assertIn("the published formula points at", self.verify_code)
+        self.assertIn("the published formula expects", self.verify_code)
+
+    def test_the_tap_is_only_checked_when_this_run_pushed_it(self):
+        """Otherwise the tap catches up on a 30-minute cron and this job polls 150s.
+
+        Demanding it here would fail *every* release over latency that is by
+        design — a gate blocking the only sequence able to satisfy it, which is
+        the mistake the online formula check already made once.
+        """
+        body = "\n".join(self.verify)
         self.assertIn("contents/Formula/ai-jury.rb", self.verify_code)
         self.assertIn("does not serve ${version}", self.verify_code)
+        self.assertIn("if: needs.build-n-publish.outputs.pushed-to-tap == 'true'", body)
+        self.assertIn("if: needs.build-n-publish.outputs.pushed-to-tap != 'true'", body)
 
     def test_a_failure_becomes_a_thing_on_a_list(self):
         """A message nobody is required to act on is not a safeguard (#638)."""
