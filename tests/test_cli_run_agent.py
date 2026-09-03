@@ -13,6 +13,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -215,6 +216,7 @@ class BaseAdapterSeamTests(unittest.TestCase):
 class SpawnDetachedTests(unittest.TestCase):
     """The one place `--detach` really forks, exercised on a harmless command."""
 
+    @unittest.skipIf(os.name == "nt", "POSIX permission semantics")
     def test_the_child_output_goes_to_an_owner_only_log(self):
         with tempfile.TemporaryDirectory() as tmp:
             out_path = Path(tmp) / "run.out"
@@ -225,6 +227,18 @@ class SpawnDetachedTests(unittest.TestCase):
                 time.sleep(0.05)
             self.assertIn("detached", out_path.read_text(encoding="utf-8"))
             self.assertEqual(out_path.stat().st_mode & 0o777, 0o600)
+
+    def test_the_child_log_is_written_wherever_we_run(self):
+        # Platform-neutral companion to the permission assertion above, which is
+        # POSIX-only: Windows chmod is a no-op, but the log must still appear.
+        with tempfile.TemporaryDirectory() as tmp:
+            out_path = Path(tmp) / "run.out"
+            _spawn_detached([sys.executable, "-c", "print('detached')"], out_path)
+            for _ in range(100):
+                if out_path.exists() and out_path.read_text(encoding="utf-8").strip():
+                    break
+                time.sleep(0.05)
+            self.assertIn("detached", out_path.read_text(encoding="utf-8"))
 
 
 class EnableWriteTests(unittest.TestCase):
@@ -1105,11 +1119,19 @@ class DetachTests(unittest.TestCase):
             self.assertTrue(state["ok"])
             self.assertEqual(state["run_id"], "child1")
 
+    @unittest.skipIf(os.name == "nt", "POSIX permission semantics")
     def test_state_files_are_owner_only(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = runagent.write_state("perm", {"run_id": "perm"}, Path(tmp))
             self.assertEqual(path.stat().st_mode & 0o777, 0o600)
             self.assertEqual(path.parent.stat().st_mode & 0o777, 0o700)
+
+    def test_state_is_readable_back_on_every_platform(self):
+        # Platform-neutral companion: the write path itself must work on Windows,
+        # where the 0600/0700 request above is a no-op the OS does not honour.
+        with tempfile.TemporaryDirectory() as tmp:
+            runagent.write_state("rt", {"run_id": "rt", "status": "done"}, Path(tmp))
+            self.assertEqual(runagent.read_state("rt", Path(tmp))["status"], "done")
 
 
 class WaitAndStatusTests(unittest.TestCase):
@@ -1244,6 +1266,97 @@ class WaitAndStatusTests(unittest.TestCase):
     def test_default_cache_dir_is_used_when_none_is_given(self):
         with mock.patch("ai_jury.cache.default_cache_dir", return_value=Path("/tmp/jc")):
             self.assertEqual(runagent.runs_dir(), Path("/tmp/jc") / runagent.RUNS_DIR_NAME)
+
+
+class CredentialLeakTests(unittest.TestCase):
+    """No credential-shaped config value reaches the run-agent output.
+
+    `jury run-agent` prints one JSON document to stdout, mirrors it into a
+    detached run's state file, and streams progress to stderr — three new sinks
+    for whatever an adapter puts in `AgentResult.error`. For a hosted-API agent
+    that text names the environment variable to set, and `[[agent]] api_key_env`
+    is an arbitrary operator string, so it must arrive rebuilt through
+    `redaction.safe_env_var_name` rather than passed through (the class CodeQL
+    flags as `py/clear-text-logging-sensitive-data`). These pin that the barrier
+    holds all the way to the export, not just at the adapter.
+    """
+
+    CONFIG = """\
+[[agent]]
+name = "hosted"
+vendor = "openai-api"
+model = "gpt-5.2"
+api_key_env = "%s"
+"""
+
+    def _document(self, api_key_env: str) -> dict:
+        with _workspace(config_text=self.CONFIG % api_key_env) as root:
+            env = {k: v for k, v in os.environ.items() if not k.endswith("_API_KEY")}
+            with mock.patch.dict(os.environ, env, clear=True):
+                code, out, err = _run(
+                    [
+                        "--agent",
+                        "hosted",
+                        "--role",
+                        "review",
+                        "--prompt-file",
+                        str(root / "prompt.md"),
+                        "--config",
+                        str(root / "jury.toml"),
+                    ]
+                )
+        self.assertEqual(code, 1)  # fail-soft: the agent ran and could not
+        return json.loads(out), err
+
+    def test_a_well_formed_env_var_name_is_reported_to_the_operator(self):
+        # The point of the message is actionable: name the variable to set.
+        doc, _ = self._document("MY_HOSTED_KEY")
+        self.assertEqual(doc["error_code"], "missing_api_key")
+        self.assertIn("MY_HOSTED_KEY", doc["error"])
+
+    def test_a_malformed_env_var_name_is_never_echoed(self):
+        # A name carrying characters an env var cannot hold falls back to the
+        # vendor constant instead of being spliced into the document.
+        hostile = "BAD-NAME;injected"
+        doc, err = self._document(hostile)
+        self.assertNotIn("injected", json.dumps(doc))
+        self.assertNotIn(hostile, json.dumps(doc))
+        self.assertNotIn(hostile, err)
+        self.assertIn("OPENAI_API_KEY", doc["error"])
+
+    def test_the_result_document_never_exports_the_credential_fields(self):
+        doc, _ = self._document("MY_HOSTED_KEY")
+        self.assertNotIn("api_key_env", doc)
+        self.assertNotIn("api_key_env", doc["attribution"])
+
+    def test_the_detached_state_file_carries_the_same_sanitized_text(self):
+        # The state file is a second sink for the same string; it must not be a
+        # way around the barrier the stdout document goes through.
+        hostile = "NOPE\nX-Injected: 1"
+        with _workspace(config_text=self.CONFIG % hostile.replace("\n", "\\n")) as root:
+            env = {k: v for k, v in os.environ.items() if not k.endswith("_API_KEY")}
+            with mock.patch.dict(os.environ, env, clear=True):
+                _run(
+                    [
+                        "--agent",
+                        "hosted",
+                        "--role",
+                        "review",
+                        "--prompt-file",
+                        str(root / "prompt.md"),
+                        "--config",
+                        str(root / "jury.toml"),
+                        "--cache-dir",
+                        str(root / "cache"),
+                        "--run-id",
+                        "leak",
+                        "--_child",
+                    ]
+                )
+            state = runagent.read_state("leak", root / "cache")
+        self.assertIsNotNone(state)
+        self.assertNotIn("X-Injected", json.dumps(state))
+        self.assertIn("OPENAI_API_KEY", state["error"])
 
 
 class HelpSurfaceTests(unittest.TestCase):
