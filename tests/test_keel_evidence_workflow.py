@@ -394,6 +394,45 @@ class AStaleEvaluationCannotOverwriteANewerVerdict(unittest.TestCase):
     def test_the_check_records_when_it_was_evaluated(self):
         self.assertIn("external_id=${EVALUATED_AT}", self.publisher)
 
+    def test_a_declined_write_is_not_a_failed_job(self):
+        """Returning 0 from both outcomes reintroduces the defect via the fix.
+
+        `publish_check` returning 0 whether it published or declined, with the
+        caller replaying this run's RC either way, means an older
+        `pull_request` run that correctly declined to overwrite a newer success
+        still exits 1 on its own stale violation code. Actions marks that job
+        FAILURE on the *live* head, keel's rollup scores FAILURE exactly like
+        CANCELLED, and `keel merge` refuses on "CI failing" again — the same
+        defect this change is about. Reachable whenever the answer differs
+        between two reads, which subscribing to comment `edited` guarantees.
+        """
+        self.assertIn("return 3", self.publisher, "the declined path is not distinguishable")
+        self.assertRegex(
+            self.body,
+            r'if \[ "\$PUBLISHED" -eq 3 \]; then\n\s*exit 0\n\s*fi',
+            "a declined write does not exit 0 unconditionally",
+        )
+        declined = self.body[self.body.index('if [ "$PUBLISHED" -eq 3 ]') :]
+        self.assertNotIn("$RC", declined[: declined.index('if [ "$PUBLISHED" -eq 0 ]')])
+
+    def test_the_violation_exit_is_scoped_to_the_run_that_published(self):
+        """This run's RC may only fail the job when this run's verdict is on the
+        check — otherwise a stale violation is replayed over a newer success."""
+        published = self.body[self.body.index('if [ "$PUBLISHED" -eq 0 ]') :]
+        self.assertRegex(
+            published[: published.index("\n\n")],
+            r'\[ "\$RC" -ne 0 \] && \[ "\$RC" -ne 2 \]',
+            "the violation exit is not scoped to the branch that published",
+        )
+
+    def test_the_stamp_orders_reads_that_land_in_the_same_second(self):
+        """Whole seconds plus a strict `-gt` means neither of two runs declines.
+
+        Two runs racing over one head are seconds apart at most, so the same
+        second is the common case, not the corner.
+        """
+        self.assertIn("date -u +%s%N", self.body)
+
     def test_the_stamp_is_taken_before_the_pull_request_is_read(self):
         """A completion time would rank the stale answer first.
 
@@ -401,7 +440,7 @@ class AStaleEvaluationCannotOverwriteANewerVerdict(unittest.TestCase):
         the run that saw it, so ordering by when each run finished picks exactly
         the wrong one.
         """
-        self.assertRegex(self.body, r"EVALUATED_AT=\$\(date -u \+%s\)")
+        self.assertRegex(self.body, r"EVALUATED_AT=\$\(date -u \+%s%N\)")
         self.assertLess(
             self.body.index("EVALUATED_AT=$(date"),
             self.body.index('keel evidence-verify "${ARGS[@]}"'),
@@ -419,7 +458,7 @@ class AStaleEvaluationCannotOverwriteANewerVerdict(unittest.TestCase):
         self.assertLess(guard, self.publisher.index("-X POST"), "the guard runs after the create")
         self.assertRegex(
             self.publisher[guard : self.publisher.index("-X PATCH")],
-            r"return 0",
+            r"return 3",
             "the guard does not actually skip the write",
         )
         self.assertIn("::notice", self.publisher, "a skipped write is invisible in the log")
@@ -435,12 +474,29 @@ class AStaleEvaluationCannotOverwriteANewerVerdict(unittest.TestCase):
         self.assertIn("${existing_stamp//[0-9]/}", self.publisher)
 
     def test_the_lookup_reads_the_stamp_as_well_as_the_id(self):
-        """`select(.id)` is load-bearing in the two-field shape: without it an
-        absent check-run renders as a single space, which is not empty and
-        parses as an existing run with no id — so every run would POST a second
+        """`select(.)` is load-bearing in the two-field shape: `max_by` over an
+        empty list is null, which renders as a single space — not empty, and
+        parsed as an existing run with no id, so every run would POST a second
         check under the gating name.
         """
-        self.assertIn(".check_runs[0] | select(.id)", self.publisher)
+        self.assertIn("map(select(.id))", self.publisher)
+        self.assertIn("| select(.) |", self.publisher, "an absent run renders as a space")
         self.assertIn("\\(.id)", self.publisher)
         self.assertIn(".external_id", self.publisher)
         self.assertIn("read -r existing_id existing_stamp", self.publisher)
+
+    def test_the_stamp_is_read_off_the_newest_run_not_an_arbitrary_one(self):
+        """The list endpoint's order is not documented as newest-first.
+
+        A head that carries more than one check-run under the gating name — the
+        stacking the upsert exists to prevent, which a pre-guard workflow could
+        have left behind — would otherwise have its stamp read off whichever row
+        came back first, and an old stamp there disarms the staleness guard
+        silently.
+        """
+        self.assertIn("max_by(.external_id | tonumber? // 0)", self.publisher)
+        # On the invocation, not the block: the comment above it names
+        # `.check_runs[0]` to explain what it replaced, so a block-wide
+        # assertion passes with the lookup reverted.
+        lookup = next(line for line in self.publisher.splitlines() if "--jq" in line)
+        self.assertNotIn(".check_runs[0]", lookup, "the lookup is back on an arbitrary row")

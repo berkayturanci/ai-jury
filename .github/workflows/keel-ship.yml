@@ -53,16 +53,28 @@ on:
 # required check green. The standing workaround was `gh run rerun` on every
 # pull request (berkayturanci/keel#1037; here #668, #670, #671, #672, #674).
 #
-# Cancelling *within* one event stays on, because there the cancelled run is
-# never the last word on a head that still matters: a superseded `pull_request`
-# run belongs to a superseded head SHA, and an `issue_comment` run always runs
-# from the default branch, so its job check-runs land there rather than on the
-# pull request's head.
+# Cancelling *within* one event stays on. Usually the cancelled run belongs to a
+# head SHA the newer run has already superseded — but not always: `reopened`, a
+# `synchronize` fired by a base-branch update, and a force-push back to an
+# already-assessed SHA all re-run `pull_request` on an unchanged head. What
+# covers those is that whatever did the cancelling is a run of the *same* event
+# on that same head, so it republishes both job check-runs under the same names,
+# and both GitHub's branch protection and keel's own rollup dedupe
+# (`cli._dedupe_rollup`) read the most recent check-run per name. The case that
+# broke was a *different* event cancelling, which republishes nothing.
+#
+# The cost, paid knowingly: `keel review --live` posts three verdicts seconds
+# apart, so two of those `issue_comment` runs are now cancelled inside their own
+# group. That event always runs from the default branch, so those cancelled job
+# check-runs land on the default branch's tip — visible in the UI, and read by
+# nothing that gates a pull request.
 #
 # Splitting the groups does let a `pull_request` run and an `issue_comment` run
 # overlap, which is the GET-then-PATCH race the shared group used to prevent.
-# `publish_check` below carries the replacement guard directly: an evaluation
-# never overwrites a check-run published by a later one.
+# The check-runs API offers no compare-and-swap, so `publish_check` below cannot
+# make a lost update impossible; what it does is shrink the window from the
+# whole install-and-verify run to the single round trip between reading the
+# published stamp and writing over it.
 concurrency:
   group: keel-ship-${{ github.event_name }}-${{ github.event.pull_request.number || github.event.issue.number || github.event.inputs.pr || github.ref }}
   cancel-in-progress: true
@@ -198,7 +210,13 @@ jobs:
           # read the pull request*. Before the read, never after: a run that
           # started before a verdict was posted can still finish after the run
           # that saw it, and a completion time would rank that stale answer first.
-          EVALUATED_AT=$(date -u +%s)
+          #
+          # Nanoseconds, not seconds: two runs racing over one head are seconds
+          # apart at most, and whole seconds leave the common case — both reads
+          # inside the same second — unordered, which under a strict `-gt` means
+          # neither declines. 19 digits stays digit-only for the guard below and
+          # inside bash's signed 64-bit arithmetic until the year 2262.
+          EVALUATED_AT=$(date -u +%s%N)
 
           set +e
           keel evidence-verify "${ARGS[@]}"
@@ -224,13 +242,21 @@ jobs:
             # 404s on this endpoint and would make every upsert look like "no
             # existing run" — quietly restoring the stacking this replaces.
             #
-            # `select(.id)` keeps "no check-run yet" as empty output: without it
-            # an absent run interpolates to a single space, which is not empty
-            # and would parse as an existing run with no id.
+            # `max_by`, not `.check_runs[0]`: the list endpoint's order is not
+            # documented as newest-first, and a head that already carries more
+            # than one run under the gating name — the stacking this upsert
+            # exists to prevent, which a pre-guard workflow could have left
+            # behind — would otherwise have its *stamp* read off an arbitrary
+            # row, and an old stamp there disarms the guard. An unparseable or
+            # absent stamp sorts as 0, so a stamped run always outranks one.
+            #
+            # `select(.)` keeps "no check-run yet" as empty output: `max_by` over
+            # an empty list is null, which would otherwise interpolate to a
+            # single space — not empty, and parsed as an existing run with no id.
             existing=$(gh api --method GET \
               "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}/check-runs" \
               -f "check_name=${CHECK_NAME}" \
-              --jq '.check_runs[0] | select(.id) | "\(.id) \(.external_id // "")"' 2>/dev/null) || existing=""
+              --jq '.check_runs | map(select(.id)) | max_by(.external_id | tonumber? // 0) | select(.) | "\(.id) \(.external_id // "")"' 2>/dev/null) || existing=""
             existing_id=""
             existing_stamp=""
             if [ -n "$existing" ]; then
@@ -248,10 +274,15 @@ jobs:
             # Numeric-only comparison: a check-run published before this guard
             # existed carries no `external_id` and is simply overwritten, which is
             # the safe direction (this run has read the newer state).
+            #
+            # Returns 3, not 0: "a newer run holds the check" and "this run
+            # published its verdict" are different outcomes, and the caller must
+            # not replay *this* run's exit code over the newer one — see the
+            # dispatch below.
             if [ -n "$existing_stamp" ] && [ -z "${existing_stamp//[0-9]/}" ] \
               && [ "$existing_stamp" -gt "$EVALUATED_AT" ]; then
               echo "::notice title=Newer evidence verdict kept::A run that read this pull request later (${existing_stamp} > ${EVALUATED_AT}) already published \"$CHECK_NAME\" for ${HEAD_SHA}; this older evaluation is not overwriting it."
-              return 0
+              return 3
             fi
 
             if [ -n "$existing_id" ]; then
@@ -301,7 +332,24 @@ jobs:
               ;;
           esac
 
-          if publish_check "$STATUS" "$CONCLUSION" "$TITLE" "$SUMMARY"; then
+          set +e
+          publish_check "$STATUS" "$CONCLUSION" "$TITLE" "$SUMMARY"
+          PUBLISHED=$?
+          set -e
+
+          # 3 = declined, because a newer evaluation already holds the check-run.
+          # That verdict is the authoritative one and this run's RC is stale, so
+          # it is not replayed — exiting 1 here on a stale violation would mark
+          # *this* job FAILURE on the live head, and `cli._ci_rollup_state` scores
+          # FAILURE exactly like CANCELLED, so `keel merge` would refuse on "CI
+          # failing" all over again. The state can genuinely differ between two
+          # reads: this workflow subscribes to comment `edited` as well as
+          # `created`, so an amended verdict flips the answer between them.
+          if [ "$PUBLISHED" -eq 3 ]; then
+            exit 0
+          fi
+
+          if [ "$PUBLISHED" -eq 0 ]; then
             # The named check carries the verdict, so this job reports only that
             # the verification ran — 0 while the gate is waiting, because the
             # incomplete check is what blocks. A hard evidence violation still
