@@ -828,8 +828,16 @@ The result document (`schema_version: "ai-jury.run-agent.v1"`):
 ```
 
 `attribution.label` is the pair an orchestrator applies verbatim: `agent:<vendor>`
-plus a versionless `model:<base>`, so a point-release bump does not fork the
+plus a coarse `model:<base>`, so a point-release bump does not fork the
 attribution history of otherwise-identical work. Split it on whitespace.
+
+The base is **family + major**, and the grouping is deliberately uneven: it is
+byte-for-byte keel's `agents.model_base`, because both projects label the same
+issues and a divergent rule would split one project's history. A tier or effort
+suffix collapses (`gemini-3.8-flash`, `gemini-3.8-flash-high` and
+`gemini-3.8-pro` are all `model:gemini-3`); a hyphen-spelled version does not
+(`claude-opus-4-5` and `claude-opus-4-6` stay distinct). Read the `model` field
+when you need the exact id.
 
 **Roles decide privilege, and the flag cannot override that.** `review`, `gate`
 and `chair` always run under the vendor's read-only invocation — the exact one a
@@ -855,12 +863,21 @@ jury run-agent --agent agy --role implement --allow-write \
 
 jury run-agent --status                 # list every recorded run
 jury run-agent --wait issue-661         # block, then print the result document
-jury run-agent --wait issue-661 --timeout 1800   # ...with a deadline
+jury run-agent --wait issue-661 --wait-timeout 1800   # ...with your own deadline
 ```
+
+`--timeout` bounds the **agent**; `--wait-timeout` bounds the **wait**. A bare
+`--wait` is not unbounded: it defaults to the run's own timeout plus a minute of
+head-room to write its state file, so a script cannot hang on a run that died.
+A run that was never started is reported immediately rather than waited on, and
+`--status` shows a run whose process is gone as `lost` rather than `running`
+forever (POSIX only — on Windows a pid cannot be probed without killing it).
 
 State lives in `<cache-dir>/run-agent/<run-id>.json` (0600, in a 0700 directory)
 with the child's console log beside it as `<run-id>.out`. `--cache-dir` and
-`$JURY_CACHE_DIR` move both.
+`$JURY_CACHE_DIR` move both. A run id becomes a filename, so it is restricted to
+letters, digits, `.`, `_` and `-`; anything that could point outside the runs
+directory is refused.
 
 ### From keel
 

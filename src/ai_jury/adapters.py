@@ -529,6 +529,14 @@ class Adapter:
         policy is never re-decided inside :meth:`run`. ``policy=None`` — every
         panel invocation — resolves to the unchanged read-only :meth:`build_argv`,
         which is why adding this could not alter an existing run.
+
+        Both branches end in :meth:`build_argv`, which the base class leaves
+        ``NotImplementedError``. That is not reachable through a real run: every
+        adapter that spawns a subprocess implements it, and the ones that do not
+        (``LocalAdapter`` and the hosted-API adapters) build no argv at all —
+        they override :meth:`run` and never call this. A new subprocess adapter
+        that forgets ``build_argv`` therefore fails loudly on its first
+        invocation rather than running with an empty command line.
         """
         if policy is None or not getattr(policy, "write", False):
             return self.build_argv(prompt)
@@ -1762,6 +1770,33 @@ class GenericCLIAdapter(Adapter):
     - ``prompt_mode = "arg"``: prompt passed as positional argument on argv
     """
 
+    def _prompt_mode(self) -> str:
+        return (self.spec.prompt_mode or "stdin").lower()
+
+    def build_argv(self, prompt: str) -> list[str]:
+        """Read-only argv for a configured `cli` profile.
+
+        Implemented rather than inherited (the base raises) so this adapter goes
+        through the same ``build_argv_for_role`` seam as every other one — the
+        role policy is then decided in exactly one place for every vendor.
+        """
+        argv = [self.spec.command, *_read_only_extra_args(self.spec)]
+        return [*argv, prompt] if self._prompt_mode() == "arg" else argv
+
+    def build_write_argv(self, prompt: str) -> list[str]:
+        """Write-capable argv.
+
+        A `cli` profile has no vendor-specific sandbox flag to add or remove, so
+        this resolves to the same configured ``extra_args`` as the read-only
+        argv. It is still routed through :func:`_write_extra_args` so the rule
+        lives with every other vendor's rather than being special-cased here.
+        """
+        argv = [self.spec.command, *_write_extra_args(self.spec)]
+        return [*argv, prompt] if self._prompt_mode() == "arg" else argv
+
+    def _stdin_for(self, prompt: str) -> str | None:
+        return None if self._prompt_mode() == "arg" else prompt
+
     def available(self) -> bool:
         command = self.spec.command or ""
         if not command:
@@ -1806,20 +1841,8 @@ class GenericCLIAdapter(Adapter):
                 error_code=ERR_MISSING_CLI,
             )
         effective_timeout = timeout if timeout is not None else self.spec.timeout
-        # A `cli` profile has no vendor-specific sandbox flag to add or remove, so
-        # both sides of the role policy resolve to its configured `extra_args`;
-        # the seam is still routed through so the rule lives in one place (#661).
-        write = role_policy is not None and getattr(role_policy, "write", False)
-        extra_args = _write_extra_args(self.spec) if write else _read_only_extra_args(self.spec)
-        argv = [self.spec.command, *extra_args]
-
-        mode = (self.spec.prompt_mode or "stdin").lower()
-        stdin_content = None
-
-        if mode == "arg":
-            argv.append(prompt)
-        else:
-            stdin_content = prompt
+        argv = self.build_argv_for_role(prompt, role_policy)
+        stdin_content = self._stdin_for(prompt)
 
         start = time.monotonic()
         try:

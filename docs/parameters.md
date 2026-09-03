@@ -362,14 +362,15 @@ run`) or a CI script. See the [cookbook recipe](cookbook.md#21-run-one-agent-for
 | `--role` | `implement` \| `review` \| `gate` \| `chair` \| `fix` | What the agent is asked to do. Decides privilege — see below. |
 | `--prompt-file` | path \| `-` | The prompt to send (`-` reads stdin; not allowed with `--detach`). |
 | `--cwd` | directory | Run the agent in this directory (default: the current one). |
-| `--timeout` | seconds | Wall-clock bound (default: the agent's configured timeout). With `--wait`, the deadline for the wait itself. |
+| `--timeout` | seconds | Wall-clock bound on the **agent** (default: the agent's configured timeout). It never bounds a `--wait` — that is `--wait-timeout`. |
 | `--effort` | `low` \| `medium` \| `high` | Reasoning [effort](#reasoning-effort---effort--agent-effort) for vendors that support one; warns and is ignored otherwise. |
 | `--allow-write` | flag | Grant the vendor's write/tool mode. **Required** by `implement`/`fix`; warned about and ignored by the read-only roles. |
 | `--format` | `json` \| `text` | `json` (default) prints the full result document; `text` prints only the agent's text. |
 | `--detach` | flag | Start in the background and print the run id immediately. |
-| `--run-id` | id | Id for a detached run (letters, digits, `.`, `_`, `-`; default: random). |
-| `--wait` | run id | Block until a detached run finishes, then print its document. |
-| `--status` | flag | List every recorded detached run as JSON and exit. |
+| `--run-id` | id | Id for a detached run: letters, digits, `.`, `_`, `-`, max 64 characters, starting with a letter or digit (default: random). Anything else is refused — the id becomes a filename. Only valid with `--detach`. |
+| `--wait` | run id | Block until a detached run finishes, then print its document. A run that was never started is reported immediately. |
+| `--wait-timeout` | seconds | How long `--wait` blocks before giving up (default: the run's own timeout + 60 s, else 3600 s). |
+| `--status` | flag | List every recorded detached run as JSON and exit. A run still marked `running` whose process is gone is reported as `lost`. |
 | `--config` | path | Path to `jury.toml`. |
 | `--cache-dir` | path | Where detached-run state lives (default: `$JURY_CACHE_DIR` or `~/.cache/ai-jury`). |
 | `--mock` | flag | Run the offline mock adapter instead of a real agent. |
@@ -378,6 +379,24 @@ run`) or a CI script. See the [cookbook recipe](cookbook.md#21-run-one-agent-for
 read-only invocation — the same one a panel review uses — and `--allow-write`
 cannot change that (it warns and is ignored). `implement` and `fix` are
 write-capable only with `--allow-write`; without it the command exits 2.
+
+**Run states.** `running` (the child is alive, or we cannot tell), `done`
+(terminal — read `ok` and `error_code`), `lost` (still marked running, but the
+recorded process is definitively gone: killed, or crashed hard enough to skip
+its own cleanup). Liveness is probed on POSIX only; on Windows a run stays
+`running`, because `os.kill(pid, 0)` there terminates the process rather than
+probing it.
+
+**Attribution labels are family + major, deliberately coarse.** The rule is
+identical to [keel](https://github.com/berkayturanci/keel)'s `agents.model_base`
+because both projects write the same `model:<base>` label onto the same issues;
+a "better" rule on one side alone would split one project's history in half. So
+a tier or effort suffix **collapses** — `gemini-3.8-flash`,
+`gemini-3.8-flash-high` and `gemini-3.8-pro` all become `model:gemini-3` — while
+a vendor that spells its version with hyphens **keeps** it: `claude-opus-4-5`
+and `claude-opus-4-6` stay distinct. The label answers "roughly which family
+ran this", not "exactly which model"; the `model` field carries the exact id
+verbatim when that is what you need.
 
 **Result document** — `schema_version: "ai-jury.run-agent.v1"`, then `ok`,
 `agent`, `vendor`, `model`, `role`, `transport` (`cli`/`api`/`local`), `text`,

@@ -26,7 +26,13 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from ai_jury import privilege, runagent  # noqa: E402
 from ai_jury.adapters import Adapter, AgentResult, make_adapter  # noqa: E402
-from ai_jury.cli import _child_argv, _run_run_agent, _spawn_detached, main  # noqa: E402
+from ai_jury.cli import (  # noqa: E402
+    _child_argv,
+    _run_agent_parser,
+    _run_run_agent,
+    _spawn_detached,
+    main,
+)
 from ai_jury.config import DEFAULT_CONFIG, AgentSpec, _from_dict  # noqa: E402
 
 # Flags that would let an agent edit files or run commands. NONE of these may
@@ -74,6 +80,14 @@ def _run(argv: list[str]) -> tuple[int, str, str]:
     out, err = io.StringIO(), io.StringIO()
     with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
         code = _run_run_agent(argv)
+    return code, out.getvalue(), err.getvalue()
+
+
+def _run_run_agent_capture(argv, **kwargs):
+    """`_run` with the injected sleep/clock seams (for the wait lifecycle)."""
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        code = _run_run_agent(argv, **kwargs)
     return code, out.getvalue(), err.getvalue()
 
 
@@ -216,15 +230,25 @@ class BaseAdapterSeamTests(unittest.TestCase):
 class SpawnDetachedTests(unittest.TestCase):
     """The one place `--detach` really forks, exercised on a harmless command."""
 
+    @staticmethod
+    def _spawn_and_reap(out_path: Path) -> int:
+        """Run a trivial detached child to completion, returning its pid."""
+        pid = _spawn_detached([sys.executable, "-c", "print('detached')"], out_path)
+        for _ in range(200):
+            if out_path.exists() and out_path.read_text(encoding="utf-8").strip():
+                break
+            time.sleep(0.05)
+        # Reap it, so the suite does not warn about a still-running subprocess.
+        if os.name != "nt":
+            with contextlib.suppress(ChildProcessError, OSError):
+                os.waitpid(pid, 0)
+        return pid
+
     @unittest.skipIf(os.name == "nt", "POSIX permission semantics")
     def test_the_child_output_goes_to_an_owner_only_log(self):
         with tempfile.TemporaryDirectory() as tmp:
             out_path = Path(tmp) / "run.out"
-            _spawn_detached([sys.executable, "-c", "print('detached')"], out_path)
-            for _ in range(100):
-                if out_path.read_text(encoding="utf-8").strip():
-                    break
-                time.sleep(0.05)
+            self._spawn_and_reap(out_path)
             self.assertIn("detached", out_path.read_text(encoding="utf-8"))
             self.assertEqual(out_path.stat().st_mode & 0o777, 0o600)
 
@@ -233,11 +257,8 @@ class SpawnDetachedTests(unittest.TestCase):
         # POSIX-only: Windows chmod is a no-op, but the log must still appear.
         with tempfile.TemporaryDirectory() as tmp:
             out_path = Path(tmp) / "run.out"
-            _spawn_detached([sys.executable, "-c", "print('detached')"], out_path)
-            for _ in range(100):
-                if out_path.exists() and out_path.read_text(encoding="utf-8").strip():
-                    break
-                time.sleep(0.05)
+            pid = self._spawn_and_reap(out_path)
+            self.assertIsInstance(pid, int)
             self.assertIn("detached", out_path.read_text(encoding="utf-8"))
 
 
@@ -389,6 +410,31 @@ class AttributionTests(unittest.TestCase):
         }
         for raw, expected in cases.items():
             self.assertEqual(runagent.model_base(raw), expected, raw)
+
+    def test_tier_suffixes_collapse_by_design(self):
+        # Documented consequence of the family+major rule, kept identical to
+        # keel's agents.model_base (ship #2036) so the two projects cannot write
+        # different `model:` labels onto the same issue. Pinned so a change has
+        # to be deliberate — and coordinated with keel.
+        for raw in ("gemini-3.8-flash", "gemini-3.8-flash-high", "gemini-3.8-pro"):
+            self.assertEqual(runagent.model_base(raw), "gemini-3", raw)
+
+    def test_hyphen_versioned_families_stay_distinct(self):
+        # The other half of the same rule: a vendor that spells its version with
+        # hyphens keeps it, so these do NOT collapse together.
+        self.assertEqual(runagent.model_base("claude-opus-4-5"), "claude-opus-4-5")
+        self.assertEqual(runagent.model_base("claude-opus-4-6"), "claude-opus-4-6")
+        self.assertNotEqual(
+            runagent.model_base("claude-opus-4-5"), runagent.model_base("claude-opus-4-6")
+        )
+
+    def test_the_exact_model_id_survives_in_the_document(self):
+        # The coarse label is a grouping, not an identity; `model` carries the
+        # verbatim id for anyone who needs to know exactly what ran.
+        spec = AgentSpec(name="a", vendor="google", model="gemini-3.8-flash-high")
+        doc = runagent.result_dict(spec, "review", AgentResult("a", "google", True, "x", 0.0))
+        self.assertEqual(doc["model"], "gemini-3.8-flash-high")
+        self.assertEqual(doc["attribution"]["label"], "agent:google model:gemini-3")
 
     def test_a_non_transport_prefix_is_kept(self):
         self.assertEqual(runagent.strip_transport("qwen2.5:7b"), "qwen2.5:7b")
@@ -1194,23 +1240,25 @@ class WaitAndStatusTests(unittest.TestCase):
 
     def test_cli_wait_on_an_unknown_run_exits_2(self):
         with tempfile.TemporaryDirectory() as tmp:
-            code, _, err = _run(["--wait", "ghost", "--cache-dir", str(tmp), "--timeout", "1"])
+            code, _, err = _run(["--wait", "ghost", "--cache-dir", str(tmp)])
             self.assertEqual(code, 2)
-            self.assertIn("did not finish", err)
+            # Answered immediately: --detach reserves the id before returning, so
+            # a run with no state file was never started.
+            self.assertIn("no such run", err)
 
     def test_cli_wait_rejects_an_unsafe_run_id(self):
         code, _, err = _run(["--wait", "../etc/passwd"])
         self.assertEqual(code, 2)
         self.assertIn("invalid run id", err)
 
-    def test_cli_wait_reports_a_missing_run_without_a_timeout(self):
-        with (
-            tempfile.TemporaryDirectory() as tmp,
-            mock.patch.object(runagent, "wait_for_run", return_value=(None, False)),
-        ):
-            code, _, err = _run(["--wait", "ghost", "--cache-dir", str(tmp)])
+    def test_cli_wait_reports_a_run_that_vanished_mid_wait(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp)
+            runagent.write_state("vanish", {"run_id": "vanish", "status": "running"}, cache)
+            with mock.patch.object(runagent, "wait_for_run", return_value=(None, False)):
+                code, _, err = _run(["--wait", "vanish", "--cache-dir", str(cache)])
         self.assertEqual(code, 2)
-        self.assertIn("no such run", err)
+        self.assertIn("disappeared while waiting", err)
 
     def test_status_lists_runs_newest_first(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1266,6 +1314,379 @@ class WaitAndStatusTests(unittest.TestCase):
     def test_default_cache_dir_is_used_when_none_is_given(self):
         with mock.patch("ai_jury.cache.default_cache_dir", return_value=Path("/tmp/jc")):
             self.assertEqual(runagent.runs_dir(), Path("/tmp/jc") / runagent.RUNS_DIR_NAME)
+
+
+class RunIdTraversalTests(unittest.TestCase):
+    """A run id must never become a path outside the runs directory.
+
+    Round-1 finding: `--run-id` was validated in the detach *parent* only, and
+    the `--_child` branch re-parses its own argv — so a traversal or absolute id
+    handed to the child wrote a 0600 file holding the agent's full output
+    anywhere the process could reach. The check now lives in `run_path`, which
+    is the only place an id becomes a path, so every caller inherits it.
+    """
+
+    HOSTILE = (
+        "../PWNED",
+        "../../PWNED",
+        "../../../../private/tmp/PWNED",
+        "/private/tmp/PWNED",
+        "/etc/passwd",
+        "sub/PWNED",
+        "..",
+        ".hidden",
+        "with space",
+        "a" * 65,
+        "",
+    )
+
+    def test_check_run_id_rejects_every_hostile_form(self):
+        for run_id in self.HOSTILE:
+            self.assertIsNotNone(runagent.check_run_id(run_id), run_id)
+
+    def test_path_construction_refuses_them(self):
+        for run_id in self.HOSTILE:
+            with self.assertRaises(runagent.RunIdError, msg=run_id):
+                runagent.state_path(run_id, "/tmp/whatever")
+            with self.assertRaises(runagent.RunIdError, msg=run_id):
+                runagent.output_path(run_id, "/tmp/whatever")
+
+    def test_write_state_refuses_them_without_creating_anything(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "cache").mkdir()
+            for run_id in self.HOSTILE:
+                with self.assertRaises(runagent.RunIdError, msg=run_id):
+                    runagent.write_state(run_id, {"leak": "x"}, root / "cache")
+            # Nothing anywhere under the temp root, inside the cache dir or out.
+            self.assertEqual([p.name for p in root.rglob("*") if p.is_file()], [])
+
+    def test_read_state_treats_them_as_a_miss(self):
+        for run_id in self.HOSTILE:
+            self.assertIsNone(runagent.read_state(run_id, "/tmp/whatever"), run_id)
+
+    def test_the_child_path_refuses_a_traversal_id(self):
+        # The proven exploit: the child, not the parent, did the writing.
+        with _workspace() as root:
+            outside = root / "outside"
+            outside.mkdir()
+            code, _, err = _run(
+                [
+                    "--agent",
+                    "claude",
+                    "--role",
+                    "review",
+                    "--prompt-file",
+                    str(root / "prompt.md"),
+                    "--config",
+                    str(root / "jury.toml"),
+                    "--cache-dir",
+                    str(root / "cache"),
+                    "--run-id",
+                    "../../outside/PWNED",
+                    "--_child",
+                    "--mock",
+                ]
+            )
+            self.assertEqual(code, 2)
+            self.assertIn("invalid run id", err)
+            self.assertEqual(list(outside.iterdir()), [])
+
+    def test_the_child_path_refuses_an_absolute_id(self):
+        with _workspace() as root:
+            outside = root / "outside"
+            outside.mkdir()
+            code, _, err = _run(
+                [
+                    "--agent",
+                    "claude",
+                    "--role",
+                    "review",
+                    "--prompt-file",
+                    str(root / "prompt.md"),
+                    "--config",
+                    str(root / "jury.toml"),
+                    "--cache-dir",
+                    str(root / "cache"),
+                    "--run-id",
+                    str(outside / "ABSPWNED"),
+                    "--_child",
+                    "--mock",
+                ]
+            )
+            self.assertEqual(code, 2)
+            self.assertIn("invalid run id", err)
+            self.assertEqual(list(outside.iterdir()), [])
+
+    def test_wait_refuses_a_traversal_id(self):
+        code, _, err = _run(["--wait", "../../etc/passwd"])
+        self.assertEqual(code, 2)
+        self.assertIn("invalid run id", err)
+
+    def test_a_containment_breach_is_caught_even_if_the_pattern_loosens(self):
+        # Second barrier: if _RUN_ID_RE were ever widened, run_path still refuses
+        # anything that does not land directly in the runs directory.
+        with (
+            mock.patch.object(runagent, "check_run_id", return_value=None),
+            self.assertRaises(runagent.RunIdError),
+        ):
+            runagent.state_path("../escape", "/tmp/whatever")
+
+    def test_a_valid_id_still_resolves_inside_the_runs_directory(self):
+        path = runagent.state_path("run-1.a_B", "/tmp/whatever")
+        self.assertEqual(path.parent, runagent.runs_dir("/tmp/whatever"))
+        self.assertEqual(path.name, "run-1.a_B.json")
+
+
+class RunIdUsageTests(unittest.TestCase):
+    def test_run_id_without_detach_is_refused(self):
+        with _workspace() as root:
+            code, _, err = _run(
+                [
+                    "--agent",
+                    "claude",
+                    "--role",
+                    "review",
+                    "--prompt-file",
+                    str(root / "prompt.md"),
+                    "--config",
+                    str(root / "jury.toml"),
+                    "--run-id",
+                    "orphan",
+                    "--mock",
+                ]
+            )
+        self.assertEqual(code, 2)
+        self.assertIn("--run-id only applies to a detached run", err)
+
+    def test_an_unsafe_run_id_is_refused_at_parse_time(self):
+        code, _, err = _run(["--run-id", "../x", "--status"])
+        self.assertEqual(code, 2)
+        self.assertIn("--run-id", err)
+
+
+class LivenessTests(unittest.TestCase):
+    """A detached run must not sit at `running` forever."""
+
+    def test_a_dead_child_is_reported_lost(self):
+        state = {"run_id": "r", "status": "running", "pid": 4242}
+        summary = runagent.run_summary(state, alive_fn=lambda _pid: False)
+        self.assertEqual(summary["status"], runagent.STATUS_LOST)
+
+    def test_a_live_child_stays_running(self):
+        state = {"run_id": "r", "status": "running", "pid": 4242}
+        self.assertEqual(
+            runagent.run_summary(state, alive_fn=lambda _pid: True)["status"], "running"
+        )
+
+    def test_unknown_liveness_stays_running(self):
+        # No pid recorded, or a platform we refuse to probe: "we don't know" must
+        # not be reported as "dead".
+        state = {"run_id": "r", "status": "running", "pid": None}
+        self.assertEqual(
+            runagent.run_summary(state, alive_fn=lambda _pid: None)["status"], "running"
+        )
+
+    def test_a_finished_run_is_never_relabelled(self):
+        state = {"run_id": "r", "status": "done", "ok": True, "pid": 4242}
+        self.assertEqual(runagent.run_summary(state, alive_fn=lambda _pid: False)["status"], "done")
+
+    def test_status_marks_a_dead_run_lost(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp)
+            runagent.write_state(
+                "zombie", {"run_id": "zombie", "status": "running", "pid": 999999}, cache
+            )
+            with mock.patch.object(runagent, "pid_alive", return_value=False):
+                code, out, _ = _run(["--status", "--cache-dir", str(cache)])
+            self.assertEqual(code, 0)
+            self.assertEqual(json.loads(out)["runs"][0]["status"], "lost")
+
+    def test_pid_alive_knows_this_process_is_running(self):
+        self.assertTrue(runagent.pid_alive(os.getpid()))
+
+    def test_pid_alive_is_unknown_for_a_bad_pid(self):
+        for pid in (None, 0, -1, "x"):
+            self.assertIsNone(runagent.pid_alive(pid))
+
+    @unittest.skipIf(os.name == "nt", "POSIX signal semantics")
+    def test_pid_alive_probes_a_real_reaped_child(self):
+        proc = subprocess.Popen([sys.executable, "-c", "pass"])
+        proc.wait()
+        # A pid can in principle be recycled between the wait and the probe, so
+        # this asserts the probe RUNS and answers definitively rather than
+        # pinning which answer; `--status` only demotes on a definite False.
+        self.assertIn(runagent.pid_alive(proc.pid), (False, True))
+
+    def test_windows_never_probes_a_pid(self):
+        # os.kill(pid, 0) TERMINATES the process on Windows, so the probe must
+        # not run there at all.
+        with (
+            mock.patch.object(runagent.os, "name", "nt"),
+            mock.patch.object(runagent.os, "kill") as killed,
+        ):
+            self.assertIsNone(runagent.pid_alive(4242))
+            killed.assert_not_called()
+
+    def test_a_permission_error_means_alive(self):
+        with mock.patch.object(runagent.os, "kill", side_effect=PermissionError):
+            self.assertTrue(runagent.pid_alive(4242))
+
+    def test_an_unexpected_oserror_is_unknown(self):
+        with mock.patch.object(runagent.os, "kill", side_effect=OSError):
+            self.assertIsNone(runagent.pid_alive(4242))
+
+    def test_the_detach_parent_records_the_child_pid(self):
+        with _workspace() as root:
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                code = _run_run_agent(
+                    [
+                        "--agent",
+                        "claude",
+                        "--role",
+                        "review",
+                        "--prompt-file",
+                        str(root / "prompt.md"),
+                        "--config",
+                        str(root / "jury.toml"),
+                        "--cache-dir",
+                        str(root / "cache"),
+                        "--detach",
+                        "--run-id",
+                        "withpid",
+                    ],
+                    spawn=lambda *_args: 31337,
+                )
+            self.assertEqual(code, 0)
+            self.assertEqual(runagent.read_state("withpid", root / "cache")["pid"], 31337)
+
+    def test_a_child_that_crashes_still_writes_a_terminal_state(self):
+        def boom(*_args, **_kwargs):
+            raise RuntimeError("adapter exploded")
+
+        with _workspace() as root, mock.patch("ai_jury.adapters.MockAdapter.run", boom):
+            with self.assertRaises(RuntimeError):
+                _run(
+                    [
+                        "--agent",
+                        "claude",
+                        "--role",
+                        "review",
+                        "--prompt-file",
+                        str(root / "prompt.md"),
+                        "--config",
+                        str(root / "jury.toml"),
+                        "--cache-dir",
+                        str(root / "cache"),
+                        "--run-id",
+                        "crashed",
+                        "--_child",
+                        "--mock",
+                    ]
+                )
+            state = runagent.read_state("crashed", root / "cache")
+        self.assertIsNotNone(state)
+        self.assertEqual(state["status"], "done")
+        self.assertFalse(state["ok"])
+        self.assertIn("exited before the agent finished", state["error"])
+
+    def test_a_child_that_cannot_record_still_prints_its_document(self):
+        with (
+            _workspace() as root,
+            mock.patch.object(runagent, "write_state", side_effect=OSError("disk full")),
+        ):
+            code, out, err = _run(
+                [
+                    "--agent",
+                    "claude",
+                    "--role",
+                    "review",
+                    "--prompt-file",
+                    str(root / "prompt.md"),
+                    "--config",
+                    str(root / "jury.toml"),
+                    "--cache-dir",
+                    str(root / "cache"),
+                    "--run-id",
+                    "nodisk",
+                    "--_child",
+                    "--mock",
+                ]
+            )
+        self.assertEqual(code, 0)
+        self.assertTrue(json.loads(out)["ok"])
+        self.assertIn("could not record run state", err)
+
+
+class WaitTimeoutTests(unittest.TestCase):
+    def test_the_default_deadline_comes_from_the_run_s_own_timeout(self):
+        self.assertEqual(
+            runagent.default_wait_timeout({"timeout_s": 600}), 600 + runagent.WAIT_GRACE_S
+        )
+
+    def test_a_run_without_a_recorded_timeout_falls_back(self):
+        for state in (None, {}, {"timeout_s": 0}, {"timeout_s": "x"}, {"timeout_s": True}):
+            self.assertEqual(runagent.default_wait_timeout(state), runagent.DEFAULT_WAIT_TIMEOUT_S)
+
+    def test_wait_is_bounded_even_with_no_flag(self):
+        # Previously `--wait` with no --timeout blocked forever on a dead run.
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp)
+            runagent.write_state(
+                "hung", {"run_id": "hung", "status": "running", "timeout_s": 5}, cache
+            )
+            now = {"t": 0.0}
+            code, _, err = _run_run_agent_capture(
+                ["--wait", "hung", "--cache-dir", str(cache)],
+                sleep=lambda _s: now.update(t=now["t"] + 10),
+                clock=lambda: now["t"],
+            )
+        self.assertEqual(code, 2)
+        self.assertIn("did not finish within 65s", err)
+
+    def test_an_explicit_wait_timeout_wins(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp)
+            runagent.write_state(
+                "hung2", {"run_id": "hung2", "status": "running", "timeout_s": 5}, cache
+            )
+            now = {"t": 0.0}
+            code, _, err = _run_run_agent_capture(
+                ["--wait", "hung2", "--cache-dir", str(cache), "--wait-timeout", "3"],
+                sleep=lambda _s: now.update(t=now["t"] + 1),
+                clock=lambda: now["t"],
+            )
+        self.assertEqual(code, 2)
+        self.assertIn("did not finish within 3s", err)
+
+    def test_a_dead_run_says_so_when_the_wait_gives_up(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp)
+            runagent.write_state(
+                "gone", {"run_id": "gone", "status": "running", "pid": 999999}, cache
+            )
+            now = {"t": 0.0}
+            with mock.patch.object(runagent, "pid_alive", return_value=False):
+                code, _, err = _run_run_agent_capture(
+                    ["--wait", "gone", "--cache-dir", str(cache), "--wait-timeout", "1"],
+                    sleep=lambda _s: now.update(t=now["t"] + 1),
+                    clock=lambda: now["t"],
+                )
+        self.assertEqual(code, 2)
+        self.assertIn("its process is gone", err)
+
+    def test_a_non_positive_wait_timeout_is_refused(self):
+        code, _, err = _run(["--wait", "x", "--wait-timeout", "0"])
+        self.assertEqual(code, 2)
+        self.assertIn("--wait-timeout", err)
+
+    def test_timeout_still_bounds_the_agent_not_the_wait(self):
+        # The two are now separate flags; --timeout never shortens a wait.
+        help_text = " ".join(_run_agent_parser().format_help().split())
+        self.assertIn("--wait-timeout", help_text)
+        self.assertIn("This bounds the agent, never the wait", help_text)
+        self.assertIn("seconds --wait will block before giving up", help_text)
 
 
 class CredentialLeakTests(unittest.TestCase):

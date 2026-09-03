@@ -251,13 +251,29 @@ def strip_transport(model: str) -> str:
 
 
 def model_base(model: str) -> str:
-    """Strip a model id to a coarse, versionless base label (pure).
+    """Strip a model id to a coarse **family + major** label (pure).
 
     ``qwen2.5:7b`` → ``qwen``, ``gemma2`` → ``gemma``, ``gpt-5.5`` → ``gpt-5``,
-    ``anthropic-api:claude-opus-4-5`` → ``claude-opus-4-5`` (a hyphenated
-    family keeps its major, only the ``.minor`` goes). The label has to stay
-    stable across a vendor's point releases, or every model bump would fork the
-    attribution history of otherwise-identical work.
+    ``anthropic-api:claude-opus-4-5`` → ``claude-opus-4-5``. The label has to
+    stay stable across a vendor's point releases, or every model bump would
+    fork the attribution history of otherwise-identical work.
+
+    **The grouping is deliberately coarse and deliberately uneven**, and it is
+    not a bug to be smoothed out here. The rule is byte-for-byte keel's
+    ``agents.model_base`` (ship #2036) because the two projects write the same
+    ``model:<base>`` label onto the same issues — a "better" rule on one side
+    only would silently split one project's history in half. Consequences worth
+    knowing before you rely on the label:
+
+    * A tier or effort suffix **collapses**: ``gemini-3.8-flash``,
+      ``gemini-3.8-flash-high`` and ``gemini-3.8-pro`` all become ``gemini-3``,
+      because everything after the first hyphen is cut at the first ``.``.
+    * A vendor that spells its version with hyphens instead **keeps** it:
+      ``claude-opus-4-5`` and ``claude-opus-4-6`` stay distinct.
+
+    So the label answers "roughly which family ran this", not "exactly which
+    model". When the exact id matters, read the ``model`` field of the result
+    document, which carries it verbatim.
     """
     text = strip_transport(model)
     if not text:
@@ -330,6 +346,8 @@ _RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 #: Status values a state file can carry.
 STATUS_RUNNING = "running"
 STATUS_DONE = "done"
+#: A run still marked running whose child process is gone (see run_summary).
+STATUS_LOST = "lost"
 
 
 def new_run_id(token_fn=None) -> str:
@@ -337,9 +355,17 @@ def new_run_id(token_fn=None) -> str:
     return (token_fn or secrets.token_hex)(6)
 
 
-def check_run_id(run_id: str) -> str | None:
+class RunIdError(ValueError):
+    """An identifier that must never be turned into a path (issue #661).
+
+    Its own type so a caller can tell "you named a run badly" apart from the
+    ``ValueError`` a corrupt JSON body raises.
+    """
+
+
+def check_run_id(run_id) -> str | None:
     """None when ``run_id`` is usable as a filename, else why not (pure)."""
-    if not _RUN_ID_RE.match(run_id or ""):
+    if not isinstance(run_id, str) or not _RUN_ID_RE.match(run_id):
         return (
             f"invalid run id '{run_id}': use letters, digits, '.', '_' or '-' "
             f"(max 64 characters, starting with a letter or digit)"
@@ -355,28 +381,60 @@ def runs_dir(cache_dir=None) -> Path:
     return base / RUNS_DIR_NAME
 
 
-def state_path(run_id: str, cache_dir=None) -> Path:
-    return runs_dir(cache_dir) / f"{run_id}.json"
+def run_path(run_id, suffix: str, cache_dir=None) -> Path:
+    """The path of one run's file, or raise :class:`RunIdError` (issue #661).
+
+    **The only place a run id becomes a path**, so every caller — the detach
+    parent, the ``--_child`` writer, ``--wait``, ``--status`` — inherits the
+    same check rather than each remembering to make it. Validating in the
+    parent alone was not enough: the child re-parses its own ``--run-id`` and
+    wrote wherever it pointed, so ``--run-id ../../PWNED`` (or an absolute
+    path) put a file holding the agent's full output outside the cache
+    directory entirely.
+
+    Two barriers, because one of them can be loosened by a future edit to a
+    regex: the id must match :data:`_RUN_ID_RE` (no separator, no leading dot,
+    so neither ``..`` nor an absolute path can be spelled), and the resolved
+    file must still sit directly inside the runs directory.
+    """
+    problem = check_run_id(run_id)
+    if problem:
+        raise RunIdError(problem)
+    directory = runs_dir(cache_dir)
+    path = directory / f"{run_id}{suffix}"
+    # Belt and braces: `..` and `/` are already unspellable above, but a path
+    # that escaped anyway must not be written to. Compared without touching the
+    # filesystem, so a missing directory is not an error here.
+    if os.path.normpath(path.parent) != os.path.normpath(directory):
+        raise RunIdError(f"invalid run id '{run_id}': resolves outside {directory}")
+    return path
 
 
-def output_path(run_id: str, cache_dir=None) -> Path:
-    return runs_dir(cache_dir) / f"{run_id}.out"
+def state_path(run_id, cache_dir=None) -> Path:
+    return run_path(run_id, ".json", cache_dir)
 
 
-def write_state(run_id: str, state: dict, cache_dir=None) -> Path:
+def output_path(run_id, cache_dir=None) -> Path:
+    return run_path(run_id, ".out", cache_dir)
+
+
+def write_state(run_id, state: dict, cache_dir=None) -> Path:
     """Write a run's state file atomically, 0600, in a 0700 directory.
 
     A state file holds the agent's full output, which is derived from the
     prompt — the same trust level as the diff a review sees — so it is written
     with the same restrictive permissions the result cache uses. The rename is
     atomic so a ``--wait`` poller never reads a half-written document.
+
+    Raises :class:`RunIdError` before creating anything when the id is not a
+    safe filename; a write to an unvalidated location must fail loudly.
     """
-    directory = runs_dir(cache_dir)
+    final = state_path(run_id, cache_dir)
+    directory = final.parent
     directory.mkdir(parents=True, exist_ok=True)
     with contextlib.suppress(OSError):
         directory.chmod(0o700)
-    final = directory / f"{run_id}.json"
-    tmp = directory / f"{run_id}.json.{secrets.token_hex(4)}.tmp"
+    tmp = directory / f"{final.name}.{secrets.token_hex(4)}.tmp"
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
         json.dump(state, fh, indent=2)
@@ -390,21 +448,48 @@ def write_state(run_id: str, state: dict, cache_dir=None) -> Path:
 _MAX_STATE_BYTES = 16 * 1024 * 1024
 
 
-def read_state(run_id: str, cache_dir=None) -> dict | None:
-    """Read one run's state, or None when it is missing/unreadable/corrupt."""
-    path = state_path(run_id, cache_dir)
+def read_state(run_id, cache_dir=None) -> dict | None:
+    """Read one run's state, or None when it is missing/unreadable/corrupt.
+
+    An unsafe id is a miss, not a raise: a read is a lookup, and "there is no
+    such run" is the honest answer for a name that could never have named one.
+    """
     try:
+        path = state_path(run_id, cache_dir)
         with path.open("r", encoding="utf-8") as fh:
             raw = fh.read(_MAX_STATE_BYTES + 1)
         if len(raw) > _MAX_STATE_BYTES:
             return None
         data = json.loads(raw)
-    except (OSError, ValueError):
+    except (OSError, ValueError):  # RunIdError is a ValueError
         return None
     return data if isinstance(data, dict) else None
 
 
-def list_runs(cache_dir=None) -> list[dict]:
+def pid_alive(pid) -> bool | None:
+    """Is that process still running? ``None`` when we cannot safely tell.
+
+    POSIX only. On Windows ``os.kill(pid, 0)`` does **not** mean "probe": for
+    any signal other than the two console events CPython opens the process and
+    calls ``TerminateProcess``, so a liveness check there would kill the very
+    run it was asked about. Returning ``None`` (unknown) leaves the run
+    reported as ``running``, which is the safe reading of "we don't know".
+    """
+    if os.name == "nt" or not isinstance(pid, int) or pid <= 0:
+        return None
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        # Alive, and owned by somebody else.
+        return True
+    except OSError:
+        return None
+    return True
+
+
+def list_runs(cache_dir=None, alive_fn=pid_alive) -> list[dict]:
     """Every recorded run, newest first, as summary dicts.
 
     Summaries only: the full agent text stays in the state file, so ``--status``
@@ -420,27 +505,45 @@ def list_runs(cache_dir=None) -> list[dict]:
         state = read_state(run_id, cache_dir)
         if state is None:
             continue
-        runs.append(run_summary(state))
+        runs.append(run_summary(state, alive_fn=alive_fn))
     runs.sort(key=lambda r: (r.get("started_at") or 0, r.get("run_id") or ""), reverse=True)
     return runs
 
 
-def run_summary(state: dict) -> dict:
-    """The listing projection of one state document (pure)."""
+def run_summary(state: dict, alive_fn=None) -> dict:
+    """The listing projection of one state document (pure given *alive_fn*).
+
+    A run still marked ``running`` whose child is definitively gone is reported
+    as ``lost``: the child is killed, or crashed hard enough to skip even its
+    own ``finally``, and reporting it as running forever is the one answer that
+    is certainly wrong. Only a definitive ``False`` from *alive_fn* demotes it —
+    unknown (no pid recorded, or a platform we cannot probe) stays ``running``.
+    """
+    status = state.get("status")
+    if status == STATUS_RUNNING and alive_fn is not None and alive_fn(state.get("pid")) is False:
+        status = STATUS_LOST
     return {
         "run_id": state.get("run_id"),
-        "status": state.get("status"),
+        "status": status,
         "agent": state.get("agent"),
         "role": state.get("role"),
         "ok": state.get("ok"),
         "error_code": state.get("error_code"),
         "started_at": state.get("started_at"),
         "duration_s": state.get("duration_s"),
+        "pid": state.get("pid"),
     }
 
 
-def initial_state(run_id: str, spec: AgentSpec, role: str, now: float) -> dict:
-    """The state file written before a detached child is spawned (pure)."""
+def initial_state(
+    run_id: str, spec: AgentSpec, role: str, now: float, pid: int | None = None
+) -> dict:
+    """The state file written before a detached child is spawned (pure).
+
+    ``pid`` and ``timeout_s`` are recorded so a later ``--status`` can tell a
+    live run from an abandoned one, and so ``--wait`` can derive a deadline
+    from what the run was actually given rather than a guess.
+    """
     return {
         "schema_version": SCHEMA_VERSION,
         "run_id": run_id,
@@ -450,7 +553,28 @@ def initial_state(run_id: str, spec: AgentSpec, role: str, now: float) -> dict:
         "model": spec.model or None,
         "role": role,
         "started_at": now,
+        "pid": pid,
+        "timeout_s": spec.timeout,
     }
+
+
+#: Head-room added to a run's own timeout to get a default ``--wait`` deadline:
+#: the agent has until its timeout, and the child needs a moment after that to
+#: write its state file.
+WAIT_GRACE_S = 60
+
+#: Deadline used when a run has recorded no timeout of its own (no state file
+#: yet, or one written by an older version). Bounded rather than infinite, so a
+#: scripted `--wait` cannot hang a pipeline forever.
+DEFAULT_WAIT_TIMEOUT_S = 3600
+
+
+def default_wait_timeout(state) -> float:
+    """The ``--wait`` deadline implied by a run's own timeout (pure)."""
+    recorded = (state or {}).get("timeout_s")
+    if isinstance(recorded, int) and not isinstance(recorded, bool) and recorded > 0:
+        return float(recorded + WAIT_GRACE_S)
+    return float(DEFAULT_WAIT_TIMEOUT_S)
 
 
 def wait_for_run(

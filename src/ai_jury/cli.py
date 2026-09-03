@@ -1243,7 +1243,8 @@ def _run_agent_parser() -> argparse.ArgumentParser:
     sub.add_argument(
         "--timeout",
         type=int,
-        help="seconds before the agent is killed (default: the agent's configured timeout)",
+        help="seconds before the AGENT is killed (default: the agent's configured "
+        "timeout). This bounds the agent, never the wait — see --wait-timeout",
     )
     sub.add_argument(
         "--effort",
@@ -1267,8 +1268,19 @@ def _run_agent_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="start the run in the background and print its run id immediately",
     )
-    sub.add_argument("--run-id", help="id for a detached run (default: a random one)")
+    sub.add_argument(
+        "--run-id",
+        help="id for a detached run: letters, digits, '.', '_' or '-', max 64 "
+        "characters (default: a random one). Only meaningful with --detach",
+    )
     sub.add_argument("--wait", metavar="RUN_ID", help="block until a detached run finishes")
+    sub.add_argument(
+        "--wait-timeout",
+        type=int,
+        metavar="SECONDS",
+        help="seconds --wait will block before giving up (default: the run's own "
+        f"timeout + {runagent.WAIT_GRACE_S}s, else {runagent.DEFAULT_WAIT_TIMEOUT_S}s)",
+    )
     sub.add_argument("--status", action="store_true", help="list detached runs and exit")
     sub.add_argument("--config", help="path to jury.toml (default: ./jury.toml or built-in)")
     sub.add_argument(
@@ -1335,30 +1347,65 @@ def _run_run_agent(rest: list[str], spawn=None, sleep=None, clock=None) -> int:
 
     ns = _run_agent_parser().parse_args(rest)
 
+    # Validate every id the caller supplies BEFORE it can reach a path. The
+    # library refuses an unsafe one on its own (runagent.run_path), so this is
+    # about the error the operator sees, not about whether the write is safe.
+    for flag, value in (("--run-id", ns.run_id), ("--wait", ns.wait)):
+        if value is not None:
+            problem = runagent.check_run_id(value)
+            if problem:
+                print(f"error: {flag}: {problem}", file=sys.stderr)
+                return 2
+    if ns.run_id and not (ns.detach or ns.child):
+        # It named nothing and recorded nothing — silently ignoring it would let
+        # a script believe it had a handle it could later --wait on.
+        print(
+            "error: --run-id only applies to a detached run; add --detach, or "
+            "drop --run-id to run in the foreground",
+            file=sys.stderr,
+        )
+        return 2
+
     if ns.status:
         print(json.dumps({"runs": runagent.list_runs(ns.cache_dir)}, indent=2))
         return 0
 
     if ns.wait:
-        problem = runagent.check_run_id(ns.wait)
-        if problem:
-            print(f"error: {problem}", file=sys.stderr)
+        if ns.wait_timeout is not None and ns.wait_timeout <= 0:
+            print("error: --wait-timeout must be a positive number of seconds", file=sys.stderr)
             return 2
+        # `--detach` reserves the id by writing the state file BEFORE it returns,
+        # so a run with no state file was never started — a typo, or the wrong
+        # --cache-dir. Say so now instead of blocking until a deadline expires.
+        known = runagent.read_state(ns.wait, ns.cache_dir)
+        if known is None:
+            print(f"error: no such run '{ns.wait}'", file=sys.stderr)
+            return 2
+        # The deadline comes from what the run was actually given (its own
+        # timeout plus head-room to write its state file), so a long agent run
+        # is not cut short and a dead one is not waited on forever.
+        deadline = ns.wait_timeout
+        if deadline is None:
+            deadline = runagent.default_wait_timeout(known)
         state, timed_out = runagent.wait_for_run(
             ns.wait,
             cache_dir=ns.cache_dir,
-            timeout=ns.timeout,
+            timeout=deadline,
             sleep=sleep or time.sleep,
             clock=clock or time.monotonic,
         )
         if timed_out:
+            gone = runagent.pid_alive((state or {}).get("pid")) is False
+            detail = " (its process is gone)" if gone else ""
             print(
-                f"error: run '{ns.wait}' did not finish within {ns.timeout}s",
+                f"error: run '{ns.wait}' did not finish within {deadline:g}s{detail}",
                 file=sys.stderr,
             )
             return 2
         if state is None:
-            print(f"error: no such run '{ns.wait}'", file=sys.stderr)
+            # The file vanished while we waited (a `jury cache clear`, a manual
+            # rm). Distinguished from "never existed", which returned above.
+            print(f"error: run '{ns.wait}' disappeared while waiting", file=sys.stderr)
             return 2
         print(json.dumps(state, indent=2))
         return 0 if state.get("ok") else 1
@@ -1428,22 +1475,85 @@ def _run_run_agent(rest: list[str], spawn=None, sleep=None, clock=None) -> int:
         file=sys.stderr,
     )
     started = time.time()
-    if ns.cwd:
-        with contextlib.chdir(ns.cwd):
+    record = _child_recorder(ns, spec, policy, started) if ns.child and ns.run_id else None
+    try:
+        if ns.cwd:
+            with contextlib.chdir(ns.cwd):
+                result = adapter.run(prompt, phase=policy.role, role_policy=policy)
+        else:
             result = adapter.run(prompt, phase=policy.role, role_policy=policy)
-    else:
-        result = adapter.run(prompt, phase=policy.role, role_policy=policy)
+        document = runagent.result_dict(spec, policy.role, result)
+    except BaseException as exc:
+        # A detached child that dies without writing leaves its run at
+        # "running" forever, and a `--wait` on it can only time out. Adapters
+        # are fail-soft, so reaching here means something unexpected — a
+        # KeyboardInterrupt, a bug — and the run must still end in a terminal
+        # state that says so. Re-raised: this records the death, it does not
+        # swallow it.
+        if record is not None:
+            record(_crash_document(spec, policy.role, started, exc))
+        raise
 
-    document = runagent.result_dict(spec, policy.role, result)
-    if ns.child and ns.run_id:
-        state = dict(document)
-        state.update({"run_id": ns.run_id, "status": runagent.STATUS_DONE, "started_at": started})
-        runagent.write_state(ns.run_id, state, ns.cache_dir)
+    if record is not None:
+        record(document)
     if ns.format == "text":
         print(document["text"])
     else:
         print(json.dumps(document, indent=2))
     return 0 if document["ok"] else 1
+
+
+def _crash_document(spec, role: str, started: float, exc: BaseException) -> dict:
+    """A result document for a child that died before producing one (#661)."""
+    import time
+
+    from . import runagent
+    from .adapters import ERR_UNKNOWN, AgentResult
+
+    reason = f"{type(exc).__name__}: {redact(str(exc))[0]}"
+    return runagent.result_dict(
+        spec,
+        role,
+        AgentResult(
+            spec.name,
+            spec.vendor,
+            False,
+            "",
+            max(0.0, time.time() - started),
+            f"run-agent exited before the agent finished: {reason}",
+            error_code=ERR_UNKNOWN,
+        ),
+    )
+
+
+def _child_recorder(ns, spec, policy, started: float):
+    """A callable that writes one terminal state file for a detached child.
+
+    Idempotent by construction — the caller invokes it exactly once, on the
+    success path or from the crash handler — and fail-soft: a child that cannot
+    write its state must still print its document to the log, since the log is
+    the only remaining record.
+    """
+    from . import runagent
+
+    del spec, policy
+
+    def record(document: dict) -> None:
+        state = dict(document)
+        state.update(
+            {
+                "run_id": ns.run_id,
+                "status": runagent.STATUS_DONE,
+                "started_at": started,
+                "pid": os.getpid(),
+            }
+        )
+        try:
+            runagent.write_state(ns.run_id, state, ns.cache_dir)
+        except (OSError, ValueError) as exc:
+            print(f"warning: could not record run state: {redact(str(exc))[0]}", file=sys.stderr)
+
+    return record
 
 
 def _detach_run_agent(ns, spec, policy, spawn=None) -> int:
@@ -1462,11 +1572,10 @@ def _detach_run_agent(ns, spec, policy, spawn=None) -> int:
         print(f"error: prompt file not found: {ns.prompt_file}", file=sys.stderr)
         return 2
 
+    # An operator-supplied id was already validated at parse time, and a
+    # generated one is valid by construction — `runagent.run_path` refuses an
+    # unsafe id regardless, so there is nothing left to re-check here.
     run_id = ns.run_id or runagent.new_run_id()
-    problem = runagent.check_run_id(run_id)
-    if problem:
-        print(f"error: {problem}", file=sys.stderr)
-        return 2
     if runagent.state_path(run_id, ns.cache_dir).exists():
         print(
             f"error: run '{run_id}' already exists; choose another --run-id",
@@ -1476,14 +1585,24 @@ def _detach_run_agent(ns, spec, policy, spawn=None) -> int:
 
     state = runagent.initial_state(run_id, spec, policy.role, time.time())
     try:
+        # Reserve the id BEFORE spawning, so a duplicate is refused rather than
+        # discovered by two children racing for the same state file.
         runagent.write_state(run_id, state, ns.cache_dir)
         out_path = runagent.output_path(run_id, ns.cache_dir)
         argv = _child_argv(ns, run_id, sys.executable)
         launch = spawn or _spawn_detached
-        launch(argv, out_path)
-    except OSError as exc:
+        pid = launch(argv, out_path)
+    except (OSError, ValueError) as exc:
         print(f"error: could not start the detached run: {redact(str(exc))[0]}", file=sys.stderr)
         return 2
+
+    if isinstance(pid, int):
+        # Second write, now that the child exists: `--status` needs the pid to
+        # tell a live run from one whose process is gone. Best-effort — a run
+        # without a recorded pid is simply reported as running, never as lost.
+        state["pid"] = pid
+        with contextlib.suppress(OSError, ValueError):
+            runagent.write_state(run_id, state, ns.cache_dir)
 
     print(
         json.dumps(
@@ -1498,12 +1617,19 @@ def _detach_run_agent(ns, spec, policy, spawn=None) -> int:
     return 0
 
 
-def _spawn_detached(argv: list[str], out_path: Path) -> None:
+#: Deliberately-unreaped background children (see :func:`_spawn_detached`). The
+#: parent is a short-lived CLI invocation, so this holds at most one entry per
+#: `--detach` in a process that is about to exit.
+_DETACHED_CHILDREN: list = []
+
+
+def _spawn_detached(argv: list[str], out_path: Path) -> int:
     """Start the background child, streaming its stdout+stderr to ``out_path``.
 
     Its own session, so the child outlives the shell that launched it — the
     whole point of ``--detach`` for an orchestrator that dispatches work and
-    comes back for it later.
+    comes back for it later. Returns the child's pid, which the caller records
+    so ``--status`` can later tell a live run from an abandoned one.
     """
     import subprocess
 
@@ -1514,13 +1640,19 @@ def _spawn_detached(argv: list[str], out_path: Path) -> None:
     # derived from the prompt and is no less sensitive than the diff a review sees.
     fd = os.open(out_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "wb") as out:
-        subprocess.Popen(  # noqa: S603 - argv is built here, never shell-parsed
+        proc = subprocess.Popen(  # noqa: S603 - argv is built here, never shell-parsed
             argv,
             stdin=subprocess.DEVNULL,
             stdout=out,
             stderr=subprocess.STDOUT,
             **kwargs,
         )
+    # Not waiting for this child is the whole point, but a dropped Popen warns
+    # ("subprocess N is still running") when it is collected, and the parent
+    # exits moments later so there is nothing to reap. Hold the reference
+    # instead of lying about the return code or reaching into private state.
+    _DETACHED_CHILDREN.append(proc)
+    return proc.pid
 
 
 def _run_replay(rest: list[str]) -> int:
