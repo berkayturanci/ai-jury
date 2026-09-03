@@ -508,8 +508,15 @@ def pid_alive(pid) -> bool | None:
     a wrong ``False`` would declare a live run dead. Ruling out recycling needs
     the process start time, which the standard library does not expose
     portably — and a runtime dependency is not on the table for this.
+
+    ``bool`` is excluded explicitly because it subclasses ``int``: without that
+    guard ``pid_alive(True)`` probes pid 1, which on POSIX raises
+    ``PermissionError`` and so reports "alive" — while
+    :func:`liveness_unknown_reason` calls the very same state document
+    unrecorded. Two classifications of one state that disagree is a drift the
+    guard costs one term to prevent.
     """
-    if os.name == "nt" or not isinstance(pid, int) or pid <= 0:
+    if os.name == "nt" or not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
         return None
     try:
         os.kill(pid, 0)
