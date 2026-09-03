@@ -1845,8 +1845,8 @@ model = "gpt-5.2"
 api_key_env = "%s"
 """
 
-    def _document(self, api_key_env: str) -> dict:
-        with _workspace(config_text=self.CONFIG % api_key_env) as root:
+    def _document(self, env_var_name: str) -> dict:
+        with _workspace(config_text=self.CONFIG % env_var_name) as root:
             env = {k: v for k, v in os.environ.items() if not k.endswith("_API_KEY")}
             with mock.patch.dict(os.environ, env, clear=True):
                 code, out, err = _run(
