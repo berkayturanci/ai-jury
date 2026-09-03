@@ -549,7 +549,6 @@ Run a local readiness check that surfaces common configuration problems:
 
 ```bash
 jury --doctor                          # print a readable report
-jury --doctor --json                   # the same facts as one JSON document
 jury --doctor --write diagnostics.json # also write the report as JSON
 ```
 
@@ -560,17 +559,6 @@ secret-like config values are redacted via the same redactor used for prompts,
 and the report **never** includes the diff under review or any agent output.
 Diagnostics are built locally and only written to disk when you pass
 `--write PATH`.
-
-`--doctor --json` prints the same facts as **one** JSON document on stdout and
-nothing else, for wizards and orchestrators — per agent: transport
-(`cli` / `api` / `local`), availability and the reason when unavailable, the
-command or endpoint, resolved binary, version, capabilities, discovered models,
-and effort support. The schema is `ai-jury.doctor.v1`, documented in
-[`docs/configuration.md`](docs/configuration.md#machine-readable-diagnostics-jury---doctor---json):
-
-```bash
-jury --doctor --json | jq '.agents[] | select(.available) | .name'
-```
 
 ## Use it from another project (skill)
 
@@ -678,8 +666,7 @@ accidental changes are caught in review.
 
 - *Input:* `--pr`, `--issue`, `--repo`, `--diff-file`, `--commit`, `--commits`
 - *Depth:* `--rounds`, `--max-rounds`, `--early-stop` / `--no-early-stop`,
-  `--auto` / `--no-auto`, `--verify` / `--no-verify`,
-  `--effort {low,medium,high}`
+  `--auto` / `--no-auto`, `--verify` / `--no-verify`
 - *Budget / reliability:* `--total-timeout`, `--phase-timeout`, `--retries`
 - *Large diffs:* `--max-diff-bytes`, `--chunk` / `--no-chunk`, `--exclude`,
   `--include`
@@ -696,7 +683,7 @@ accidental changes are caught in review.
 - *Cache & incremental:* `--cache`, `--clear-cache`, `--cache-dir`,
   `--incremental`
 - *Patches:* `--suggest-patches`, `--patches-out`
-- *Misc:* `--doctor`, `--json` (with `--doctor`), `--version`, `-h` / `--help`
+- *Misc:* `--doctor`, `--version`, `-h` / `--help`
 
 A version-independent test (`test_documented_flags_match_parser_exactly`)
 asserts the documented flag set and the parser's actual long options stay

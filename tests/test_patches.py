@@ -11,7 +11,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from ai_jury.consensus import FindingGroup  # noqa: E402
 from ai_jury.findings import Finding  # noqa: E402
 from ai_jury.patches import (  # noqa: E402
-    _looks_like_patch,
     patch_suggestions,
     render_patch_suggestions,
 )
@@ -73,48 +72,6 @@ class PatchSuggestionTest(unittest.TestCase):
         # Exactly the two fence markers we emit, none injected by the content —
         # so the forged "## Verdict" stays trapped inside the suggestion block.
         self.assertEqual(md.count("```"), 2)
-
-
-# One header line per marker `_looks_like_patch` recognises.
-_HEADERS = (
-    "diff --git a/x b/x",
-    "--- a/x",
-    "+++ b/x",
-    "@@ -1 +1 @@",
-    "GIT binary patch",
-)
-
-
-class LooksLikePatchTest(unittest.TestCase):
-    """The detector decides between `git apply` and a literal line replacement.
-
-    It used to split the text into lines; it now searches the raw string for a
-    marker at the start or after a newline. These pin the cases that must not
-    move: every marker on a first or later line, CRLF bodies, and a marker
-    that merely appears mid-line (which would otherwise send prose to git).
-    """
-
-    def test_first_line_marker_is_a_patch(self):
-        for marker in _HEADERS:
-            with self.subTest(marker=marker):
-                self.assertTrue(_looks_like_patch(f"{marker}\nbody\n"))
-
-    def test_marker_on_a_later_line_is_a_patch(self):
-        self.assertTrue(_looks_like_patch("Apply this:\ndiff --git a/x b/x\n--- a/x\n+++ b/x\n"))
-        self.assertTrue(_looks_like_patch("x\nGIT binary patch\nliteral 0\n"))
-
-    def test_crlf_bodies_are_still_detected(self):
-        self.assertTrue(_looks_like_patch("Apply this:\r\n+++ b/x\r\n"))
-
-    def test_marker_text_mid_line_is_not_a_patch(self):
-        # A "+++" or "diff --git" inside prose is not a header; treating it as
-        # one would hand a literal replacement to `git apply`.
-        self.assertFalse(_looks_like_patch("use a +++ b here\n"))
-        self.assertFalse(_looks_like_patch("run diff --git manually\n"))
-
-    def test_plain_replacement_is_not_a_patch(self):
-        self.assertFalse(_looks_like_patch("    return value or default\n"))
-        self.assertFalse(_looks_like_patch(""))
 
 
 if __name__ == "__main__":

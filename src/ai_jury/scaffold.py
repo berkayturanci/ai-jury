@@ -171,7 +171,6 @@ def build_config(
     context_mode: str | None = None,
     redact_secrets: bool | None = None,
     ci_fail_on: list[str] | None = None,
-    effort: str | None = None,
 ) -> dict:
     """Build a jury config dict from selected agent names.
 
@@ -183,10 +182,6 @@ def build_config(
     ``ci_fail_on`` knobs (used by ``jury init --wizard``) are written ONLY when
     not ``None`` — callers that omit them produce byte-identical output to before,
     keeping the scaffolded file free of redundant built-in defaults.
-
-    ``effort`` (issue #662) is written onto each selected agent whose vendor can
-    act on it; agents whose vendor has no effort control are left alone rather
-    than scaffolded with a setting that would only warn at run time.
     """
     templates = agent_templates()
     chosen: list[dict] = []
@@ -203,8 +198,6 @@ def build_config(
                 entry["model"] = local_model
             if local_endpoint:
                 entry["endpoint"] = local_endpoint
-        if effort and _effort_supported(entry.get("vendor", "")):
-            entry["effort"] = effort
         chosen.append(entry)
         seen.add(name)
 
@@ -233,17 +226,6 @@ def build_config(
     return {"jury": jury, "agent": chosen}
 
 
-def _effort_supported(vendor: str) -> bool:
-    """Whether *vendor* has an effort control (see ``adapters.effort_args``).
-
-    Imported lazily so this module keeps its light import graph; ``adapters``
-    is the single owner of the vendor -> effort mapping.
-    """
-    from .adapters import effort_supported
-
-    return effort_supported(vendor)
-
-
 def _scalar(value) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
@@ -262,11 +244,7 @@ def _render_value(value) -> str:
 
 
 # Stable key order for agent tables so output is deterministic and readable.
-_AGENT_KEY_ORDER = ("name", "vendor", "command", "endpoint", "model", "effort", "extra_args")
-
-#: Commented hint written under every effort-capable agent that has no explicit
-#: level, so the setting is discoverable from the generated file itself.
-_EFFORT_HINT = '# effort = "medium"    # low | medium | high'
+_AGENT_KEY_ORDER = ("name", "vendor", "command", "endpoint", "model", "extra_args")
 
 
 def render_toml(config: dict) -> str:
@@ -313,11 +291,6 @@ def render_toml(config: dict) -> str:
             if value in (None, "", []):
                 continue
             lines.append(f"{key} = {_render_value(value)}")
-        # Only hint at `effort` where the vendor can actually act on it; a hint
-        # under the `claude`/`codex` CLI blocks would invite a setting that only
-        # ever produces an "effort unsupported" warning.
-        if not agent.get("effort") and _effort_supported(agent.get("vendor", "")):
-            lines.append(_EFFORT_HINT)
         lines.append("")
 
     return "\n".join(lines).rstrip() + "\n"

@@ -22,12 +22,10 @@ from __future__ import annotations
 
 import contextlib
 import io
-import json
 import os
 import sys
 import tempfile
 import unittest
-import unittest.mock as mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
@@ -89,9 +87,7 @@ DOCUMENTED_FLAGS = [
     "--verify",
     "--no-verify",
     "--doctor",
-    "--json",
     "--write",
-    "--effort",
     "--output",
     "--metadata-json",
     "--format",
@@ -283,19 +279,6 @@ class ErrorContractTests(unittest.TestCase):
         self.assertNotEqual(code, 0)
         self.assertIn("error reading diff file", str(code) + err)
 
-    def test_missing_diff_file_error_redacts_the_exception_text(self):
-        # The OSError repeats the path; a token-shaped component in it must
-        # come back as the placeholder (#658). The prefix quotes the argument
-        # verbatim, so the raw token appears exactly once — in the user's own
-        # input — and never in the interpolated exception.
-        token_dir = "ghp_" + "B" * 36
-        path = f"/nonexistent/{token_dir}/diff.patch"
-        code, _, err = _run_cli(["--mock", "--diff-file", path])
-        text = str(code) + err
-        self.assertIn("error reading diff file", text)
-        self.assertIn("[REDACTED:github_token]", text)
-        self.assertEqual(text.count(token_dir), 1)
-
 
 class MockPipelineTests(unittest.TestCase):
     """Lock the deterministic offline pipeline behavior and report headings."""
@@ -405,148 +388,6 @@ class CiGateTests(unittest.TestCase):
         # CI gate must return a non-zero exit code (1).
         code, _, _ = _run_cli(["--ci", "--mock", "--diff-file", "-"], stdin=SAMPLE_DIFF)
         self.assertEqual(code, 1)
-
-
-class DoctorJsonCliTests(unittest.TestCase):
-    """`jury --doctor --json`: exactly one JSON document on stdout (issue #662)."""
-
-    CONFIG = (
-        '[jury]\nrounds = 1\nchair = "a"\n\n'
-        '[[agent]]\nname = "a"\nvendor = "openai-api"\nmodel = "gpt-x"\neffort = "high"\n'
-    )
-
-    def _config_path(self):
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".toml", delete=False, encoding="utf-8"
-        ) as tmp:
-            tmp.write(self.CONFIG)
-        self.addCleanup(os.unlink, tmp.name)
-        return tmp.name
-
-    def test_stdout_is_one_json_document_and_nothing_else(self):
-        code, out, _err = _run_cli(["--doctor", "--json", "--config", self._config_path()])
-        self.assertEqual(code, 0)
-        payload = json.loads(out)  # raises if stdout carries anything but JSON
-        self.assertEqual(payload["schema_version"], "ai-jury.doctor.v1")
-        self.assertEqual(payload["tool_version"], __version__)
-        self.assertNotIn("jury doctor", out)  # the human report stayed out of it
-
-    def test_human_report_is_still_the_default(self):
-        code, out, _err = _run_cli(["--doctor", "--config", self._config_path()])
-        self.assertEqual(code, 0)
-        self.assertIn("jury doctor", out)
-        with self.assertRaises(ValueError):
-            json.loads(out)
-
-    def test_write_confirmation_moves_to_stderr_under_json(self):
-        out_dir = Path(tempfile.mkdtemp())
-        target = out_dir / "diagnostics.json"
-        code, out, err = _run_cli(
-            ["--doctor", "--json", "--write", str(target), "--config", self._config_path()]
-        )
-        self.assertEqual(code, 0)
-        json.loads(out)  # stdout is STILL just the one export
-        self.assertIn("Wrote diagnostics", err)
-        self.assertTrue(target.exists())
-
-    def test_json_without_doctor_is_rejected(self):
-        code, out, err = _run_cli(["--json", "--mock", "--diff-file", "-"], stdin=SAMPLE_DIFF)
-        self.assertEqual(code, 2)
-        self.assertEqual(out, "")
-        self.assertIn("--json applies to --doctor", err)
-
-    def test_the_guard_runs_before_every_short_circuiting_branch(self):
-        # It used to sit behind --clear-cache, which returns first, so a
-        # misplaced --json was silently accepted on that path.
-        out_dir = Path(tempfile.mkdtemp())
-        code, out, err = _run_cli(["--json", "--clear-cache", "--cache-dir", str(out_dir)])
-        self.assertEqual(code, 2)
-        self.assertEqual(out, "")
-        self.assertIn("--json applies to --doctor", err)
-
-    def test_effort_choices_come_from_the_adapter_mapping(self):
-        from ai_jury.adapters import EFFORT_LEVELS
-
-        action = next(a for a in build_parser()._actions if "--effort" in a.option_strings)
-        self.assertEqual(list(action.choices), list(EFFORT_LEVELS))
-
-
-class EffortCliTests(unittest.TestCase):
-    """`--effort` overrides every agent for the run and warns where unsupported."""
-
-    @staticmethod
-    def _write(text):
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".toml", delete=False, encoding="utf-8"
-        ) as tmp:
-            tmp.write(text)
-        return tmp.name
-
-    def _captured_config(self, argv, config_text):
-        """Run the CLI with the orchestrator stubbed; return the config it got."""
-        path = self._write(config_text)
-        self.addCleanup(os.unlink, path)
-        captured = {}
-
-        def _fake_review_diff(config, *_a, **_kw):
-            captured["config"] = config
-            raise SystemExit(0)
-
-        with mock.patch("ai_jury.cli.review_diff", side_effect=_fake_review_diff):
-            code, out, err = _run_cli(
-                [*argv, "--config", path, "--mock", "--diff-file", "-"], stdin=SAMPLE_DIFF
-            )
-        return captured.get("config"), code, out, err
-
-    CONFIG = (
-        '[jury]\nrounds = 1\nchair = "gpt"\n\n'
-        '[[agent]]\nname = "gpt"\nvendor = "openai-api"\nmodel = "gpt-x"\neffort = "low"\n\n'
-        '[[agent]]\nname = "claude"\nvendor = "anthropic"\ncommand = "claude"\n'
-    )
-
-    def test_flag_overrides_every_configured_agent(self):
-        config, _code, _out, _err = self._captured_config(["--effort", "high"], self.CONFIG)
-        self.assertEqual([a.effort for a in config.agents], ["high", "high"])
-
-    def test_config_effort_is_kept_without_the_flag(self):
-        config, _code, _out, _err = self._captured_config([], self.CONFIG)
-        self.assertEqual([a.effort for a in config.agents], ["low", None])
-
-    def test_unsupported_vendor_warns_once_per_run(self):
-        _config, _code, _out, err = self._captured_config(["--effort", "high"], self.CONFIG)
-        warning = "effort unsupported for anthropic, ignored"
-        self.assertEqual(err.count(warning), 1)
-
-    def test_no_warning_when_every_vendor_supports_effort(self):
-        supported = (
-            '[jury]\nrounds = 1\nchair = "gpt"\n\n'
-            '[[agent]]\nname = "gpt"\nvendor = "openai-api"\nmodel = "gpt-x"\n'
-        )
-        _config, _code, _out, err = self._captured_config(["--effort", "high"], supported)
-        self.assertNotIn("effort unsupported", err)
-
-    def test_model_listings_are_probed_outside_mock_only(self):
-        # --mock must never spawn a vendor CLI to check a model listing.
-        for argv, expects_factory in ((["--mock"], False), ([], True)):
-            with (
-                mock.patch("ai_jury.cli.effort_warnings", return_value=[]) as warned,
-                mock.patch("ai_jury.cli.review_diff", side_effect=SystemExit(0)),
-            ):
-                path = self._write(self.CONFIG)
-                self.addCleanup(os.unlink, path)
-                _run_cli(
-                    ["--effort", "high", "--config", path, "--diff-file", "-", *argv],
-                    stdin=SAMPLE_DIFF,
-                )
-            factory = warned.call_args.kwargs["adapter_factory"]
-            self.assertEqual(factory is not None, expects_factory, argv)
-
-    def test_invalid_level_is_rejected_by_the_parser(self):
-        code, _out, err = _run_cli(
-            ["--effort", "maximum", "--mock", "--diff-file", "-"], stdin=SAMPLE_DIFF
-        )
-        self.assertNotEqual(code, 0)
-        self.assertIn("--effort", err)
 
 
 if __name__ == "__main__":

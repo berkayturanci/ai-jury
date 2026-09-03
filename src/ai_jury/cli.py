@@ -22,7 +22,6 @@ from pathlib import Path
 
 from . import __version__
 from . import doctor as doctor_module
-from .adapters import EFFORT_LEVELS, effort_warnings, make_adapter
 from .ci import evaluate_ci
 from .classification import classify, label_strings
 from .config import ConfigError, load_config, load_raw_config, validate_config
@@ -138,9 +137,7 @@ def _read_diff(args) -> tuple[str, str]:
             with Path(args.diff_file).open("rb") as fh:
                 return _read_capped(fh, args.diff_file), ""
         except (OSError, UnicodeDecodeError) as exc:
-            raise SystemExit(
-                f"error reading diff file '{args.diff_file}': {redact(str(exc))[0]}"
-            ) from None
+            raise SystemExit(f"error reading diff file '{args.diff_file}': {exc}") from None
     raise SystemExit(
         "error: provide one of --pr, --issue, --diff-file, --commit, --commits "
         "(or --diff-file - for stdin)"
@@ -322,25 +319,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="print a local readiness diagnostics report and exit (no telemetry is collected or sent)",
     )
     p.add_argument(
-        "--json",
-        action="store_true",
-        help=(
-            "with --doctor, print the machine-readable provider export "
-            "(schema ai-jury.doctor.v1) as the only thing on stdout"
-        ),
-    )
-    p.add_argument(
         "--write",
         help="with --doctor, also write the diagnostics as JSON to this path (secrets redacted)",
-    )
-    p.add_argument(
-        "--effort",
-        choices=list(EFFORT_LEVELS),
-        default=None,
-        help=(
-            "reasoning effort for every agent this run (overrides [[agent]] effort); "
-            "ignored with a warning for agents whose vendor has no effort control"
-        ),
     )
     p.add_argument("-o", "--output", help="write the report to a file instead of stdout")
     p.add_argument(
@@ -566,9 +546,7 @@ def _run_apply(rest: list[str]) -> int:
                 return 2
             content = p.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as exc:
-            print(
-                f"Error reading report file '{ns.report}': {redact(str(exc))[0]}", file=sys.stderr
-            )
+            print(f"Error reading report file '{ns.report}': {exc}", file=sys.stderr)
             return 2
     elif sys.stdin is not None and not sys.stdin.isatty():
         content = sys.stdin.read()
@@ -718,6 +696,7 @@ _AGENT_BLURB = {
 
 def _init_available() -> dict:
     """Map each known agent name to whether it is reachable right now."""
+    from .adapters import make_adapter
     from .config import AgentSpec
     from .scaffold import KNOWN_AGENTS, agent_templates
 
@@ -785,19 +764,12 @@ def _init_interactive(available: dict, input_fn=input, local_endpoint=None, mode
             )
             local_model = input_fn("Local model name [qwen2.5-coder:7b]: ").strip() or None
 
-    # Reasoning effort (issue #662). Skippable: Enter leaves it unset, so
-    # nothing is written and every agent keeps its vendor default. Asked last so
-    # the established question order is unchanged.
-    effort_raw = input_fn("Reasoning effort — low/medium/high [skip]: ").strip().lower()
-    effort = effort_raw if effort_raw in EFFORT_LEVELS else None
-
     return {
         "agents": agents,
         "rounds": rounds,
         "chair": chair,
         "verify": verify,
         "local_model": local_model,
-        "effort": effort,
     }
 
 
@@ -1487,15 +1459,6 @@ def main(argv: list[str] | None = None) -> int:
 
     args = build_parser().parse_args(argv)
 
-    # Checked before any short-circuiting branch below, so `--json` is rejected
-    # wherever it is misplaced rather than only on the paths that reach the end.
-    if args.json and not args.doctor:
-        print(
-            "error: --json applies to --doctor; use --format json for the review report.",
-            file=sys.stderr,
-        )
-        return 2
-
     if args.clear_cache:
         from .cache import Cache
 
@@ -1504,17 +1467,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.doctor:
-        # Model discovery costs a probe per agent and only the JSON export
-        # renders it; the human report must not pay for a field it never prints.
-        diagnostics = doctor_module.build_diagnostics(args.config, probe_models=args.json)
-        if args.json:
-            # Exactly ONE JSON document on stdout, and nothing else: the export
-            # is meant to be piped straight into `jq` / an orchestrator, so any
-            # human chatter (including the --write confirmation below) goes to
-            # stderr.
-            print(json.dumps(doctor_module.doctor_report_dict(diagnostics), indent=2))
-        else:
-            print(doctor_module.render_report(diagnostics))
+        diagnostics = doctor_module.build_diagnostics(args.config)
+        print(doctor_module.render_report(diagnostics))
         if args.write:
             try:
                 Path(args.write).write_text(
@@ -1523,8 +1477,7 @@ def main(argv: list[str] | None = None) -> int:
             except OSError as exc:
                 print(f"error: {redact(str(exc))[0]}", file=sys.stderr)
                 return 2
-            stream = sys.stderr if args.json else sys.stdout
-            print(f"\nWrote diagnostics to {args.write}", file=stream)
+            print(f"\nWrote diagnostics to {args.write}")
         return 0
 
     if args.config_validate:
@@ -1568,19 +1521,6 @@ def main(argv: list[str] | None = None) -> int:
         config.seed = args.seed
     if args.chair:
         config.chair = args.chair
-    # --effort is a whole-panel override: it wins over every [[agent]] effort so
-    # one flag raises (or lowers) the depth of the entire run.
-    if args.effort is not None:
-        for agent in config.agents:
-            agent.effort = args.effort
-    # Warn ONCE per run per distinct message, before any agent is invoked, for
-    # every panelist whose vendor cannot act on the requested effort. Real
-    # adapters are passed only outside --mock, so an offline demo never spawns a
-    # vendor CLI to check a model listing.
-    for warning in effort_warnings(
-        config.enabled_agents, adapter_factory=None if args.mock else make_adapter
-    ):
-        print(f"warning: {warning}", file=sys.stderr)
     if args.verify is not None:
         config.verify = args.verify
     if args.context_mode is not None:

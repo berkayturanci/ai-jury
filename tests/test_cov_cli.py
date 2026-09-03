@@ -126,10 +126,7 @@ class InitDetectionPaths(unittest.TestCase):
 
     def test_init_available_swallows_errors(self):
         # _init_available: make_adapter raising -> detection records False (312-313).
-        # Patched in the cli namespace: make_adapter is imported at module level
-        # there now (the effort warnings need it), so the adapters-module name is
-        # no longer the one this function resolves.
-        with mock.patch("ai_jury.cli.make_adapter", side_effect=RuntimeError("boom")):
+        with mock.patch("ai_jury.adapters.make_adapter", side_effect=RuntimeError("boom")):
             avail = cli._init_available()
         self.assertTrue(all(v is False for v in avail.values()))
 
@@ -195,7 +192,7 @@ class InitInteractive(unittest.TestCase):
     def test_default_models_fn_used(self):
         # models_fn left None -> imports list_local_models (line 327). Choose qwen
         # so the local-model block runs; empty pick -> local_model = default (365).
-        answers = iter(["qwen", "", "", "", "", ""])  # agents/rounds/chair/verify/model/effort
+        answers = iter(["qwen", "", "", "", ""])  # agents, rounds, chair, verify, model pick
 
         def fake_input(_prompt):
             return next(answers)
@@ -495,7 +492,7 @@ class InitInteractiveModelPicks(unittest.TestCase):
     unreachable-server fallback prompt (367-371)."""
 
     def test_pick_model_by_number(self):
-        answers = iter(["qwen", "1", "qwen", "y", "2", ""])  # pick model #2, then skip effort
+        answers = iter(["qwen", "1", "qwen", "y", "2"])  # last: pick model #2
 
         def fake_input(_prompt):
             return next(answers)
@@ -508,7 +505,7 @@ class InitInteractiveModelPicks(unittest.TestCase):
         self.assertEqual(kwargs["local_model"], "b:2b")
 
     def test_pick_model_by_name(self):
-        answers = iter(["qwen", "1", "qwen", "y", "custom:3b", ""])
+        answers = iter(["qwen", "1", "qwen", "y", "custom:3b"])
 
         def fake_input(_prompt):
             return next(answers)
@@ -522,7 +519,7 @@ class InitInteractiveModelPicks(unittest.TestCase):
 
     def test_server_unreachable_fallback_prompt(self):
         # No models discoverable -> the "could not reach server" prompt (367-371).
-        answers = iter(["qwen", "1", "qwen", "y", "mymodel:1b", ""])
+        answers = iter(["qwen", "1", "qwen", "y", "mymodel:1b"])
 
         def fake_input(_prompt):
             return next(answers)
