@@ -23,9 +23,17 @@ import tomllib
 from pathlib import Path
 
 from . import __version__
-from .adapters import make_adapter
+from .adapters import effort_supported, make_adapter
 from .config import ConfigError, load_config
 from .redaction import redact, redact_url_userinfo
+
+#: Version of the machine-readable export emitted by ``jury --doctor --json``.
+#: Bump this (and ``tests/test_doctor.py``'s schema test) on any breaking change
+#: to the shape produced by :func:`doctor_report_dict`.
+DOCTOR_SCHEMA_VERSION = "ai-jury.doctor.v1"
+
+#: Default endpoint assumed for a ``vendor = "local"`` agent with none configured.
+_DEFAULT_LOCAL_ENDPOINT = "http://localhost:11434/v1"
 
 
 def _redact_value(value):
@@ -97,21 +105,83 @@ def _resolved_command(spec):
         return None
 
 
+def _probe_models(spec):
+    """Model ids this agent could be pointed at, or None (issue #662).
+
+    Delegates to the adapter's own ``list_models`` seam — ``agy models`` for
+    Antigravity, the OpenAI-compatible ``/models`` listing for a local server —
+    and, like every other doctor probe, swallows any failure.
+    """
+    try:
+        models = make_adapter(spec).list_models()
+    except Exception:  # noqa: BLE001 - diagnostics must never crash
+        return None
+    if not models:
+        return None
+    return [_redact_value(m) for m in models]
+
+
+def _endpoint_for(spec):
+    """The HTTP endpoint an agent talks to, or None for a CLI agent.
+
+    A configured ``endpoint`` wins (with any userinfo credentials stripped); a
+    hosted-API vendor reports its adapter's fixed vendor URL, so the export
+    answers "where would this actually go?" for every non-CLI transport.
+    """
+    if getattr(spec, "endpoint", None):
+        return redact_url_userinfo(spec.endpoint)
+    vendor = (getattr(spec, "vendor", "") or "").lower()
+    if vendor == "local":
+        return _DEFAULT_LOCAL_ENDPOINT
+    try:
+        api_url = getattr(make_adapter(spec), "_api_url", None)
+        return api_url() if callable(api_url) else None
+    except Exception:  # noqa: BLE001 - diagnostics must never crash
+        return None
+
+
+def _unavailable_reason(spec, capability_warnings) -> str:
+    """Why an agent is not usable, in one line (pure given its inputs).
+
+    Prefers the adapter's own capability warning (e.g. "ANTHROPIC_API_KEY is not
+    set") so the export cannot drift from what the adapter reports, and falls
+    back to a transport-appropriate message when the probe said nothing.
+    """
+    if capability_warnings:
+        return "; ".join(capability_warnings)
+    vendor = (getattr(spec, "vendor", "") or "").lower()
+    if vendor == "local":
+        endpoint = redact_url_userinfo(spec.endpoint or _DEFAULT_LOCAL_ENDPOINT)
+        return f"endpoint '{endpoint}' is not reachable"
+    if vendor in _HOSTED_API_VENDORS or vendor.endswith("-api"):
+        return "the hosted API is not reachable"
+    if getattr(spec, "command", ""):
+        return f"command '{_redact_value(spec.command)}' is not on PATH"
+    return "not available"
+
+
 def _agent_entry(spec):
     caps = _detect_capabilities(spec)
+    available = _is_available(spec)
+    capability_warnings = [_redact_value(w) for w in caps.get("warnings", [])]
     return {
         "name": _redact_value(spec.name),
         "command": _redact_value(spec.command),
+        "endpoint": _endpoint_for(spec),
         "resolved": _resolved_command(spec),
         "vendor": _redact_value(spec.vendor),
-        "available": _is_available(spec),
+        "available": available,
+        "reason": None if available else _unavailable_reason(spec, capability_warnings),
         "version": _redact_value(caps.get("version")),
         "capabilities": {
             "supports_headless": caps.get("supports_headless"),
             "supports_model_selection": caps.get("supports_model_selection"),
             "status": caps.get("status"),
         },
-        "capability_warnings": [_redact_value(w) for w in caps.get("warnings", [])],
+        "models": _probe_models(spec),
+        "effort": _redact_value(getattr(spec, "effort", None)),
+        "effort_supported": effort_supported(getattr(spec, "vendor", "")),
+        "capability_warnings": capability_warnings,
     }
 
 
@@ -265,8 +335,94 @@ def build_diagnostics(config_path=None):
     }
 
 
+# Capability flags -> the short labels shown in both renderers, in a fixed order.
+_CAPABILITY_LABELS = (
+    ("supports_headless", "headless"),
+    ("supports_model_selection", "model-selection"),
+)
+
+
+def capability_labels(capabilities) -> list[str]:
+    """Short capability labels for one agent's capability dict (pure)."""
+    caps = capabilities or {}
+    return [label for key, label in _CAPABILITY_LABELS if caps.get(key)]
+
+
+def _transport(vendor: str, command: str, endpoint) -> str:
+    """Classify how an agent is reached: ``cli``, ``api`` or ``local`` (pure)."""
+    name = (vendor or "").strip().lower()
+    if name == "local":
+        return "local"
+    if name.endswith("-api") or name == "openai-compatible":
+        return "api"
+    if command:
+        return "cli"
+    return "api" if endpoint else "cli"
+
+
+def doctor_report_dict(diagnostics) -> dict:
+    """Project a diagnostics dict onto the stable ``ai-jury.doctor.v1`` export.
+
+    PURE: it runs no probes and touches no network, PATH or filesystem — every
+    fact comes from the dict :func:`build_diagnostics` already built, so the
+    probes run exactly once no matter how many renderers consume them.
+
+    Both renderers consume this: ``jury --doctor --json`` serializes it, and
+    :func:`render_report` renders its agent rows from it, so the human report
+    and the machine export cannot describe the panel differently.
+
+    Secrets are never included — only environment *variable names*, which reach
+    this dict through the adapters' own capability warnings.
+    """
+    agents = []
+    for entry in diagnostics.get("agents", []):
+        vendor = entry.get("vendor") or ""
+        command = entry.get("command") or ""
+        endpoint = entry.get("endpoint")
+        transport = _transport(vendor, command, endpoint)
+        item = {
+            "name": entry.get("name"),
+            "vendor": vendor,
+            "transport": transport,
+            "available": bool(entry.get("available")),
+            "reason": entry.get("reason"),
+        }
+        # One address key per agent, named for the transport that reaches it.
+        if transport == "cli":
+            item["command"] = command
+        else:
+            item["endpoint"] = endpoint
+        models = entry.get("models")
+        item["resolved"] = entry.get("resolved")
+        item["version"] = entry.get("version")
+        item["capabilities"] = capability_labels(entry.get("capabilities"))
+        item["models"] = list(models) if models else None
+        item["effort_supported"] = bool(entry.get("effort_supported"))
+        item["effort"] = entry.get("effort")
+        agents.append(item)
+
+    recommendations = diagnostics.get("recommendations") or {}
+    return {
+        "schema_version": DOCTOR_SCHEMA_VERSION,
+        "tool_version": diagnostics.get("tool_version"),
+        "python": diagnostics.get("python_version"),
+        "config_path": diagnostics.get("config_path"),
+        "ready": bool(recommendations.get("ready")),
+        "agents": agents,
+        "warnings": list(diagnostics.get("config_warnings") or []),
+    }
+
+
 def render_report(diagnostics) -> str:
-    """Render a human-readable text report from a diagnostics dict."""
+    """Render a human-readable text report from a diagnostics dict.
+
+    The Agents section and the readiness line are rendered from
+    :func:`doctor_report_dict`, the same projection ``--json`` serializes, so
+    the two views cannot drift; the capability *probe status* is read alongside
+    it from the raw diagnostics (it is a diagnostic detail, not part of the
+    exported schema).
+    """
+    report = doctor_report_dict(diagnostics)
     lines = []
     lines.append("jury doctor")
     lines.append("=" * 40)
@@ -281,32 +437,29 @@ def render_report(diagnostics) -> str:
 
     lines.append("Agents")
     lines.append("-" * 40)
-    agents = diagnostics["agents"]
+    agents = report["agents"]
     if not agents:
         lines.append("  (no agents loaded)")
     else:
-        for agent in agents:
+        for agent, probe in zip(agents, diagnostics["agents"], strict=False):
             status = "available" if agent["available"] else "MISSING"
             lines.append(
                 f"  [{status:>9}] {agent['name']} "
-                f"(vendor={agent['vendor']}, command={agent['command']})"
+                f"(vendor={agent['vendor']}, command={agent.get('command', '')})"
             )
-            if agent.get("command") and agent.get("vendor") != "local":
+            if agent.get("command"):
                 resolved = agent.get("resolved") or "(not found on PATH)"
                 lines.append(f"              resolved: {resolved}")
             version = agent.get("version") or "unknown"
-            caps = agent.get("capabilities") or {}
-            cap_bits = []
-            if caps.get("supports_headless"):
-                cap_bits.append("headless")
-            if caps.get("supports_model_selection"):
-                cap_bits.append("model-selection")
-            cap_summary = ", ".join(cap_bits) or "none"
-            cap_status = caps.get("status") or "unknown"
-            lines.append(
+            cap_summary = ", ".join(agent["capabilities"]) or "none"
+            cap_status = (probe.get("capabilities") or {}).get("status") or "unknown"
+            summary = (
                 f"              version={version}, capabilities=[{cap_summary}] "
                 f"(probe: {cap_status})"
             )
+            if agent.get("effort"):
+                summary += f", effort={agent['effort']}"
+            lines.append(summary)
     lines.append("")
 
     lines.append("Config summary")
@@ -335,7 +488,7 @@ def render_report(diagnostics) -> str:
     rec = diagnostics.get("recommendations") or {}
     lines.append("Next steps")
     lines.append("-" * 40)
-    lines.append(f"  ready to run: {'yes' if rec.get('ready') else 'no'}")
+    lines.append(f"  ready to run: {'yes' if report['ready'] else 'no'}")
     for step in rec.get("steps", []):
         lines.append(f"  - {step}")
     lines.append("")
