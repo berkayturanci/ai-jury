@@ -628,9 +628,9 @@ touches a `tier3_globs` path turns the jury on automatically (gating, unless
 
 ### What keel does with the report
 
-At the `s8 test` step, Keel runs `jury --format json --diff-file <tmp>`
-read-only against the PR diff (never `--strict`) and maps each finding's
-`ai-jury` severity onto a Keel severity:
+At the `s8 test` step, a `keel ship` run invokes `jury --format json
+--diff-file <tmp>` read-only against the PR diff (never `--strict`) and maps each
+finding's `ai-jury` severity onto a Keel severity:
 
 | `ai-jury` severity | Keel severity | Effect in gating mode |
 |---|---|---|
@@ -640,14 +640,20 @@ read-only against the PR diff (never `--strict`) and maps each finding's
 | `nit`, `info`, `note` | `nit` | advisory only |
 | anything else / unrecognized | `minor` | gated suggestion |
 
-Keel then:
+What runs this step is Keel's **ship adapter** — the `ship` command/skill
+generated from `src/keel/adapters/commands/ship.md` in the keel repository, not
+any code path in `src/keel/*.py`. (Anchors below are keel `main` as of
+2026-09-04.) The adapter:
 
 - Posts a single verdict comment to the PR via `keel post-comment --artifact
   jury-verdict`, tagged with the `keel.jury-verdict.v1` marker and `head: <sha>`
   so re-runs on the same commit stay idempotent instead of piling up comments.
-- Saves the raw JSON report to `.keel/state/jury/<run-id>.json` — untracked
-  state, not committed — so `keel-visual` can show the jury verdict alongside
-  the run on the activity board.
+- Saves the raw JSON report to `.keel/state/jury/<run-id>.json` by adding
+  `--format json -o .keel/state/jury/$RUN_ID.json` to that same jury invocation
+  (`commands/ship.md:711`, s8, "Save the jury artifact for visualizers"). It is
+  untracked state, never committed, and the write is fail-soft — display-only,
+  it never gates. `keel-visual` only *reads* the file, to show the jury verdict
+  alongside the run on the activity board.
 - Passes the count of **distinct participating vendors** (the ones that
   actually returned output, not just the ones configured) to `keel
   evidence-verify --jury-vendors <N>` at merge time. A panel with fewer than 2
@@ -893,11 +899,33 @@ with the child's console log beside it as `<run-id>.out`. `--cache-dir` and
 letters, digits, `.`, `_` and `-`; anything that could point outside the runs
 directory is refused.
 
-### From keel
+### From keel, and what keel actually does
 
-This is the integration point for keel's `keel delegate run`: keel picks the
-agent and the role, ai-jury owns the argv, the sandbox and the error taxonomy,
-and the JSON result carries the attribution keel writes onto the issue.
+`jury run-agent` is the entry point for *any* orchestrator that wants one agent,
+one role and one JSON result: the caller picks the agent and the role, ai-jury
+owns the argv, the sandbox and the error taxonomy, and the result carries the
+attribution the caller can write onto an issue.
+
+**Keel is not that caller today.** Keel's `keel delegate run`
+(`src/keel/delegate.py` and `src/keel/delegaterun.py`, keel `main` as of
+2026-09-04) is an
+independent port of the same contract, not a client of this command: its module
+docstring names ai-jury's `src/ai_jury/adapters.py` as a *read-only reference*
+for the vendor invocations, and it re-derives the argv shapes, the
+role-to-privilege policy and the `agent:<vendor>` / `model:<base>` attribution
+label on its own. The string `jury run-agent` does not appear anywhere in keel's
+tree — `git grep 'jury run-agent'` there returns nothing. Two implementations
+of one contract, agreeing by construction and by review, neither running the
+other.
+
+The change that will make keel call the jury is
+[keel#1015](https://github.com/berkayturanci/keel/issues/1015), which makes the
+panel keel's tier-3 review panel, invoked from `s7`. Update this section again
+when that merges.
+
+So the invocation below is the shape a caller uses — written with keel's
+environment variable names, since a host agent driving a keel worktree is the
+obvious first one:
 
 ```bash
 jury run-agent --agent "$KEEL_DELEGATE" --role implement --allow-write \

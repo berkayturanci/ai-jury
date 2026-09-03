@@ -6,44 +6,108 @@ true to announce/publish) and **Nice-to-have** (improves polish, not a blocker).
 
 ## Required before public
 
+**Cleared — and re-verified on 2026-09-04 (#686).** This section is the bar for
+the *first* public release, and that release happened long ago: 1.15.1 is on
+PyPI, served by the Homebrew tap `berkayturanci/homebrew-ai-jury`, and the plugin
+manifests ship in the repository. The boxes sat unticked for fifteen releases
+anyway, which made the whole section unreadable — a reader could not tell an
+outstanding item from a stale one.
+
+Each box now names *where to re-check it* rather than asking anyone to remember.
+Most are held by a job that runs on every push or every tag, so re-verifying the
+section is reading those jobs, not repeating their work by hand.
+
 ### Package & metadata
-- [ ] `pyproject.toml` metadata correct: name, description, `requires-python`, license,
-      classifiers, `project.urls`, `console_scripts` (`jury`).
-- [ ] `make release-check` passes — every file that names the version agrees with
+- [x] `pyproject.toml` metadata correct: name, description, `requires-python`
+      (`>=3.11`), `license = "MIT"`, classifiers, `project.urls`, and the console
+      script `jury = "ai_jury.cli:main"` — all in `pyproject.toml`'s `[project]`
+      table, and pinned by
+      `tests/test_release_metadata.py::PackagingMetadataIsComplete`: it asserts
+      the identifying fields, that both PyPI sidebar URLs are present and
+      `https://`, that the `jury` entry point names a `main()` that exists, and
+      that the Python classifiers still agree with `requires-python`. (Before
+      #686 this box cited that module for all of it, when every test in it was
+      about version lockstep.)
+- [x] `make release-check` passes — every file that names the version agrees with
       `pyproject.toml`. The surface list is [`scripts/release_surfaces.py`](../scripts/release_surfaces.py),
       the single table read by the CI guard (`scripts/verify_merge.py`), its
       `--check-surfaces` entry point, and `tests/test_release_metadata.py`.
       Adding a surface is one line there. The Homebrew formula is not among them —
       see [The Homebrew release chain](homebrew-release-chain.md). (`publish.yml` re-checks the version
-      against the tag at release time.)
-- [ ] `pip install -e .` and `python -m build` (sdist + wheel) succeed cleanly.
-- [ ] PyPI **trusted publishing** (OIDC) configured for the repo (one-time PyPI
-      trusted-publisher setup); `publish.yml` publishes without a long-lived token.
-- [ ] Release artifacts include **checksums** (`SHA256SUMS`), a **CycloneDX SBOM**
-      (`sbom.cdx.json`), and a **build-provenance attestation** — see
-      [docs/releasing.md](releasing.md) for how they are built and verified.
+      against the tag at release time.) The `version-integrity` job in
+      `.github/workflows/ci.yml` runs the same check on every push, so this box
+      cannot come untucked between releases.
+- [x] `pip install -e .` and `python -m build` (sdist + wheel) succeed cleanly —
+      the editable install is the first step of every `test` matrix leg
+      (`.github/workflows/ci.yml`), and `python -m build --sdist --wheel` is the
+      build step of `.github/workflows/publish.yml`, which has produced every
+      release through 1.15.1.
+- [x] PyPI **trusted publishing** (OIDC) configured for the repo (one-time PyPI
+      trusted-publisher setup); `publish.yml` publishes without a long-lived token
+      — `id-token: write` in the publish job's `permissions`, and a pinned
+      `pypa/gh-action-pypi-publish` step with no password input.
+- [x] Release artifacts include **checksums** (`SHA256SUMS`), a **CycloneDX SBOM**
+      (`sbom.cdx.json`), and a **build-provenance attestation** — all three are
+      produced in `.github/workflows/publish.yml` (`cyclonedx-py environment`,
+      `sha256sum … > SHA256SUMS`, `actions/attest-build-provenance`) and attached
+      to the GitHub Release; the v1.15.1 Release carries the wheel, the sdist,
+      `sbom.cdx.json` and `SHA256SUMS`. See [docs/releasing.md](releasing.md) for
+      how they are built and verified.
 
 ### CI & quality
-- [ ] CI green on the full matrix (Python 3.11–3.13; Linux + macOS + Windows).
-- [ ] Unit tests + mock CLI smoke test pass.
-- [ ] `ruff check` and `ruff format --check` clean.
-- [ ] CodeQL has no unresolved high-severity alerts.
-- [ ] No secrets committed; secret redaction covered by tests.
+- [x] CI green on the matrix in `.github/workflows/ci.yml`: Python 3.11, 3.12 and
+      3.13 on Linux, plus 3.13 on macOS and 3.13 on Windows. It is deliberately
+      not every version on every OS — the two cross-OS legs exist to prove
+      subprocess and path behaviour, and the matrix comment says so.
+- [x] Unit tests + mock CLI smoke test pass — every matrix leg runs
+      `unittest discover -s tests` and then
+      `python -m ai_jury --mock --diff-file examples/sample.diff`, asserting the
+      rendered report contains the chair's verdict.
+- [x] `ruff check` and `ruff format --check` clean — the `lint` job, on a ruff
+      pinned to the same version as the `ruff-format` pre-commit hook
+      (`tests/test_ruff_pin.py` asserts the two never drift apart).
+- [x] CodeQL has no unresolved high-severity alerts —
+      `.github/workflows/codeql.yml`. Re-check with
+      `gh api 'repos/berkayturanci/ai-jury/code-scanning/alerts?state=open'
+      --jq '[.[] | select(.tool.name == "CodeQL")]'`. Keep the `tool.name` filter:
+      the open alerts in that inbox are mostly *stale Scorecard* findings, left
+      behind when #201 stopped uploading Scorecard's SARIF to code scanning on
+      2026-06-03 (`.github/workflows/scorecard.yml` uploads an artifact and
+      publishes to the OpenSSF API instead, deliberately). They carry `high`
+      security severities and reading them as CodeQL results is the mistake this
+      box invites — they are the Nice-to-have bar below, not this one.
+- [x] No secrets committed; secret redaction covered by tests —
+      `src/ai_jury/redaction.py`, `tests/test_redaction.py` and
+      `tests/test_git_error_redaction.py`, with the data flow and the detector
+      table written up in `SECURITY.md`.
 
 ### Docs
-- [ ] README: install, usage, configuration, data-flow/privacy all current.
-- [ ] `docs/architecture.md`, `docs/comparison.md`, `docs/feasibility.md` accurate.
-- [ ] `llms.txt` / `llms-full.txt` present and current.
-- [ ] Skill install instructions verified (`skill/ai-jury/`).
-- [ ] `SECURITY.md` data-flow/redaction reference matches the code.
-- [ ] No downstream/private project names anywhere (project-agnostic).
+The docs boxes were re-verified by a full read-through of README, `docs/`,
+`CONTRIBUTING.md` and the website against `origin/main` on 2026-09-04 (#686);
+what that audit found stale is fixed in the same change.
+
+- [x] README: install, usage, configuration, data-flow/privacy all current.
+- [x] `docs/architecture.md`, `docs/comparison.md`, `docs/feasibility.md` accurate.
+- [x] `llms.txt` / `llms-full.txt` present and listing the current docs set.
+- [x] Skill install instructions verified — `skill/ai-jury/SKILL.md`, linked from
+      the README and from `docs/platforms.md`.
+- [x] `SECURITY.md` data-flow/redaction reference matches the code — its
+      "Jury data flow & redaction" section names `redaction.py` and its detectors.
+- [x] No downstream/private project names anywhere (project-agnostic). Keel is
+      named in `docs/cookbook.md` §16 and §21, but as a *public* sibling project
+      with a public integration — the documented exception, not a leak.
 
 ### Repository hygiene
-- [ ] LICENSE present (MIT) and referenced.
-- [ ] Issue templates and PR template present.
-- [ ] `CODE_OF_CONDUCT.md`, `CONTRIBUTING.md`, `SUPPORT.md` present and accurate.
-- [ ] CI / CodeQL / coverage badges resolve in the README.
-- [ ] Dependabot configured.
+- [x] LICENSE present (MIT) and referenced — `LICENSE`, plus `license = "MIT"` in
+      `pyproject.toml` and the licence badge in the README.
+- [x] Issue templates and PR template present — `.github/ISSUE_TEMPLATE/`
+      (`bug_report.yml`, `feature_request.yml`, `config.yml`) and
+      `.github/pull_request_template.md`.
+- [x] `CODE_OF_CONDUCT.md`, `CONTRIBUTING.md`, `SUPPORT.md` present and accurate.
+- [x] CI / coverage / CodeQL / PyPI / licence badges resolve in the README's first
+      screenful; the coverage badge is served from `https://ai-jury.dev`.
+- [x] Dependabot configured — `.github/dependabot.yml`: weekly, for the pinned
+      GitHub Actions SHAs and for the Python tooling declared in `pyproject.toml`.
 
 ## Nice-to-have
 
@@ -68,7 +132,9 @@ true to announce/publish) and **Nice-to-have** (improves polish, not a blocker).
 > gone wrong five ways — see
 > [The Homebrew release chain](homebrew-release-chain.md).
 
-1. Confirm every **Required before public** box above is checked.
+1. Confirm the **Required before public** section above still holds. Its boxes
+   are ticked with the evidence beside each one; a release re-confirms them by
+   reading the green CI run for the release commit, not by repeating the checks.
 2. Determine target version (`MAJOR`, `MINOR`, or `PATCH`) per SemVer rules.
 3. Update `CHANGELOG.md`: rename `[Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD`.
 4. Bump the version everywhere it is named, then run `make release-check` — it

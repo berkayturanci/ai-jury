@@ -556,7 +556,15 @@ warning for `anthropic`/`openai` (the `claude`/`codex` CLIs), `local`, `cli` and
 custom vendors.
 
 ### Output formats
-`markdown` (default) · `json` · `sarif`.
+`markdown` (default) · `json` · `sarif` · `keel-reviews` — the four `--format`
+values, as declared in `src/ai_jury/cli.py`
+(`choices=["markdown", "json", "sarif", "keel-reviews"]`).
+
+`keel-reviews` is a bundle rather than a report: a JSON array carrying one review
+record per panelist that returned output, plus the chair, for an orchestrator
+that shows a verdict per reviewer instead of one consolidated document. See
+[Output & format](#output--format) above and
+[report-format.md](report-format.md#the-keel-reviews-bundle).
 
 ### Context modes
 `diff-only` (default) · `expanded`.
