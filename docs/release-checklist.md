@@ -177,14 +177,20 @@ run was cancelled — or the reverse.
    gh release view vX.Y.Z --repo berkayturanci/ai-jury                         # GitHub Release
    grep -A1 '^ *url' Formula/ai-jury.rb                                        # in-repo formula
    ```
-2. Re-run the workflow from the tag:
+2. Re-run the *existing* tag run — `publish.yml` triggers only on `push: tags:
+   v*` and has no `workflow_dispatch`, so `gh workflow run publish.yml --ref
+   vX.Y.Z` fails with "workflow does not have workflow_dispatch trigger". Find
+   the run for the tag and re-run it instead:
    ```bash
-   gh workflow run publish.yml --ref vX.Y.Z --repo berkayturanci/ai-jury
+   gh run list --repo berkayturanci/ai-jury --workflow publish.yml --branch vX.Y.Z
+   gh run rerun <run-id> --failed --repo berkayturanci/ai-jury
    # or, from the Actions tab: re-run the failed job on the existing vX.Y.Z run
    ```
    `skip-existing` on the PyPI publish step only makes *that step* idempotent —
    re-running it after a successful upload does not fail or duplicate anything on
-   PyPI. It says nothing about the steps around it.
+   PyPI. It says nothing about the steps around it. A full re-run from scratch
+   (rather than re-running the existing run) needs the tag re-pushed, or
+   `workflow_dispatch` added to the workflow — tracked by #666.
 3. After the re-run, check for duplicate side effects rather than assuming the
    whole workflow is idempotent:
    - the GitHub Release exists exactly once (no second `Release vX.Y.Z`);
