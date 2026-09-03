@@ -1,4 +1,4 @@
-.PHONY: help install test live-smoke smoke benchmark lint format coverage build assets clean
+.PHONY: help install test live-smoke smoke benchmark lint format coverage release-check build assets clean
 
 help:
 	@echo "Available commands:"
@@ -10,6 +10,7 @@ help:
 	@echo "  make lint       - Run Ruff checks"
 	@echo "  make format     - Format Python code with Ruff"
 	@echo "  make coverage   - Measure test coverage and enforce the minimum gate"
+	@echo "  make release-check - Check every file that names the version (scripts/release_surfaces.py)"
 	@echo "  make build      - Build sdist and wheel packages"
 	@echo "  make assets     - Re-render website/docs PNGs from their SVG sources (needs rsvg-convert)"
 	@echo "  make clean      - Remove build artifacts and Python caches"
@@ -50,6 +51,15 @@ coverage:
 	python3 -m coverage run -m unittest discover -s tests
 	python3 -m coverage report
 	python3 -m coverage html
+
+# Every file that names the version, checked against pyproject.toml in one
+# command. The surface list is scripts/release_surfaces.py, shared with the CI
+# guard and the release tests — adding a surface is one line there, not three
+# lists to keep in step (#665). Run this before opening a release PR: the
+# website sat two releases behind because the checklist asked a person to
+# remember eight filenames (#646).
+release-check:
+	python3 scripts/verify_merge.py --check-surfaces
 
 build:
 	python3 -m build --sdist --wheel --outdir dist/

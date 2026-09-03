@@ -199,10 +199,21 @@ class GuardIsWiredTests(unittest.TestCase):
 
     def test_every_version_marker_is_watched(self):
         # uv.lock was outside the set and sat a release behind on main (#556).
-        source = self._read("scripts/verify_merge.py")
+        # The set now lives in one shared table (#665), so this reads that file;
+        # a checkout where the table was reverted away still fails here rather
+        # than erroring on an import.
+        source = self._read("scripts/release_surfaces.py")
         for marker in ("pyproject.toml", "__init__.py", "CHANGELOG.md", "uv.lock"):
             with self.subTest(marker=marker):
                 self.assertIn(marker, source)
+
+    def test_the_guard_reads_the_shared_table_rather_than_its_own_list(self):
+        # The whole point of #665: a second list here is a list that can fall out
+        # of step with the one the release tests read.
+        source = self._read("scripts/verify_merge.py")
+        self.assertIn("release_surfaces.py", source)
+        self.assertIn("release_surfaces.find_versions", source)
+        self.assertNotIn("VERSION_MARKERS = (", source)
 
     def test_the_drift_check_reports_instead_of_discarding(self):
         source = self._read("scripts/verify_merge.py")
