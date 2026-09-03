@@ -174,9 +174,8 @@ jobs:
           fi
 
           set +e
-          RC=0
-          # keel evidence-verify "${ARGS[@]}"
-          RC=0
+          keel evidence-verify "${ARGS[@]}"
+          RC=$?
           set -e
 
           # Upsert, never blind POST. The check-runs API has no upsert on
