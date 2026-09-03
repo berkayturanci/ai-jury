@@ -39,3 +39,7 @@
 ## 2025-06-17 - Avoid .count() on lists during multi-metric aggregations
 **Learning:** Using `list.count()` multiple times sequentially on the same list forces multiple O(N) traversals.
 **Action:** Consolidate multiple sequential `list.count()` calls into a single explicit loop that tallies all metrics simultaneously to achieve single-pass O(N) evaluation.
+
+## 2025-06-18 - Silence SIM110 when converting any() to loops
+**Learning:** When explicitly unwinding an `any()` generator into a `for` loop to avoid Python interpreter generator overhead for performance, Ruff will aggressively flag it as `SIM110` (Use any(...) instead of for loop).
+**Action:** Add `# noqa: SIM110` with an explanatory comment to the loop to ensure CI passes while preserving the intended C-level optimization.
