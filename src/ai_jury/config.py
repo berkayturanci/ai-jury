@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from .redaction import redact
+from .redaction import ENV_VAR_NAME_RULE, redact, safe_env_var_name
 
 # Hosts that are safe to reach over plaintext http and never an SSRF target.
 _LOOPBACK_HOSTS = ("localhost", "127.0.0.1", "::1", "[::1]")
@@ -245,7 +245,15 @@ KNOWN_AGENT_KEYS = (
     "api_key_env",
     "prompt_mode",
     "headers",
+    # Reasoning effort (issue #662): mapped per vendor in adapters.effort_args.
+    "effort",
 )
+
+#: Accepted values for ``[[agent]] effort`` / ``--effort`` (issue #662).
+#: Duplicated as a literal rather than imported from ``adapters`` so config
+#: validation stays free of any adapter import (``adapters`` imports ``config``).
+#: ``tests/test_adapters.py`` pins the two lists together.
+KNOWN_EFFORTS = ("low", "medium", "high")
 
 
 class ConfigError(Exception):
@@ -422,6 +430,37 @@ def validate_config(data: dict, strict: bool = False) -> list:
                 f"agent '{label}' timeout must be a positive integer (got {a_timeout!r})."
             )
 
+        # `api_key_env` names an environment variable and is echoed into
+        # diagnostics, so it is bounded to a real env var name (see
+        # redaction.safe_env_var_name). Warn rather than fail: the vendor
+        # default still works, but the operator should not discover the
+        # silent fallback by wondering why their variable is ignored.
+        #
+        # The rejected value is deliberately NOT quoted back. Reaching this
+        # branch means it contains characters outside the safe set — which is
+        # exactly the class (control characters, ANSI escapes, quotes) that must
+        # not be written to a terminal or spliced into a report. Naming the
+        # agent and stating the rule locates the problem without reproducing it.
+        env_var = agent.get("api_key_env")
+        if env_var is not None and safe_env_var_name(env_var, "") != env_var:
+            warnings.append(
+                f"agent '{label}' api_key_env is not a valid environment variable "
+                f"name (expected {ENV_VAR_NAME_RULE}); the vendor default will be used."
+            )
+
+        # Reasoning effort (hard when present and not a known level, issue
+        # #662): a typo like `effort = "max"` would otherwise be silently
+        # dropped, and the operator would pay for a run they think is deeper
+        # than it is.
+        effort = agent.get("effort")
+        if effort is not None and (
+            not isinstance(effort, str) or effort.strip().lower() not in KNOWN_EFFORTS
+        ):
+            errors.append(
+                f"agent '{label}' effort must be one of "
+                f"{', '.join(KNOWN_EFFORTS)} (got {effort!r})."
+            )
+
         # Known vendor (soft).
         vendor = agent.get("vendor", "")
         if vendor not in KNOWN_VENDORS:
@@ -470,6 +509,9 @@ class AgentSpec:
     api_key_env: str | None = None
     prompt_mode: str | None = None
     headers: dict[str, str] = field(default_factory=dict)
+    # Reasoning effort: "low" | "medium" | "high" (issue #662). None leaves the
+    # vendor default alone. Mapped per vendor by ``adapters.effort_args``.
+    effort: str | None = None
 
 
 @dataclass
@@ -683,6 +725,8 @@ def _from_dict(data: dict) -> JuryConfig:
         )
         api_key_env_val = str(raw["api_key_env"]) if raw.get("api_key_env") else None
         prompt_mode_val = str(raw["prompt_mode"]) if raw.get("prompt_mode") else None
+        raw_effort = raw.get("effort")
+        effort_val = str(raw_effort).strip().lower() if isinstance(raw_effort, str) else None
         agents.append(
             AgentSpec(
                 name=raw["name"],
@@ -697,6 +741,7 @@ def _from_dict(data: dict) -> JuryConfig:
                 api_key_env=api_key_env_val,
                 prompt_mode=prompt_mode_val,
                 headers=headers_dict,
+                effort=effort_val or None,
             )
         )
     return JuryConfig(
@@ -788,6 +833,9 @@ def config_hash(config: JuryConfig) -> str:
                 "timeout": a.timeout,
                 "enabled": a.enabled,
                 "extra_args": list(a.extra_args),
+                # Effort changes the model id / request body an agent sends, so
+                # it is orchestration-affecting and must split the cache key.
+                "effort": a.effort,
             }
             for a in config.agents
         ],

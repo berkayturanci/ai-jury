@@ -13,7 +13,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 import tempfile  # noqa: E402
 
 from ai_jury.config import (  # noqa: E402
+    KNOWN_AGENT_KEYS,
+    KNOWN_EFFORTS,
     ConfigError,
+    _from_dict,
+    config_hash,
     load_raw_config,
     validate_config,
 )
@@ -125,6 +129,108 @@ class HardErrors(unittest.TestCase):
     def test_no_agents(self):
         with self.assertRaises(ConfigError):
             validate_config({"jury": {"rounds": 1}, "agent": []})
+
+
+class ApiKeyEnvNameValidation(unittest.TestCase):
+    """`api_key_env` names an env var and is displayed, so it is bounded (#669)."""
+
+    @staticmethod
+    def _with(value):
+        return {
+            "jury": {"rounds": 1, "chair": "a"},
+            "agent": [
+                {
+                    "name": "a",
+                    "vendor": "openai-compatible",
+                    "model": "m",
+                    "endpoint": "http://localhost:9/v1",
+                    "api_key_env": value,
+                }
+            ],
+        }
+
+    def test_a_valid_name_is_accepted_silently(self):
+        self.assertEqual(validate_config(self._with("MY_TOKEN_VAR")), [])
+
+    def test_a_malformed_name_warns_rather_than_failing(self):
+        # Soft, not hard: the vendor default still works, but a silent fallback
+        # would leave the operator wondering why their variable is ignored.
+        warnings = validate_config(self._with('EVIL", "injected": "yes'))
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("is not a valid environment variable name", warnings[0])
+
+    def test_the_rejected_value_is_never_quoted_back(self):
+        # Reaching this branch means the value holds characters outside the safe
+        # set — the very class that must not be written to a terminal. The
+        # message locates the problem (agent name + rule) without reproducing it.
+        for hostile, marker in (
+            ('EVIL", "injected": "yes', "injected"),
+            ("TWO\nLINES", "TWO"),
+            ("ansi\x1b[31mred", "\x1b"),
+        ):
+            warning = validate_config(self._with(hostile))[0]
+            self.assertNotIn(marker, warning, hostile)
+            self.assertIn("api_key_env", warning)
+            self.assertIn("agent 'a'", warning)
+
+    def test_the_message_states_the_rule_it_enforces(self):
+        from ai_jury.redaction import ENV_VAR_NAME_RULE
+
+        self.assertIn(ENV_VAR_NAME_RULE, validate_config(self._with("bad name"))[0])
+
+    def test_a_newline_in_the_name_warns(self):
+        self.assertTrue(validate_config(self._with("TWO\nLINES")))
+
+    def test_absent_key_produces_no_warning(self):
+        data = self._with("X")
+        del data["agent"][0]["api_key_env"]
+        self.assertEqual(validate_config(data), [])
+
+
+class EffortValidation(unittest.TestCase):
+    """`[[agent]] effort` is a closed enum — a typo is a hard error (issue #662)."""
+
+    @staticmethod
+    def _with_effort(value):
+        return {
+            "jury": {"rounds": 1, "chair": "a"},
+            "agent": [{"name": "a", "vendor": "openai-api", "model": "m", "effort": value}],
+        }
+
+    def test_every_known_level_is_accepted(self):
+        for level in KNOWN_EFFORTS:
+            self.assertEqual(validate_config(self._with_effort(level)), [])
+
+    def test_case_and_padding_are_tolerated(self):
+        self.assertEqual(validate_config(self._with_effort("  HIGH ")), [])
+
+    def test_unknown_level_is_a_hard_error(self):
+        with self.assertRaises(ConfigError) as ctx:
+            validate_config(self._with_effort("maximum"))
+        self.assertIn("effort must be one of", str(ctx.exception))
+
+    def test_non_string_effort_is_a_hard_error(self):
+        for value in (3, True, ["high"]):
+            with self.assertRaises(ConfigError):
+                validate_config(self._with_effort(value))
+
+    def test_effort_is_a_known_agent_key(self):
+        # Not merely accepted: it must not produce an "unknown key" warning.
+        self.assertIn("effort", KNOWN_AGENT_KEYS)
+        self.assertEqual(validate_config(self._with_effort("low")), [])
+
+    def test_effort_is_normalized_and_hashed(self):
+        cfg = _from_dict(self._with_effort(" High "))
+        self.assertEqual(cfg.agents[0].effort, "high")
+        other = _from_dict(self._with_effort("low"))
+        # Effort changes the request an agent sends, so it must split the cache key.
+        self.assertNotEqual(config_hash(cfg), config_hash(other))
+
+    def test_absent_effort_stays_none(self):
+        cfg = _from_dict(
+            {"jury": {"rounds": 1, "chair": "a"}, "agent": [{"name": "a", "command": "x"}]}
+        )
+        self.assertIsNone(cfg.agents[0].effort)
 
 
 class SoftWarnings(unittest.TestCase):

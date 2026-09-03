@@ -162,6 +162,57 @@ def redact(text: str) -> tuple[str, int]:
     return result, count
 
 
+# The complete alphabet a POSIX-shell environment variable name may use. Kept as
+# a module constant on purpose: :func:`safe_env_var_name` rebuilds its result out
+# of THESE characters rather than slicing the caller's string, so no byte of the
+# input can survive into the output. See that function for why that matters.
+_ENV_NAME_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_"
+
+# A real env var name is short; refuse anything longer rather than echoing it.
+_MAX_ENV_NAME_LEN = 128
+
+#: Human-readable statement of what :func:`safe_env_var_name` accepts. Lives here
+#: so a diagnostic can describe the rule without quoting the value that broke it.
+ENV_VAR_NAME_RULE = f"[A-Za-z_][A-Za-z0-9_]*, at most {_MAX_ENV_NAME_LEN} characters"
+
+
+def safe_env_var_name(raw, fallback: str) -> str:
+    """A syntactically valid environment-variable NAME, safe to display.
+
+    Diagnostics tell an operator *which variable to set* — "OPENAI_API_KEY is not
+    set in the environment" — so a config-supplied name is echoed into the
+    ``--doctor`` report, the machine-readable export, and warning text. Two
+    reasons that name must be rebuilt rather than passed through:
+
+    1. **Output integrity.** ``[[agent]] api_key_env`` is an arbitrary operator
+       string. A value containing a newline, a quote, or an ANSI escape would be
+       spliced straight into a JSON document or a terminal report. Only
+       ``[A-Za-z_][A-Za-z0-9_]*`` can survive here, so the export cannot be
+       reshaped by a config value.
+    2. **Provenance.** The returned string is assembled from
+       :data:`_ENV_NAME_ALPHABET`, a constant — only the *indices* come from the
+       input. So this is a genuine barrier, not a rename: nothing derived from a
+       credential-shaped config field can reach a log or an export through it,
+       which is what static analysis (CodeQL ``py/clear-text-logging-sensitive-data``)
+       flags on this path and what it should flag.
+
+    Anything that is not a valid name — empty, over-long, leading digit, any
+    character outside the alphabet — yields *fallback* unchanged.
+    """
+    text = raw if isinstance(raw, str) else ""
+    if not text or len(text) > _MAX_ENV_NAME_LEN or text[0].isdigit():
+        return fallback
+    rebuilt: list[str] = []
+    for char in text:
+        position = _ENV_NAME_ALPHABET.find(char)
+        if position < 0:
+            return fallback
+        # Appending from the constant, NOT `char`: the input contributes only
+        # the position it matched. This is the whole point of the function.
+        rebuilt.append(_ENV_NAME_ALPHABET[position])
+    return "".join(rebuilt)
+
+
 def redact_url_userinfo(url: str) -> str:
     """Strip any userinfo (``user[:password]``) from a URL before display.
 
