@@ -40,11 +40,31 @@ on:
         description: "Optional evidence deferral id, kind, or all"
         required: false
 
-# One evaluation per pull request at a time. Two overlapping runs would both
-# GET-then-PATCH the same check-run, and the slower one would overwrite the
-# newer verdict — routine once a comment can trigger a run.
+# One evaluation per pull request *per event* — the event name is part of the
+# group on purpose.
+#
+# A single group across every trigger did more than serialize. `keel review
+# --live` posts its verdict comments seconds after the push that started the
+# assessment, so the `issue_comment` run landed in the same group as the
+# still-running `pull_request` run and cancelled it. A cancelled run's job
+# check-runs (`keel ship (assessment)`, `keel evidence (verify)`) stay
+# `cancelled` on that head and cannot be removed; GitHub then reports the pull
+# request as UNSTABLE and `keel merge` refuses on "CI failing" with every
+# required check green. The standing workaround was `gh run rerun` on every
+# pull request (berkayturanci/keel#1037; here #668, #670, #671, #672, #674).
+#
+# Cancelling *within* one event stays on, because there the cancelled run is
+# never the last word on a head that still matters: a superseded `pull_request`
+# run belongs to a superseded head SHA, and an `issue_comment` run always runs
+# from the default branch, so its job check-runs land there rather than on the
+# pull request's head.
+#
+# Splitting the groups does let a `pull_request` run and an `issue_comment` run
+# overlap, which is the GET-then-PATCH race the shared group used to prevent.
+# `publish_check` below carries the replacement guard directly: an evaluation
+# never overwrites a check-run published by a later one.
 concurrency:
-  group: keel-ship-${{ github.event.pull_request.number || github.event.issue.number || github.event.inputs.pr || github.ref }}
+  group: keel-ship-${{ github.event_name }}-${{ github.event.pull_request.number || github.event.issue.number || github.event.inputs.pr || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -173,6 +193,13 @@ jobs:
             HEAD_SHA=$(gh pr view "$PR" --json headRefOid -q .headRefOid)
           fi
 
+          # Stamped immediately before the read and published as the check-run's
+          # `external_id`, so two runs over one head can be ordered by *when they
+          # read the pull request*. Before the read, never after: a run that
+          # started before a verdict was posted can still finish after the run
+          # that saw it, and a completion time would rank that stale answer first.
+          EVALUATED_AT=$(date -u +%s)
+
           set +e
           keel evidence-verify "${ARGS[@]}"
           RC=$?
@@ -186,21 +213,49 @@ jobs:
           publish_check() {
             local status="$1" conclusion="$2" title="$3" summary="$4"
             local body=(-f "status=${status}"
+                        -f "external_id=${EVALUATED_AT}"
                         -f "output[title]=${title}"
                         -f "output[summary]=${summary}")
             if [ -n "$conclusion" ]; then
               body+=(-f "conclusion=${conclusion}")
             fi
-            local existing
+            local existing existing_id existing_stamp
             # --method GET is required: `-f` alone switches gh to POST, which
             # 404s on this endpoint and would make every upsert look like "no
             # existing run" — quietly restoring the stacking this replaces.
+            #
+            # `select(.id)` keeps "no check-run yet" as empty output: without it
+            # an absent run interpolates to a single space, which is not empty
+            # and would parse as an existing run with no id.
             existing=$(gh api --method GET \
               "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}/check-runs" \
               -f "check_name=${CHECK_NAME}" \
-              --jq '.check_runs[0].id // empty' 2>/dev/null) || existing=""
+              --jq '.check_runs[0] | select(.id) | "\(.id) \(.external_id // "")"' 2>/dev/null) || existing=""
+            existing_id=""
+            existing_stamp=""
             if [ -n "$existing" ]; then
-              gh api -X PATCH "repos/${GITHUB_REPOSITORY}/check-runs/${existing}" \
+              read -r existing_id existing_stamp <<<"$existing"
+            fi
+
+            # Concurrency is now per event (see the top of this file), so a
+            # `pull_request` run and an `issue_comment` run can be in flight over
+            # one head at the same time. Whoever read the pull request *last* holds
+            # the current verdict, and an earlier evaluation that happens to finish
+            # second must not put its answer back — that is the regression the
+            # shared concurrency group used to prevent by cancelling, at the cost
+            # of the cancelled check-runs this change is about.
+            #
+            # Numeric-only comparison: a check-run published before this guard
+            # existed carries no `external_id` and is simply overwritten, which is
+            # the safe direction (this run has read the newer state).
+            if [ -n "$existing_stamp" ] && [ -z "${existing_stamp//[0-9]/}" ] \
+              && [ "$existing_stamp" -gt "$EVALUATED_AT" ]; then
+              echo "::notice title=Newer evidence verdict kept::A run that read this pull request later (${existing_stamp} > ${EVALUATED_AT}) already published \"$CHECK_NAME\" for ${HEAD_SHA}; this older evaluation is not overwriting it."
+              return 0
+            fi
+
+            if [ -n "$existing_id" ]; then
+              gh api -X PATCH "repos/${GITHUB_REPOSITORY}/check-runs/${existing_id}" \
                 "${body[@]}" >/dev/null
             else
               gh api -X POST "repos/${GITHUB_REPOSITORY}/check-runs" \
