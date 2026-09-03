@@ -652,5 +652,89 @@ class ErrorBranchesThatNothingExecuted(unittest.TestCase):
             self.assertIn("Error reading report file", err.getvalue())
 
 
+# A directory component shaped like a GitHub token. The outer message names the
+# suggestion's *relative* file, so the only way the token reaches the output is
+# through the absolute path inside the OSError text — the arm #658 wraps.
+_TOKEN_DIR = "ghp_" + "A" * 36
+
+
+class IoErrorRedactionTests(unittest.TestCase):
+    """The four `{exc}` arms #658 wrapped must redact what they interpolate.
+
+    `OSError.__str__` repeats the resolved absolute path, which the outer
+    message does not otherwise show — so a secret-shaped path component was
+    the concrete leak. Each test plants one and asserts the placeholder comes
+    back instead. Root is skipped where the test relies on a permission bit.
+    """
+
+    def _suggestion(self, path: Path, fix: str = "x = 2\n"):
+        return PatchSuggestion(
+            file=path.name, line=1, claim="c", suggested_fix=fix, severity="minor"
+        )
+
+    @unittest.skipIf(sys.platform == "win32", "chmod 0o000 does not block reads on Windows")
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "root ignores the read bit")
+    def test_cannot_read_redacts_the_path_in_the_exception(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / _TOKEN_DIR
+            root.mkdir()
+            target = root / "t.py"
+            target.write_text("x = 1\n", encoding="utf-8")
+            target.chmod(0o000)
+            try:
+                ok, message = apply_patch_suggestion(self._suggestion(target), root_dir=root)
+            finally:
+                target.chmod(0o644)
+
+            self.assertFalse(ok)
+            self.assertIn("Cannot read t.py", message)
+            self.assertIn("[REDACTED:github_token]", message)
+            self.assertNotIn(_TOKEN_DIR, message)
+
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "root ignores the write bit")
+    def test_cannot_write_redacts_the_path_in_the_exception(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / _TOKEN_DIR
+            root.mkdir()
+            target = root / "t.py"
+            target.write_text("x = 1\n", encoding="utf-8")
+            target.chmod(0o444)
+            try:
+                ok, message = apply_patch_suggestion(self._suggestion(target), root_dir=root)
+            finally:
+                target.chmod(0o644)
+
+            self.assertFalse(ok)
+            self.assertIn("Cannot write t.py", message)
+            self.assertIn("[REDACTED:github_token]", message)
+            self.assertNotIn(_TOKEN_DIR, message)
+
+    @unittest.skipIf(sys.platform == "win32", "chmod 0o000 does not block reads on Windows")
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "root ignores the read bit")
+    def test_an_unreadable_report_redacts_the_path_in_the_exception(self):
+        """`cli.py`'s `apply --report` read arm."""
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp) / _TOKEN_DIR
+            folder.mkdir()
+            report = folder / "report.md"
+            report.write_text("# report\n", encoding="utf-8")
+            report.chmod(0o000)
+
+            err = io.StringIO()
+            try:
+                with patch.object(sys, "stderr", err):
+                    code = main(["apply", "--report", str(report)])
+            finally:
+                report.chmod(0o644)
+
+            self.assertEqual(code, 2)
+            # The prefix quotes the argument as given — the user's own input —
+            # so the token appears exactly once there and nowhere else.
+            text = err.getvalue()
+            self.assertIn("Error reading report file", text)
+            self.assertIn("[REDACTED:github_token]", text)
+            self.assertEqual(text.count(_TOKEN_DIR), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
