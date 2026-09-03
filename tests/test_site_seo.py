@@ -195,7 +195,7 @@ class TestAdvertisedUrlsResolve(unittest.TestCase):
         for path in (
             REPO_ROOT / "README.md",
             REPO_ROOT / "install.sh",
-            REPO_ROOT / "Formula/ai-jury.rb",
+            REPO_ROOT / "packaging/homebrew/ai-jury.rb.template",
             *sorted(SITE.glob("*.html")),
             SITE / "robots.txt",
             SITE / "sitemap.xml",

@@ -5,12 +5,22 @@ what supply-chain metadata ships with them, and how to verify a release (issue
 #25). Releases are cut by pushing a `v*` tag, which triggers
 [`.github/workflows/publish.yml`](../.github/workflows/publish.yml).
 
+For *why* the Homebrew half of the chain is shaped the way it is — why no formula
+is committed to this repository, and what each guard catches — see
+[The Homebrew release chain](homebrew-release-chain.md).
+
 ## What a release contains
 
 For each release, the publish workflow builds and attaches:
 
 - **`*.whl` and `*.tar.gz`** — the wheel and sdist, built with `python -m build`.
-- **`SHA256SUMS`** — SHA-256 checksums over every artifact (including the SBOM).
+- **`ai-jury.rb`** — the Homebrew formula, rendered from
+  `packaging/homebrew/ai-jury.rb.template` with the url and SHA-256 digest PyPI
+  reports for the sdist that was just uploaded. Always available at
+  `https://github.com/berkayturanci/ai-jury/releases/latest/download/ai-jury.rb`,
+  which is how the tap gets it without a credential at either end.
+- **`SHA256SUMS`** — SHA-256 checksums over every artifact (including the SBOM
+  and the formula).
 - **`sbom.cdx.json`** — a [CycloneDX](https://cyclonedx.org/) software bill of
   materials. The project has **zero runtime dependencies**, so the SBOM is small
   by design; it is generated on every release rather than deferred.
@@ -23,8 +33,18 @@ For each release, the publish workflow builds and attaches:
 1. A maintainer pushes a `v<version>` tag (see [release-checklist](release-checklist.md)).
 2. The workflow checks out the tag, builds the sdist + wheel on a pinned Python,
    generates the SBOM and `SHA256SUMS`, attests build provenance, publishes to
-   PyPI via **trusted publishing**, and creates the GitHub Release with all
-   assets attached.
+   PyPI via **trusted publishing**, renders the Homebrew formula from what PyPI
+   reports, and creates the GitHub Release with all assets attached.
+3. A second job, `verify`, then installs the *published* release the way a user
+   would — a clean virtualenv, `pip install ai-jury==<version>` from the index —
+   and checks that `jury --version` equals the tag, that `jury --doctor` runs,
+   and that the digest the Homebrew tap tells `brew` to expect is the digest of
+   the sdist PyPI serves. It opens (or comments on) a `release-broken: <tag>`
+   issue when any of that fails, because a red workflow nobody is watching is
+   how six of the last seven releases went out broken.
+
+Nothing after the tag commits to this repository. A release is exactly one write
+to `main`: the release pull request.
 
 All GitHub Actions are pinned to full commit SHAs (see
 [CONTRIBUTING](../CONTRIBUTING.md)).
@@ -33,17 +53,23 @@ All GitHub Actions are pinned to full commit SHAs (see
 
 Publishing uses [PyPI trusted publishing](https://docs.pypi.org/trusted-publishers/)
 (OIDC) instead of a long-lived API token. This required a **one-time** setup on
-PyPI — a trusted publisher for this repository and the `publish.yml` workflow — which
-is now configured and has been used for every release since. The publish step is
-**not** `continue-on-error`: a failed upload fails the release loudly so a broken
-publish can't pass silently. `skip-existing` keeps re-runs idempotent.
+PyPI — a trusted publisher for this repository and the `publish.yml` workflow —
+which is now configured and used by every release. The publish step is **not**
+`continue-on-error`: a failed upload fails the release loudly so a broken publish
+can't pass silently. `skip-existing` keeps re-runs idempotent.
 
 ## Which files carry the version
 
 One table, [`scripts/release_surfaces.py`](../scripts/release_surfaces.py), lists
 every file that names the release — package metadata, `uv.lock`, both plugin
-manifests, the website, the README, the cookbook, and the Homebrew formula —
-together with the pattern that reads the version out of each.
+manifests, the website, the README, and the cookbook — together with the pattern
+that reads the version out of each.
+
+The Homebrew formula is not on that list, and its absence is deliberate: #666
+deleted `Formula/ai-jury.rb` rather than keep repairing a file whose url and
+digest cannot be known before the tag. What is left is
+`packaging/homebrew/ai-jury.rb.template`, which names `@VERSION@` until the
+release renders it — a placeholder cannot go stale, so nothing needs to watch it.
 
 Three guards read that table, and none of them keeps its own copy:
 
@@ -51,7 +77,7 @@ Three guards read that table, and none of them keeps its own copy:
 | --- | --- |
 | `scripts/verify_merge.py --check-version` (CI, `fetch-depth: 0`) | Do the surfaces present agree, and has the version not gone backwards from the last `v*` tag? |
 | `scripts/verify_merge.py --check-surfaces` (`make release-check`) | Does **every** listed surface name what `pyproject.toml` declares? |
-| `tests/test_release_metadata.py`, `tests/test_homebrew_formula.py` | The same question, in the unit suite, plus the formula's url and digest. |
+| `tests/test_release_metadata.py` | The same question, in the unit suite, on every pull request. |
 
 Registering a new surface is one line in that table (#665). It used to be three
 lines in three files, and the surface that was missed is the one that went stale:
@@ -87,15 +113,7 @@ Every release is automatically published across three primary distribution chann
    - Automated via `publish.yml` using `softprops/action-gh-release`.
    - GitHub Action is consumable as `uses: berkayturanci/ai-jury@v1` or pinned to release tags.
 3. **Homebrew Tap (`berkayturanci/homebrew-ai-jury`)**:
-   - Automated formula synchronization: `publish.yml` queries PyPI for the uploaded sdist's immutable URL and SHA-256 digest, updates `Formula/ai-jury.rb`, and syncs to `berkayturanci/homebrew-ai-jury`.
-   - This is not one automatic pass: the formula's `url` and `sha256` cannot both be
-     correct before the tag exists — the release bump moves the `url` ahead of the
-     sdist that will satisfy it, so the digest committed in the release PR
-     necessarily belongs to the *previous* release. The digest becomes knowable only
-     once PyPI has the new sdist, so the workflow corrects the formula immediately
-     after publishing rather than leaving the stale digest in place. See
-     [The Homebrew release chain](homebrew-release-chain.md) for the full mechanism,
-     every guard involved, and what has already gone wrong.
+   - No formula is committed to this repository. `publish.yml` queries PyPI for the uploaded sdist's immutable URL and SHA-256 digest, renders `packaging/homebrew/ai-jury.rb.template`, attaches the result to the GitHub Release, and pushes it to `berkayturanci/homebrew-ai-jury` when `HOMEBREW_TAP_TOKEN` is set.
    - Installable via `brew install berkayturanci/ai-jury/ai-jury` or `brew install ai-jury`.
 
 ## How to verify a release

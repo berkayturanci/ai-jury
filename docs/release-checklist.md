@@ -11,9 +11,10 @@ true to announce/publish) and **Nice-to-have** (improves polish, not a blocker).
       classifiers, `project.urls`, `console_scripts` (`jury`).
 - [ ] `make release-check` passes — every file that names the version agrees with
       `pyproject.toml`. The surface list is [`scripts/release_surfaces.py`](../scripts/release_surfaces.py),
-      the single table read by the CI guard (`scripts/verify_merge.py`),
-      `tests/test_release_metadata.py`, and `tests/test_homebrew_formula.py`.
-      Adding a surface is one line there. (`publish.yml` re-checks the version
+      the single table read by the CI guard (`scripts/verify_merge.py`), its
+      `--check-surfaces` entry point, and `tests/test_release_metadata.py`.
+      Adding a surface is one line there. The Homebrew formula is not among them —
+      see [The Homebrew release chain](homebrew-release-chain.md). (`publish.yml` re-checks the version
       against the tag at release time.)
 - [ ] `pip install -e .` and `python -m build` (sdist + wheel) succeed cleanly.
 - [ ] PyPI **trusted publishing** (OIDC) configured for the repo (one-time PyPI
@@ -61,9 +62,10 @@ true to announce/publish) and **Nice-to-have** (improves polish, not a blocker).
 
 ## Manual release steps
 
-> The steps below are the *what*. For the *why* — the reason the formula's
-> url and digest cannot both be correct at the same moment, which guard
-> catches which failure, and what has already gone wrong four ways — see
+> The steps below are the *what*. For the *why* — the reason a formula's url and
+> digest cannot both be correct at the same moment, why no formula is committed
+> here because of it, which guard catches which failure, and what has already
+> gone wrong five ways — see
 > [The Homebrew release chain](homebrew-release-chain.md).
 
 1. Confirm every **Required before public** box above is checked.
@@ -75,15 +77,25 @@ true to announce/publish) and **Nice-to-have** (improves polish, not a blocker).
    two releases (#646). The surfaces live in
    [`scripts/release_surfaces.py`](../scripts/release_surfaces.py), and a new one
    is registered there once rather than in three separate guards (#665).
+   **Not** the Homebrew formula — there isn't one committed here; see
+   [The Homebrew release chain](homebrew-release-chain.md).
 5. Open a release PR (`release/vX.Y.Z`); wait for green CI; merge to `main`.
 6. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
 7. Creating the tag triggers `.github/workflows/publish.yml`, which:
    - Builds sdist + wheel, generates SBOM and `SHA256SUMS`, and attests build provenance.
    - Publishes to PyPI via OIDC Trusted Publishing.
-   - Creates the GitHub Release with attached assets.
-   - Queries PyPI for the immutable sdist URL and SHA-256 digest, updates `Formula/ai-jury.rb`, and syncs to `berkayturanci/homebrew-ai-jury`.
-8. Verify all channels:
-   - PyPI & CLI: `pipx install --force ai-jury==X.Y.Z && jury --version && jury --doctor`
+   - Queries PyPI for the immutable sdist URL and SHA-256 digest, renders
+     `packaging/homebrew/ai-jury.rb.template`, and re-downloads the artifact to
+     confirm the digest is that artifact's.
+   - Creates the GitHub Release with attached assets, the rendered `ai-jury.rb`
+     among them, and pushes the formula to `berkayturanci/homebrew-ai-jury`.
+   - Runs the `verify` job: installs `ai-jury==X.Y.Z` from PyPI into a clean
+     virtualenv, requires `jury --version` to equal the tag and `jury --doctor`
+     to run, and compares the tap's digest with the published sdist's. On failure
+     it opens or updates a `release-broken: vX.Y.Z` issue.
+   - **Commits nothing.** Step 5 above is the only write to `main` a release makes.
+8. Read the `verify` job's log — it has already installed the release and run it —
+   then spot-check what it cannot see:
    - Homebrew: `brew update && brew info berkayturanci/ai-jury/ai-jury && brew fetch --formula berkayturanci/ai-jury/ai-jury`
    - Supply-chain: `sha256sum -c SHA256SUMS` and `gh attestation verify <wheel> --repo berkayturanci/ai-jury`
 9. Confirm the PyPI page, README rendering, and badges.
@@ -118,8 +130,7 @@ command for yanking — it is a PyPI web-console action:
    number:
    ```bash
    git checkout -b release/vX.Y.Z+1 main
-   # bump CHANGELOG.md, pyproject.toml, __init__.py, plugin manifests,
-   # Formula/ai-jury.rb, website/index.html, website/app.js
+   # bump every surface in scripts/release_surfaces.py, then: make release-check
    git commit -am "release: X.Y.Z+1"
    git push -u origin release/vX.Y.Z+1
    gh pr create --base main --title "release: X.Y.Z+1" \
@@ -180,7 +191,8 @@ run was cancelled — or the reverse.
    ```bash
    curl -fsSL "https://pypi.org/pypi/ai-jury/X.Y.Z/json" | jq '.info.version'  # PyPI
    gh release view vX.Y.Z --repo berkayturanci/ai-jury                         # GitHub Release
-   grep -A1 '^ *url' Formula/ai-jury.rb                                        # in-repo formula
+   gh release view vX.Y.Z --repo berkayturanci/ai-jury --json assets \
+     --jq '.assets[].name' | grep ai-jury.rb                                   # rendered formula
    ```
 2. Re-run the *existing* tag run — `publish.yml` triggers only on `push: tags:
    v*` and has no `workflow_dispatch`, so `gh workflow run publish.yml --ref
@@ -195,11 +207,14 @@ run was cancelled — or the reverse.
    re-running it after a successful upload does not fail or duplicate anything on
    PyPI. It says nothing about the steps around it. A full re-run from scratch
    (rather than re-running the existing run) needs the tag re-pushed, or
-   `workflow_dispatch` added to the workflow — tracked by #666.
+   `workflow_dispatch` added to the workflow. Neither is available today: #666
+   removed the second write to `main` and added the post-publish `verify` job,
+   but deliberately did not widen how the workflow can be triggered.
 3. After the re-run, check for duplicate side effects rather than assuming the
    whole workflow is idempotent:
    - the GitHub Release exists exactly once (no second `Release vX.Y.Z`);
-   - no duplicate formula follow-up PR — `gh pr list --repo berkayturanci/ai-jury --head chore/formula-X.Y.Z`;
+   - the `ai-jury.rb` asset is attached exactly once (a re-run re-uploads it; it
+     must not appear twice, and its digest must still be the published sdist's);
    - if the tap was written, that it now matches PyPI's digest (see "bad tap
      write" above for how to check).
 

@@ -155,7 +155,14 @@ jobs:
       # they never ran: AI_JURY_CHECK_EXTERNAL was set nowhere in CI. A stale
       # digest shipped with 1.15.0 and surfaced as an hourly failure in the tap
       # repository instead (#630).
-      - name: Verify the Homebrew formula against the artifact it names
+      #
+      # Since #666 the subject is the *tap's* formula, not a copy in this
+      # repository — there is no copy here any more. It is never compared with
+      # this branch's version: the tap is written after the tag, so it is
+      # legitimately behind between a release and its next sync, and failing a
+      # pull request over that is the gate that made every release pull request
+      # unmergeable. What fails is a tap that cannot install.
+      - name: Verify the Homebrew tap serves an installable formula
         env:
           AI_JURY_CHECK_EXTERNAL: "1"
           PYTHONPATH: src
