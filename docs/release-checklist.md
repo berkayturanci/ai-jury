@@ -21,7 +21,13 @@ section is reading those jobs, not repeating their work by hand.
 - [x] `pyproject.toml` metadata correct: name, description, `requires-python`
       (`>=3.11`), `license = "MIT"`, classifiers, `project.urls`, and the console
       script `jury = "ai_jury.cli:main"` — all in `pyproject.toml`'s `[project]`
-      table; `tests/test_release_metadata.py` pins it.
+      table, and pinned by
+      `tests/test_release_metadata.py::PackagingMetadataIsComplete`: it asserts
+      the identifying fields, that both PyPI sidebar URLs are present and
+      `https://`, that the `jury` entry point names a `main()` that exists, and
+      that the Python classifiers still agree with `requires-python`. (Before
+      #686 this box cited that module for all of it, when every test in it was
+      about version lockstep.)
 - [x] `make release-check` passes — every file that names the version agrees with
       `pyproject.toml`. The surface list is [`scripts/release_surfaces.py`](../scripts/release_surfaces.py),
       the single table read by the CI guard (`scripts/verify_merge.py`), its
@@ -63,9 +69,13 @@ section is reading those jobs, not repeating their work by hand.
 - [x] CodeQL has no unresolved high-severity alerts —
       `.github/workflows/codeql.yml`. Re-check with
       `gh api 'repos/berkayturanci/ai-jury/code-scanning/alerts?state=open'
-      --jq '[.[] | select(.tool.name == "CodeQL")]'`, and **filter by tool**: this
-      repository also uploads OpenSSF Scorecard findings into the same
-      code-scanning inbox, and those are the Nice-to-have bar below, not this one.
+      --jq '[.[] | select(.tool.name == "CodeQL")]'`. Keep the `tool.name` filter:
+      the open alerts in that inbox are mostly *stale Scorecard* findings, left
+      behind when #201 stopped uploading Scorecard's SARIF to code scanning on
+      2026-06-03 (`.github/workflows/scorecard.yml` uploads an artifact and
+      publishes to the OpenSSF API instead, deliberately). They carry `high`
+      security severities and reading them as CodeQL results is the mistake this
+      box invites — they are the Nice-to-have bar below, not this one.
 - [x] No secrets committed; secret redaction covered by tests —
       `src/ai_jury/redaction.py`, `tests/test_redaction.py` and
       `tests/test_git_error_redaction.py`, with the data flow and the detector

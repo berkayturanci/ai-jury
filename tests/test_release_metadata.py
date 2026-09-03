@@ -29,6 +29,7 @@ Stdlib-only by policy: `tomllib` + `json`.
 from __future__ import annotations
 
 import json
+import re
 import sys
 import tomllib
 import unittest
@@ -90,6 +91,75 @@ class NoUserFacingSurfaceCarriesAStaleVersion(unittest.TestCase):
         covered = {surface.path for surface in release_surfaces.RELEASE_SURFACES}
         self.assertIn("website/index.html", covered)
         self.assertIn("website/app.js", covered)
+
+
+class PackagingMetadataIsComplete(unittest.TestCase):
+    """The `[project]` fields the release checklist claims are correct.
+
+    The checklist's first "Required before public" box names seven of them and
+    cited *this module* as the thing that pins them (#686). It did not: every
+    test above is about version lockstep, so the box pointed at a guard that was
+    not watching. Rather than weaken the anchor to "checked by hand once", these
+    are the assertions that make it true.
+
+    Each one is drift a release would ship silently: a `requires-python` bump
+    that leaves the classifiers claiming a version the code no longer runs on,
+    a renamed `cli.main` that turns the `jury` entry point into an ImportError
+    at install time, a dropped `project.urls` that empties the PyPI sidebar.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        with (REPO_ROOT / "pyproject.toml").open("rb") as f:
+            cls.project = tomllib.load(f)["project"]
+
+    def test_the_identifying_fields_are_present(self):
+        self.assertEqual(self.project["name"], "ai-jury")
+        self.assertTrue(self.project["description"].strip())
+        self.assertEqual(self.project["license"], "MIT")
+        self.assertEqual(self.project["readme"], "README.md")
+
+    def test_the_pypi_sidebar_links_are_present(self):
+        self.assertLessEqual({"Homepage", "Issues"}, set(self.project["urls"]))
+        for name, url in self.project["urls"].items():
+            with self.subTest(url=name):
+                self.assertTrue(url.startswith("https://"), url)
+
+    def test_the_console_script_points_at_something_that_exists(self):
+        self.assertEqual(self.project["scripts"], {"jury": "ai_jury.cli:main"})
+        module, _, attribute = self.project["scripts"]["jury"].partition(":")
+        source = REPO_ROOT / "src" / Path(*module.split(".")).with_suffix(".py")
+        self.assertTrue(source.is_file(), f"{source} does not exist")
+        self.assertIn(
+            f"def {attribute}(",
+            source.read_text(encoding="utf-8"),
+            f"{module} defines no {attribute}(), so the `jury` entry point cannot resolve",
+        )
+
+    def test_the_classifiers_agree_with_requires_python(self):
+        """Bumping the floor and leaving a stale classifier is the drift here."""
+        floor = self.project["requires-python"]
+        match = re.fullmatch(r">=3\.(\d+)", floor)
+        self.assertIsNotNone(match, f"unexpected requires-python spelling: {floor!r}")
+        minimum = int(match.group(1))
+
+        supported = re.compile(r"Programming Language :: Python :: 3\.(\d+)")
+        declared = sorted(
+            int(found.group(1))
+            for found in (supported.fullmatch(c) for c in self.project["classifiers"])
+            if found
+        )
+        self.assertTrue(declared, "no `Programming Language :: Python :: 3.x` classifier")
+        self.assertEqual(
+            declared[0],
+            minimum,
+            f"requires-python is {floor} but the lowest declared classifier is 3.{declared[0]}",
+        )
+        self.assertEqual(
+            declared,
+            list(range(declared[0], declared[-1] + 1)),
+            f"the declared Python classifiers have a gap: {declared}",
+        )
 
 
 if __name__ == "__main__":
