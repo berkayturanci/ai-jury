@@ -34,7 +34,7 @@ All GitHub Actions are pinned to full commit SHAs (see
 Publishing uses [PyPI trusted publishing](https://docs.pypi.org/trusted-publishers/)
 (OIDC) instead of a long-lived API token. This required a **one-time** setup on
 PyPI — a trusted publisher for this repository and the `publish.yml` workflow — which
-is now configured (v1.0.0 and v1.1.0 were published this way). The publish step is
+is now configured and has been used for every release since. The publish step is
 **not** `continue-on-error`: a failed upload fails the release loudly so a broken
 publish can't pass silently. `skip-existing` keeps re-runs idempotent.
 
@@ -68,6 +68,14 @@ Every release is automatically published across three primary distribution chann
    - GitHub Action is consumable as `uses: berkayturanci/ai-jury@v1` or pinned to release tags.
 3. **Homebrew Tap (`berkayturanci/homebrew-ai-jury`)**:
    - Automated formula synchronization: `publish.yml` queries PyPI for the uploaded sdist's immutable URL and SHA-256 digest, updates `Formula/ai-jury.rb`, and syncs to `berkayturanci/homebrew-ai-jury`.
+   - This is not one automatic pass: the formula's `url` and `sha256` cannot both be
+     correct before the tag exists — the release bump moves the `url` ahead of the
+     sdist that will satisfy it, so the digest committed in the release PR
+     necessarily belongs to the *previous* release. The digest becomes knowable only
+     once PyPI has the new sdist, so the workflow corrects the formula immediately
+     after publishing rather than leaving the stale digest in place. See
+     [The Homebrew release chain](homebrew-release-chain.md) for the full mechanism,
+     every guard involved, and what has already gone wrong.
    - Installable via `brew install berkayturanci/ai-jury/ai-jury` or `brew install ai-jury`.
 
 ## How to verify a release

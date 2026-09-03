@@ -60,6 +60,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Rewritten around the real integration: the built-in `jury` gate (`gates: [build, lint, jury]`), `knobs.jury_timeout_s`, the `keel ship --jury` / `--jury-advisory` / `--no-jury` flags and their precedence, the ai-jury-severity-to-keel-severity mapping, and how the `keel.jury-verdict.v1` PR comment and the `.keel/state/jury/<run-id>.json` report feed `keel evidence-verify --jury-vendors` and `keel-visual`. Links out to keel's own `docs/keel/configuration.md` and `docs/keel/evidence.md` rather than restating them.
   - Notes that per-panelist ballots (`--format keel-reviews`, #663) and a `jury run-agent` recipe (#661) aren't wired into Keel yet, so the recipe doesn't imply they are.
   - Pinned by `tests/test_docs_snippets.py`: every `.keel/project.yaml`-marked snippet in the cookbook is parsed and its top-level keys are checked against a vendored allowlist of keel's actual schema keys, so a `review:`-shaped regression fails the suite instead of waiting for the next reader's `keel validate`.
+- **Rollback For A Bad Tap Write Or A Partial Publish Was Undocumented** (#667): `docs/release-checklist.md` covered only a bad PyPI release and a bad tag/GitHub Release — nothing for a wrong `Formula/ai-jury.rb`/tap write, and nothing for "PyPI succeeded, GitHub Release failed" (`skip-existing` only makes the PyPI step idempotent, not the workflow).
+  - Rollback is now a decision table with exact `gh`/`git`/`brew` commands per situation, phrased around whether the tap was actually written rather than a step number, so it stays accurate whether the tap gets a direct write or a scheduled pull.
+  - `docs/releasing.md` now links [`docs/homebrew-release-chain.md`](docs/homebrew-release-chain.md) from the Homebrew distribution-channel paragraph instead of describing the sync as one automatic pass, and drops the "v1.0.0 and v1.1.0 were published this way" example, stale 14 releases later.
+  - The rollback rows themselves are unrehearsed — no scratch-tag transcript exists yet; tracked as a follow-up rather than claimed as verified.
 
 ## [1.15.1] - 2026-08-27
 
