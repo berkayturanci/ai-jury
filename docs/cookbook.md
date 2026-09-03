@@ -583,17 +583,92 @@ jobs:
 
 ## 16. Full delivery governance with Keel + AI Jury
 
-For teams using [Keel](https://github.com/berkayturanci/keel) to automate software delivery from issue intake to verified merge, `ai-jury` serves as the multi-agent review gate in Keel's review phase:
+**Prerequisites:** [Keel](https://github.com/berkayturanci/keel) driving the
+repository (`.keel/project.yaml`), `jury` on `PATH` wherever `keel ship` runs. Keel
+does not depend on `ai-jury` — if the `jury` CLI is absent, the built-in `jury` gate
+is a fail-soft no-op.
+
+There is no `review:` key in Keel's project schema — `keel validate` rejects
+`review: {…}` with `unknown property 'review'`. The real integration is a built-in
+gate named `jury`, declared like `build` and `lint`:
 
 ```yaml
 # .keel/project.yaml
-review:
-  engine: ai-jury
-  preset: balanced
-  gating: true
+extends: keel
+core_version: "^1.0"
+base_branch: main
+gates: [build, lint, jury]
+knobs:
+  build_gate_cmd: "make test"
+  jury_timeout_s: 600
+  evidence_require_distinct_vendors: true
 ```
 
-When Keel executes `keel ship`, it convenes `ai-jury` cross-examination across your configured models to guarantee consensus before unlocking the merge window.
+`knobs.jury_timeout_s` bounds the wall-clock seconds the `jury` gate may run
+before it is killed (default `600`); a run that is killed, or that produces no
+parseable report, is recorded as a blocking `major` finding in gating mode rather
+than silently passing. See Keel's
+[`gates` and `knobs` reference](https://github.com/berkayturanci/keel/blob/main/docs/keel/configuration.md)
+for the full field list.
+
+### Turning the jury on
+
+`keel ship` decides per run whether the jury participates, with flags on the
+`ship` command itself:
+
+```bash
+keel ship --jury            # force the jury on, gating mode
+keel ship --jury-advisory   # force the jury on, report-only (never blocks)
+keel ship --no-jury         # force the jury off for this run
+```
+
+Precedence is `--no-jury` > `--jury` > tier-3 auto-on > off — a change that
+touches a `tier3_globs` path turns the jury on automatically (gating, unless
+`--jury-advisory` is also passed), and `--no-jury` always wins over that.
+
+### What keel does with the report
+
+At the `s8 test` step, Keel runs `jury --format json --diff-file <tmp>`
+read-only against the PR diff (never `--strict`) and maps each finding's
+`ai-jury` severity onto a Keel severity:
+
+| `ai-jury` severity | Keel severity | Effect in gating mode |
+|---|---|---|
+| `critical`, `blocker` | `critical` | blocks the merge |
+| `major` | `major` | blocks the merge |
+| `minor` | `minor` | gated suggestion (fix before merge, or explicitly defer) |
+| `nit`, `info`, `note` | `nit` | advisory only |
+| anything else / unrecognized | `minor` | gated suggestion |
+
+Keel then:
+
+- Posts a single verdict comment to the PR via `keel post-comment --artifact
+  jury-verdict`, tagged with the `keel.jury-verdict.v1` marker and `head: <sha>`
+  so re-runs on the same commit stay idempotent instead of piling up comments.
+- Saves the raw JSON report to `.keel/state/jury/<run-id>.json` — untracked
+  state, not committed — so `keel-visual` can show the jury verdict alongside
+  the run on the activity board.
+- Passes the count of **distinct participating vendors** (the ones that
+  actually returned output, not just the ones configured) to `keel
+  evidence-verify --jury-vendors <N>` at merge time. A panel with fewer than 2
+  distinct vendors is downgraded from gating to advisory before that evidence
+  check runs, even if the earlier `s8` gate treated the run as gating. Setting
+  `knobs.evidence_require_distinct_vendors: true` (shown above) additionally
+  requires every *required reviewer* verdict to carry vendor provenance, with
+  no two sharing a vendor; the jury verdict is a separate artifact and is
+  checked on its own through that participating-vendor count, not this knob.
+  See Keel's
+  [evidence guide](https://github.com/berkayturanci/keel/blob/main/docs/keel/evidence.md)
+  for how the pre-merge evidence gate reads these signals.
+
+### Not yet available
+
+Two `ai-jury` capabilities mentioned elsewhere in this cookbook are not wired
+into Keel yet: per-panelist ballots (`--format keel-reviews`) are tracked in
+[ai-jury#663](https://github.com/berkayturanci/ai-jury/issues/663), and a
+`jury run-agent` recipe for Keel's implementer/reviewer roles is tracked in
+[ai-jury#661](https://github.com/berkayturanci/ai-jury/issues/661). Until
+those land, the `jury` gate above is the full extent of the Keel integration.
 
 ---
 

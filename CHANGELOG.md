@@ -49,6 +49,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The Homebrew release chain, written down** (#646): `docs/homebrew-release-chain.md`. Between 25 and 27 August this chain failed four separate ways and each was diagnosed from scratch, because nothing recorded how the pieces fit.
   - Covers the contradiction the whole design is arranged around (the formula's url and digest cannot both be correct at once), every guard and where it lives, what has already gone wrong and what each fix added, the two settings that still require a manual step, and a symptom-to-cause table for the next failure.
   - Linked from the README and from the release checklist, which is the *what* to this document's *why*.
+- **The Keel Cookbook Recipe Configured A Key Keel Doesn't Have** (#664): `docs/cookbook.md` §16 told readers to add `review: { engine: ai-jury, preset: balanced, gating: true }` to `.keel/project.yaml`. Keel's schema has no top-level `review` key — `keel validate` rejects it with `unknown property 'review'` — so the recipe could never actually pass validation.
+  - Rewritten around the real integration: the built-in `jury` gate (`gates: [build, lint, jury]`), `knobs.jury_timeout_s`, the `keel ship --jury` / `--jury-advisory` / `--no-jury` flags and their precedence, the ai-jury-severity-to-keel-severity mapping, and how the `keel.jury-verdict.v1` PR comment and the `.keel/state/jury/<run-id>.json` report feed `keel evidence-verify --jury-vendors` and `keel-visual`. Links out to keel's own `docs/keel/configuration.md` and `docs/keel/evidence.md` rather than restating them.
+  - Notes that per-panelist ballots (`--format keel-reviews`, #663) and a `jury run-agent` recipe (#661) aren't wired into Keel yet, so the recipe doesn't imply they are.
+  - Pinned by `tests/test_docs_snippets.py`: every `.keel/project.yaml`-marked snippet in the cookbook is parsed and its top-level keys are checked against a vendored allowlist of keel's actual schema keys, so a `review:`-shaped regression fails the suite instead of waiting for the next reader's `keel validate`.
 
 ## [1.15.1] - 2026-08-27
 
