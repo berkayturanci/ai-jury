@@ -96,6 +96,119 @@ hints = true         # run local Ruff/ESLint pre-pass before Round 1 (default: f
 - **`routing = "tiered"`** (`--tiered`): Uses the diff risk classifier to route non-critical files to economical models while keeping frontier models as anchor reviewers for security-critical paths (`auth/`, `crypto/`).
 - **`hints = true`** (`--hints`): Runs fast local static linters (Ruff for Python, ESLint for JS/TS) on modified files and injects compact hints into Round 1 prompt context so reviewers focus strictly on deep logic bugs and security flaws.
 
+## Reasoning effort (`[[agent]] effort` / `--effort`)
+
+Ask a reviewer to think harder (or cheaper) without learning each vendor's own
+knob. Set it per agent, or for the whole run:
+
+```toml
+[[agent]]
+name = "gemini-api"
+vendor = "google-api"
+model = "gemini-3.8-flash"
+effort = "high"        # "low" | "medium" | "high"
+```
+
+```
+jury --pr 123 --effort high     # overrides every [[agent]] effort for this run
+```
+
+The level is a **hint expressed in each vendor's own vocabulary** — the mapping
+lives in exactly one place (`adapters.effort_args`):
+
+| Vendor | How the level is sent | `low` | `medium` | `high` |
+| --- | --- | --- | --- | --- |
+| `google` (`agy` CLI) | model-id suffix | `<model>-low` | `<model>-medium` | `<model>-high` |
+| `anthropic-api` | `thinking.budget_tokens` (extended thinking) | `2048` | `8192` | `32768` |
+| `openai-api` | `reasoning_effort` | `low` | `medium` | `high` |
+| `openai-compatible` | `reasoning_effort` | `low` | `medium` | `high` |
+| `google-api` | `generationConfig.thinkingConfig.thinkingBudget` | `1024` | `8192` | `32768` |
+| `anthropic` (`claude` CLI) | — no headless control | ignored | ignored | ignored |
+| `openai` (`codex` CLI) | — no headless control | ignored | ignored | ignored |
+| `local`, `cli`, custom | — not sent | ignored | ignored | ignored |
+
+Notes:
+
+- **`agy` encodes effort in the model id.** `gemini-3.8-flash` + `high` becomes
+  `gemini-3.8-flash-high`; a model that *already* carries a `-low`/`-medium`/`-high`
+  suffix is left exactly as configured, so an explicit model id always wins.
+  `jury --doctor --json` lists the ids the installed CLI actually offers.
+- **Anthropic raises `max_tokens`.** Thinking tokens come out of the same
+  allowance, so the request's `max_tokens` is lifted above the budget rather than
+  leaving the response no room.
+- **`local` is deliberately excluded.** Many local OpenAI-compatible servers
+  reject an unknown request field outright, which would turn a hint into a failed
+  review; effort is not sent on speculation.
+- **Unsupported vendors warn once per run** (`effort unsupported for <vendor>,
+  ignored`) on stderr and run unchanged — a panel is never blocked by one
+  panelist that cannot take the hint.
+- An unknown level (`effort = "maximum"`) is a **hard config error**, not a
+  silent fallback: paying for a shallower run than you asked for is worse than
+  a clear message.
+- Effort is part of the config hash, so two runs that differ only by effort do
+  not share a cache entry.
+
+## Machine-readable diagnostics (`jury --doctor --json`)
+
+`jury --doctor` prints a human report. `--json` prints the same facts as a single
+JSON document on stdout and nothing else, for wizards and orchestrators that need
+to know what this machine can actually run:
+
+```
+jury --doctor --json | jq '.agents[] | select(.available) | .name'
+```
+
+The document is `schema_version: "ai-jury.doctor.v1"`:
+
+```json
+{
+  "schema_version": "ai-jury.doctor.v1",
+  "tool_version": "1.15.1",
+  "python": "3.12.14",
+  "config_path": "/path/to/jury.toml",
+  "ready": true,
+  "agents": [
+    {
+      "name": "agy",
+      "vendor": "google",
+      "transport": "cli",
+      "available": true,
+      "reason": null,
+      "command": "agy",
+      "resolved": "/usr/local/bin/agy",
+      "version": "1.1.25",
+      "capabilities": ["headless", "model-selection"],
+      "models": ["gemini-3.8-flash-high", "gemini-3.8-flash-low"],
+      "effort_supported": true,
+      "effort": "high"
+    }
+  ],
+  "warnings": []
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `schema_version` | `ai-jury.doctor.v1`. Bumped on any breaking shape change. |
+| `ready` | At least one configured agent is reachable. |
+| `transport` | `cli` (a command on PATH), `api` (a hosted vendor API), or `local` (an OpenAI-compatible server you run). |
+| `command` / `endpoint` | Exactly one, named for the transport: a `cli` agent carries `command`, everything else carries the `endpoint` its adapter would actually call. |
+| `reason` | Why an agent is unusable, or `null` when it is available. |
+| `capabilities` | Labels from the version probe: `headless`, `model-selection`. |
+| `models` | Model ids discovered for that agent (`agy models`, or a local server's `/v1/models`), or `null` when nothing could be listed. |
+| `effort_supported` / `effort` | Whether the vendor has an effort control, and the level configured for this agent. |
+| `warnings` | The same config warnings the human report lists. |
+
+**Secrets are never included** — only environment *variable names* (e.g.
+`OPENAI_API_KEY is not set in the environment`), never their values, and
+userinfo credentials are stripped from any endpoint. The text report and this
+export are two renderings of one projection (`doctor.doctor_report_dict`), so
+they cannot disagree about the panel.
+
+`--write PATH` is unchanged and still writes the *full* internal diagnostics dict
+(a superset, no schema promise); under `--json` its confirmation line moves to
+stderr so stdout stays a single JSON document.
+
 ## Large-diff handling (`[jury.diff]`)
 
 Before running, the diff is measured and filtered. The CLI logs the total and

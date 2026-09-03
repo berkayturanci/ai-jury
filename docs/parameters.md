@@ -140,6 +140,7 @@ current branch from stdin.
 | `--verify` / `--no-verify` | flag | from config (`true`) | Run (or skip) the verification round. |
 | `--chair` | agent name, or `rotate` | from config (`claude`) | Which agent synthesizes the verdict (and runs verification). Must be an enabled agent. |
 | `--seed` | integer | from config (unset) | Reproducible orchestration; identical mock runs + seed ⇒ byte-identical reports. |
+| `--effort` | `low` \| `medium` \| `high` | from config (unset) | Reasoning effort for every agent this run, mapped per vendor. |
 
 A fixed `--rounds N` is a hard override: it also disables adaptive early-stop
 (for reproducible fixed-N runs) unless you pass `--early-stop` explicitly.
@@ -148,6 +149,13 @@ A fixed `--rounds N` is a hard override: it also disables adaptive early-stop
 **Example:** `jury --pr 123 --rounds 1` runs review only (no debate);
 `jury --pr 123 --early-stop --max-rounds 3 --chair rotate` debates only on
 disagreement, up to 3 rounds, rotating the synthesizing chair per run.
+
+**`--effort {low,medium,high}`** sets the reasoning effort for **every** agent
+this run, overriding any `[[agent]] effort`. It is mapped to each vendor's own
+control (agy model suffix, Anthropic thinking budget, OpenAI `reasoning_effort`,
+Gemini `thinkingConfig`); a vendor with no effort control warns once on stderr
+(`effort unsupported for <vendor>, ignored`) and runs unchanged. See the
+[per-vendor mapping table](configuration.md#reasoning-effort-agent-effort----effort).
 
 ### Execution budget & reliability
 
@@ -293,16 +301,23 @@ reviews only the new range since the last posted run, then posts.
 | `--strict-config` | flag | Treat configuration warnings as errors. |
 | `--mock` | flag | Offline demo using deterministic mock agents. |
 | `--doctor` | flag | Print a local readiness diagnostics report and exit (no telemetry). |
-| `--write` | path | With `--doctor`, also write diagnostics as JSON (secrets redacted). |
+| `--json` | flag | With `--doctor`, print the machine-readable provider export (schema `ai-jury.doctor.v1`) as the **only** thing on stdout. |
+| `--write` | path | With `--doctor`, also write the full internal diagnostics as JSON (secrets redacted). |
 | `--version` | flag | Print the version and exit. |
 | `-h`, `--help` | flag | Show help and exit. |
 
-**Depends on / conflicts:** `--write` only applies with `--doctor`.
+**Depends on / conflicts:** `--write` and `--json` only apply with `--doctor`;
+`--json` without `--doctor` exits `2` (use `--format json` for the review report).
 `--config-validate` and `--doctor` short-circuit the run (they print and exit).
+Under `--json` the `--write` confirmation line goes to stderr, so stdout stays a
+single JSON document.
 
 **Example:** `jury --config-validate --config jury.toml` validates and exits
 (`0` valid, `2` invalid); `jury --doctor --write doctor.json` prints readiness
-diagnostics and also writes them as redacted JSON.
+diagnostics and also writes them as redacted JSON;
+`jury --doctor --json | jq '.agents[] | select(.available) | .name'` lists the
+reviewers this machine can actually run. The exported schema is documented in
+[configuration.md](configuration.md#machine-readable-diagnostics-jury---doctor---json).
 
 ---
 
@@ -321,7 +336,7 @@ diagnostics and also writes them as redacted JSON.
 | `--local-endpoint` | URL | OpenAI-compatible base URL for a local agent. |
 | `-o`, `--output` | path | Output path (default `jury.toml`). |
 | `--force` | flag | Overwrite an existing file. |
-| `--interactive` | flag | Force interactive prompts. |
+| `--interactive` | flag | Force interactive prompts. The interactive flow also asks for a reasoning [effort](configuration.md#reasoning-effort-agent-effort----effort) (skippable); a chosen level is written onto each agent whose vendor supports it, and every other effort-capable agent gets a commented `# effort = "medium"` hint. |
 | `--wizard` | flag | Guided, numbered-option setup for the most-used settings (reviewers, depth, decision, verification, context, CI gate). Every question is skippable (Enter keeps the built-in default); only the keys you choose are written, so the file stays minimal. |
 | `--list-agents` | flag | List known agents + availability and exit. |
 | `--list-models` | flag | List local models on the server and exit. |
@@ -428,6 +443,7 @@ transcript = true   # default the markdown report to the full play-by-play
 | `api_key_env` | string | unset (`OPENAI_API_KEY` default) | Environment variable name holding the API key for `openai-compatible` vendors (e.g. `DEEPSEEK_API_KEY`, `OPENROUTER_API_KEY`). |
 | `prompt_mode` | string | `stdin` | Prompt delivery for `vendor = "cli"` (`stdin` \| `arg`). |
 | `headers` | table | `{}` | Custom HTTP headers map for `openai-compatible` API calls. |
+| `effort` | string | unset | `low` \| `medium` \| `high`. Reasoning effort, mapped per vendor (see [effort](configuration.md#reasoning-effort-agent-effort----effort)). An unknown value is a hard config error; a vendor with no effort control warns once and ignores it. Overridden by `--effort`. |
 | `timeout` | int | `600` | Positive seconds (inherits `jury.timeout`). |
 | `enabled` | bool | `true` | Disabled agents are skipped. |
 | `extra_args` | list[str] | `[]` | Extra CLI args (e.g. the secure-default sandbox flags). |
@@ -467,6 +483,12 @@ Set with `jury init --preset`.
 | `fast` | 1 round (review only). |
 | `balanced` | Debate + early-stop. |
 | `thorough` | All available agents + debate + verify. |
+
+### Reasoning effort (`--effort` / `[[agent]] effort`)
+`low` · `medium` · `high`. Supported by `google` (agy), `anthropic-api`,
+`openai-api`, `openai-compatible` and `google-api`; ignored with a one-line
+warning for `anthropic`/`openai` (the `claude`/`codex` CLIs), `local`, `cli` and
+custom vendors.
 
 ### Output formats
 `markdown` (default) · `json` · `sarif`.
