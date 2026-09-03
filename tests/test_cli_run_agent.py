@@ -1536,7 +1536,10 @@ class LivenessTests(unittest.TestCase):
         with mock.patch.object(runagent.os, "kill", side_effect=OSError):
             self.assertIsNone(runagent.pid_alive(4242))
 
-    def test_the_detach_parent_records_the_child_pid(self):
+    def test_the_detach_parent_reports_the_pid_without_writing_it(self):
+        # The parent writes the state file exactly once, BEFORE the spawn. It
+        # reports the pid it started for the operator, but writing it back
+        # afterwards is what clobbered a fast child's result.
         with _workspace() as root:
             out, err = io.StringIO(), io.StringIO()
             with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
@@ -1559,7 +1562,92 @@ class LivenessTests(unittest.TestCase):
                     spawn=lambda *_args: 31337,
                 )
             self.assertEqual(code, 0)
-            self.assertEqual(runagent.read_state("withpid", root / "cache")["pid"], 31337)
+            self.assertEqual(json.loads(out.getvalue())["pid"], 31337)
+            self.assertIsNone(runagent.read_state("withpid", root / "cache")["pid"])
+
+    def test_a_child_that_finishes_during_launch_keeps_its_result(self):
+        # The round-2 regression, as a test: a spawn stub that completes while
+        # the parent is still in `launch()`. The parent must not write again.
+        with _workspace() as root:
+
+            def spawn_that_finishes_immediately(_argv, _out_path):
+                runagent.write_state(
+                    "racy",
+                    {
+                        "run_id": "racy",
+                        "status": "done",
+                        "ok": True,
+                        "text": "the real answer",
+                    },
+                    root / "cache",
+                )
+                return 4242
+
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                code = _run_run_agent(
+                    [
+                        "--agent",
+                        "claude",
+                        "--role",
+                        "review",
+                        "--prompt-file",
+                        str(root / "prompt.md"),
+                        "--config",
+                        str(root / "jury.toml"),
+                        "--cache-dir",
+                        str(root / "cache"),
+                        "--detach",
+                        "--run-id",
+                        "racy",
+                    ],
+                    spawn=spawn_that_finishes_immediately,
+                )
+            self.assertEqual(code, 0)
+            final = runagent.read_state("racy", root / "cache")
+        self.assertEqual(final["status"], "done")
+        self.assertTrue(final["ok"])
+        self.assertEqual(final["text"], "the real answer")
+
+    def test_the_child_claims_the_run_with_its_own_pid(self):
+        # The claim lands before any work, so `--status` can see a live pid
+        # while the agent is still running — and every write to the file after
+        # the parent's single one comes from this process, in order.
+        seen = {}
+
+        def fake_run(*_args, **_kwargs):
+            seen["state"] = runagent.read_state("claimed", seen["cache"])
+            return AgentResult("claude", "anthropic", True, "ok", 0.1, exit_code=0)
+
+        with _workspace() as root, mock.patch("ai_jury.adapters.MockAdapter.run", fake_run):
+            seen["cache"] = root / "cache"
+            code, _, _ = _run(
+                [
+                    "--agent",
+                    "claude",
+                    "--role",
+                    "review",
+                    "--prompt-file",
+                    str(root / "prompt.md"),
+                    "--config",
+                    str(root / "jury.toml"),
+                    "--cache-dir",
+                    str(root / "cache"),
+                    "--run-id",
+                    "claimed",
+                    "--_child",
+                    "--mock",
+                ]
+            )
+            final = runagent.read_state("claimed", root / "cache")
+        self.assertEqual(code, 0)
+        # Mid-run: claimed, running, with this process's pid.
+        self.assertEqual(seen["state"]["status"], "running")
+        self.assertEqual(seen["state"]["pid"], os.getpid())
+        self.assertIsNotNone(seen["state"]["started_at"])
+        # After: terminal, same pid.
+        self.assertEqual(final["status"], "done")
+        self.assertEqual(final["pid"], os.getpid())
 
     def test_a_child_that_crashes_still_writes_a_terminal_state(self):
         def boom(*_args, **_kwargs):
@@ -1660,21 +1748,68 @@ class WaitTimeoutTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("did not finish within 3s", err)
 
-    def test_a_dead_run_says_so_when_the_wait_gives_up(self):
+    def test_a_dead_run_is_reported_at_once_not_at_the_deadline(self):
+        # Previously this blocked for the whole deadline for a result that was
+        # never coming, while `--status` already called the same run lost.
+        slept = []
         with tempfile.TemporaryDirectory() as tmp:
             cache = Path(tmp)
             runagent.write_state(
                 "gone", {"run_id": "gone", "status": "running", "pid": 999999}, cache
             )
-            now = {"t": 0.0}
             with mock.patch.object(runagent, "pid_alive", return_value=False):
-                code, _, err = _run_run_agent_capture(
-                    ["--wait", "gone", "--cache-dir", str(cache), "--wait-timeout", "1"],
-                    sleep=lambda _s: now.update(t=now["t"] + 1),
-                    clock=lambda: now["t"],
+                code, out, err = _run_run_agent_capture(
+                    ["--wait", "gone", "--cache-dir", str(cache), "--wait-timeout", "600"],
+                    sleep=slept.append,
+                    clock=lambda: 0.0,
                 )
-        self.assertEqual(code, 2)
-        self.assertIn("its process is gone", err)
+        self.assertEqual(code, 1)
+        self.assertEqual(slept, [])  # returned without waiting at all
+        self.assertEqual(json.loads(out)["status"], "lost")
+        self.assertIn("was lost", err)
+
+    def test_a_terminal_write_that_lands_during_the_probe_wins(self):
+        # The child may finish between our read and the pid probe. A real
+        # answer always beats an inference about a pid, so the state is
+        # re-read once before anything is called lost.
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp)
+            runagent.write_state(
+                "photo", {"run_id": "photo", "status": "running", "pid": 999999}, cache
+            )
+
+            def finish_then_report_dead(_pid):
+                runagent.write_state(
+                    "photo", {"run_id": "photo", "status": "done", "ok": True, "text": "x"}, cache
+                )
+                return False
+
+            state, timed_out = runagent.wait_for_run(
+                "photo",
+                cache_dir=cache,
+                timeout=5,
+                clock=lambda: 0.0,
+                alive_fn=finish_then_report_dead,
+            )
+        self.assertFalse(timed_out)
+        self.assertEqual(state["status"], "done")
+        self.assertEqual(state["text"], "x")
+
+    def test_a_run_with_no_pid_is_waited_on_normally(self):
+        # Unknown liveness must not be read as death.
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp)
+            runagent.write_state("nopid", {"run_id": "nopid", "status": "running"}, cache)
+            now = {"t": 0.0}
+            state, timed_out = runagent.wait_for_run(
+                "nopid",
+                cache_dir=cache,
+                timeout=2,
+                sleep=lambda _s: now.update(t=now["t"] + 1),
+                clock=lambda: now["t"],
+            )
+        self.assertTrue(timed_out)
+        self.assertEqual(state["status"], "running")
 
     def test_a_non_positive_wait_timeout_is_refused(self):
         code, _, err = _run(["--wait", "x", "--wait-timeout", "0"])

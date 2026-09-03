@@ -870,8 +870,21 @@ jury run-agent --wait issue-661 --wait-timeout 1800   # ...with your own deadlin
 `--wait` is not unbounded: it defaults to the run's own timeout plus a minute of
 head-room to write its state file, so a script cannot hang on a run that died.
 A run that was never started is reported immediately rather than waited on, and
-`--status` shows a run whose process is gone as `lost` rather than `running`
-forever (POSIX only — on Windows a pid cannot be probed without killing it).
+both `--status` and `--wait` report a run whose process is gone as `lost`
+rather than leaving it `running` forever — `--wait` returns as soon as it sees
+that, instead of blocking for a result that is not coming.
+
+**`running` is a claim, not a guarantee.** The status means "a process with
+this pid existed and we have not seen it exit". Pids are recycled, so a state
+file that outlives its process — across a reboot, or in a `--cache-dir` shared
+between machines or containers — can name a pid that some unrelated process now
+holds, and the run keeps reporting `running`. The failure is deliberately
+one-directional: a stale pid leaves a finished-looking run marked `running`
+(and its `started_at` shows how old the claim is), never the reverse, so a live
+run is never declared dead. Liveness is probed on POSIX only; on Windows a pid
+cannot be probed without terminating it, so every unfinished run there reads as
+`running`. If you share a cache directory, treat `running` from another host as
+unknown and read the state file's `started_at` yourself.
 
 State lives in `<cache-dir>/run-agent/<run-id>.json` (0600, in a 0700 directory)
 with the child's console log beside it as `<run-id>.out`. `--cache-dir` and

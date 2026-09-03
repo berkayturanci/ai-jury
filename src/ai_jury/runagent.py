@@ -474,6 +474,17 @@ def pid_alive(pid) -> bool | None:
     calls ``TerminateProcess``, so a liveness check there would kill the very
     run it was asked about. Returning ``None`` (unknown) leaves the run
     reported as ``running``, which is the safe reading of "we don't know".
+
+    **A live pid is not proof of identity.** Pids are recycled, so a state file
+    that outlives its process — across a reboot, or in a ``--cache-dir`` shared
+    between machines — can name a pid some unrelated process now holds, and this
+    reports ``True`` for it. That is why the answer is only ever used to demote
+    ``running`` to ``lost`` on a definite ``False``: a wrong ``True`` leaves a
+    finished-looking run reported as still running (recoverable, and the state
+    file carries ``started_at`` so a reader can see how old the claim is), while
+    a wrong ``False`` would declare a live run dead. Ruling out recycling needs
+    the process start time, which the standard library does not expose
+    portably — and a runtime dependency is not on the table for this.
     """
     if os.name == "nt" or not isinstance(pid, int) or pid <= 0:
         return None
@@ -584,19 +595,35 @@ def wait_for_run(
     poll_s: float = 0.25,
     sleep=time.sleep,
     clock=time.monotonic,
+    alive_fn=pid_alive,
 ) -> tuple[dict | None, bool]:
     """Block until a detached run finishes. Returns ``(state, timed_out)``.
 
-    ``sleep`` and ``clock`` are injected so the lifecycle is testable against a
-    fake clock instead of real seconds. A missing state file is treated as "not
-    finished yet", not as an error: ``--wait`` may legitimately start before the
-    child has written anything.
+    ``sleep``, ``clock`` and ``alive_fn`` are injected so the lifecycle is
+    testable against a fake clock instead of real seconds. A missing state file
+    is treated as "not finished yet", not as an error: a caller may legitimately
+    start waiting before the child has written anything.
+
+    A run whose recorded process is **definitively gone** returns immediately
+    with its status mapped to :data:`STATUS_LOST`, rather than blocking to the
+    deadline for a result that is never coming — the same judgement ``--status``
+    makes, applied here so the two cannot disagree. Before reporting that, the
+    state is re-read once: the child may have written its terminal document in
+    the window between our read and the probe, and a real answer always wins
+    over an inference about a pid.
     """
     deadline = None if timeout is None else clock() + float(timeout)
     while True:
         state = read_state(run_id, cache_dir)
         if state is not None and state.get("status") != STATUS_RUNNING:
             return state, False
+        if state is not None and alive_fn is not None and alive_fn(state.get("pid")) is False:
+            confirmed = read_state(run_id, cache_dir)
+            if confirmed is not None and confirmed.get("status") != STATUS_RUNNING:
+                return confirmed, False
+            lost = dict(confirmed or state)
+            lost["status"] = STATUS_LOST
+            return lost, False
         if deadline is not None and clock() >= deadline:
             return state, True
         sleep(poll_s)

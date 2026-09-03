@@ -1395,10 +1395,8 @@ def _run_run_agent(rest: list[str], spawn=None, sleep=None, clock=None) -> int:
             clock=clock or time.monotonic,
         )
         if timed_out:
-            gone = runagent.pid_alive((state or {}).get("pid")) is False
-            detail = " (its process is gone)" if gone else ""
             print(
-                f"error: run '{ns.wait}' did not finish within {deadline:g}s{detail}",
+                f"error: run '{ns.wait}' did not finish within {deadline:g}s",
                 file=sys.stderr,
             )
             return 2
@@ -1407,6 +1405,14 @@ def _run_run_agent(rest: list[str], spawn=None, sleep=None, clock=None) -> int:
             # rm). Distinguished from "never existed", which returned above.
             print(f"error: run '{ns.wait}' disappeared while waiting", file=sys.stderr)
             return 2
+        if state.get("status") == runagent.STATUS_LOST:
+            # Returned as soon as the pid was seen gone, not at the deadline:
+            # there is no result coming, and blocking for one is just delay.
+            print(
+                f"error: run '{ns.wait}' was lost — its process is gone and it "
+                f"never recorded a result (see {runagent.output_path(ns.wait, ns.cache_dir)})",
+                file=sys.stderr,
+            )
         print(json.dumps(state, indent=2))
         return 0 if state.get("ok") else 1
 
@@ -1476,6 +1482,13 @@ def _run_run_agent(rest: list[str], spawn=None, sleep=None, clock=None) -> int:
     )
     started = time.time()
     record = _child_recorder(ns, spec, policy, started) if ns.child and ns.run_id else None
+    if record is not None:
+        # Claim the run with our OWN pid before doing any work. Every write to
+        # this state file now comes from this process, in order, so nothing can
+        # overwrite the terminal document the way the parent's post-spawn write
+        # used to. Until this lands the run has no pid, which reads as
+        # "liveness unknown" — reported as running, never as lost.
+        record(runagent.initial_state(ns.run_id, spec, policy.role, started), terminal=False)
     try:
         if ns.cwd:
             with contextlib.chdir(ns.cwd):
@@ -1527,23 +1540,30 @@ def _crash_document(spec, role: str, started: float, exc: BaseException) -> dict
 
 
 def _child_recorder(ns, spec, policy, started: float):
-    """A callable that writes one terminal state file for a detached child.
+    """A callable that writes a detached child's state file (issue #661).
 
-    Idempotent by construction — the caller invokes it exactly once, on the
-    success path or from the crash handler — and fail-soft: a child that cannot
-    write its state must still print its document to the log, since the log is
-    the only remaining record.
+    Called twice: once at the top with ``terminal=False`` to claim the run with
+    this process's pid, and once at the end — from the success path or the
+    crash handler — with the result document. Both writes come from the child,
+    which is what keeps them ordered: the parent writes only before the spawn,
+    so no stale copy can land on top of the finished document.
+
+    Fail-soft: a child that cannot write its state must still print its
+    document to the log, since the log is then the only record.
     """
     from . import runagent
 
     del spec, policy
 
-    def record(document: dict) -> None:
+    def record(document: dict, terminal: bool = True) -> None:
         state = dict(document)
         state.update(
             {
                 "run_id": ns.run_id,
-                "status": runagent.STATUS_DONE,
+                "status": runagent.STATUS_DONE if terminal else runagent.STATUS_RUNNING,
+                # `started_at` travels with the pid so a reader can see how old
+                # the claim is — see runagent.pid_alive on why a pid alone is
+                # not proof of identity.
                 "started_at": started,
                 "pid": os.getpid(),
             }
@@ -1596,18 +1616,20 @@ def _detach_run_agent(ns, spec, policy, spawn=None) -> int:
         print(f"error: could not start the detached run: {redact(str(exc))[0]}", file=sys.stderr)
         return 2
 
-    if isinstance(pid, int):
-        # Second write, now that the child exists: `--status` needs the pid to
-        # tell a live run from one whose process is gone. Best-effort — a run
-        # without a recorded pid is simply reported as running, never as lost.
-        state["pid"] = pid
-        with contextlib.suppress(OSError, ValueError):
-            runagent.write_state(run_id, state, ns.cache_dir)
-
+    # The parent writes the state file EXACTLY ONCE, before the spawn. It used
+    # to write a second time afterwards to record the pid, from the stale dict
+    # it still held — and a child that finished during launch had its terminal
+    # document overwritten with `status: running`, losing the answer entirely.
+    # The child records its own pid instead (see `_child_running_state`), so
+    # every write after this one comes from the child, in order.
     print(
         json.dumps(
             {
+                # The pid is the parent's own knowledge, reported for the
+                # operator's benefit; it is deliberately NOT written to the
+                # state file from here.
                 **runagent.run_summary(state),
+                "pid": pid if isinstance(pid, int) else None,
                 "state_file": str(runagent.state_path(run_id, ns.cache_dir)),
                 "output_file": str(runagent.output_path(run_id, ns.cache_dir)),
             },

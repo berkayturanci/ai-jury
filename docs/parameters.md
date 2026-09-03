@@ -383,9 +383,13 @@ write-capable only with `--allow-write`; without it the command exits 2.
 **Run states.** `running` (the child is alive, or we cannot tell), `done`
 (terminal — read `ok` and `error_code`), `lost` (still marked running, but the
 recorded process is definitively gone: killed, or crashed hard enough to skip
-its own cleanup). Liveness is probed on POSIX only; on Windows a run stays
-`running`, because `os.kill(pid, 0)` there terminates the process rather than
-probing it.
+its own cleanup). Both `--status` and `--wait` apply the same rule, so they
+cannot disagree; `--wait` returns as soon as it sees a lost run rather than
+blocking to its deadline. Liveness is probed on POSIX only; on Windows a run
+stays `running`, because `os.kill(pid, 0)` there terminates the process rather
+than probing it. A pid is not proof of identity — see the
+[cookbook](cookbook.md#long-runs-dispatch-now-collect-later) on why `running`
+is not authoritative across a reboot or a shared `--cache-dir`.
 
 **Attribution labels are family + major, deliberately coarse.** The rule is
 identical to [keel](https://github.com/berkayturanci/keel)'s `agents.model_base`
