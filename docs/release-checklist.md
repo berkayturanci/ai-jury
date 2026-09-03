@@ -9,10 +9,12 @@ true to announce/publish) and **Nice-to-have** (improves polish, not a blocker).
 ### Package & metadata
 - [ ] `pyproject.toml` metadata correct: name, description, `requires-python`, license,
       classifiers, `project.urls`, `console_scripts` (`jury`).
-- [ ] Version bumped and consistent across `pyproject.toml`, `__init__.__version__`,
-      `.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`, and `CHANGELOG.md`.
-      (CI enforces the pyproject ↔ plugin.json equality via `tests/test_release_metadata.py`;
-      `publish.yml` re-checks both against the tag at release time.)
+- [ ] `make release-check` passes — every file that names the version agrees with
+      `pyproject.toml`. The surface list is [`scripts/release_surfaces.py`](../scripts/release_surfaces.py),
+      the single table read by the CI guard (`scripts/verify_merge.py`),
+      `tests/test_release_metadata.py`, and `tests/test_homebrew_formula.py`.
+      Adding a surface is one line there. (`publish.yml` re-checks the version
+      against the tag at release time.)
 - [ ] `pip install -e .` and `python -m build` (sdist + wheel) succeed cleanly.
 - [ ] PyPI **trusted publishing** (OIDC) configured for the repo (one-time PyPI
       trusted-publisher setup); `publish.yml` publishes without a long-lived token.
@@ -67,9 +69,12 @@ true to announce/publish) and **Nice-to-have** (improves polish, not a blocker).
 1. Confirm every **Required before public** box above is checked.
 2. Determine target version (`MAJOR`, `MINOR`, or `PATCH`) per SemVer rules.
 3. Update `CHANGELOG.md`: rename `[Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD`.
-4. Bump the version in `pyproject.toml`, `src/ai_jury/__init__.py`, `uv.lock`,
-   `.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`, `Formula/ai-jury.rb`,
-   `website/index.html`, and `website/app.js`.
+4. Bump the version everywhere it is named, then run `make release-check` — it
+   names any file left behind. Do not work from a list in this document: this
+   step used to spell out eight filenames, and the website was still missed for
+   two releases (#646). The surfaces live in
+   [`scripts/release_surfaces.py`](../scripts/release_surfaces.py), and a new one
+   is registered there once rather than in three separate guards (#665).
 5. Open a release PR (`release/vX.Y.Z`); wait for green CI; merge to `main`.
 6. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
 7. Creating the tag triggers `.github/workflows/publish.yml`, which:

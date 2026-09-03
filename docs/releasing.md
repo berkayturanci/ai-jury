@@ -38,6 +38,26 @@ is now configured and has been used for every release since. The publish step is
 **not** `continue-on-error`: a failed upload fails the release loudly so a broken
 publish can't pass silently. `skip-existing` keeps re-runs idempotent.
 
+## Which files carry the version
+
+One table, [`scripts/release_surfaces.py`](../scripts/release_surfaces.py), lists
+every file that names the release — package metadata, `uv.lock`, both plugin
+manifests, the website, the README, the cookbook, and the Homebrew formula —
+together with the pattern that reads the version out of each.
+
+Three guards read that table, and none of them keeps its own copy:
+
+| Guard | Question it asks |
+| --- | --- |
+| `scripts/verify_merge.py --check-version` (CI, `fetch-depth: 0`) | Do the surfaces present agree, and has the version not gone backwards from the last `v*` tag? |
+| `scripts/verify_merge.py --check-surfaces` (`make release-check`) | Does **every** listed surface name what `pyproject.toml` declares? |
+| `tests/test_release_metadata.py`, `tests/test_homebrew_formula.py` | The same question, in the unit suite, plus the formula's url and digest. |
+
+Registering a new surface is one line in that table (#665). It used to be three
+lines in three files, and the surface that was missed is the one that went stale:
+`website/index.html` and `website/app.js` sat at v1.14.4 through two releases
+(#646).
+
 ## Semantic Versioning (SemVer 2.0.0) Policy
 
 `ai-jury` strictly adheres to [Semantic Versioning 2.0.0](https://semver.org/):

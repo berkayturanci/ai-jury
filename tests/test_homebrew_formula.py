@@ -15,19 +15,27 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
+
+import release_surfaces  # noqa: E402
 
 from ai_jury import __version__  # noqa: E402
+
+#: The formula's path in the shared surface table. *Which* strings in the formula
+#: carry the version is decided in `scripts/release_surfaces.py`, alongside every
+#: other surface, rather than restated here — three disjoint lists is what let the
+#: website sit two releases behind (#665).
+FORMULA = "Formula/ai-jury.rb"
 
 
 class HomebrewFormulaTests(unittest.TestCase):
     def test_formula_file_exists_and_matches_version(self):
-        formula_path = REPO_ROOT / "Formula" / "ai-jury.rb"
+        formula_path = REPO_ROOT / FORMULA
         self.assertTrue(formula_path.exists(), "Formula/ai-jury.rb must exist")
 
         content = formula_path.read_text(encoding="utf-8")
         self.assertIn("class AiJury < Formula", content)
         self.assertIn("include Language::Python::Virtualenv", content)
-        self.assertIn(f"ai_jury-{__version__}.tar.gz", content)
 
         # Validate sha256 pattern (64 hex characters)
         sha_match = re.search(r'sha256\s+"([0-9a-f]{64})"', content)
@@ -35,7 +43,29 @@ class HomebrewFormulaTests(unittest.TestCase):
 
         # Validate test block
         self.assertIn("assert_match", content)
-        self.assertIn(f"jury {__version__}", content)
+
+        # Every version the table says this formula names — the sdist filename in
+        # `url` and the `jury X.Y.Z` the formula's own `test do` block asserts.
+        for surface in release_surfaces.RELEASE_SURFACES:
+            if surface.path != FORMULA:
+                continue
+            with self.subTest(pattern=surface.pattern):
+                found = surface.find(content)
+                self.assertTrue(found, f"{surface.pattern} matched nothing; the formula moved")
+                self.assertEqual(
+                    set(found),
+                    {__version__},
+                    "the formula names a version the package is not",
+                )
+
+    def test_the_formula_is_a_registered_release_surface(self):
+        """Vacuity: the loop above is a no-op if the table stops listing it.
+
+        The formula is the surface a `brew install` reads, and it is bumped by a
+        workflow rather than by hand, so nothing else would notice its removal.
+        """
+        covered = {surface.path for surface in release_surfaces.RELEASE_SURFACES}
+        self.assertIn(FORMULA, covered)
 
     def test_install_script_syntax_and_structure(self):
         install_script = REPO_ROOT / "install.sh"
