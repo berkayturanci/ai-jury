@@ -783,6 +783,98 @@ jury --pr 123 --ci
 
 ---
 
+## 21. Run one agent for an orchestrator (keel)
+
+The panel is the point of ai-jury, but an orchestrator sometimes needs *one*
+agent: dispatch an implementer, ask a single gate reviewer, get a chair's call.
+`jury run-agent` is that entry point — the same adapters, the same read-only
+flags, the same timeouts and the same typed error codes a panel run uses, for
+one agent, with a JSON result on stdout.
+
+```bash
+# One reviewer, read-only, JSON on stdout
+jury run-agent --agent claude --role review --prompt-file gate.md
+
+# A specific model, with a deliberate wall-clock bound
+jury run-agent --agent codex:gpt-5.2 --role gate --prompt-file gate.md --timeout 900
+
+# An implementer that may edit the tree — write access is explicit, never implied
+jury run-agent --agent agy --role implement --allow-write --cwd ../worktree \
+  --prompt-file task.md
+
+# Just the text, for a shell pipeline
+jury run-agent --agent claude --role chair --prompt-file decide.md --format text
+```
+
+The result document (`schema_version: "ai-jury.run-agent.v1"`):
+
+```json
+{
+  "schema_version": "ai-jury.run-agent.v1",
+  "ok": true,
+  "agent": "codex",
+  "vendor": "openai",
+  "model": "gpt-5.2",
+  "role": "gate",
+  "transport": "cli",
+  "text": "...the agent's answer...",
+  "exit_code": 0,
+  "duration_s": 41.2,
+  "timed_out": false,
+  "error_code": null,
+  "error": null,
+  "attribution": { "vendor": "openai", "model": "gpt-5.2", "label": "agent:openai model:gpt-5" }
+}
+```
+
+`attribution.label` is the pair an orchestrator applies verbatim: `agent:<vendor>`
+plus a versionless `model:<base>`, so a point-release bump does not fork the
+attribution history of otherwise-identical work. Split it on whitespace.
+
+**Roles decide privilege, and the flag cannot override that.** `review`, `gate`
+and `chair` always run under the vendor's read-only invocation — the exact one a
+panel review uses (`claude --disallowed-tools …`, `codex -s read-only`, `agy
+--sandbox`). Passing `--allow-write` to them warns and is ignored: those roles
+read attacker-controlled content, and a flag must not be able to make a reviewer
+write-capable. `implement` and `fix` are the only write-capable roles, and only
+with `--allow-write`; without it the command exits 2 rather than quietly running
+a read-only agent and reporting work that never happened.
+
+**Exit codes:** `0` the agent ran and produced output, `1` it ran and failed
+(read `error_code` — the same fail-soft vocabulary as a panel run), `2` the
+request itself was refused.
+
+### Long runs: dispatch now, collect later
+
+```bash
+# Start it in the background; prints the run id immediately
+jury run-agent --agent agy --role implement --allow-write \
+  --prompt-file task.md --detach --run-id issue-661
+
+# ... do other work ...
+
+jury run-agent --status                 # list every recorded run
+jury run-agent --wait issue-661         # block, then print the result document
+jury run-agent --wait issue-661 --timeout 1800   # ...with a deadline
+```
+
+State lives in `<cache-dir>/run-agent/<run-id>.json` (0600, in a 0700 directory)
+with the child's console log beside it as `<run-id>.out`. `--cache-dir` and
+`$JURY_CACHE_DIR` move both.
+
+### From keel
+
+This is the integration point for keel's `keel delegate run`: keel picks the
+agent and the role, ai-jury owns the argv, the sandbox and the error taxonomy,
+and the JSON result carries the attribution keel writes onto the issue.
+
+```bash
+jury run-agent --agent "$KEEL_DELEGATE" --role implement --allow-write \
+  --cwd "$KEEL_WORKTREE" --prompt-file "$KEEL_PROMPT" --timeout 3600 --detach
+```
+
+---
+
 ## See also
 
 - [Architecture](architecture.md) — components, round structure, adapters.

@@ -226,6 +226,18 @@ jury config show   # the effective resolved config + its source
 jury --doctor      # readiness check + actionable next steps
 ```
 
+**Drive one agent from an orchestrator** — `jury run-agent` runs a single
+configured agent for one role and prints an `ai-jury.run-agent.v1` JSON result
+with attribution, using the same adapters, read-only flags and error taxonomy as
+a panel run. `review`/`gate`/`chair` are always read-only; `implement`/`fix`
+need an explicit `--allow-write`. See
+[cookbook §21](docs/cookbook.md#21-run-one-agent-for-an-orchestrator-keel).
+
+```bash
+jury run-agent --agent claude --role review --prompt-file gate.md
+jury run-agent --agent codex:gpt-5.2 --role implement --allow-write --prompt-file task.md
+```
+
 **Pre-commit hook (`.pre-commit-config.yaml`):**
 
 ```yaml
