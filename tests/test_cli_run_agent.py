@@ -18,6 +18,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import textwrap
 import time
 import unittest
 import unittest.mock as mock
@@ -1849,6 +1850,88 @@ class WaitTimeoutTests(unittest.TestCase):
         self.assertIn("seconds --wait will block before giving up", help_text)
 
 
+#: Helpers in this file that reach `wait_for_run`'s polling loop directly, and so
+#: must each keep a platform-independent way out of it. The rule lives in
+#: `_wait_call_escape` below rather than inline in the guard, so its self-test
+#: can exercise the real rule instead of a second copy that could drift from it.
+_WATCHED_WAITS = frozenset({"wait_for_run", "_run_run_agent_capture"})
+
+#: What the guard matched when it was written. A static guard whose names have
+#: drifted matches nothing and passes in silence, which is strictly worse than
+#: no guard, so the walk asserts it still sees at least this many call sites.
+#: Lower these only when a test is genuinely deleted — never to quiet a rename.
+_KNOWN_WATCHED_WAIT_CALLS = 12
+_KNOWN_CLI_WAIT_CALLS = 8
+
+
+def _call_name(node: ast.Call) -> str | None:
+    """The bare name a call resolves to: `runagent.wait_for_run` -> `wait_for_run`."""
+    func = node.func
+    return func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
+
+
+def _wait_call_escape(name: str, node: ast.Call) -> str | None:
+    """The platform-independent exit this watched wait keeps, or None for none.
+
+    `wait_for_run` ends for exactly three reasons — the run reaches a terminal
+    state, the probe says the pid is gone, or the clock passes the deadline. A
+    call that relies solely on the probe has no way out where the probe answers
+    "unknown", so each one must keep an exit that does not depend on the
+    platform: an advancing clock, an injected `alive_fn`, or no timeout at all
+    plus an injected `sleep` that drives the run to a terminal state.
+    """
+    kw = {k.arg: k.value for k in node.keywords if k.arg}
+    clock, sleep = kw.get("clock"), kw.get("sleep")
+    # A lambda whose whole body is a literal can never move.
+    constant_clock = isinstance(clock, ast.Lambda) and isinstance(clock.body, ast.Constant)
+    if clock is not None and not constant_clock:
+        return "an advancing clock"
+    if "alive_fn" in kw:
+        return "an injected probe"
+    # `_run_run_agent_capture` goes through the CLI, which always computes a
+    # deadline, so "no timeout" is not an escape there.
+    if name == "wait_for_run" and "timeout" not in kw and sleep is not None:
+        return "no deadline, driven by an injected sleep"
+    return None
+
+
+def _argv_flag(node: ast.AST, flag: str) -> bool:
+    """Is *node* a list literal carrying *flag* as one of its elements?"""
+    return isinstance(node, ast.List) and any(
+        isinstance(el, ast.Constant) and el.value == flag for el in node.elts
+    )
+
+
+def _names_constant(node: ast.AST, value: str) -> bool:
+    """Does the subtree rooted at *node* contain the string constant *value*?"""
+    return any(isinstance(n, ast.Constant) and n.value == value for n in ast.walk(node))
+
+
+def _cli_wait_calls(func: ast.AST) -> tuple[list[int], list[int]]:
+    """`_run(["--wait", ...])` lines in *func*: (every one, the ones that can block).
+
+    `_run` has no `sleep`/`clock` seams — it goes through the CLI down to the
+    real `time.sleep` — so a `--wait` through it is only safe when the wait
+    cannot block at all: a refused run id, no state file, or an already-terminal
+    state, or `wait_for_run` patched out entirely. What a static walk can see of
+    that is whether the test wrote a *running* state without patching
+    `wait_for_run`, so that is the rule. `--wait-timeout` is no defence: it is
+    counted in real seconds, and the default is an hour.
+    """
+    waits, writes_running, patches_wait = [], False, False
+    for node in ast.walk(func):
+        if not isinstance(node, ast.Call):
+            continue
+        name = _call_name(node)
+        if name == "_run" and node.args and _argv_flag(node.args[0], "--wait"):
+            waits.append(node.lineno)
+        elif name == "write_state" and _names_constant(node, "running"):
+            writes_running = True
+        elif name in ("patch", "object") and _names_constant(node, "wait_for_run"):
+            patches_wait = True
+    return waits, (waits if writes_running and not patches_wait else [])
+
+
 class UnprobeablePlatformTests(unittest.TestCase):
     """Where a pid cannot be probed, every wait must still terminate.
 
@@ -1987,6 +2070,16 @@ class UnprobeablePlatformTests(unittest.TestCase):
                 repr(pid),
             )
 
+    def test_pid_alive_calls_the_same_pids_bogus(self):
+        # The two readings of one state document must not drift. `bool`
+        # subclasses `int`, so without an explicit guard `pid_alive(True)`
+        # probes pid 1 — which on POSIX raises PermissionError and so reports
+        # "alive" — while `liveness_unknown_reason` above calls that same state
+        # unrecorded. Only reachable through a hand-edited or corrupt state
+        # file, and pinned here so the two cannot answer differently.
+        for pid in (0, -1, "x", True, False, None, 3.5):
+            self.assertIsNone(runagent.pid_alive(pid), repr(pid))
+
     def test_the_cli_warns_that_it_cannot_check_liveness(self):
         now = {"t": 0.0}
         with tempfile.TemporaryDirectory() as tmp:
@@ -2019,67 +2112,117 @@ class UnprobeablePlatformTests(unittest.TestCase):
     def test_every_wait_call_in_this_module_can_terminate(self):
         """Static guard: no wait in this file can spin if a probe stops answering.
 
-        `wait_for_run` ends for exactly three reasons — the run reaches a
-        terminal state, the probe says the pid is gone, or the clock passes the
-        deadline. A call that relies solely on the probe has no way out on a
-        platform that answers "unknown", which is how a Windows-only spin hid
-        behind a green POSIX suite for five heads.
+        Two families of call site, two rules — both in module-level helpers, so
+        the self-tests below run the guard rather than a copy of its reasoning:
 
-        So every call here must keep at least one *platform-independent* exit:
-
-        * an **advancing** clock (a lambda returning a constant cannot ever
-          reach a deadline), or
-        * an injected ``alive_fn`` (its answer does not depend on the platform), or
-        * **no timeout** plus an injected ``sleep`` that drives the run to a
-          terminal state.
+        * `wait_for_run` and `_run_run_agent_capture` reach the polling loop
+          with seams to inject, and each must keep a platform-independent exit
+          (`_wait_call_escape`). Relying on the probe alone is how a Windows-only
+          spin hid behind a green POSIX suite for five heads.
+        * `_run(["--wait", ...])` has no seams at all, so it must never target a
+          run this test wrote as `running` unless `wait_for_run` is patched out
+          (`_cli_wait_calls`) — otherwise it blocks on the real clock, for the
+          hour the default deadline allows.
 
         Walking the AST rather than grepping for a literal: the previous version
         matched one exact spelling and indentation, and missed the very call
-        that this docstring's history is about.
+        that this docstring's history is about. And a walk that matches nothing
+        passes in silence, so the inspected counts are asserted first — a guard
+        whose failure mode is quiet is not a guard.
         """
         source = Path(__file__).read_text(encoding="utf-8")
         tree = ast.parse(source)
-        watched = {"wait_for_run", "_run_run_agent_capture"}
-        offenders = []
+        offenders, inspected = [], 0
+        cli_inspected, cli_offenders = set(), set()
 
         for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
-                continue
-            func = node.func
-            name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
-            if name not in watched:
-                continue
-            kw = {k.arg: k.value for k in node.keywords if k.arg}
-            clock, sleep = kw.get("clock"), kw.get("sleep")
-            # A lambda whose whole body is a literal can never move.
-            constant_clock = isinstance(clock, ast.Lambda) and isinstance(clock.body, ast.Constant)
-            advancing_clock = clock is not None and not constant_clock
-            injects_probe = "alive_fn" in kw
-            # `_run_run_agent_capture` goes through the CLI, which always
-            # computes a deadline, so "no timeout" is not an escape there.
-            unbounded_but_driven = (
-                name == "wait_for_run" and "timeout" not in kw and sleep is not None
-            )
-            if not (advancing_clock or injects_probe or unbounded_but_driven):
-                offenders.append(f"{name}() at line {node.lineno}")
+            if isinstance(node, ast.Call):
+                name = _call_name(node)
+                if name in _WATCHED_WAITS:
+                    inspected += 1
+                    if _wait_call_escape(name, node) is None:
+                        offenders.append(f"{name}() at line {node.lineno}")
+            elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+                seen, blocking = _cli_wait_calls(node)
+                cli_inspected.update(seen)
+                cli_offenders.update(blocking)
 
+        self.assertGreaterEqual(
+            inspected,
+            _KNOWN_WATCHED_WAIT_CALLS,
+            f"the guard inspected {inspected} direct wait calls, fewer than the "
+            f"{_KNOWN_WATCHED_WAIT_CALLS} it matched when it was written: a rename or a "
+            "move has made it vacuous, and the empty offender list below would mean nothing",
+        )
+        self.assertGreaterEqual(
+            len(cli_inspected),
+            _KNOWN_CLI_WAIT_CALLS,
+            f"the guard inspected {len(cli_inspected)} `_run(['--wait', ...])` sites, fewer "
+            f"than the {_KNOWN_CLI_WAIT_CALLS} it matched when it was written",
+        )
+
+        offenders += [f"_run(['--wait', ...]) at line {n}" for n in sorted(cli_offenders)]
         self.assertEqual(
             offenders,
             [],
-            "these waits can only terminate via the liveness probe, so they "
-            "hang instead of failing where a pid cannot be probed: " + ", ".join(offenders),
+            "these waits can only terminate via the liveness probe or the real "
+            "clock, so they hang instead of failing where a pid cannot be "
+            "probed: " + ", ".join(offenders),
         )
 
     def test_the_guard_above_would_catch_the_regression_it_exists_for(self):
         """The guard must fail on the exact shape that hung Windows CI."""
         bad = "runagent.wait_for_run('x', cache_dir=c, timeout=5, clock=lambda: 0.0)\n"
         node = next(n for n in ast.walk(ast.parse(bad)) if isinstance(n, ast.Call))
-        kw = {k.arg: k.value for k in node.keywords if k.arg}
-        clock = kw.get("clock")
-        constant_clock = isinstance(clock, ast.Lambda) and isinstance(clock.body, ast.Constant)
-        self.assertTrue(constant_clock, "a constant-returning lambda must be recognised")
-        self.assertNotIn("alive_fn", kw)
-        self.assertIn("timeout", kw)  # so the 'unbounded but driven' escape does not apply
+        self.assertEqual(_call_name(node), "wait_for_run")
+        # The guard's own rule, not a re-implementation of it: a constant-returning
+        # lambda is not an escape, and neither is a timeout on its own.
+        self.assertIsNone(_wait_call_escape("wait_for_run", node))
+
+        good = "runagent.wait_for_run('x', timeout=5, clock=lambda: now['t'])\n"
+        moving = next(n for n in ast.walk(ast.parse(good)) if isinstance(n, ast.Call))
+        self.assertEqual(_wait_call_escape("wait_for_run", moving), "an advancing clock")
+
+        probed = "_run_run_agent_capture(argv, alive_fn=lambda _p: False)\n"
+        injected = next(n for n in ast.walk(ast.parse(probed)) if isinstance(n, ast.Call))
+        self.assertEqual(_wait_call_escape("_run_run_agent_capture", injected), "an injected probe")
+
+        # "No timeout plus a driving sleep" is an escape for `wait_for_run` only:
+        # the CLI always computes a deadline, so it cannot be unbounded.
+        driven = "runagent.wait_for_run('x', sleep=fake_sleep)\n"
+        node = next(n for n in ast.walk(ast.parse(driven)) if isinstance(n, ast.Call))
+        self.assertIsNotNone(_wait_call_escape("wait_for_run", node))
+        self.assertIsNone(_wait_call_escape("_run_run_agent_capture", node))
+
+    def test_the_guard_catches_a_cli_wait_on_a_running_run(self):
+        """`_run(['--wait', ...])` against a running state is the blocking shape."""
+        blocking = textwrap.dedent(
+            """
+            def test_blocks(self):
+                runagent.write_state("r", {"run_id": "r", "status": "running"}, cache)
+                code, _, err = _run(["--wait", "r", "--cache-dir", str(cache)])
+            """
+        )
+        func = ast.parse(blocking).body[0]
+        seen, offenders = _cli_wait_calls(func)
+        self.assertEqual(len(seen), 1)
+        self.assertEqual(offenders, seen)
+
+        # Patching the wait out is the escape the real tests use.
+        patched = blocking.replace(
+            "code, _, err = _run(",
+            'with mock.patch.object(runagent, "wait_for_run", return_value=(None, False)):\n'
+            "        code, _, err = _run(",
+        )
+        seen, offenders = _cli_wait_calls(ast.parse(patched).body[0])
+        self.assertEqual(len(seen), 1)
+        self.assertEqual(offenders, [])
+
+        # So is never writing a running state in the first place.
+        terminal = blocking.replace('"status": "running"', '"status": "done"')
+        seen, offenders = _cli_wait_calls(ast.parse(terminal).body[0])
+        self.assertEqual(len(seen), 1)
+        self.assertEqual(offenders, [])
 
 
 class CredentialLeakTests(unittest.TestCase):
