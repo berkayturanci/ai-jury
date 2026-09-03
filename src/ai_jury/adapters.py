@@ -83,6 +83,15 @@ def _read_only_extra_args(spec: AgentSpec) -> list[str]:
     return privilege.enforce_read_only(spec.vendor, spec.name, spec.extra_args)
 
 
+def _write_extra_args(spec: AgentSpec) -> list[str]:
+    """The agent's ``extra_args`` with its vendor write/tool mode enabled (#661).
+
+    Reached ONLY from ``jury run-agent --role implement|fix --allow-write``, via
+    :meth:`Adapter.build_write_argv`. Nothing on the panel path calls it.
+    """
+    return privilege.enable_write(spec.vendor, spec.name, spec.extra_args)
+
+
 # Short timeout for capability/version probes. Detection is best-effort and must
 # never slow down or block a normal run, so probes are deliberately snappy.
 _VERSION_PROBE_TIMEOUT = 10
@@ -469,6 +478,12 @@ class AgentResult:
     # produced no review emits prose and no block. Without this, both arrive as zero
     # findings and the panel reports the same size either way.
     structured: bool = False
+    # The agent process's own exit status (issue #661), or None when there was
+    # no process to exit: a network adapter, a CLI that was never spawned
+    # (missing on PATH, spawn failure), or one killed on timeout. `jury
+    # run-agent` reports it so an orchestrator can act on the real status
+    # instead of parsing it back out of the error string.
+    exit_code: int | None = None
 
 
 class Adapter:
@@ -496,6 +511,28 @@ class Adapter:
 
     def build_argv(self, prompt: str) -> list[str]:  # pragma: no cover - overridden
         raise NotImplementedError
+
+    def build_write_argv(self, prompt: str) -> list[str]:
+        """Argv for a WRITE-capable invocation of this CLI (issue #661).
+
+        The default is the read-only argv: a vendor with no tool-enabled mode
+        (and every network adapter, which has no tools at all) simply cannot
+        widen, and failing closed is the right default. The three native CLI
+        adapters override it.
+        """
+        return self.build_argv(prompt)
+
+    def build_argv_for_role(self, prompt: str, policy=None) -> list[str]:
+        """Argv for one ``jury run-agent`` role (issue #661).
+
+        The single seam between the role policy and an adapter's argv, so the
+        policy is never re-decided inside :meth:`run`. ``policy=None`` — every
+        panel invocation — resolves to the unchanged read-only :meth:`build_argv`,
+        which is why adding this could not alter an existing run.
+        """
+        if policy is None or not getattr(policy, "write", False):
+            return self.build_argv(prompt)
+        return self.build_write_argv(prompt)
 
     def _stdin_for(self, prompt: str) -> str | None:
         """Prompt to feed on stdin, or None to pass it in argv (the default)."""
@@ -600,7 +637,13 @@ class Adapter:
             )
         return caps
 
-    def run(self, prompt: str, phase: str = "review", timeout: int | None = None) -> AgentResult:
+    def run(
+        self,
+        prompt: str,
+        phase: str = "review",
+        timeout: int | None = None,
+        role_policy=None,
+    ) -> AgentResult:
         del phase
         if not self.available():
             return AgentResult(
@@ -617,7 +660,7 @@ class Adapter:
         effective_timeout = self.spec.timeout
         if timeout is not None:
             effective_timeout = max(1, min(self.spec.timeout, int(timeout)))
-        argv = self.build_argv(prompt)
+        argv = self.build_argv_for_role(prompt, role_policy)
         stdin = self._stdin_for(prompt)
         start = time.monotonic()
         try:
@@ -667,6 +710,7 @@ class Adapter:
                 dur,
                 f"exit {proc.returncode}: {safe_detail[:500]}",
                 error_code=classify_stderr(proc.returncode, stderr or out),
+                exit_code=proc.returncode,
             )
         if not out:
             # Exit 0 but nothing on stdout: the agent produced no usable review.
@@ -678,8 +722,9 @@ class Adapter:
                 dur,
                 f"exit {proc.returncode}: empty output",
                 error_code=ERR_EMPTY_OUTPUT,
+                exit_code=proc.returncode,
             )
-        return AgentResult(self.name, self.spec.vendor, True, out, dur)
+        return AgentResult(self.name, self.spec.vendor, True, out, dur, exit_code=proc.returncode)
 
 
 class ClaudeAdapter(Adapter):
@@ -687,12 +732,20 @@ class ClaudeAdapter(Adapter):
     # STDIN rather than as a process argument so it is not exposed in `ps` /
     # /proc/<pid>/cmdline to other local users (issue #287). `claude -p` reads
     # the prompt from stdin when no positional prompt is given.
-    def build_argv(self, prompt: str) -> list[str]:
-        del prompt
+    def _head_argv(self) -> list[str]:
         argv = [self.spec.command, "-p"]
         if self.spec.model:
             argv += ["--model", self.spec.model]
-        return argv + _read_only_extra_args(self.spec)
+        return argv
+
+    def build_argv(self, prompt: str) -> list[str]:
+        del prompt
+        return self._head_argv() + _read_only_extra_args(self.spec)
+
+    def build_write_argv(self, prompt: str) -> list[str]:
+        """Implementer invocation: the CLI's own tool set, no deny list (#661)."""
+        del prompt
+        return self._head_argv() + _write_extra_args(self.spec)
 
     def _stdin_for(self, prompt: str) -> str | None:
         return prompt
@@ -703,12 +756,20 @@ class CodexAdapter(Adapter):
     # waiting for input in non-interactive runs. Sandbox flags live in extra_args;
     # the shipped default is ``-s read-only`` (secure by default, #100) — the
     # reviewer only reads its prompt, since the jury fetches the diff via ``gh``.
-    def build_argv(self, prompt: str) -> list[str]:
-        del prompt
+    def _head_argv(self) -> list[str]:
         argv = [self.spec.command, "exec"]
         if self.spec.model:
             argv += ["-m", self.spec.model]
-        return argv + _read_only_extra_args(self.spec)
+        return argv
+
+    def build_argv(self, prompt: str) -> list[str]:
+        del prompt
+        return self._head_argv() + _read_only_extra_args(self.spec)
+
+    def build_write_argv(self, prompt: str) -> list[str]:
+        """Implementer invocation: ``-s workspace-write`` instead of read-only (#661)."""
+        del prompt
+        return self._head_argv() + _write_extra_args(self.spec)
 
     def _stdin_for(self, prompt: str) -> str | None:
         return prompt
@@ -761,15 +822,23 @@ class AgyAdapter(Adapter):
             self._model_listing = self.list_models()
         return self._model_listing
 
-    def build_argv(self, prompt: str) -> list[str]:
-        del prompt
+    def _head_argv(self) -> list[str]:
         argv = [self.spec.command, *self._STREAM_ARGS]
         # agy encodes reasoning effort in the model id (`…-flash` -> `…-flash-high`),
         # so effort changes WHICH model is selected rather than adding a flag.
         model = self.effort_plan().model or self.spec.model
         if model:
             argv += ["--model", model]
-        return argv + _read_only_extra_args(self.spec)
+        return argv
+
+    def build_argv(self, prompt: str) -> list[str]:
+        del prompt
+        return self._head_argv() + _read_only_extra_args(self.spec)
+
+    def build_write_argv(self, prompt: str) -> list[str]:
+        """Implementer invocation: drop the boolean ``--sandbox`` (#661)."""
+        del prompt
+        return self._head_argv() + _write_extra_args(self.spec)
 
     def list_models(self) -> list[str] | None:
         """Model ids from ``agy models`` (time-boxed, fail-soft; issue #662)."""
@@ -990,12 +1059,21 @@ class LocalAdapter(Adapter):
             "warnings": ([] if reachable else [f"local server unreachable at {self.endpoint}"]),
         }
 
-    def run(self, prompt: str, phase: str = "review", timeout: int | None = None) -> AgentResult:
+    def run(
+        self,
+        prompt: str,
+        phase: str = "review",
+        timeout: int | None = None,
+        role_policy=None,
+    ) -> AgentResult:
         import json as _json
         import urllib.error
         import urllib.request
 
         del phase
+        # A network adapter has no tools, no shell and no filesystem, so a
+        # write-enabled role changes nothing about how it is invoked (#661).
+        del role_policy
         effective_timeout = self.spec.timeout
         if timeout is not None:
             effective_timeout = max(1, min(self.spec.timeout, int(timeout)))
@@ -1278,8 +1356,17 @@ class _HostedApiAdapter(Adapter):
     def parse_content(data: dict) -> str:  # pragma: no cover - overridden
         raise NotImplementedError
 
-    def run(self, prompt: str, phase: str = "review", timeout: int | None = None) -> AgentResult:
+    def run(
+        self,
+        prompt: str,
+        phase: str = "review",
+        timeout: int | None = None,
+        role_policy=None,
+    ) -> AgentResult:
         del phase
+        # A network adapter has no tools, no shell and no filesystem, so a
+        # write-enabled role changes nothing about how it is invoked (#661).
+        del role_policy
         # Checked independently of available() (not just "not available()"):
         # available() now also returns False for a key that IS set but
         # invalid, and that case needs its own distinct error_code/message
@@ -1541,8 +1628,14 @@ class MockAdapter(Adapter):
             "warnings": [],
         }
 
-    def run(self, prompt: str, phase: str = "review", timeout: int | None = None) -> AgentResult:
-        del prompt, timeout
+    def run(
+        self,
+        prompt: str,
+        phase: str = "review",
+        timeout: int | None = None,
+        role_policy=None,
+    ) -> AgentResult:
+        del prompt, timeout, role_policy
         n = self.name
         if phase == "review":
             body = (
@@ -1694,7 +1787,13 @@ class GenericCLIAdapter(Adapter):
             "warnings": [],
         }
 
-    def run(self, prompt: str, phase: str = "review", timeout: int | None = None) -> AgentResult:
+    def run(
+        self,
+        prompt: str,
+        phase: str = "review",
+        timeout: int | None = None,
+        role_policy=None,
+    ) -> AgentResult:
         del phase
         if not self.available():
             return AgentResult(
@@ -1707,7 +1806,11 @@ class GenericCLIAdapter(Adapter):
                 error_code=ERR_MISSING_CLI,
             )
         effective_timeout = timeout if timeout is not None else self.spec.timeout
-        extra_args = _read_only_extra_args(self.spec)
+        # A `cli` profile has no vendor-specific sandbox flag to add or remove, so
+        # both sides of the role policy resolve to its configured `extra_args`;
+        # the seam is still routed through so the rule lives in one place (#661).
+        write = role_policy is not None and getattr(role_policy, "write", False)
+        extra_args = _write_extra_args(self.spec) if write else _read_only_extra_args(self.spec)
         argv = [self.spec.command, *extra_args]
 
         mode = (self.spec.prompt_mode or "stdin").lower()
@@ -1759,6 +1862,7 @@ class GenericCLIAdapter(Adapter):
                 duration,
                 f"exit {res.returncode}: {safe_detail[:500]}",
                 error_code=err_code,
+                exit_code=res.returncode,
             )
 
         if not out:
@@ -1770,9 +1874,12 @@ class GenericCLIAdapter(Adapter):
                 duration,
                 "agent produced empty output",
                 error_code=ERR_EMPTY_OUTPUT,
+                exit_code=res.returncode,
             )
 
-        return AgentResult(self.spec.name, self.spec.vendor, True, out, duration)
+        return AgentResult(
+            self.spec.name, self.spec.vendor, True, out, duration, exit_code=res.returncode
+        )
 
 
 _VENDOR_ADAPTERS: dict[str, type[Adapter]] = {

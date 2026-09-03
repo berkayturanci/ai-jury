@@ -145,6 +145,98 @@ def _ensure_value_sandbox(extra_args: list[str], default: list[str]) -> list[str
     return [*default, *args]
 
 
+#: Vendors that reach their model over the network rather than by spawning a
+#: CLI. They have no sandbox/tool surface at all, in either direction, so both
+#: :func:`enforce_read_only` and :func:`enable_write` return their args as-is.
+_NO_SANDBOX_VENDORS: tuple[str, ...] = (
+    "local",
+    "anthropic-api",
+    "openai-api",
+    "google-api",
+    "openai-compatible",
+    "cli",
+)
+
+
+def _drop_claude_disallowed(extra_args: list[str]) -> list[str]:
+    """Drop every ``--disallowed-tools`` flag, in both its spelling forms.
+
+    The inverse of :func:`_ensure_claude_disallowed`. Removing the flag entirely
+    (rather than narrowing its value) restores the CLI's own default tool set,
+    which is what an implementer role needs.
+    """
+    args = list(extra_args)
+    out: list[str] = []
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == "--disallowed-tools":
+            i += 2 if i + 1 < len(args) else 1
+            continue
+        if a.startswith("--disallowed-tools="):
+            i += 1
+            continue
+        out.append(a)
+        i += 1
+    return out
+
+
+def _set_value_sandbox(extra_args: list[str], flag: str, value: str) -> list[str]:
+    """Replace any existing value sandbox with ``flag value`` (codex form)."""
+    args = list(extra_args)
+    out: list[str] = []
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a in ("-s", "--sandbox"):
+            # Drop the flag AND its value — unless the next token is another
+            # flag, in which case there is no value to consume.
+            nxt = args[i + 1] if i + 1 < len(args) else ""
+            i += 2 if nxt and not nxt.startswith("-") else 1
+            continue
+        if a.startswith(("-s=", "--sandbox=")):
+            i += 1
+            continue
+        out.append(a)
+        i += 1
+    return [flag, value, *out]
+
+
+def _drop_bare_sandbox(extra_args: list[str]) -> list[str]:
+    """Drop agy's boolean ``--sandbox`` (both spellings), leaving the rest."""
+    return [a for a in extra_args if a != "--sandbox" and not a.startswith("--sandbox=")]
+
+
+def enable_write(vendor: str, name: str, extra_args: list[str]) -> list[str]:
+    """Return ``extra_args`` with the vendor's write/tool mode enabled (issue #661).
+
+    The deliberate mirror image of :func:`enforce_read_only`, and the ONLY place
+    the read-only guarantee is lifted. It exists for ``jury run-agent --role
+    implement|fix --allow-write``: an orchestrator dispatching an *implementer*
+    needs the agent to edit files, which is precisely what a reviewer must never
+    do. Nothing on the panel path calls this — a review/debate/verify/synthesis
+    invocation still goes through :func:`enforce_read_only`, so a prompt
+    injection in an attacker-controlled diff cannot reach it.
+
+    Per vendor: claude drops ``--disallowed-tools`` (restoring its own default
+    tool set), codex moves to ``-s workspace-write``, and agy (plus any unknown
+    vendor, which routes to the agy adapter) drops the boolean ``--sandbox``.
+    Network vendors have no such surface and are returned unchanged.
+    """
+    vendor = (vendor or "").lower()
+    name = (name or "").lower()
+    args = list(extra_args or [])
+    # Network vendors first, for the same reason as in enforce_read_only: a
+    # local agent named "local-claude" must not be read as claude.
+    if vendor in _NO_SANDBOX_VENDORS or vendor.endswith("-api"):
+        return args
+    if "claude" in name or vendor == "anthropic":
+        return _drop_claude_disallowed(args)
+    if vendor == "openai" or "codex" in name:
+        return _set_value_sandbox(args, "-s", "workspace-write")
+    return _drop_bare_sandbox(args)
+
+
 def enforce_read_only(vendor: str, name: str, extra_args: list[str]) -> list[str]:
     """Return ``extra_args`` with the mandatory read-only restriction guaranteed.
 
@@ -166,14 +258,7 @@ def enforce_read_only(vendor: str, name: str, extra_args: list[str]) -> list[str
     # `local`/hosted-API vendors are checked FIRST (review of #310): a network
     # agent runs no subprocess, and the name-substring checks below would
     # otherwise mis-handle e.g. a local agent named "local-claude" / "my-codex".
-    if vendor in (
-        "local",
-        "anthropic-api",
-        "openai-api",
-        "google-api",
-        "openai-compatible",
-        "cli",
-    ) or vendor.endswith("-api"):
+    if vendor in _NO_SANDBOX_VENDORS or vendor.endswith("-api"):
         return extra_args
     if "claude" in name or vendor == "anthropic":
         return _ensure_claude_disallowed(extra_args)
