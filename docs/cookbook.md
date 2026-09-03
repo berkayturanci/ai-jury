@@ -654,8 +654,10 @@ Keel then:
   distinct vendors is downgraded from gating to advisory before that evidence
   check runs, even if the earlier `s8` gate treated the run as gating. Setting
   `knobs.evidence_require_distinct_vendors: true` (shown above) additionally
-  requires every *required* review verdict, jury included, to carry vendor
-  provenance with no two verdicts sharing a vendor. See Keel's
+  requires every *required reviewer* verdict to carry vendor provenance, with
+  no two sharing a vendor; the jury verdict is a separate artifact and is
+  checked on its own through that participating-vendor count, not this knob.
+  See Keel's
   [evidence guide](https://github.com/berkayturanci/keel/blob/main/docs/keel/evidence.md)
   for how the pre-merge evidence gate reads these signals.
 
