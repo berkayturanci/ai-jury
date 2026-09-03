@@ -57,6 +57,10 @@ jury --pr 123 --rounds 1
 jury --mock --diff-file examples/sample.diff
 #   → exercise the full pipeline locally; byte-identical output every run
 
+# Run ONE agent for one role and get a JSON result (orchestrator integration)
+jury run-agent --agent claude --role review --prompt-file gate.md
+#   → one agent, read-only, `ai-jury.run-agent.v1` JSON on stdout with attribution
+
 # CI gate — fail the build on blocking findings
 jury --pr 123 --ci --fail-on critical,major
 #   → exit non-zero if any confirmed critical/major finding remains
@@ -346,6 +350,65 @@ reviewers this machine can actually run. The exported schema is documented in
 early-stop config; `jury init --agents claude,codex,qwen --chair rotate
 --local-model qwen2.5-coder:7b` scaffolds a specific panel with a local model.
 
+### `jury run-agent` — run one agent for one role
+
+Dispatch a single agent instead of the whole panel, and get a JSON result with
+attribution. The integration point for an orchestrator (keel's `keel delegate
+run`) or a CI script. See the [cookbook recipe](cookbook.md#21-run-one-agent-for-an-orchestrator-keel).
+
+| Flag | Value | Description |
+| --- | --- | --- |
+| `--agent` | name \| `vendor[:model]` | A `[[agent]]` name from `jury.toml`, or a built-in vendor (`claude`, `codex`, `agy`, `anthropic-api`, `openai-api`, `google-api`). A configured entry wins over a built-in of the same name. `:model` overrides the model. |
+| `--role` | `implement` \| `review` \| `gate` \| `chair` \| `fix` | What the agent is asked to do. Decides privilege — see below. |
+| `--prompt-file` | path \| `-` | The prompt to send (`-` reads stdin; not allowed with `--detach`). |
+| `--cwd` | directory | Run the agent in this directory (default: the current one). |
+| `--timeout` | seconds | Wall-clock bound on the **agent** (default: the agent's configured timeout). It never bounds a `--wait` — that is `--wait-timeout`. |
+| `--effort` | `low` \| `medium` \| `high` | Reasoning [effort](#reasoning-effort---effort--agent-effort) for vendors that support one; warns and is ignored otherwise. |
+| `--allow-write` | flag | Grant the vendor's write/tool mode. **Required** by `implement`/`fix`; warned about and ignored by the read-only roles. |
+| `--format` | `json` \| `text` | `json` (default) prints the full result document; `text` prints only the agent's text. |
+| `--detach` | flag | Start in the background and print the run id immediately. |
+| `--run-id` | id | Id for a detached run: letters, digits, `.`, `_`, `-`, max 64 characters, starting with a letter or digit (default: random). Anything else is refused — the id becomes a filename. Only valid with `--detach`. |
+| `--wait` | run id | Block until a detached run finishes, then print its document. A run that was never started is reported immediately. |
+| `--wait-timeout` | seconds | How long `--wait` blocks before giving up (default: the run's own timeout + 60 s, else 3600 s). |
+| `--status` | flag | List every recorded detached run as JSON and exit. A run still marked `running` whose process is gone is reported as `lost`. |
+| `--config` | path | Path to `jury.toml`. |
+| `--cache-dir` | path | Where detached-run state lives (default: `$JURY_CACHE_DIR` or `~/.cache/ai-jury`). |
+| `--mock` | flag | Run the offline mock adapter instead of a real agent. |
+
+**Role → privilege.** `review`, `gate` and `chair` always run under the vendor's
+read-only invocation — the same one a panel review uses — and `--allow-write`
+cannot change that (it warns and is ignored). `implement` and `fix` are
+write-capable only with `--allow-write`; without it the command exits 2.
+
+**Run states.** `running` (the child is alive, or we cannot tell), `done`
+(terminal — read `ok` and `error_code`), `lost` (still marked running, but the
+recorded process is definitively gone: killed, or crashed hard enough to skip
+its own cleanup). Both `--status` and `--wait` apply the same rule, so they
+cannot disagree; `--wait` returns as soon as it sees a lost run rather than
+blocking to its deadline. Liveness is probed on POSIX only; on Windows a run
+stays `running`, because `os.kill(pid, 0)` there terminates the process rather
+than probing it. A pid is not proof of identity — see the
+[cookbook](cookbook.md#long-runs-dispatch-now-collect-later) on why `running`
+is not authoritative across a reboot or a shared `--cache-dir`.
+
+**Attribution labels are family + major, deliberately coarse.** The rule is
+identical to [keel](https://github.com/berkayturanci/keel)'s `agents.model_base`
+because both projects write the same `model:<base>` label onto the same issues;
+a "better" rule on one side alone would split one project's history in half. So
+a tier or effort suffix **collapses** — `gemini-3.8-flash`,
+`gemini-3.8-flash-high` and `gemini-3.8-pro` all become `model:gemini-3` — while
+a vendor that spells its version with hyphens **keeps** it: `claude-opus-4-5`
+and `claude-opus-4-6` stay distinct. The label answers "roughly which family
+ran this", not "exactly which model"; the `model` field carries the exact id
+verbatim when that is what you need.
+
+**Result document** — `schema_version: "ai-jury.run-agent.v1"`, then `ok`,
+`agent`, `vendor`, `model`, `role`, `transport` (`cli`/`api`/`local`), `text`,
+`exit_code`, `duration_s`, `timed_out`, `error_code`, `error`, and
+`attribution` (`vendor`, `model`, and a `label` of `agent:<vendor>` plus a
+versionless `model:<base>`). Exit codes: `0` ran and produced output, `1` ran
+and failed, `2` the request was refused.
+
 ### Other subcommands
 
 | Command | Description |
@@ -356,6 +419,7 @@ early-stop config; `jury init --agents claude,codex,qwen --chair rotate
 | `jury comment --text "/jury review" --pr N` | Run from an allowlisted PR comment. Actions: `review`, `summary` (see [comment actions](#comment-actions)). Flags: `--print-args`, `--no-post`. |
 | `jury examples` | Print a plain-language list of common example commands. |
 | `jury guide` | Print a short end-to-end walkthrough (install → init → review → post → CI). |
+| `jury run-agent --status` / `--wait <id>` | List or block on detached single-agent runs (see above). |
 
 Running bare `jury` with no arguments **in a terminal** prints a compact overview
 (what it does + the handful of commands most people use) and exits 0. In a

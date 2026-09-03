@@ -169,3 +169,6 @@ input:
                         repo)
   --commits COMMITS     review a commit range, e.g. origin/main..HEAD or
                         HEAD~5..HEAD (needs a git repo)
+
+Subcommands (each takes its own --help): init, config, comment, apply, replay,
+run-agent, cache clear, examples, guide.

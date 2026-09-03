@@ -151,6 +151,13 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="jury",
         description="Cross-vendor multi-agent PR review jury.",
+        # The subcommands are argv-intercepts (handled before this parser runs),
+        # so argparse cannot list them on its own — and until #661 nothing in
+        # `--help` mentioned that they exist at all.
+        epilog=(
+            "Subcommands (each takes its own --help): init, config, comment, "
+            "apply, replay, run-agent, cache clear, examples, guide."
+        ),
     )
     src = p.add_argument_group("input")
     src.add_argument("--pr", help="GitHub PR number/URL to review (uses `gh`)")
@@ -1179,6 +1186,511 @@ def _run_config(rest: list[str]) -> int:
     return 0
 
 
+# Cap on a prompt file. An orchestrator's prompt is a few KB of instructions
+# plus, at most, a diff; this only bounds memory against a pathological file.
+_MAX_PROMPT_BYTES = 8 * 1024 * 1024
+
+
+def _read_prompt(path: str) -> tuple[str, str | None]:
+    """Read a prompt file (or stdin for ``-``). Returns ``(text, error)``."""
+    if path == "-":
+        stream = sys.stdin.buffer if sys.stdin is not None else None
+        if stream is None:
+            return "", "cannot read the prompt from stdin: stdin is not available"
+        raw = stream.read(_MAX_PROMPT_BYTES + 1)
+    else:
+        target = Path(path)
+        if not target.is_file():
+            return "", f"prompt file not found: {path}"
+        try:
+            raw = target.read_bytes()[: _MAX_PROMPT_BYTES + 1]
+        except OSError as exc:
+            return "", f"could not read prompt file '{path}': {redact(str(exc))[0]}"
+    if len(raw) > _MAX_PROMPT_BYTES:
+        return "", f"prompt exceeds the {_MAX_PROMPT_BYTES}-byte limit"
+    text = raw.decode("utf-8", errors="replace")
+    if not text.strip():
+        return "", "empty prompt — nothing to send to the agent"
+    return text, None
+
+
+def _run_agent_parser() -> argparse.ArgumentParser:
+    """The ``jury run-agent`` flag surface (built separately so it can be tested)."""
+    from . import runagent
+
+    sub = argparse.ArgumentParser(
+        prog="jury run-agent",
+        description="Run ONE configured agent for one role and print a JSON "
+        "result with attribution. The integration point for an orchestrator "
+        "(keel's `keel delegate run`) or a CI script that needs a single "
+        "agent rather than the whole panel.",
+    )
+    sub.add_argument(
+        "--agent",
+        help="agent to run: a [[agent]] name from jury.toml, or a built-in "
+        f"vendor ({', '.join(runagent.BUILTIN_AGENTS)}); append ':<model>' to "
+        "override the model (e.g. codex:gpt-5.2)",
+    )
+    sub.add_argument(
+        "--role",
+        help="what the agent is being asked to do: "
+        f"{'|'.join(runagent.ROLES)}. "
+        f"{'/'.join(runagent.READ_ONLY_ROLES)} always run read-only; "
+        f"{'/'.join(sorted(runagent.WRITE_ROLES))} need --allow-write",
+    )
+    sub.add_argument("--prompt-file", help="path to the prompt to send, or '-' for stdin")
+    sub.add_argument("--cwd", help="directory to run the agent in (default: the current one)")
+    sub.add_argument(
+        "--timeout",
+        type=int,
+        help="seconds before the AGENT is killed (default: the agent's configured "
+        "timeout). This bounds the agent, never the wait — see --wait-timeout",
+    )
+    sub.add_argument(
+        "--effort",
+        choices=list(EFFORT_LEVELS),
+        help="reasoning effort for vendors that support one (see `jury --doctor --json`)",
+    )
+    sub.add_argument(
+        "--allow-write",
+        action="store_true",
+        help="grant the vendor's write/tool mode; required by the implement and "
+        "fix roles, ignored by the read-only ones",
+    )
+    sub.add_argument(
+        "--format",
+        choices=["json", "text"],
+        default="json",
+        help="json: the full result document (default); text: only the agent's text",
+    )
+    sub.add_argument(
+        "--detach",
+        action="store_true",
+        help="start the run in the background and print its run id immediately",
+    )
+    sub.add_argument(
+        "--run-id",
+        help="id for a detached run: letters, digits, '.', '_' or '-', max 64 "
+        "characters (default: a random one). Only meaningful with --detach",
+    )
+    sub.add_argument("--wait", metavar="RUN_ID", help="block until a detached run finishes")
+    sub.add_argument(
+        "--wait-timeout",
+        type=int,
+        metavar="SECONDS",
+        help="seconds --wait will block before giving up (default: the run's own "
+        f"timeout + {runagent.WAIT_GRACE_S}s, else {runagent.DEFAULT_WAIT_TIMEOUT_S}s)",
+    )
+    sub.add_argument("--status", action="store_true", help="list detached runs and exit")
+    sub.add_argument("--config", help="path to jury.toml (default: ./jury.toml or built-in)")
+    sub.add_argument(
+        "--cache-dir",
+        help="where detached-run state lives (default: $JURY_CACHE_DIR or ~/.cache/ai-jury)",
+    )
+    sub.add_argument(
+        "--mock", action="store_true", help="run the offline mock adapter instead of a real agent"
+    )
+    # The detached child re-enters this same command; the flag only tells it to
+    # record its result in the run's state file. Hidden: it is not a surface
+    # anyone should call directly.
+    sub.add_argument("--_child", dest="child", action="store_true", help=argparse.SUPPRESS)
+    return sub
+
+
+def _child_argv(ns, run_id: str, python: str) -> list[str]:
+    """The argv of the background child a ``--detach`` run spawns (pure)."""
+    argv = [
+        python,
+        "-m",
+        "ai_jury",
+        "run-agent",
+        "--agent",
+        ns.agent,
+        "--role",
+        ns.role,
+        "--prompt-file",
+        str(Path(ns.prompt_file).resolve()),
+        "--run-id",
+        run_id,
+        "--_child",
+    ]
+    if ns.cwd:
+        argv += ["--cwd", str(Path(ns.cwd).resolve())]
+    if ns.timeout is not None:
+        argv += ["--timeout", str(ns.timeout)]
+    if ns.effort:
+        argv += ["--effort", ns.effort]
+    if ns.allow_write:
+        argv.append("--allow-write")
+    if ns.config:
+        argv += ["--config", str(Path(ns.config).resolve())]
+    if ns.cache_dir:
+        argv += ["--cache-dir", str(Path(ns.cache_dir).resolve())]
+    if ns.mock:
+        argv.append("--mock")
+    return argv
+
+
+def _run_run_agent(rest: list[str], spawn=None, sleep=None, clock=None) -> int:
+    """Handle ``jury run-agent`` (issue #661): one agent, one role, one JSON result.
+
+    Exit codes: ``0`` the agent ran and produced output, ``1`` it ran and
+    failed (the JSON says why — same fail-soft vocabulary as a panel run),
+    ``2`` the request itself was refused (bad role, missing write grant,
+    unknown agent, unreadable prompt).
+    """
+    import dataclasses
+    import time
+
+    from . import runagent
+    from .adapters import effort_args, make_adapter
+
+    ns = _run_agent_parser().parse_args(rest)
+
+    # Validate every id the caller supplies BEFORE it can reach a path. The
+    # library refuses an unsafe one on its own (runagent.run_path), so this is
+    # about the error the operator sees, not about whether the write is safe.
+    for flag, value in (("--run-id", ns.run_id), ("--wait", ns.wait)):
+        if value is not None:
+            problem = runagent.check_run_id(value)
+            if problem:
+                print(f"error: {flag}: {problem}", file=sys.stderr)
+                return 2
+    if ns.run_id and not (ns.detach or ns.child):
+        # It named nothing and recorded nothing — silently ignoring it would let
+        # a script believe it had a handle it could later --wait on.
+        print(
+            "error: --run-id only applies to a detached run; add --detach, or "
+            "drop --run-id to run in the foreground",
+            file=sys.stderr,
+        )
+        return 2
+
+    if ns.status:
+        print(json.dumps({"runs": runagent.list_runs(ns.cache_dir)}, indent=2))
+        return 0
+
+    if ns.wait:
+        if ns.wait_timeout is not None and ns.wait_timeout <= 0:
+            print("error: --wait-timeout must be a positive number of seconds", file=sys.stderr)
+            return 2
+        # `--detach` reserves the id by writing the state file BEFORE it returns,
+        # so a run with no state file was never started — a typo, or the wrong
+        # --cache-dir. Say so now instead of blocking until a deadline expires.
+        known = runagent.read_state(ns.wait, ns.cache_dir)
+        if known is None:
+            print(f"error: no such run '{ns.wait}'", file=sys.stderr)
+            return 2
+        # The deadline comes from what the run was actually given (its own
+        # timeout plus head-room to write its state file), so a long agent run
+        # is not cut short and a dead one is not waited on forever.
+        deadline = ns.wait_timeout
+        if deadline is None:
+            deadline = runagent.default_wait_timeout(known)
+        # When liveness cannot be determined, a run that has already died can
+        # only be noticed when the deadline expires. Say so once, so a long
+        # silence reads as a known limitation rather than a hung command. The
+        # opening is cause-neutral and the reason names which case it is —
+        # "this platform cannot probe" is false on POSIX for a run that simply
+        # has not been claimed yet. The deadline always applies regardless, so
+        # the wait is bounded either way.
+        unknown = runagent.liveness_unknown_reason(known)
+        if unknown:
+            print(
+                f"warning: cannot tell whether run '{ns.wait}' is still alive — "
+                f"{unknown}; waiting up to {deadline:g}s for it to report",
+                file=sys.stderr,
+            )
+        state, timed_out = runagent.wait_for_run(
+            ns.wait,
+            cache_dir=ns.cache_dir,
+            timeout=deadline,
+            sleep=sleep or time.sleep,
+            clock=clock or time.monotonic,
+        )
+        if timed_out:
+            print(
+                f"error: run '{ns.wait}' did not finish within {deadline:g}s",
+                file=sys.stderr,
+            )
+            return 2
+        if state is None:
+            # The file vanished while we waited (a `jury cache clear`, a manual
+            # rm). Distinguished from "never existed", which returned above.
+            print(f"error: run '{ns.wait}' disappeared while waiting", file=sys.stderr)
+            return 2
+        if state.get("status") == runagent.STATUS_LOST:
+            # Returned as soon as the pid was seen gone, not at the deadline:
+            # there is no result coming, and blocking for one is just delay.
+            print(
+                f"error: run '{ns.wait}' was lost — its process is gone and it "
+                f"never recorded a result (see {runagent.output_path(ns.wait, ns.cache_dir)})",
+                file=sys.stderr,
+            )
+        print(json.dumps(state, indent=2))
+        return 0 if state.get("ok") else 1
+
+    missing = [
+        flag
+        for flag, value in (
+            ("--agent", ns.agent),
+            ("--role", ns.role),
+            ("--prompt-file", ns.prompt_file),
+        )
+        if not value
+    ]
+    if missing:
+        print(
+            f"error: {', '.join(missing)} required (or use --wait <run-id> / --status)",
+            file=sys.stderr,
+        )
+        return 2
+
+    # Role policy first: an implement run without --allow-write must be refused
+    # before a prompt is read, a config is loaded, or a child is spawned.
+    policy = runagent.role_policy(ns.role, ns.allow_write)
+    if policy.refusal:
+        print(f"error: {policy.refusal}", file=sys.stderr)
+        return 2
+    if policy.warning:
+        print(f"warning: {policy.warning}", file=sys.stderr)
+
+    if ns.cwd and not Path(ns.cwd).is_dir():
+        print(f"error: --cwd is not a directory: {ns.cwd}", file=sys.stderr)
+        return 2
+
+    try:
+        config = load_config(ns.config)
+    except (ConfigError, FileNotFoundError) as exc:
+        print(redact(f"error: {exc}")[0], file=sys.stderr)
+        return 2
+
+    spec, error = runagent.resolve_agent(config, ns.agent)
+    if error is not None:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+    if ns.timeout is not None:
+        if ns.timeout <= 0:
+            print("error: --timeout must be a positive number of seconds", file=sys.stderr)
+            return 2
+        spec = dataclasses.replace(spec, timeout=ns.timeout)
+    if ns.effort:
+        spec = dataclasses.replace(spec, effort=ns.effort)
+        warning = effort_args(spec.vendor, ns.effort, spec.model).warning
+        if warning:
+            print(f"warning: {warning}", file=sys.stderr)
+
+    if ns.detach:
+        return _detach_run_agent(ns, spec, policy, spawn=spawn)
+
+    prompt, error = _read_prompt(ns.prompt_file)
+    if error is not None:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+
+    adapter = make_adapter(spec, mock=ns.mock)
+    print(
+        f"run-agent: {spec.name} ({spec.vendor}) role={policy.role} "
+        f"{'write' if policy.write else 'read-only'}",
+        file=sys.stderr,
+    )
+    started = time.time()
+    record = _child_recorder(ns, spec, policy, started) if ns.child and ns.run_id else None
+    if record is not None:
+        # Claim the run with our OWN pid before doing any work. Every write to
+        # this state file now comes from this process, in order, so nothing can
+        # overwrite the terminal document the way the parent's post-spawn write
+        # used to. Until this lands the run has no pid, which reads as
+        # "liveness unknown" — reported as running, never as lost.
+        record(runagent.initial_state(ns.run_id, spec, policy.role, started), terminal=False)
+    try:
+        if ns.cwd:
+            with contextlib.chdir(ns.cwd):
+                result = adapter.run(prompt, phase=policy.role, role_policy=policy)
+        else:
+            result = adapter.run(prompt, phase=policy.role, role_policy=policy)
+        document = runagent.result_dict(spec, policy.role, result)
+    except BaseException as exc:
+        # A detached child that dies without writing leaves its run at
+        # "running" forever, and a `--wait` on it can only time out. Adapters
+        # are fail-soft, so reaching here means something unexpected — a
+        # KeyboardInterrupt, a bug — and the run must still end in a terminal
+        # state that says so. Re-raised: this records the death, it does not
+        # swallow it.
+        if record is not None:
+            record(_crash_document(spec, policy.role, started, exc))
+        raise
+
+    if record is not None:
+        record(document)
+    if ns.format == "text":
+        print(document["text"])
+    else:
+        print(json.dumps(document, indent=2))
+    return 0 if document["ok"] else 1
+
+
+def _crash_document(spec, role: str, started: float, exc: BaseException) -> dict:
+    """A result document for a child that died before producing one (#661)."""
+    import time
+
+    from . import runagent
+    from .adapters import ERR_UNKNOWN, AgentResult
+
+    reason = f"{type(exc).__name__}: {redact(str(exc))[0]}"
+    return runagent.result_dict(
+        spec,
+        role,
+        AgentResult(
+            spec.name,
+            spec.vendor,
+            False,
+            "",
+            max(0.0, time.time() - started),
+            f"run-agent exited before the agent finished: {reason}",
+            error_code=ERR_UNKNOWN,
+        ),
+    )
+
+
+def _child_recorder(ns, spec, policy, started: float):
+    """A callable that writes a detached child's state file (issue #661).
+
+    Called twice: once at the top with ``terminal=False`` to claim the run with
+    this process's pid, and once at the end — from the success path or the
+    crash handler — with the result document. Both writes come from the child,
+    which is what keeps them ordered: the parent writes only before the spawn,
+    so no stale copy can land on top of the finished document.
+
+    Fail-soft: a child that cannot write its state must still print its
+    document to the log, since the log is then the only record.
+    """
+    from . import runagent
+
+    del spec, policy
+
+    def record(document: dict, terminal: bool = True) -> None:
+        state = dict(document)
+        state.update(
+            {
+                "run_id": ns.run_id,
+                "status": runagent.STATUS_DONE if terminal else runagent.STATUS_RUNNING,
+                # `started_at` travels with the pid so a reader can see how old
+                # the claim is — see runagent.pid_alive on why a pid alone is
+                # not proof of identity.
+                "started_at": started,
+                "pid": os.getpid(),
+            }
+        )
+        try:
+            runagent.write_state(ns.run_id, state, ns.cache_dir)
+        except (OSError, ValueError) as exc:
+            print(f"warning: could not record run state: {redact(str(exc))[0]}", file=sys.stderr)
+
+    return record
+
+
+def _detach_run_agent(ns, spec, policy, spawn=None) -> int:
+    """Start a ``run-agent`` call in the background and print its run id."""
+    import time
+
+    from . import runagent
+
+    if ns.prompt_file == "-":
+        print(
+            "error: --detach needs a prompt FILE; the background run has no stdin to read from",
+            file=sys.stderr,
+        )
+        return 2
+    if not Path(ns.prompt_file).is_file():
+        print(f"error: prompt file not found: {ns.prompt_file}", file=sys.stderr)
+        return 2
+
+    # An operator-supplied id was already validated at parse time, and a
+    # generated one is valid by construction — `runagent.run_path` refuses an
+    # unsafe id regardless, so there is nothing left to re-check here.
+    run_id = ns.run_id or runagent.new_run_id()
+    if runagent.state_path(run_id, ns.cache_dir).exists():
+        print(
+            f"error: run '{run_id}' already exists; choose another --run-id",
+            file=sys.stderr,
+        )
+        return 2
+
+    state = runagent.initial_state(run_id, spec, policy.role, time.time())
+    try:
+        # Reserve the id BEFORE spawning, so a duplicate is refused rather than
+        # discovered by two children racing for the same state file.
+        runagent.write_state(run_id, state, ns.cache_dir)
+        out_path = runagent.output_path(run_id, ns.cache_dir)
+        argv = _child_argv(ns, run_id, sys.executable)
+        launch = spawn or _spawn_detached
+        pid = launch(argv, out_path)
+    except (OSError, ValueError) as exc:
+        print(f"error: could not start the detached run: {redact(str(exc))[0]}", file=sys.stderr)
+        return 2
+
+    # The parent writes the state file EXACTLY ONCE, before the spawn. It used
+    # to write a second time afterwards to record the pid, from the stale dict
+    # it still held — and a child that finished during launch had its terminal
+    # document overwritten with `status: running`, losing the answer entirely.
+    # The child records its own pid instead (see `_child_running_state`), so
+    # every write after this one comes from the child, in order.
+    print(
+        json.dumps(
+            {
+                # The pid is the parent's own knowledge, reported for the
+                # operator's benefit; it is deliberately NOT written to the
+                # state file from here.
+                **runagent.run_summary(state),
+                "pid": pid if isinstance(pid, int) else None,
+                "state_file": str(runagent.state_path(run_id, ns.cache_dir)),
+                "output_file": str(runagent.output_path(run_id, ns.cache_dir)),
+            },
+            indent=2,
+        )
+    )
+    return 0
+
+
+#: Deliberately-unreaped background children (see :func:`_spawn_detached`). The
+#: parent is a short-lived CLI invocation, so this holds at most one entry per
+#: `--detach` in a process that is about to exit.
+_DETACHED_CHILDREN: list = []
+
+
+def _spawn_detached(argv: list[str], out_path: Path) -> int:
+    """Start the background child, streaming its stdout+stderr to ``out_path``.
+
+    Its own session, so the child outlives the shell that launched it — the
+    whole point of ``--detach`` for an orchestrator that dispatches work and
+    comes back for it later. Returns the child's pid, which the caller records
+    so ``--status`` can later tell a live run from an abandoned one.
+    """
+    import subprocess
+
+    kwargs: dict = {}
+    if hasattr(os, "setsid"):
+        kwargs["start_new_session"] = True
+    # 0600 like the state file: the log holds the agent's full output, which is
+    # derived from the prompt and is no less sensitive than the diff a review sees.
+    fd = os.open(out_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "wb") as out:
+        proc = subprocess.Popen(  # noqa: S603 - argv is built here, never shell-parsed
+            argv,
+            stdin=subprocess.DEVNULL,
+            stdout=out,
+            stderr=subprocess.STDOUT,
+            **kwargs,
+        )
+    # Not waiting for this child is the whole point, but a dropped Popen warns
+    # ("subprocess N is still running") when it is collected, and the parent
+    # exits moments later so there is nothing to reap. Hold the reference
+    # instead of lying about the return code or reaching into private state.
+    _DETACHED_CHILDREN.append(proc)
+    return proc.pid
+
+
 def _run_replay(rest: list[str]) -> int:
     """Handle ``jury replay <outcome.json>`` (issue #449).
 
@@ -1479,6 +1991,12 @@ def main(argv: list[str] | None = None) -> int:
     # suggested patches directly to the working directory.
     if raw[:1] == ["apply"]:
         return _run_apply(raw[1:])
+
+    # Single-agent role dispatch (issue #661): `jury run-agent` runs ONE agent
+    # for one role and prints a JSON result with attribution — the integration
+    # point for an orchestrator. Intercepted like the other subcommands.
+    if raw[:1] == ["run-agent"]:
+        return _run_run_agent(raw[1:])
 
     # Theater replay (issue #449): `jury replay <outcome.json>` re-drives the
     # deliberation scene from a saved outcome — no agents, no network.
