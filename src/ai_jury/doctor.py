@@ -160,7 +160,7 @@ def _unavailable_reason(spec, capability_warnings) -> str:
     return "not available"
 
 
-def _agent_entry(spec):
+def _agent_entry(spec, probe_models: bool = False):
     caps = _detect_capabilities(spec)
     available = _is_available(spec)
     capability_warnings = [_redact_value(w) for w in caps.get("warnings", [])]
@@ -178,7 +178,10 @@ def _agent_entry(spec):
             "supports_model_selection": caps.get("supports_model_selection"),
             "status": caps.get("status"),
         },
-        "models": _probe_models(spec),
+        # Only the JSON export renders a model listing, and discovering one
+        # costs a subprocess (`agy models`) or an HTTP round trip per agent. The
+        # text report would pay that for nothing, so the probe is opt-in.
+        "models": _probe_models(spec) if probe_models else None,
         "effort": _redact_value(getattr(spec, "effort", None)),
         "effort_supported": effort_supported(getattr(spec, "vendor", "")),
         "capability_warnings": capability_warnings,
@@ -285,13 +288,19 @@ def _recommendations(config_path, config_summary, agents) -> dict:
     return {"ready": ready, "steps": steps}
 
 
-def build_diagnostics(config_path=None):
+def build_diagnostics(config_path=None, probe_models: bool = False):
     """Build a SAFE diagnostics dict for the given config path.
 
     Best-effort: if the config cannot be loaded, the error is captured as a
     string under ``config_warnings`` and ``config`` is left ``None``. Never
     raises for a bad/missing config. The returned dict never contains the raw
     diff or any agent output.
+
+    ``probe_models`` opts into discovering each agent's available model ids —
+    a subprocess (``agy models``) or an HTTP round trip *per agent*, each
+    time-boxed but not free. Only ``--doctor --json`` renders that listing, so
+    it defaults off: the human report used to pay ~2 s (and up to the probe
+    timeout if a CLI hangs) for a field it never printed.
     """
     config_summary = None
     config_warnings: list[str] = []
@@ -309,7 +318,7 @@ def build_diagnostics(config_path=None):
         config_warnings.append(f"config error: {redact(str(exc))[0]}")
     else:
         config_summary = _config_summary(cfg)
-        agents = [_agent_entry(spec) for spec in cfg.agents]
+        agents = [_agent_entry(spec, probe_models=probe_models) for spec in cfg.agents]
         config_warnings = _detect_warnings(cfg)
         # Fold capability/version probe warnings (e.g. an available CLI whose
         # version could not be detected) into the user-facing warnings list.
@@ -443,10 +452,14 @@ def render_report(diagnostics) -> str:
     else:
         for agent, probe in zip(agents, diagnostics["agents"], strict=False):
             status = "available" if agent["available"] else "MISSING"
-            lines.append(
-                f"  [{status:>9}] {agent['name']} "
-                f"(vendor={agent['vendor']}, command={agent.get('command', '')})"
-            )
+            # A CLI agent is identified by its command; an api/local agent has
+            # none, so name the endpoint it actually talks to rather than
+            # printing an empty `command=`.
+            if agent["transport"] == "cli":
+                address = f"command={agent.get('command', '')}"
+            else:
+                address = f"endpoint={agent.get('endpoint') or '(unknown)'}"
+            lines.append(f"  [{status:>9}] {agent['name']} (vendor={agent['vendor']}, {address})")
             if agent.get("command"):
                 resolved = agent.get("resolved") or "(not found on PATH)"
                 lines.append(f"              resolved: {resolved}")

@@ -220,8 +220,16 @@ def classify_stderr(returncode: int, stderr: str) -> str:
 #: The effort levels accepted by ``[[agent]] effort`` and ``--effort``.
 EFFORT_LEVELS: tuple[str, ...] = ("low", "medium", "high")
 
-# Anthropic extended-thinking budgets (tokens) per level.
+# Anthropic extended-thinking budgets (tokens) per level, before clamping.
 _ANTHROPIC_THINKING_BUDGET = {"low": 2048, "medium": 8192, "high": 32768}
+# Ceiling on the `max_tokens` this project will ever request from Anthropic.
+# Thinking tokens are drawn from the same allowance, so `max_tokens` has to
+# exceed the budget — but per-model caps vary and an unbounded sum would build a
+# request some models reject outright. 32000 sits inside every current model's
+# limit, so the `high` budget is clamped to `ceiling - _HOSTED_API_MAX_TOKENS`
+# (27904) rather than sending its nominal 32768. Documented in
+# docs/configuration.md.
+_ANTHROPIC_MAX_TOKENS_CEILING = 32000
 # Gemini `thinkingConfig.thinkingBudget` (tokens) per level.
 _GEMINI_THINKING_BUDGET = {"low": 1024, "medium": 8192, "high": 32768}
 # agy model-id suffixes that already carry an effort level.
@@ -257,13 +265,42 @@ def effort_supported(vendor: str) -> bool:
     return (vendor or "").strip().lower() in _EFFORT_VENDORS
 
 
-def effort_args(vendor: str, effort: str | None, model: str | None = None) -> EffortPlan:
+def _anthropic_budget(level: str) -> int:
+    """Thinking budget for *level*, clamped to the documented ceiling (pure)."""
+    return min(
+        _ANTHROPIC_THINKING_BUDGET[level],
+        _ANTHROPIC_MAX_TOKENS_CEILING - _HOSTED_API_MAX_TOKENS,
+    )
+
+
+def _effort_uses_model_listing(vendor: str) -> bool:
+    """Whether *vendor* expresses effort through the model id (pure).
+
+    Those are the vendors whose mapped id can be checked against what the CLI
+    actually offers, so callers know when discovering a listing is worth a probe.
+    """
+    return (vendor or "").strip().lower() == "google"
+
+
+def effort_args(
+    vendor: str,
+    effort: str | None,
+    model: str | None = None,
+    known_models: list[str] | None = None,
+) -> EffortPlan:
     """Map ``(vendor, effort, model)`` to the vendor's own effort knob (pure).
 
     An empty/None *effort* is a no-op plan. An unrecognized level raises
     ``ValueError`` — ``config.validate_config`` and the ``--effort`` choices
     already gate user input, so reaching here with garbage is a programming
     error, not something to silently swallow.
+
+    ``known_models``, when the caller has discovered one, is the model listing
+    the vendor actually offers. It is only consulted where effort is expressed
+    *as* a model id (agy): sending a suffixed id the CLI does not have would
+    fail the whole review, so an unlisted mapping falls back to the configured
+    id and warns instead. ``None`` means "no listing available" — the check is
+    skipped, never guessed.
     """
     level = (effort or "").strip().lower()
     if not level:
@@ -286,14 +323,24 @@ def effort_args(vendor: str, effort: str | None, model: str | None = None) -> Ef
         if current.endswith(_AGY_MODEL_SUFFIXES):
             # Already pinned by the operator; an explicit model id wins.
             return EffortPlan(model=current)
-        return EffortPlan(model=f"{current}-{level}")
+        suffixed = f"{current}-{level}"
+        if known_models is not None and suffixed not in known_models:
+            # Better a review at the configured depth than no review at all.
+            return EffortPlan(
+                model=current,
+                warning=(
+                    f"effort '{level}' maps model '{current}' to '{suffixed}', which "
+                    f"vendor '{vendor}' does not offer; using '{current}' unchanged"
+                ),
+            )
+        return EffortPlan(model=suffixed)
 
     if name == "anthropic-api":
         return EffortPlan(
             payload={
                 "thinking": {
                     "type": "enabled",
-                    "budget_tokens": _ANTHROPIC_THINKING_BUDGET[level],
+                    "budget_tokens": _anthropic_budget(level),
                 }
             }
         )
@@ -313,20 +360,36 @@ def effort_args(vendor: str, effort: str | None, model: str | None = None) -> Ef
     return EffortPlan(supported=False, warning=f"effort unsupported for {vendor}, ignored")
 
 
-def effort_warnings(agents) -> list[str]:
-    """Deduped, ordered effort warnings for a panel — one message per run (pure).
+def effort_warnings(agents, adapter_factory=None) -> list[str]:
+    """Deduped, ordered effort warnings for a panel — one message per run.
 
     Callers (the CLI) print these once before the run rather than once per agent
     invocation, so a three-round panel does not repeat the same line nine times.
+
+    Pure unless *adapter_factory* is given. With it, an agent whose effort is
+    expressed as a model id has its mapped id checked against the vendor's real
+    listing, so "that model does not exist" is reported up front instead of
+    surfacing as an abstention mid-run. The probe is skipped entirely for agents
+    with no effort configured and for every other vendor, and any failure
+    degrades to "no listing" rather than blocking the run.
     """
     seen: set[str] = set()
     out: list[str] = []
     for spec in agents:
+        vendor = getattr(spec, "vendor", "")
+        effort = getattr(spec, "effort", None)
+        known_models = None
+        if adapter_factory is not None and effort and _effort_uses_model_listing(vendor):
+            try:
+                known_models = adapter_factory(spec).list_models()
+            except Exception:  # noqa: BLE001 - discovery is best-effort
+                known_models = None
         try:
             plan = effort_args(
-                getattr(spec, "vendor", ""),
-                getattr(spec, "effort", None),
+                vendor,
+                effort,
                 getattr(spec, "model", None),
+                known_models=known_models,
             )
         except ValueError as exc:
             message = str(exc)
@@ -672,6 +735,31 @@ class AgyAdapter(Adapter):
 
     # `agy models` lists the model ids the CLI can be pointed at.
     _MODELS_ARGS = ("models",)
+
+    def effort_plan(self) -> EffortPlan:
+        """agy's effort IS the model id, so check the mapping against its listing.
+
+        The listing is probed at most once per adapter instance, and only when an
+        effort level is actually configured — a run without one pays nothing,
+        which matters because this is on the per-invocation path.
+        """
+        if not getattr(self.spec, "effort", None):
+            return EffortPlan()
+        try:
+            return effort_args(
+                self.spec.vendor,
+                self.spec.effort,
+                self.spec.model,
+                known_models=self._cached_model_listing(),
+            )
+        except ValueError:
+            return EffortPlan()
+
+    def _cached_model_listing(self) -> list[str] | None:
+        """``agy models``, memoized per adapter instance."""
+        if not hasattr(self, "_model_listing"):
+            self._model_listing = self.list_models()
+        return self._model_listing
 
     def build_argv(self, prompt: str) -> list[str]:
         del prompt
@@ -1271,7 +1359,9 @@ class AnthropicApiAdapter(_HostedApiAdapter):
         With an effort level configured, extended thinking is enabled with the
         mapped token budget. ``max_tokens`` must exceed that budget (thinking
         tokens are drawn from the same allowance), so it is raised to leave the
-        original response allowance on top of it.
+        original response allowance on top of it — bounded by
+        :data:`_ANTHROPIC_MAX_TOKENS_CEILING`, since per-model ``max_tokens``
+        caps vary and an unbounded sum would build a request some models reject.
         """
         payload = {
             "model": self.spec.model or "",
@@ -1281,7 +1371,14 @@ class AnthropicApiAdapter(_HostedApiAdapter):
         payload.update(self.effort_plan().payload)
         thinking = payload.get("thinking")
         if isinstance(thinking, dict):
-            payload["max_tokens"] = int(thinking["budget_tokens"]) + _HOSTED_API_MAX_TOKENS
+            # Clamped here too, not only in effort_args, so `budget < max_tokens
+            # <= ceiling` holds for any plan handed to this builder.
+            budget = min(
+                int(thinking["budget_tokens"]),
+                _ANTHROPIC_MAX_TOKENS_CEILING - _HOSTED_API_MAX_TOKENS,
+            )
+            payload["thinking"] = {**thinking, "budget_tokens": budget}
+            payload["max_tokens"] = budget + _HOSTED_API_MAX_TOKENS
         return payload
 
     def _headers(self) -> dict[str, str]:

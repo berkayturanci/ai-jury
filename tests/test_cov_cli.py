@@ -126,7 +126,10 @@ class InitDetectionPaths(unittest.TestCase):
 
     def test_init_available_swallows_errors(self):
         # _init_available: make_adapter raising -> detection records False (312-313).
-        with mock.patch("ai_jury.adapters.make_adapter", side_effect=RuntimeError("boom")):
+        # Patched in the cli namespace: make_adapter is imported at module level
+        # there now (the effort warnings need it), so the adapters-module name is
+        # no longer the one this function resolves.
+        with mock.patch("ai_jury.cli.make_adapter", side_effect=RuntimeError("boom")):
             avail = cli._init_available()
         self.assertTrue(all(v is False for v in avail.values()))
 

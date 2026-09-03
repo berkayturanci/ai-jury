@@ -7,6 +7,7 @@ No third-party dependencies, no live agent CLIs, no network.
 from __future__ import annotations
 
 import contextlib
+import io
 import json
 import os
 import sys
@@ -648,7 +649,7 @@ class DoctorJsonSchemaTests(unittest.TestCase):
             mock.patch.dict(os.environ, {}, clear=True),
             mock.patch.object(doctor, "_probe_models", return_value=["gemini-3.8-flash"]),
         ):
-            diag = doctor.build_diagnostics(path)
+            diag = doctor.build_diagnostics(path, probe_models=True)
         report = doctor.doctor_report_dict(diag)
         self.assertTrue(all(a["models"] == ["gemini-3.8-flash"] for a in report["agents"]))
 
@@ -861,6 +862,110 @@ model = "m"
         hostile = self.CONFIG.replace('"MY_CUSTOM_TOKEN_VAR"', '"BROKEN\\nAgents"')
         diag, _report = self._export(config_text=hostile)
         self.assertNotIn("BROKEN", doctor.render_report(diag))
+
+
+class ModelProbeIsOptInTests(unittest.TestCase):
+    """Discovering models costs a probe per agent; only the export renders it.
+
+    Plain `jury --doctor` used to spawn `agy models` per google agent and GET
+    /v1/models per local agent to fill a field it never printed — measured at
+    0.11 s -> 2.3 s with one agy agent, and up to the probe timeout if the CLI
+    hangs.
+    """
+
+    def _build(self, **kwargs):
+        from ai_jury.adapters import Adapter, LocalAdapter
+
+        path = _write_config(MIXED_TRANSPORT_CONFIG)
+        self.addCleanup(os.unlink, path)
+        # One shared spy on both the base seam and LocalAdapter's override, so
+        # the count covers every transport in the config.
+        listed = mock.Mock(return_value=["m1"])
+        with (
+            mock.patch.dict(os.environ, {}, clear=True),
+            mock.patch.object(LocalAdapter, "available", return_value=False),
+            mock.patch.object(Adapter, "list_models", listed),
+            mock.patch.object(LocalAdapter, "list_models", listed),
+        ):
+            diag = doctor.build_diagnostics(path, **kwargs)
+        return diag, listed
+
+    def test_the_text_path_never_probes_for_models(self):
+        diag, listed = self._build()
+        listed.assert_not_called()
+        self.assertTrue(all(a["models"] is None for a in diag["agents"]))
+        # And the report still renders.
+        self.assertIn("jury doctor", doctor.render_report(diag))
+
+    def test_the_default_is_off(self):
+        _diag, listed = self._build()
+        listed.assert_not_called()
+
+    def test_opting_in_probes_every_agent(self):
+        diag, listed = self._build(probe_models=True)
+        self.assertEqual(listed.call_count, len(diag["agents"]))
+        self.assertTrue(all(a["models"] == ["m1"] for a in diag["agents"]))
+
+    def test_cli_probes_only_on_the_json_path(self):
+        from ai_jury import cli
+
+        path = _write_config(MIXED_TRANSPORT_CONFIG)
+        self.addCleanup(os.unlink, path)
+        for argv, expected in (
+            (["--doctor", "--config", path], False),
+            (["--doctor", "--json", "--config", path], True),
+        ):
+            with (
+                mock.patch.object(
+                    doctor, "build_diagnostics", wraps=doctor.build_diagnostics
+                ) as built,
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                cli.main(argv)
+            self.assertEqual(built.call_args.kwargs["probe_models"], expected, argv)
+
+
+class RenderShowsAnAddressForEveryTransportTests(unittest.TestCase):
+    def test_api_and_local_agents_name_their_endpoint(self):
+        diag, report = _export()
+        text = doctor.render_report(diag)
+        by_name = {a["name"]: a for a in report["agents"]}
+        # A CLI agent is still identified by its command.
+        self.assertIn(f"command={by_name['claude']['command']}", text)
+        # An api/local agent shows where it points, not an empty `command=`.
+        self.assertIn(f"endpoint={by_name['gpt']['endpoint']}", text)
+        self.assertIn(f"endpoint={by_name['qwen']['endpoint']}", text)
+        self.assertNotIn("command=)", text)
+
+    def test_an_unknown_endpoint_is_labelled(self):
+        diag = {
+            "tool_version": "0",
+            "python_version": "3.12.0",
+            "python_implementation": "CPython",
+            "python_executable": "/usr/bin/python3",
+            "os": "test-os",
+            "config_path": "(default)",
+            "agents": [
+                {
+                    "name": "a",
+                    "vendor": "openai-api",
+                    "command": "",
+                    "endpoint": None,
+                    "available": False,
+                    "reason": "no key",
+                    "resolved": None,
+                    "version": None,
+                    "capabilities": {},
+                    "models": None,
+                    "effort": None,
+                    "effort_supported": True,
+                }
+            ],
+            "config": None,
+            "config_warnings": [],
+            "recommendations": {"ready": False, "steps": []},
+        }
+        self.assertIn("endpoint=(unknown)", doctor.render_report(diag))
 
 
 if __name__ == "__main__":

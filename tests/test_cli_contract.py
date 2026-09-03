@@ -442,6 +442,21 @@ class DoctorJsonCliTests(unittest.TestCase):
         self.assertEqual(out, "")
         self.assertIn("--json applies to --doctor", err)
 
+    def test_the_guard_runs_before_every_short_circuiting_branch(self):
+        # It used to sit behind --clear-cache, which returns first, so a
+        # misplaced --json was silently accepted on that path.
+        out_dir = Path(tempfile.mkdtemp())
+        code, out, err = _run_cli(["--json", "--clear-cache", "--cache-dir", str(out_dir)])
+        self.assertEqual(code, 2)
+        self.assertEqual(out, "")
+        self.assertIn("--json applies to --doctor", err)
+
+    def test_effort_choices_come_from_the_adapter_mapping(self):
+        from ai_jury.adapters import EFFORT_LEVELS
+
+        action = next(a for a in build_parser()._actions if "--effort" in a.option_strings)
+        self.assertEqual(list(action.choices), list(EFFORT_LEVELS))
+
 
 class EffortCliTests(unittest.TestCase):
     """`--effort` overrides every agent for the run and warns where unsupported."""
@@ -496,6 +511,22 @@ class EffortCliTests(unittest.TestCase):
         )
         _config, _code, _out, err = self._captured_config(["--effort", "high"], supported)
         self.assertNotIn("effort unsupported", err)
+
+    def test_model_listings_are_probed_outside_mock_only(self):
+        # --mock must never spawn a vendor CLI to check a model listing.
+        for argv, expects_factory in ((["--mock"], False), ([], True)):
+            with (
+                mock.patch("ai_jury.cli.effort_warnings", return_value=[]) as warned,
+                mock.patch("ai_jury.cli.review_diff", side_effect=SystemExit(0)),
+            ):
+                path = self._write(self.CONFIG)
+                self.addCleanup(os.unlink, path)
+                _run_cli(
+                    ["--effort", "high", "--config", path, "--diff-file", "-", *argv],
+                    stdin=SAMPLE_DIFF,
+                )
+            factory = warned.call_args.kwargs["adapter_factory"]
+            self.assertEqual(factory is not None, expects_factory, argv)
 
     def test_invalid_level_is_rejected_by_the_parser(self):
         code, _out, err = _run_cli(

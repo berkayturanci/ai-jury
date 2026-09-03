@@ -22,7 +22,7 @@ from pathlib import Path
 
 from . import __version__
 from . import doctor as doctor_module
-from .adapters import EFFORT_LEVELS, effort_warnings
+from .adapters import EFFORT_LEVELS, effort_warnings, make_adapter
 from .ci import evaluate_ci
 from .classification import classify, label_strings
 from .config import ConfigError, load_config, load_raw_config, validate_config
@@ -333,7 +333,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--effort",
-        choices=["low", "medium", "high"],
+        choices=list(EFFORT_LEVELS),
         default=None,
         help=(
             "reasoning effort for every agent this run (overrides [[agent]] effort); "
@@ -714,7 +714,6 @@ _AGENT_BLURB = {
 
 def _init_available() -> dict:
     """Map each known agent name to whether it is reachable right now."""
-    from .adapters import make_adapter
     from .config import AgentSpec
     from .scaffold import KNOWN_AGENTS, agent_templates
 
@@ -1484,13 +1483,8 @@ def main(argv: list[str] | None = None) -> int:
 
     args = build_parser().parse_args(argv)
 
-    if args.clear_cache:
-        from .cache import Cache
-
-        removed = Cache(args.cache_dir).clear()
-        print(f"Cleared {removed} cache entr{'y' if removed == 1 else 'ies'}.")
-        return 0
-
+    # Checked before any short-circuiting branch below, so `--json` is rejected
+    # wherever it is misplaced rather than only on the paths that reach the end.
     if args.json and not args.doctor:
         print(
             "error: --json applies to --doctor; use --format json for the review report.",
@@ -1498,8 +1492,17 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
 
+    if args.clear_cache:
+        from .cache import Cache
+
+        removed = Cache(args.cache_dir).clear()
+        print(f"Cleared {removed} cache entr{'y' if removed == 1 else 'ies'}.")
+        return 0
+
     if args.doctor:
-        diagnostics = doctor_module.build_diagnostics(args.config)
+        # Model discovery costs a probe per agent and only the JSON export
+        # renders it; the human report must not pay for a field it never prints.
+        diagnostics = doctor_module.build_diagnostics(args.config, probe_models=args.json)
         if args.json:
             # Exactly ONE JSON document on stdout, and nothing else: the export
             # is meant to be piped straight into `jq` / an orchestrator, so any
@@ -1567,8 +1570,12 @@ def main(argv: list[str] | None = None) -> int:
         for agent in config.agents:
             agent.effort = args.effort
     # Warn ONCE per run per distinct message, before any agent is invoked, for
-    # every panelist whose vendor cannot act on the requested effort.
-    for warning in effort_warnings(config.enabled_agents):
+    # every panelist whose vendor cannot act on the requested effort. Real
+    # adapters are passed only outside --mock, so an offline demo never spawns a
+    # vendor CLI to check a model listing.
+    for warning in effort_warnings(
+        config.enabled_agents, adapter_factory=None if args.mock else make_adapter
+    ):
         print(f"warning: {warning}", file=sys.stderr)
     if args.verify is not None:
         config.verify = args.verify

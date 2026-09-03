@@ -119,7 +119,7 @@ lives in exactly one place (`adapters.effort_args`):
 | Vendor | How the level is sent | `low` | `medium` | `high` |
 | --- | --- | --- | --- | --- |
 | `google` (`agy` CLI) | model-id suffix | `<model>-low` | `<model>-medium` | `<model>-high` |
-| `anthropic-api` | `thinking.budget_tokens` (extended thinking) | `2048` | `8192` | `32768` |
+| `anthropic-api` | `thinking.budget_tokens` (extended thinking) | `2048` | `8192` | `27904` † |
 | `openai-api` | `reasoning_effort` | `low` | `medium` | `high` |
 | `openai-compatible` | `reasoning_effort` | `low` | `medium` | `high` |
 | `google-api` | `generationConfig.thinkingConfig.thinkingBudget` | `1024` | `8192` | `32768` |
@@ -127,18 +127,34 @@ lives in exactly one place (`adapters.effort_args`):
 | `openai` (`codex` CLI) | — no headless control | ignored | ignored | ignored |
 | `local`, `cli`, custom | — not sent | ignored | ignored | ignored |
 
+† **`high` is clamped.** Thinking tokens come out of the same allowance as the
+response, so `max_tokens` is lifted above the budget — but per-model `max_tokens`
+caps vary, and the nominal `32768` plus the 4096-token response allowance would
+build a request some models reject. The budget is therefore capped at
+**27904**, holding `max_tokens` at or below the documented ceiling of **32000**.
+`low` and `medium` are already under it and are sent as-is.
+
 Notes:
 
 - **`agy` encodes effort in the model id.** `gemini-3.8-flash` + `high` becomes
   `gemini-3.8-flash-high`; a model that *already* carries a `-low`/`-medium`/`-high`
   suffix is left exactly as configured, so an explicit model id always wins.
   `jury --doctor --json` lists the ids the installed CLI actually offers.
-- **Anthropic raises `max_tokens`.** Thinking tokens come out of the same
-  allowance, so the request's `max_tokens` is lifted above the budget rather than
-  leaving the response no room.
+- **A suffixed id is checked against what `agy` offers.** When the listing can be
+  discovered, an id the CLI does not have (say the model has no `-high` variant)
+  falls back to the configured model and warns, rather than sending an unknown id
+  and losing that reviewer's whole review. If the listing cannot be discovered,
+  the mapping is used as-is — "unknown" is not treated as "absent". The probe runs
+  only when an effort level is set, and at most once per run per agent.
 - **`local` is deliberately excluded.** Many local OpenAI-compatible servers
   reject an unknown request field outright, which would turn a hint into a failed
   review; effort is not sent on speculation.
+- **`openai-compatible` is only as good as the provider behind it.** The vendor
+  covers OpenRouter, DeepSeek, Groq, Mistral, LiteLLM and any other
+  OpenAI-shaped endpoint, and `reasoning_effort` is sent to all of them. A
+  provider that validates unknown fields strictly will reject the request rather
+  than ignore it, so set `effort` on such a profile only when that provider
+  documents `reasoning_effort`; check with a one-agent run before relying on it.
 - **Unsupported vendors warn once per run** (`effort unsupported for <vendor>,
   ignored`) on stderr and run unchanged — a panel is never blocked by one
   panelist that cannot take the hint.
@@ -195,7 +211,7 @@ The document is `schema_version: "ai-jury.doctor.v1"`:
 | `command` / `endpoint` | Exactly one, named for the transport: a `cli` agent carries `command`, everything else carries the `endpoint` its adapter would actually call. |
 | `reason` | Why an agent is unusable, or `null` when it is available. |
 | `capabilities` | Labels from the version probe: `headless`, `model-selection`. |
-| `models` | Model ids discovered for that agent (`agy models`, or a local server's `/v1/models`), or `null` when nothing could be listed. |
+| `models` | Model ids discovered for that agent (`agy models`, or a local server's `/v1/models`), or `null` when nothing could be listed. Discovered **only** for `--json`: it costs a probe per agent, and the text report does not show it. |
 | `effort_supported` / `effort` | Whether the vendor has an effort control, and the level configured for this agent. |
 | `warnings` | The same config warnings the human report lists. |
 

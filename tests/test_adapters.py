@@ -148,8 +148,18 @@ class EffortMappingTest(unittest.TestCase):
             level: effort_args("anthropic-api", level).payload["thinking"]["budget_tokens"]
             for level in EFFORT_LEVELS
         }
-        self.assertEqual(budgets, {"low": 2048, "medium": 8192, "high": 32768})
+        # `high` is clamped: its nominal 32768 plus the response allowance would
+        # exceed the max_tokens ceiling some models enforce.
+        self.assertEqual(budgets, {"low": 2048, "medium": 8192, "high": 27904})
         self.assertEqual(effort_args("anthropic-api", "low").payload["thinking"]["type"], "enabled")
+
+    def test_every_level_stays_under_the_documented_max_tokens_ceiling(self):
+        from ai_jury.adapters import _ANTHROPIC_MAX_TOKENS_CEILING, _HOSTED_API_MAX_TOKENS
+
+        for level in EFFORT_LEVELS:
+            budget = effort_args("anthropic-api", level).payload["thinking"]["budget_tokens"]
+            self.assertLessEqual(budget + _HOSTED_API_MAX_TOKENS, _ANTHROPIC_MAX_TOKENS_CEILING)
+            self.assertGreater(budget, 0)
 
     def test_openai_shaped_apis_use_reasoning_effort(self):
         for vendor in ("openai-api", "openai-compatible"):
@@ -233,9 +243,11 @@ class EffortAppliedToRequestsTest(unittest.TestCase):
             result = AnthropicApiAdapter(spec).run("prompt")
         self.assertTrue(result.ok)
         body = self._sent_body(opened)
-        self.assertEqual(body["thinking"], {"type": "enabled", "budget_tokens": 32768})
-        # max_tokens must exceed the thinking budget or the API rejects the call.
+        self.assertEqual(body["thinking"], {"type": "enabled", "budget_tokens": 27904})
+        # max_tokens must exceed the thinking budget or the API rejects the call,
+        # and stay under the ceiling or some models reject it for being too high.
         self.assertGreater(body["max_tokens"], body["thinking"]["budget_tokens"])
+        self.assertLessEqual(body["max_tokens"], 32000)
 
     def test_anthropic_without_effort_keeps_the_plain_body(self):
         spec = _spec("anthropic-api", model="claude-x")
@@ -279,7 +291,10 @@ class EffortAppliedToRequestsTest(unittest.TestCase):
 
     def test_agy_argv_uses_the_effort_suffixed_model(self):
         spec = _spec("google", name="agy", command="agy", model="gemini-3.8-flash", effort="high")
-        argv = AgyAdapter(spec).build_argv(PROMPT)
+        # list_models is stubbed: an installed `agy` would otherwise really be
+        # spawned here, and this suite stays mock-only.
+        with mock.patch.object(AgyAdapter, "list_models", return_value=None):
+            argv = AgyAdapter(spec).build_argv(PROMPT)
         self.assertEqual(argv[argv.index("--model") + 1], "gemini-3.8-flash-high")
 
     def test_agy_argv_without_effort_is_unchanged(self):
@@ -394,6 +409,125 @@ class ListModelsProbeTest(unittest.TestCase):
             self.assertEqual(LocalAdapter(spec).list_models(), ["qwen:7b"])
         with mock.patch("ai_jury.adapters.list_local_models", return_value=[]):
             self.assertIsNone(LocalAdapter(spec).list_models())
+
+
+class AnthropicBudgetCeilingTest(unittest.TestCase):
+    """`budget < max_tokens <= ceiling` holds for any plan (issue #669 review)."""
+
+    def test_a_hand_built_oversized_budget_is_clamped_at_the_boundary(self):
+        spec = _spec("anthropic-api", model="claude-x", effort="high")
+        adapter = AnthropicApiAdapter(spec)
+        with mock.patch.object(
+            AnthropicApiAdapter,
+            "effort_plan",
+            return_value=EffortPlan(
+                payload={"thinking": {"type": "enabled", "budget_tokens": 1_000_000}}
+            ),
+        ):
+            body = adapter.build_payload("p")
+        self.assertEqual(body["thinking"]["budget_tokens"], 27904)
+        self.assertEqual(body["max_tokens"], 32000)
+        self.assertGreater(body["max_tokens"], body["thinking"]["budget_tokens"])
+
+    def test_the_plan_dict_is_not_mutated_in_place(self):
+        plan = effort_args("anthropic-api", "high")
+        before = dict(plan.payload["thinking"])
+        AnthropicApiAdapter(_spec("anthropic-api", model="m")).build_payload("p")
+        self.assertEqual(plan.payload["thinking"], before)
+
+
+class AgyEffortChecksTheModelListingTest(unittest.TestCase):
+    """A suffixed id the CLI does not offer would fail the whole review."""
+
+    def _agy(self, model="gemini-3.8-flash", effort="high"):
+        return AgyAdapter(_spec("google", name="agy", command="agy", model=model, effort=effort))
+
+    def test_a_listed_variant_is_used(self):
+        adapter = self._agy()
+        with mock.patch.object(AgyAdapter, "list_models", return_value=["gemini-3.8-flash-high"]):
+            argv = adapter.build_argv(PROMPT)
+        self.assertEqual(argv[argv.index("--model") + 1], "gemini-3.8-flash-high")
+
+    def test_an_unlisted_variant_falls_back_to_the_configured_id(self):
+        adapter = self._agy()
+        with mock.patch.object(
+            AgyAdapter, "list_models", return_value=["gemini-3.8-flash", "other-pro-low"]
+        ):
+            plan = adapter.effort_plan()
+            argv = adapter.build_argv(PROMPT)
+        self.assertEqual(plan.model, "gemini-3.8-flash")
+        self.assertIn("does not offer", plan.warning)
+        self.assertEqual(argv[argv.index("--model") + 1], "gemini-3.8-flash")
+
+    def test_no_listing_available_keeps_the_suffixed_id(self):
+        # None means "could not discover", not "the model does not exist".
+        adapter = self._agy()
+        with mock.patch.object(AgyAdapter, "list_models", return_value=None):
+            argv = adapter.build_argv(PROMPT)
+        self.assertEqual(argv[argv.index("--model") + 1], "gemini-3.8-flash-high")
+
+    def test_the_listing_is_probed_once_per_instance(self):
+        adapter = self._agy()
+        with mock.patch.object(
+            AgyAdapter, "list_models", return_value=["gemini-3.8-flash-high"]
+        ) as listed:
+            for _ in range(4):
+                adapter.build_argv(PROMPT)
+        self.assertEqual(listed.call_count, 1)
+
+    def test_no_effort_configured_never_probes(self):
+        adapter = self._agy(effort=None)
+        with mock.patch.object(AgyAdapter, "list_models") as listed:
+            argv = adapter.build_argv(PROMPT)
+        listed.assert_not_called()
+        self.assertEqual(argv[argv.index("--model") + 1], "gemini-3.8-flash")
+
+    def test_an_invalid_level_degrades_without_probing(self):
+        adapter = self._agy(effort="turbo")
+        with mock.patch.object(AgyAdapter, "list_models", return_value=["x"]):
+            self.assertEqual(adapter.effort_plan(), EffortPlan())
+
+
+class EffortWarningsModelListingTest(unittest.TestCase):
+    """`effort_warnings` stays pure unless a factory is handed to it."""
+
+    AGY = None
+
+    def setUp(self):
+        self.agy = _spec(
+            "google", name="agy", command="agy", model="gemini-3.8-flash", effort="high"
+        )
+
+    def test_pure_by_default(self):
+        with mock.patch.object(AgyAdapter, "list_models") as listed:
+            self.assertEqual(effort_warnings([self.agy]), [])
+        listed.assert_not_called()
+
+    def test_a_factory_surfaces_an_unlisted_variant(self):
+        factory = mock.Mock(return_value=mock.Mock(list_models=lambda: ["gemini-3.8-flash"]))
+        warnings = effort_warnings([self.agy], adapter_factory=factory)
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("does not offer", warnings[0])
+
+    def test_a_listed_variant_warns_about_nothing(self):
+        factory = mock.Mock(return_value=mock.Mock(list_models=lambda: ["gemini-3.8-flash-high"]))
+        self.assertEqual(effort_warnings([self.agy], adapter_factory=factory), [])
+
+    def test_agents_without_effort_are_never_probed(self):
+        factory = mock.Mock()
+        plain = _spec("google", name="agy", command="agy", model="gemini-3.8-flash")
+        self.assertEqual(effort_warnings([plain], adapter_factory=factory), [])
+        factory.assert_not_called()
+
+    def test_other_vendors_are_never_probed(self):
+        factory = mock.Mock()
+        hosted = _spec("openai-api", name="gpt", model="gpt-x", effort="high")
+        self.assertEqual(effort_warnings([hosted], adapter_factory=factory), [])
+        factory.assert_not_called()
+
+    def test_a_failing_probe_degrades_to_no_listing(self):
+        factory = mock.Mock(side_effect=OSError("agy exploded"))
+        self.assertEqual(effort_warnings([self.agy], adapter_factory=factory), [])
 
 
 if __name__ == "__main__":
