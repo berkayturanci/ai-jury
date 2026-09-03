@@ -15,6 +15,7 @@ inert looks exactly like a gate that works.
 
 from __future__ import annotations
 
+import re
 import unittest
 from pathlib import Path
 
@@ -223,3 +224,279 @@ class TheTierDeclarationIsConsumed(unittest.TestCase):
         """
         self.assertIn("keel-ship.yml", self.config)
         self.assertIn("branch protection", self.config)
+
+
+#: `${{ … }}` interpolations, one at a time.
+_EXPRESSION = re.compile(r"\$\{\{(.+?)\}\}")
+
+
+def _lookup(context: dict, path: str) -> object:
+    """Resolve a dotted Actions context path; a missing key reads as empty."""
+    node: object = context
+    for part in path.split("."):
+        if not isinstance(node, dict):
+            return ""
+        node = node.get(part, "")
+    return node
+
+
+def _render(expression: str, context: dict) -> str:
+    """Render the slice of the Actions expression language the group uses.
+
+    ``a || b || …`` over dotted context paths and quoted literals — enough to
+    compute the group *GitHub* would compute for a given event. There is no YAML
+    parser and no expression evaluator available here (the package ships with no
+    runtime dependencies), and asserting on the expression's *text* instead
+    would pass for a group that merely mentions ``github.event_name`` and still
+    renders one string for every event — which is exactly the bug.
+    """
+
+    def one(match: re.Match[str]) -> str:
+        for raw in match.group(1).split("||"):
+            operand = raw.strip()
+            value = operand[1:-1] if operand.startswith("'") else _lookup(context, operand)
+            if value not in ("", None, False):
+                return str(value)
+        return ""
+
+    return _EXPRESSION.sub(one, expression)
+
+
+def _concurrency() -> dict[str, str]:
+    """The `concurrency:` block's keys, read off the uncommented lines.
+
+    Line-anchored rather than parsed: every value asserted on below is also
+    *described* in a comment directly above it, so a search over the raw text
+    passes whether or not the block is configured that way.
+    """
+    lines = code_lines()
+    start = lines.index("concurrency:")
+    block: dict[str, str] = {}
+    for line in lines[start + 1 :]:
+        if not line.startswith("  "):
+            break
+        key, _, value = line.strip().partition(":")
+        block[key] = value.strip()
+    return block
+
+
+def _group(context: dict) -> str:
+    return _render(_concurrency()["group"], context)
+
+
+def _event(name: str, ref: str = "refs/heads/main", **payload: object) -> dict:
+    return {"github": {"event_name": name, "event": payload, "ref": ref}}
+
+
+class TheRendererRendersSomething(unittest.TestCase):
+    """The group assertions are only meaningful if this evaluates the expression."""
+
+    def test_a_group_expression_is_found_and_interpolated(self):
+        group = _concurrency()["group"]
+        self.assertIn("${{", group, "no expression in the concurrency group")
+        rendered = _group(_event("pull_request", pull_request={"number": 7}))
+        self.assertNotIn("${{", rendered, "the renderer left the expression untouched")
+        self.assertIn("7", rendered)
+
+    def test_an_unset_operand_falls_through_to_the_next(self):
+        self.assertEqual(_render("${{ a.b || 'x' }}", {"a": {"b": ""}}), "x")
+
+
+class OneEventCannotCancelAnotherEventsRun(unittest.TestCase):
+    """A verdict comment used to cancel the assessment run, and cancelled
+    check-runs cannot be deleted.
+
+    One `concurrency` group for the whole workflow keyed on the pull request
+    number alone put the `issue_comment` run and the `pull_request` run in the
+    same group; `keel review --live` posts its verdicts seconds after the push,
+    so the comment run cancelled the assessment run and left
+    `keel ship (assessment)` / `keel evidence (verify)` `cancelled` on the head.
+    GitHub then reports the pull request as UNSTABLE and `keel merge` refuses on
+    "CI failing" with every required check green — every ai-jury PR merged on
+    2026-09-03 needed a hand-run `gh run rerun` (#679, port of
+    berkayturanci/keel#1038).
+
+    These assert on the group GitHub would *render*, not on the expression's
+    text: a group that reads `github.event_name` and still renders one string
+    per pull request would satisfy any `assertIn` and reproduce the bug.
+    """
+
+    PR = 679
+    PUSH = _event("pull_request", ref="refs/pull/679/merge", pull_request={"number": PR})
+    VERDICT = _event("issue_comment", issue={"number": PR, "pull_request": {"url": "…"}})
+    DISPATCH = _event("workflow_dispatch", inputs={"pr": str(PR)})
+
+    def test_no_two_events_share_a_group_for_one_pull_request(self):
+        groups = {
+            "pull_request": _group(self.PUSH),
+            "issue_comment": _group(self.VERDICT),
+            "workflow_dispatch": _group(self.DISPATCH),
+        }
+        self.assertEqual(
+            len(set(groups.values())),
+            len(groups),
+            f"two events share a concurrency group, so one cancels the other: {groups}",
+        )
+
+    def test_every_event_still_scopes_its_group_to_the_pull_request(self):
+        """Per-event is not enough on its own — a group that dropped the number
+        would serialize every open pull request against every other."""
+        for name, context in (
+            ("pull_request", self.PUSH),
+            ("issue_comment", self.VERDICT),
+            ("workflow_dispatch", self.DISPATCH),
+        ):
+            with self.subTest(event=name):
+                self.assertIn(str(self.PR), _group(context))
+
+    def test_two_pull_requests_never_share_a_group(self):
+        other = _event("pull_request", ref="refs/pull/9/merge", pull_request={"number": 9})
+        self.assertNotEqual(_group(self.PUSH), _group(other))
+
+    def test_a_superseded_run_of_the_same_event_is_still_cancelled(self):
+        """Cancelling within one event is the point of the group and stays on.
+
+        The cancelled run is never the last word on a head that still matters: a
+        superseded `pull_request` run belongs to a superseded head SHA, and an
+        `issue_comment` run always runs from the default branch, so its job
+        check-runs land there rather than on the pull request's head.
+        """
+        again = _event("pull_request", ref="refs/pull/679/merge", pull_request={"number": self.PR})
+        self.assertEqual(_group(self.PUSH), _group(again))
+        self.assertEqual(_concurrency()["cancel-in-progress"], "true")
+
+    def test_the_group_falls_back_to_the_ref_without_a_number(self):
+        """A dispatch from a branch with no `pr` input still gets a group, and
+        still one of its own — the fallback chain is per-event too."""
+        bare = _event("workflow_dispatch", ref="refs/heads/main", inputs={"pr": ""})
+        self.assertTrue(_group(bare).endswith("refs/heads/main"))
+        self.assertNotEqual(_group(bare), _group(_event("pull_request", ref="refs/heads/main")))
+
+
+class AStaleEvaluationCannotOverwriteANewerVerdict(unittest.TestCase):
+    """Splitting the groups lets two runs publish the same check-run.
+
+    That race is what the shared group prevented, at the cost of the cancelled
+    check-runs above. The replacement is in `publish_check`: each run stamps when
+    it read the pull request into `external_id`, and refuses to overwrite a
+    check-run stamped later. Without it a `pull_request` run that started before
+    a verdict was posted can finish after the comment run and put its "waiting"
+    answer back over "verified" — blocking the merge with nothing left to
+    retrigger the workflow.
+    """
+
+    def setUp(self):
+        self.body = WORKFLOW.read_text(encoding="utf-8")
+        publisher = re.search(r"publish_check\(\)\s*\{(.*?)\n {10}\}", self.body, re.DOTALL)
+        self.assertIsNotNone(publisher, "the publisher is gone")
+        self.publisher = publisher.group(1)
+
+    def test_the_check_records_when_it_was_evaluated(self):
+        self.assertIn("external_id=${EVALUATED_AT}", self.publisher)
+
+    def test_a_declined_write_is_not_a_failed_job(self):
+        """Returning 0 from both outcomes reintroduces the defect via the fix.
+
+        `publish_check` returning 0 whether it published or declined, with the
+        caller replaying this run's RC either way, means an older
+        `pull_request` run that correctly declined to overwrite a newer success
+        still exits 1 on its own stale violation code. Actions marks that job
+        FAILURE on the *live* head, keel's rollup scores FAILURE exactly like
+        CANCELLED, and `keel merge` refuses on "CI failing" again — the same
+        defect this change is about. Reachable whenever the answer differs
+        between two reads, which subscribing to comment `edited` guarantees.
+        """
+        self.assertIn("return 3", self.publisher, "the declined path is not distinguishable")
+        self.assertRegex(
+            self.body,
+            r'if \[ "\$PUBLISHED" -eq 3 \]; then\n\s*exit 0\n\s*fi',
+            "a declined write does not exit 0 unconditionally",
+        )
+        declined = self.body[self.body.index('if [ "$PUBLISHED" -eq 3 ]') :]
+        self.assertNotIn("$RC", declined[: declined.index('if [ "$PUBLISHED" -eq 0 ]')])
+
+    def test_the_violation_exit_is_scoped_to_the_run_that_published(self):
+        """This run's RC may only fail the job when this run's verdict is on the
+        check — otherwise a stale violation is replayed over a newer success."""
+        published = self.body[self.body.index('if [ "$PUBLISHED" -eq 0 ]') :]
+        self.assertRegex(
+            published[: published.index("\n\n")],
+            r'\[ "\$RC" -ne 0 \] && \[ "\$RC" -ne 2 \]',
+            "the violation exit is not scoped to the branch that published",
+        )
+
+    def test_the_stamp_orders_reads_that_land_in_the_same_second(self):
+        """Whole seconds plus a strict `-gt` means neither of two runs declines.
+
+        Two runs racing over one head are seconds apart at most, so the same
+        second is the common case, not the corner.
+        """
+        self.assertIn("date -u +%s%N", self.body)
+
+    def test_the_stamp_is_taken_before_the_pull_request_is_read(self):
+        """A completion time would rank the stale answer first.
+
+        A run that started before the verdict existed can still *finish* after
+        the run that saw it, so ordering by when each run finished picks exactly
+        the wrong one.
+        """
+        self.assertRegex(self.body, r"EVALUATED_AT=\$\(date -u \+%s%N\)")
+        self.assertLess(
+            self.body.index("EVALUATED_AT=$(date"),
+            self.body.index('keel evidence-verify "${ARGS[@]}"'),
+            "the stamp is taken after the read, so it orders runs by completion",
+        )
+
+    def test_a_newer_stamp_stops_the_write_before_it_happens(self):
+        self.assertRegex(
+            self.publisher,
+            r'\[\s+"\$existing_stamp"\s+-gt\s+"\$EVALUATED_AT"\s+\]',
+            "nothing compares this run's evaluation time with the published one",
+        )
+        guard = self.publisher.index("-gt")
+        self.assertLess(guard, self.publisher.index("-X PATCH"), "the guard runs after the update")
+        self.assertLess(guard, self.publisher.index("-X POST"), "the guard runs after the create")
+        self.assertRegex(
+            self.publisher[guard : self.publisher.index("-X PATCH")],
+            r"return 3",
+            "the guard does not actually skip the write",
+        )
+        self.assertIn("::notice", self.publisher, "a skipped write is invisible in the log")
+
+    def test_an_unstamped_or_malformed_check_is_still_overwritten(self):
+        """A check-run published before this guard existed carries no stamp.
+
+        Refusing to write then would freeze the gate on whatever it last said,
+        so both the empty and the non-numeric case fall through to the write —
+        the safe direction, since this run has read the newer state.
+        """
+        self.assertIn('[ -n "$existing_stamp" ]', self.publisher)
+        self.assertIn("${existing_stamp//[0-9]/}", self.publisher)
+
+    def test_the_lookup_reads_the_stamp_as_well_as_the_id(self):
+        """`select(.)` is load-bearing in the two-field shape: `max_by` over an
+        empty list is null, which renders as a single space — not empty, and
+        parsed as an existing run with no id, so every run would POST a second
+        check under the gating name.
+        """
+        self.assertIn("map(select(.id))", self.publisher)
+        self.assertIn("| select(.) |", self.publisher, "an absent run renders as a space")
+        self.assertIn("\\(.id)", self.publisher)
+        self.assertIn(".external_id", self.publisher)
+        self.assertIn("read -r existing_id existing_stamp", self.publisher)
+
+    def test_the_stamp_is_read_off_the_newest_run_not_an_arbitrary_one(self):
+        """The list endpoint's order is not documented as newest-first.
+
+        A head that carries more than one check-run under the gating name — the
+        stacking the upsert exists to prevent, which a pre-guard workflow could
+        have left behind — would otherwise have its stamp read off whichever row
+        came back first, and an old stamp there disarms the staleness guard
+        silently.
+        """
+        self.assertIn("max_by(.external_id | tonumber? // 0)", self.publisher)
+        # On the invocation, not the block: the comment above it names
+        # `.check_runs[0]` to explain what it replaced, so a block-wide
+        # assertion passes with the lookup reverted.
+        lookup = next(line for line in self.publisher.splitlines() if "--jq" in line)
+        self.assertNotIn(".check_runs[0]", lookup, "the lookup is back on an arbitrary row")
