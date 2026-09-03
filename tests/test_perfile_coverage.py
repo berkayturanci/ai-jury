@@ -26,7 +26,7 @@ class InitInteractiveTests(unittest.TestCase):
         self.assertIsNone(kw["local_model"])
 
     def test_explicit_answers(self):
-        answers = iter(["claude,codex", "1", "codex", "n"])
+        answers = iter(["claude,codex", "1", "codex", "n", ""])
         kw = cli._init_interactive(
             {"claude": True}, input_fn=lambda _p: next(answers), models_fn=lambda _e: []
         )
@@ -36,7 +36,9 @@ class InitInteractiveTests(unittest.TestCase):
         self.assertFalse(kw["verify"])
 
     def test_local_model_pick_by_number(self):
-        answers = iter(["claude,qwen", "", "", "", "2"])  # agents, rounds, chair, verify, model#2
+        answers = iter(
+            ["claude,qwen", "", "", "", "2", ""]
+        )  # agents/rounds/chair/verify/model#2/effort
         kw = cli._init_interactive(
             {"claude": True, "qwen": True},
             input_fn=lambda _p: next(answers),
@@ -45,7 +47,7 @@ class InitInteractiveTests(unittest.TestCase):
         self.assertEqual(kw["local_model"], "gemma:2b")
 
     def test_local_model_pick_by_name(self):
-        answers = iter(["qwen", "", "", "", "deepseek-coder:6.7b"])
+        answers = iter(["qwen", "", "", "", "deepseek-coder:6.7b", ""])
         kw = cli._init_interactive(
             {"qwen": True},
             input_fn=lambda _p: next(answers),
@@ -54,7 +56,7 @@ class InitInteractiveTests(unittest.TestCase):
         self.assertEqual(kw["local_model"], "deepseek-coder:6.7b")
 
     def test_local_no_models_reachable(self):
-        answers = iter(["qwen", "", "", "", "my-model"])  # last = typed model name
+        answers = iter(["qwen", "", "", "", "my-model", ""])  # typed model name, then skip effort
         kw = cli._init_interactive(
             {"qwen": True},
             input_fn=lambda _p: next(answers),

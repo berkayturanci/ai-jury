@@ -171,7 +171,7 @@ class InitCliTest(unittest.TestCase):
     def test_interactive_picks_discovered_model_by_number(self):
         # qwen selected + a server that lists models -> user picks one by number.
         available = {"claude": True, "codex": True, "agy": False, "qwen": True}
-        answers = iter(["claude,qwen", "1", "claude", "n", "2"])
+        answers = iter(["claude,qwen", "1", "claude", "n", "2", ""])
         kwargs = cli._init_interactive(
             available,
             input_fn=lambda _p: next(answers),
@@ -185,7 +185,7 @@ class InitCliTest(unittest.TestCase):
 
     def test_interactive_no_server_falls_back_to_typed_model(self):
         available = {"claude": False, "codex": False, "agy": False, "qwen": True}
-        answers = iter(["qwen", "2", "qwen", "y", "deepseek-coder:6.7b"])
+        answers = iter(["qwen", "2", "qwen", "y", "deepseek-coder:6.7b", ""])
         kwargs = cli._init_interactive(
             available, input_fn=lambda _p: next(answers), models_fn=lambda _ep: []
         )
@@ -443,6 +443,84 @@ class RemoteAgentsAreOfferedButNotForcedIntoPresets(unittest.TestCase):
                     scaffold.build_config([name]),
                     f"{name} is offered but cannot be chosen by name",
                 )
+
+
+class EffortScaffoldingTest(unittest.TestCase):
+    """`jury init` records a chosen effort and hints at it otherwise (issue #662)."""
+
+    def test_effort_is_written_only_for_vendors_that_support_it(self):
+        cfg = build_config(["claude", "codex", "gemini-api"], effort="high")
+        by_name = {a["name"]: a for a in cfg["agent"]}
+        # A hosted API takes an effort level; the claude/codex CLIs do not, so
+        # scaffolding one there would only ever produce a runtime warning.
+        self.assertEqual(by_name["gemini-api"]["effort"], "high")
+        self.assertNotIn("effort", by_name["claude"])
+        self.assertNotIn("effort", by_name["codex"])
+
+    def test_no_effort_argument_writes_no_effort_key(self):
+        cfg = build_config(["gemini-api"])
+        self.assertNotIn("effort", cfg["agent"][0])
+
+    def test_rendered_effort_round_trips_through_the_loader(self):
+        text = render_toml(build_config(["gemini-api"], effort="low"))
+        self.assertIn('effort = "low"', text)
+        parsed = tomllib.loads(text)
+        # The template leaves `model` for the operator, so the only warning is
+        # the pre-existing "no model" one; effort itself is valid.
+        self.assertFalse(
+            [w for w in validate_config(parsed) if "effort" in w],
+            validate_config(parsed),
+        )
+        self.assertEqual(_from_dict(parsed).agents[0].effort, "low")
+
+    def test_commented_hint_is_written_for_effort_capable_agents(self):
+        text = render_toml(build_config(["gemini-api"]))
+        self.assertIn('# effort = "medium"', text)
+        # A hint is a comment: the config still parses with no effort set.
+        self.assertIsNone(_from_dict(tomllib.loads(text)).agents[0].effort)
+
+    def test_no_hint_where_the_vendor_has_no_effort_control(self):
+        text = render_toml(build_config(["claude", "codex"]))
+        self.assertNotIn("effort", text)
+
+    def test_explicit_effort_replaces_the_hint(self):
+        text = render_toml(build_config(["gemini-api"], effort="high"))
+        self.assertIn('effort = "high"', text)
+        self.assertNotIn('# effort = "medium"', text)
+
+
+class InteractiveEffortQuestionTest(unittest.TestCase):
+    """The effort question exists only on the interactive path (issue #662)."""
+
+    AVAILABLE = {"claude": True}
+
+    def _ask(self, effort_answer):
+        answers = iter(["claude", "", "", "", effort_answer])
+        with contextlib.redirect_stderr(io.StringIO()):
+            return cli._init_interactive(
+                self.AVAILABLE, input_fn=lambda _p: next(answers), models_fn=lambda _e: []
+            )
+
+    def test_chosen_effort_is_recorded(self):
+        self.assertEqual(self._ask("high")["effort"], "high")
+
+    def test_answer_is_case_insensitive(self):
+        self.assertEqual(self._ask(" Medium ")["effort"], "medium")
+
+    def test_enter_skips_and_writes_nothing(self):
+        self.assertIsNone(self._ask("")["effort"])
+
+    def test_an_unrecognized_answer_is_treated_as_a_skip(self):
+        self.assertIsNone(self._ask("turbo")["effort"])
+
+    def test_the_wizard_does_not_ask(self):
+        # The guided wizard's question set is deliberately unchanged.
+        answers = iter(["claude", "", "", "", "", "", "", ""])
+        with contextlib.redirect_stderr(io.StringIO()):
+            kwargs = cli._init_wizard(
+                self.AVAILABLE, input_fn=lambda _p: next(answers), models_fn=lambda _e: []
+            )
+        self.assertNotIn("effort", kwargs)
 
 
 if __name__ == "__main__":
