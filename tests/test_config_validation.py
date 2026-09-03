@@ -13,7 +13,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 import tempfile  # noqa: E402
 
 from ai_jury.config import (  # noqa: E402
+    KNOWN_AGENT_KEYS,
+    KNOWN_EFFORTS,
     ConfigError,
+    _from_dict,
+    config_hash,
     load_raw_config,
     validate_config,
 )
@@ -125,6 +129,52 @@ class HardErrors(unittest.TestCase):
     def test_no_agents(self):
         with self.assertRaises(ConfigError):
             validate_config({"jury": {"rounds": 1}, "agent": []})
+
+
+class EffortValidation(unittest.TestCase):
+    """`[[agent]] effort` is a closed enum — a typo is a hard error (issue #662)."""
+
+    @staticmethod
+    def _with_effort(value):
+        return {
+            "jury": {"rounds": 1, "chair": "a"},
+            "agent": [{"name": "a", "vendor": "openai-api", "model": "m", "effort": value}],
+        }
+
+    def test_every_known_level_is_accepted(self):
+        for level in KNOWN_EFFORTS:
+            self.assertEqual(validate_config(self._with_effort(level)), [])
+
+    def test_case_and_padding_are_tolerated(self):
+        self.assertEqual(validate_config(self._with_effort("  HIGH ")), [])
+
+    def test_unknown_level_is_a_hard_error(self):
+        with self.assertRaises(ConfigError) as ctx:
+            validate_config(self._with_effort("maximum"))
+        self.assertIn("effort must be one of", str(ctx.exception))
+
+    def test_non_string_effort_is_a_hard_error(self):
+        for value in (3, True, ["high"]):
+            with self.assertRaises(ConfigError):
+                validate_config(self._with_effort(value))
+
+    def test_effort_is_a_known_agent_key(self):
+        # Not merely accepted: it must not produce an "unknown key" warning.
+        self.assertIn("effort", KNOWN_AGENT_KEYS)
+        self.assertEqual(validate_config(self._with_effort("low")), [])
+
+    def test_effort_is_normalized_and_hashed(self):
+        cfg = _from_dict(self._with_effort(" High "))
+        self.assertEqual(cfg.agents[0].effort, "high")
+        other = _from_dict(self._with_effort("low"))
+        # Effort changes the request an agent sends, so it must split the cache key.
+        self.assertNotEqual(config_hash(cfg), config_hash(other))
+
+    def test_absent_effort_stays_none(self):
+        cfg = _from_dict(
+            {"jury": {"rounds": 1, "chair": "a"}, "agent": [{"name": "a", "command": "x"}]}
+        )
+        self.assertIsNone(cfg.agents[0].effort)
 
 
 class SoftWarnings(unittest.TestCase):

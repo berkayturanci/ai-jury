@@ -208,6 +208,185 @@ def classify_stderr(returncode: int, stderr: str) -> str:
     return ERR_NONZERO_EXIT
 
 
+# --- Reasoning effort (issue #662) -------------------------------------------
+#
+# Every vendor expresses "think harder" differently, so the mapping lives HERE,
+# in one pure function, instead of being spread across the adapters: agy encodes
+# effort as a model-id suffix, the Anthropic Messages API takes an extended-
+# thinking token budget, OpenAI-shaped APIs take `reasoning_effort`, Gemini takes
+# a `thinkingConfig` budget, and the `claude`/`codex` CLIs have no headless knob
+# at all. `effort_args` is the single place any of that is decided.
+
+#: The effort levels accepted by ``[[agent]] effort`` and ``--effort``.
+EFFORT_LEVELS: tuple[str, ...] = ("low", "medium", "high")
+
+# Anthropic extended-thinking budgets (tokens) per level.
+_ANTHROPIC_THINKING_BUDGET = {"low": 2048, "medium": 8192, "high": 32768}
+# Gemini `thinkingConfig.thinkingBudget` (tokens) per level.
+_GEMINI_THINKING_BUDGET = {"low": 1024, "medium": 8192, "high": 32768}
+# agy model-id suffixes that already carry an effort level.
+_AGY_MODEL_SUFFIXES = tuple(f"-{level}" for level in EFFORT_LEVELS)
+
+# Vendors that can actually act on an effort level. Everything else (the
+# `claude`/`codex` CLIs, `local`, `cli`, any unregistered vendor) warns once and
+# ignores it: a local OpenAI-compatible server is NOT included, because many of
+# them reject an unknown request field outright, which would turn a hint into a
+# failed review.
+_EFFORT_VENDORS = frozenset(
+    {"google", "anthropic-api", "openai-api", "openai-compatible", "google-api"}
+)
+
+
+@dataclass(frozen=True)
+class EffortPlan:
+    """How one vendor expresses a reasoning-effort level.
+
+    ``model`` is a replacement model id (agy, which encodes effort in the id);
+    ``payload`` is a request-body fragment to merge into the vendor's JSON body;
+    ``warning`` is the once-per-run operator message when the level is ignored.
+    """
+
+    supported: bool = True
+    model: str | None = None
+    payload: dict = field(default_factory=dict)
+    warning: str | None = None
+
+
+def effort_supported(vendor: str) -> bool:
+    """Whether *vendor* can act on an effort level at all (pure)."""
+    return (vendor or "").strip().lower() in _EFFORT_VENDORS
+
+
+def effort_args(vendor: str, effort: str | None, model: str | None = None) -> EffortPlan:
+    """Map ``(vendor, effort, model)`` to the vendor's own effort knob (pure).
+
+    An empty/None *effort* is a no-op plan. An unrecognized level raises
+    ``ValueError`` — ``config.validate_config`` and the ``--effort`` choices
+    already gate user input, so reaching here with garbage is a programming
+    error, not something to silently swallow.
+    """
+    level = (effort or "").strip().lower()
+    if not level:
+        return EffortPlan()
+    if level not in EFFORT_LEVELS:
+        raise ValueError(f"unknown effort {effort!r}; expected one of {', '.join(EFFORT_LEVELS)}")
+
+    name = (vendor or "").strip().lower()
+
+    if name == "google":
+        # The `agy` CLI selects effort through the model id itself.
+        current = (model or "").strip()
+        if not current:
+            return EffortPlan(
+                warning=(
+                    f"effort '{level}' needs a configured model for vendor '{vendor}' "
+                    f"(effort is encoded in the model id), ignored"
+                )
+            )
+        if current.endswith(_AGY_MODEL_SUFFIXES):
+            # Already pinned by the operator; an explicit model id wins.
+            return EffortPlan(model=current)
+        return EffortPlan(model=f"{current}-{level}")
+
+    if name == "anthropic-api":
+        return EffortPlan(
+            payload={
+                "thinking": {
+                    "type": "enabled",
+                    "budget_tokens": _ANTHROPIC_THINKING_BUDGET[level],
+                }
+            }
+        )
+
+    if name in ("openai-api", "openai-compatible"):
+        return EffortPlan(payload={"reasoning_effort": level})
+
+    if name == "google-api":
+        return EffortPlan(
+            payload={
+                "generationConfig": {
+                    "thinkingConfig": {"thinkingBudget": _GEMINI_THINKING_BUDGET[level]}
+                }
+            }
+        )
+
+    return EffortPlan(supported=False, warning=f"effort unsupported for {vendor}, ignored")
+
+
+def effort_warnings(agents) -> list[str]:
+    """Deduped, ordered effort warnings for a panel — one message per run (pure).
+
+    Callers (the CLI) print these once before the run rather than once per agent
+    invocation, so a three-round panel does not repeat the same line nine times.
+    """
+    seen: set[str] = set()
+    out: list[str] = []
+    for spec in agents:
+        try:
+            plan = effort_args(
+                getattr(spec, "vendor", ""),
+                getattr(spec, "effort", None),
+                getattr(spec, "model", None),
+            )
+        except ValueError as exc:
+            message = str(exc)
+        else:
+            message = plan.warning
+        if message and message not in seen:
+            seen.add(message)
+            out.append(message)
+    return out
+
+
+# Model ids look like `gemini-3.8-flash`, `qwen2.5-coder:7b`, `anthropic/claude-x`.
+_MODEL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]*$")
+# Cap a discovered model listing so a chatty/hostile CLI cannot flood diagnostics.
+_MAX_LISTED_MODELS = 50
+
+
+def parse_model_list(raw: str) -> list[str]:
+    """Model ids out of a CLI's model listing (pure, best-effort, order-preserving).
+
+    Accepts either JSON (a list, or an object with ``models``/``data``) or plain
+    lines, because a CLI's listing format is not a contract. Anything that does
+    not look like a model id is dropped rather than guessed at.
+    """
+    text = (raw or "").strip()
+    if not text:
+        return []
+
+    ids: list[str] = []
+    try:
+        data = json.loads(text)
+    except ValueError:
+        data = None
+    if isinstance(data, dict):
+        data = data.get("models") or data.get("data")
+    if isinstance(data, list):
+        for item in data:
+            if isinstance(item, str):
+                ids.append(item)
+            elif isinstance(item, dict):
+                value = item.get("id") or item.get("name") or item.get("model")
+                if isinstance(value, str):
+                    ids.append(value)
+    else:
+        for line in text.splitlines():
+            token = line.strip().lstrip("-*\u2022").strip()
+            token = token.split()[0] if token else ""
+            if _MODEL_ID_RE.match(token):
+                ids.append(token)
+
+    seen: set[str] = set()
+    out: list[str] = []
+    for value in ids:
+        value = value.strip()
+        if value and value not in seen:
+            seen.add(value)
+            out.append(value)
+    return out[:_MAX_LISTED_MODELS]
+
+
 @dataclass
 class AgentResult:
     agent: str
@@ -271,6 +450,28 @@ class Adapter:
     def _version_argv(self) -> list[str]:
         """Argv used to probe the CLI's version."""
         return [self.spec.command, *self._VERSION_ARGS]
+
+    def effort_plan(self) -> EffortPlan:
+        """This agent's resolved effort mapping (see :func:`effort_args`).
+
+        An invalid level degrades to a no-op plan here: a run must not crash on
+        a bad config value that ``validate_config`` is responsible for rejecting.
+        """
+        try:
+            return effort_args(
+                self.spec.vendor, getattr(self.spec, "effort", None), self.spec.model
+            )
+        except ValueError:
+            return EffortPlan()
+
+    def list_models(self) -> list[str] | None:
+        """Model ids this agent could be pointed at, or None when unknown.
+
+        Diagnostics only (``jury --doctor --json``). The default is None — most
+        CLIs have no listing command — and every override is time-boxed and
+        fail-soft, because doctor must never hang or crash on a probe.
+        """
+        return None
 
     def detect_capabilities(self) -> dict:
         """Best-effort probe of this agent's version and capabilities.
@@ -469,12 +670,30 @@ class AgyAdapter(Adapter):
     # problem. Verified end to end against agy 1.1.22.
     _STREAM_ARGS = ("--input-format", "stream-json", "--output-format", "stream-json")
 
+    # `agy models` lists the model ids the CLI can be pointed at.
+    _MODELS_ARGS = ("models",)
+
     def build_argv(self, prompt: str) -> list[str]:
         del prompt
         argv = [self.spec.command, *self._STREAM_ARGS]
-        if self.spec.model:
-            argv += ["--model", self.spec.model]
+        # agy encodes reasoning effort in the model id (`…-flash` -> `…-flash-high`),
+        # so effort changes WHICH model is selected rather than adding a flag.
+        model = self.effort_plan().model or self.spec.model
+        if model:
+            argv += ["--model", model]
         return argv + _read_only_extra_args(self.spec)
+
+    def list_models(self) -> list[str] | None:
+        """Model ids from ``agy models`` (time-boxed, fail-soft; issue #662)."""
+        if not self.available():
+            return None
+        try:
+            proc = _spawn([self.spec.command, *self._MODELS_ARGS], None, _VERSION_PROBE_TIMEOUT)
+        except Exception:  # noqa: BLE001 - discovery is best-effort
+            return None
+        if proc.returncode != 0:
+            return None
+        return parse_model_list(proc.stdout or "") or None
 
     def _stdin_for(self, prompt: str) -> str | None:
         """One NDJSON frame carrying the prompt. Shape verified against 1.1.22."""
@@ -667,6 +886,10 @@ class LocalAdapter(Adapter):
             return exc.code < 500
         except Exception:  # noqa: BLE001 - unreachable server -> not available
             return False
+
+    def list_models(self) -> list[str] | None:
+        """Model ids the local server advertises, or None when it has none."""
+        return list_local_models(self.endpoint) or None
 
     def detect_capabilities(self) -> dict:
         reachable = self.available()
@@ -1022,12 +1245,23 @@ class AnthropicApiAdapter(_HostedApiAdapter):
         return _ANTHROPIC_API_URL
 
     def build_payload(self, prompt: str) -> dict:
-        """Build the Anthropic Messages API request body (pure)."""
-        return {
+        """Build the Anthropic Messages API request body (pure).
+
+        With an effort level configured, extended thinking is enabled with the
+        mapped token budget. ``max_tokens`` must exceed that budget (thinking
+        tokens are drawn from the same allowance), so it is raised to leave the
+        original response allowance on top of it.
+        """
+        payload = {
             "model": self.spec.model or "",
             "max_tokens": _HOSTED_API_MAX_TOKENS,
             "messages": [{"role": "user", "content": prompt}],
         }
+        payload.update(self.effort_plan().payload)
+        thinking = payload.get("thinking")
+        if isinstance(thinking, dict):
+            payload["max_tokens"] = int(thinking["budget_tokens"]) + _HOSTED_API_MAX_TOKENS
+        return payload
 
     def _headers(self) -> dict[str, str]:
         return {
@@ -1067,10 +1301,12 @@ class OpenAiApiAdapter(_HostedApiAdapter):
 
     def build_payload(self, prompt: str) -> dict:
         """Build the OpenAI chat-completions request body (pure)."""
-        return {
+        payload = {
             "model": self.spec.model or "",
             "messages": [{"role": "user", "content": prompt}],
         }
+        payload.update(self.effort_plan().payload)
+        return payload
 
     def _headers(self) -> dict[str, str]:
         return {
@@ -1132,7 +1368,9 @@ class GoogleApiAdapter(_HostedApiAdapter):
 
     def build_payload(self, prompt: str) -> dict:
         """Build the Gemini ``generateContent`` request body (pure)."""
-        return {"contents": [{"parts": [{"text": prompt}]}]}
+        payload: dict = {"contents": [{"parts": [{"text": prompt}]}]}
+        payload.update(self.effort_plan().payload)
+        return payload
 
     def _headers(self) -> dict[str, str]:
         return {
@@ -1259,10 +1497,12 @@ class GenericOpenAICompatibleAdapter(_HostedApiAdapter):
         return f"{endpoint}/chat/completions"
 
     def build_payload(self, prompt: str) -> dict:
-        return {
+        payload = {
             "model": self.spec.model or "",
             "messages": [{"role": "user", "content": prompt}],
         }
+        payload.update(self.effort_plan().payload)
+        return payload
 
     def _headers(self) -> dict[str, str]:
         hdrs = {
