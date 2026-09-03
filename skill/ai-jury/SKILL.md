@@ -54,7 +54,8 @@ reference (every flag + `jury.toml` key, with values and examples) is
 - `--chair <agent|rotate>` — who synthesizes the verdict.
 
 **Output & how much to show:**
-- `--format {markdown,json,sarif}` — report format (default markdown).
+- `--format {markdown,json,sarif,keel-reviews}` — report format (default markdown).
+  `keel-reviews` emits one review record per panelist (plus the chair) as a JSON array.
 - `-o <file>` — write the report to a file instead of stdout.
 - `--transcript` — full play-by-play (each agent's review, the debate, the chair's reasoning) instead of the summary.
 - `--verbose` — summary **and** the full transcript in one document.

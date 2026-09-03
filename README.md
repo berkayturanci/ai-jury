@@ -302,14 +302,15 @@ the per-agent deliberation stream — and is rejected with a pointed message.
 
 ## Output formats
 
-Use `--format {markdown,json,sarif}` (default `markdown`) to control what is
-written to stdout or `--output`. `--metadata-json` is independent and always
+Use `--format {markdown,json,sarif,keel-reviews}` (default `markdown`) to control
+what is written to stdout or `--output`. `--metadata-json` is independent and always
 writes the metadata block to its own file, and the `--ci` exit code is computed
 the same way regardless of format.
 
 ```bash
-jury --diff-file changes.diff --format json  -o report.json
-jury --diff-file changes.diff --format sarif -o report.sarif
+jury --diff-file changes.diff --format json         -o report.json
+jury --diff-file changes.diff --format sarif        -o report.sarif
+jury --diff-file changes.diff --format keel-reviews -o reviews.json
 ```
 
 ### JSON
@@ -318,10 +319,11 @@ A structured report with these top-level keys:
 
 | Key | Description |
 | --- | --- |
-| `schema_version` | Version of this JSON schema (currently `1.0`). |
+| `schema_version` | Version of this JSON schema (currently `1.1`). |
 | `metadata` | Run metadata (agents, rounds, context mode, redaction stats, wall-clock proxy). |
 | `findings` | All raw findings; each carries `severity`, `file`, `line`, `claim`, `evidence`, `suggested_fix`, `confidence`, `reviewer`. |
 | `consensus` | Per consensus group: `representative` finding, `agreement` count, `reviewers`, `bucket`, `verification_status`. |
+| `reviewers` | Per-panelist ballots — who said what, with vendor/model provenance — plus the chair. See [the report-format contract](docs/report-format.md#per-reviewer-ballots-reviewers). |
 | `verdicts` | Verification verdicts (`file`, `line`, `claim`, `status`, `reasoning`). |
 | `verdict` | The chair synthesis text, if any. |
 
@@ -332,6 +334,31 @@ This JSON is also a **replayable artifact**: feed it to `jury replay` (above) to
 the run in the terminal theater, or drag it onto the **"Load a real run"** panel on the
 [website](https://ai-jury.dev/) to play the real reviewers, findings,
 and verdict through the in-browser theater (fully client-side — nothing is uploaded).
+
+### keel-reviews
+
+A JSON **array** of per-reviewer review records — one per panelist that returned
+output, plus the chair as `reviewer: "chair"` — in the shape a consumer of
+head-pinned per-reviewer verdicts accepts (keel's `keel review --reviews <file>`):
+
+```json
+[
+  {
+    "reviewer": "claude",
+    "verdict": "REQUEST_CHANGES",
+    "scope": "Named 1 file(s): src/example.py.",
+    "findings": [
+      {"severity": "major", "path": "src/example.py", "line": 42, "message": "..."}
+    ],
+    "testing": "not stated",
+    "vendor": "anthropic",
+    "model": "claude-sonnet-4-5"
+  }
+]
+```
+
+See [the report-format contract](docs/report-format.md#the-keel-reviews-bundle)
+for how each field is derived.
 
 ### SARIF
 
@@ -688,7 +715,7 @@ accidental changes are caught in review.
 - *Config / policy:* `--config`, `--policy`, `--chair`, `--seed`, `--mock`,
   `--strict`, `--config-validate`, `--strict-config`
 - *Output:* `-o` / `--output`, `--write`, `--metadata-json`,
-  `--format {markdown,json,sarif}`, `--decision {chair,vote}`,
+  `--format {markdown,json,sarif,keel-reviews}`, `--decision {chair,vote}`,
   `--transcript` / `--no-transcript`, `--verbose`, `--live`, `-q` / `--quiet`
 - *GitHub posting:* `--post-summary` / `--post`, `--post-inline`,
   `--post-progress`, `--post-mode {single,phased}`, `--dry-run`, `--label`

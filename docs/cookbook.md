@@ -670,6 +670,26 @@ into Keel yet: per-panelist ballots (`--format keel-reviews`) are tracked in
 [ai-jury#661](https://github.com/berkayturanci/ai-jury/issues/661). Until
 those land, the `jury` gate above is the full extent of the Keel integration.
 
+### Use the panel as Keel's reviewers
+
+The gate above consumes the panel's *consolidated* findings. To have each
+panelist appear as its own reviewer instead — one head-pinned verdict per agent,
+carrying the vendor and model that produced it — render the run with
+`--format keel-reviews` and hand the file to `keel review`:
+
+```bash
+jury --pr 123 --format keel-reviews -o reviews.json
+keel review --reviews reviews.json --dry-run
+```
+
+The file is a JSON array of `{reviewer, verdict, scope, findings, testing,
+vendor, model}` records, one per panelist that returned output plus the chair as
+`reviewer: "chair"` — see [report-format.md](report-format.md#the-keel-reviews-bundle).
+Because every record carries its own `vendor`, a three-seat panel spread over
+three vendors satisfies Keel's distinct-vendor evidence requirement on its own.
+Producing the bundle is an `ai-jury` concern only; the Keel-side consumption of
+it is tracked in [keel#1015](https://github.com/berkayturanci/keel/issues/1015).
+
 ---
 
 ## 17. Add an AI Jury verified badge to your README

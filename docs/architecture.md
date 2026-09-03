@@ -23,7 +23,7 @@ agent* (adapters), so new vendors are a ~20-line addition.
                     └─────────────┘ └────────────┘  └────────────┘  └──────────────┘
                        cloud CLIs (subprocess, headless, parallel)   local / open-weight
                                                 │
-                                  consensus.py → report.py → markdown / json / sarif
+                                  consensus.py → report.py → markdown / json / sarif / keel-reviews
                                                           → stdout / -o / gh comment / CI gate
 ```
 
