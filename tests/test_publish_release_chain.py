@@ -210,9 +210,27 @@ class ReleasingWritesNothingToThisRepository(WorkflowScan):
         self.assertIn("releases/latest/download/ai-jury.rb", self.publish_code)
 
     def test_whether_the_tap_was_pushed_is_visible_to_the_next_job(self):
+        """The output must mean the push *happened*, not that a token existed.
+
+        A token is a precondition for trying; `gh api -X PUT` can still fail, or
+        the readback can differ. Sourcing the output from the push step's last
+        line means a skipped or failed push contributes nothing, and `verify`
+        takes its eventually-consistent path instead of demanding a tap that was
+        never written.
+        """
         outputs = "\n".join(self.publish)
-        self.assertIn("pushed-to-tap:", outputs)
-        self.assertIn("steps.tap.outputs.has_tap_token", outputs)
+        self.assertIn("pushed-to-tap: ${{ steps.tap-push.outputs.pushed }}", outputs)
+        self.assertIn("id: tap-push", outputs)
+        self.assertIn('echo "pushed=true" >> "$GITHUB_OUTPUT"', self.publish_code)
+
+    def test_the_render_step_waits_as_long_as_the_verify_job_does(self):
+        """It runs after the upload and before the Release; a short wait half-makes one.
+
+        Sixty seconds against PyPI's index, with the release only partly
+        created if it ran out, is the state this whole change removes.
+        """
+        waits = [line for line in self.publish_code.splitlines() if "seq 1 30" in line]
+        self.assertTrue(waits, "the render step no longer uses the five-minute budget")
 
     def test_the_rendered_formula_leaves_the_release(self):
         """Two credential-free routes out, neither of them `main`.

@@ -41,6 +41,9 @@ ONLINE = os.environ.get("AI_JURY_CHECK_EXTERNAL") == "1"
 TAP_REPOINTED = REPO_ROOT / "packaging" / "homebrew" / "TAP_REPOINTED"
 TAP_PATCH = REPO_ROOT / "packaging" / "homebrew" / "tap-sync-formula.patch"
 
+#: The marker's required line: the tap commit that applied the patch.
+MARKER_RE = re.compile(r"^tap-sync-formula: ([0-9a-f]{40})$", re.MULTILINE)
+
 #: The path the tap used to pull, and must not pull any more.
 RETIRED_TAP_SOURCE = "contents/Formula/ai-jury.rb"
 #: What it must pull instead.
@@ -72,6 +75,20 @@ def url_is_this_projects_sdist(url: str, version: str) -> bool:
     return url.startswith("https://files.pythonhosted.org/packages/") and url.endswith(
         f"/ai_jury-{version}.tar.gz"
     )
+
+
+def marker_records_a_tap_commit(text: str) -> str | None:
+    """The commit in `packaging/homebrew/TAP_REPOINTED`, or None.
+
+    A marker whose only requirement is "exists and is non-empty" is satisfied by
+    `echo x >`, which records that someone typed a command rather than that the
+    tap was changed. Requiring `tap-sync-formula: <40-hex>` does not make the
+    claim true — nothing offline can — but it makes it *checkable*: the sha names
+    a commit in the tap that a reviewer can open, and a wrong one is a specific,
+    falsifiable statement rather than a shrug.
+    """
+    found = MARKER_RE.search(text)
+    return found.group(1) if found else None
 
 
 class TheTemplateNamesNoDigest(unittest.TestCase):
@@ -162,15 +179,25 @@ class TheTapIsRepointedBeforeTheFormulaMayGo(unittest.TestCase):
     the tap's sync job fails on a schedule, which is the exact shape of #630 and
     the reason `docs/homebrew-release-chain.md` exists.
 
-    The tap cannot be changed from this repository, so the ordering is enforced
-    from here instead: the deletion is only allowed once someone records that the
-    tap has been repointed. `packaging/homebrew/tap-sync-formula.patch` is the
-    change, ready to apply; `packaging/homebrew/TAP_REPOINTED` is the record.
+    The tap cannot be changed from this repository, so the ordering is recorded
+    here instead. Be precise about what that buys, because two of these checks
+    run in different places:
 
-    This is a gate that a person must satisfy, deliberately, and it is satisfiable
-    at any time — unlike the digest gate that used to block every release pull
-    request, where no value of the file could pass. It exists for exactly one
-    merge and can be deleted with the marker afterwards.
+    * **Offline, and blocking on `main`** — `packaging/homebrew/TAP_REPOINTED`
+      must exist and must name the tap commit that applied the patch, as
+      `tap-sync-formula: <40-hex>`. This is a *claim in a reviewable form*, not
+      proof: nothing offline can read another repository. A reviewer can open the
+      sha; a wrong one is a falsifiable statement rather than a shrug.
+    * **Online, and advisory today** — `AI_JURY_CHECK_EXTERNAL=1` reads the tap's
+      live workflow and fails if it still names the retired path. That is the
+      real check, but it runs in `ci.yml`'s `Action pins match upstream` job,
+      which is **not** currently a required status check on `main`. Making it one
+      would turn the claim into an enforced fact; that is the operator's call and
+      is noted on the pull request rather than done here.
+
+    The gate is satisfiable at any moment — unlike the digest gate that used to
+    block every release pull request, where no value of the file could pass. It
+    and the marker exist for one merge and can be deleted afterwards.
     """
 
     def test_the_repointing_patch_ships_with_the_deletion(self):
@@ -181,28 +208,74 @@ class TheTapIsRepointedBeforeTheFormulaMayGo(unittest.TestCase):
         self.assertIn(RELEASE_ASSET, patch, "the patch does not point the tap at the asset")
         self.assertIn(f'-{" " * 12}"https://api.github.com/repos/', patch)
 
+    def test_the_patched_sync_tolerates_an_asset_that_is_not_published_yet(self):
+        """Between the repoint and the next tag there is no asset to fetch.
+
+        The gate orders repoint before merge, and the merge is what makes the
+        *next* release attach `ai-jury.rb`. So for one release cycle the asset
+        404s — and a patch that fails on that would trade the old red cron for a
+        new one, every thirty minutes, which is #630 again wearing a new url.
+        """
+        patch = TAP_PATCH.read_text(encoding="utf-8")
+        self.assertIn("found=false", patch)
+        self.assertIn("::notice::formula asset not published yet", patch)
+        self.assertIn("if: steps.fetch.outputs.found == 'true'", patch)
+
     def test_the_formula_may_only_be_absent_once_the_tap_is_repointed(self):
-        formula_gone = not (REPO_ROOT / "Formula" / "ai-jury.rb").exists()
-        if not formula_gone:
+        if (REPO_ROOT / "Formula" / "ai-jury.rb").exists():
             self.skipTest("the formula is still committed, so the tap's pull still resolves")
         self.assertTrue(
             TAP_REPOINTED.exists(),
             "Formula/ai-jury.rb is gone but the tap still pulls it every 30 minutes.\n"
-            "Apply packaging/homebrew/tap-sync-formula.patch to "
-            f"{HOMEBREW_TAP} (or set HOMEBREW_TAP_TOKEN here and make the push the\n"
-            "only path), then record it:\n"
-            "    echo '<tap commit sha> repointed at the release asset' "
+            f"Apply packaging/homebrew/tap-sync-formula.patch to {HOMEBREW_TAP},\n"
+            "then record the commit it produced:\n"
+            "    echo 'tap-sync-formula: <40-char tap commit sha>' "
             "> packaging/homebrew/TAP_REPOINTED",
         )
 
-    def test_the_marker_says_what_was_done(self):
-        """An empty file records that someone touched a file, not that they did the work."""
+    def test_the_marker_names_the_commit_that_did_it(self):
+        """`echo x >` satisfies "non-empty"; it does not satisfy a commit sha."""
         if not TAP_REPOINTED.exists():
             self.skipTest("the marker is not present yet")
-        self.assertTrue(
-            TAP_REPOINTED.read_text(encoding="utf-8").strip(),
-            "TAP_REPOINTED is empty; record what was changed and where",
+        text = TAP_REPOINTED.read_text(encoding="utf-8")
+        self.assertIsNotNone(
+            marker_records_a_tap_commit(text),
+            "TAP_REPOINTED must contain a line `tap-sync-formula: <40-char sha>` "
+            f"naming the {HOMEBREW_TAP} commit that applied the patch; got: {text!r}",
         )
+
+
+class TheMarkerRuleRejectsAGesture(unittest.TestCase):
+    """Offline, because the rule is what can be wrong — and it must be able to fail.
+
+    Exercised with strings rather than by creating the marker, so these cases run
+    whether or not the repointing has happened.
+    """
+
+    def test_a_commit_sha_is_accepted(self):
+        sha = "a" * 40
+        self.assertEqual(
+            marker_records_a_tap_commit(f"tap-sync-formula: {sha}\n"),
+            sha,
+        )
+
+    def test_the_line_may_sit_among_prose(self):
+        sha = "0123456789abcdef" * 2 + "01234567"
+        text = f"repointed 2026-09-03 by the operator\ntap-sync-formula: {sha}\nsee PR #673\n"
+        self.assertEqual(marker_records_a_tap_commit(text), sha)
+
+    def test_a_gesture_is_rejected(self):
+        for gesture in ("x\n", "done\n", "repointed the tap\n", ""):
+            with self.subTest(marker=gesture):
+                self.assertIsNone(marker_records_a_tap_commit(gesture))
+
+    def test_a_short_or_malformed_sha_is_rejected(self):
+        for bad in ("tap-sync-formula: abc123\n", "tap-sync-formula: " + "z" * 40 + "\n"):
+            with self.subTest(marker=bad):
+                self.assertIsNone(marker_records_a_tap_commit(bad))
+
+    def test_the_key_must_be_the_documented_one(self):
+        self.assertIsNone(marker_records_a_tap_commit("tap: " + "a" * 40 + "\n"))
 
 
 class InstallScriptTests(unittest.TestCase):

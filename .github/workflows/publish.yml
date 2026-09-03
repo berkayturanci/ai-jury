@@ -15,12 +15,16 @@ jobs:
     name: Build, Publish to PyPI, and Create GitHub Release
     runs-on: ubuntu-latest
     outputs:
-      # Whether the formula was pushed to the tap synchronously. The `verify`
-      # job below asks a different question of the tap depending on the answer:
-      # with a push, the tap must already carry this release; without one, the
-      # tap is eventually consistent on its own schedule and demanding it now
-      # would fail every release.
-      pushed-to-tap: ${{ steps.tap.outputs.has_tap_token }}
+      # Whether the formula was actually pushed to the tap in this run — set by
+      # the push step's last line, not by the presence of a token, which is only
+      # a precondition for trying. A skipped step contributes no output, so the
+      # value is empty and `verify` takes its eventually-consistent path.
+      #
+      # `verify` asks a different question of the tap depending on the answer:
+      # after a push the tap must already carry this release; without one the tap
+      # catches up on its own schedule, and demanding it now would fail every
+      # release over latency that is by design.
+      pushed-to-tap: ${{ steps.tap-push.outputs.pushed }}
     permissions:
       id-token: write       # PyPI trusted publishing (OIDC) + provenance attestation
       contents: write       # create the GitHub Release and upload assets
@@ -139,13 +143,18 @@ jobs:
           # version guessed the url as /packages/source/a/ai_jury/… — a layout
           # PyPI no longer serves, so it 404'd — and took the digest from the
           # locally built sdist rather than the uploaded one (#562).
+          #
+          # Five minutes, the same budget the `verify` job uses. It was sixty
+          # seconds, which is a worse failure than it looks: this step runs after
+          # the upload and before the GitHub Release, so a slow index left the
+          # release half-made — exactly the state this PR exists to remove.
           indexed=""
-          for attempt in 1 2 3 4 5 6; do
+          for attempt in $(seq 1 30); do
             if curl -fsSL "https://pypi.org/pypi/ai-jury/${tag_version}/json" -o pypi.json; then
               indexed=1
               break
             fi
-            echo "PyPI has not indexed ${tag_version} yet (attempt ${attempt}); retrying…"
+            echo "PyPI has not indexed ${tag_version} yet (attempt ${attempt}/30); retrying in 10s"
             sleep 10
           done
           if [ -z "$indexed" ]; then
@@ -238,6 +247,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Publish the formula to the Homebrew tap
+        id: tap-push
         # The repo's copy is not the copy brew installs — keel fixed its own
         # formula, went green, and users kept getting the broken one until the tap
         # was synced by hand (keel#787). There is no repo copy any more, so this
@@ -265,6 +275,9 @@ jobs:
           # A 200 from the push is not proof the tap serves the new bytes.
           gh api "repos/${TAP}/contents/Formula/ai-jury.rb" --jq .content | base64 -d > tap-formula.rb
           diff release/ai-jury.rb tap-formula.rb
+          # Last line, after the readback: `verify` may only demand the tap carry
+          # this release if the tap demonstrably has it.
+          echo "pushed=true" >> "$GITHUB_OUTPUT"
 
   # Nothing used to install the thing that was published (#666). The job above
   # re-hashes a tarball it downloaded; `ci.yml`'s external check runs on pushes to

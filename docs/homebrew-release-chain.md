@@ -68,7 +68,7 @@ Step 1 is the only write to `main`. Nothing after the tag commits anything here.
 This repo's tap has no `main` copy to pull, so the formula travels as a release
 asset (credential-free at both ends) with a direct push as the fast path.
 
-### The one thing the tap has to be told, and the gate that enforces it
+### The one thing the tap has to be told, and the gate that records it
 
 `berkayturanci/homebrew-ai-jury`'s `sync-formula.yml` pulled
 `berkayturanci/ai-jury` → `main` → `Formula/ai-jury.rb`, which no longer exists.
@@ -82,19 +82,32 @@ So the source moves to the release asset:
 https://github.com/berkayturanci/ai-jury/releases/latest/download/ai-jury.rb
 ```
 
-That change cannot be made from this repository, so the *ordering* is enforced
-from here instead. `packaging/homebrew/tap-sync-formula.patch` is the change,
-ready to `git apply`, and `tests/test_homebrew_formula.py` **fails while
-`Formula/ai-jury.rb` is absent and `packaging/homebrew/TAP_REPOINTED` does not
-exist**. The deletion cannot merge until someone records that the tap has been
-repointed; with `AI_JURY_CHECK_EXTERNAL=1` the same file reads the tap's live
-workflow and refuses the retired path, so the marker records something checked
-rather than something claimed.
+`packaging/homebrew/tap-sync-formula.patch` is that change, ready to `git apply`.
+It also makes the fetch tolerate an asset that does not exist yet, which matters
+for exactly one window: the ordering is *repoint → merge → next release*, and it
+is the merge that makes the next release attach the formula. Until then the asset
+404s, so the patched fetch records `found=false`, prints a `::notice::`, and skips
+the verify and commit steps. The tap keeps serving what it has and its cron stays
+green. A patch that failed on that 404 would have traded one red cron for another.
 
-This is a gate a person must satisfy deliberately, and it is satisfiable at any
+**What the gate actually enforces** is worth stating exactly, because the two
+halves run in different places:
+
+| Check | Where | Blocking on `main` today |
+|---|---|---|
+| `packaging/homebrew/TAP_REPOINTED` exists and names the tap commit as `tap-sync-formula: <40-hex>` | offline, default suite | **yes** |
+| the tap's live `sync-formula.yml` no longer names the retired path | `AI_JURY_CHECK_EXTERNAL=1` | **no** — it runs in `Action pins match upstream`, which is not a required check |
+
+The offline half is therefore a claim in a reviewable form, not proof: nothing
+offline can read another repository. Requiring the tap's commit sha rather than a
+non-empty file is what makes the claim checkable — a reviewer can open it, and a
+wrong sha is falsifiable rather than a shrug. The online half is the real check;
+making `Action pins match upstream` a required status check would turn the claim
+into an enforced fact, and that is the operator's decision.
+
+This is a gate a person satisfies deliberately, and it is satisfiable at any
 moment — unlike the digest gate that used to block every release pull request,
-where no value of the file could pass. It and the marker are single-use and can
-be deleted once the tap has been repointed for a release or two.
+where no value of the file could pass. It and the marker are single-use.
 
 Setting `HOMEBREW_TAP_TOKEN` in this repository is complementary: it makes the
 push path carry every release to the tap within seconds instead of within the
@@ -114,7 +127,7 @@ nothing pushed.
 | the tap's url downloads and hashes to its digest | `tests/test_homebrew_formula.py` | online | a tap `brew` would refuse (#633) |
 | the release path writes nothing to `main` | `tests/test_publish_release_chain.py` | offline | the second write being reintroduced |
 | the tap push is gated on its token | `tests/test_publish_release_chain.py` | offline | a 401 failing a release that already succeeded |
-| the tap was repointed before the formula went | `tests/test_homebrew_formula.py` | offline + online | the tap's sync 404ing every 30 minutes |
+| the tap repointing is recorded (offline) and true (online) | `tests/test_homebrew_formula.py` | offline claim + online check | the tap's sync 404ing every 30 minutes |
 | the published release installs and runs | `publish.yml` `verify` | online | a green release nobody can install (#666) |
 | what the tap actually serves | tap's `tests/` | online | anything the sync produced that cannot install |
 
