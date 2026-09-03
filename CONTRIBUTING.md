@@ -58,25 +58,48 @@ implemented as a project-specific wrapper outside this package.
 
 ## Bot-owned branches are read-only
 
-A pull request branch opened by an automation — `bolt-…`, `palette/…`,
-`sentinel/…`, `jules/…`, `dependabot/…` — is a **read-only input**. Do not rebase
-it, amend it, or push fixes to it: the bot pushes from its own checkout, so its
-next push replaces the branch with that stale copy and silently reverts anything
-that landed in between. On #648 that cost 25 files and two already-merged pull
-requests. Instead, re-land the reviewed changes on a fresh `fix/`, `perf/` or
-`docs/` branch cut from `main`, and close the bot's pull request with a link to
-the replacement.
+A pull request branch opened by an automation is a **read-only input**. The
+registered prefixes are `bolt`, `palette`, `sentinel`, `jules`, `dependabot`,
+`copilot` and `renovate`, in any spelling (`bolt-x`, `palette/x`, `sentinel.x`).
+Do not rebase such a branch, amend it, or push fixes to it: the bot pushes from
+its own checkout, so its next push replaces the branch with that stale copy and
+silently reverts anything that landed in between. On #648 that cost 25 files and
+two already-merged pull requests. Instead, re-land the reviewed changes on a
+fresh `fix/`, `perf/` or `docs/` branch cut from `main`, and close the bot's
+pull request with a link to the replacement.
+
+Branches a person drives from a working copy (`claude/…`, `codex/…`, `fix/…`)
+are deliberately outside the rule — it is about a branch something else holds the
+only copy of, not about who wrote the code.
 
 The `Bot push guard` job in [`ci.yml`](.github/workflows/ci.yml) enforces the
 half of this a machine can see: `scripts/bot_push_after_human_push_check.py`
 fails the run when a bot commit lands after a human commit on such a branch, and
-names both in the job summary. Note that these bots commit *as the repository
-owner*, so the guard recognises them by the branch prefix and by the subject
-marker each stamps (`⚡ Bolt:`, `🎨 Palette:`, `🛡️ Sentinel:`) rather than by the
-account. Adding a new automation means one entry in that script's
-`BOT_BRANCH_PREFIXES` and one in its `BOT_SUBJECT_MARKER`. Branches a person
-drives from a working copy (`claude/…`, `codex/…`, `fix/…`) are deliberately not
-covered — the rule is about a branch something else holds the only copy of.
+names both in the job summary. These bots commit *as the repository owner*, so it
+recognises them by the branch prefix and by the subject marker each stamps
+(`⚡ Bolt:`, `🎨 Palette:`, `🛡️ Sentinel:`) rather than by the account.
+
+**The job is not self-enforcing.** On a `pull_request` event GitHub runs the
+workflow from the pull request's own head, so a stale bot push that predates the
+guard — 28d9cc3c on #648 deleted 25 files, two workflows among them — removes the
+job and no check run is ever created for it. The fix is branch protection: `Bot
+push guard` must be listed in `main`'s **required status checks**, where a
+context that never reports blocks the merge. Its name is load-bearing once
+registered there; renaming the job leaves the old context required and never
+reported, which blocks every merge permanently.
+
+**Registering a new automation** means, in that script:
+
+1. its branch prefix in `BOT_BRANCH_PREFIXES` — mandatory, and it also supplies
+   the subject marker, since `BOT_SUBJECT_MARKER` is built from that table so the
+   two cannot drift apart;
+2. its login in `BOT_LOGINS` — mandatory *where the bot pushes under an account
+   of its own* (Dependabot, Renovate, Copilot); a `[bot]`-suffixed login or a
+   `Bot` account type is recognised without an entry.
+
+A bot registered in only one of the two is recognised half-way: on its branch but
+not on its commits, or the reverse. `tests/test_bot_push_guard.py` asserts the
+tables and this document agree.
 
 ## Dependency and tooling updates
 

@@ -103,8 +103,18 @@ jobs:
     # #648 silently reverted two merged PRs on 2026-09-03 while the only signal was
     # an unexplained red suite. This job names both commits instead (#676).
     #
+    # OPERATOR NOTE — this job is not self-enforcing. On `pull_request` both the
+    # workflow and the script are taken from the *pull request head*, so a stale
+    # bot push that predates the guard (28d9cc3c on #648 deleted 25 files, two
+    # workflows among them) removes the job and GitHub creates no check run for
+    # it at all. Nothing in this file can prevent that: the fix is branch
+    # protection. Add `Bot push guard` to main's required status checks — a
+    # required context that never reports blocks the merge, which is the whole
+    # point. The name is load-bearing once it is registered there; renaming it
+    # leaves the old context required and never reported, so do not.
+    #
     # Pull requests only: there is no branch to reason about on a push to main.
-    name: Bot push guard (bot-owned branch is read-only)
+    name: Bot push guard
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
@@ -118,13 +128,17 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: "3.13"
+      # The refs come from the event payload, so a branch the rule does not cover
+      # is answered without touching the API at all.
       - name: Detect a bot push following a human push
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           python scripts/bot_push_after_human_push_check.py \
             --repo "${{ github.repository }}" \
-            --pr "${{ github.event.pull_request.number }}"
+            --pr "${{ github.event.pull_request.number }}" \
+            --head-ref "${{ github.event.pull_request.head.ref }}" \
+            --base-ref "${{ github.event.pull_request.base.ref }}"
 
   coverage:
     name: Coverage gate

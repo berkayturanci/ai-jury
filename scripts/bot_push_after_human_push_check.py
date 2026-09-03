@@ -32,18 +32,40 @@ passed. What actually separates them is:
 Everything else on such a branch is a person, and a person's commit is the thing
 a later bot push destroys.
 
+What this check does and does not see
+-------------------------------------
+Its accuracy is bounded by the marker convention, not by the rule. Where the bots
+push under the maintainer's own account, the subject prefix is the *only* thing
+separating their commits from a person's, so:
+
+* **an unmarked bot push reads as a human commit** — Bolt did exactly that on
+  #632 — which turns the bot's own next push into a reported hit. One branch-wide
+  pass recovers the common case (an unmarked push later re-pushed *with* the
+  marker), and nothing recovers the rest;
+* **a human subject that opens with a bot's name** (``Bolt: revert the change``)
+  reads as a bot commit, so a human push wearing that shape is invisible;
+* **a rebase is only visible where the bot has its own account.** Where it commits
+  as the maintainer, a rebase leaves both identities on the same login and this
+  cannot tell it from a plain bot push;
+* **a merge is judged by its subject**, since the API reports a first-parent diff
+  for a clean merge exactly as it does for a hand-resolved one (verified: the
+  clean ``Merge branch 'main' into sentinel/…`` at 92a1d481 reports 4 files and
+  +252/-58). A merge of the base branch is therefore read as carrying no work of
+  its own even when someone resolved conflicts inside it.
+
 Measured against this repository's history — all 114 bot-owned pull requests —
 the check fires on two: #648, the incident, and #631, where a Sentinel push
-landed on top of a maintainer's `sec(cli)` fix in exactly the same shape. It errs
-toward firing on purpose: a false positive costs one re-land on a fresh branch,
-which is what the policy asks for on a bot branch anyway, and a false negative
-costs a silent revert nobody sees.
+landed on top of a maintainer's ``sec(cli)`` fix in exactly the same shape.
+Within the bound above it errs toward firing: a false positive costs one re-land
+on a fresh branch, which is what the policy asks for on a bot branch anyway, and
+a false negative costs a silent revert nobody sees.
 
 Design notes
 ------------
 Every decision is a pure function over the JSON GitHub already returns for
 ``/repos/{repo}/pulls/{n}`` and ``…/commits``; the only I/O is two injectable
-fetch callables. That is what lets the tests be fixture-driven and offline.
+fetch callables, and neither runs at all when the branch name says the rule does
+not apply. That is what lets the tests be fixture-driven and offline.
 """
 
 from __future__ import annotations
@@ -64,6 +86,11 @@ from pathlib import Path
 #: keyboard, who is expected to keep pushing to them. The distinction that
 #: matters is not "an agent wrote it" but "something else holds the only copy of
 #: this branch and will overwrite yours".
+#:
+#: This is the one table to edit when a new automation arrives: the subject
+#: markers below are built from it, so a registered bot cannot be recognised on
+#: its branch and missed on its commits. Add its login to :data:`BOT_LOGINS` as
+#: well when it pushes under an account of its own.
 BOT_BRANCH_PREFIXES = frozenset(
     {
         "bolt",
@@ -78,15 +105,34 @@ BOT_BRANCH_PREFIXES = frozenset(
 
 #: Logins belonging to automation, compared against the whole normalized login or
 #: name rather than a token of it — ``jules`` alone is also somebody's first name.
-#: GitHub App accounts already end in ``[bot]`` and are caught by shape.
+#: GitHub App accounts already end in ``[bot]`` and are caught by shape; this is
+#: for the spellings that do not.
 BOT_LOGINS = frozenset(
-    {"dependabot", "dependabot-preview", "google-labs-jules", "renovate", "renovate-bot"}
+    {
+        "copilot",
+        "copilot-swe-agent",
+        "dependabot",
+        "dependabot-preview",
+        "google-labs-jules",
+        "renovate",
+        "renovate-bot",
+    }
 )
 
 #: The name each bot stamps on its own commit subjects, after whatever emoji it
-#: leads with: ``⚡ Bolt: Optimize …``, ``🛡️ Sentinel: [CRITICAL] Fix …``.
+#: leads with: ``⚡ Bolt: Optimize …``, ``🛡️ Sentinel: [CRITICAL] Fix …``. Derived
+#: from :data:`BOT_BRANCH_PREFIXES` so the two cannot drift apart. A bare
+#: ``word:`` prefix is not enough — ``fix:`` and ``sec(cli):`` are how people
+#: write here — so only a registered name counts.
 BOT_SUBJECT_MARKER = re.compile(
-    r"^[^\w]*(bolt|palette|sentinel|jules|dependabot)\s*:",
+    r"^[^\w]*(?:" + "|".join(sorted(BOT_BRANCH_PREFIXES)) + r")\s*:",
+    re.IGNORECASE,
+)
+
+#: ``Merge branch 'main' into <branch>`` — GitHub's "Update branch" click, and
+#: ``git merge main`` by hand. Group 1 is the branch that was merged *in*.
+MERGE_OF_BRANCH = re.compile(
+    r"^merge\s+(?:remote-tracking\s+)?branch\s+'?([^\s']+)'?",
     re.IGNORECASE,
 )
 
@@ -105,22 +151,22 @@ def _tokens(value: str) -> set[str]:
 
 
 def _normalize(value: str) -> str:
-    """An identity string reduced to ``lower-case-words-joined-by-hyphens``."""
+    """An identity or branch string reduced to ``lower-case-words-joined-by-hyphens``."""
     return "-".join(t for t in _TOKEN_SPLIT.split(value.strip().lower()) if t)
 
 
-def first_branch_segment(head_ref: str) -> str:
-    """The leading ``/``- or ``-``-delimited segment of a branch name, lower-cased.
-
-    ``sentinel/fix-git-stderr-leak-1004…`` and ``sentinel-fix-workspace-write-33…``
-    are the same bot; both spellings are in this repository's history.
-    """
-    return re.split(r"[/-]", head_ref.strip().lower(), maxsplit=1)[0]
-
-
 def is_bot_branch(head_ref: str) -> bool:
-    """Whether a branch name marks the branch as owned by an automation."""
-    return first_branch_segment(head_ref) in BOT_BRANCH_PREFIXES
+    """Whether a branch name marks the branch as owned by an automation.
+
+    A prefix match on the normalized name, not a match on its first delimited
+    segment: ``sentinel/fix-…``, ``sentinel-fix-…``, ``bolt_optimize_…`` and
+    ``boltfix/…`` are all the same bot naming the same branch four ways, and a
+    guard that recognised only some of them would be off wherever it mattered
+    most. The over-match is the safe direction — it can only add a branch to the
+    rule, never drop one out of it.
+    """
+    normalized = _normalize(head_ref)
+    return any(normalized.startswith(prefix) for prefix in BOT_BRANCH_PREFIXES)
 
 
 @dataclass(frozen=True)
@@ -176,28 +222,38 @@ class Commit:
     def is_merge(self) -> bool:
         return len(self.parents) > 1
 
-    def kind(self) -> str:
+    def merges_in(self) -> str:
+        """The branch this commit merged in, from its subject, or ``""``."""
+        found = MERGE_OF_BRANCH.match(self.subject.strip())
+        return found.group(1).rsplit("/", 1)[-1].lower() if found else ""
+
+    def taken_over_by_a_person(self) -> bool:
+        """Whether somebody other than the author created this commit object.
+
+        A rebase or a cherry-pick: the content is still the author's, but a
+        person took hold of the branch to put it there. Only visible where the
+        two identities are distinguishable — where the bot commits *as* the
+        maintainer, both land on the same login and this is always false.
+        """
+        return (
+            not self.committer.is_neutral()
+            and not self.committer.same_person_as(self.author)
+            and not self.committer.is_bot_account()
+        )
+
+    def kind(self, base_ref: str = "") -> str:
         """``"bot"``, ``"human"`` or ``"neutral"`` for the commit as a whole.
 
-        A merge is ``neutral``: ``Merge branch 'main' into <bot-branch>`` is the
-        routine "Update branch" click, it carries no work of its own, and losing
-        it to a force-push costs nothing — treating it as a human push would fire
-        this guard on most of the bot pull requests in the history.
-
-        A commit whose author and committer are different people is ``human``
-        even when the *content* is the bot's: that is a rebase or a cherry-pick,
-        which is a person taking hold of the branch, and it is the only trace
-        left when a maintainer rebases a bot branch and adds nothing of their
-        own. It is a secondary signal, not a load-bearing one — where the bot
-        commits *as* the maintainer, as Bolt and Sentinel do here, a rebase
-        leaves both identities on the same account and this cannot see it.
+        A merge **of the base branch** is ``neutral``: ``Merge branch 'main' into
+        <bot-branch>`` is the routine "Update branch" click, it carries no work
+        of its own, and counting it as a human push would fire this guard on most
+        of the bot pull requests in the history. Only that shape is excused — any
+        other merge is classified like any other commit, so a merge of some third
+        branch, or one whose subject was rewritten, still registers as a person.
         """
-        if self.is_merge():
+        if self.is_merge() and base_ref and self.merges_in() == base_ref.rsplit("/", 1)[-1].lower():
             return "neutral"
-        rewritten_by_someone_else = not self.committer.is_neutral() and not (
-            self.committer.same_person_as(self.author)
-        )
-        if rewritten_by_someone_else and not self.committer.is_bot_account():
+        if self.taken_over_by_a_person():
             return "human"
         if BOT_SUBJECT_MARKER.match(self.subject) or self.author.is_bot_account():
             return "bot"
@@ -259,28 +315,47 @@ def parse_commits(payload: Sequence[object]) -> list[Commit]:
     return commits
 
 
-def classify_branch(commits: Sequence[Commit]) -> list[str]:
+def classify_branch(commits: Sequence[Commit], base_ref: str = "") -> list[str]:
     """Each commit's kind, with one correction only the whole branch can make.
 
     A bot sometimes pushes a commit *without* its own subject marker and then
     re-pushes the same change with one — #632 in this repository is exactly that,
     and read commit by commit the unmarked one is indistinguishable from a
     person's. Seeing the whole branch resolves it: a commit whose subject is a
-    later bot commit's subject with the marker taken off is that bot's own work.
+    **later** bot commit's subject with the marker taken off is that bot's own
+    first push of the same work.
+
+    Two guards keep the correction from running backwards, because it can only
+    ever turn a human commit into a bot one and so can only ever hide a hit:
+
+    * only *later* bot commits are consulted. Matching an earlier one would erase
+      a person's hand-redo of a bot commit that keeps its summary line — the
+      sequence ``⚡ Bolt: X`` / ``X`` / ``⚡ Bolt: X more`` is a human push between
+      two bot pushes, not three bot pushes;
+    * a commit somebody else re-created (:meth:`Commit.taken_over_by_a_person`)
+      is never reclassified. A maintainer rebasing Dependabot's branch and
+      Dependabot then force-pushing the same commit back is the incident's own
+      shape, and the subjects match by construction.
     """
-    kinds = [commit.kind() for commit in commits]
-    bot_subjects = {
-        BOT_SUBJECT_MARKER.sub("", commit.subject).strip().lower()
-        for commit, kind in zip(commits, kinds, strict=True)
-        if kind == "bot" and commit.subject.strip()
-    }
-    return [
-        "bot" if kind == "human" and commit.subject.strip().lower() in bot_subjects else kind
-        for commit, kind in zip(commits, kinds, strict=True)
-    ]
+    kinds = [commit.kind(base_ref) for commit in commits]
+    stripped = [BOT_SUBJECT_MARKER.sub("", commit.subject).strip().lower() for commit in commits]
+    for index, commit in enumerate(commits):
+        subject = commit.subject.strip().lower()
+        if kinds[index] != "human" or not subject or commit.taken_over_by_a_person():
+            continue
+        later_bot_subjects = {
+            stripped[later]
+            for later in range(index + 1, len(commits))
+            if kinds[later] == "bot" and stripped[later]
+        }
+        if subject in later_bot_subjects:
+            kinds[index] = "bot"
+    return kinds
 
 
-def find_bot_push_after_human(commits: Sequence[Commit]) -> tuple[Commit, Commit] | None:
+def find_bot_push_after_human(
+    commits: Sequence[Commit], base_ref: str = ""
+) -> tuple[Commit, Commit] | None:
     """The ``(human, bot)`` pair proving a bot pushed on top of a human's work.
 
     Reports the *last* human commit and the *first* bot commit after it: those two
@@ -288,7 +363,7 @@ def find_bot_push_after_human(commits: Sequence[Commit]) -> tuple[Commit, Commit
     order to find the tree that was replaced.
     """
     last_human: Commit | None = None
-    for commit, kind in zip(commits, classify_branch(commits), strict=True):
+    for commit, kind in zip(commits, classify_branch(commits, base_ref), strict=True):
         if kind == "human":
             last_human = commit
         elif kind == "bot" and last_human is not None:
@@ -296,7 +371,7 @@ def find_bot_push_after_human(commits: Sequence[Commit]) -> tuple[Commit, Commit
     return None
 
 
-def evaluate(head_ref: str, commits: Sequence[Commit]) -> tuple[bool, str]:
+def evaluate(head_ref: str, commits: Sequence[Commit], base_ref: str = "") -> tuple[bool, str]:
     """``(ok, report)`` for one pull request's branch.
 
     ``report`` is Markdown and is the whole of what the job writes to its step
@@ -305,12 +380,14 @@ def evaluate(head_ref: str, commits: Sequence[Commit]) -> tuple[bool, str]:
     """
     if not is_bot_branch(head_ref):
         return True, (
-            f"`{head_ref}` is not a bot-owned branch, so the read-only-branch rule does not apply."
+            f"Out of scope: `{head_ref}` is not a bot-owned branch — its name matches "
+            f"none of {', '.join(sorted(BOT_BRANCH_PREFIXES))} — so the read-only-branch "
+            "rule does not apply and no commits were read."
         )
     if not commits:
         return True, f"`{head_ref}` has no commits, so there is nothing to check."
 
-    hit = find_bot_push_after_human(commits)
+    hit = find_bot_push_after_human(commits, base_ref)
     if hit is None:
         return True, (
             f"`{head_ref}` is bot-owned, {len(commits)} commit(s), and no bot push "
@@ -360,13 +437,20 @@ def _gh(args: Sequence[str]) -> str:
     return res.stdout
 
 
-def fetch_head_ref(repo: str, pr: int) -> str:
-    """The pull request's branch name — the thing that decides bot ownership."""
+def fetch_refs(repo: str, pr: int) -> tuple[str, str]:
+    """``(head_ref, base_ref)`` for a pull request.
+
+    Only needed when the workflow did not pass them: on a ``pull_request`` event
+    both are already in the payload, and taking them from there means a branch
+    the rule does not cover costs no API call at all.
+    """
     data = json.loads(_gh(["api", f"repos/{repo}/pulls/{pr}"]))
     head = data.get("head") if isinstance(data, dict) else None
+    base = data.get("base") if isinstance(data, dict) else None
     if not isinstance(head, dict) or not head.get("ref"):
         raise RuntimeError(f"no head branch in the response for PR #{pr}")
-    return str(head["ref"])
+    base_ref = base.get("ref") if isinstance(base, dict) else ""
+    return str(head["ref"]), str(base_ref or "")
 
 
 def fetch_pr_commits(repo: str, pr: int) -> list[dict]:
@@ -386,7 +470,7 @@ def write_summary(report: str, summary_path: str | None) -> None:
 def main(
     argv: Sequence[str] | None = None,
     *,
-    fetch_ref: Callable[[str, int], str] = fetch_head_ref,
+    fetch_ref: Callable[[str, int], tuple[str, str]] = fetch_refs,
     fetch_commits: Callable[[str, int], list[dict]] = fetch_pr_commits,
 ) -> int:
     parser = argparse.ArgumentParser(
@@ -395,14 +479,30 @@ def main(
     parser.add_argument("--repo", required=True, help="owner/name of the repository")
     parser.add_argument("--pr", required=True, type=int, help="pull request number")
     parser.add_argument(
+        "--head-ref",
+        default="",
+        help="the pull request's branch, from the event payload; looked up if omitted",
+    )
+    parser.add_argument(
+        "--base-ref",
+        default="",
+        help="the branch being merged into, from the event payload; looked up if omitted",
+    )
+    parser.add_argument(
         "--summary-file",
         default=os.environ.get("GITHUB_STEP_SUMMARY"),
         help="append the report here (defaults to $GITHUB_STEP_SUMMARY)",
     )
     args = parser.parse_args(argv)
 
+    head_ref, base_ref = args.head_ref, args.base_ref
     try:
-        head_ref = fetch_ref(args.repo, args.pr)
+        if not head_ref:
+            head_ref, fetched_base = fetch_ref(args.repo, args.pr)
+            base_ref = base_ref or fetched_base
+        # A branch the rule does not cover is answered from its name alone, so a
+        # repository-read failure can only ever fail the pull requests the guard
+        # actually judges.
         payload = fetch_commits(args.repo, args.pr) if is_bot_branch(head_ref) else []
     except (OSError, RuntimeError, ValueError) as exc:
         # A guard that could not read the branch has not cleared it. Reporting
@@ -410,8 +510,15 @@ def main(
         print(f"[FAIL] Bot push guard could not read PR #{args.pr}: {exc}", file=sys.stderr)
         return 2
 
-    ok, report = evaluate(head_ref, parse_commits(payload))
-    write_summary(report, args.summary_file)
+    ok, report = evaluate(head_ref, parse_commits(payload), base_ref)
+    try:
+        write_summary(report, args.summary_file)
+    except OSError as exc:
+        # The verdict is not the summary's to change. Crashing here would exit
+        # non-zero out of a *passing* run and read exactly like a hit; going
+        # quiet would drop the report on a failing one. Say so, and carry on —
+        # the full report also goes to stderr below.
+        print(f"[warn] Bot push guard could not write the step summary: {exc}", file=sys.stderr)
 
     if ok:
         print(f"[OK] Bot push guard: {report}")
