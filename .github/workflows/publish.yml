@@ -5,8 +5,8 @@ on:
     tags:
       - "v*"
 
-# Least-privilege default for the whole workflow; the job below elevates only the
-# scopes it needs (OpenSSF Scorecard TokenPermissions).
+# Least-privilege default for the whole workflow; the jobs below elevate only the
+# scopes they need (OpenSSF Scorecard TokenPermissions).
 permissions:
   contents: read
 
@@ -17,7 +17,6 @@ jobs:
     permissions:
       id-token: write       # PyPI trusted publishing (OIDC) + provenance attestation
       contents: write       # create the GitHub Release and upload assets
-      pull-requests: write # open the formula follow-up when main refuses a push (#638)
       attestations: write   # build-provenance attestations (issue #25)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -82,6 +81,8 @@ jobs:
       # Checksums (issue #25): a single SHA256SUMS over every release artifact so
       # downloaders can verify integrity with `sha256sum -c SHA256SUMS`. Staged in
       # release/ next to the dists (kept out of dist/ for the same reason as above).
+      # The rendered formula is appended to this file by the step that produces it,
+      # since it cannot exist until PyPI has the sdist.
       - name: Generate checksums
         run: |
           cp dist/*.whl dist/*.tar.gz release/
@@ -107,6 +108,78 @@ jobs:
         with:
           skip-existing: true
 
+      # The formula is rendered here and committed nowhere (#645, #666).
+      #
+      # `url` and `sha256` cannot both be correct before this moment: PyPI's
+      # paths are content-addressed, so the url is not derivable, and the digest
+      # belongs to an artifact that does not exist until the line above uploads
+      # it. Every design that kept a copy of that pair in this repository needed
+      # a second write to `main` after the tag to make it true — a direct push
+      # that branch protection refused (#633), then a pull request that had to be
+      # opened, armed and landed (#638, #641, #643). Seven releases in a row
+      # needed a fix-forward commit.
+      #
+      # So nothing here is committed. The rendered formula is published to two
+      # places that are not this repository's `main`: the GitHub Release below
+      # (permanently at /releases/latest/download/ai-jury.rb) and the tap itself.
+      # A release is now exactly one write to `main`: the release pull request.
+      - name: Render the Homebrew formula from the published sdist
+        run: |
+          set -euo pipefail
+          tag_version="${GITHUB_REF_NAME#v}"
+
+          # Both values come from PyPI, neither is constructed. A previous
+          # version guessed the url as /packages/source/a/ai_jury/… — a layout
+          # PyPI no longer serves, so it 404'd — and took the digest from the
+          # locally built sdist rather than the uploaded one (#562).
+          indexed=""
+          for attempt in 1 2 3 4 5 6; do
+            if curl -fsSL "https://pypi.org/pypi/ai-jury/${tag_version}/json" -o pypi.json; then
+              indexed=1
+              break
+            fi
+            echo "PyPI has not indexed ${tag_version} yet (attempt ${attempt}); retrying…"
+            sleep 10
+          done
+          if [ -z "$indexed" ]; then
+            echo "::error::PyPI has no metadata for ${tag_version}; cannot render a formula"
+            exit 1
+          fi
+
+          read -r sdist_url sdist_sha <<EOF
+          $(python3 -c "
+          import json
+          urls = json.load(open('pypi.json'))['urls']
+          sdist = next(f for f in urls if f['packagetype'] == 'sdist')
+          print(sdist['url'], sdist['digests']['sha256'])")
+          EOF
+
+          # Prove it before publishing anywhere. A tap one release behind still
+          # installs; a tap holding an uninstallable formula does not.
+          curl -fsSL "$sdist_url" -o published-sdist.tar.gz
+          got="$(sha256sum published-sdist.tar.gz | cut -d' ' -f1)"
+          if [ "$got" != "$sdist_sha" ]; then
+            echo "::error::PyPI's declared digest is not the artifact's; refusing to publish a formula"
+            exit 1
+          fi
+
+          mkdir -p release
+          sed -e "s|@URL@|${sdist_url}|g" \
+              -e "s|@SHA256@|${sdist_sha}|g" \
+              -e "s|@VERSION@|${tag_version}|g" \
+              packaging/homebrew/ai-jury.rb.template > release/ai-jury.rb
+
+          # A template placeholder that survived rendering would ship a formula
+          # that cannot parse, and `sed` reports success either way.
+          left="$(grep -oE '@[A-Z0-9_]+@' release/ai-jury.rb || true)"
+          if [ -n "$left" ]; then
+            echo "::error::unrendered placeholder(s) in the formula: ${left}"
+            exit 1
+          fi
+          ( cd release && sha256sum ai-jury.rb >> SHA256SUMS )
+          echo "formula rendered and verified against ${sdist_url}"
+          cat release/ai-jury.rb
+
       - name: Create GitHub Release and Upload Packages
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228  # v3.0.2
         with:
@@ -115,6 +188,7 @@ jobs:
             release/*.tar.gz
             release/sbom.cdx.json
             release/SHA256SUMS
+            release/ai-jury.rb
           name: Release ${{ github.ref_name }}
           draft: false
           prerelease: false
@@ -122,141 +196,20 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Homebrew formula sync (issue #527): update Formula/ai-jury.rb with the
-      # newly-published release tarball checksum and commit back to main.
-      - name: Update in-repo Homebrew Formula
-        env:
-          # `gh pr create` below; scoped to this repo.
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          tag_version="${GITHUB_REF_NAME#v}"
-
-          # Both values come from PyPI, neither is constructed. The previous
-          # version guessed the url as /packages/source/a/ai_jury/… — a layout
-          # PyPI no longer serves, so it 404'd — and took the digest from the
-          # locally built sdist, which is not byte-identical to the uploaded one.
-          # Every release produced an uninstallable formula that way (#562).
-          # PyPI is the only authority for either: the path is content-addressed
-          # and cannot be derived, and the digest has to belong to the artifact
-          # brew will download.
-          for attempt in 1 2 3 4 5 6; do
-            curl -fsSL "https://pypi.org/pypi/ai-jury/${tag_version}/json" -o /tmp/pypi.json && break
-            echo "PyPI has not indexed ${tag_version} yet (attempt ${attempt}); retrying…"
-            sleep 10
-          done
-
-          read -r sdist_url sdist_sha <<EOF
-          $(python3 -c "
-          import json
-          urls = json.load(open('/tmp/pypi.json'))['urls']
-          sdist = next(f for f in urls if f['packagetype'] == 'sdist')
-          print(sdist['url'], sdist['digests']['sha256'])")
-          EOF
-
-          sed -i.bak "s|url \".*\"|url \"${sdist_url}\"|" Formula/ai-jury.rb
-          sed -i.bak "s|sha256 \".*\"|sha256 \"${sdist_sha}\"|" Formula/ai-jury.rb
-          sed -i.bak "s|jury .*\", shell_output|jury ${tag_version}\", shell_output|" Formula/ai-jury.rb
-          rm -f Formula/ai-jury.rb.bak
-
-          # Prove it before publishing anywhere. A tap one release behind still
-          # installs; a tap holding an uninstallable formula does not.
-          curl -fsSL "$sdist_url" -o /tmp/sdist.tar.gz
-          got="$(sha256sum /tmp/sdist.tar.gz | cut -d' ' -f1)"
-          if [ "$got" != "$sdist_sha" ]; then
-            echo "::error::formula sha256 does not match the artifact it points at"
-            exit 1
-          fi
-          echo "formula verified against ${sdist_url}"
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Formula/ai-jury.rb
-          if ! git diff --cached --quiet; then
-            # No `[skip ci]`. It was right while this commit went straight to
-            # `main` — a formula bump needs no re-run. It is wrong now that the
-            # commit heads a pull request: with CI skipped the ten required
-            # checks never report, the PR can never merge, and the tap keeps
-            # failing hourly. That is the failure this whole step exists to end.
-            git commit -m "chore(homebrew): Update Formula/ai-jury.rb to v${tag_version}"
-            # Branch protection refuses a direct push to main (10 required
-            # checks), and the `|| true` that used to swallow that refusal is
-            # why a stale digest shipped with 1.15.0 and the tap then refused
-            # every sync for a day — in a different repository, hourly, long
-            # after anyone was still watching the release.
-            #
-            # So the fix arrives the only way it can pass protection: as a pull
-            # request, opened here rather than remembered by a human. The
-            # sibling repo forgot exactly this follow-up for its own 1.19.1.
-            branch="chore/formula-${tag_version}"
-            # Fully qualified. `HEAD:${branch}` is refused from the detached HEAD
-            # a tag build checks out: git cannot infer the remote namespace
-            # when the source is a bare commit rather than a branch, so it
-            # asks to be told, and the first live run of this step hit it.
-            if git push -f origin "HEAD:refs/heads/${branch}" 2>/tmp/push.err; then
-              if gh pr create --base main --head "$branch" \
-                   --title "chore(homebrew): Formula digest for v${tag_version}" \
-                   --body "$(printf '%s\n' \
-                     "Opened by the publish workflow: the sdist digest is only knowable" \
-                     "once the release exists, so the formula in the repo is one release" \
-                     "behind until this merges." \
-                     "" \
-                     "| | |" \
-                     "|---|---|" \
-                     "| url | \`${sdist_url}\` |" \
-                     "| sha256 | \`${sdist_sha}\` |" \
-                     "" \
-                     "The tap syncs from \`main\`, so until this merges \`brew upgrade\`" \
-                     "does not see v${tag_version}.")" 2>/tmp/pr.err; then
-                echo "formula follow-up PR opened on ${branch}"
-                # Arm it to land on its own once CI has re-verified the digest
-                # against the published sdist. main requires no approvals, only
-                # checks, so nothing is bypassed — this removes the wait between
-                # "green" and "someone noticed", which is the last manual step
-                # in the chain and the one that left the tap failing every half
-                # hour for a day (#633). Best-effort: with the repository
-                # setting off, the pull request simply waits for a person.
-                gh pr merge --auto --squash "$branch" \
-                  || echo "::notice::auto-merge unavailable; land ${branch} to unblock the tap"
-              else
-                sed 's/^/  /' /tmp/pr.err
-                echo "::notice::Branch ${branch} is pushed; a pull request for it already exists."
-              fi
-            else
-              echo "::error title=Formula not committed::Could not push ${branch}:"
-              sed 's/^/  /' /tmp/push.err
-              # An `::error::` rather than a non-zero exit: PyPI and the GitHub
-              # Release have already succeeded by this point, and failing here
-              # would report a good release as broken. The hard stop is the
-              # formula digest test in CI, which turns the next pull request red.
-              {
-                echo "### ⚠️ Homebrew formula not committed"
-                echo
-                echo "The digest was computed correctly but could not be pushed."
-                echo "Set \`sha256\` in \`Formula/ai-jury.rb\` to \`${sdist_sha}\`,"
-                echo "or \`brew upgrade\` will not see this release."
-              } >> "$GITHUB_STEP_SUMMARY"
-            fi
-          fi
-
       - name: Publish the formula to the Homebrew tap
         # The repo's copy is not the copy brew installs — keel fixed its own
         # formula, went green, and users kept getting the broken one until the tap
-        # was synced by hand (keel#787). So the tap must be updated, but *this*
-        # step is no longer the only thing that can do it, and therefore no longer
-        # fails the release.
+        # was synced by hand (keel#787). There is no repo copy any more, so this
+        # is the fast path to the only copy that matters.
         #
         # A workflow's GITHUB_TOKEN is scoped to its own repository, so pushing to
         # the tap needs a PAT. Rather than make every release depend on one being
-        # present, the tap pulls: berkayturanci/homebrew-ai-jury runs a scheduled
-        # workflow that fetches this formula, verifies its url and digest against
-        # the artifact, and commits when they differ. Reading a public repo needs
-        # no credential, and the token that writes the tap is the tap's own.
-        #
-        # This step stays as the *fast path*: with HOMEBREW_TAP_TOKEN set the tap
-        # updates within seconds instead of within the schedule interval. Without
-        # it the release completes and the tap catches up on its own, so the
-        # failure mode is latency rather than a red release or a stale tap.
+        # present, the release itself carries the formula: the step above attaches
+        # it to the GitHub Release, so the tap can pull
+        # /releases/latest/download/ai-jury.rb with no credential at either end.
+        # With HOMEBREW_TAP_TOKEN set the tap updates within seconds instead of
+        # within its schedule interval, so the failure mode without it is latency
+        # rather than a red release or a stale tap.
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           TAP: berkayturanci/homebrew-ai-jury
@@ -269,8 +222,173 @@ jobs:
           gh api "repos/${TAP}/contents/Formula/ai-jury.rb" --jq .sha > .tap-sha || echo "" > .tap-sha
           gh api -X PUT "repos/${TAP}/contents/Formula/ai-jury.rb" \
             -f message="chore: sync formula for ${GITHUB_REF_NAME} (from ${GITHUB_REPOSITORY}@${GITHUB_SHA})" \
-            -f content="$(base64 -w0 Formula/ai-jury.rb)" \
+            -f content="$(base64 -w0 release/ai-jury.rb)" \
             $( [ -s .tap-sha ] && echo -f sha="$(cat .tap-sha)" )
           # A 200 from the push is not proof the tap serves the new bytes.
           gh api "repos/${TAP}/contents/Formula/ai-jury.rb" --jq .content | base64 -d > tap-formula.rb
-          diff Formula/ai-jury.rb tap-formula.rb
+          diff release/ai-jury.rb tap-formula.rb
+
+  # Nothing used to install the thing that was published (#666). The job above
+  # re-hashes a tarball it downloaded; `ci.yml`'s external check runs on pushes to
+  # `main`, not on the tag. So a release could be green while `pip install
+  # ai-jury==<tag>` produced something that would not start — which is the only
+  # question a release actually has to answer.
+  #
+  # This job asks it the way a user does: a clean interpreter, a clean venv, the
+  # published wheel from the index, and then the CLI's own entry point.
+  verify:
+    name: Verify the published release installs and runs
+    needs: build-n-publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write   # open/update `release-broken: <tag>` when this job fails
+    env:
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.13"
+
+      # Bounded, not unbounded: publishing is synchronous but indexing is not,
+      # and a job that waits forever for a release that will never appear is
+      # indistinguishable from a hung runner.
+      - name: Wait for PyPI to serve the release
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          for attempt in $(seq 1 30); do
+            if curl -fsS -o /dev/null "https://pypi.org/pypi/ai-jury/${version}/json"; then
+              echo "PyPI serves ${version}"
+              exit 0
+            fi
+            echo "not indexed yet (attempt ${attempt}/30); retrying in 10s"
+            sleep 10
+          done
+          echo "::error::PyPI did not serve ${version} within five minutes"
+          exit 1
+
+      - name: Install the published release into a clean virtualenv
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          python -m venv /tmp/verify-venv
+          /tmp/verify-venv/bin/python -m pip install --upgrade pip
+          # The JSON API can know a version before the installer index serves it.
+          installed=""
+          for attempt in 1 2 3 4 5 6; do
+            if /tmp/verify-venv/bin/python -m pip install "ai-jury==${version}"; then
+              installed=1
+              break
+            fi
+            echo "pip cannot resolve ${version} yet (attempt ${attempt}/6); retrying in 10s"
+            sleep 10
+          done
+          if [ -z "$installed" ]; then
+            echo "::error::pip could not install ai-jury==${version} from PyPI"
+            exit 1
+          fi
+          /tmp/verify-venv/bin/python -m pip show ai-jury
+
+      - name: The installed CLI reports the tag it was published under
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          reported="$(/tmp/verify-venv/bin/jury --version)"
+          echo "jury --version → ${reported}"
+          if [ "$reported" != "jury ${version}" ]; then
+            echo "::error::the installed CLI reports '${reported}', not 'jury ${version}'"
+            exit 1
+          fi
+
+      # `--doctor` imports the adapter layer and probes the environment, so it
+      # exercises far more of the package than `--version`, and it is what a user
+      # is told to run first. It must exit 0 with no agent CLI present.
+      - name: The installed CLI runs its own diagnostics
+        run: /tmp/verify-venv/bin/jury --doctor
+
+      # No `brew` here on purpose: installing Homebrew on a Linux runner to read
+      # one field is slower and more fragile than reading the field. What matters
+      # is that the digest the tap tells `brew` to expect is the digest of the
+      # sdist PyPI actually serves.
+      - name: The tap's formula carries the digest of the published sdist
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAP: berkayturanci/homebrew-ai-jury
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          curl -fsSL "https://pypi.org/pypi/ai-jury/${version}/json" -o pypi.json
+          read -r sdist_url sdist_sha <<EOF
+          $(python3 -c "
+          import json
+          urls = json.load(open('pypi.json'))['urls']
+          sdist = next(f for f in urls if f['packagetype'] == 'sdist')
+          print(sdist['url'], sdist['digests']['sha256'])")
+          EOF
+          curl -fsSL "$sdist_url" -o published-sdist.tar.gz
+          got="$(sha256sum published-sdist.tar.gz | cut -d' ' -f1)"
+          if [ "$got" != "$sdist_sha" ]; then
+            echo "::error::the sdist PyPI serves does not hash to the digest PyPI declares"
+            exit 1
+          fi
+
+          tap_sha=""
+          for attempt in $(seq 1 10); do
+            gh api "repos/${TAP}/contents/Formula/ai-jury.rb" \
+              -H "Accept: application/vnd.github.raw" > tap-formula.rb || true
+            if grep -qF "ai_jury-${version}.tar.gz" tap-formula.rb; then
+              tap_sha="$(grep -m1 -oE 'sha256 "[0-9a-f]{64}"' tap-formula.rb | cut -d'"' -f2)"
+              break
+            fi
+            echo "the tap does not carry ${version} yet (attempt ${attempt}/10); retrying in 15s"
+            sleep 15
+          done
+          if [ -z "$tap_sha" ]; then
+            echo "::error::${TAP} does not serve ${version}; brew upgrade will not see this release"
+            exit 1
+          fi
+          if [ "$tap_sha" != "$got" ]; then
+            echo "::error::the tap tells brew to expect ${tap_sha}; the sdist hashes to ${got}"
+            exit 1
+          fi
+          echo "the tap is verified against ${sdist_url}"
+
+      # A failed check that only reddens a workflow nobody is watching is the
+      # failure mode this whole chain kept repeating. So the failure becomes a
+      # thing on a list. Deduped by title so a re-run comments instead of opening
+      # a second issue for the same tag.
+      - name: Open or update the release-broken issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          title="release-broken: ${GITHUB_REF_NAME}"
+          body="$(printf '%s\n' \
+            "Post-publish verification of \`${GITHUB_REF_NAME}\` failed." \
+            "" \
+            "Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            "" \
+            "This job installs the release the way a user does — a clean virtualenv," \
+            "\`pip install ai-jury==${GITHUB_REF_NAME#v}\` from the index — and then checks that" \
+            "\`jury --version\` equals the tag, that \`jury --doctor\` runs, and that the digest" \
+            "the Homebrew tap tells \`brew\` to expect is the digest of the sdist PyPI serves." \
+            "" \
+            "A failure here means the published release is broken for someone, not that a" \
+            "check is fussy. PyPI does not allow re-uploading a version: yank it and ship the" \
+            "next patch (see docs/releasing.md).")"
+          # `|| true`: a hiccup listing issues must not stop the report being
+          # filed. Worst case a duplicate is opened, which is strictly better
+          # than a broken release with nothing on a list.
+          existing="$(gh issue list --state open --search "\"${title}\" in:title" \
+            --json number,title --jq "[.[] | select(.title == \"${title}\")][0].number // empty" \
+            || true)"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+            echo "commented on #${existing}"
+          else
+            gh issue create --title "$title" --body "$body" \
+              --label "area:release" --label "bug" --label "priority:high"
+          fi
