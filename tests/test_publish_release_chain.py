@@ -1170,6 +1170,33 @@ class EveryJobHasACeiling(WorkflowScan):
                     f"{self.ceiling(name)}s ceiling; a job cancelled that way files no report",
                 )
 
+    def test_the_prose_a_maintainer_reads_states_the_ceiling_the_file_sets(self):
+        """The drift this class exists to prevent, one document further out.
+
+        `docs/releasing.md` restates both numbers — the ceiling and the sum it
+        must clear — and it is where somebody chooses the next one. Raising the
+        ceiling in the workflow and leaving the old minutes in the prose is how
+        a reader concludes the ceiling sits *below* the sum, which is the
+        cancellation this whole change is against. It happened on this branch.
+        """
+        prose = (REPO_ROOT / "docs" / "releasing.md").read_text(encoding="utf-8")
+        budget = script_budget((REPO_ROOT / WAIT_SCRIPT).read_text(encoding="utf-8"))
+        for name in self.jobs:
+            with self.subTest(job=name):
+                minutes = self.ceiling(name) // 60
+                # `assertTrue`, not `assertIn`: the haystack is a whole document,
+                # and a failure that prints it buries the one number that is wrong.
+                self.assertTrue(
+                    str(minutes) in prose,
+                    f"docs/releasing.md never states {name}'s {minutes}-minute ceiling",
+                )
+        spend = wait_seconds(self.verify_code, budget)
+        self.assertTrue(
+            f"{spend}s" in prose,
+            f"docs/releasing.md states a spend for `verify` that is not the {spend}s "
+            "the workflow now permits",
+        )
+
     def test_the_sum_it_checks_against_is_not_an_empty_one(self):
         """Vacuity again: `0 < any ceiling`, so a sum of nothing would pass.
 

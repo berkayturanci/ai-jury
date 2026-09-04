@@ -67,14 +67,16 @@ distribution that never appeared; re-running the job is the recovery, and
 The same rule covers every other command in that workflow that opens a
 connection, because the index converging is not the file server answering: the
 sdist downloads carry `--connect-timeout` and `--max-time`
-(`SDIST_CONNECT_TIMEOUT`/`SDIST_MAX_TIME`, 10s and 120s by default), every `pip`
-carries `--timeout`, and every `gh` call is wrapped in `timeout`, which is the
-only bound `gh` accepts. `0` is refused for either sdist timeout rather than
+(`SDIST_CONNECT_TIMEOUT`/`SDIST_MAX_TIME`, 10s and 120s by default), and every
+`pip install` and every `gh` call is wrapped in `timeout`. `gh` accepts no other
+bound at all; `pip` appears to, but its `--timeout` limits one quiet read rather
+than the call, so a peer that sends a byte inside every window is unbounded by
+it. The wrapper is the only bound that is both real and countable here. `0` is refused for either sdist timeout rather than
 passed on, because `${SDIST_MAX_TIME:-120}` substitutes only when the variable is
 unset or empty and curl reads `0` as "no limit" — the unbounded download, reached
 through the bound.
 
-Underneath them both jobs set `timeout-minutes` — 30 for the publish job, 35 for
+Underneath them both jobs set `timeout-minutes` — 30 for the publish job, 45 for
 `verify` — which bounds the actions the workflow `uses:` and anything a future
 step forgets to bound. That ceiling is a backstop and not the mechanism: a job
 stopped by `timeout-minutes` is cancelled, so `verify`'s failure step does not
