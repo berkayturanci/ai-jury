@@ -26,6 +26,15 @@ inputs:
     description: "Additional arguments to pass to the jury CLI (e.g. '--post --auto')"
     required: false
     default: "--auto --post"
+  min-vendors:
+    description: >-
+      Fail the run (exit 3) unless at least this many distinct vendors actually
+      CONTRIBUTED a review. 0 opts out. Defaults to 2, so a consumer of this
+      Action cannot silently inherit a panel that collapsed to one vendor
+      (#682) — an agent can be installed, probe clean, and return nothing.
+      Ignored when `args` already names --min-vendors or --no-min-vendors.
+    required: false
+    default: "2"
   version:
     description: "ai-jury package version to install (defaults to latest)"
     required: false
@@ -63,11 +72,27 @@ runs:
         ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
         GEMINI_API_KEY: ${{ inputs.gemini-api-key }}
         INPUT_ARGS: ${{ inputs.args }}
+        INPUT_MIN_VENDORS: ${{ inputs.min-vendors }}
         PR_NUM: ${{ github.event.pull_request.number }}
         BASE_REF: ${{ github.base_ref }}
       run: |
+        # The cross-vendor guard, made explicit for Action consumers (#682).
+        # `args` wins when it already says something about it, so a caller who
+        # has decided is never overridden. Validated as digits before it is
+        # word-split into the command line: the value is caller-supplied, and
+        # `min-vendors: "--post"` would otherwise smuggle in a flag.
+        case "$INPUT_MIN_VENDORS" in
+          ''|*[!0-9]*)
+            echo "ai-jury: min-vendors must be a non-negative integer" >&2
+            exit 2
+            ;;
+        esac
+        GUARD="--min-vendors $INPUT_MIN_VENDORS"
+        case " $INPUT_ARGS " in
+          *" --min-vendors "*|*" --no-min-vendors "*) GUARD="" ;;
+        esac
         if [ -n "$PR_NUM" ] && [ "$PR_NUM" != "null" ]; then
-          jury --pr "$PR_NUM" $INPUT_ARGS
+          jury --pr "$PR_NUM" $INPUT_ARGS $GUARD
         else
-          git diff "origin/$BASE_REF...HEAD" | jury --diff-file - $INPUT_ARGS
+          git diff "origin/$BASE_REF...HEAD" | jury --diff-file - $INPUT_ARGS $GUARD
         fi

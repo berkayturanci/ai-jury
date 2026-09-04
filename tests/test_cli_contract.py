@@ -86,6 +86,7 @@ DOCUMENTED_FLAGS = [
     "--mock",
     "--strict",
     "--min-vendors",
+    "--no-min-vendors",
     "--verify",
     "--no-verify",
     "--doctor",

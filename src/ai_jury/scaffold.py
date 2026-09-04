@@ -269,6 +269,18 @@ _AGENT_KEY_ORDER = ("name", "vendor", "command", "endpoint", "model", "effort", 
 _EFFORT_HINT = '# effort = "medium"    # low | medium | high'
 
 
+#: Written under a scaffolded ``[jury.ci]`` (issue #682). Commented out, because
+#: the shipped default already IS 2 — the hint exists so a reader discovers the
+#: knob and its opt-out here rather than only after a run exits 3.
+_MIN_VENDORS_HINT = (
+    "# Distinct vendors that must have contributed a review before the run can",
+    "# stand as cross-vendor consensus (exit 3 otherwise). Defaults to 2 and only",
+    "# applies when 2+ vendors are enabled; set 0 (or pass --no-min-vendors) to",
+    "# accept a panel that collapsed to one vendor.",
+    "# min_vendors = 2",
+)
+
+
 def render_toml(config: dict) -> str:
     """Render a jury config dict to ``jury.toml`` text (minimal, typed).
 
@@ -302,6 +314,7 @@ def render_toml(config: dict) -> str:
     if ci and "fail_on" in ci:
         lines.append("[jury.ci]")
         lines.append(f"fail_on = {_render_value(ci['fail_on'])}")
+        lines.extend(_MIN_VENDORS_HINT)
         lines.append("")
 
     for agent in config["agent"]:

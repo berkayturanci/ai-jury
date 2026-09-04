@@ -68,6 +68,13 @@ verify = true
 [jury.ci]
 fail_on = ["critical", "major"]
 ignore_unverified = true
+# Cross-vendor guard (#682): distinct vendors that must have CONTRIBUTED a review
+# before the run may stand as cross-vendor consensus. Below it the run exits 3
+# instead of 0 — an agent can be installed, probe clean, and still return nothing
+# (#635), which is how a three-vendor panel silently becomes one. It only applies
+# when 2+ distinct vendors are enabled, so a deliberate single-agent setup is
+# untouched. Set 0 (or pass --no-min-vendors) to accept a collapsed panel.
+min_vendors = 2
 
 # Context policy: what gets sent to each agent, and whether secrets are redacted.
 # mode = "diff-only" sends only the diff; "expanded" also sends PR context.

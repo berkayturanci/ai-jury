@@ -7,9 +7,10 @@ usage: jury [-h] [--pr PR] [--issue ISSUE] [--repo REPO]
             [--total-timeout TOTAL_TIMEOUT] [--phase-timeout PHASE_TIMEOUT]
             [--retries RETRIES] [--max-diff-bytes MAX_DIFF_BYTES] [--chunk]
             [--no-chunk] [--exclude GLOB] [--include GLOB] [--seed SEED]
-            [--chair CHAIR] [--mock] [--strict] [--min-vendors N] [--verify]
-            [--no-verify] [--doctor] [--json] [--write WRITE]
-            [--effort {low,medium,high}] [-o OUTPUT] [--metadata-json PATH]
+            [--chair CHAIR] [--mock] [--strict] [--min-vendors N]
+            [--no-min-vendors] [--verify] [--no-verify] [--doctor] [--json]
+            [--write WRITE] [--effort {low,medium,high}] [-o OUTPUT]
+            [--metadata-json PATH]
             [--format {markdown,json,sarif,keel-reviews}]
             [--decision {chair,vote}] [--transcript] [--no-transcript]
             [--verbose] [--live] [--theater] [--no-theater]
@@ -65,9 +66,13 @@ options:
   --mock                offline demo: use deterministic mock agents
   --strict              fail if any configured agent CLI is missing
   --min-vendors N       fail (exit 3) unless at least N distinct vendors
-                        contributed a review; 0 disables. --strict checks
+                        contributed a review; 0 disables. Default from config
+                        ([jury.ci] min_vendors, shipped as 2). --strict checks
                         availability at startup, this checks participation at
                         the end
+  --no-min-vendors      opt out of the cross-vendor guard: accept a run whose
+                        panel collapsed to a single vendor (same as --min-
+                        vendors 0)
   --verify              run the verification round (default: from config)
   --no-verify           skip the verification round
   --doctor              print a local readiness diagnostics report and exit
