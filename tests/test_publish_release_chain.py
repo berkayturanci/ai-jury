@@ -40,6 +40,8 @@ WORKFLOW = REPO_ROOT / ".github" / "workflows" / "publish.yml"
 PUBLISH_JOB = "build-n-publish"
 VERIFY_JOB = "verify"
 TEMPLATE = "packaging/homebrew/ai-jury.rb.template"
+#: The one wait both jobs run, extracted so there is no second copy (#694).
+WAIT_SCRIPT = ".github/scripts/wait-for-pypi-dists.sh"
 
 
 def indent_of(line: str) -> int:
@@ -223,14 +225,28 @@ class ReleasingWritesNothingToThisRepository(WorkflowScan):
         self.assertIn("id: tap-push", outputs)
         self.assertIn('echo "pushed=true" >> "$GITHUB_OUTPUT"', self.publish_code)
 
-    def test_the_render_step_waits_as_long_as_the_verify_job_does(self):
+    def test_the_render_step_waits_for_the_index_with_the_shared_wait(self):
         """It runs after the upload and before the Release; a short wait half-makes one.
 
-        Sixty seconds against PyPI's index, with the release only partly
-        created if it ran out, is the state this whole change removes.
+        Sixty seconds against PyPI's index, with the release only partly created
+        if it ran out, was the first version of this. Five minutes was the
+        second, and it still asked only whether the version endpoint answered —
+        which on 1.16.0 it did, with a file list that was still empty (#694).
+
+        So the wait is now one script, asserted here to be the one the `verify`
+        job runs, and its behaviour is exercised in `test_pypi_index_wait`.
         """
-        waits = [line for line in self.publish_code.splitlines() if "seq 1 30" in line]
-        self.assertTrue(waits, "the render step no longer uses the five-minute budget")
+        self.assertIn(WAIT_SCRIPT, self.publish_code)
+        self.assertTrue((REPO_ROOT / WAIT_SCRIPT).exists(), f"{WAIT_SCRIPT} is missing")
+
+    def test_the_render_step_reads_the_sdist_pair_from_the_wait(self):
+        """`next(f for f in urls …)` raised `StopIteration` and left an empty url.
+
+        The pair now comes out of the file the wait wrote, so the render cannot
+        run before the sdist it names is indexed.
+        """
+        self.assertIn("read -r sdist_url sdist_sha < published-sdist.txt", self.publish_code)
+        self.assertNotIn("packagetype", self.publish_code)
 
     def test_the_rendered_formula_leaves_the_release(self):
         """Two credential-free routes out, neither of them `main`.
@@ -266,10 +282,42 @@ class ThePublishedReleaseIsInstalledAndRun(WorkflowScan):
         """Publishing is synchronous; indexing is not.
 
         A job that waits forever for a release that will never appear is
-        indistinguishable from a hung runner.
+        indistinguishable from a hung runner. The bound lives in the shared
+        script now — `seq 1 30` at ten seconds — so it is asserted there.
         """
-        self.assertIn("did not serve", self.verify_code)
-        self.assertIn("seq 1 30", self.verify_code)
+        self.assertIn(WAIT_SCRIPT, self.verify_code)
+        script = (REPO_ROOT / WAIT_SCRIPT).read_text(encoding="utf-8")
+        self.assertIn('attempts="${PYPI_ATTEMPTS:-30}"', script)
+        self.assertIn('interval="${PYPI_INTERVAL_SECONDS:-10}"', script)
+        self.assertIn("never served", script)
+
+    def test_the_wait_is_one_implementation_and_not_two(self):
+        """#694: `verify` already had a wait of this shape; it is now *the* wait.
+
+        Both jobs run the same file, so the five-minute budget and the failure
+        message cannot drift apart, and there is no second reader of PyPI's file
+        list to forget when this one is fixed.
+        """
+        self.assertIn(WAIT_SCRIPT, self.publish_code)
+        self.assertIn(WAIT_SCRIPT, self.verify_code)
+        # The fragile read is gone from both jobs, not merely from the one that
+        # failed: it is the same three lines, and it raised on an empty list.
+        for name, code in ((PUBLISH_JOB, self.publish_code), (VERIFY_JOB, self.verify_code)):
+            with self.subTest(job=name):
+                self.assertNotIn("packagetype", code)
+                self.assertNotIn("StopIteration", code)
+
+    def test_the_verify_job_checks_out_only_the_scripts(self):
+        """It must install what the index serves, not what a checkout holds.
+
+        The job had no checkout at all, which is the property worth keeping: a
+        full tree would put the package source on the runner beside the release
+        being verified. A sparse checkout brings in the shared wait and nothing
+        else.
+        """
+        body = "\n".join(self.verify)
+        self.assertIn("sparse-checkout: .github/scripts", body)
+        self.assertNotIn("path: src", body)
 
     def test_the_installed_cli_must_report_the_tag(self):
         self.assertIn("jury --version", self.verify_code)

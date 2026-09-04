@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The formula render no longer races PyPI's index** (#694): cutting `v1.16.0`, `publish.yml` uploaded both distributions and then failed in *Render the Homebrew formula from the published sdist* with `StopIteration` followed by `curl: (3) URL rejected: Malformed input to a URL function`. PyPI had accepted the upload and its version endpoint answered, but the `urls` array in that answer did not yet list the files, so `next(f for f in urls if f['packagetype'] == 'sdist')` raised, the url stayed empty and `curl` was handed the empty string.
+  - That step runs **after** the upload and **before** the GitHub Release, so the failure produced the worst intermediate state this chain can reach: 1.16.0 live on PyPI with no GitHub release at all — therefore no `releases/latest/download/ai-jury.rb` — while the tap correctly kept serving 1.15.1. Re-running the failed job recovered it, but a release should not need a person to notice.
+  - **The wait asked the wrong question.** There already was one, and it was already five minutes: it polled until the version endpoint answered, which on 1.16.0 it already did. What had not converged was the file list *inside* the answer. `.github/scripts/wait-for-pypi-dists.sh` waits on that file list instead — until **both** the sdist and the wheel appear — and writes the sdist's own url and sha256 to `published-sdist.txt` for the render to read.
+  - **One implementation, three call sites.** `verify` already had a wait of exactly this shape, so that poll *is* this script rather than a second one beside it: `publish.yml` runs it from the render step in `build-n-publish` and from both the index wait and the formula check in `verify`, and the two hand-rolled `packagetype` reads are gone from the workflow entirely. `verify` gets it through a **sparse** `actions/checkout` of `.github/scripts` alone — that job's point is to install what the index serves rather than what a checkout holds, so the package source stays off its runner.
+  - **The failure message is the thing a maintainer reads first.** An index that genuinely never converges now ends the job with `::error::PyPI never served ai-jury <version>: missing sdist after 30 attempts over 300s`, naming the version and the distribution, followed by the endpoint to check and the fact that re-running is the recovery — not a Python traceback and a malformed-URL error. Nothing is rendered or published from a partial answer, an sdist listed without a url or a digest counts as not served, and a 503 page where JSON was expected is diagnosed rather than raised.
+  - No change to what the formula contains: still the published sdist's own url and digest, re-downloaded and confirmed against what PyPI reported.
+  - Tested by running the extracted shell against a stub index on loopback whose answers are scripted (`tests/test_pypi_index_wait.py`) — including the exact answer that broke the release, a 200 with an empty `urls` — since a workflow that only truly runs on a tag cannot be exercised in the suite.
+
 ## [1.16.0] - 2026-09-04
 
 ### Added

@@ -46,6 +46,21 @@ For each release, the publish workflow builds and attaches:
 Nothing after the tag commits to this repository. A release is exactly one write
 to `main`: the release pull request.
 
+Uploading to PyPI is synchronous; being indexed by it is not, and the formula is
+rendered from the *published* sdist — a read-after-write against a service that
+is only eventually consistent. Both jobs therefore run one shared wait,
+`.github/scripts/wait-for-pypi-dists.sh`, which polls
+`https://pypi.org/pypi/ai-jury/<version>/json` for five minutes (30 × 10s) until
+**both** distributions appear in its `urls` array, and hands back the sdist's own
+url and sha256. Before #694 the render waited only for that endpoint to answer at
+all: on v1.16.0 it answered with an empty file list, the read raised
+`StopIteration`, and `curl` was handed an empty url — failing *after* the upload
+and *before* the GitHub Release, which left 1.16.0 live on PyPI with no release
+and no `releases/latest/download/ai-jury.rb`. If the index genuinely never
+converges the job now fails with an `::error::` naming the version and the
+distribution that never appeared; re-running the job is the recovery, and
+`skip-existing: true` keeps the upload step a no-op.
+
 All GitHub Actions are pinned to full commit SHAs (see
 [CONTRIBUTING](../CONTRIBUTING.md)).
 

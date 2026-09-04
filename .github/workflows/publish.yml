@@ -144,31 +144,19 @@ jobs:
           # PyPI no longer serves, so it 404'd — and took the digest from the
           # locally built sdist rather than the uploaded one (#562).
           #
-          # Five minutes, the same budget the `verify` job uses. It was sixty
-          # seconds, which is a worse failure than it looks: this step runs after
-          # the upload and before the GitHub Release, so a slow index left the
-          # release half-made — exactly the state this PR exists to remove.
-          indexed=""
-          for attempt in $(seq 1 30); do
-            if curl -fsSL "https://pypi.org/pypi/ai-jury/${tag_version}/json" -o pypi.json; then
-              indexed=1
-              break
-            fi
-            echo "PyPI has not indexed ${tag_version} yet (attempt ${attempt}/30); retrying in 10s"
-            sleep 10
-          done
-          if [ -z "$indexed" ]; then
-            echo "::error::PyPI has no metadata for ${tag_version}; cannot render a formula"
-            exit 1
-          fi
-
-          read -r sdist_url sdist_sha <<EOF
-          $(python3 -c "
-          import json
-          urls = json.load(open('pypi.json'))['urls']
-          sdist = next(f for f in urls if f['packagetype'] == 'sdist')
-          print(sdist['url'], sdist['digests']['sha256'])")
-          EOF
+          # The wait is `.github/scripts/wait-for-pypi-dists.sh`, the same script
+          # the `verify` job runs — one implementation, three call sites, so the
+          # five-minute budget and the failure message cannot drift apart (#694).
+          #
+          # The wait that used to live here polled until the version endpoint
+          # answered at all, which on 1.16.0 it already did; what had not
+          # converged was the `urls` array inside the answer, so `next(f for f in
+          # urls if …)` raised `StopIteration`, the url stayed empty and `curl`
+          # rejected it — after the upload, before the Release. The script waits
+          # on the file list itself and hands back the sdist's url and digest,
+          # so nothing downstream re-parses the document.
+          .github/scripts/wait-for-pypi-dists.sh
+          read -r sdist_url sdist_sha < published-sdist.txt
 
           # Prove it before publishing anywhere. A tap one release behind still
           # installs; a tap holding an uninstallable formula does not.
@@ -297,6 +285,16 @@ jobs:
     env:
       GH_REPO: ${{ github.repository }}
     steps:
+      # Only `.github/scripts`, and deliberately not the package source: this
+      # job's whole point is to install what the index serves rather than what
+      # the checkout holds, so a full tree here would put the thing under test
+      # on the runner beside the thing being tested. A sparse checkout brings in
+      # the shared wait and nothing else (#694).
+      - name: Check out the release scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
@@ -305,20 +303,14 @@ jobs:
       # Bounded, not unbounded: publishing is synchronous but indexing is not,
       # and a job that waits forever for a release that will never appear is
       # indistinguishable from a hung runner.
+      #
+      # The same script the render step runs, asking the same question of the
+      # same endpoint (#694). It waits on the *file list*, not merely on the
+      # version endpoint answering: a 200 whose `urls` array is still empty is
+      # what broke the render, and it would equally mean `pip install` has
+      # nothing to resolve.
       - name: Wait for PyPI to serve the release
-        run: |
-          set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
-          for attempt in $(seq 1 30); do
-            if curl -fsS -o /dev/null "https://pypi.org/pypi/ai-jury/${version}/json"; then
-              echo "PyPI serves ${version}"
-              exit 0
-            fi
-            echo "not indexed yet (attempt ${attempt}/30); retrying in 10s"
-            sleep 10
-          done
-          echo "::error::PyPI did not serve ${version} within five minutes"
-          exit 1
+        run: .github/scripts/wait-for-pypi-dists.sh
 
       - name: Install the published release into a clean virtualenv
         run: |
@@ -368,15 +360,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
-          curl -fsSL "https://pypi.org/pypi/ai-jury/${version}/json" -o pypi.json
-          read -r sdist_url sdist_sha <<EOF
-          $(python3 -c "
-          import json
-          urls = json.load(open('pypi.json'))['urls']
-          sdist = next(f for f in urls if f['packagetype'] == 'sdist')
-          print(sdist['url'], sdist['digests']['sha256'])")
-          EOF
+          # The same shared wait again rather than a second hand-rolled read of
+          # the same document (#694). By now it returns on the first attempt;
+          # calling it keeps this step self-contained and leaves exactly one
+          # place in the workflow that knows how to find the sdist in PyPI's
+          # file list.
+          .github/scripts/wait-for-pypi-dists.sh
+          read -r sdist_url sdist_sha < published-sdist.txt
           curl -fsSL "$sdist_url" -o published-sdist.tar.gz
           got="$(sha256sum published-sdist.tar.gz | cut -d' ' -f1)"
           if [ "$got" != "$sdist_sha" ]; then
