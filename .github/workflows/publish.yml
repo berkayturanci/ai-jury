@@ -76,8 +76,8 @@ jobs:
       # pip's.
       - name: Install build dependencies
         run: |
-          python -m pip install --timeout 30 --upgrade pip
-          python -m pip install --timeout 30 build
+          timeout 60 python -m pip install --timeout 30 --upgrade pip
+          timeout 180 python -m pip install --timeout 30 build
 
       - name: Build package distributions
         run: python -m build --sdist --wheel --outdir dist/
@@ -96,13 +96,13 @@ jobs:
       # in the upload dir. The SBOM still ships with the GitHub Release.
       - name: Generate CycloneDX SBOM
         run: |
-          python -m pip install --timeout 30 cyclonedx-bom
+          timeout 180 python -m pip install --timeout 30 cyclonedx-bom
           mkdir -p release
           python -m venv --without-pip sbom-venv
           # A local wheel with `--no-deps` reaches no index, so this one carries
           # the bound for uniformity rather than for need: a rule with a
           # remembered exception is a rule nobody can check mechanically.
-          python -m pip --python sbom-venv/bin/python install --timeout 30 --no-deps dist/*.whl
+          timeout 60 python -m pip --python sbom-venv/bin/python install --timeout 30 --no-deps dist/*.whl
           cyclonedx-py environment sbom-venv \
             --pyproject pyproject.toml \
             --mc-type application \
@@ -355,13 +355,18 @@ jobs:
     #     (30s) and the sleep after it (10s) — 340s apiece. The second one
     #     returns on the first attempt in practice, but nothing enforces that,
     #     so it is counted at full price;
-    #   - the pip resolve loop: 6 × 10s of sleeps = 60s;
+    #   - the pip upgrade, wrapped at 60s, and the resolve loop:
+    #     6 × (`timeout 90` + `sleep 10`) = 660s in all. pip's own
+    #     `--timeout` is a socket timeout — a bound on one quiet read, not
+    #     on the call — so a peer that drips a byte inside it holds the
+    #     loop open for as long as it likes. Only the wrapper bounds it,
+    #     and only the wrapper is countable here;
     #   - the sdist download: `--max-time` 120s, plus a 10s connect timeout;
     #   - `gh release download`, wrapped at 120s;
     #   - the tap poll: 10 × `timeout 30` + 10 × `sleep 15` = 450s;
     #   - the `if: failure()` report: three `timeout 60` `gh` calls = 180s.
     #
-    # That is ~1620s, and the twenty minutes this used to say was *below* it: a
+    # That is ~2220s, and the twenty minutes this used to say was *below* it: a
     # job that spent its own bounds honestly would be cancelled at 1200s rather
     # than fail. Which matters more here than anywhere, because a job stopped by
     # `timeout-minutes` is *cancelled* — the `if: failure()` step below does not
@@ -371,7 +376,7 @@ jobs:
     # on its own timeout fails the job, names what stalled, and files that
     # report. `tests/test_publish_release_chain.py` recomputes the sum above
     # from this file, so a new wait cannot quietly outgrow the ceiling again.
-    timeout-minutes: 35
+    timeout-minutes: 45
     permissions:
       contents: read
       issues: write   # open/update `release-broken: <tag>` when this job fails
@@ -419,11 +424,11 @@ jobs:
           set -euo pipefail
           version="${GITHUB_REF_NAME#v}"
           python -m venv /tmp/verify-venv
-          /tmp/verify-venv/bin/python -m pip install --timeout 30 --upgrade pip
+          timeout 60 /tmp/verify-venv/bin/python -m pip install --timeout 30 --upgrade pip
           # The JSON API can know a version before the installer index serves it.
           installed=""
           for attempt in 1 2 3 4 5 6; do
-            if /tmp/verify-venv/bin/python -m pip install --timeout 30 "ai-jury==${version}"; then
+            if timeout 90 /tmp/verify-venv/bin/python -m pip install --timeout 30 "ai-jury==${version}"; then
               installed=1
               break
             fi

@@ -80,7 +80,7 @@ step forgets to bound. That ceiling is a backstop and not the mechanism: a job
 stopped by `timeout-minutes` is cancelled, so `verify`'s failure step does not
 run and no `release-broken` issue is opened, whereas a command that fails on its
 own timeout fails the job and files the report. It must therefore sit *above*
-the sum of the bounds beneath it — `verify` may spend about 1620s inside its own
+the sum of the bounds beneath it — `verify` may spend about 2220s inside its own
 waits and its failure report, so twenty minutes would have cancelled a job that
 was still inside every deadline it sets itself.
 `tests/test_publish_release_chain.py` recomputes that sum from the workflow, for

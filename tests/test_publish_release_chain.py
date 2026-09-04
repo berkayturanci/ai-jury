@@ -58,8 +58,16 @@ WAIT_SCRIPT = ".github/scripts/wait-for-pypi-dists.sh"
 NETWORK_TOOLS: dict[str, tuple[str, ...]] = {
     "curl": ("--connect-timeout", "--max-time"),
     "wget": ("--timeout",),
-    "pip": ("--timeout",),
-    "pip3": ("--timeout",),
+    # `pip`'s `--timeout` is its *socket* timeout: it bounds one quiet read, not
+    # the call, so a peer that sends a byte inside every window holds a resolve
+    # for as long as it likes. Accepting it here while `_BOUND_TOKENS` below
+    # refuses to count it had the two halves of this module disagreeing — the
+    # scan called pip bounded, the ceiling counted it as zero, and the residual
+    # path was a `verify` cancelled at its own ceiling with no report filed for a
+    # release already on PyPI. An empty tuple demands the `timeout` wrapper, the
+    # one bound that is both real and countable.
+    "pip": (),
+    "pip3": (),
     "gh": (),
     "twine": (),
     "npm": (),
@@ -109,10 +117,13 @@ _DURATION = re.compile(r"^\d+(\.\d+)?[smhd]?$")
 #: equality test silently stopped reading (see :func:`shell`).
 _BLOCK_SCALAR = re.compile(r"^run:[ \t]*[|>](?:[+-][1-9]?|[1-9][+-]?)?[ \t]*$")
 
-#: A quoted heredoc's opening: `<<'EOF'`, `<< "EOF"`, `<<-'EOF'`. Its body is
-#: literal text, so the words in it are not commands — `<<<` is a herestring and
-#: not a heredoc, hence the lookahead.
-_HEREDOC = re.compile(r"<<(?!<)-?[ \t]*(?:'([^']*)'|\"([^\"]*)\")")
+#: A quoted heredoc's opening: `<<'EOF'`, `<< "EOF"`, `<<-'EOF'`, `<<\\EOF`. Its
+#: body is literal text, so the words in it are not commands — `<<<` is a
+#: herestring and not a heredoc, hence the lookahead. The backslash form is the
+#: third spelling bash accepts for a *non-expanding* heredoc, and missing it made
+#: prose in a document that happens to mention `curl` read as an unbounded
+#: request: a false alarm, which is how a scanner gets switched off.
+_HEREDOC = re.compile(r"<<(?!<)-?[ \t]*(?:'([^']*)'|\"([^\"]*)\"|\\(\w+))")
 
 #: A wrapper's or a loop's duration as it is actually written: `30`, `1m`,
 #: `${SDIST_MAX_TIME:-120}` — the defaulted form the workflow reads its bounds
@@ -266,7 +277,7 @@ def _lex(code: str) -> list[str]:
             opener = _HEREDOC.match(code, index)
             if opener:
                 flush()
-                heredocs.append(opener.group(1) or opener.group(2) or "")
+                heredocs.append(opener.group(1) or opener.group(2) or opener.group(3) or "")
                 index = opener.end()
                 continue
         if quote == '"':
@@ -910,6 +921,55 @@ class EveryNetworkCommandIsBoundedInTime(unittest.TestCase):
         self.assertEqual([call.tool for call in caught], ["gh"], [c.why() for c in caught])
         self.assertIn("a `timeout` wrapper", caught[0].why())
 
+    def test_it_would_have_caught_a_pip_call_left_to_its_socket_timeout(self):
+        """`--timeout` is not a bound on the call, and used to be accepted as one.
+
+        pip's `--timeout` limits one quiet read. A peer that sends a byte inside
+        every window keeps a resolve alive indefinitely, so the six-attempt loop
+        in `verify` could outlive the job's ceiling — and a job stopped that way
+        is cancelled, which files no report for a release already on PyPI. The
+        scan called those calls bounded while `wait_seconds` counted them as
+        zero; this is the mutation that would have shown the disagreement.
+        """
+        broken = self.source.replace(
+            "timeout 90 /tmp/verify-venv/bin/python -m pip", "/tmp/verify-venv/bin/python -m pip"
+        )
+        self.assertNotEqual(broken, self.source, "the mutation matched nothing; rewrite it")
+        caught = [call for call in scan(broken) if not call.bounded]
+        self.assertEqual([call.tool for call in caught], ["pip"], [c.why() for c in caught])
+        self.assertIn("a `timeout` wrapper", caught[0].why())
+
+    def test_every_pip_call_is_counted_by_the_ceiling_it_is_bounded_by(self):
+        """The two halves agreeing: what makes pip bounded is what makes it countable.
+
+        `_BOUND_TOKENS` has always refused to count `--timeout`, so a pip call
+        whose only bound was that flag put nothing in the sum the ceiling is
+        chosen against. Requiring the wrapper closes the gap in both directions
+        at once.
+        """
+        self.assertEqual(NETWORK_TOOLS["pip"], ())
+        self.assertNotIn("--timeout", _BOUND_TOKENS)
+        for call in self.calls:
+            if call.tool in ("pip", "pip3"):
+                with self.subTest(command=call.command):
+                    self.assertTrue(call.bounded, call.why())
+                    self.assertGreater(wait_seconds(call.command, 0), 0, call.command)
+
+    def test_a_backslash_heredoc_is_literal_text_and_not_a_run_of_commands(self):
+        """`<<\\EOF` is bash's third spelling for a non-expanding heredoc.
+
+        The pattern knew the two quoted forms only, so a document written with
+        this one had its prose lexed as commands — a `curl` mentioned in a
+        sentence reported as an unbounded request. A finding nobody can act on
+        is how a scanner gets switched off, which is the same failure the quoted
+        forms are excluded to avoid.
+        """
+        body = "cat <<\\EOF > notes.md\ncurl https://example.invalid/x\nEOF\n"
+        self.assertEqual(network_calls(body, VERIFY_JOB), [])
+        # The quoted spellings still behave, and an *unquoted* heredoc still is
+        # not a licence to hide a call: only the opener changed.
+        self.assertEqual(network_calls(body.replace("<<\\EOF", "<<'EOF'"), VERIFY_JOB), [])
+
     def test_prose_about_the_network_is_not_read_as_a_call_on_it(self):
         """The other way a scan gets switched off: findings nobody can act on.
 
@@ -955,6 +1015,13 @@ class EveryBlockScalarSpellingIsRead(unittest.TestCase):
     one of them collected *nothing*: `block_after` was never called, the body
     never reached the scan, and each `assertNotIn` in this module passed on a
     step it had not read.
+
+    Block scalars are not every spelling of a `run:`, and this class does not
+    claim they are. A quoted flow scalar, a block header carrying a trailing
+    comment, and a value on the following line are all legal YAML that Actions
+    runs, and all three still pass this scan unread. Seeing them needs the file
+    parsed rather than lexed, which needs a YAML library this project does not
+    depend on, so the gap is tracked on #697 rather than papered over here.
 
     That is the failure worth a test of its own, because it is silent and
     total. A step spelled `run: >-` holding an unbounded `curl`, an unbounded
