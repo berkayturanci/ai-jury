@@ -82,26 +82,17 @@ NETWORK_TOOLS: dict[str, tuple[str, ...]] = {
 #: that is really there and really unbounded, and a call that later takes a
 #: wrapper fails this suite until it is removed from here. That is the difference
 #: between a list nobody maintains and one that cannot go stale quietly.
-KNOWN_UNBOUNDED: dict[tuple[str, str], str] = {
-    (
-        ".github/workflows/ci.yml (test)",
-        "python -m pip install --upgrade pip",
-    ): (
-        "`timeout(1)` is GNU coreutils and the `macos-latest` runner does not ship "
-        "it, so a wrapper here exits 127 on that leg of the matrix before pip runs "
-        "— a red required check on every pull request rather than a bound. One step "
-        "serves all five legs, so the bound available to all five is the job's "
-        "`timeout-minutes`. `pip --timeout` is not a substitute: it bounds one "
-        "quiet read, not the call."
-    ),
-    (
-        ".github/workflows/ci.yml (test)",
-        "python -m pip install -e .",
-    ): (
-        "The same step, the same reason: no `timeout` on `macos-latest`, one step "
-        "across five matrix legs, and the job's `timeout-minutes` as the bound."
-    ),
-}
+#:
+#: Empty, and meant to stay that way. It held `ci.yml`'s two cross-OS
+#: `pip install` calls, on the ground that `timeout(1)` is GNU coreutils and
+#: `macos-latest` ships neither it nor `gtimeout` — true, and not a reason to
+#: leave the calls unbounded: the step now defines `bounded`, a shell function
+#: that runs its argument under `subprocess.run(timeout=…)`, which is the same
+#: bound on all three operating systems. A waiver is for a call that *cannot*
+#: take a bound, and the only evidence that a call is one is that somebody has
+#: tried. The tests below still hold, so an entry added tomorrow must name a real
+#: unbounded call, state a reason, and sit under a job that sets a ceiling.
+KNOWN_UNBOUNDED: dict[tuple[str, str], str] = {}
 
 #: `pip` and `git` reach the network in only some of their moods. Both the
 #: network set and the local one are named, because the scan has to be able to
@@ -133,7 +124,17 @@ _JOB_NAME = re.compile(r"^  ([A-Za-z_][\w-]*):[ \t]*$")
 #: Commands whose argument is itself a command — `timeout` is the only bound
 #: `gh` can be given, so a scan that could not see through it would report every
 #: wrapped call as unbounded.
-_WRAPPERS = frozenset({"timeout", "env", "nice", "command", "exec", "stdbuf"})
+#:
+#: `bounded` is not a program. It is a shell function `ci.yml`'s cross-OS `test`
+#: job defines at the top of its install step, because `timeout(1)` is GNU
+#: coreutils and `macos-latest` ships neither it nor `gtimeout`: a wrapper that
+#: exits 127 on one leg of a five-leg matrix is a red required check, not a bound.
+#: It runs its argument under `subprocess.run(timeout=…)`, which kills the child
+#: and exits non-zero on all three operating systems. Because a function dies with
+#: the step that defines it, :func:`undefined_wrapper_calls` refuses a call to it
+#: from a step that does not — that would read as bounded here and as `command
+#: not found` on the runner, which is a worse hole than the one it closes.
+_WRAPPERS = frozenset({"timeout", "bounded", "env", "nice", "command", "exec", "stdbuf"})
 
 #: `60`, `1m`, `30s` — a wrapper's duration, which is not its command.
 _DURATION = re.compile(r"^\d+(\.\d+)?[smhd]?$")
@@ -195,8 +196,10 @@ _REFERENCE = re.compile(r"^\$\{?([A-Za-z_]\w*)\}?$")
 #: Tokens whose next argument is a number of seconds this job may spend. Matched
 #: as whole tokens, which is what keeps `--timeout` out: that is pip's *socket*
 #: timeout, a bound on one quiet read rather than on the call, and counting it
-#: would put a number in the sum that no stall is limited to.
-_BOUND_TOKENS = frozenset({"timeout", "sleep", "--max-time", "--connect-timeout"})
+#: would put a number in the sum that no stall is limited to. `bounded` is here
+#: for the same reason it is in `_WRAPPERS`: the two halves of this module have to
+#: agree, so a bound the scan accepts is a bound the ceiling counts.
+_BOUND_TOKENS = frozenset({"timeout", "bounded", "sleep", "--max-time", "--connect-timeout"})
 
 
 def indent_of(line: str) -> int:
@@ -787,6 +790,42 @@ def unreadable_runs(lines: list[str]) -> list[str]:
             continue  # a plain scalar, which `shell()` collects whole
         unreadable.append(f"{number}: {line.strip()}")
     return unreadable
+
+
+#: A call to `bounded`, the shell function `ci.yml` defines for the matrix leg
+#: with no `timeout(1)`. Anchored at the head of the line, which is where a
+#: wrapped command stands.
+_WRAPPER_CALL = re.compile(r"^bounded[ \t]+\S")
+
+#: How that function is spelled where it is defined.
+_WRAPPER_DEFINITION = "bounded()"
+
+
+def undefined_wrapper_calls(lines: list[str]) -> list[str]:
+    """Every `bounded` call in a `run:` block that does not define `bounded`.
+
+    `bounded` is a shell function, not a program: it lives exactly as long as the
+    step that defines it. `_WRAPPERS` reads it as a wrapper and `_BOUND_TOKENS`
+    counts its seconds, so a call to it from a step that never defines it would
+    be a bound in this module and `command not found` on the runner — the failure
+    the wrapper exists to remove, wearing the fix's own name.
+
+    A `run:` key starts a new block and clears the definition, which is exactly
+    the scope bash gives it.
+    """
+    found: list[str] = []
+    defined = False
+    for number, line in enumerate(lines, start=1):
+        key = key_text(line)
+        if _RUN_KEY.match(key):
+            defined, text = False, key[len("run:") :].strip()
+        else:
+            text = line.strip()
+        if _WRAPPER_DEFINITION in text:
+            defined = True
+        elif _WRAPPER_CALL.match(text) and not defined:
+            found.append(f"{number}: {line.strip()}")
+    return found
 
 
 class WorkflowScan(unittest.TestCase):
@@ -1412,12 +1451,97 @@ class EveryWorkflowBoundsItsNetworkCalls(unittest.TestCase):
     def test_no_command_in_any_workflow_reaches_the_network_unbounded(self):
         """Every network call takes a bound, or appears in `KNOWN_UNBOUNDED`.
 
-        Two do — both in `ci.yml`'s cross-OS `test` job, where `timeout(1)` is
-        absent from the `macos-latest` runner and one step serves five matrix
-        legs. Their bound is that job's ceiling, which the class below requires.
+        None do. Two used to: `ci.yml`'s cross-OS `test` job installs the package
+        on five matrix legs from one step, and `timeout(1)` is GNU coreutils that
+        `macos-latest` does not ship, so the wrapper written there exited 127 on
+        that leg before pip ran. The step defines `bounded` now — the same limit
+        expressed in the interpreter `setup-python` has just installed, which
+        every leg has — so the waiver list is empty and this reads every call.
         """
         unbounded = [call.why() for call in self.calls if not call.bounded and not is_waived(call)]
         self.assertEqual(unbounded, [], "unbounded network commands:\n" + "\n".join(unbounded))
+
+    def test_the_cross_os_install_is_bounded_by_something_all_five_legs_have(self):
+        """The waived pair, now limited — and limited by a countable limit.
+
+        Both halves of this module have to agree about it, which is the mistake
+        `pip --timeout` made: the scan called those calls bounded while the
+        ceiling counted them as zero, so the sum the ceiling is chosen against
+        left them out. `bounded` is in `_WRAPPERS` *and* in `_BOUND_TOKENS`, so
+        the seconds it names are the seconds the ceiling has to clear.
+        """
+        self.assertEqual(KNOWN_UNBOUNDED, {}, "a waiver is back; it needs a reason that holds")
+        lines = (WORKFLOW_DIR / "ci.yml").read_text(encoding="utf-8").splitlines()
+        code = shell(job_body(lines, "test"))
+        installs = [call for call in network_calls(code, "test") if call.tool == "pip"]
+        self.assertEqual(len(installs), 2, [call.command for call in installs])
+        for call in installs:
+            with self.subTest(command=call.command):
+                self.assertTrue(call.bounded, call.why())
+                self.assertGreater(wait_seconds(call.command, 0), 0, call.command)
+        self.assertEqual(wait_seconds(code, 0), 120 + 300)
+        self.assertGreater(ceiling_seconds(job_body(lines, "test")), wait_seconds(code, 0))
+
+    def test_it_would_have_caught_the_cross_os_install_left_unbounded(self):
+        """Prove it fails: take one of the two limits away again.
+
+        The pair sat in `KNOWN_UNBOUNDED` for a release, so the thing worth
+        pinning is not that they read as bounded today but that dropping the
+        wrapper puts them back on the list this suite fails on.
+        """
+        source = (WORKFLOW_DIR / "ci.yml").read_text(encoding="utf-8")
+        broken = source.replace(
+            "bounded 300 python -m pip install -e .", "python -m pip install -e ."
+        )
+        self.assertNotEqual(broken, source, "the mutation matched nothing; rewrite it")
+        caught = [call for call in scan(broken) if not call.bounded and not is_waived(call)]
+        self.assertEqual([call.tool for call in caught], ["pip"], [c.why() for c in caught])
+        self.assertIn("`timeout` wrapper", caught[0].why())
+        self.assertEqual(caught[0].command, "python -m pip install -e .")
+
+    def test_no_step_calls_the_shell_wrapper_without_defining_it(self):
+        """`bounded` is a function, and a function dies with its step.
+
+        `_WRAPPERS` reads it as a wrapper and `_BOUND_TOKENS` counts its seconds,
+        so a call to it from a step that never defines it would be a bound here
+        and `command not found` there — a hole opened under the name of the fix
+        that closed one. Every workflow, because the next step to want a bound on
+        a matrix leg is not necessarily in `ci.yml`.
+        """
+        for path in workflow_paths():
+            with self.subTest(workflow=path.name):
+                found = undefined_wrapper_calls(path.read_text(encoding="utf-8").splitlines())
+                self.assertEqual(
+                    found,
+                    [],
+                    f"{path.name} calls `bounded` in a step that does not define it, so the "
+                    f"scan reads a bound the runner does not have:\n" + "\n".join(found),
+                )
+
+    def test_it_would_have_caught_a_wrapper_call_with_no_definition(self):
+        """Prove it fails: the same call, in each of the two places it can stand."""
+        defined = (WORKFLOW_DIR / "ci.yml").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(undefined_wrapper_calls(defined), [])
+        for step in (
+            ["      - name: s", "        run: |", "          bounded 30 gh api repos/e/e"],
+            ["      - name: s", "        run: bounded 30 gh api repos/e/e"],
+        ):
+            with self.subTest(step=step[-1]):
+                self.assertEqual(len(undefined_wrapper_calls(step)), 1, step)
+        # And the definition has to be in the *same* block, not merely earlier in
+        # the file: bash gives a function the life of the step that defines it.
+        two_steps = [
+            "      - name: defines it",
+            "        run: |",
+            "          bounded() { python -c 'pass' \"$@\"; }",
+            "          bounded 30 gh api repos/e/e",
+            "      - name: does not",
+            "        run: |",
+            "          bounded 30 gh api repos/e/e",
+        ]
+        self.assertEqual(
+            len(undefined_wrapper_calls(two_steps)), 1, undefined_wrapper_calls(two_steps)
+        )
 
     def test_every_waiver_names_a_call_that_is_really_there_and_really_unbounded(self):
         """A waiver that has gone stale is a bound quietly dropped.
@@ -1433,7 +1557,14 @@ class EveryWorkflowBoundsItsNetworkCalls(unittest.TestCase):
         )
 
     def test_every_waiver_states_a_reason_and_sits_under_a_ceiling(self):
-        """A waiver is only defensible because the job still has a backstop."""
+        """A waiver is only defensible because the job still has a backstop.
+
+        `KNOWN_UNBOUNDED` is empty, so this loop runs over nothing today. It is
+        kept rather than deleted with the entries it used to hold: the list is a
+        thing a future change adds to, and the two conditions on an entry — a
+        stated reason, and a job that still sets a ceiling — are the reason the
+        list stayed honest while it had entries in it.
+        """
         ceilings = {job.where(): ceiling_seconds(job.body) for job in self.jobs}
         for (where, command), reason in KNOWN_UNBOUNDED.items():
             with self.subTest(command=command):
