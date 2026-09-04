@@ -22,6 +22,16 @@
 # poll, made to check the file list and moved into a file both jobs can run, so
 # there is no second copy to drift.
 #
+# The poll is bounded twice over, in attempts *and* in wall-clock seconds,
+# because attempts alone are not a bound: one response that stalls after the
+# connection has been accepted holds the loop open for as long as the peer keeps
+# the socket open. No job in `publish.yml` sets `timeout-minutes`, so the ceiling
+# would be GitHub's six-hour default — in a step that sits after the upload and
+# before the Release, which is the same half-made release this script exists to
+# remove, only slower. Every request therefore carries `--connect-timeout` and
+# `--max-time`, and `--max-time` is clamped to the budget still unspent, so the
+# five minutes below is the real ceiling rather than an estimate.
+#
 # On success:
 #   - `$PYPI_JSON_OUT`  (default `pypi.json`) holds the metadata document, and
 #   - `$PYPI_SDIST_OUT` (default `published-sdist.txt`) holds one line,
@@ -30,7 +40,10 @@
 #
 # On failure the last line is a `::error::` naming the version and which
 # distribution never appeared, so that — and not a Python traceback followed by
-# a malformed-URL error — is what a maintainer reads first.
+# a malformed-URL error — is what a maintainer reads first. A mistake in the
+# configuration below is diagnosed the same way and *before* the poll starts: a
+# budget spent waiting on an index that was never going to be asked, ending in
+# an error that blames that index, is the failure mode this script is against.
 #
 # Every input arrives through the environment, never through an Actions
 # `${{ }}` expression: those are substituted into the script source before bash
@@ -41,12 +54,19 @@
 #   PYPI_BASE_URL          index origin                    (default: https://pypi.org)
 #   PYPI_ATTEMPTS          poll attempts                   (default: 30)
 #   PYPI_INTERVAL_SECONDS  seconds between attempts        (default: 10)
+#   PYPI_BUDGET_SECONDS    wall-clock ceiling on the poll  (default: attempts × interval)
+#   PYPI_CONNECT_TIMEOUT   seconds to connect, per request (default: 10)
+#   PYPI_MAX_TIME          seconds for one whole request   (default: 30)
 #   PYPI_JSON_OUT          where to write the metadata     (default: pypi.json)
 #   PYPI_SDIST_OUT         where to write "<url> <sha256>" (default: published-sdist.txt)
 #   PYPI_PYTHON            interpreter for the JSON read   (default: python3)
 #
-# The defaults are 30 × 10s — the same five-minute budget `verify` has always
-# used, and the budget the render step was given for the same reason.
+# The defaults are 30 × 10s = 300s — the same five-minute budget `verify` has
+# always used, and the budget the render step was given for the same reason —
+# and `PYPI_BUDGET_SECONDS` is what holds the poll to it whatever the network
+# does. A budget of `0`, which is what an interval of `0` computes to, leaves
+# the attempt count as the only bound; the tests poll that way so they cost
+# nothing.
 set -euo pipefail
 
 project="${PYPI_PROJECT:-ai-jury}"
@@ -55,12 +75,63 @@ version="${version#v}"
 base_url="${PYPI_BASE_URL:-https://pypi.org}"
 attempts="${PYPI_ATTEMPTS:-30}"
 interval="${PYPI_INTERVAL_SECONDS:-10}"
+connect_timeout="${PYPI_CONNECT_TIMEOUT:-10}"
+max_time="${PYPI_MAX_TIME:-30}"
 json_out="${PYPI_JSON_OUT:-pypi.json}"
 sdist_out="${PYPI_SDIST_OUT:-published-sdist.txt}"
 python_bin="${PYPI_PYTHON:-python3}"
 
 if [ -z "$version" ]; then
   echo "::error::wait-for-pypi-dists.sh: no version to wait for (set PYPI_VERSION or GITHUB_REF_NAME)"
+  exit 2
+fi
+
+# A number that is not a number must be *diagnosed*, not left to bash. Under
+# `set -u` an arithmetic expansion treats a bare word as a variable name, so
+# `PYPI_ATTEMPTS=lots` dies at `$((attempts * interval))` with
+# `lots: unbound variable` — a shell error, printed before any message of this
+# script's own, about a variable nobody set. Reading a diagnosis rather than a
+# shell error is the whole point of this file.
+require_whole_number() {
+  case "$2" in
+    "" | *[!0-9]*)
+      echo "::error::wait-for-pypi-dists.sh: $1 must be a whole number of $3, not '$2'"
+      exit 2
+      ;;
+  esac
+}
+
+require_whole_number PYPI_ATTEMPTS "$attempts" attempts
+require_whole_number PYPI_INTERVAL_SECONDS "$interval" seconds
+require_whole_number PYPI_CONNECT_TIMEOUT "$connect_timeout" seconds
+require_whole_number PYPI_MAX_TIME "$max_time" seconds
+
+# Base ten explicitly: `08` is a valid attempt count and an invalid octal literal.
+attempts="$((10#$attempts))"
+interval="$((10#$interval))"
+connect_timeout="$((10#$connect_timeout))"
+max_time="$((10#$max_time))"
+
+budget="${PYPI_BUDGET_SECONDS:-$((attempts * interval))}"
+require_whole_number PYPI_BUDGET_SECONDS "$budget" seconds
+budget="$((10#$budget))"
+
+if [ "$attempts" -lt 1 ]; then
+  echo "::error::wait-for-pypi-dists.sh: PYPI_ATTEMPTS must be at least 1, not '${attempts}'"
+  exit 2
+fi
+if [ "$max_time" -lt 1 ]; then
+  echo "::error::wait-for-pypi-dists.sh: PYPI_MAX_TIME must be at least 1 second, not '${max_time}' — curl reads 0 as 'no limit', which is the bound this poll needs"
+  exit 2
+fi
+
+# An interpreter that cannot run is a configuration mistake, not a slow index.
+# Undiagnosed it exits 127 from every file-list read, which the loop below would
+# report as "a readable file list" — burning the whole budget and then blaming
+# PyPI for a missing python. So it is probed once, first, and the error names
+# the variable that is wrong.
+if ! "$python_bin" -c "" >/dev/null 2>&1; then
+  echo "::error::wait-for-pypi-dists.sh: PYPI_PYTHON='${python_bin}' is not a usable interpreter; PyPI's file list cannot be read without one"
   exit 2
 fi
 
@@ -116,28 +187,58 @@ with open(sdist_path, "w", encoding="utf-8") as handle:
 PY
 }
 
-budget="$((attempts * interval))"
+started="$(date +%s)"
 missing="metadata"
+made=0
 
 for attempt in $(seq 1 "$attempts"); do
-  if curl -fsSL "$url" -o "$json_out"; then
+  # `--max-time` is clamped to what is left of the budget, so a response that
+  # stalls cannot spend more wall time than the whole poll is allowed.
+  request_max="$max_time"
+  if [ "$budget" -gt 0 ]; then
+    remaining="$((started + budget - $(date +%s)))"
+    if [ "$remaining" -le 0 ]; then
+      break
+    fi
+    if [ "$remaining" -lt "$request_max" ]; then
+      request_max="$remaining"
+    fi
+  fi
+  made="$attempt"
+  if curl -fsSL --connect-timeout "$connect_timeout" --max-time "$request_max" "$url" -o "$json_out"; then
     set +e
     missing="$(read_file_list)"
     status=$?
     set -e
     case "$status" in
       0)
+        if [ ! -s "$sdist_out" ]; then
+          # Exit 0 and no pair means `$python_bin` ran and is not a Python: the
+          # probe above only proves that something answered to `-c ""`.
+          echo "::error::wait-for-pypi-dists.sh: PYPI_PYTHON='${python_bin}' read the file list without writing ${sdist_out}; it does not behave like a Python interpreter"
+          exit 2
+        fi
         echo "PyPI serves ${project} ${version}: sdist and wheel both indexed (attempt ${attempt}/${attempts})"
         cat "$sdist_out"
         exit 0
         ;;
       3) : ;;  # reported below, then retried
-      *)
+      4)
         missing="a readable file list"
+        ;;
+      *)
+        # Not a status this reader produces: the interpreter itself failed.
+        echo "::error::wait-for-pypi-dists.sh: reading the file list with PYPI_PYTHON='${python_bin}' exited ${status}; that is a broken interpreter, not a slow index"
+        exit 2
         ;;
     esac
   else
-    missing="metadata"
+    curl_status=$?
+    if [ "$curl_status" -eq 28 ]; then
+      missing="metadata (the request timed out after ${request_max}s)"
+    else
+      missing="metadata"
+    fi
   fi
   if [ "$attempt" -lt "$attempts" ]; then
     echo "PyPI has not served ${project} ${version} yet — missing ${missing} (attempt ${attempt}/${attempts}); retrying in ${interval}s"
@@ -148,5 +249,6 @@ done
 # The first thing a maintainer reads. It names the version and the distribution
 # that never appeared, because "which artifact is PyPI still missing" is the
 # only question worth answering here, and the recovery is to re-run the job.
-echo "::error::PyPI never served ${project} ${version}: missing ${missing} after ${attempts} attempts over ${budget}s. Nothing was rendered or published from it. Check ${url} and re-run this job once the file list is complete."
+elapsed="$(($(date +%s) - started))"
+echo "::error::PyPI never served ${project} ${version}: missing ${missing} after ${made} attempts over ${elapsed}s. Nothing was rendered or published from it. Check ${url} and re-run this job once the file list is complete."
 exit 1

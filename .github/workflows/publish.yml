@@ -288,12 +288,21 @@ jobs:
       # Only `.github/scripts`, and deliberately not the package source: this
       # job's whole point is to install what the index serves rather than what
       # the checkout holds, so a full tree here would put the thing under test
-      # on the runner beside the thing being tested. A sparse checkout brings in
-      # the shared wait and nothing else (#694).
+      # on the runner beside the thing being tested (#694).
+      #
+      # `sparse-checkout-cone-mode: false` is load-bearing, not tidiness. Cone
+      # mode always materialises every file at the repository *root* whatever
+      # the pattern says, so the default would hand this runner `jury.toml` and
+      # `pyproject.toml` among others — and `jury --doctor`, two steps down,
+      # discovers `jury.toml` from the working directory. A check whose whole
+      # point is a clean environment would then be reading this repository's own
+      # configuration. Out of cone mode the pattern is gitignore-shaped and
+      # anchored, so the workspace holds `.github/scripts/` and nothing else.
       - name: Check out the release scripts
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           sparse-checkout: .github/scripts
+          sparse-checkout-cone-mode: false
 
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0

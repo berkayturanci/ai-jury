@@ -52,7 +52,10 @@ is only eventually consistent. Both jobs therefore run one shared wait,
 `.github/scripts/wait-for-pypi-dists.sh`, which polls
 `https://pypi.org/pypi/ai-jury/<version>/json` for five minutes (30 × 10s) until
 **both** distributions appear in its `urls` array, and hands back the sdist's own
-url and sha256. Before #694 the render waited only for that endpoint to answer at
+url and sha256. The five minutes is a ceiling and not an estimate: every request
+carries a connect timeout and a maximum time, and the poll stops once the budget
+is spent, so a response that stalls after the connection is accepted cannot hold
+the step open. Before #694 the render waited only for that endpoint to answer at
 all: on v1.16.0 it answered with an empty file list, the read raised
 `StopIteration`, and `curl` was handed an empty url — failing *after* the upload
 and *before* the GitHub Release, which left 1.16.0 live on PyPI with no release

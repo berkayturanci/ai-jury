@@ -31,8 +31,15 @@ itself. So the download, the digest check, the `sed` render and the placeholder
 check all run, and the failure path is asserted to end in a named `::error::`
 rather than a traceback.
 
+Two of the stub's answers are not documents. One is a 404, and one is no answer
+at all: the request is accepted and then left open, which is the only way to show
+that a bound in *attempts* is not a bound in *time* — and, once the requests
+carry `--connect-timeout` and `--max-time`, that the poll gives up anyway.
+
 Hermetic: no network, no PyPI, `PYPI_INTERVAL_SECONDS=0` so the poll costs
-nothing, and the interpreter the script shells out to is this one.
+nothing, and the interpreter the script shells out to is this one. Everything
+except `TheScriptIsShapedToBeShared` runs real `bash` and real `curl` against the
+loopback stub; that one class reads the script as text and runs everywhere.
 """
 
 from __future__ import annotations
@@ -46,6 +53,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -80,6 +88,10 @@ def _file(packagetype: str, url: str, sha: str = "b" * 64) -> dict:
     return {"packagetype": packagetype, "url": url, "digests": {"sha256": sha}}
 
 
+#: An answer the stub never sends: the request is accepted and then left open,
+#: which is the shape a bound in attempts alone does not bound at all.
+STALL = object()
+
 BOTH = {"urls": [_file("bdist_wheel", WHEEL_URL), _file("sdist", SDIST_URL, SDIST_SHA)]}
 #: What PyPI actually served on 1.16.0: the version exists, the files do not yet.
 EMPTY = {"info": {"version": "9.9.9"}, "urls": []}
@@ -109,6 +121,14 @@ class _Handler(BaseHTTPRequestHandler):
         if answer is None:
             self.send_error(404)
             return
+        if answer is STALL:
+            # Accepted, and then nothing — no status line, no body. Only a
+            # client-side timeout ends this; the connect timeout never fires,
+            # because connecting is the one thing that did work. The wait is
+            # released by `StubIndex.close`, and the thread is a daemon, so a
+            # failing assertion cannot leave the suite hanging on it.
+            self.server.release.wait(timeout=120)
+            return
         raw = answer if isinstance(answer, bytes) else json.dumps(answer).encode()
         # `{base}` lets an answer point at this very server: the sdist url PyPI
         # reports is not knowable until the stub has bound a port.
@@ -133,6 +153,7 @@ class StubIndex:
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
         self.server.answers = list(answers)
         self.server.paths = []
+        self.server.release = threading.Event()
         host, port = self.server.server_address[:2]
         self.server.base_url = f"http://{host}:{port}"
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
@@ -147,6 +168,7 @@ class StubIndex:
         return self.server.paths
 
     def close(self):
+        self.server.release.set()
         self.server.shutdown()
         self.server.server_close()
         self.thread.join(timeout=5)
@@ -156,7 +178,17 @@ class StubIndex:
 class WaitAgainstStub(unittest.TestCase):
     """Runs the real script against a scripted loopback index. No tests here."""
 
-    def run_wait(self, answers, *, attempts: int = 4, version: str = "9.9.9"):
+    def run_wait(
+        self,
+        answers,
+        *,
+        attempts=4,
+        version: str = "9.9.9",
+        max_time: str = "10",
+        connect_timeout: str = "5",
+        budget: str | None = None,
+        python: str | None = None,
+    ):
         index = StubIndex(answers)
         self.addCleanup(index.close)
         workdir = tempfile.mkdtemp()
@@ -168,8 +200,12 @@ class WaitAgainstStub(unittest.TestCase):
             "PYPI_BASE_URL": index.base_url,
             "PYPI_ATTEMPTS": str(attempts),
             "PYPI_INTERVAL_SECONDS": "0",
-            "PYPI_PYTHON": sys.executable,
+            "PYPI_MAX_TIME": max_time,
+            "PYPI_CONNECT_TIMEOUT": connect_timeout,
+            "PYPI_PYTHON": python if python is not None else sys.executable,
         }
+        if budget is not None:
+            env["PYPI_BUDGET_SECONDS"] = budget
         env.pop("GITHUB_REF_NAME", None)
         completed = subprocess.run(
             ["bash", str(SCRIPT)],
@@ -285,6 +321,96 @@ class AnIndexThatNeverConvergesFailsLegibly(WaitAgainstStub):
         self.assertIn("no version to wait for", completed.stdout)
 
 
+class AStalledResponseIsNotAllowedToHoldTheStepOpen(WaitAgainstStub):
+    """Attempts bound how many requests are made, not how long one of them takes.
+
+    A peer that accepts the connection and then says nothing defeats an
+    attempt-only bound completely: the first request never returns, so the
+    second is never made. `publish.yml` sets no `timeout-minutes` anywhere, so
+    the ceiling on that would be GitHub's six-hour default — in the step between
+    the upload and the GitHub Release, which is the half-made release this whole
+    change exists to remove, only arrived at slowly.
+    """
+
+    def test_a_response_that_never_arrives_is_abandoned_and_the_poll_ends(self):
+        """The reviewer's repro: a stalling stub, two attempts, no interval."""
+        started = time.monotonic()
+        completed, _, index = self.run_wait([STALL], attempts=2, max_time="1")
+        elapsed = time.monotonic() - started
+        self.assertEqual(completed.returncode, 1)
+        # Two requests actually issued: the first was abandoned, not waited on.
+        self.assertEqual(len(index.paths), 2)
+        self.assertLess(elapsed, 30, "the stalled response was not abandoned promptly")
+        self.assertIn("timed out", completed.stdout)
+        self.assertIn("::error::PyPI never served ai-jury 9.9.9", completed.stdout)
+
+    def test_the_wall_clock_budget_ends_the_poll_before_the_attempts_do(self):
+        """What makes the header's five minutes a ceiling rather than an estimate.
+
+        Thirty attempts are allowed and the budget is two seconds, so the budget
+        is what stops it — and `--max-time` is clamped to the budget left, so the
+        one request that stalls cannot outlive the poll it belongs to.
+        """
+        started = time.monotonic()
+        completed, _, index = self.run_wait([STALL], attempts=30, budget="2", max_time="60")
+        elapsed = time.monotonic() - started
+        self.assertEqual(completed.returncode, 1)
+        self.assertLess(elapsed, 30, "the budget did not bound the poll")
+        self.assertLess(len(index.paths), 30, "the poll ran to its attempt count, not its budget")
+        self.assertIn("::error::PyPI never served ai-jury 9.9.9", completed.stdout)
+
+
+class MisconfigurationIsDiagnosedRatherThanPolled(WaitAgainstStub):
+    """Neither is reachable from `publish.yml`; both were reported as PyPI's fault.
+
+    The script's stated purpose is that a maintainer reads a diagnosis instead of
+    a shell error, and that is not a property of the happy path only.
+    """
+
+    def test_a_non_numeric_attempt_count_is_named_and_not_left_to_bash(self):
+        """`set -u` turns `$((attempts * interval))` into `lots: unbound variable`.
+
+        A shell error about a variable nobody set, printed before any message of
+        the script's own, is exactly what this file is against.
+        """
+        completed, _, index = self.run_wait([BOTH], attempts="lots")
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("::error::", completed.stdout)
+        self.assertIn("PYPI_ATTEMPTS", completed.stdout)
+        self.assertIn("'lots'", completed.stdout)
+        self.assertNotIn("unbound variable", completed.stdout + completed.stderr)
+        self.assertEqual(index.paths, [], "a misconfigured poll asked the index anyway")
+
+    def test_an_attempt_count_of_zero_is_refused(self):
+        """Zero attempts is a wait that never waits, which is not a wait."""
+        completed, _, index = self.run_wait([BOTH], attempts=0)
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("PYPI_ATTEMPTS must be at least 1", completed.stdout)
+        self.assertEqual(index.paths, [])
+
+    def test_an_unusable_interpreter_is_named_rather_than_blamed_on_the_index(self):
+        """It exits 127 from every read, which reads as an unreadable file list.
+
+        So a missing interpreter used to spend the whole budget and then accuse
+        PyPI of never serving the version. It is a configuration mistake and it
+        is now diagnosed as one, before the first request.
+        """
+        completed, _, index = self.run_wait([BOTH], python="/nonexistent/python3")
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("PYPI_PYTHON='/nonexistent/python3'", completed.stdout)
+        self.assertIn("not a usable interpreter", completed.stdout)
+        self.assertNotIn("never served", completed.stdout)
+        self.assertEqual(index.paths, [], "the budget was spent before the diagnosis")
+
+    @unittest.skipIf(shutil.which("echo") is None, "needs an executable that is not python")
+    def test_an_interpreter_that_runs_but_is_not_python_is_diagnosed(self):
+        """`-c ""` only proves something answered; writing the pair proves more."""
+        completed, workdir, _ = self.run_wait([BOTH], python=shutil.which("echo"))
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("does not behave like a Python interpreter", completed.stdout)
+        self.assertFalse((workdir / "published-sdist.txt").exists())
+
+
 class TheScriptIsShapedToBeShared(unittest.TestCase):
     """It is a committed, runnable file, and both jobs can actually run it."""
 
@@ -302,6 +428,13 @@ class TheScriptIsShapedToBeShared(unittest.TestCase):
         text = SCRIPT.read_text(encoding="utf-8")
         self.assertIn('attempts="${PYPI_ATTEMPTS:-30}"', text)
         self.assertIn('interval="${PYPI_INTERVAL_SECONDS:-10}"', text)
+        self.assertIn('budget="${PYPI_BUDGET_SECONDS:-$((attempts * interval))}"', text)
+
+    def test_every_request_is_bounded_in_time_and_not_only_in_attempts(self):
+        """Thirty attempts is not five minutes if one of them can never return."""
+        text = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn('--connect-timeout "$connect_timeout"', text)
+        self.assertIn('--max-time "$request_max"', text)
 
     def test_every_input_arrives_through_the_environment(self):
         """No Actions expression may reach a shell, and this is still a shell.
@@ -316,10 +449,6 @@ class TheScriptIsShapedToBeShared(unittest.TestCase):
             if not line.lstrip().startswith("#")
         ]
         self.assertNotIn("${{", "\n".join(code))
-
-
-if __name__ == "__main__":  # pragma: no cover
-    unittest.main()
 
 
 def render_step_shell() -> str:
@@ -408,3 +537,12 @@ class TheRenderStepRunsAgainstAStubIndex(unittest.TestCase):
         self.assertIn("::error::PyPI never served ai-jury 9.9.9", last)
         self.assertIn("missing sdist", last)
         self.assertFalse((workdir / "release" / "ai-jury.rb").exists())
+
+
+# Last, deliberately: as the first thing after the shared-shape class this
+# collected seventeen of the module's tests and silently dropped the three that
+# run the render step — the ones carrying this change's headline claim. The
+# discovery-based suite was never affected, but `python tests/…` is how a
+# maintainer checks one file.
+if __name__ == "__main__":  # pragma: no cover
+    unittest.main()

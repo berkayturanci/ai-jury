@@ -312,11 +312,15 @@ class ThePublishedReleaseIsInstalledAndRun(WorkflowScan):
 
         The job had no checkout at all, which is the property worth keeping: a
         full tree would put the package source on the runner beside the release
-        being verified. A sparse checkout brings in the shared wait and nothing
-        else.
+        being verified. The sparse checkout must bring in the shared wait and
+        nothing else — and *nothing else* is why cone mode is off. Cone mode
+        materialises every root file whatever the pattern says, so it would
+        deliver `jury.toml` to a runner on which `jury --doctor` runs two steps
+        later and discovers config from the working directory.
         """
         body = "\n".join(self.verify)
         self.assertIn("sparse-checkout: .github/scripts", body)
+        self.assertIn("sparse-checkout-cone-mode: false", body)
         self.assertNotIn("path: src", body)
 
     def test_the_installed_cli_must_report_the_tag(self):
