@@ -90,6 +90,52 @@ def panel_accounting(reviews) -> dict:
     }
 
 
+def distinct_vendors(specs) -> int:
+    """How many distinct vendors a set of agent specs represents (pure).
+
+    Slots, not vendors, is the mistake this exists to prevent: three
+    ``[[agent]]`` entries all pointing at one vendor are one perspective, so a
+    run configured that way never claimed cross-vendor consensus and must not be
+    failed for not delivering it.
+    """
+    return len({(getattr(s, "vendor", "") or "").strip().lower() for s in specs or []} - {""})
+
+
+def collapse_reason(reviews, required: int, configured_vendors: int | None = None) -> str | None:
+    """Why this run may not stand as cross-vendor consensus, or ``None``.
+
+    PURE. ``required`` is the number of distinct vendors that must have
+    *contributed* a review (:func:`panel_accounting`'s ``vendors``), not the
+    number configured — an agent that was installed, probed clean and then
+    returned nothing is exactly the failure this guards (#635/#682).
+
+    ``configured_vendors`` scopes the DEFAULT: when fewer distinct vendors are
+    enabled than ``required``, the run never claimed cross-vendor consensus and
+    is left alone, so turning the guard on by default cannot fail a
+    single-vendor install that was always honest about being one. Pass ``None``
+    for an explicitly requested threshold, which is enforced as asked.
+
+    The message NAMES the opt-out. Whoever reads it is looking at a red CI step
+    on a gate that ships on by default, quite possibly for the first time, and a
+    failure that does not say how to accept it sends them to the issue tracker
+    for a flag the tool already has.
+    """
+    if required <= 0:
+        return None
+    if configured_vendors is not None and configured_vendors < required:
+        return None
+    contributed = panel_accounting(reviews).get("vendors", 0)
+    if contributed >= required:
+        return None
+    return (
+        f"panel collapsed: {contributed} vendor(s) contributed a review, "
+        f"{required} required. An abstention is not an approval; "
+        f"cross-vendor consensus was not formed. To accept a collapsed panel, "
+        f"pass --no-min-vendors (or set [jury.ci] min_vendors = 0); to catch a "
+        f"missing CLI at startup instead, run with --strict."
+    )
+
+
 def _agent_entry(result) -> dict:
     """Build a single agent metadata entry.
 

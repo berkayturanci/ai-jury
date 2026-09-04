@@ -25,7 +25,13 @@ from . import doctor as doctor_module
 from .adapters import EFFORT_LEVELS, effort_warnings, make_adapter
 from .ci import evaluate_ci
 from .classification import classify, label_strings
-from .config import ConfigError, load_config, load_raw_config, validate_config
+from .config import (
+    DEFAULT_MIN_VENDORS,
+    ConfigError,
+    load_config,
+    load_raw_config,
+    validate_config,
+)
 from .github import (
     apply_labels,
     issue_body,
@@ -35,7 +41,7 @@ from .github import (
     pr_context,
     pr_diff,
 )
-from .metadata import build_run_metadata, panel_accounting
+from .metadata import build_run_metadata, collapse_reason, distinct_vendors
 from .orchestrator import review_diff, run_jury
 from .policy import PolicyError, load_policy
 from .redaction import redact
@@ -145,6 +151,23 @@ def _read_diff(args) -> tuple[str, str]:
         "error: provide one of --pr, --issue, --diff-file, --commit, --commits "
         "(or --diff-file - for stdin)"
     )
+
+
+def resolve_min_vendors(cli_value, config) -> tuple[int, bool]:
+    """The effective cross-vendor threshold, and whether a person asked for it.
+
+    PURE. ``cli_value`` is ``args.min_vendors``: ``None`` when neither
+    ``--min-vendors`` nor ``--no-min-vendors`` was passed, in which case the
+    value comes from ``[jury.ci] min_vendors`` (shipped as 2, #682).
+
+    The second element says whether the threshold was named on the command line.
+    Only an unnamed (default) threshold is scoped down to runs that actually
+    claimed cross-vendor consensus — someone who types ``--min-vendors 3`` on a
+    two-vendor panel is asking for the failure and gets it.
+    """
+    if cli_value is None:
+        return max(0, int(getattr(config.ci, "min_vendors", DEFAULT_MIN_VENDORS))), False
+    return max(0, int(cli_value)), True
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -302,12 +325,23 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--min-vendors",
         type=int,
-        default=0,
+        default=None,
         metavar="N",
         help=(
             "fail (exit 3) unless at least N distinct vendors contributed a "
-            "review; 0 disables. --strict checks availability at startup, this "
+            "review; 0 disables. Default from config ([jury.ci] min_vendors, "
+            "shipped as 2). --strict checks availability at startup, this "
             "checks participation at the end"
+        ),
+    )
+    p.add_argument(
+        "--no-min-vendors",
+        dest="min_vendors",
+        action="store_const",
+        const=0,
+        help=(
+            "opt out of the cross-vendor guard: accept a run whose panel "
+            "collapsed to a single vendor (same as --min-vendors 0)"
         ),
     )
     p.add_argument(
@@ -2460,24 +2494,32 @@ def main(argv: list[str] | None = None) -> int:
 
     ci_exit = 0
     # A run whose panel collapsed is a different thing wearing the same output
-    # (#625). `--strict` fails when a configured CLI is *missing*; this fails
-    # when one was present, probed fine, and returned nothing — which is how a
-    # three-vendor panel silently becomes one. Opt-in, so the default is
-    # unchanged, and exit 3 so it is distinguishable from a findings failure.
-    if getattr(args, "min_vendors", 0) > 0:
-        contributed = panel_accounting(outcome.reviews).get("vendors", 0)
-        if contributed < args.min_vendors:
-            log(
-                f"panel collapsed: {contributed} vendor(s) contributed a review, "
-                f"--min-vendors {args.min_vendors} required. An abstention is not "
-                "an approval; cross-vendor consensus was not formed."
-            )
-            ci_exit = 3
+    # (#625/#682). `--strict` fails when a configured CLI is *missing*; this
+    # fails when one was present, probed fine, and returned nothing — which is
+    # how a three-vendor panel silently becomes one. It FAILS CLOSED by default
+    # (`[jury.ci] min_vendors`, shipped as 2) and is scoped to runs that claimed
+    # cross-vendor consensus, so a single-vendor install is untouched; exit 3, so
+    # it is distinguishable from a findings failure.
+    required, explicit = resolve_min_vendors(getattr(args, "min_vendors", None), config)
+    collapsed = collapse_reason(
+        outcome.reviews,
+        required,
+        None if explicit else distinct_vendors(config.enabled_agents),
+    )
+    if collapsed:
+        log(collapsed)
+        ci_exit = 3
     if args.ci:
         fail_on = config.ci.fail_on
         if args.fail_on:
             fail_on = [s.strip().lower() for s in args.fail_on.split(",") if s.strip()]
-        ci_exit, ci_reason = evaluate_ci(outcome.groups, fail_on, config.ci.ignore_unverified)
+        gate_exit, ci_reason = evaluate_ci(outcome.groups, fail_on, config.ci.ignore_unverified)
+        # A collapsed panel outranks the severity gate: `evaluate_ci` reports on
+        # findings the panel did or did not raise, and a panel that never formed
+        # is not evidence either way. Before #682 this assignment overwrote the
+        # collapse exit, so `--ci --min-vendors 2` reported a clean pass on a
+        # single-vendor run — the exact failure the flag was added for.
+        ci_exit = ci_exit or gate_exit
         # Only the markdown report carries the human-readable CI gate section;
         # json/sarif documents stay machine-clean. The exit code is unchanged.
         if args.format == "markdown":

@@ -26,6 +26,21 @@ inputs:
     description: "Additional arguments to pass to the jury CLI (e.g. '--post --auto')"
     required: false
     default: "--auto --post"
+  min-vendors:
+    description: >-
+      Fail the run (exit 3) unless at least this many distinct vendors actually
+      CONTRIBUTED a review. 0 opts out. Defaults to 2, so a consumer of this
+      Action cannot silently inherit a panel that collapsed to one vendor
+      (#682) — an agent can be installed, probe clean, and return nothing, and
+      a configured CLI that is not installed at all counts the same way: the
+      gate scopes on vendors CONFIGURED, so a jury.toml naming three vendors
+      fails on a runner carrying one. An empty value means "use the default",
+      because passing an unset repository/organization variable through this
+      input arrives as the empty string; a non-numeric value fails with exit 2.
+      Ignored when `args` already names --min-vendors or --no-min-vendors, in
+      either the `--flag value` or the `--flag=value` spelling.
+    required: false
+    default: "2"
   version:
     description: "ai-jury package version to install (defaults to latest)"
     required: false
@@ -63,11 +78,44 @@ runs:
         ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
         GEMINI_API_KEY: ${{ inputs.gemini-api-key }}
         INPUT_ARGS: ${{ inputs.args }}
+        INPUT_MIN_VENDORS: ${{ inputs.min-vendors }}
         PR_NUM: ${{ github.event.pull_request.number }}
         BASE_REF: ${{ github.base_ref }}
       run: |
+        # The cross-vendor guard, made explicit for Action consumers (#682).
+        # `args` wins when it already says something about it, so a caller who
+        # has decided is never overridden.
+        #
+        # An EMPTY value is the default, not an error: passing an unset
+        # repository or organization variable through the `min-vendors` input
+        # arrives here as "", and hard-failing that broke a workflow that had
+        # asked for nothing unusual. The Action's own `default:` never reaches
+        # this branch — GitHub applies it only when the input is omitted.
+        MIN_VENDORS="$INPUT_MIN_VENDORS"
+        if [ -z "$MIN_VENDORS" ]; then
+          MIN_VENDORS="2"
+        fi
+        # Anything non-numeric IS an error, and is caught before the value is
+        # word-split into the command line: it is caller-supplied, and
+        # `min-vendors: "--post"` would otherwise smuggle in a flag.
+        case "$MIN_VENDORS" in
+          *[!0-9]*)
+            echo "ai-jury: min-vendors must be a non-negative integer (got '$MIN_VENDORS')" >&2
+            exit 2
+            ;;
+        esac
+        GUARD="--min-vendors $MIN_VENDORS"
+        # Both spellings count as "the caller has decided": `--min-vendors 0`
+        # and `--min-vendors=0` mean the same thing to argparse, and matching
+        # only the space-separated form appended a second, contradicting
+        # `--min-vendors 2` behind the caller's back. The padding is what makes
+        # a flag at the very start or the very end of `args` match too.
+        case " $INPUT_ARGS " in
+          *" --min-vendors "*|*" --min-vendors="*) GUARD="" ;;
+          *" --no-min-vendors "*|*" --no-min-vendors="*) GUARD="" ;;
+        esac
         if [ -n "$PR_NUM" ] && [ "$PR_NUM" != "null" ]; then
-          jury --pr "$PR_NUM" $INPUT_ARGS
+          jury --pr "$PR_NUM" $INPUT_ARGS $GUARD
         else
-          git diff "origin/$BASE_REF...HEAD" | jury --diff-file - $INPUT_ARGS
+          git diff "origin/$BASE_REF...HEAD" | jury --diff-file - $INPUT_ARGS $GUARD
         fi

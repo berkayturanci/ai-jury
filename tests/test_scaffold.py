@@ -92,6 +92,10 @@ class RenderTomlTest(unittest.TestCase):
         # Sections render under [jury].
         self.assertIn("[jury.context]", text)
         self.assertIn("[jury.ci]", text)
+        # The cross-vendor knob is discoverable where the CI gate is configured
+        # (#682) — commented out, so it changes nothing a reader did not ask for.
+        self.assertIn("# min_vendors = 2", text)
+        self.assertNotIn("\nmin_vendors", text)
 
     def test_no_wizard_keys_byte_identical(self):
         # Omitting the new kwargs must produce output with none of the new sections.

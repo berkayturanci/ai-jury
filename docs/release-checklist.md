@@ -63,6 +63,23 @@ section is reading those jobs, not repeating their work by hand.
       `unittest discover -s tests` and then
       `python -m ai_jury --mock --diff-file examples/sample.diff`, asserting the
       rendered report contains the chair's verdict.
+- [x] Adapter invocation contracts locked offline — `tests/test_adapter_contracts.py`
+      drives every shipped adapter's real argv / stdin / parse path against the
+      recorded fixtures in `tests/fixtures/contracts/`, checked against
+      `tests/golden/adapter_contracts.json`. It needs no auth, network or spend,
+      so it runs on every matrix leg. A vendor CLI change is expected to fail it;
+      re-record the golden **and** say which CLI changed in `CHANGELOG.md`.
+- [ ] **Live smokes before any release that touched `src/ai_jury/adapters.py`** —
+      `JURY_LIVE=1 make live-smoke` (or `make live-smoke`), on a machine with the
+      real `claude`, `codex` and `agy` CLIs installed and authenticated. The
+      offline lock proves the adapters still *build* the recorded invocation; only
+      a live run proves the installed CLI still *accepts* it. That is the gap
+      #635 fell through: every offline check was green while `agy` contributed
+      nothing to the panel for a whole release. `tests/live/test_live_contracts.py`
+      is the contract half (it asserts a review came back, not merely exit 0) and
+      `tests/live/test_live_smoke.py` the end-to-end half; both skip per agent
+      whose CLI is absent or unauthenticated. Left unchecked on purpose — it is a
+      per-release action, not a standing property.
 - [x] `ruff check` and `ruff format --check` clean — the `lint` job, on a ruff
       pinned to the same version as the `ruff-format` pre-commit hook
       (`tests/test_ruff_pin.py` asserts the two never drift apart).

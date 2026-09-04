@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 
 from . import privilege, redaction
 from .config import AgentSpec
+from .findings import emitted_findings_block
 
 # Cap on a single local-model HTTP response body (issue #293/F-9). A chat
 # completion is small; an unbounded read from a malicious/buggy endpoint would
@@ -127,6 +128,15 @@ ERR_MISSING_API_KEY = "missing_api_key"
 # letting http.client raise (and risk echoing a transformed/escaped copy of
 # the secret in its exception text — see _HostedApiAdapter._invalid_key_reason).
 ERR_INVALID_API_KEY = "invalid_api_key"
+# The agent exited 0 and printed something, but that something is not a review
+# (issue #682): a refusal, or the CLI's own usage/argument-error/version banner
+# echoed back because the invocation never reached the model. Distinct from
+# ERR_EMPTY_OUTPUT (nothing at all on stdout) so a report can tell "the CLI is
+# broken/misinvoked" apart from "the model declined", and distinct from ok=True
+# so neither can be counted as a vendor that contributed to consensus. #635 is
+# the shape: `agy` passed every availability probe, printed an argument error,
+# and the panel silently became single-vendor.
+ERR_NO_REVIEW = "no_review"
 ERR_UNKNOWN = "unknown"
 
 ERROR_CODES = frozenset(
@@ -142,6 +152,7 @@ ERROR_CODES = frozenset(
         ERR_CONNECTION,
         ERR_MISSING_API_KEY,
         ERR_INVALID_API_KEY,
+        ERR_NO_REVIEW,
         ERR_UNKNOWN,
     }
 )
@@ -150,7 +161,8 @@ ERROR_CODES = frozenset(
 # #30): a timeout, a rate-limit, a process that failed to spawn, or a local
 # server that was briefly unreachable (#43). Auth, missing-CLI,
 # permission-prompt, empty-output, and generic nonzero-exit are treated as
-# deterministic — retrying them just burns time and tokens.
+# deterministic — retrying them just burns time and tokens. So is a
+# no-review output: a misinvoked CLI prints the same usage banner every time.
 RETRYABLE_ERROR_CODES = frozenset(
     {
         ERR_TIMEOUT,
@@ -215,6 +227,207 @@ def classify_stderr(returncode: int, stderr: str) -> str:
         return ERR_PERMISSION_PROMPT
     del returncode
     return ERR_NONZERO_EXIT
+
+
+# --- "Exit 0, but nothing reviewable came back" (issue #682) ------------------
+#
+# A CLI that exits 0 and prints its own usage text is indistinguishable, to
+# everything downstream, from a reviewer that read the diff — the run stays
+# fail-soft and the panel quietly loses a vendor (#635). These patterns turn
+# that into a typed failure at the adapter boundary, on SHAPE alone: never on
+# whether a review is any good, only on whether it is a review at all.
+
+#: An output longer than this is treated as a review even if it opens with a
+#: refusal-shaped sentence. A real review that mentions "I cannot verify X"
+#: mid-argument must never be discarded; an actual refusal is a short paragraph.
+_NO_REVIEW_MAX_CHARS = 600
+
+#: How much of the output is examined for a usage/argument-error banner. A CLI
+#: that is going to print one prints it first.
+_NO_REVIEW_HEAD_CHARS = 400
+
+# The #635 class: the launcher rejected the argv, so the model was never
+# reached. Every one of these is text a CLI writes about ITSELF — and the whole
+# difficulty is that a review may *talk about* the same words. "Usage of int()
+# is unsafe" and "Invalid argument passed to calculate_total()" are findings,
+# not banners, and discarding either costs a panelist and (with the guard
+# failing closed) can collapse the panel. So each pattern below is matched
+# against a whole line, and every branch is bounded the way the refusal branch
+# already is: a banner is short, or it is corroborated by banner structure.
+
+#: A launcher's own usage line, as a whole line. Prose that merely opens with
+#: the word "usage" does not match: the line must go on to look like a synopsis
+#: (a colon, or a bracketed/flag-shaped operand).
+_USAGE_LINE_RE = re.compile(
+    r"usage:\s*\S"  # "Usage: agy [options] [prompt]"
+    r"|usage\s+of\s+\S+:$"  # Go's flag package: "Usage of ./agy:"
+    r"|usage\s+\S+\s+[\[<-]",  # "usage agy [options]"
+    re.IGNORECASE,
+)
+
+#: Text only a launcher writes about itself — it complains about the argv it
+#: was handed, in the first person of a program. Needs no corroboration beyond
+#: opening a short output.
+_CLI_SELF_ERROR_RE = re.compile(
+    r"(?:error|fatal)\s*:\s*(?:unknown|unrecognized|invalid|unexpected)\s+"
+    r"(?:flag|option|argument|command|subcommand)\b"
+    r"|flag needs an argument\b"
+    r"|.{0,40}\bcommand not found$",
+    re.IGNORECASE,
+)
+
+#: The same complaint without the ``error:`` prefix. This one IS ambiguous with
+#: review prose, so it must both name a flag-shaped token ("unknown flag:
+#: --print") and be corroborated by surrounding banner structure.
+_BARE_ARG_ERROR_RE = re.compile(
+    r"(?:unknown|unrecognized|invalid|unexpected)\s+"
+    r"(?:flag|option|argument|command|subcommand)\b"
+    r"[\s:=]*[\"'`]?-{1,2}[A-Za-z0-9]",
+    re.IGNORECASE,
+)
+
+#: Corroborating structure, never a trigger on its own: the options/flags block
+#: under a synopsis, or the help hint a launcher prints beneath it. The old
+#: unanchored "for more information, try/see" pattern lives on only here — it
+#: is a sentence a review can perfectly well contain.
+_BANNER_STRUCTURE_RE = re.compile(
+    r"^[ \t]*(?:options|flags|commands|arguments|subcommands)\b[ \t]*:?[ \t]*$"
+    r"|^[ \t]*-{1,2}[A-Za-z0-9][\w-]*(?:[ \t=,]|$)"
+    r"|^[ \t]*for more information,? (?:try|see)\b",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+#: Nothing but a version/probe banner, e.g. "1.1.22" or "agy version 1.1.22".
+_VERSION_ONLY_RE = re.compile(r"^[\w.@/+-]{0,40}(?:\s+version)?\s*v?\d+\.\d+[\w.+-]*$")
+
+#: A refusal, matched on the lowercased text and only inside the length bound
+#: above. Deliberately narrow: these are first-person declines, not any
+#: sentence containing the word "cannot".
+#:
+#: Matching this is NOT on its own enough to discard an output — see
+#: :func:`_is_whole_output_refusal`. A reviewer routinely opens with a limit it
+#: hit ("I do not have access to the migration file, so I reviewed the Python
+#: only: …") and then reviews; discarding that costs a panelist and, with the
+#: gate failing closed, turns a passing two-vendor run into exit 3.
+_REFUSAL_RE = re.compile(
+    r"i(?:'|\u2019)?m (?:sorry|unable|not able)"
+    r"|i am (?:sorry|unable|not able)"
+    r"|i (?:can(?:'|\u2019)?t|cannot|won(?:'|\u2019)?t|will not)"
+    r" (?:help|assist|do|review|comply|provide|analyz|analys)"
+    r"|sorry,? (?:but )?i "
+    r"|as an ai\b"
+    r"|i (?:do not|don(?:'|\u2019)?t) have (?:access|the ability)"
+)
+
+
+#: How far into the output a decline may begin and still BE the output. A
+#: refusal says so first; a review that ran into a limit mid-argument says so
+#: after paragraphs of review. One short lead-in sentence is allowed for, no more.
+_REFUSAL_OPENING_CHARS = 80
+
+#: Marks of an output that reviewed something, however briefly. Any one of them
+#: outranks the refusal phrase in front of it: an agent that says it could not
+#: read one file and then names a defect HAS reviewed, and its finding is the
+#: thing the panel exists to collect.
+_REVIEW_SUBSTANCE_RE = re.compile(
+    r"\blines?\s+\d+"  # "line 12", "lines 40-52"
+    r"|\b[\w./-]+\.[a-z]{1,5}:\d+"  # "src/app.py:12"
+    r"|^@@[ \t]"  # a hunk header quoted back
+    r"|\bi (?:reviewed|read|checked|examined|inspected|looked at|went through)\b"
+    r"|\b(?:having|after) (?:reviewed|read|checked|examined)\b",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+#: The adversative pivot that turns a limit into a review: "I'm not able to
+#: reproduce the race locally, BUT the lock ordering here is wrong." It counts
+#: only when what follows is prose of its own and is not itself another decline
+#: — "I'm sorry, but I can't help with this" pivots into the same refusal.
+_PIVOT_RE = re.compile(r"\b(?:but|however|though|although|that said)\b", re.IGNORECASE)
+
+#: How much text must follow a pivot before it can carry a review claim.
+_PIVOT_MIN_CHARS = 20
+
+
+def _carries_review_substance(body: str) -> bool:
+    """True when ``body`` says something about the code, not only about itself."""
+    if _REVIEW_SUBSTANCE_RE.search(body):
+        return True
+    pivot = _PIVOT_RE.search(body)
+    if pivot is None:
+        return False
+    rest = body[pivot.end() :].strip()
+    return len(rest) >= _PIVOT_MIN_CHARS and _REFUSAL_RE.search(rest.lower()) is None
+
+
+def _is_whole_output_refusal(body: str) -> bool:
+    """True when the output *is* a decline, not a review that mentions a limit.
+
+    Three conditions, all necessary. The output is short (a real decline is a
+    sentence or two), the decline OPENS it, and nothing in it carries review
+    substance. Merely containing a refusal phrase somewhere inside the length
+    bound was the old rule, and it destroyed genuine short reviews — including
+    ones that named a defect and a line number (#682, round 3).
+    """
+    if len(body) > _NO_REVIEW_MAX_CHARS:
+        return False
+    match = _REFUSAL_RE.search(body.lower())
+    if match is None or match.start() > _REFUSAL_OPENING_CHARS:
+        return False
+    return not _carries_review_substance(body)
+
+
+def _is_cli_banner(body: str) -> bool:
+    """True when ``body`` *is* a launcher's banner, not prose that mentions one.
+
+    Two shapes qualify. A full help dump — a synopsis line plus an options
+    block — is unmistakable at any length. Anything shorter must both open with
+    a banner-shaped line and fit inside the same length bound the refusal branch
+    uses: a real review is not three lines.
+    """
+    head = body[:_NO_REVIEW_HEAD_CHARS]
+    lines = [line.strip() for line in head.splitlines() if line.strip()]
+    if not lines:  # pragma: no cover - `body` is stripped and non-empty here
+        return False
+    synopsis = any(_USAGE_LINE_RE.match(line) for line in lines)
+    structure = _BANNER_STRUCTURE_RE.search(head) is not None
+    if synopsis and structure:
+        return True
+    if len(body) > _NO_REVIEW_MAX_CHARS:
+        return False
+    first = lines[0]
+    if _USAGE_LINE_RE.match(first) or _CLI_SELF_ERROR_RE.match(first):
+        return True
+    return _BARE_ARG_ERROR_RE.match(first) is not None and (synopsis or structure)
+
+
+def no_review_reason(text: str) -> str | None:
+    """Why ``text`` cannot be a review, or ``None`` when it could be one.
+
+    PURE, and a judgement of SHAPE only — it never scores a review's quality.
+    An adapter calls it on an exit-0 stdout so that a refusal, a usage banner
+    or a bare version string is recorded as a typed failure (``ERR_NO_REVIEW``)
+    rather than as a contributing vendor. Fail-soft still applies: the run
+    continues, but with a dead seat that says so.
+
+    Returns a short human-readable reason, safe to embed in an error string
+    (it names the category, never the agent's text).
+    """
+    body = (text or "").strip()
+    if not body:
+        return "the agent produced no output"
+    # A structured findings block is the one machine-checkable proof that the
+    # agent answered in the reviewer's contract, and it settles the question
+    # before any prose heuristic gets a vote: a launcher banner does not emit
+    # one, and an agent that declines and then reports a finding has reviewed.
+    if emitted_findings_block(body):
+        return None
+    if _is_cli_banner(body):
+        return "the CLI printed usage or argument-error text instead of a review"
+    if _VERSION_ONLY_RE.match(body):
+        return "the CLI printed only a version banner instead of a review"
+    if _is_whole_output_refusal(body):
+        return "the agent declined to review"
+    return None
 
 
 # --- Reasoning effort (issue #662) -------------------------------------------
@@ -732,6 +945,21 @@ class Adapter:
                 error_code=ERR_EMPTY_OUTPUT,
                 exit_code=proc.returncode,
             )
+        # Exit 0 with output that is not a review (issue #682): a refusal, or the
+        # CLI's own usage/version banner because the argv never reached the model
+        # (#635). Counting it as a review is what makes a panel collapse silent.
+        no_review = no_review_reason(out)
+        if no_review is not None:
+            return AgentResult(
+                self.name,
+                self.spec.vendor,
+                False,
+                "",
+                dur,
+                f"no review returned: {no_review}: {redaction.redact(out)[0][:200]}",
+                error_code=ERR_NO_REVIEW,
+                exit_code=proc.returncode,
+            )
         return AgentResult(self.name, self.spec.vendor, True, out, dur, exit_code=proc.returncode)
 
 
@@ -1157,6 +1385,17 @@ class LocalAdapter(Adapter):
                 "local model returned empty content",
                 error_code=ERR_EMPTY_OUTPUT,
             )
+        no_review = no_review_reason(content)
+        if no_review is not None:
+            return AgentResult(
+                self.name,
+                self.spec.vendor,
+                False,
+                "",
+                dur,
+                f"no review returned: {no_review}",
+                error_code=ERR_NO_REVIEW,
+            )
         return AgentResult(self.name, self.spec.vendor, True, content, dur)
 
 
@@ -1431,6 +1670,17 @@ class _HostedApiAdapter(Adapter):
                 dur,
                 "hosted API returned empty content",
                 error_code=ERR_EMPTY_OUTPUT,
+            )
+        no_review = no_review_reason(content)
+        if no_review is not None:
+            return AgentResult(
+                self.name,
+                self.spec.vendor,
+                False,
+                "",
+                dur,
+                f"no review returned: {no_review}",
+                error_code=ERR_NO_REVIEW,
             )
         return AgentResult(self.name, self.spec.vendor, True, content, dur)
 
@@ -1897,6 +2147,19 @@ class GenericCLIAdapter(Adapter):
                 duration,
                 "agent produced empty output",
                 error_code=ERR_EMPTY_OUTPUT,
+                exit_code=res.returncode,
+            )
+
+        no_review = no_review_reason(out)
+        if no_review is not None:
+            return AgentResult(
+                self.spec.name,
+                self.spec.vendor,
+                False,
+                "",
+                duration,
+                f"no review returned: {no_review}: {redaction.redact(out)[0][:200]}",
+                error_code=ERR_NO_REVIEW,
                 exit_code=res.returncode,
             )
 

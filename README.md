@@ -490,6 +490,21 @@ extra_args = ["--output-format", "text", "--disallowed-tools", "Edit,Write,Noteb
 
 Override per run with `--rounds`, `--chair`, `--config`.
 
+> **Fail-soft is not a multi-vendor guarantee.** A missing or failing agent is
+> skipped and the run continues — which is right for one reviewer having a bad
+> day, and wrong as a *silent* default, because a panel that collapsed to one
+> vendor produces a report shaped exactly like a healthy one. Two guards keep
+> them apart: an agent that exits 0 with a refusal or its own usage banner is
+> recorded as a typed failure rather than a review, and a run that claimed
+> cross-vendor consensus and did not form one exits **3** (`--min-vendors`,
+> default `2`). The claim is what your config NAMES, so a `jury.toml` naming
+> three vendors fails on a machine carrying one installed CLI — a missing CLI is
+> not an exemption. Opt out with `--no-min-vendors` (`[jury.ci] min_vendors =
+> 0`), or use `--strict` to catch the missing CLI at startup instead.
+> `jury --doctor` reports
+> reachable vendors, but never contribution — only a run can prove that. See
+> [docs/parameters.md](docs/parameters.md#the-cross-vendor-guard---min-vendors).
+
 The config is validated on every run. Check it without running a review with `jury --config-validate` (exit `0` valid, `2` invalid); add `--strict-config` to turn warnings into errors. See the [**parameter reference**](docs/parameters.md) for every field, allowed value, and default (CLI flags + `jury.toml`), and [docs/configuration.md](docs/configuration.md) for the validation behaviour (hard errors vs. warnings) and other config semantics.
 
 ### Local / open-weight reviewer (free, offline)
@@ -741,7 +756,7 @@ accidental changes are caught in review.
   `--transcript` / `--no-transcript`, `--verbose`, `--live`, `-q` / `--quiet`
 - *GitHub posting:* `--post-summary` / `--post`, `--post-inline`,
   `--post-progress`, `--post-mode {single,phased}`, `--dry-run`, `--label`
-- *CI gating:* `--ci`, `--fail-on`
+- *CI gating:* `--ci`, `--fail-on`, `--min-vendors`, `--no-min-vendors`
 - *Cache & incremental:* `--cache`, `--clear-cache`, `--cache-dir`,
   `--incremental`
 - *Patches:* `--suggest-patches`, `--patches-out`

@@ -170,10 +170,42 @@ Gemini `thinkingConfig`); a vendor with no effort control warns once on stderr
 | `--phase-timeout` | seconds | unset | Per-phase wall-clock budget. |
 | `--retries` | integer ≥ 0 | `0` | Extra attempts for *transient* failures (timeout / rate-limit / spawn). |
 | `--strict` | flag | off | Fail the run if any configured agent CLI is missing. |
+| `--min-vendors` | integer ≥ 0 | from config (`2`) | Fail (**exit 3**) unless at least N **distinct vendors contributed a review**. `0` disables. |
+| `--no-min-vendors` | flag | off | Explicit opt-out: accept a panel that collapsed to one vendor (same as `--min-vendors 0`). |
 
 **Example:** `jury --pr 123 --total-timeout 900 --phase-timeout 240 --retries 1`
 caps the whole run at 15 min, each phase at 4 min, and retries transient
 failures once.
+
+#### The cross-vendor guard (`--min-vendors`)
+
+`--strict` checks **availability at startup**; `--min-vendors` checks
+**participation at the end**. They catch different failures: an agent can be on
+`PATH`, exit 0 on its version probe, be reported `[available]` by `jury
+--doctor`, and still contribute nothing to the panel — which is how a
+three-vendor jury silently becomes a single-vendor rubber stamp.
+
+It counts *vendors*, not slots: three agents from one vendor are one
+perspective, and an abstention (a reply with no findings block) is not one at
+all. Exit **3** is deliberately distinct from the `--ci` findings failure (exit
+1), so a caller can tell "the reviewers disagreed with you" from "the reviewers
+never ran", and a collapsed panel outranks the severity gate when both apply.
+
+It fails **closed** by default: the threshold is `2`, from `[jury.ci]
+min_vendors`. It scopes on the vendors your config **names**, so from this
+release a config naming two or more distinct vendors exits 3 unless at least
+that many actually contributed — **including when a configured CLI is not
+installed**. The shipped three-vendor `jury.toml` on a machine with one CLI
+fails; that is a collapsed panel, not an exemption. Only a config that never
+claimed the consensus — fewer distinct vendors enabled than the threshold, e.g.
+a deliberate single-agent setup — keeps exiting 0. A threshold you type is
+enforced as typed: `--min-vendors 2` on a one-vendor config fails, because you
+asked for it.
+
+Two escapes: `--no-min-vendors` (or `min_vendors = 0` under `[jury.ci]`) accepts
+a collapsed panel, and `--strict` catches a **missing CLI at startup** instead —
+the same situation, reported before the run rather than after it. The failure
+message names both.
 
 ### Large-diff handling
 
@@ -323,6 +355,13 @@ diagnostics and also writes them as redacted JSON;
 `jury --doctor --json | jq '.agents[] | select(.available) | .name'` lists the
 reviewers this machine can actually run. The exported schema is documented in
 [configuration.md](configuration.md#machine-readable-diagnostics-jury---doctor---json).
+
+**Doctor reports reachability, not contribution.** The `panel` block's
+`contributing_vendors` is **always `null`** — doctor runs no review, so it
+cannot know how many vendors would actually contribute one, and it says so
+rather than guessing. Only a real run measures that; the number lives in
+`panel.vendors` of a run's `--metadata-json`, and `--min-vendors` is what
+enforces it. A green doctor is not evidence of a cross-vendor panel.
 
 ---
 

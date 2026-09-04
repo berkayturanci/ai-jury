@@ -1,0 +1,5 @@
+flag needs an argument: -print
+Usage: agy [options] [prompt]
+
+  --print <value>   print the response for <value> and exit
+  --model <id>      model to use

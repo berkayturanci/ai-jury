@@ -128,6 +128,28 @@ def _endpoint_issues(endpoint: str, label: str) -> tuple[list[str], list[str]]:
     return errors, warnings
 
 
+#: Distinct vendors a run must have heard from before it may call itself a
+#: cross-vendor consensus (issue #682). The shipped default of 2 FAILS CLOSED:
+#: before it, a three-vendor panel that collapsed to one exited 0 with a verdict
+#: and nothing said so (#635). Lower it, or set 0, to opt out — see
+#: ``[jury.ci] min_vendors`` and ``--no-min-vendors``.
+DEFAULT_MIN_VENDORS = 2
+
+
+def _non_negative_int(value, default: int) -> int:
+    """A non-negative int from raw config data, falling back to ``default``.
+
+    A malformed value falls back to the default rather than raising: the default
+    is the *safe* direction for a fail-closed gate, and a typo in a CI knob must
+    not stop a review from running.
+    """
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(0, number)
+
+
 DEFAULT_CONFIG: dict = {
     "jury": {
         "rounds": 2,
@@ -135,7 +157,11 @@ DEFAULT_CONFIG: dict = {
         "timeout": 600,
         "parallel": True,
         "verify": True,
-        "ci": {"fail_on": ["critical", "major"], "ignore_unverified": True},
+        "ci": {
+            "fail_on": ["critical", "major"],
+            "ignore_unverified": True,
+            "min_vendors": DEFAULT_MIN_VENDORS,
+        },
         "context": {"mode": "diff-only", "redact_secrets": True},
     },
     # Execution controls (issue #30) are optional and conservative by default:
@@ -518,6 +544,14 @@ class AgentSpec:
 class CiConfig:
     fail_on: list[str] = field(default_factory=lambda: ["critical", "major"])
     ignore_unverified: bool = True
+    # Distinct vendors that must have CONTRIBUTED a review before the run is
+    # allowed to stand as cross-vendor consensus (issue #682). Fails closed at
+    # 2: the product claim is a cross-vendor jury, and a panel that collapsed to
+    # one vendor is a different thing wearing the same output. Only applies when
+    # the run claimed consensus in the first place — a panel with fewer distinct
+    # vendors enabled than this is never failed by the default (see
+    # ``metadata.collapse_reason``). ``0`` disables the guard entirely.
+    min_vendors: int = DEFAULT_MIN_VENDORS
 
 
 @dataclass
@@ -647,6 +681,7 @@ def _ci_from_dict(data: dict) -> CiConfig:
     return CiConfig(
         fail_on=fail_on,
         ignore_unverified=bool(data.get("ignore_unverified", True)),
+        min_vendors=_non_negative_int(data.get("min_vendors"), DEFAULT_MIN_VENDORS),
     )
 
 
@@ -810,6 +845,12 @@ def config_hash(config: JuryConfig) -> str:
         "ci": {
             "fail_on": list(config.ci.fail_on),
             "ignore_unverified": config.ci.ignore_unverified,
+            # `min_vendors` belongs here for the same reason the other two do: it
+            # decides the outcome of a run, so two runs that disagree about it are
+            # not the same run. Adding it invalidates every existing review cache
+            # entry ONCE on upgrade — noted in the CHANGELOG, since a user's first
+            # run after the bump is a full one.
+            "min_vendors": config.ci.min_vendors,
         },
         "context": {
             "mode": config.context.mode,

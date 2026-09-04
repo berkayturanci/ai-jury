@@ -89,15 +89,46 @@ unreachable local endpoint (`connection_error`), or an unset hosted-API key
 continues with whoever is available unless `--strict` is passed; the report lists
 skipped / failed / retried / timed-out agents.
 
-`--strict` checks **availability at startup**. An agent that is installed, probes
-clean, and then returns nothing still leaves the panel short — and cross-vendor
-consensus is the premise, so a run that collapses to one vendor is a different
-thing wearing the same output. `--min-vendors N` fails such a run (exit 3,
-distinct from a findings failure), counting **distinct vendors that contributed a
-review**: three agents from one vendor are one perspective, and an abstention is
-not one at all. It is off by default — failing closed on a flaky vendor CLI turns
-a degraded second opinion into no second opinion, which is a trade for whoever
-runs the panel to make.
+**Fail-soft is not a multi-vendor guarantee.** Continuing without a reviewer is
+the right behaviour for one agent having a bad day; it is the wrong behaviour as
+a *silent* one, because the output of a collapsed panel is byte-shaped like the
+output of a healthy one. Two mechanisms keep the two apart.
+
+First, at the adapter boundary: exit 0 with a non-review on stdout is a typed
+failure, not a review. A refusal, a usage/argument-error banner, or a bare
+version string comes back `ok=False` with `error_code = "no_review"`
+(`adapters.no_review_reason`, judged on **shape** — never on a review's quality).
+That is the #635 shape exactly: `agy` 1.1 gave `--print` an arity, the launcher
+rejected the argv, and the adapter reported the launcher's own text as a review.
+A dead seat is now recorded as a dead seat, so it can never count as a
+contributing vendor.
+
+Second, at the end of the run: `--strict` checks **availability at startup**, and
+an agent that is installed, probes clean, and then returns nothing still leaves
+the panel short. `--min-vendors N` fails such a run (exit 3, distinct from a
+findings failure), counting **distinct vendors that contributed a review**: three
+agents from one vendor are one perspective, and an abstention is not one at all.
+
+It **fails closed by default** (`[jury.ci] min_vendors`, shipped as 2). Failing
+closed on a flaky vendor CLI does turn a degraded second opinion into no second
+opinion — but a false consensus is the more expensive of the two, because a
+degraded run that says so is recoverable and a silent one is not. The default is
+scoped so that trade only lands on runs that made the claim: it applies when two
+or more distinct vendors are enabled, so a deliberate single-agent install is
+untouched. The claim is the CONFIGURATION, not the machine — a config naming
+three vendors on a host with one installed CLI fails, because that run is
+single-vendor however it got there. `--no-min-vendors` (or `min_vendors = 0`) is
+the explicit opt-out, `--strict` turns the missing-CLI half into a startup
+failure instead, and a threshold typed on the command line is enforced as typed.
+
+The invocation each adapter builds is **locked in CI**
+(`tests/golden/adapter_contracts.json` + `tests/test_adapter_contracts.py`):
+argv, stdin mode and sandbox flags per vendor, driven against recorded CLI
+responses in `tests/fixtures/contracts/`. It needs no auth, no network and no
+spend, so it runs on every pull request — which is the half `JURY_LIVE=1` smoke
+tests could never cover, being excluded from CI by design. The live variant of
+the same contract (`tests/live/test_live_contracts.py`) proves the locked
+invocation still *works* against an installed CLI, and is a release step.
 
 **Read-only by default (secure):** reviewers read attacker-controlled diffs, so the
 shipped defaults run them sandboxed — Claude with `--disallowed-tools
