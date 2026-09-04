@@ -42,7 +42,8 @@ Key facts:
   without it, fewer than `min_vendors` (default 2) contributing vendors exits 3.
 - `jury run-agent --agent claude --role review --prompt-file p.md` — run ONE configured
   agent for one role and print one `ai-jury.run-agent.v1` JSON result (for an
-  orchestrator); `--role implement|fix` needs `--allow-write`, the read-only roles refuse it.
+  orchestrator); `--role implement|fix` needs `--allow-write`; on the read-only roles
+  (`review`/`gate`/`chair`) it warns and is ignored.
 - `jury comment --text "/jury review" --pr 123` — run from an allowlisted PR comment.
 
 ## Docs
