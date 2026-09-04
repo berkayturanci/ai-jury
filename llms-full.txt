@@ -123,8 +123,9 @@ Input (choose exactly one): `--pr <num/url>`, `--issue <num/url>` (both take an 
 - `--min-vendors <n>` / `--no-min-vendors` — the cross-vendor guard: fewer than `n`
   distinct vendors *contributing* a review exits `3`, checked on every run and outranking
   the `--ci` severity gate. Default from `[jury.ci] min_vendors` (shipped as `2`) and
-  scoped to runs that enabled that many vendors; an explicit `-n` is enforced as asked.
-  `--strict` is the other half — it fails at *startup* on a missing CLI (#682).
+  scoped to runs that enabled that many vendors; an explicit `--min-vendors <n>` is
+  enforced as asked. `--strict` is the other half — it fails at *startup* on a missing
+  CLI (#682).
 - `--doctor` — local readiness report; `--json` makes it the `ai-jury.doctor.v1` document
   and the only thing on stdout; `--write <path>` also writes the diagnostics as JSON (#662).
 - `--mock`, `--strict`, `-q/--quiet`, `--version`.
