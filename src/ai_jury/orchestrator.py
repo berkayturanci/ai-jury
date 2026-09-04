@@ -418,11 +418,12 @@ def run_jury(
     usable_names = [a.name for a in usable]
 
     # State the number a downstream consumer will actually receive, BEFORE the
-    # panel is paid for (#699). "3 agents reviewing" is not that number: the
-    # bundle is one record per agent that answers, plus the chair's. When a
-    # consumer's minimum is configured and the bench cannot reach it, this is a
-    # shortfall the run should name here rather than at the consumer, an hour and
-    # three CLI invocations later.
+    # panel is paid for (#699). "3 agents reviewing" is not that number: it is one
+    # review per agent that *answers*, and the chair's synthesis record rides
+    # along beside them without being one. When a consumer's minimum is
+    # configured and the bench cannot reach it, this is a shortfall the run
+    # should name here rather than at the consumer, an hour and three CLI
+    # invocations later.
     log(panel.describe(len(usable), available=len(usable)))
     too_small = panel.shortfall(len(usable), config.ci.min_reviews, stage="before the panel runs")
     if too_small:

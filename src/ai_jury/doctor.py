@@ -25,7 +25,7 @@ from pathlib import Path
 from . import __version__
 from .adapters import effort_supported, make_adapter
 from .config import ConfigError, load_config
-from .panel import bundle_size, shortfall
+from .panel import shortfall
 from .redaction import redact, redact_url_userinfo
 
 #: Version of the machine-readable export emitted by ``jury --doctor --json``.
@@ -261,10 +261,12 @@ def _panel_readiness(cfg, agents) -> dict:
     } - {""}
     minimum = int(getattr(cfg.ci, "min_vendors", 0) or 0)
     # The number a downstream consumer counts, which doctor never reported and
-    # which is not the agent count (#699): one record per agent that answers,
-    # plus the chair's. Doctor can only see reachability, so this is the CEILING
-    # — an agent that runs and returns nothing casts no ballot — which is why it
-    # is labelled "at most" where it is rendered.
+    # which is not the vendor count (#699): one review per agent that answers.
+    # The chair's synthesis record is not added here — a consumer reads it as the
+    # panel's consensus, not as a review, and adding it is how a bench with
+    # nothing reachable came to advertise one review. Doctor can only see
+    # reachability, so this is the CEILING — an agent that runs and returns
+    # nothing casts no ballot — which is why it is labelled "at most" below.
     seats = sum(1 for a in enabled if entries.get(a.name, {}).get("available"))
     panel = {
         "vendors_configured": len(configured),
@@ -272,7 +274,7 @@ def _panel_readiness(cfg, agents) -> dict:
         "min_vendors": minimum,
         "contributing_vendors": None,
         "panelists_available": seats,
-        "reviews_supplied_max": bundle_size(seats),
+        "reviews_supplied_max": seats,
         "min_reviews": int(getattr(cfg.ci, "min_reviews", 0) or 0),
     }
     # Derived from the same predicate the warning uses, so the field and the
@@ -622,8 +624,9 @@ def render_report(diagnostics) -> str:
     # requires is a true statement that answers the wrong question.
     lines.append(
         f"  reviews for a consumer: at most {panel['reviews_supplied_max']} "
-        f"({panel['panelists_available']} panel ballot(s) + 1 chair record; "
-        f"the chair reviews too, so its ballot is one of them)"
+        f"({panel['panelists_available']} panel ballot(s); the chairing agent "
+        f"reviews too, so its ballot is one of them, and the chair's synthesis "
+        f"record is not a review)"
     )
     lines.append(f"  min_reviews gate:  {panel['min_reviews'] or 'off'}")
     lines.append(

@@ -133,17 +133,15 @@ def _metadata_block(metadata: dict) -> list[str]:
     if panel.get("reviews_supplied"):
         chair_name = panel.get("chair") or ""
         if panel.get("chair_ballot"):
-            role = (
-                f"chair `{chair_name}` also sat on the panel — its ballot is counted "
-                f"alongside its synthesis"
-            )
+            role = f"chair `{chair_name}` also sat on the panel — its ballot is one of them"
         elif chair_name:
             role = f"chair `{chair_name}` returned no ballot of its own — synthesis only"
         else:  # pragma: no cover - a run always resolves a chair
             role = "no chair was resolved"
         lines.append(
             f"- reviews for a downstream consumer: {panel['reviews_supplied']} "
-            f"({panel.get('ballots', 0)} panel ballot(s) + 1 chair record); {role}"
+            f"(one per panel ballot; the chair's synthesis record is carried "
+            f"alongside them and is not a review); {role}"
         )
     total = metadata["total_wall_clock_s"]
     lines.append(f"- total wall-clock (cost proxy, not $): {total:.0f}s")

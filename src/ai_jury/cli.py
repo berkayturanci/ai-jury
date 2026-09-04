@@ -350,10 +350,10 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="N",
         help=(
-            "require at least N review records for a downstream consumer "
-            "(panel ballots + the chair record); 0 disables. Checked before the "
-            "panel runs and again on the result (exit 3). Default from config "
-            "([jury.ci] min_reviews, shipped as 0)"
+            "require at least N reviews for a downstream consumer (one per panel "
+            "ballot; the chair's synthesis record is not one); 0 disables. "
+            "Checked before the panel runs and again on the result (exit 3). "
+            "Default from config ([jury.ci] min_reviews, shipped as 0)"
         ),
     )
     p.add_argument(

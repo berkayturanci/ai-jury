@@ -552,9 +552,11 @@ class CiConfig:
     # vendors enabled than this is never failed by the default (see
     # ``metadata.collapse_reason``). ``0`` disables the guard entirely.
     min_vendors: int = DEFAULT_MIN_VENDORS
-    # Review RECORDS the run must be able to hand a downstream consumer before it
-    # is worth running at all (issue #699) — panel ballots plus the chair record,
-    # which is the number a gate like `keel review` counts. ``0`` (the default)
+    # REVIEWS the run must be able to hand a downstream consumer before it is
+    # worth running at all (issue #699) — one per panel ballot, which is the
+    # number a gate like `keel review --from-jury` counts: it splits the
+    # ``reviewers`` array on ``role`` and reads the ``chair`` entry as the
+    # panel's consensus, not as a review. ``0`` (the default)
     # disables it: most consumers have no minimum, and a gate that fails closed
     # here would break every single-agent install. Set it to what your consumer
     # requires and the shortfall is named before the panel runs, instead of after

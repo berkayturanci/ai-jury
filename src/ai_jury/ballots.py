@@ -28,7 +28,7 @@ import re
 from typing import Any
 
 from .findings import flatten_inline
-from .panel import ballot_slots, bundle_size
+from .panel import ballot_slots, bundle_records
 from .voting import is_abstention, tally_votes
 
 #: Stance recorded for a panelist that did not actually review — an empty reply,
@@ -203,9 +203,10 @@ def participating(outcome: Any) -> list:
     Such a slot has a stance worth recording; ``round1_ok`` says the adapter
     reported failure. A slot with nothing at all is not a ballot.
 
-    The predicate itself lives in :mod:`ai_jury.panel` because the number this
-    returns *is* the number a consumer receives, minus the chair record — and
-    the report, ``--doctor`` and the pre-run gate all have to quote it (#699).
+    The predicate itself lives in :mod:`ai_jury.panel` because the length of
+    what this returns *is* the number of reviews a consumer receives — the chair
+    record sits beside them and is not one — and the markdown report,
+    ``--doctor`` and both halves of the ``min_reviews`` gate all quote it (#699).
     """
     return ballot_slots(getattr(outcome, "reviews", []) or [])
 
@@ -270,11 +271,13 @@ def reviewer_ballots(
     ``duration_s``. The chair's entry is the one carrying ``role: "chair"`` and is
     always last.
 
-    ``chaired`` and the chair entry's ``agent``/``ballot_counted`` exist because
-    the chair reviews too (#699): without them a reader cannot tell that the
-    ``claude`` ballot and the ``chair`` record are the same agent, nor whether the
-    chair contributed a ballot at all — and a reader who guesses drops a review
-    the panel actually cast.
+    ``role`` is what a consumer splits on: the ``chair`` entry is the panel's
+    consensus record and every ``panelist`` entry is a ballot, and only the
+    ballots are counted as reviews (#699). ``chaired`` and the chair entry's
+    ``agent``/``ballot_counted`` exist because the chairing agent reviews too:
+    without them a reader cannot tell that the ``claude`` ballot and the
+    ``chair`` record are the same agent, nor whether that agent contributed a
+    ballot at all — and a reader who guesses drops a review the panel cast.
     """
     slots = participating(outcome)
     names = [getattr(r, "agent", "") for r in slots]
@@ -305,10 +308,12 @@ def reviewer_ballots(
             "name": CHAIR_NAME,
             "role": "chair",
             "agent": chair_name,
-            # The chair record is itself one of the reviews a consumer counts,
-            # which is the fact the bundle never stated (#699).
+            # Whether the chairing agent's own ballot is among the panelist
+            # entries — the fact the bundle never stated (#699). This synthesis
+            # record is NOT one of the reviews: ``reviews_supplied`` counts the
+            # ballots, exactly as the consumer's role-based split does.
             "ballot_counted": any(e["chaired"] for e in entries),
-            "reviews_supplied": bundle_size(len(entries)),
+            "reviews_supplied": len(entries),
             "vendor": _vendor_for(config, chair_name),
             "model": _model_for(config, chair_name),
             "verdict": chair_verdict(outcome, vote),
@@ -342,19 +347,22 @@ def _chair_role_sentence(chair_agent: str, chaired_ballot: dict | None) -> str:
 
     A chair that reviewed and a chair that only synthesised produce records that
     are otherwise identical, and a reader who cannot tell them apart guesses —
-    which is how a bundle of four reviews is handed on as two. So the record says
-    which agent chaired and where (or whether) its own ballot is in the bundle.
+    which is how a panel's ballots get handed on short. So the record says which
+    agent chaired and where (or whether) its own ballot is in the bundle, and it
+    says plainly that this synthesis record is not itself one of the reviews.
     """
     who = f"`{chair_agent}`" if chair_agent else "This run's chair"
     if chaired_ballot is not None:
         return (
             f"The chair is {who}, which also sat on the panel: its ballot is the "
-            f"'{chaired_ballot['name']}' review in this bundle and is counted "
-            f"alongside this synthesis."
+            f"'{chaired_ballot['name']}' review in this bundle and counts as one "
+            f"of the reviews. This synthesis record does not — it is the panel's "
+            f"consensus, not a ballot."
         )
     return (
         f"The chair is {who}, which returned no panel review of its own, so this "
-        f"bundle carries no ballot from it — only this synthesis."
+        f"bundle carries no ballot from it. This synthesis record is not counted "
+        f"as a review either — it is the panel's consensus, not a ballot."
     )
 
 
@@ -370,7 +378,8 @@ def _chair_scope(outcome: Any, panelists: list[dict]) -> str:
         f"Chair synthesis over {len(panelists)} panel review(s) and "
         f"{len(groups)} consensus group(s), across {listed}{suffix}. "
         f"{_chair_role_sentence(chair_agent, chaired)} This bundle carries "
-        f"{bundle_size(len(panelists))} review(s) in total."
+        f"{len(panelists)} review(s) plus this record, "
+        f"{bundle_records(len(panelists))} records in all."
     )
 
 
@@ -398,7 +407,8 @@ def keel_reviews(outcome: Any, config: Any, *, vote: Any = None, mode: str = "co
             # review shows this text on its own, with no chair record beside it.
             scope += (
                 " This reviewer also chaired the run (verification and synthesis);"
-                " this ballot is counted alongside the chair record below."
+                " this ballot is one of the panel's reviews, and the chair record"
+                " below is the panel's consensus rather than a further review."
             )
         records.append(
             {

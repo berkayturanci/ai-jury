@@ -73,11 +73,11 @@ options:
   --no-min-vendors      opt out of the cross-vendor guard: accept a run whose
                         panel collapsed to a single vendor (same as --min-
                         vendors 0)
-  --min-reviews N       require at least N review records for a downstream
-                        consumer (panel ballots + the chair record); 0
-                        disables. Checked before the panel runs and again on
-                        the result (exit 3). Default from config ([jury.ci]
-                        min_reviews, shipped as 0)
+  --min-reviews N       require at least N reviews for a downstream consumer
+                        (one per panel ballot; the chair's synthesis record is
+                        not one); 0 disables. Checked before the panel runs
+                        and again on the result (exit 3). Default from config
+                        ([jury.ci] min_reviews, shipped as 0)
   --verify              run the verification round (default: from config)
   --no-verify           skip the verification round
   --doctor              print a local readiness diagnostics report and exit

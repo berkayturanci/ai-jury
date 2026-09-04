@@ -190,7 +190,7 @@ The document is `schema_version: "ai-jury.doctor.v1"`:
     "contributing_vendors": null,
     "multi_vendor_ready": false,
     "panelists_available": 1,
-    "reviews_supplied_max": 2,
+    "reviews_supplied_max": 1,
     "min_reviews": 0
   },
   "agents": [
@@ -234,8 +234,8 @@ The document is `schema_version: "ai-jury.doctor.v1"`:
 | `vendors_available` | How many of those are reachable right now. |
 | `min_vendors` | The effective `[jury.ci] min_vendors` threshold (`0` when opted out). |
 | `contributing_vendors` | **Always `null` here.** Doctor runs no review, so it cannot know how many vendors would actually contribute. The real number is `panel.vendors` in a run's `--metadata-json`. |
-| `panelists_available` | Enabled agents reachable right now — each of them a ballot in the bundle, the chair included (it reviews too). |
-| `reviews_supplied_max` | Review **records** a downstream consumer would receive: `panelists_available` + 1 for the chair's record. An **upper bound** — an agent that runs and returns nothing casts no ballot — and the number a gate like `keel review` counts. |
+| `panelists_available` | Enabled agents reachable right now — each of them a ballot in the bundle, the chairing agent included (it reviews too). |
+| `reviews_supplied_max` | **Reviews** a downstream consumer would receive: one per reachable agent, so the same number as `panelists_available`. The chair's synthesis record is carried beside them and is **not** added — a gate like `keel review --from-jury` splits the `reviewers` array on `role` and counts only the ballots. An **upper bound**: an agent that runs and returns nothing casts no ballot. |
 | `min_reviews` | The effective `[jury.ci] min_reviews` threshold (`0` when off). |
 | `multi_vendor_ready` | `false` exactly when a run on this machine would fail the gate — the guard is on, this config names at least `min_vendors` distinct vendors, and fewer than that are reachable. `true` when the guard is off, when the config never claimed that many vendors, or when enough are reachable. (Also `false` when no config could be loaded: there is nothing to be ready for.) |
 
@@ -268,7 +268,7 @@ stderr so stdout stays a single JSON document.
 fail_on = ["critical", "major"]   # severities that fail `jury --ci` (exit 1)
 ignore_unverified = true          # only verified findings can fail the build
 min_vendors = 2                   # distinct vendors that must have REVIEWED
-min_reviews = 0                   # review RECORDS a consumer must receive
+min_reviews = 0                   # REVIEWS a consumer must receive (ballots)
 ```
 
 `fail_on` / `ignore_unverified` apply only under `--ci`. `min_vendors` applies to
@@ -278,16 +278,18 @@ of whether a jury happened at all.
 | Key | Default | Effect |
 | --- | --- | --- |
 | `min_vendors` | `2` | Exit **3** unless at least this many *distinct vendors contributed a review*. `0` disables. |
-| `min_reviews` | `0` | Refuse the run unless it can supply this many *review records* to a downstream consumer. `0` disables. |
+| `min_reviews` | `0` | Refuse the run unless it can supply this many *reviews* to a downstream consumer — one per panel ballot. `0` disables. |
 
 ### The panel-size guard (`min_reviews`)
 
 A different question from `min_vendors`: not *how many perspectives did the panel
 have* but *how many reviews does the thing downstream get handed*. That number is
-one ballot per agent that answered **plus the chair's record** — the chair sits on
-the panel (it is drawn from the usable agents and reviews in round 1), so its
-ballot is counted alongside its synthesis, and the report says which agent chaired
-and whether its ballot is in the bundle.
+one review per agent that answered, and **not** one more for the chair: a consumer
+splits the report's `reviewers` array on `role` and reads the `chair` entry as the
+panel's consensus record, not as a review. The chairing agent still reviews — it is
+drawn from the usable agents and runs in round 1 — and its ballot is an ordinary
+`panelist` entry that the consumer counts like any other. The report says which
+agent chaired and whether its ballot is in the bundle, so neither half is a guess.
 
 It is checked twice, because neither check alone is enough:
 

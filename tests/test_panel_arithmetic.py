@@ -5,16 +5,21 @@ The reported failure: a machine with the three shipped CLIs ran the panel,
 consumer refused the bundle with *supplied 2 review(s) but tier requires at
 least 3*. Nothing in the tool had ever stated the number the consumer counts.
 
-Two facts had to be established against the code rather than assumed, and they
-are the first two classes below:
+Three facts had to be established against the code rather than assumed, and
+they are the first three classes below:
 
-1. **The chair already sits on the panel.** ``resolve_chair`` only ever picks
-   from the *usable* agents and round 1 runs every usable agent, so an
-   *n*-agent bench yields *n* ballots plus the chair record — not *n-1*. What
-   was missing was any statement of that, which is how a reader hands on a
-   four-record bundle as two: the trailing ``chair`` record is indistinguishable
-   from a synthesis-only entry unless it says otherwise.
-2. **A bundle can still shrink.** An agent that is installed, runs, and returns
+1. **A review is a ballot.** The consumer splits the report's ``reviewers``
+   array on ``role``, keeps the ``chair`` entry aside as the panel's consensus
+   record, and counts the rest. So the number to announce is the ballot count;
+   adding the chair record advertises one review the consumer will not find,
+   which is this same defect from the other side.
+2. **The chairing agent already sits on the panel.** ``resolve_chair`` only ever
+   picks from the *usable* agents and round 1 runs every usable agent, so an
+   *n*-agent bench yields *n* ballots — one of them the chairing agent's, an
+   ordinary ``panelist`` record the consumer counts like any other — not *n-1*.
+   What was missing was any statement of that: the trailing ``chair`` record is
+   indistinguishable from a synthesis-only entry unless it says otherwise.
+3. **A bundle can still shrink.** An agent that is installed, runs, and returns
    nothing casts no ballot (#635's failure, restated for ballots), so the count
    is knowable only as an upper bound before the run — hence a gate on both
    sides of it.
@@ -119,17 +124,83 @@ def _bundle(**kwargs) -> list[dict]:
     return json.loads(out)
 
 
-class TheDefaultBenchSuppliesEnoughReviews(unittest.TestCase):
-    """Acceptance criterion 1, on the bench a normal machine actually has."""
+def _reviewers(**kwargs) -> list[dict]:
+    """The JSON report's ``reviewers`` array — what the consumer actually parses."""
+    code, out, _err = _jury(["--format", "json", "-q"], **kwargs)
+    assert code in (0, 3), code
+    return json.loads(out)["reviewers"]
 
-    def test_three_shipped_clis_supply_four_reviews(self):
+
+#: ``keel.jury.CHAIR_ROLE``. The consumer separates the entry carrying this role
+#: out of the ballots into ``Panel.chair`` — "the chair is the consensus record,
+#: not a panelist ballot" — so a review, to it, is any other entry.
+_CHAIR_ROLE = "chair"
+
+
+def _ballots_as_the_consumer_counts_them(reviewers: list[dict]) -> list[dict]:
+    """Count the report the way ``keel/jury.py::parse_panel`` does.
+
+    Role-based, deliberately: restating the expected integer here would let the
+    two sides drift apart again while the test stayed green, which is precisely
+    the failure #699 is. This is that parser's loop, reduced to its counting.
+    """
+    return [e for e in reviewers if (e.get("role") or "") != _CHAIR_ROLE]
+
+
+class TheCountMatchesWhatTheConsumerCounts(unittest.TestCase):
+    """The defect, from the side the consumer sees it.
+
+    ai-jury announced ballots + 1; keel counts ballots. Every assertion here
+    derives the expected number from the report by ``role``, the way
+    ``keel/jury.py::parse_panel`` does, rather than restating an integer — a
+    restated number is exactly how the two sides drifted apart in the first
+    place.
+    """
+
+    def test_the_announced_count_equals_the_ballots_the_consumer_parses(self):
+        reviewers = _reviewers()
+        counted = _ballots_as_the_consumer_counts_them(reviewers)
+        chair = next(e for e in reviewers if e["role"] == _CHAIR_ROLE)
+        self.assertEqual(chair["reviews_supplied"], len(counted))
+        # And the chair's own record is not among what the consumer counted.
+        self.assertNotIn(chair, counted)
+
+    def test_it_still_matches_when_an_agent_falls_silent(self):
+        reviewers = _reviewers(silent=frozenset({"codex"}))
+        chair = next(e for e in reviewers if e["role"] == _CHAIR_ROLE)
+        self.assertEqual(
+            chair["reviews_supplied"], len(_ballots_as_the_consumer_counts_them(reviewers))
+        )
+
+    def test_the_run_metadata_agrees_with_the_report(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            meta = Path(tmp) / "run.json"
+            code, out, _err = _jury(["--format", "json", "-q", "--metadata-json", str(meta)])
+            self.assertIn(code, (0, 3))
+            recorded = json.loads(meta.read_text(encoding="utf-8"))["panel"]
+        counted = _ballots_as_the_consumer_counts_them(json.loads(out)["reviewers"])
+        self.assertEqual(recorded["reviews_supplied"], len(counted))
+
+    def test_three_shipped_clis_supply_three_reviews_and_a_consensus_record(self):
         records = _bundle()
         self.assertEqual([r["reviewer"] for r in records], ["claude", "codex", "agy", "chair"])
-        self.assertGreaterEqual(len(records), _TIER_THREE)
+        counted = _ballots_as_the_consumer_counts_them(_reviewers())
+        self.assertEqual([e["name"] for e in counted], ["claude", "codex", "agy"])
+        # The tier that refused the original bundle is met, and met honestly.
+        self.assertGreaterEqual(len(counted), _TIER_THREE)
 
-    def test_the_arithmetic_is_ballots_plus_the_chair_record(self):
-        self.assertEqual(panel.bundle_size(3), 4)
-        self.assertEqual(panel.bundle_size(0), 1)
+    def test_the_bundle_carries_one_record_more_than_it_carries_reviews(self):
+        self.assertEqual(panel.bundle_records(3), 4)
+        self.assertEqual(panel.bundle_records(0), 1)
+
+    def test_the_review_count_is_the_ballots_and_only_the_ballots(self):
+        slots = [
+            AgentResult("a", "acme", True, "a review", 0.0),
+            AgentResult("b", "acme", True, "", 0.0),
+            AgentResult("c", "acme", False, "partial review", 0.0),
+        ]
+        self.assertEqual(panel.review_count(slots), 2)
+        self.assertEqual(panel.review_count([]), 0)
 
 
 class TheChairsRoleIsStatedPlainly(unittest.TestCase):
@@ -149,15 +220,33 @@ class TheChairsRoleIsStatedPlainly(unittest.TestCase):
         scope = _bundle()[-1]["scope"]
         self.assertIn("also sat on the panel", scope)
         self.assertIn("'claude' review in this bundle", scope)
-        self.assertIn("counted", scope)
+        self.assertIn("counts as one of the reviews", scope)
 
-    def test_the_chair_record_states_the_bundle_size(self):
-        self.assertIn("carries 4 review(s)", _bundle()[-1]["scope"])
+    def test_the_chair_record_disclaims_itself_as_a_review(self):
+        # The half that was wrong: this record is the panel's consensus, and a
+        # consumer does not count it. Saying so is what keeps the two arithmetics
+        # from parting company again.
+        scope = _bundle()[-1]["scope"]
+        self.assertIn("This synthesis record does not", scope)
+        self.assertIn("not a ballot", scope)
 
-    def test_the_chairs_own_ballot_says_it_chaired(self):
+    def test_the_chair_record_states_the_reviews_and_the_record_count_apart(self):
+        scope = _bundle()[-1]["scope"]
+        self.assertIn("carries 3 review(s) plus this record, 4 records in all", scope)
+
+    def test_the_chairs_own_ballot_is_a_separate_record_with_no_chair_role(self):
         # Read on its own, one head-pinned verdict per review, with no chair
-        # record beside it — so the ballot has to carry the fact too.
-        self.assertIn("also chaired the run", _bundle()[0]["scope"])
+        # record beside it — so the ballot has to carry the fact too. And it is
+        # emphatically not the synthesis entry: separate record, role
+        # ``panelist``, counted.
+        records = _bundle()
+        self.assertIn("also chaired the run", records[0]["scope"])
+        self.assertIn("one of the panel's reviews", records[0]["scope"])
+        self.assertNotEqual(records[0]["reviewer"], records[-1]["reviewer"])
+
+        chairing_ballot = next(e for e in _reviewers() if e.get("chaired"))
+        self.assertEqual(chairing_ballot["role"], "panelist")
+        self.assertIn(chairing_ballot, _ballots_as_the_consumer_counts_them(_reviewers()))
 
     def test_a_panelist_that_did_not_chair_claims_nothing(self):
         for record in _bundle()[1:3]:
@@ -171,16 +260,14 @@ class TheChairsRoleIsStatedPlainly(unittest.TestCase):
         self.assertEqual([r["reviewer"] for r in records], ["codex", "agy", "chair"])
         scope = records[-1]["scope"]
         self.assertIn("returned no panel review of its own", scope)
-        self.assertIn("carries 3 review(s)", scope)
+        self.assertIn("carries 2 review(s) plus this record, 3 records in all", scope)
         for record in records[:-1]:
             self.assertNotIn("chaired the run", record["scope"])
 
 
 class TheJsonReportMarksTheRoles(unittest.TestCase):
     def _reviewers(self, **kwargs) -> list[dict]:
-        code, out, _err = _jury(["--format", "json", "-q"], **kwargs)
-        self.assertIn(code, (0, 3))
-        return json.loads(out)["reviewers"]
+        return _reviewers(**kwargs)
 
     def test_every_entry_declares_a_role(self):
         entries = self._reviewers()
@@ -192,17 +279,17 @@ class TheJsonReportMarksTheRoles(unittest.TestCase):
         entries = self._reviewers()
         self.assertEqual([e["name"] for e in entries if e.get("chaired")], ["claude"])
 
-    def test_the_chair_entry_names_its_agent_and_the_bundle_size(self):
+    def test_the_chair_entry_names_its_agent_and_the_review_count(self):
         chair = self._reviewers()[-1]
         self.assertEqual(chair["agent"], "claude")
         self.assertTrue(chair["ballot_counted"])
-        self.assertEqual(chair["reviews_supplied"], 4)
+        self.assertEqual(chair["reviews_supplied"], 3)
 
     def test_a_silent_chair_is_not_reported_as_counted(self):
         chair = self._reviewers(silent=frozenset({"claude"}))[-1]
         self.assertEqual(chair["agent"], "claude")
         self.assertFalse(chair["ballot_counted"])
-        self.assertEqual(chair["reviews_supplied"], 3)
+        self.assertEqual(chair["reviews_supplied"], 2)
 
 
 class TheRunSaysHowManyReviewsItWillSupply(unittest.TestCase):
@@ -210,17 +297,19 @@ class TheRunSaysHowManyReviewsItWillSupply(unittest.TestCase):
 
     def test_the_count_is_logged_before_round_one(self):
         _code, _out, err = _jury([])
-        announcement = err.index("1 chair record = 4 review(s)")
+        announcement = err.index("3 ballot(s) = 3 review(s) for a downstream consumer")
         self.assertLess(announcement, err.index("round 1: 3 agents reviewing"))
+        self.assertIn("plus 1 chair synthesis record (not counted as a review)", err)
 
     def test_the_markdown_report_states_the_chairs_role(self):
         _code, out, _err = _jury(["-q"])
-        self.assertIn("reviews for a downstream consumer: 4 (3 panel ballot(s)", out)
-        self.assertIn("chair `claude` also sat on the panel", out)
+        self.assertIn("reviews for a downstream consumer: 3 (one per panel ballot", out)
+        self.assertIn("the chair's synthesis record is carried alongside them", out)
+        self.assertIn("chair `claude` also sat on the panel — its ballot is one of them", out)
 
     def test_the_markdown_report_states_a_chair_that_cast_no_ballot(self):
         _code, out, _err = _jury(["-q"], silent=frozenset({"claude"}))
-        self.assertIn("reviews for a downstream consumer: 3 (2 panel ballot(s)", out)
+        self.assertIn("reviews for a downstream consumer: 2 (one per panel ballot", out)
         self.assertIn("chair `claude` returned no ballot of its own", out)
 
 
@@ -228,16 +317,17 @@ class TheShortfallIsNamedBeforeThePanelRuns(unittest.TestCase):
     """The other branch of criterion 1: fail early, naming the shortfall."""
 
     def test_a_bench_that_cannot_reach_the_minimum_never_reviews(self):
-        code, _out, err = _jury(["--min-reviews", "5"])
+        code, _out, err = _jury(["--min-reviews", "4"])
         self.assertEqual(code, 2)
         self.assertIn("panel too small before the panel runs", err)
-        self.assertIn("4 review(s) available", err)
-        self.assertIn("requires 5", err)
+        self.assertIn("3 review(s) available", err)
+        self.assertIn("the chair's synthesis record is not one of them", err)
+        self.assertIn("requires 4", err)
         # Named before a single agent was invoked, which is the whole point.
         self.assertNotIn("round 1:", err)
 
     def test_a_bench_that_reaches_it_runs_normally(self):
-        code, _out, err = _jury(["--min-reviews", "4", "-q"])
+        code, _out, err = _jury(["--min-reviews", "3", "-q"])
         self.assertEqual(code, 0)
         self.assertNotIn("panel too small", err)
 
@@ -256,18 +346,28 @@ class TheShortfallIsAlsoCaughtOnTheResult(unittest.TestCase):
     def test_a_silent_agent_that_shrinks_the_bundle_fails_the_gate(self):
         # No ``-q``: the shortfall is a log line, and a gate nobody can read is
         # the failure mode this issue was about.
-        code, _out, err = _jury(["--min-reviews", "4"], silent=frozenset({"codex"}))
-        # Pre-flight passed: three agents were available, so four records were
+        code, _out, err = _jury(["--min-reviews", "3"], silent=frozenset({"codex"}))
+        # Pre-flight passed: three agents were available, so three reviews were
         # possible. One of them then said nothing.
         self.assertEqual(code, 3)
         self.assertIn("panel too small after the panel ran", err)
-        self.assertIn("3 review(s) available", err)
+        self.assertIn("2 review(s) available", err)
         self.assertIn("1 agent(s) ran but returned no review", err)
+
+    def test_the_tier_three_case_the_consumer_actually_refused(self):
+        # The reported mismatch, now impossible: a silent agent leaves two
+        # ballots, ``--min-reviews 3`` refuses it here rather than letting keel
+        # refuse it later with *supplied 2 review(s) but tier requires 3*.
+        code, out, _err = _jury(
+            ["--min-reviews", "3", "--format", "json"], silent=frozenset({"codex"})
+        )
+        self.assertEqual(code, 3)
+        self.assertEqual(len(_ballots_as_the_consumer_counts_them(json.loads(out)["reviewers"])), 2)
 
     def test_the_exit_code_is_the_panel_one_not_the_findings_one(self):
         # Same family as a collapsed panel (#682): the panel fell short, not the
         # diff. A caller must be able to tell those apart.
-        code, _out, _err = _jury(["--min-reviews", "4", "-q", "--ci"], silent=frozenset({"codex"}))
+        code, _out, _err = _jury(["--min-reviews", "3", "-q", "--ci"], silent=frozenset({"codex"}))
         self.assertEqual(code, 3)
 
     def test_off_by_default(self):
@@ -293,15 +393,49 @@ class DoctorReportsWhatAConsumerWouldReceive(unittest.TestCase):
             ):
                 return doctor.build_diagnostics(path)
 
+    @staticmethod
+    def _unreachable(toml: str = _THREE_CLI_TOML):
+        """The same bench with every command absent from PATH."""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "jury.toml"
+            path.write_text(toml, encoding="utf-8")
+            with (
+                mock.patch.dict(os.environ, {}, clear=True),
+                mock.patch.object(doctor, "_is_available", return_value=False),
+                mock.patch.object(doctor, "_detect_capabilities", return_value={}),
+                mock.patch.object(doctor, "_probe_models", return_value=None),
+            ):
+                return doctor.build_diagnostics(path)
+
     def test_the_export_carries_the_number_a_consumer_counts(self):
         report = doctor.doctor_report_dict(self._diagnostics())
         self.assertEqual(report["panel"]["panelists_available"], 3)
-        self.assertEqual(report["panel"]["reviews_supplied_max"], 4)
+        self.assertEqual(report["panel"]["reviews_supplied_max"], 3)
 
     def test_the_text_report_says_it_beside_readiness(self):
         text = doctor.render_report(self._diagnostics())
-        self.assertIn("reviews for a consumer: at most 4", text)
-        self.assertIn("the chair reviews too", text)
+        self.assertIn("reviews for a consumer: at most 3", text)
+        self.assertIn("the chairing agent reviews too", text)
+        self.assertIn("the chair's synthesis record is not a review", text)
+
+    def test_nothing_reachable_promises_nothing(self):
+        # The bound used to read "at most 1" on a machine where a real run exits
+        # 2 with *no usable agents* — the chair record counted as a review that
+        # no agent was there to write.
+        diagnostics = self._unreachable()
+        self.assertEqual(doctor.doctor_report_dict(diagnostics)["panel"]["reviews_supplied_max"], 0)
+        self.assertIn("reviews for a consumer: at most 0", doctor.render_report(diagnostics))
+
+    def test_nothing_reachable_warns_against_a_minimum_of_one(self):
+        # The smallest minimum there is, and the one the old arithmetic silently
+        # satisfied on an empty bench.
+        diagnostics = self._unreachable(
+            _THREE_CLI_TOML.replace("rounds = 1", "rounds = 1\n\n[jury.ci]\nmin_reviews = 1")
+        )
+        warnings = " ".join(diagnostics["config_warnings"])
+        self.assertIn("panel too small on this machine", warnings)
+        self.assertIn("0 review(s) available", warnings)
+        self.assertIn("requires 1", warnings)
 
     def test_a_configured_minimum_this_machine_cannot_meet_is_warned(self):
         diagnostics = self._diagnostics(
@@ -325,10 +459,10 @@ class ThePureArithmetic(unittest.TestCase):
     def test_describe_reads_as_one_sentence_with_and_without_a_bench_count(self):
         self.assertEqual(
             panel.describe(3, available=3),
-            "panel: 3 available agent(s) → 3 ballot(s) + 1 chair record = "
-            "4 review(s) for a downstream consumer",
+            "panel: 3 available agent(s) → 3 ballot(s) = 3 review(s) for a downstream "
+            "consumer, plus 1 chair synthesis record (not counted as a review)",
         )
-        self.assertIn("2 ballot(s) + 1 chair record", panel.describe(2))
+        self.assertIn("2 ballot(s) = 2 review(s)", panel.describe(2))
         self.assertNotIn("available agent(s)", panel.describe(2))
 
     def test_zero_disables_the_gate(self):
@@ -336,11 +470,17 @@ class ThePureArithmetic(unittest.TestCase):
         self.assertIsNone(panel.shortfall(0, None, stage="anywhere"))
 
     def test_a_satisfied_minimum_is_silent(self):
-        self.assertIsNone(panel.shortfall(2, 3, stage="anywhere"))
+        self.assertIsNone(panel.shortfall(3, 3, stage="anywhere"))
+
+    def test_a_minimum_of_one_is_not_satisfied_by_the_chair_record(self):
+        # The doctor half of the defect, in the pure function: an empty bench
+        # supplies no review, and the chair's record does not make it one.
+        self.assertIsNotNone(panel.shortfall(0, 1, stage="anywhere"))
 
     def test_the_message_names_the_shortfall_and_both_opt_outs(self):
         message = panel.shortfall(1, 4, stage="before the panel runs", silent=2)
-        self.assertIn("2 review(s) available", message)
+        self.assertIn("1 review(s) available", message)
+        self.assertIn("the chair's synthesis record is not one of them", message)
         self.assertIn("requires 4", message)
         self.assertIn("2 agent(s) ran but returned no review", message)
         self.assertIn("--min-reviews", message)

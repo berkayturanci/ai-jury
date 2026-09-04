@@ -28,8 +28,9 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 # per-agent ``review_status``. A slot that returns no review is an abstention, not an
 # approval, and until now nothing in the output said so.
 # v5 (issue #699) added, inside ``panel``: ``ballots``, ``reviews_supplied``,
-# ``chair`` and ``chair_ballot`` — the number of review records a downstream
-# consumer actually receives, and whether the chair's own ballot is among them.
+# ``chair`` and ``chair_ballot`` — the number of reviews a downstream consumer
+# actually receives (the ballots; the chair's synthesis record is not one of
+# them), and whether the chairing agent cast a ballot of its own.
 # Purely additive: every v4 key keeps its name and meaning.
 SCHEMA_VERSION = 5
 
@@ -67,12 +68,15 @@ def panel_accounting(reviews, chair: str = "") -> dict:
     cross-vendor consensus: three slots from one vendor are not three perspectives.
 
     ``reviews_supplied`` is a different number again, and the one #699 was about:
-    how many review *records* the bundle hands on. It is the ballots (slots that
-    returned something) plus the chair's record — not ``configured`` (a silent
-    slot casts no ballot) and not ``effective`` (a slot that returned prose but no
-    findings block still states a stance). ``chair_ballot`` says whether the
-    chair's own ballot is one of them, which is the difference between a chair
-    that reviewed and a chair that only synthesised.
+    how many reviews the bundle hands on. It is the ballots (slots that returned
+    something) and only the ballots — not ``configured`` (a silent slot casts no
+    ballot), not ``effective`` (a slot that returned prose but no findings block
+    still states a stance), and *not* ballots plus the chair record, because a
+    consumer splits the ``reviewers`` array on ``role`` and reads the ``chair``
+    entry as the panel's consensus rather than as one more review.
+    ``chair_ballot`` says whether the chairing agent cast a ballot of its own,
+    which is the difference between a chair that reviewed and one that only
+    synthesised — and that ballot, when present, is counted like any other.
     """
     reviews = list(reviews or [])
     ballots = panel.ballot_slots(reviews)
@@ -103,7 +107,7 @@ def panel_accounting(reviews, chair: str = "") -> dict:
         "failed": failed_count,
         "short": effective_count < len(reviews),
         "ballots": len(ballots),
-        "reviews_supplied": panel.bundle_size(len(ballots)),
+        "reviews_supplied": panel.review_count(reviews),
         "chair": chair or "",
         "chair_ballot": bool(chair) and any(getattr(r, "agent", "") == chair for r in ballots),
     }

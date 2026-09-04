@@ -140,7 +140,7 @@ REQUEST CHANGES — one confirmed major issue.
 - rounds executed: 2
 - verify: on
 - context mode: diff-only
-- reviews for a downstream consumer: 4 (3 panel ballot(s) + 1 chair record); chair `claude` also sat on the panel — its ballot is counted alongside its synthesis
+- reviews for a downstream consumer: 3 (one per panel ballot; the chair's synthesis record is carried alongside them and is not a review); chair `claude` also sat on the panel — its ballot is one of them
 - total wall-clock (cost proxy, not $): 0s
 
 | agent | vendor | status | duration |
