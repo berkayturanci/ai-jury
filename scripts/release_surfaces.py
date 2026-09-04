@@ -118,11 +118,22 @@ RELEASE_SURFACES: tuple[Surface, ...] = (
     Surface("docs/cookbook.md", "site", rf"rev: v{SEMVER}"),
 )
 
-#: The distinct paths, in table order, so a guard's success line can name what it
-#: actually compared. `scripts/verify_merge.py` used to print a hard-coded three
-#: files and claim ">= latest tag" even where no tag had been read (#556); a
-#: success line asserting a check that did not run is worse than no line at all.
-SURFACE_PATHS: tuple[str, ...] = tuple(dict.fromkeys(s.path for s in RELEASE_SURFACES))
+
+def surface_paths() -> tuple[str, ...]:
+    """The distinct paths, in table order, so a guard can name what it compared.
+
+    `scripts/verify_merge.py` used to print a hard-coded three files and claim
+    ">= latest tag" even where no tag had been read (#556); a success line
+    asserting a check that did not run is worse than no line at all.
+
+    Derived on each call rather than frozen at import: `RELEASE_SURFACES` is the
+    one table, and the guards and their tests substitute it (see
+    `tests/test_release_surfaces.py`). A module-level copy taken at import would
+    keep naming the files the *original* table listed, so the success line would
+    describe a comparison that did not happen — the same defect #556 was about.
+    Readers: `verify_merge.main` (both success lines) and the table tests.
+    """
+    return tuple(dict.fromkeys(s.path for s in RELEASE_SURFACES))
 
 
 def declared_version(root: Path) -> str | None:

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Two `py/unused-global-variable` findings, answered by evidence rather than by a delete** (#696): CodeQL flagged `SURFACE_PATHS` in `scripts/release_surfaces.py` and `KNOWN_AGENTS` in `src/ai_jury/scaffold.py`. Both have real readers; the query is intra-module, and every reader of these two lives in another file.
+  - `SURFACE_PATHS` is now the function `release_surfaces.surface_paths()`. It was a copy of the table's distinct paths taken at import, and the guards and their tests *substitute* `RELEASE_SURFACES` — so a frozen copy would keep naming the files the original table listed, and the success line it exists to print would describe a comparison that did not happen. That is the defect #556 was about, one level down. Derived on each call, it cannot drift from the table. Readers (`verify_merge.main`'s two success lines, three table tests) moved with it; the printed output is unchanged.
+  - `KNOWN_AGENTS` stays exactly as it is, and now names its readers: `cli._init_available`, `cli._init_interactive`, `cli._init_wizard` and `cli._run_init` — every path through which `jury init` offers, detects or defaults an agent. Deleting it would take `--list-agents`, the wizard and `--preset all` with it, and nothing in `scaffold.py` recomputes the set: the one place that could, `build_config`, needs the templates dict it already holds, so reading the tuple there would reintroduce the second copy #589/#610 removed.
+
 ## [1.16.0] - 2026-09-04
 
 ### Added
