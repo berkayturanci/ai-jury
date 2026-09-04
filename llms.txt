@@ -37,7 +37,13 @@ Key facts:
 - `jury --pr 123 --incremental` — review only changes since the last jury run.
 - `jury --pr 123 --suggest-patches` — also emit inspectable patches for verified findings.
 - `jury --mock --diff-file examples/sample.diff` — offline demo, no live CLIs.
-- `jury --ci --fail-on high,critical` — gate CI on blocking findings.
+- `jury --ci --fail-on critical,major` — gate CI on blocking findings (exit 1).
+- `jury --pr 123 --no-min-vendors` — accept a panel that collapsed to one vendor;
+  without it, fewer than `min_vendors` (default 2) contributing vendors exits 3.
+- `jury run-agent --agent claude --role review --prompt-file p.md` — run ONE configured
+  agent for one role and print one `ai-jury.run-agent.v1` JSON result (for an
+  orchestrator); `--role implement|fix` needs `--allow-write`; on the read-only roles
+  (`review`/`gate`/`chair`) it warns and is ignored.
 - `jury comment --text "/jury review" --pr 123` — run from an allowlisted PR comment.
 
 ## Docs
@@ -57,6 +63,10 @@ Key facts:
   `timeout`, `total_timeout`/`phase_timeout`/`retries`, `verify`; per-agent
   `vendor`/`command`/`extra_args`, or for a local agent `vendor = "local"` +
   `endpoint`/`model`.
+- `[jury.ci]` takes exactly three keys: `fail_on`, `ignore_unverified`, and
+  `min_vendors` — distinct vendors that must have contributed a review before the run
+  counts as cross-vendor consensus (default 2; fewer exits 3, `0` disables it). Report
+  format is the `--format` flag, not a key in this section.
 - Optional project review policy: `.jury/policy.toml` (high-risk paths, focus areas,
   severity overrides) — trusted, separate from `jury.toml`.
 

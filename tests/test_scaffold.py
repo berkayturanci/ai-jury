@@ -97,12 +97,29 @@ class RenderTomlTest(unittest.TestCase):
         self.assertIn("# min_vendors = 2", text)
         self.assertNotIn("\nmin_vendors", text)
 
-    def test_no_wizard_keys_byte_identical(self):
-        # Omitting the new kwargs must produce output with none of the new sections.
+    def test_no_wizard_keys_omit_their_values(self):
+        # Omitting the new kwargs must leave the wizard's *values* unwritten.
+        # `[jury.ci]` itself is unconditional (#692), but with nothing under it
+        # except the commented cross-vendor hint, so it still states no default.
         text = render_toml(build_config(["claude", "codex"], rounds=2))
-        self.assertNotIn("[jury.ci]", text)
+        self.assertIn("[jury.ci]", text)
+        self.assertNotIn("fail_on", text)
         self.assertNotIn("[jury.context]", text)
         self.assertNotIn("decision", text)
+        self.assertEqual(tomllib.loads(text)["jury"]["ci"], {})
+
+    def test_min_vendors_hint_names_the_exit_code_and_the_opt_out(self):
+        """The scaffolded hint has to answer the question a red run raises.
+
+        Whoever reads it is looking at exit 3 for the first time, so the block
+        must name the code, the default and both opt-outs — otherwise it is a
+        comment about a knob rather than an answer.
+        """
+        text = render_toml(build_config(["claude", "codex"]))
+        self.assertIn("exit 3", text)
+        self.assertIn("--no-min-vendors", text)
+        self.assertIn("--strict", text)
+        self.assertIn("# min_vendors = 2", text)
 
     def test_redact_only_context_section(self):
         # redact_secrets set WITHOUT context_mode still emits [jury.context].

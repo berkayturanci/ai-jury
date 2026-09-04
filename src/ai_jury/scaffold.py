@@ -269,9 +269,16 @@ _AGENT_KEY_ORDER = ("name", "vendor", "command", "endpoint", "model", "effort", 
 _EFFORT_HINT = '# effort = "medium"    # low | medium | high'
 
 
-#: Written under a scaffolded ``[jury.ci]`` (issue #682). Commented out, because
-#: the shipped default already IS 2 — the hint exists so a reader discovers the
-#: knob and its opt-out here rather than only after a run exits 3.
+#: Written under every scaffolded ``[jury.ci]`` (issue #682). Commented out,
+#: because the shipped default already IS 2 — the hint exists so a reader
+#: discovers the knob and its opt-out here rather than only after a run exits 3.
+#:
+#: The section it lives under is emitted UNCONDITIONALLY (issue #692). It used to
+#: be written only when a caller passed ``ci_fail_on``, which no preset and no
+#: plain ``jury init`` ever does — so the hint the module defines never reached a
+#: generated file, and `--preset thorough` (three or four vendors, and therefore
+#: the config most likely to exit 3 on a one-CLI machine) shipped with nothing
+#: about the guard in it at all.
 _MIN_VENDORS_HINT = (
     "# Distinct vendors that must have contributed a review before the run can",
     "# stand as cross-vendor consensus (exit 3 otherwise). Defaults to 2 and only",
@@ -311,12 +318,16 @@ def render_toml(config: dict) -> str:
             if key in context:
                 lines.append(f"{key} = {_render_value(context[key])}")
         lines.append("")
-    ci = jury.get("ci")
-    if ci and "fail_on" in ci:
-        lines.append("[jury.ci]")
+    # `[jury.ci]` is always written, with the cross-vendor hint under it (#692).
+    # `fail_on` still appears only when a caller chose one, so the file keeps
+    # stating no redundant defaults; an otherwise empty section is comments only
+    # and parses to `{}`, which is exactly what the run resolves today.
+    ci = jury.get("ci") or {}
+    lines.append("[jury.ci]")
+    if "fail_on" in ci:
         lines.append(f"fail_on = {_render_value(ci['fail_on'])}")
-        lines.extend(_MIN_VENDORS_HINT)
-        lines.append("")
+    lines.extend(_MIN_VENDORS_HINT)
+    lines.append("")
 
     for agent in config["agent"]:
         lines.append("[[agent]]")

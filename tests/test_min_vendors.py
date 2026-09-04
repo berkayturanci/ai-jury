@@ -409,5 +409,42 @@ class TheCommandFailsClosedByDefault(unittest.TestCase):
         self.assertEqual(code, 3)
 
 
+class TheReadmeContractListsExitThree(unittest.TestCase):
+    """The README's exit-code table is the project's own stable contract (#692).
+
+    It shipped 1.16.0 listing 0, 1 and 2 only, so a CI integrator reading the
+    section that the README itself says may not change without a changelog entry
+    concluded those were the whole set — and then met exit 3 in a red pipeline
+    with nothing to look it up in. Anchored on the table row rather than on the
+    file, so moving the section does not fail this and deleting the row does.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        text = (Path(__file__).parent.parent / "README.md").read_text(encoding="utf-8")
+        cls.table = text.split("**Stable error messages and exit codes:**", 1)[1].split(
+            "**Stable report headings**", 1
+        )[0]
+
+    def _row(self) -> str:
+        rows = [r for r in self.table.splitlines() if "min_vendors" in r]
+        self.assertEqual(len(rows), 1, "expected exactly one min_vendors row")
+        return rows[0]
+
+    def test_the_table_declares_exit_three(self):
+        self.assertIn("`3`", self._row())
+
+    def test_the_row_separates_it_from_the_findings_failure(self):
+        """0/1/2 were "the whole set" precisely because 3 looked like the `--ci` 1."""
+        row = self._row()
+        self.assertIn("*not* a findings failure", row)
+        self.assertIn("--no-min-vendors", row)
+
+    def test_the_findings_row_names_its_own_code(self):
+        rows = [r for r in self.table.splitlines() if "blocking findings remaining" in r]
+        self.assertEqual(len(rows), 1)
+        self.assertIn("`1`", rows[0])  # `evaluate_ci` returns 0 or 1
+
+
 if __name__ == "__main__":
     unittest.main()
