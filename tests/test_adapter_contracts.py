@@ -178,6 +178,33 @@ class TheLockedInvocationShapes(unittest.TestCase):
                 for flag in contract["sandbox_flags"]:
                     self.assertIn(flag, argv)
 
+    def test_at_least_one_locked_spec_supplies_no_sandbox_of_its_own(self):
+        """Otherwise the assertion above only proves flags are echoed back.
+
+        Every hand-written spec used to carry its sandbox flags in its own
+        `extra_args`, so `build_argv` could have been a pass-through and the
+        check would still have been green — the enforcement in
+        `privilege.enforce_read_only` (#288) was untested by this module. The
+        `-bare` entries close that: with nothing supplied, a flag in the argv
+        can only have been ADDED.
+        """
+        bare = [
+            name
+            for name, contract in CONTRACTS.items()
+            if not contract["extra_args"] and contract["sandbox_flags"]
+        ]
+        self.assertTrue(bare, "no contract locks an empty extra_args; the sandbox check is vacuous")
+
+    def test_the_sandbox_is_added_when_the_config_omits_it(self):
+        """The #288 guarantee, per vendor: config cannot leave a reviewer unsandboxed."""
+        for name, contract in CONTRACTS.items():
+            if contract["extra_args"] or not contract["sandbox_flags"]:
+                continue
+            with self.subTest(name):
+                argv = make_adapter(spec_for(name)).build_argv(PROMPT)
+                for flag in contract["sandbox_flags"]:
+                    self.assertIn(flag, argv, f"{name}: adapter did not add {flag}")
+
     def test_the_prompt_never_reaches_argv_where_the_contract_says_so(self):
         """#287: the redacted diff must not be readable in `ps`."""
         secret = "SENSITIVE-DIFF-CONTENT"
@@ -438,6 +465,87 @@ class ReviewsThatMustSurvive(unittest.TestCase):
             "README snippet needs a version note.\n"
         )
         self.assertIsNone(no_review_reason(text))
+
+
+#: Real reviewer outputs that OPEN with a decline phrase and then review anyway.
+#: Every one was destroyed by the first cut of the refusal branch, which matched
+#: the phrase anywhere inside the length bound. They are the expensive kind of
+#: false positive: short, substantive, and — with the gate failing closed — one
+#: of them is the difference between a passing two-vendor run and exit 3.
+REVIEWS_THAT_OPEN_WITH_A_LIMIT = {
+    "a limit, then a finding and a structured block": (
+        "I do not have access to the migration file, so I reviewed the Python "
+        "only: the null check on line 12 is missing.\n"
+        '```json\n[{"severity":"major","title":"missing null check"}]\n```\n'
+    ),
+    "an apology for a miss in the first pass": (
+        "Sorry, I missed the null check on line 12 in my first pass — it does need one."
+    ),
+    "cannot reproduce, but the defect is still named": (
+        "I'm not able to reproduce the race locally, but the lock ordering here is wrong."
+    ),
+    "cannot measure, but the hot spot is identified": (
+        "I cannot provide a performance number without a benchmark, but the "
+        "O(n^2) loop at line 40 is the hot spot."
+    ),
+    "no access to one file, a verdict on the rest": (
+        "I do not have access to the schema file, so I reviewed only the "
+        "Python changes: they look correct."
+    ),
+}
+
+
+class ReviewsThatMustSurviveTheRefusalBranch(unittest.TestCase):
+    """A decline that also reviews is a review (#682, round 3).
+
+    The rule the branch now encodes: the refusal must BE the output — short,
+    opening it, and with nothing in it that says something about the code. A
+    findings block settles it before any of that is consulted.
+    """
+
+    def test_none_of_them_is_discarded(self):
+        for label, text in REVIEWS_THAT_OPEN_WITH_A_LIMIT.items():
+            with self.subTest(label):
+                self.assertIsNone(no_review_reason(text), text)
+
+    def test_the_findings_block_case_really_carries_findings(self):
+        """Guards the first case against rotting into a plain sentence."""
+        text = REVIEWS_THAT_OPEN_WITH_A_LIMIT["a limit, then a finding and a structured block"]
+        self.assertTrue(emitted_findings_block(text))
+
+    def test_a_survivor_reaches_the_panel_as_a_contributing_review(self):
+        """End to end: the predicate is not the only thing that has to agree."""
+        text = REVIEWS_THAT_OPEN_WITH_A_LIMIT["a limit, then a finding and a structured block"]
+        result, _recorder = probe("claude", stdout=text)
+        self.assertTrue(result.ok, result.error)
+        self.assertIsNone(result.error_code)
+        self.assertTrue(emitted_findings_block(result.output))
+
+    def test_a_findings_block_outranks_a_refusal_that_precedes_it(self):
+        """The short-circuit, isolated from the substance heuristics."""
+        text = "I'm sorry, I can't help with reviewing this content.\n```json\n[]\n```\n"
+        self.assertIsNone(no_review_reason(text))
+
+
+class RefusalsThatMustStillDie(unittest.TestCase):
+    """The other half: loosening the branch must not let a real decline through."""
+
+    def test_the_recorded_refusal_fixture(self):
+        self.assertEqual(
+            no_review_reason(fixture("refusal.stdout")), "the agent declined to review"
+        )
+
+    def test_declines_of_every_shape_the_pattern_covers(self):
+        for text in (
+            "I cannot review this content.",
+            "I'm sorry, I can't help with reviewing this content.",
+            "I'm sorry, but I can't help with reviewing this content.",
+            "I'm unable to assist with that.",
+            "As an AI language model, I am unable to assist with this request.",
+            "I do not have access to the repository, so I cannot review this.",
+        ):
+            with self.subTest(text):
+                self.assertEqual(no_review_reason(text), "the agent declined to review")
 
 
 class OutputsThatMustNotCountAsReviews(unittest.TestCase):

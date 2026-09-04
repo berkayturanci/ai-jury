@@ -9,7 +9,11 @@
     "'stdin' is what the adapter feeds the child: 'prompt' verbatim, 'stream-json'",
     "one NDJSON frame carrying it, or 'none' when it goes in argv instead.",
     "'prompt_absent_from_argv' encodes #287: the redacted diff must never be",
-    "readable in `ps` to another local user."
+    "readable in `ps` to another local user.",
+    "The '-bare' entries carry an EMPTY extra_args on purpose: every other spec",
+    "here supplies its own sandbox flags, so the sandbox assertion could only",
+    "prove they were echoed back. With nothing supplied, the same assertion",
+    "proves the adapter ADDS the read-only sandbox itself (#288)."
   ],
   "claude": {
     "vendor": "anthropic",
@@ -47,11 +51,42 @@
     "sandbox_flags": ["--disallowed-tools"],
     "stdout_fixture": "review.stdout"
   },
+  "claude-bare": {
+    "vendor": "anthropic",
+    "command": "claude",
+    "model": "claude-probe-1",
+    "extra_args": [],
+    "argv": [
+      "claude",
+      "-p",
+      "--model",
+      "claude-probe-1",
+      "--disallowed-tools",
+      "Edit,Write,NotebookEdit,Bash"
+    ],
+    "write_argv": ["claude", "-p", "--model", "claude-probe-1"],
+    "stdin": "prompt",
+    "prompt_absent_from_argv": true,
+    "sandbox_flags": ["--disallowed-tools", "Edit,Write,NotebookEdit,Bash"],
+    "stdout_fixture": "review.stdout"
+  },
   "codex": {
     "vendor": "openai",
     "command": "codex",
     "model": "gpt-probe-1",
     "extra_args": ["-s", "read-only"],
+    "argv": ["codex", "exec", "-m", "gpt-probe-1", "-s", "read-only"],
+    "write_argv": ["codex", "exec", "-m", "gpt-probe-1", "-s", "workspace-write"],
+    "stdin": "prompt",
+    "prompt_absent_from_argv": true,
+    "sandbox_flags": ["-s", "read-only"],
+    "stdout_fixture": "review.stdout"
+  },
+  "codex-bare": {
+    "vendor": "openai",
+    "command": "codex",
+    "model": "gpt-probe-1",
+    "extra_args": [],
     "argv": ["codex", "exec", "-m", "gpt-probe-1", "-s", "read-only"],
     "write_argv": ["codex", "exec", "-m", "gpt-probe-1", "-s", "workspace-write"],
     "stdin": "prompt",
@@ -84,6 +119,35 @@
       "--model",
       "gemini-probe-1",
       "--dangerously-skip-permissions"
+    ],
+    "stdin": "stream-json",
+    "prompt_absent_from_argv": true,
+    "sandbox_flags": ["--sandbox"],
+    "stdout_fixture": "agy.stdout.ndjson"
+  },
+  "agy-bare": {
+    "vendor": "google",
+    "command": "agy",
+    "model": "gemini-probe-1",
+    "extra_args": [],
+    "argv": [
+      "agy",
+      "--input-format",
+      "stream-json",
+      "--output-format",
+      "stream-json",
+      "--model",
+      "gemini-probe-1",
+      "--sandbox"
+    ],
+    "write_argv": [
+      "agy",
+      "--input-format",
+      "stream-json",
+      "--output-format",
+      "stream-json",
+      "--model",
+      "gemini-probe-1"
     ],
     "stdin": "stream-json",
     "prompt_absent_from_argv": true,

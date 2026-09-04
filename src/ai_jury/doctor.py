@@ -259,16 +259,22 @@ def _panel_readiness(cfg, agents) -> dict:
         if entries.get(a.name, {}).get("available")
     } - {""}
     minimum = int(getattr(cfg.ci, "min_vendors", 0) or 0)
-    return {
+    panel = {
         "vendors_configured": len(configured),
         "vendors_available": len(available),
         "min_vendors": minimum,
         "contributing_vendors": None,
-        "multi_vendor_ready": minimum <= 0 or len(available) >= minimum,
     }
+    # Derived from the same predicate the warning uses, so the field and the
+    # warning cannot disagree about the same machine (#682, round 3).
+    panel["multi_vendor_ready"] = not _gate_would_fail(panel)
+    return panel
 
 
 #: What a machine with no loadable config can prove about its panel: nothing.
+#: ``multi_vendor_ready`` is ``False`` here for a different reason than below —
+#: not "the gate would fail" but "there is no config to satisfy", which is not a
+#: readiness anyone should build on.
 _NO_PANEL = {
     "vendors_configured": 0,
     "vendors_available": 0,
@@ -278,30 +284,44 @@ _NO_PANEL = {
 }
 
 
+def _gate_would_fail(panel) -> bool:
+    """Would a run on this machine fail the cross-vendor gate?
+
+    The single place doctor decides that, so the ``multi_vendor_ready`` field
+    and the warning below are the same judgement rendered twice. It mirrors
+    :func:`metadata.collapse_reason`'s scoping term for term: the gate is off at
+    ``0``; a config with fewer distinct vendors enabled than the threshold never
+    claimed that consensus and is left alone; otherwise every configured vendor
+    short of the threshold is a vendor the run cannot hear from.
+
+    Doctor can only see reachability, so this is a *lower* bound on failure: a
+    reachable CLI that returns nothing (#635) fails the gate too, and no offline
+    check can predict it. That is why the report says so in as many words.
+    """
+    minimum = panel["min_vendors"]
+    if minimum <= 0 or panel["vendors_configured"] < minimum:
+        return False
+    return panel["vendors_available"] < minimum
+
+
 def _panel_warning(panel) -> str | None:
     """The one actionable thing offline diagnostics can say about the panel.
 
-    Fires only when the config claims cross-vendor consensus (two or more
-    distinct vendors enabled) and this machine cannot deliver it, because then
-    the run would exit 3 and the operator would rather know now.
-
-    The `max(2, minimum)` mirrors the runtime scoping in
-    :func:`metadata.collapse_reason` exactly: a two-vendor config under
-    ``min_vendors = 3`` is not failed by the default gate, so warning about it
-    here would advertise a failure that is never going to happen. A warning that
-    does not predict the run is worse than none — it is the kind people learn to
-    scroll past.
+    Fires only when a run on this machine would actually fail the gate, because
+    then it exits 3 and the operator would rather know now. A warning that does
+    not predict the run is worse than none — it is the kind people learn to
+    scroll past — which is also why a single-vendor config under the shipped
+    ``min_vendors = 2`` is silent: :func:`metadata.collapse_reason` leaves that
+    run alone, so there is nothing to warn about.
     """
-    minimum = panel["min_vendors"]
-    if minimum <= 0 or panel["vendors_configured"] < max(2, minimum):
-        return None
-    if panel["vendors_available"] >= minimum:
+    if not _gate_would_fail(panel):
         return None
     return (
         f"{panel['vendors_configured']} vendors are enabled but only "
         f"{panel['vendors_available']} is/are reachable; a run would fail the "
-        f"cross-vendor guard (min_vendors = {minimum}, exit 3). Install the "
-        f"missing CLI, or opt out with `--no-min-vendors`."
+        f"cross-vendor guard (min_vendors = {panel['min_vendors']}, exit 3). "
+        f"Install the missing CLI, or opt out with `--no-min-vendors` "
+        f"(`[jury.ci] min_vendors = 0`)."
     )
 
 

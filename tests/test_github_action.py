@@ -198,11 +198,108 @@ class TheActionDoesNotShipAFailSoftPanel(unittest.TestCase):
         into the invocation — the same class of hole #584 closed for `version`,
         one layer down.
         """
-        self.assertIn("''|*[!0-9]*)", self.text)
+        self.assertIn("*[!0-9]*)", self.text)
 
     def test_it_travels_through_env_like_every_other_input(self):
         """Never as a `${{ }}` inside `run:` — see the sweep above."""
         self.assertIn("INPUT_MIN_VENDORS: ${{ inputs.min-vendors }}", self.text)
+
+
+class AnEmptyMinVendorsMeansTheDefault(unittest.TestCase):
+    """`min-vendors: ${{ vars.MIN_VENDORS }}` with the variable unset (#682, round 3).
+
+    GitHub applies an input's `default:` only when the input is OMITTED. Pass it
+    explicitly from an unset repository or organization variable and the step
+    receives the empty string — which the first cut rejected with exit 2, hard-
+    failing a workflow that had asked for nothing unusual. Empty now means "use
+    the default"; a genuinely non-numeric value still fails, and still before
+    the value is word-split into the command line.
+
+    The shell is emulated rather than executed: this suite runs on the Windows
+    matrix leg too, where there is no `sh`. `fnmatch` and a POSIX `case` glob
+    agree on these patterns (`*` and one `[!…]` class), which is what makes the
+    emulation faithful — and the parts it cannot emulate (the default literal,
+    the ordering of the two branches) are pinned against the file's own text.
+    """
+
+    def setUp(self):
+        self.text = (REPO_ROOT / "action.yml").read_text(encoding="utf-8")
+
+    def _reject_patterns(self) -> list[str]:
+        """The globs from the `case "$MIN_VENDORS" in` validation block.
+
+        Every arm, not only the ones opening with `*`: an arm that rejects the
+        empty string is spelled `''|…`, and skipping it would make the
+        emulation silently kinder than the shell. A line is an arm when it ends
+        a pattern list right after the `case` header or a previous `;;`.
+        """
+        self.assertTrue('case "$MIN_VENDORS" in' in self.text, "validation block not found")
+        block = self.text.split('case "$MIN_VENDORS" in', 1)[1].split("esac", 1)[0]
+        patterns: list[str] = []
+        expect_arm = True
+        for line in block.splitlines():
+            arm = line.strip()
+            if not arm:
+                continue
+            if expect_arm and arm.endswith(")"):
+                patterns += [
+                    p.strip().replace('"', "").replace("'", "") for p in arm[:-1].split("|")
+                ]
+                expect_arm = False
+            elif arm == ";;":
+                expect_arm = True
+        self.assertTrue(patterns, "no validation case arms found in action.yml")
+        return patterns
+
+    def _default(self) -> str:
+        """The literal the empty-value branch substitutes."""
+        marker = 'if [ -z "$MIN_VENDORS" ]; then'
+        self.assertTrue(
+            marker in self.text, "no empty-value branch: an unset variable exits 2 again"
+        )
+        branch = self.text.split(marker, 1)[1].split("fi", 1)[0]
+        return branch.split("MIN_VENDORS=", 1)[1].strip().strip('"')
+
+    def _resolve(self, value: str) -> str:
+        """What the step does with `value`: the guard it builds, or ``"exit 2"``."""
+        resolved = self._default() if value == "" else value
+        if any(fnmatch.fnmatchcase(resolved, p) for p in self._reject_patterns()):
+            return "exit 2"
+        return f"--min-vendors {resolved}"
+
+    def test_an_unset_variable_resolves_to_the_default(self):
+        self.assertEqual(self._resolve(""), "--min-vendors 2")
+
+    def test_the_empty_default_matches_the_inputs_default(self):
+        """Two spellings of the same number; they must not drift apart."""
+        block = self.text.split("min-vendors:", 1)[1].split("version:", 1)[0]
+        self.assertIn(f'default: "{self._default()}"', block)
+
+    def test_a_real_value_still_reaches_the_command_line(self):
+        for value in ("0", "2", "3", "10"):
+            with self.subTest(value):
+                self.assertEqual(self._resolve(value), f"--min-vendors {value}")
+
+    def test_a_non_numeric_value_still_fails_the_step(self):
+        """The hole this validation exists for stays closed."""
+        for value in ("--post", "two", "-1", "2 3", " ", "2.0"):
+            with self.subTest(value):
+                self.assertEqual(self._resolve(value), "exit 2")
+
+    def test_the_empty_check_runs_before_the_validation(self):
+        """Order is the whole fix: validate first and "" is rejected again."""
+        self.assertTrue(
+            'if [ -z "$MIN_VENDORS" ]; then' in self.text, "no empty-value branch at all"
+        )
+        self.assertLess(
+            self.text.index('if [ -z "$MIN_VENDORS" ]; then'),
+            self.text.index('case "$MIN_VENDORS" in'),
+        )
+
+    def test_the_raw_input_is_not_what_reaches_the_command_line(self):
+        """The guard is built from the resolved value, never from `$INPUT_MIN_VENDORS`."""
+        self.assertIn('GUARD="--min-vendors $MIN_VENDORS"', self.text)
+        self.assertNotIn('GUARD="--min-vendors $INPUT_MIN_VENDORS"', self.text)
 
 
 if __name__ == "__main__":

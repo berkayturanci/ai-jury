@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 
 from . import privilege, redaction
 from .config import AgentSpec
+from .findings import emitted_findings_block
 
 # Cap on a single local-model HTTP response body (issue #293/F-9). A chat
 # completion is small; an unbounded read from a malicious/buggy endpoint would
@@ -302,6 +303,12 @@ _VERSION_ONLY_RE = re.compile(r"^[\w.@/+-]{0,40}(?:\s+version)?\s*v?\d+\.\d+[\w.
 #: A refusal, matched on the lowercased text and only inside the length bound
 #: above. Deliberately narrow: these are first-person declines, not any
 #: sentence containing the word "cannot".
+#:
+#: Matching this is NOT on its own enough to discard an output — see
+#: :func:`_is_whole_output_refusal`. A reviewer routinely opens with a limit it
+#: hit ("I do not have access to the migration file, so I reviewed the Python
+#: only: …") and then reviews; discarding that costs a panelist and, with the
+#: gate failing closed, turns a passing two-vendor run into exit 3.
 _REFUSAL_RE = re.compile(
     r"i(?:'|\u2019)?m (?:sorry|unable|not able)"
     r"|i am (?:sorry|unable|not able)"
@@ -311,6 +318,62 @@ _REFUSAL_RE = re.compile(
     r"|as an ai\b"
     r"|i (?:do not|don(?:'|\u2019)?t) have (?:access|the ability)"
 )
+
+
+#: How far into the output a decline may begin and still BE the output. A
+#: refusal says so first; a review that ran into a limit mid-argument says so
+#: after paragraphs of review. One short lead-in sentence is allowed for, no more.
+_REFUSAL_OPENING_CHARS = 80
+
+#: Marks of an output that reviewed something, however briefly. Any one of them
+#: outranks the refusal phrase in front of it: an agent that says it could not
+#: read one file and then names a defect HAS reviewed, and its finding is the
+#: thing the panel exists to collect.
+_REVIEW_SUBSTANCE_RE = re.compile(
+    r"\blines?\s+\d+"  # "line 12", "lines 40-52"
+    r"|\b[\w./-]+\.[a-z]{1,5}:\d+"  # "src/app.py:12"
+    r"|^@@[ \t]"  # a hunk header quoted back
+    r"|\bi (?:reviewed|read|checked|examined|inspected|looked at|went through)\b"
+    r"|\b(?:having|after) (?:reviewed|read|checked|examined)\b",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+#: The adversative pivot that turns a limit into a review: "I'm not able to
+#: reproduce the race locally, BUT the lock ordering here is wrong." It counts
+#: only when what follows is prose of its own and is not itself another decline
+#: — "I'm sorry, but I can't help with this" pivots into the same refusal.
+_PIVOT_RE = re.compile(r"\b(?:but|however|though|although|that said)\b", re.IGNORECASE)
+
+#: How much text must follow a pivot before it can carry a review claim.
+_PIVOT_MIN_CHARS = 20
+
+
+def _carries_review_substance(body: str) -> bool:
+    """True when ``body`` says something about the code, not only about itself."""
+    if _REVIEW_SUBSTANCE_RE.search(body):
+        return True
+    pivot = _PIVOT_RE.search(body)
+    if pivot is None:
+        return False
+    rest = body[pivot.end() :].strip()
+    return len(rest) >= _PIVOT_MIN_CHARS and _REFUSAL_RE.search(rest.lower()) is None
+
+
+def _is_whole_output_refusal(body: str) -> bool:
+    """True when the output *is* a decline, not a review that mentions a limit.
+
+    Three conditions, all necessary. The output is short (a real decline is a
+    sentence or two), the decline OPENS it, and nothing in it carries review
+    substance. Merely containing a refusal phrase somewhere inside the length
+    bound was the old rule, and it destroyed genuine short reviews — including
+    ones that named a defect and a line number (#682, round 3).
+    """
+    if len(body) > _NO_REVIEW_MAX_CHARS:
+        return False
+    match = _REFUSAL_RE.search(body.lower())
+    if match is None or match.start() > _REFUSAL_OPENING_CHARS:
+        return False
+    return not _carries_review_substance(body)
 
 
 def _is_cli_banner(body: str) -> bool:
@@ -352,11 +415,17 @@ def no_review_reason(text: str) -> str | None:
     body = (text or "").strip()
     if not body:
         return "the agent produced no output"
+    # A structured findings block is the one machine-checkable proof that the
+    # agent answered in the reviewer's contract, and it settles the question
+    # before any prose heuristic gets a vote: a launcher banner does not emit
+    # one, and an agent that declines and then reports a finding has reviewed.
+    if emitted_findings_block(body):
+        return None
     if _is_cli_banner(body):
         return "the CLI printed usage or argument-error text instead of a review"
     if _VERSION_ONLY_RE.match(body):
         return "the CLI printed only a version banner instead of a review"
-    if len(body) <= _NO_REVIEW_MAX_CHARS and _REFUSAL_RE.search(body.lower()):
+    if _is_whole_output_refusal(body):
         return "the agent declined to review"
     return None
 

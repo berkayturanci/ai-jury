@@ -115,8 +115,11 @@ opinion — but a false consensus is the more expensive of the two, because a
 degraded run that says so is recoverable and a silent one is not. The default is
 scoped so that trade only lands on runs that made the claim: it applies when two
 or more distinct vendors are enabled, so a deliberate single-agent install is
-untouched. `--no-min-vendors` (or `min_vendors = 0`) is the explicit opt-out, and
-a threshold typed on the command line is enforced as typed.
+untouched. The claim is the CONFIGURATION, not the machine — a config naming
+three vendors on a host with one installed CLI fails, because that run is
+single-vendor however it got there. `--no-min-vendors` (or `min_vendors = 0`) is
+the explicit opt-out, `--strict` turns the missing-CLI half into a startup
+failure instead, and a threshold typed on the command line is enforced as typed.
 
 The invocation each adapter builds is **locked in CI**
 (`tests/golden/adapter_contracts.json` + `tests/test_adapter_contracts.py`):

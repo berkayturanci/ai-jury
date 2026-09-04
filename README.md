@@ -497,7 +497,11 @@ Override per run with `--rounds`, `--chair`, `--config`.
 > them apart: an agent that exits 0 with a refusal or its own usage banner is
 > recorded as a typed failure rather than a review, and a run that claimed
 > cross-vendor consensus and did not form one exits **3** (`--min-vendors`,
-> default `2`; opt out with `--no-min-vendors`). `jury --doctor` reports
+> default `2`). The claim is what your config NAMES, so a `jury.toml` naming
+> three vendors fails on a machine carrying one installed CLI — a missing CLI is
+> not an exemption. Opt out with `--no-min-vendors` (`[jury.ci] min_vendors =
+> 0`), or use `--strict` to catch the missing CLI at startup instead.
+> `jury --doctor` reports
 > reachable vendors, but never contribution — only a run can prove that. See
 > [docs/parameters.md](docs/parameters.md#the-cross-vendor-guard---min-vendors).
 

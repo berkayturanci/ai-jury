@@ -31,7 +31,12 @@ inputs:
       Fail the run (exit 3) unless at least this many distinct vendors actually
       CONTRIBUTED a review. 0 opts out. Defaults to 2, so a consumer of this
       Action cannot silently inherit a panel that collapsed to one vendor
-      (#682) — an agent can be installed, probe clean, and return nothing.
+      (#682) — an agent can be installed, probe clean, and return nothing, and
+      a configured CLI that is not installed at all counts the same way: the
+      gate scopes on vendors CONFIGURED, so a jury.toml naming three vendors
+      fails on a runner carrying one. An empty value means "use the default",
+      because passing an unset repository/organization variable through this
+      input arrives as the empty string; a non-numeric value fails with exit 2.
       Ignored when `args` already names --min-vendors or --no-min-vendors, in
       either the `--flag value` or the `--flag=value` spelling.
     required: false
@@ -79,16 +84,27 @@ runs:
       run: |
         # The cross-vendor guard, made explicit for Action consumers (#682).
         # `args` wins when it already says something about it, so a caller who
-        # has decided is never overridden. Validated as digits before it is
-        # word-split into the command line: the value is caller-supplied, and
+        # has decided is never overridden.
+        #
+        # An EMPTY value is the default, not an error: passing an unset
+        # repository or organization variable through the `min-vendors` input
+        # arrives here as "", and hard-failing that broke a workflow that had
+        # asked for nothing unusual. The Action's own `default:` never reaches
+        # this branch — GitHub applies it only when the input is omitted.
+        MIN_VENDORS="$INPUT_MIN_VENDORS"
+        if [ -z "$MIN_VENDORS" ]; then
+          MIN_VENDORS="2"
+        fi
+        # Anything non-numeric IS an error, and is caught before the value is
+        # word-split into the command line: it is caller-supplied, and
         # `min-vendors: "--post"` would otherwise smuggle in a flag.
-        case "$INPUT_MIN_VENDORS" in
-          ''|*[!0-9]*)
-            echo "ai-jury: min-vendors must be a non-negative integer" >&2
+        case "$MIN_VENDORS" in
+          *[!0-9]*)
+            echo "ai-jury: min-vendors must be a non-negative integer (got '$MIN_VENDORS')" >&2
             exit 2
             ;;
         esac
-        GUARD="--min-vendors $INPUT_MIN_VENDORS"
+        GUARD="--min-vendors $MIN_VENDORS"
         # Both spellings count as "the caller has decided": `--min-vendors 0`
         # and `--min-vendors=0` mean the same thing to argparse, and matching
         # only the space-separated form appended a second, contradicting

@@ -231,7 +231,7 @@ The document is `schema_version: "ai-jury.doctor.v1"`:
 | `vendors_available` | How many of those are reachable right now. |
 | `min_vendors` | The effective `[jury.ci] min_vendors` threshold (`0` when opted out). |
 | `contributing_vendors` | **Always `null` here.** Doctor runs no review, so it cannot know how many vendors would actually contribute. The real number is `panel.vendors` in a run's `--metadata-json`. |
-| `multi_vendor_ready` | `vendors_available >= min_vendors` (or `true` when the guard is off). |
+| `multi_vendor_ready` | `false` exactly when a run on this machine would fail the gate — the guard is on, this config names at least `min_vendors` distinct vendors, and fewer than that are reachable. `true` when the guard is off, when the config never claimed that many vendors, or when enough are reachable. (Also `false` when no config could be loaded: there is nothing to be ready for.) |
 
 `contributing_vendors` is in the export precisely *because* it is null: a
 consumer must be able to see that availability was checked and contribution was
@@ -272,17 +272,27 @@ of whether a jury happened at all.
 | --- | --- | --- |
 | `min_vendors` | `2` | Exit **3** unless at least this many *distinct vendors contributed a review*. `0` disables. |
 
-It **fails closed**, and it is scoped so that default is safe:
+It **fails closed**, and it is scoped on the vendors your config **names**:
 
-- it applies only when **two or more distinct vendors are enabled** — a
-  deliberate single-agent setup never claimed cross-vendor consensus, so it is
-  never failed for not delivering one;
+- from this release, a config naming two or more distinct vendors exits **3**
+  unless at least that many actually contributed a review — **including when a
+  configured CLI is not installed on this machine.** The shipped three-vendor
+  `jury.toml` on a machine with one installed CLI fails, by design: a
+  configuration that promises three vendors and delivers one is the collapse
+  this guard exists to catch, and a missing CLI is not an exemption. Install it,
+  drop the agent from the config, or opt out explicitly;
+- it applies only when the config claimed that consensus: with fewer distinct
+  vendors enabled than the threshold — a deliberate single-agent setup — it
+  never fires;
 - an agent that abstained (replied with no findings block) or came back
   `ok=False` — including the typed `no_review` failure for a refusal or a CLI
   usage banner — does not count toward the total;
 - `--min-vendors N` overrides the key, and a threshold given on the command line
   is enforced as given, scoping or not;
-- `--no-min-vendors` (or `min_vendors = 0`) is the explicit opt-out.
+- `--no-min-vendors` (or `min_vendors = 0`) is the explicit opt-out, and
+  `--strict` is the other escape for the missing-CLI case: it does not lower the
+  bar, it fails at **startup** on a configured CLI that is not installed, so you
+  learn before the run rather than from a collapsed panel after it.
 
 Exit 3 is distinct from the `--ci` findings failure (exit 1), and a collapsed
 panel outranks it: `evaluate_ci` reports on findings the panel did or did not

@@ -73,7 +73,10 @@ ignore_unverified = true
 # instead of 0 — an agent can be installed, probe clean, and still return nothing
 # (#635), which is how a three-vendor panel silently becomes one. It only applies
 # when 2+ distinct vendors are enabled, so a deliberate single-agent setup is
-# untouched. Set 0 (or pass --no-min-vendors) to accept a collapsed panel.
+# untouched — but "enabled" means named HERE: with the three agents below, a
+# machine that has only one of the CLIs installed fails this gate too. Set 0 (or
+# pass --no-min-vendors) to accept a collapsed panel; --strict reports the
+# missing CLI at startup instead.
 min_vendors = 2
 
 # Context policy: what gets sent to each agent, and whether secrets are redacted.

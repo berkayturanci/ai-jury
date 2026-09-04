@@ -223,6 +223,45 @@ class TheGateOnlyFiresOnARunThatClaimedConsensus(unittest.TestCase):
         )
 
 
+class TheFailureSaysHowToGetPastIt(unittest.TestCase):
+    """A default-on gate that fails without naming its opt-out is a support ticket.
+
+    Whoever reads this line is looking at a red CI step on a guard that shipped
+    on by default, quite possibly for the first time — and the two things they
+    need (accept the collapse, or catch the missing CLI earlier) are both flags
+    the tool already has.
+    """
+
+    def _reason(self) -> str:
+        reason = collapse_reason(
+            [_Review("findings", "anthropic"), _Review("failed", "openai")],
+            2,
+            configured_vendors=2,
+        )
+        self.assertIsNotNone(reason)
+        return reason
+
+    def test_it_names_the_opt_out_flag(self):
+        self.assertIn("--no-min-vendors", self._reason())
+
+    def test_it_names_the_config_key_too(self):
+        """A CI caller edits jury.toml as often as it edits the command line."""
+        self.assertIn("min_vendors = 0", self._reason())
+
+    def test_it_names_the_startup_check_for_a_missing_cli(self):
+        """The other escape, and the one a missing CLI actually wants."""
+        self.assertIn("--strict", self._reason())
+
+    def test_the_flags_it_names_are_real(self):
+        """Guards against advertising a flag that argparse would reject."""
+        parser = cli.build_parser()
+        for flag in ("--no-min-vendors", "--strict"):
+            with self.subTest(flag):
+                self.assertIn(flag, self._reason())
+                args = parser.parse_args(["--diff-file", "-", flag])
+                self.assertIsNotNone(args)
+
+
 class CountingConfiguredVendors(unittest.TestCase):
     def test_distinct_vendors_ignores_slot_count(self):
         config = _from_dict({"agent": _AGENTS})

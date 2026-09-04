@@ -377,11 +377,37 @@ jury --pr 123 --min-vendors 3          # require all three vendors
 jury --pr 123 --no-min-vendors         # accept a collapsed panel (explicit)
 ```
 
-It fails closed, and only for a run that claimed cross-vendor consensus: with
-fewer than two distinct vendors enabled — Option A above, or a single installed
-CLI — the default gate never fires. Exit 3 is distinct from the `--ci` findings
-failure (exit 1), so a caller can tell "the reviewers disagreed with you" from
-"the reviewers never ran".
+**From this release the gate is on by default, and it scopes on the vendors your
+config NAMES.** A `jury.toml` naming two or more distinct vendors exits **3**
+unless at least that many actually contributed a review. That includes the case
+where a configured CLI is **not installed on this machine**: the shipped
+three-vendor `jury.toml` on a laptop with one CLI now fails, because a
+configuration promising three vendors and delivering one is exactly the collapse
+this guard exists to catch. A missing CLI is not an exemption.
+
+Only a config that never claimed cross-vendor consensus is left alone — Option A
+above, or any config with fewer distinct vendors enabled than the threshold.
+
+Two escapes, and they answer different questions:
+
+```bash
+jury --pr 123 --no-min-vendors        # accept a collapsed panel (or [jury.ci] min_vendors = 0)
+jury --pr 123 --strict                # fail at STARTUP on a missing CLI, before spending anything
+```
+
+`--no-min-vendors` (equivalently `min_vendors = 0` under `[jury.ci]`) says "one
+vendor is fine here". `--strict` does not lower the bar — it moves the failure
+earlier, so a missing CLI is reported before the run instead of as a collapsed
+panel after it. Exit 3 is distinct from the `--ci` findings failure (exit 1), so
+a caller can tell "the reviewers disagreed with you" from "the reviewers never
+ran", and the failure message names the opt-out:
+
+```console
+panel collapsed: 1 vendor(s) contributed a review, 2 required. An abstention is
+not an approval; cross-vendor consensus was not formed. To accept a collapsed
+panel, pass --no-min-vendors (or set [jury.ci] min_vendors = 0); to catch a
+missing CLI at startup instead, run with --strict.
+```
 
 The run's own count is in `--metadata-json` under `panel.vendors`:
 
@@ -650,10 +676,14 @@ choice in `args` always wins.
 | `"2"` (default) | Fail the step (exit 3) when fewer than 2 distinct vendors contributed a review. |
 | `"3"` | Require all three of a three-vendor panel. |
 | `"0"` | Opt out — accept a single-vendor run, the pre-#682 behaviour. |
+| `""` (empty) | Same as the default. An unset repository or organization variable arrives as the empty string, so `min-vendors: ${{ vars.MIN_VENDORS }}` is a valid way to leave the guard alone. |
 
-The guard is inert for a single-vendor configuration, so a workflow running one
-reviewer does not need `min-vendors: "0"`. A non-integer value fails the step
-with a clear message rather than being spliced into the command line.
+The guard is inert for a single-vendor *configuration*, so a workflow running one
+reviewer does not need `min-vendors: "0"`. It is **not** inert for a runner that
+is missing one of several configured CLIs — that is a collapsed panel, and it
+fails: install the CLI, drop the agent from the config, or opt out explicitly. A
+non-integer value fails the step with a clear message rather than being spliced
+into the command line.
 
 ---
 

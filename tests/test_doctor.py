@@ -689,6 +689,49 @@ command = "claude"
         diag = self._diag(single, set())
         self.assertFalse([w for w in diag["config_warnings"] if "cross-vendor guard" in w])
 
+    def test_a_single_vendor_config_with_a_missing_cli_is_still_ready(self):
+        """The field must agree with the runtime, not with a stricter rule of its own.
+
+        One agent, its CLI absent: `collapse_reason` leaves that run alone (it
+        never claimed cross-vendor consensus) and the run exits 0. Doctor used
+        to answer `vendors_available >= min_vendors` — 0 >= 2 is false — and
+        printed "cross-vendor ready: no" for a configuration nothing fails. A
+        diagnostic that contradicts the runtime is one people learn to ignore.
+        """
+        single = """\
+[jury]
+chair = "claude"
+
+[[agent]]
+name = "claude"
+vendor = "anthropic"
+command = "claude"
+"""
+        diag = self._diag(single, set())
+        panel = diag["panel"]
+        self.assertEqual(panel["vendors_configured"], 1)
+        self.assertEqual(panel["vendors_available"], 0)
+        self.assertEqual(panel["min_vendors"], 2)
+        self.assertTrue(panel["multi_vendor_ready"])
+        self.assertIn("cross-vendor ready: yes", doctor.render_report(diag))
+
+    def test_the_field_and_the_warning_never_disagree(self):
+        """Both shapes, read off one predicate: warned exactly when not ready."""
+        for label, config_text, available in (
+            ("three vendors, one reachable", THREE_VENDOR_CONFIG, {"claude"}),
+            ("three vendors, all reachable", THREE_VENDOR_CONFIG, {"claude", "codex", "agy"}),
+        ):
+            with self.subTest(label):
+                diag = self._diag(config_text, available)
+                warned = bool([w for w in diag["config_warnings"] if "cross-vendor guard" in w])
+                self.assertEqual(warned, not diag["panel"]["multi_vendor_ready"])
+
+    def test_a_three_vendor_config_with_one_cli_is_not_ready(self):
+        """The other shape: a missing CLI IS a collapsed panel, and the gate fails it."""
+        diag = self._diag(THREE_VENDOR_CONFIG, {"claude"})
+        self.assertFalse(diag["panel"]["multi_vendor_ready"])
+        self.assertIn("cross-vendor ready: no", doctor.render_report(diag))
+
     def test_opting_out_silences_the_gate_warning(self):
         opted_out = THREE_VENDOR_CONFIG.replace(
             'chair = "claude"', 'chair = "claude"\n\n[jury.ci]\nmin_vendors = 0'

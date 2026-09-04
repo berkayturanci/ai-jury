@@ -114,6 +114,11 @@ def collapse_reason(reviews, required: int, configured_vendors: int | None = Non
     is left alone, so turning the guard on by default cannot fail a
     single-vendor install that was always honest about being one. Pass ``None``
     for an explicitly requested threshold, which is enforced as asked.
+
+    The message NAMES the opt-out. Whoever reads it is looking at a red CI step
+    on a gate that ships on by default, quite possibly for the first time, and a
+    failure that does not say how to accept it sends them to the issue tracker
+    for a flag the tool already has.
     """
     if required <= 0:
         return None
@@ -125,7 +130,9 @@ def collapse_reason(reviews, required: int, configured_vendors: int | None = Non
     return (
         f"panel collapsed: {contributed} vendor(s) contributed a review, "
         f"{required} required. An abstention is not an approval; "
-        f"cross-vendor consensus was not formed."
+        f"cross-vendor consensus was not formed. To accept a collapsed panel, "
+        f"pass --no-min-vendors (or set [jury.ci] min_vendors = 0); to catch a "
+        f"missing CLI at startup instead, run with --strict."
     )
 
 

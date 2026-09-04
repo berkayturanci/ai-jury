@@ -192,12 +192,20 @@ all. Exit **3** is deliberately distinct from the `--ci` findings failure (exit
 never ran", and a collapsed panel outranks the severity gate when both apply.
 
 It fails **closed** by default: the threshold is `2`, from `[jury.ci]
-min_vendors`. It only applies to a run that claimed cross-vendor consensus in
-the first place — two or more distinct vendors enabled — so a deliberate
-single-agent setup keeps exiting 0. A threshold you type is enforced as typed:
-`--min-vendors 2` on a one-vendor config fails, because you asked for it.
+min_vendors`. It scopes on the vendors your config **names**, so from this
+release a config naming two or more distinct vendors exits 3 unless at least
+that many actually contributed — **including when a configured CLI is not
+installed**. The shipped three-vendor `jury.toml` on a machine with one CLI
+fails; that is a collapsed panel, not an exemption. Only a config that never
+claimed the consensus — fewer distinct vendors enabled than the threshold, e.g.
+a deliberate single-agent setup — keeps exiting 0. A threshold you type is
+enforced as typed: `--min-vendors 2` on a one-vendor config fails, because you
+asked for it.
 
-Opt out with `--no-min-vendors`, or `min_vendors = 0` under `[jury.ci]`.
+Two escapes: `--no-min-vendors` (or `min_vendors = 0` under `[jury.ci]`) accepts
+a collapsed panel, and `--strict` catches a **missing CLI at startup** instead —
+the same situation, reported before the run rather than after it. The failure
+message names both.
 
 ### Large-diff handling
 

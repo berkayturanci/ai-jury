@@ -275,8 +275,9 @@ _EFFORT_HINT = '# effort = "medium"    # low | medium | high'
 _MIN_VENDORS_HINT = (
     "# Distinct vendors that must have contributed a review before the run can",
     "# stand as cross-vendor consensus (exit 3 otherwise). Defaults to 2 and only",
-    "# applies when 2+ vendors are enabled; set 0 (or pass --no-min-vendors) to",
-    "# accept a panel that collapsed to one vendor.",
+    "# applies when 2+ vendors are enabled HERE — including when one of their CLIs",
+    "# is not installed; set 0 (or pass --no-min-vendors) to accept a panel that",
+    "# collapsed to one vendor, or --strict to fail at startup on a missing CLI.",
     "# min_vendors = 2",
 )
 

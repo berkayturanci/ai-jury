@@ -845,6 +845,11 @@ def config_hash(config: JuryConfig) -> str:
         "ci": {
             "fail_on": list(config.ci.fail_on),
             "ignore_unverified": config.ci.ignore_unverified,
+            # `min_vendors` belongs here for the same reason the other two do: it
+            # decides the outcome of a run, so two runs that disagree about it are
+            # not the same run. Adding it invalidates every existing review cache
+            # entry ONCE on upgrade — noted in the CHANGELOG, since a user's first
+            # run after the bump is a full one.
             "min_vendors": config.ci.min_vendors,
         },
         "context": {
