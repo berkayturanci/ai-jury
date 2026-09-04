@@ -712,5 +712,151 @@ class ARecognisedVendorIsRecognisedByEveryRule(unittest.TestCase):
         self.assertTrue(is_commandless_vendor(" LOCAL "))
 
 
+class OneSpellingIsOneAnswerEverywhere(unittest.TestCase):
+    """One padded, cased spelling, walked past every reader (round 3).
+
+    Round 2 normalised inside each rule, which is a convention, not an
+    invariant: two readers of the same seat were still free to disagree, and
+    two of them did. ``doctor._detect_warnings`` compared the raw string while
+    ``doctor._unavailable_reason`` compared the normalised one, so a single
+    ``vendor = "XAI-API"`` seat came out of one ``--doctor`` run as both "the
+    hosted API is not reachable" and "command '' is not on PATH". And
+    ``privilege.enforce_read_only`` lowercased without stripping, so ``" XAI "``
+    — a spelling validation accepts — missed ``GENERIC_CLI_VENDORS`` and had
+    ``--sandbox`` injected into ``cursor-agent``, the one flag the xai profile
+    exists to keep off that CLI.
+
+    So the claim under test is not "each rule normalises" but "there is one
+    answer": the spec normalises on construction, and every reader below is
+    asked about the same padded seat and must return the same thing the
+    canonical spelling returns.
+    """
+
+    #: Padded, cased spellings of both xai flavours, each with the single answer
+    #: every reader has to give. ``transport`` is doctor's classification;
+    #: ``sandboxed`` is what the privilege guard may add to ``extra_args``.
+    _SEATS = (
+        {
+            "spelling": " XAI-API ",
+            "canonical": "xai-api",
+            "seat": {"name": "grok", "vendor": " XAI-API ", "model": "grok-4"},
+            "adapter": XaiApiAdapter,
+            "transport": "hosted-api",
+            "doctor_transport": "api",
+            "extra_args": ["-p"],
+            "guarded_args": ["-p"],
+        },
+        {
+            "spelling": " XAI ",
+            "canonical": "xai",
+            "seat": {
+                "name": "grok",
+                "vendor": " XAI ",
+                "command": "cursor-agent",
+                "extra_args": ["-p"],
+            },
+            "adapter": GenericCLIAdapter,
+            "transport": "cli",
+            "doctor_transport": "cli",
+            "extra_args": ["-p"],
+            "guarded_args": ["-p"],
+        },
+    )
+
+    def _config(self, case):
+        return _from_dict({"jury": {"chair": "grok"}, "agent": [dict(case["seat"])]})
+
+    def test_every_reader_gives_the_same_seat_the_same_answer(self):
+        """The whole walk, in one test: nobody in this chain may disagree."""
+        for case in self._SEATS:
+            with self.subTest(spelling=case["spelling"]):
+                canonical = case["canonical"]
+
+                # 1. Validation accepts the spelling, with nothing to report.
+                self.assertEqual(
+                    validate_config({"jury": {"chair": "grok"}, "agent": [dict(case["seat"])]}),
+                    [],
+                )
+
+                # 2. The adapter lookup routes it to the vendor's own adapter.
+                spec = self._config(case).agents[0]
+                self.assertIsInstance(make_adapter(spec), case["adapter"])
+
+                # 3. The gate counts it as that vendor, not as the fallback.
+                self.assertEqual(vendor_identity(case["spelling"]), canonical)
+                self.assertNotEqual(vendor_identity(case["spelling"]), GENERIC_VENDOR)
+
+                # 4. Doctor's two unavailability readers describe the SAME
+                #    failure. Asserted through what each one actually prints, so
+                #    this stays a test of the diagnosis rather than of whichever
+                #    helper happens to produce it.
+                config = self._config(case)
+                with mock.patch.object(doctor, "_is_available", return_value=False):
+                    warnings = doctor._detect_warnings(config)
+                    reason = doctor._unavailable_reason(spec, [])
+                self.assertEqual(len(warnings), 1)
+                if case["transport"] == "hosted-api":
+                    self.assertIn("(hosted API)", warnings[0])
+                    self.assertNotIn("is not on PATH", warnings[0])
+                    self.assertEqual(reason, "the hosted API is not reachable")
+                else:
+                    self.assertIn("'cursor-agent' is not on PATH", warnings[0])
+                    self.assertEqual(reason, "command 'cursor-agent' is not on PATH")
+
+                # 5. The privilege guard treats it exactly as the canonical
+                #    spelling: no flag belonging to another vendor's CLI.
+                self.assertEqual(
+                    enforce_read_only(case["spelling"], "cursor", list(case["extra_args"])),
+                    enforce_read_only(canonical, "cursor", list(case["extra_args"])),
+                )
+                self.assertEqual(
+                    enforce_read_only(case["spelling"], "cursor", list(case["extra_args"])),
+                    case["guarded_args"],
+                )
+
+                # 6. And the invariant all five rest on: the spec normalised the
+                #    spelling once, on construction, so none of the readers above
+                #    was ever offered the raw form to disagree over.
+                self.assertEqual(spec.vendor, canonical)
+
+    def test_the_padded_seat_and_the_canonical_seat_are_the_same_doctor_row(self):
+        """Same seat, two spellings, one export row (bar the name)."""
+        for case in self._SEATS:
+            with self.subTest(spelling=case["spelling"]):
+                canonical_seat = dict(case["seat"], vendor=case["canonical"])
+                with mock.patch.object(doctor, "_is_available", return_value=False):
+                    padded = doctor._agent_entry(self._config(case).agents[0])
+                    plain = doctor._agent_entry(
+                        _from_dict({"agent": [canonical_seat]}).agents[0],
+                    )
+                self.assertEqual(padded["vendor"], plain["vendor"])
+                self.assertEqual(padded["vendor_identity"], plain["vendor_identity"])
+                self.assertEqual(padded["reason"], plain["reason"])
+                self.assertEqual(
+                    _transport(case["spelling"], case["seat"].get("command", ""), None),
+                    case["doctor_transport"],
+                )
+
+    def test_lifting_the_guarantee_reads_the_same_spelling(self):
+        """`enable_write` is the mirror image and must mirror this too."""
+        for case in self._SEATS:
+            with self.subTest(spelling=case["spelling"]):
+                self.assertEqual(
+                    enable_write(case["spelling"], "cursor", ["-p"]),
+                    enable_write(case["canonical"], "cursor", ["-p"]),
+                )
+
+    def test_no_reader_can_be_handed_the_raw_spelling(self):
+        """The invariant behind all of the above: the spec normalises itself.
+
+        Not `_from_dict` — every construction site, including the ad-hoc specs
+        `cli` and `runagent` build, so a reader added tomorrow cannot see a raw
+        vendor even if it forgets the normaliser exists.
+        """
+        self.assertEqual(AgentSpec(name="a", vendor=" XAI-API ").vendor, "xai-api")
+        self.assertEqual(AgentSpec(name="a", vendor="\tGoogle\n").vendor, "google")
+        self.assertEqual(AgentSpec(name="a", vendor=3).vendor, "")
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

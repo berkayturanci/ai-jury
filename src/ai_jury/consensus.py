@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from .config import normalise_vendor
 from .findings import SEVERITY_ORDER, Finding
 
 # Buckets describing how broadly a finding was raised.
@@ -150,7 +151,12 @@ def demote_local_only_groups(
     for group in groups:
         if not group.reviewers:
             continue
-        if not all(vendor_by_reviewer.get(r) == "local" for r in group.reviewers):
+        # Normalised, not compared raw: the mapping is built from configured
+        # vendors, and "which vendor is this" is one question with one answer
+        # everywhere (issue #701, round 3).
+        if not all(
+            normalise_vendor(vendor_by_reviewer.get(r, "")) == "local" for r in group.reviewers
+        ):
             continue
         if (
             SEVERITY_ORDER.get(group.severity, len(SEVERITY_ORDER))

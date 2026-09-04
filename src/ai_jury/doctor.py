@@ -140,6 +140,24 @@ def _endpoint_for(spec):
         return None
 
 
+def _unavailable_transport(spec) -> str:
+    """Which transport failed for an unavailable seat: local, hosted-api or cli.
+
+    The single classifier behind both unavailability messages — the per-agent
+    ``reason`` in the export and the corresponding line in ``warnings`` (issue
+    #701, review round 3). Two readers asking the same question of the same seat
+    must get the same answer, so they ask it here, once, of the normalised
+    vendor: ``vendor = "XAI-API"`` used to be a hosted API to one reader and a
+    CLI with a missing ``command`` to the other.
+    """
+    vendor = normalise_vendor(getattr(spec, "vendor", ""))
+    if vendor == "local":
+        return "local"
+    if vendor in _HOSTED_API_VENDORS or vendor.endswith("-api"):
+        return "hosted-api"
+    return "cli"
+
+
 def _unavailable_reason(spec, capability_warnings) -> str:
     """Why an agent is not usable, in one line (pure given its inputs).
 
@@ -149,11 +167,11 @@ def _unavailable_reason(spec, capability_warnings) -> str:
     """
     if capability_warnings:
         return "; ".join(capability_warnings)
-    vendor = normalise_vendor(getattr(spec, "vendor", ""))
-    if vendor == "local":
+    transport = _unavailable_transport(spec)
+    if transport == "local":
         endpoint = redact_url_userinfo(spec.endpoint or _DEFAULT_LOCAL_ENDPOINT)
         return f"endpoint '{endpoint}' is not reachable"
-    if vendor in _HOSTED_API_VENDORS or vendor.endswith("-api"):
+    if transport == "hosted-api":
         return "the hosted API is not reachable"
     if getattr(spec, "command", ""):
         return f"command '{_redact_value(spec.command)}' is not on PATH"
@@ -171,7 +189,9 @@ def _agent_entry(spec, probe_models: bool = False):
         "resolved": _resolved_command(spec),
         # Two vendor fields, because they answer two different questions and a
         # row that showed only one was read as answering both (#701, round 2).
-        # `vendor` is provenance: what the operator configured, verbatim.
+        # `vendor` is provenance: the vendor the operator named, in the one
+        # normalised spelling every rule reads (round 3 — the spec normalises on
+        # construction, so this is the same string the doctor reasons about).
         # `vendor_identity` is the gate's view: what this seat counts as under
         # `min_vendors`, which is `cli` for anything the build cannot identify.
         "vendor": _redact_value(spec.vendor),
@@ -224,13 +244,18 @@ def _detect_warnings(cfg) -> list[str]:
     for agent in enabled:
         if _is_available(agent):
             continue
-        if agent.vendor == "local":
+        # Classified by the SAME predicate `_unavailable_reason` uses, so the
+        # warning list and the per-agent `reason` cannot diagnose one seat two
+        # different ways (issue #701, review round 3). They differ only in
+        # wording; disagreeing about *which* transport failed was the bug.
+        transport = _unavailable_transport(agent)
+        if transport == "local":
             warnings.append(
                 f"agent '{_redact_value(agent.name)}' (local) endpoint "
-                f"'{redact_url_userinfo(agent.endpoint or 'http://localhost:11434/v1')}' "
+                f"'{redact_url_userinfo(agent.endpoint or _DEFAULT_LOCAL_ENDPOINT)}' "
                 f"is not reachable"
             )
-        elif agent.vendor in _HOSTED_API_VENDORS:
+        elif transport == "hosted-api":
             # Reuse the adapter's own capability warning (issue #430) instead
             # of re-deriving the vendor -> env-var mapping here, so the
             # message can't drift from what the adapter actually reports.
@@ -464,7 +489,7 @@ def capability_labels(capabilities) -> list[str]:
 
 def _transport(vendor: str, command: str, endpoint) -> str:
     """Classify how an agent is reached: ``cli``, ``api`` or ``local`` (pure)."""
-    name = (vendor or "").strip().lower()
+    name = normalise_vendor(vendor)
     if name == "local":
         return "local"
     if name.endswith("-api") or name == "openai-compatible":
@@ -575,7 +600,7 @@ def render_report(diagnostics) -> str:
             # be read together without arithmetic (#701, round 2).
             identity = agent.get("vendor_identity") or ""
             vendor_field = agent["vendor"]
-            if identity and identity != (vendor_field or "").strip().lower():
+            if identity and identity != normalise_vendor(vendor_field):
                 vendor_field = f"{vendor_field} -> counts as {identity}"
             lines.append(f"  [{status:>9}] {agent['name']} (vendor={vendor_field}, {address})")
             if agent.get("command"):

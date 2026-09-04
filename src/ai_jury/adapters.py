@@ -485,7 +485,7 @@ class EffortPlan:
 
 def effort_supported(vendor: str) -> bool:
     """Whether *vendor* can act on an effort level at all (pure)."""
-    return (vendor or "").strip().lower() in _EFFORT_VENDORS
+    return config_module.normalise_vendor(vendor) in _EFFORT_VENDORS
 
 
 def _anthropic_budget(level: str) -> int:
@@ -502,7 +502,7 @@ def _effort_uses_model_listing(vendor: str) -> bool:
     Those are the vendors whose mapped id can be checked against what the CLI
     actually offers, so callers know when discovering a listing is worth a probe.
     """
-    return (vendor or "").strip().lower() == "google"
+    return config_module.normalise_vendor(vendor) == "google"
 
 
 def effort_args(
@@ -531,7 +531,7 @@ def effort_args(
     if level not in EFFORT_LEVELS:
         raise ValueError(f"unknown effort {effort!r}; expected one of {', '.join(EFFORT_LEVELS)}")
 
-    name = (vendor or "").strip().lower()
+    name = config_module.normalise_vendor(vendor)
 
     if name == "google":
         # The `agy` CLI selects effort through the model id itself.

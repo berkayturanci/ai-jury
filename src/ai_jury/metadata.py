@@ -16,7 +16,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from .config import vendor_identity
+from .config import normalise_vendor, vendor_identity
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from .config import JuryConfig
@@ -211,7 +211,7 @@ def estimate_economics(results: list) -> dict:
 
     for r in results:
         agent = getattr(r, "agent", "unknown")
-        vendor = (getattr(r, "vendor", "") or "").lower()
+        vendor = normalise_vendor(getattr(r, "vendor", ""))
         output_len = len(getattr(r, "output", "") or "")
         # Heuristic: base prompt ~800 tokens + output tokens
         tokens_est = max(100, 800 + (output_len // 4)) if getattr(r, "ok", False) else 200

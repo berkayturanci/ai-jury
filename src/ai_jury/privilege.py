@@ -24,7 +24,7 @@ Required read-only invocation per adapter (documented here and in docs/security.
 
 from __future__ import annotations
 
-from .config import GENERIC_CLI_VENDORS
+from .config import GENERIC_CLI_VENDORS, normalise_vendor
 
 # Flags that grant broad write/tool/network powers — dangerous for a reviewer.
 _DANGEROUS_FLAGS: tuple[str, ...] = (
@@ -61,7 +61,7 @@ def _is_sandboxed(extra_args: list[str], vendor: str = "", name: str = "") -> bo
     "--yolo"]`` — is no longer accepted as a sandbox. When a restricting sandbox
     is active, an otherwise-broad flag no longer grants real powers (issue #100).
     """
-    vendor = (vendor or "").lower()
+    vendor = normalise_vendor(vendor)
     name = (name or "").lower()
     is_agy = vendor == "google" or "agy" in name or "gemini" in name
     args = list(extra_args)
@@ -166,6 +166,15 @@ _NO_SANDBOX_VENDORS: tuple[str, ...] = (
     *GENERIC_CLI_VENDORS,
 )
 
+#: Vendors with no subprocess to audit AT ALL — the network transports above,
+#: minus the bring-your-own-CLI seats. Derived rather than re-typed (issue #701,
+#: round 3): the hand-written copy this replaces had already drifted (no
+#: ``xai-api``), and a bring-your-own CLI does spawn a process, so it stays in
+#: scope for :func:`audit_agent` even though the tool knows no sandbox flag for it.
+_NO_SUBPROCESS_VENDORS: tuple[str, ...] = tuple(
+    v for v in _NO_SANDBOX_VENDORS if v not in GENERIC_CLI_VENDORS
+)
+
 
 def _drop_claude_disallowed(extra_args: list[str]) -> list[str]:
     """Drop every ``--disallowed-tools`` flag, in both its spelling forms.
@@ -232,7 +241,7 @@ def enable_write(vendor: str, name: str, extra_args: list[str]) -> list[str]:
     vendor, which routes to the agy adapter) drops the boolean ``--sandbox``.
     Network vendors have no such surface and are returned unchanged.
     """
-    vendor = (vendor or "").lower()
+    vendor = normalise_vendor(vendor)
     name = (name or "").lower()
     args = list(extra_args or [])
     # Network vendors first, for the same reason as in enforce_read_only: a
@@ -261,7 +270,12 @@ def enforce_read_only(vendor: str, name: str, extra_args: list[str]) -> list[str
     like agy and gets ``--sandbox`` injected (issue #310, completes #300) —
     fail-closed, never fail-open.
     """
-    vendor = (vendor or "").lower()
+    # `normalise_vendor`, not `.lower()`: lowercasing alone left `" XAI "`
+    # outside `GENERIC_CLI_VENDORS`, so the xai seat fell through to the agy
+    # branch and had `--sandbox` injected into `cursor-agent` — the exact flag
+    # the xai profile exists to keep off that CLI (issue #701, review round 3).
+    # A spelling validation accepts must be the spelling the guard enforces.
+    vendor = normalise_vendor(vendor)
     name = (name or "").lower()
     extra_args = list(extra_args or [])
     # `local`/hosted-API vendors are checked FIRST (review of #310): a network
@@ -295,7 +309,7 @@ def audit_agent(spec) -> list[str]:
     """Return least-privilege warnings for a single agent spec."""
     warnings: list[str] = []
     name = (getattr(spec, "name", "") or "").lower()
-    vendor = (getattr(spec, "vendor", "") or "").lower()
+    vendor = normalise_vendor(getattr(spec, "vendor", ""))
     extra_args = list(getattr(spec, "extra_args", []) or [])
     args_text = _args_str(extra_args)
     label = getattr(spec, "name", "agent")
@@ -306,11 +320,7 @@ def audit_agent(spec) -> list[str]:
     # no filesystem, no shell, nothing to disallow), so they are out of scope
     # for this audit.
     has_endpoint = bool(getattr(spec, "endpoint", None))
-    if (
-        vendor in ("local", "anthropic-api", "openai-api", "google-api", "openai-compatible")
-        or vendor.endswith("-api")
-        or has_endpoint
-    ):
+    if vendor in _NO_SUBPROCESS_VENDORS or vendor.endswith("-api") or has_endpoint:
         return warnings
 
     is_claude = "claude" in name or vendor == "anthropic"

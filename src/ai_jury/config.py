@@ -628,6 +628,24 @@ def validate_config(data: dict, strict: bool = False) -> list:
 
 @dataclass
 class AgentSpec:
+    """One configured seat on the panel.
+
+    ``vendor`` is normalised on construction (issue #701, review round 3) and is
+    therefore the ONLY spelling any reader ever sees. Round 2 normalised at each
+    rule instead, which left every new reader free to forget: ``_detect_warnings``
+    compared the raw string while ``_unavailable_reason`` compared the normalised
+    one, so a single ``vendor = "XAI-API"`` seat got two different diagnoses out
+    of one ``--doctor`` run. Doing it here — in the one place a spec comes into
+    existence, whatever built it — is what makes "every rule reads one value"
+    true by construction rather than by review.
+
+    Normalising is only ``strip().lower()``, so provenance survives it: the
+    operator's vendor *name* is preserved, only its whitespace and case are not.
+    Messages that must quote the file verbatim (``validate_config``) read the raw
+    TOML dict, not this field. A non-string vendor normalises to ``""`` — a
+    config mistake to warn about, not a crash in a later ``.lower()``.
+    """
+
     name: str
     vendor: str
     command: str = ""
@@ -644,6 +662,12 @@ class AgentSpec:
     # Reasoning effort: "low" | "medium" | "high" (issue #662). None leaves the
     # vendor default alone. Mapped per vendor by ``adapters.effort_args``.
     effort: str | None = None
+
+    def __post_init__(self) -> None:
+        # The single normalisation point. Every construction site — `_from_dict`,
+        # `runagent`'s built-in templates, `cli`'s ad-hoc local seat, a test —
+        # goes through it, so no reader downstream can be handed the raw form.
+        self.vendor = normalise_vendor(self.vendor)
 
 
 @dataclass
@@ -871,6 +895,9 @@ def _from_dict(data: dict) -> JuryConfig:
         agents.append(
             AgentSpec(
                 name=raw["name"],
+                # Passed through raw on purpose: `AgentSpec.__post_init__` is the
+                # one place that normalises a vendor, so normalising here as well
+                # would create a second place to keep in step (issue #701, r3).
                 vendor=raw.get("vendor", "unknown"),
                 # ``command`` is optional for local/HTTP agents (issue #43).
                 command=raw.get("command", ""),

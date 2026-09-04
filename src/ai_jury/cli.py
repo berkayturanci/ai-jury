@@ -30,6 +30,7 @@ from .config import (
     ConfigError,
     load_config,
     load_raw_config,
+    normalise_vendor,
     validate_config,
 )
 from .github import (
@@ -1190,7 +1191,7 @@ def _render_effective_config(cfg) -> str:
     lines.append("agents:")
     for a in cfg.agents:
         flag = "" if a.enabled else "  (disabled)"
-        target = a.endpoint if a.vendor == "local" else (a.command or "—")
+        target = a.endpoint if normalise_vendor(a.vendor) == "local" else (a.command or "—")
         model = f" model={a.model}" if a.model else ""
         lines.append(f"  - {a.name} ({a.vendor}) → {target}{model}{flag}")
     return "\n".join(lines)

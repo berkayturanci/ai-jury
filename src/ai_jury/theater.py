@@ -24,6 +24,7 @@ import threading
 import time
 
 from .adapters import AgentResult
+from .config import normalise_vendor
 from .findings import SEVERITY_ORDER, flatten_inline, parse_findings, parse_verdicts
 
 # ---- styling ---------------------------------------------------------------
@@ -44,6 +45,19 @@ _VENDOR_SGR = {
     "openai-compatible": "38;2;139;92;246",  # OpenRouter/DeepSeek/Groq #8b5cf6
     "cli": "38;2;236;72;153",  # arbitrary CLI agent #ec4899
 }
+
+
+def _vendor_sgr(vendor, default: str = "1") -> str:
+    """The brand colour for *vendor*, keyed on its normalised spelling (pure).
+
+    A replayed outcome file is an external document: it carries whatever vendor
+    string the run recorded, so this looks it up the way every other rule looks
+    up a vendor (issue #701, round 3). Cosmetic — an unmatched vendor just gets
+    the default attribute — but "which vendor is this" has one answer here too.
+    """
+    return _VENDOR_SGR.get(normalise_vendor(vendor), default)
+
+
 # Same brand palette as RGB tuples, for the pixel-art style (half-block render).
 _VENDOR_RGB = {
     "anthropic": (217, 119, 87),
@@ -339,7 +353,7 @@ class Courtroom:
         s = self.screen
         st = self.state.get(name, "idle")
         hi = st in ("speaking", "arguing")
-        vsgr = _VENDOR_SGR.get(vendor, "1") + (";1" if hi else "")
+        vsgr = _vendor_sgr(vendor) + (";1" if hi else "")
         figure = self.g["speak"] if hi else self.g["idle"]
         if st == "done":
             figure = self.g["ok"]
@@ -437,7 +451,7 @@ class Courtroom:
                 row,
                 x,
                 label,
-                _VENDOR_SGR.get(vendor, "1") + (";1" if st in ("speaking", "arguing") else ""),
+                _vendor_sgr(vendor) + (";1" if st in ("speaking", "arguing") else ""),
             )
             x += len(label) + 2
         self._table_interior()
@@ -513,7 +527,9 @@ class Courtroom:
         eye = (40, 40, 54)
 
         def figure(axc, heady, vendor, name):
-            body = _VENDOR_RGB.get(vendor, (180, 180, 190))
+            # Same reason as `_vendor_sgr`: keyed on the normalised spelling so
+            # a recorded " XAI " still gets its own vendor tint (#701, round 3).
+            body = _VENDOR_RGB.get(normalise_vendor(vendor), (180, 180, 190))
             hair = tuple(int(c * 0.55) for c in body)  # darker vendor tint
             hi = self.state.get(name) in ("speaking", "arguing")
             rect(axc - 2, heady, axc + 2, heady + 2, _PIX["skin"])  # head (5×3)
@@ -588,7 +604,7 @@ class Courtroom:
         plate = f" {plate} "  # padding for the dark pill
         # Vendor-coloured, bold, on a dark pill so the name reads over the floor.
         speaking = st in ("speaking", "arguing")
-        sgr = _VENDOR_SGR.get(vendor, "37") + ";48;2;22;22;32;1"
+        sgr = _vendor_sgr(vendor, "37") + ";48;2;22;22;32;1"
         if speaking:
             sgr = "30;47;1"  # invert (black on white) while speaking
         self.screen.put(row, max(0, x - len(plate) // 2), plate, sgr)
