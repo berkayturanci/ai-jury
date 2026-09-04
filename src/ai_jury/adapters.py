@@ -246,15 +246,54 @@ _NO_REVIEW_MAX_CHARS = 600
 _NO_REVIEW_HEAD_CHARS = 400
 
 # The #635 class: the launcher rejected the argv, so the model was never
-# reached. Every one of these is text a CLI writes about ITSELF.
-_USAGE_ECHO_RE = re.compile(
-    r"^\s*usage\b"
-    r"|^\s*(?:error:\s*)?(?:unknown|unrecognized|invalid|unexpected)\s+"
-    r"(?:flag|option|argument|command|subcommand)\b"
-    r"|\bflag needs an argument\b"
-    r"|\bcommand not found\b"
-    r"|\bfor more information,? (?:try|see)\b",
+# reached. Every one of these is text a CLI writes about ITSELF — and the whole
+# difficulty is that a review may *talk about* the same words. "Usage of int()
+# is unsafe" and "Invalid argument passed to calculate_total()" are findings,
+# not banners, and discarding either costs a panelist and (with the guard
+# failing closed) can collapse the panel. So each pattern below is matched
+# against a whole line, and every branch is bounded the way the refusal branch
+# already is: a banner is short, or it is corroborated by banner structure.
+
+#: A launcher's own usage line, as a whole line. Prose that merely opens with
+#: the word "usage" does not match: the line must go on to look like a synopsis
+#: (a colon, or a bracketed/flag-shaped operand).
+_USAGE_LINE_RE = re.compile(
+    r"usage:\s*\S"  # "Usage: agy [options] [prompt]"
+    r"|usage\s+of\s+\S+:$"  # Go's flag package: "Usage of ./agy:"
+    r"|usage\s+\S+\s+[\[<-]",  # "usage agy [options]"
     re.IGNORECASE,
+)
+
+#: Text only a launcher writes about itself — it complains about the argv it
+#: was handed, in the first person of a program. Needs no corroboration beyond
+#: opening a short output.
+_CLI_SELF_ERROR_RE = re.compile(
+    r"(?:error|fatal)\s*:\s*(?:unknown|unrecognized|invalid|unexpected)\s+"
+    r"(?:flag|option|argument|command|subcommand)\b"
+    r"|flag needs an argument\b"
+    r"|.{0,40}\bcommand not found$",
+    re.IGNORECASE,
+)
+
+#: The same complaint without the ``error:`` prefix. This one IS ambiguous with
+#: review prose, so it must both name a flag-shaped token ("unknown flag:
+#: --print") and be corroborated by surrounding banner structure.
+_BARE_ARG_ERROR_RE = re.compile(
+    r"(?:unknown|unrecognized|invalid|unexpected)\s+"
+    r"(?:flag|option|argument|command|subcommand)\b"
+    r"[\s:=]*[\"'`]?-{1,2}[A-Za-z0-9]",
+    re.IGNORECASE,
+)
+
+#: Corroborating structure, never a trigger on its own: the options/flags block
+#: under a synopsis, or the help hint a launcher prints beneath it. The old
+#: unanchored "for more information, try/see" pattern lives on only here — it
+#: is a sentence a review can perfectly well contain.
+_BANNER_STRUCTURE_RE = re.compile(
+    r"^[ \t]*(?:options|flags|commands|arguments|subcommands)\b[ \t]*:?[ \t]*$"
+    r"|^[ \t]*-{1,2}[A-Za-z0-9][\w-]*(?:[ \t=,]|$)"
+    r"|^[ \t]*for more information,? (?:try|see)\b",
+    re.IGNORECASE | re.MULTILINE,
 )
 
 #: Nothing but a version/probe banner, e.g. "1.1.22" or "agy version 1.1.22".
@@ -274,6 +313,30 @@ _REFUSAL_RE = re.compile(
 )
 
 
+def _is_cli_banner(body: str) -> bool:
+    """True when ``body`` *is* a launcher's banner, not prose that mentions one.
+
+    Two shapes qualify. A full help dump — a synopsis line plus an options
+    block — is unmistakable at any length. Anything shorter must both open with
+    a banner-shaped line and fit inside the same length bound the refusal branch
+    uses: a real review is not three lines.
+    """
+    head = body[:_NO_REVIEW_HEAD_CHARS]
+    lines = [line.strip() for line in head.splitlines() if line.strip()]
+    if not lines:  # pragma: no cover - `body` is stripped and non-empty here
+        return False
+    synopsis = any(_USAGE_LINE_RE.match(line) for line in lines)
+    structure = _BANNER_STRUCTURE_RE.search(head) is not None
+    if synopsis and structure:
+        return True
+    if len(body) > _NO_REVIEW_MAX_CHARS:
+        return False
+    first = lines[0]
+    if _USAGE_LINE_RE.match(first) or _CLI_SELF_ERROR_RE.match(first):
+        return True
+    return _BARE_ARG_ERROR_RE.match(first) is not None and (synopsis or structure)
+
+
 def no_review_reason(text: str) -> str | None:
     """Why ``text`` cannot be a review, or ``None`` when it could be one.
 
@@ -289,7 +352,7 @@ def no_review_reason(text: str) -> str | None:
     body = (text or "").strip()
     if not body:
         return "the agent produced no output"
-    if _USAGE_ECHO_RE.search(body[:_NO_REVIEW_HEAD_CHARS]):
+    if _is_cli_banner(body):
         return "the CLI printed usage or argument-error text instead of a review"
     if _VERSION_ONLY_RE.match(body):
         return "the CLI printed only a version banner instead of a review"

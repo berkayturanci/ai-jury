@@ -32,7 +32,8 @@ inputs:
       CONTRIBUTED a review. 0 opts out. Defaults to 2, so a consumer of this
       Action cannot silently inherit a panel that collapsed to one vendor
       (#682) — an agent can be installed, probe clean, and return nothing.
-      Ignored when `args` already names --min-vendors or --no-min-vendors.
+      Ignored when `args` already names --min-vendors or --no-min-vendors, in
+      either the `--flag value` or the `--flag=value` spelling.
     required: false
     default: "2"
   version:
@@ -88,8 +89,14 @@ runs:
             ;;
         esac
         GUARD="--min-vendors $INPUT_MIN_VENDORS"
+        # Both spellings count as "the caller has decided": `--min-vendors 0`
+        # and `--min-vendors=0` mean the same thing to argparse, and matching
+        # only the space-separated form appended a second, contradicting
+        # `--min-vendors 2` behind the caller's back. The padding is what makes
+        # a flag at the very start or the very end of `args` match too.
         case " $INPUT_ARGS " in
-          *" --min-vendors "*|*" --no-min-vendors "*) GUARD="" ;;
+          *" --min-vendors "*|*" --min-vendors="*) GUARD="" ;;
+          *" --no-min-vendors "*|*" --no-min-vendors="*) GUARD="" ;;
         esac
         if [ -n "$PR_NUM" ] && [ "$PR_NUM" != "null" ]; then
           jury --pr "$PR_NUM" $INPUT_ARGS $GUARD

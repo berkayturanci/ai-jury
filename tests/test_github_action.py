@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fnmatch
 import unittest
 from pathlib import Path
 
@@ -142,8 +143,53 @@ class TheActionDoesNotShipAFailSoftPanel(unittest.TestCase):
         self.assertIn("jury --diff-file - $INPUT_ARGS $GUARD", self.text)
 
     def test_an_explicit_caller_choice_is_not_overridden(self):
-        """Passing the flag through `args` must not produce it twice."""
-        self.assertIn('*" --min-vendors "*|*" --no-min-vendors "*) GUARD="" ;;', self.text)
+        """Passing the flag through `args` must not produce it twice.
+
+        Driven off the real `case` patterns rather than a substring, so it
+        tests the matching and not the spelling of one line. `fnmatch` and a
+        POSIX `case` glob agree on these patterns (`*` only, no classes), which
+        is what lets this stay stdlib-only and shell-free.
+        """
+        for args in (
+            "--min-vendors 0",
+            "--auto --post --min-vendors 3",
+            "--min-vendors=0",
+            "--auto --post --min-vendors=3",
+            "--min-vendors=3 --auto",
+            "--no-min-vendors",
+            "--auto --no-min-vendors",
+            "--no-min-vendors --post",
+        ):
+            with self.subTest(args=args, expected="suppressed"):
+                self.assertTrue(self._guard_suppressed(args), args)
+
+    def test_the_default_guard_still_applies_to_everyone_else(self):
+        """The override must not swallow args that never mention the flag."""
+        for args in (
+            "",
+            "--auto --post",
+            "--severity high",
+            "--min-vendors-report",
+            "--post --minimal",
+        ):
+            with self.subTest(args=args, expected="appended"):
+                self.assertFalse(self._guard_suppressed(args), args)
+
+    def _guard_patterns(self) -> list[str]:
+        """The globs from the `case " $INPUT_ARGS " in` block in action.yml."""
+        block = self.text.split('case " $INPUT_ARGS " in', 1)[1].split("esac", 1)[0]
+        patterns: list[str] = []
+        for line in block.splitlines():
+            arm = line.strip()
+            if not arm.startswith("*"):
+                continue
+            patterns += [p.strip().replace('"', "") for p in arm.split(")", 1)[0].split("|")]
+        self.assertTrue(patterns, "no case arms found in action.yml")
+        return patterns
+
+    def _guard_suppressed(self, args: str) -> bool:
+        subject = f" {args} "
+        return any(fnmatch.fnmatchcase(subject, p) for p in self._guard_patterns())
 
     def test_the_value_is_validated_before_it_is_word_split(self):
         """It is caller-supplied and lands unquoted in the command line.

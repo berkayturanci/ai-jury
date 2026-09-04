@@ -348,6 +348,13 @@ diagnostics and also writes them as redacted JSON;
 reviewers this machine can actually run. The exported schema is documented in
 [configuration.md](configuration.md#machine-readable-diagnostics-jury---doctor---json).
 
+**Doctor reports reachability, not contribution.** The `panel` block's
+`contributing_vendors` is **always `null`** — doctor runs no review, so it
+cannot know how many vendors would actually contribute one, and it says so
+rather than guessing. Only a real run measures that; the number lives in
+`panel.vendors` of a run's `--metadata-json`, and `--min-vendors` is what
+enforces it. A green doctor is not evidence of a cross-vendor panel.
+
 ---
 
 ## Subcommands

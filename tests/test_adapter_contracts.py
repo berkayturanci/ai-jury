@@ -382,6 +382,122 @@ class TheClassifierItself(unittest.TestCase):
         self.assertIsNone(no_review_reason(fixture("review.stdout")))
 
 
+class ReviewsThatMustSurvive(unittest.TestCase):
+    """The cost of a false positive is the whole point of the guard.
+
+    `no_review_reason` fails CLOSED: a discarded review is a dead seat, and a
+    dead seat can drop the panel under `min_vendors` and exit 3. So a review
+    that merely *talks about* usage text, invalid arguments or `--help` must
+    come through untouched. Every case here was a false positive of the first
+    cut of the predicate.
+    """
+
+    def test_a_review_that_opens_with_the_word_usage(self):
+        text = (
+            "Usage of int() is unsafe here without handling ValueError: line 42 "
+            "parses untrusted input straight from the request body, so a "
+            "non-numeric value raises and the handler returns a 500 instead of "
+            "a 400.\n\n```json\n[]\n```\n"
+        )
+        self.assertIsNone(no_review_reason(text))
+
+    def test_a_finding_about_an_invalid_argument(self):
+        text = (
+            "Invalid argument passed to calculate_total() on line 42: the "
+            "function expects a Decimal and the caller hands it a float, so "
+            "the rounding is wrong for every currency with two decimals.\n"
+        )
+        self.assertIsNone(no_review_reason(text))
+
+    def test_a_review_written_in_another_language(self):
+        """English-shaped patterns must not swallow a non-English review."""
+        text = (
+            "Die Änderung ist korrekt, aber der Fehlerpfad in zeile 42 wird "
+            "nicht getestet: ein leerer Eingabewert führt zu einer "
+            "unbehandelten Ausnahme.\n"
+        )
+        self.assertIsNone(no_review_reason(text))
+
+    def test_a_short_but_genuine_review(self):
+        """Brevity is not a refusal. Some reviews really are one sentence."""
+        text = "Looks correct to me; the null check on line 7 covers the case.\n"
+        self.assertIsNone(no_review_reason(text))
+
+    def test_a_review_that_points_at_the_docs(self):
+        """`for more information, see …` is a sentence a human writes too."""
+        text = (
+            "The retry budget is undocumented at this call site; for more "
+            "information, see the docs on backoff before changing it.\n"
+        )
+        self.assertIsNone(no_review_reason(text))
+
+    def test_a_review_that_quotes_a_flag_name(self):
+        """Reviews discuss flags; a leading dash is not banner structure."""
+        text = (
+            "Unknown option --min-vendors is what a user gets on 1.14, so this "
+            "README snippet needs a version note.\n"
+        )
+        self.assertIsNone(no_review_reason(text))
+
+
+class OutputsThatMustNotCountAsReviews(unittest.TestCase):
+    """The other half of the same bargain: real banners still die."""
+
+    def test_the_recorded_usage_banner(self):
+        self.assertEqual(
+            no_review_reason(fixture("usage_echo.stdout")),
+            "the CLI printed usage or argument-error text instead of a review",
+        )
+
+    def test_a_bare_version_string(self):
+        self.assertEqual(
+            no_review_reason(fixture("version_echo.stdout")),
+            "the CLI printed only a version banner instead of a review",
+        )
+        self.assertEqual(
+            no_review_reason("1.1.22"),
+            "the CLI printed only a version banner instead of a review",
+        )
+
+    def test_a_real_refusal(self):
+        self.assertEqual(
+            no_review_reason(fixture("refusal.stdout")), "the agent declined to review"
+        )
+
+    def test_nothing_and_whitespace(self):
+        self.assertEqual(no_review_reason(""), "the agent produced no output")
+        self.assertEqual(no_review_reason("\t\n  \n"), "the agent produced no output")
+
+    def test_a_synopsis_with_an_argument_error_prefix(self):
+        text = "error: unknown flag: --print\nRun 'agy --help' for usage.\n"
+        self.assertIsNotNone(no_review_reason(text))
+
+    def test_a_go_style_usage_of_line(self):
+        text = "Usage of /usr/local/bin/agy:\n  -print string\n    \tthe prompt\n"
+        self.assertIsNotNone(no_review_reason(text))
+
+    def test_a_bare_argument_error_with_banner_structure(self):
+        text = "unknown flag: --print\nUsage: agy [options] [prompt]\n  --model id\n"
+        self.assertIsNotNone(no_review_reason(text))
+
+    def test_a_shell_not_found_line(self):
+        self.assertIsNotNone(no_review_reason("bash: agy: command not found\n"))
+
+    def test_a_long_help_dump_is_still_a_banner(self):
+        """A full `--help` blows the length bound, so structure carries it."""
+        text = "Usage: agy [options] [prompt]\n\nOptions:\n" + (
+            "".join(f"  --opt{i} <value>   option number {i} for the CLI\n" for i in range(30))
+        )
+        self.assertGreater(len(text), 600)
+        self.assertIsNotNone(no_review_reason(text))
+
+    def test_a_long_review_that_merely_names_a_flag_is_not(self):
+        """Length alone must not flip a review into a banner, and vice versa."""
+        text = "The --model flag is undocumented. " + ("Detail about the diff. " * 40)
+        self.assertGreater(len(text), 600)
+        self.assertIsNone(no_review_reason(text))
+
+
 class TheFixturesAreRealInputs(unittest.TestCase):
     """Cheap guards against a fixture rotting into something vacuous."""
 
