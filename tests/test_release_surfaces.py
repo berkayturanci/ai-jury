@@ -159,7 +159,7 @@ class TheTableDescribesThisTree(unittest.TestCase):
         found = release_surfaces.find_versions(REPO_ROOT)
         self.assertEqual(
             {path: sorted(versions) for path, versions in found.items()},
-            {path: [__version__] for path in release_surfaces.SURFACE_PATHS},
+            {path: [__version__] for path in release_surfaces.surface_paths()},
             "a surface names something other than the version the package declares",
         )
 
@@ -193,11 +193,11 @@ class TheTableDescribesThisTree(unittest.TestCase):
         self.assertFalse((REPO_ROOT / "Formula" / "ai-jury.rb").exists())
         template = REPO_ROOT / "packaging" / "homebrew" / "ai-jury.rb.template"
         self.assertIn("@VERSION@", template.read_text(encoding="utf-8"))
-        self.assertNotIn("packaging/homebrew/ai-jury.rb.template", release_surfaces.SURFACE_PATHS)
+        self.assertNotIn("packaging/homebrew/ai-jury.rb.template", release_surfaces.surface_paths())
 
     def test_the_fixture_covers_every_surface(self):
         """Otherwise a new surface would be silently untested by everything below."""
-        self.assertEqual(sorted(FIXTURE_FILES), sorted(release_surfaces.SURFACE_PATHS))
+        self.assertEqual(sorted(FIXTURE_FILES), sorted(release_surfaces.surface_paths()))
 
 
 class ReadingTheTable(unittest.TestCase):
@@ -214,6 +214,23 @@ class ReadingTheTable(unittest.TestCase):
     def test_a_surface_reports_every_reading_it_finds(self):
         surface = release_surfaces.Surface("README.md", "site", r"rev: v(\d+\.\d+\.\d+)")
         self.assertEqual(surface.find("rev: v1.0.0\nrev: v2.0.0\n"), ["1.0.0", "2.0.0"])
+
+    def test_the_paths_are_the_distinct_ones_in_table_order(self):
+        """`README.md` is listed twice and must contribute one entry, where it first appears."""
+        table = (
+            release_surfaces.Surface("README.md", "site", r"rev: v(\d+)"),
+            release_surfaces.Surface("CHANGELOG.md", "changelog", r"v(\d+)"),
+            release_surfaces.Surface("README.md", "site", r"Active \(v(\d+)\)"),
+        )
+        with unittest.mock.patch.object(release_surfaces, "RELEASE_SURFACES", table):
+            self.assertEqual(release_surfaces.surface_paths(), ("README.md", "CHANGELOG.md"))
+
+    def test_the_paths_follow_the_table_rather_than_a_copy_taken_at_import(self):
+        """#696: the guards substitute the table, so a frozen copy would name files
+        the table no longer lists — a success line describing a comparison that did
+        not happen, which is the defect #556 was about."""
+        with unittest.mock.patch.object(release_surfaces, "RELEASE_SURFACES", ()):
+            self.assertEqual(release_surfaces.surface_paths(), ())
 
     def test_declared_version_is_none_without_a_pyproject(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -239,7 +239,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             all_errors.extend(s_errors)
         else:
             print(
-                f"[OK] Release surfaces: {len(release_surfaces.SURFACE_PATHS)} files "
+                f"[OK] Release surfaces: {len(release_surfaces.surface_paths())} files "
                 f"all name {release_surfaces.declared_version(root)}."
             )
 
@@ -253,7 +253,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             # case where no tag was ever read (#556) — a success line asserting a
             # check that did not run is worse than no line at all.
             print(
-                f"[OK] Version integrity: {release_surfaces.SURFACE_PATHS} agree "
+                f"[OK] Version integrity: {release_surfaces.surface_paths()} agree "
                 "and do not regress on the last tag."
             )
 

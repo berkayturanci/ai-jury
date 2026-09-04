@@ -124,6 +124,13 @@ def agents_needing_remote_opt_in() -> tuple[str, ...]:
 #:
 #: ``agent_templates`` reads only module constants, so this costs no I/O at
 #: import and is deterministic.
+#:
+#: Read by ``cli._init_available``, ``cli._init_interactive``, ``cli._init_wizard``
+#: and ``cli._run_init`` — every path through which ``jury init`` offers, detects
+#: or defaults an agent. Nothing in *this* module reads it, which is the whole of
+#: what CodeQL's intra-module ``py/unused-global-variable`` sees (#696): the
+#: readers are real, and deleting this tuple would take ``--list-agents``, the
+#: wizard and ``--preset all`` with it.
 KNOWN_AGENTS: tuple[str, ...] = tuple(agent_templates())
 
 # Substrings that hint a local model is code-oriented (preferred for reviews).
