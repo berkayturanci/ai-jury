@@ -88,3 +88,7 @@
 ## 2026-08-22 - Modal Focus Restoration
 **Learning:** We implemented `Escape` to close the integration modal, but forgot to return focus to the integration card that opened it. When keyboard users closed the modal, they lost their place in the grid.
 **Action:** Always store `document.activeElement` before opening a modal and restore focus to it inside the generic `closeModal()` function so that `Escape`, click-outside, and close button actions all correctly return the user to their previous context.
+
+## 2024-05-23 - Global Accessibility Features Across Stylesheets
+**Learning:** When implementing global accessibility features (like skip-to-content links), it is easy to forget that projects might use multiple independent stylesheets (e.g., `styles.css` and `docs.css`). If the CSS rules are only added to one stylesheet, the accessibility feature will be broken or visually inconsistent on pages using the other stylesheet.
+**Action:** Always verify that the required CSS classes for accessibility features are present in all relevant stylesheets where the corresponding HTML is used to avoid visual inconsistencies.
