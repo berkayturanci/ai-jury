@@ -36,6 +36,15 @@ at all: the request is accepted and then left open, which is the only way to sho
 that a bound in *attempts* is not a bound in *time* — and, once the requests
 carry `--connect-timeout` and `--max-time`, that the poll gives up anyway.
 
+The stub can also stall on the *sdist* rather than on the metadata, which is the
+same defect one line further down: with an index that converges normally, the
+wait returns in milliseconds and the step then downloaded the tarball with no
+bound at all. That download is bounded now, and the test that used to claim
+*every request is bounded in time* has been renamed to the one file it actually
+reads — the claim about every request belongs to
+`test_publish_release_chain.EveryNetworkCommandIsBoundedInTime`, which scans the
+workflow's own `run:` blocks.
+
 Hermetic: no network, no PyPI, `PYPI_INTERVAL_SECONDS=0` so the poll costs
 nothing, and the interpreter the script shells out to is this one. Everything
 except `TheScriptIsShapedToBeShared` runs real `bash` and real `curl` against the
@@ -112,6 +121,11 @@ class _Handler(BaseHTTPRequestHandler):
     def do_GET(self):  # noqa: N802 — BaseHTTPRequestHandler's spelling
         self.server.paths.append(self.path)
         if self.path.endswith(".tar.gz"):
+            if self.server.stall_tarball:
+                # The same stall as `STALL`, one line further down: the index
+                # converges and the *file server* is what never answers.
+                self.server.release.wait(timeout=120)
+                return
             # The sdist itself, so the render step's re-download and digest
             # check are exercised against bytes rather than mocked away.
             self._send(200, TARBALL, "application/octet-stream")
@@ -149,10 +163,11 @@ class _Handler(BaseHTTPRequestHandler):
 class StubIndex:
     """A loopback index whose answers are a script, not a fixture."""
 
-    def __init__(self, answers):
+    def __init__(self, answers, *, stall_tarball: bool = False):
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
         self.server.answers = list(answers)
         self.server.paths = []
+        self.server.stall_tarball = stall_tarball
         self.server.release = threading.Event()
         host, port = self.server.server_address[:2]
         self.server.base_url = f"http://{host}:{port}"
@@ -430,8 +445,17 @@ class TheScriptIsShapedToBeShared(unittest.TestCase):
         self.assertIn('interval="${PYPI_INTERVAL_SECONDS:-10}"', text)
         self.assertIn('budget="${PYPI_BUDGET_SECONDS:-$((attempts * interval))}"', text)
 
-    def test_every_request_is_bounded_in_time_and_not_only_in_attempts(self):
-        """Thirty attempts is not five minutes if one of them can never return."""
+    def test_this_scripts_own_requests_are_bounded_in_time_not_only_in_attempts(self):
+        """Thirty attempts is not five minutes if one of them can never return.
+
+        Named for what it reads, which is this file. It was called
+        *every request is bounded in time*, and it greps one script — so it went
+        on passing while `publish.yml` made an unbounded request to the same host
+        one line after calling this, which is how that gap survived a round of
+        review. The claim about *every* request now belongs to
+        `test_publish_release_chain.EveryNetworkCommandIsBoundedInTime`, which
+        reads the workflow's own `run:` blocks.
+        """
         text = SCRIPT.read_text(encoding="utf-8")
         self.assertIn('--connect-timeout "$connect_timeout"', text)
         self.assertIn('--max-time "$request_max"', text)
@@ -483,8 +507,8 @@ class TheRenderStepRunsAgainstAStubIndex(unittest.TestCase):
     first a 200 with an empty file list, then the complete one.
     """
 
-    def render(self, answers, *, attempts: int = 4):
-        index = StubIndex(answers)
+    def render(self, answers, *, attempts: int = 4, stall_tarball: bool = False, **extra: str):
+        index = StubIndex(answers, stall_tarball=stall_tarball)
         self.addCleanup(index.close)
         workdir = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, workdir, True)
@@ -499,6 +523,7 @@ class TheRenderStepRunsAgainstAStubIndex(unittest.TestCase):
             "PYPI_ATTEMPTS": str(attempts),
             "PYPI_INTERVAL_SECONDS": "0",
             "PYPI_PYTHON": sys.executable,
+            **extra,
         }
         completed = subprocess.run(
             ["bash", "-c", render_step_shell()],
@@ -527,6 +552,48 @@ class TheRenderStepRunsAgainstAStubIndex(unittest.TestCase):
         self.assertIn('assert_match "jury 9.9.9"', formula)
         self.assertEqual(re.findall(r"@[A-Z0-9_]+@", formula), [])
         self.assertIn("ai-jury.rb", (workdir / "release" / "SHA256SUMS").read_text())
+
+    def test_a_stalled_sdist_download_ends_the_step_instead_of_holding_it_open(self):
+        """The bug one line past the wait: the *file server* is what never answers.
+
+        The index converges on the first answer, so the wait returns in
+        milliseconds — and the step then downloaded the sdist it named with a
+        bare `curl -fsSL "$sdist_url"`. Against a peer that accepts the
+        connection and writes nothing, the step was observed still running at
+        forty-five seconds with no formula, and its only ceiling was the job's.
+        Same step, same host, same half-made release the wait was written to
+        prevent, reached slowly.
+
+        `SDIST_MAX_TIME` is what the step's own `--max-time` reads, driven down
+        here so the suite is not the thing that waits; the release's default is
+        asserted separately below.
+        """
+        started = time.monotonic()
+        completed, workdir = self.render(
+            [SERVED],
+            stall_tarball=True,
+            SDIST_MAX_TIME="2",
+            SDIST_CONNECT_TIMEOUT="2",
+        )
+        elapsed = time.monotonic() - started
+        output = completed.stdout + completed.stderr
+        # The wait did its job: this is a download that hangs, not an index that
+        # never converged, and the test would be vacuous if it were the latter.
+        self.assertIn("sdist and wheel both indexed", completed.stdout)
+        self.assertEqual(completed.returncode, 28, output)  # curl's own timeout
+        self.assertLess(elapsed, 30, "the stalled download was not abandoned")
+        self.assertIn("timed out", output)
+        self.assertFalse((workdir / "release" / "ai-jury.rb").exists())
+
+    def test_the_download_bounds_default_to_the_values_a_release_uses(self):
+        """The knob exists so the bound can be exercised, not so it can be the bound.
+
+        A test that sets the timeout to two seconds proves the flag is wired; it
+        proves nothing about what the release runs with. Those are the defaults.
+        """
+        body = render_step_shell()
+        self.assertIn('--connect-timeout "${SDIST_CONNECT_TIMEOUT:-10}"', body)
+        self.assertIn('--max-time "${SDIST_MAX_TIME:-120}"', body)
 
     def test_an_index_that_never_converges_fails_before_anything_is_rendered(self):
         completed, workdir = self.render([EMPTY], attempts=2)

@@ -31,7 +31,10 @@ checked against the file's own text before anything is concluded from it.
 
 from __future__ import annotations
 
+import re
 import unittest
+from collections import Counter
+from dataclasses import dataclass
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -42,6 +45,59 @@ VERIFY_JOB = "verify"
 TEMPLATE = "packaging/homebrew/ai-jury.rb.template"
 #: The one wait both jobs run, extracted so there is no second copy (#694).
 WAIT_SCRIPT = ".github/scripts/wait-for-pypi-dists.sh"
+
+#: Every command that opens a network connection, mapped to the flags that bound
+#: one in time. An empty tuple means the tool has no timeout of its own — `gh`
+#: has neither a flag nor an environment variable for it — so the only bound
+#: available is a `timeout` wrapper, and that is what the scan then demands.
+#:
+#: `curl` must carry both: `--connect-timeout` alone leaves the peer that
+#: completes the handshake and then stops writing, which is the exact shape that
+#: held the render step open, and `--max-time` alone leaves a connect that never
+#: completes to the kernel's own patience.
+NETWORK_TOOLS: dict[str, tuple[str, ...]] = {
+    "curl": ("--connect-timeout", "--max-time"),
+    "wget": ("--timeout",),
+    "pip": ("--timeout",),
+    "pip3": ("--timeout",),
+    "gh": (),
+    "twine": (),
+    "npm": (),
+    "npx": (),
+    "brew": (),
+}
+
+#: `pip` and `git` reach the network in only some of their moods. Both the
+#: network set and the local one are named, because the scan has to be able to
+#: tell "this is a local subcommand" from "this is a subcommand I do not know",
+#: and only the first of those is safe to pass over.
+PIP_NETWORK_SUBCOMMANDS = frozenset({"install", "download", "wheel", "index", "search"})
+PIP_SUBCOMMANDS = PIP_NETWORK_SUBCOMMANDS | frozenset(
+    {"show", "list", "freeze", "uninstall", "check", "config", "cache", "debug", "hash", "inspect"}
+)
+GIT_NETWORK_SUBCOMMANDS = frozenset({"clone", "fetch", "pull", "push", "ls-remote", "submodule"})
+GIT_SUBCOMMANDS = GIT_NETWORK_SUBCOMMANDS | frozenset(
+    {"init", "add", "commit", "status", "diff", "log", "checkout", "rev-parse", "tag", "config"}
+)
+
+#: Markers the lexer emits: a command substitution opening — the word after it
+#: is a command name and not an argument — and the end of one command.
+_OPENS = "\x00"
+_BREAK = "\x01"
+
+#: Words that stand in front of the command a fragment actually runs.
+_LEADING_KEYWORDS = frozenset(
+    {"if", "then", "else", "elif", "fi", "while", "until", "for", "in", "do", "done", "!", "{", "("}
+)
+_ASSIGNMENT = re.compile(r"^[A-Za-z_]\w*=")
+
+#: Commands whose argument is itself a command — `timeout` is the only bound
+#: `gh` can be given, so a scan that could not see through it would report every
+#: wrapped call as unbounded.
+_WRAPPERS = frozenset({"timeout", "env", "nice", "command", "exec", "stdbuf"})
+
+#: `60`, `1m`, `30s` — a wrapper's duration, which is not its command.
+_DURATION = re.compile(r"^\d+(\.\d+)?[smhd]?$")
 
 
 def indent_of(line: str) -> int:
@@ -82,6 +138,211 @@ def shell(block: list[str]) -> str:
         elif stripped.startswith("run: "):
             code.append(stripped[len("run: ") :])
     return "\n".join(line for line in code if not line.strip().startswith("#"))
+
+
+@dataclass(frozen=True)
+class NetworkCall:
+    """One command in a `run:` block that opens a connection, and its bound."""
+
+    job: str
+    tool: str
+    command: str
+    bounded: bool
+
+    def why(self) -> str:
+        wanted = NETWORK_TOOLS.get(self.tool, ())
+        need = " and ".join(wanted) if wanted else "a `timeout` wrapper"
+        return f"{self.job}: `{self.command}` carries no {need}"
+
+
+def _lex(code: str) -> list[str]:
+    """Words, plus a marker where a command substitution opens and one where a
+    command ends.
+
+    Quote-aware, which is the difference between a scan worth having and one
+    worth switching off. `;`, `|` and `&&` inside a quoted string do not end a
+    command — this workflow writes ``"::error::… does not serve …; brew upgrade
+    will not see this release"``, and a naive split turns the tail of that
+    sentence into an unbounded `brew` call. Nor does an *escaped* backtick open
+    a subshell: the issue body this job files quotes `pip install ai-jury==…` in
+    Markdown, and the escape is what says so. But a real ``"$(timeout 60 gh …)"``
+    is a command, quoted or not, so substitutions are entered, not skipped.
+    """
+    out: list[str] = []
+    word: list[str] = []
+    quote: str | None = None
+    #: The quoting context each open substitution suspended, and how it opened.
+    #: `"$(timeout 60 gh …)"` restarts quoting inside the parentheses — without
+    #: that, every word of the substitution runs together into one, and the `gh`
+    #: it contains is never seen as a command.
+    suspended: list[tuple[str, str | None]] = []
+    index, end = 0, len(code)
+
+    def flush() -> None:
+        if word:
+            out.append("".join(word))
+            word.clear()
+
+    while index < end:
+        char = code[index]
+        if quote == "'":  # nothing is special inside single quotes, not even \
+            if char == "'":
+                quote = None
+            else:
+                word.append(char)
+            index += 1
+            continue
+        if char == "\\" and index + 1 < end:  # an escaped character is literal
+            word.append(code[index + 1])
+            index += 2
+            continue
+        if char == "`" and suspended and suspended[-1][0] == "`":
+            flush()
+            _, quote = suspended.pop()
+            index += 1
+            continue
+        if code.startswith("$(", index) or char == "`":
+            flush()
+            out.append(_OPENS)
+            suspended.append((char, quote))
+            quote = None
+            index += 2 if char == "$" else 1
+            continue
+        if quote == '"':
+            if char == '"':
+                quote = None
+            else:
+                word.append(char)
+            index += 1
+            continue
+        if char in "'\"":
+            quote = char
+            index += 1
+            continue
+        if code.startswith("&&", index) or code.startswith("||", index):
+            flush()
+            out.append(_BREAK)
+            index += 2
+            continue
+        if char in ";|\n":
+            flush()
+            out.append(_BREAK)
+            index += 1
+            continue
+        if char == ")":
+            flush()
+            if suspended and suspended[-1][0] == "$":
+                _, quote = suspended.pop()
+            index += 1
+            continue
+        if char.isspace():
+            flush()
+            index += 1
+            continue
+        word.append(char)
+        index += 1
+    flush()
+    return out
+
+
+def _commands(code: str) -> list[list[str]]:
+    """One shell command per element, as its words. Continuations joined first."""
+    commands: list[list[str]] = []
+    current: list[str] = []
+    for token in _lex(code.replace("\\\n", " ")):
+        if token == _BREAK:
+            commands.append(current)
+            current = []
+        else:
+            current.append(token)
+    commands.append(current)
+    return [command for command in commands if any(t != _OPENS for t in command)]
+
+
+def _command_positions(tokens: list[str]) -> list[int]:
+    """The indices at which a command *name* stands, rather than an argument.
+
+    Position is the whole point. Scanning for a tool's name anywhere in a
+    command would find `brew` in `echo "…brew upgrade will not see this…"` and
+    `pip` in the issue body this workflow writes when a release breaks — prose
+    about the network, reported as unbounded requests to it, which is how a
+    scanner earns being switched off. A command name stands at the head of a
+    fragment, or just inside a command substitution, or after a wrapper like
+    `timeout` and its duration; nowhere else.
+    """
+    positions: list[int] = []
+    expect, after_wrapper = True, False
+    for index, token in enumerate(tokens):
+        if token == _OPENS:
+            expect, after_wrapper = True, False
+            continue
+        if not expect:
+            continue
+        name = token.rsplit("/", 1)[-1]
+        if after_wrapper:
+            # `timeout -k 5 60 gh …`: its own options and its duration first.
+            if token.startswith("-") or _DURATION.match(token):
+                continue
+            after_wrapper = False
+        elif name in _LEADING_KEYWORDS or _ASSIGNMENT.match(token):
+            continue  # still looking for the command this fragment runs
+        positions.append(index)
+        if name in _WRAPPERS:
+            after_wrapper = True
+            continue
+        expect = False
+    return positions
+
+
+def _subcommand(tokens: list[str], index: int, known: frozenset[str]) -> str | None:
+    """The first recognised subcommand after `tokens[index]`, if any.
+
+    Searched rather than taken positionally: `pip --python <path> install` puts
+    two tokens between the tool and its verb.
+    """
+    return next((token for token in tokens[index + 1 :] if token in known), None)
+
+
+def network_calls(code: str, job: str) -> list[NetworkCall]:
+    """Every network client invoked in one job's shell, and whether it is bounded.
+
+    A tool is located by the basename of the token in command position, so
+    `/tmp/verify-venv/bin/python -m pip` and a bare `pip` are the same client.
+    `pip` and `git` are network clients only in some of their moods, and the
+    mood is the subcommand: `pip show` reads an installed dist and `git status`
+    reads a work tree, and demanding a timeout on either would train the reader
+    to ignore this scan.
+    """
+    calls: list[NetworkCall] = []
+    for tokens in _commands(code):
+        for head in _command_positions(tokens):
+            index, name = head, tokens[head].rsplit("/", 1)[-1]
+            if name.startswith("python") and tokens[index + 1 : index + 2] == ["-m"]:
+                index, name = index + 2, tokens[index + 2] if len(tokens) > index + 2 else ""
+            if name in ("pip", "pip3"):
+                if _subcommand(tokens, index, PIP_SUBCOMMANDS) not in PIP_NETWORK_SUBCOMMANDS:
+                    continue
+            elif name == "git":
+                if _subcommand(tokens, index, GIT_SUBCOMMANDS) not in GIT_NETWORK_SUBCOMMANDS:
+                    continue
+            elif name not in NETWORK_TOOLS:
+                continue
+            wrapped = any(token.rsplit("/", 1)[-1] in _WRAPPERS for token in tokens[:index])
+            wanted = NETWORK_TOOLS.get(name, ())
+            bounded = wrapped or (bool(wanted) and all(flag in tokens for flag in wanted))
+            shown = " ".join(token for token in tokens if token != _OPENS)
+            calls.append(NetworkCall(job=job, tool=name, command=shown, bounded=bounded))
+    return calls
+
+
+def scan(source: str) -> list[NetworkCall]:
+    """Every network call in both jobs of a `publish.yml`, real or mutated."""
+    lines = source.splitlines()
+    return [
+        call
+        for job in (PUBLISH_JOB, VERIFY_JOB)
+        for call in network_calls(shell(job_body(lines, job)), job)
+    ]
 
 
 def permissions(block: list[str]) -> list[str]:
@@ -276,7 +537,7 @@ class ThePublishedReleaseIsInstalledAndRun(WorkflowScan):
     def test_it_installs_from_the_index_into_a_clean_virtualenv(self):
         """Not the built wheel, and not the checkout: what a user would get."""
         self.assertIn("python -m venv", self.verify_code)
-        self.assertIn('pip install "ai-jury==${version}"', self.verify_code)
+        self.assertIn('pip install --timeout 30 "ai-jury==${version}"', self.verify_code)
 
     def test_it_waits_for_the_index_but_not_forever(self):
         """Publishing is synchronous; indexing is not.
@@ -371,6 +632,131 @@ class ThePublishedReleaseIsInstalledAndRun(WorkflowScan):
             any(p.startswith("issues: write") for p in self.verify_permissions),
             f"the verify job cannot open an issue: {self.verify_permissions}",
         )
+
+
+class EveryNetworkCommandIsBoundedInTime(unittest.TestCase):
+    """No command in a `run:` block may talk to the network without a deadline.
+
+    #694 fixed the index poll — bounded in attempts *and* in wall-clock seconds,
+    every request carrying `--connect-timeout` and `--max-time` — and a test
+    asserted it. That test read the *script*, so it said nothing about the line
+    immediately after the call to it: the render step downloaded the published
+    sdist with a bare `curl -fsSL "$sdist_url"`. An index that converges
+    normally, a file server that accepts the connection and never writes, and
+    the step is still running with no formula: the wait returns cleanly and the
+    hang has simply moved one line down. Same host, same step, same half-made
+    release — 1.16.0 live on PyPI with no GitHub Release and nothing for the tap
+    — reached slowly instead of quickly.
+
+    A test named for every request that only greps one file is how that survived,
+    so this one reads the workflow. Both jobs, every `run:` block, every command
+    in them that opens a connection: `curl` and `wget` must carry their own
+    timeouts, `pip` its socket timeout, and anything with no timeout of its own —
+    `gh` above all — must be wrapped in `timeout`.
+
+    Scoped to `publish.yml` deliberately. It is the file where an unbounded
+    command lands between a PyPI upload and a GitHub Release, which is a state no
+    other workflow here can reach; the other six are worth the same treatment and
+    are not in the diff that fixes a broken release.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.source = WORKFLOW.read_text(encoding="utf-8")
+        cls.calls = scan(cls.source)
+
+    def test_the_scan_found_the_calls_that_are_actually_there(self):
+        """Vacuity: an empty scan satisfies the assertion this class exists for."""
+        by_tool = Counter(call.tool for call in self.calls)
+        self.assertGreaterEqual(by_tool["curl"], 2, "the two sdist downloads were not found")
+        self.assertGreaterEqual(by_tool["gh"], 6, f"too few `gh` calls found: {by_tool}")
+        self.assertGreaterEqual(by_tool["pip"], 4, f"too few `pip` calls found: {by_tool}")
+
+    def test_no_command_in_either_job_reaches_the_network_unbounded(self):
+        unbounded = [call.why() for call in self.calls if not call.bounded]
+        self.assertEqual(unbounded, [], "unbounded network commands:\n" + "\n".join(unbounded))
+
+    def test_it_would_have_caught_the_download_that_was_unbounded(self):
+        """Put the reviewer's line back and the scan has to name it — twice.
+
+        `verify` had the identical download, so a fix that reached only the step
+        that was reported would have left the other one exactly as it was.
+        """
+        broken, swapped = re.subn(
+            r'curl -fsSL \\\n\s*--connect-timeout[^\n]*\\\n\s*--max-time[^\n]*\\\n\s*"\$sdist_url"',
+            'curl -fsSL "$sdist_url"',
+            self.source,
+        )
+        self.assertEqual(swapped, 2, "the mutation did not restore both downloads; rewrite it")
+        self.assertIn('curl -fsSL "$sdist_url" -o published-sdist.tar.gz', broken)
+        caught = [call for call in scan(broken) if not call.bounded]
+        self.assertEqual(
+            [call.tool for call in caught], ["curl", "curl"], [c.why() for c in caught]
+        )
+        self.assertEqual({call.job for call in caught}, {PUBLISH_JOB, VERIFY_JOB})
+
+    def test_it_would_have_caught_a_gh_call_stripped_of_its_wrapper(self):
+        """`gh` has no timeout of its own, so losing the wrapper is losing the bound."""
+        broken = self.source.replace("timeout 30 gh api", "gh api")
+        self.assertNotEqual(broken, self.source, "the mutation matched nothing; rewrite it")
+        caught = [call for call in scan(broken) if not call.bounded]
+        self.assertEqual([call.tool for call in caught], ["gh"], [c.why() for c in caught])
+        self.assertIn("a `timeout` wrapper", caught[0].why())
+
+    def test_prose_about_the_network_is_not_read_as_a_call_on_it(self):
+        """The other way a scan gets switched off: findings nobody can act on.
+
+        This workflow writes `brew upgrade will not see this release` into an
+        `::error::` and `pip install ai-jury==<tag>` into the issue body it files
+        when a release breaks. Both sit inside quoted strings, and neither is a
+        request to anything.
+        """
+        self.assertIn("brew upgrade will not see this release", self.source)
+        self.assertIn("pip install ai-jury==${GITHUB_REF_NAME#v}", self.source)
+        self.assertEqual([call for call in self.calls if call.tool in ("brew", "npm")], [])
+        for call in self.calls:
+            with self.subTest(command=call.command[:60]):
+                self.assertNotIn("Post-publish verification", call.command)
+
+
+class EveryJobHasACeiling(WorkflowScan):
+    """A backstop under the per-command bounds, for the commands nobody has read.
+
+    The bounds above cover the commands this workflow spells out. They cannot
+    cover the five actions it `uses:` — checkout, setup-python, the attestation,
+    the PyPI publish, the release — whose HTTP is their own, nor `python -m
+    build`, which shells out to pip. Without `timeout-minutes` the ceiling on any
+    of those is GitHub's six-hour default, in a job that sits between an upload
+    and a Release.
+
+    It is a backstop and not the mechanism: a job stopped this way is *cancelled*,
+    so `verify`'s `if: failure()` step does not run and no `release-broken` issue
+    is opened. A command that fails on its own timeout fails the job, names what
+    stalled, and files the report. Both are worth having; only one of them is a
+    diagnosis.
+    """
+
+    def test_both_jobs_set_a_job_level_timeout(self):
+        for name, block in ((PUBLISH_JOB, self.publish), (VERIFY_JOB, self.verify)):
+            with self.subTest(job=name):
+                found = [
+                    line.strip() for line in block if line.strip().startswith("timeout-minutes")
+                ]
+                self.assertEqual(len(found), 1, f"{name} has no job-level timeout: {found}")
+
+    def test_the_ceilings_are_measured_in_minutes_and_not_in_hours(self):
+        """A six-hour ceiling is GitHub's default with extra steps."""
+        for name, block in ((PUBLISH_JOB, self.publish), (VERIFY_JOB, self.verify)):
+            with self.subTest(job=name):
+                line = next(ln for ln in block if ln.strip().startswith("timeout-minutes"))
+                minutes = int(line.split(":", 1)[1].strip())
+                self.assertGreaterEqual(minutes, 10, f"{name}'s ceiling would fail a slow release")
+                self.assertLessEqual(minutes, 60, f"{name}'s ceiling is not a ceiling")
+
+    def test_the_ceiling_is_above_what_the_job_is_allowed_to_spend_waiting(self):
+        """`verify`'s own waits: 300s for the index, 60s for pip, 150s for the tap."""
+        line = next(ln for ln in self.verify if ln.strip().startswith("timeout-minutes"))
+        self.assertGreater(int(line.split(":", 1)[1].strip()) * 60, 300 + 60 + 150)
 
 
 if __name__ == "__main__":  # pragma: no cover

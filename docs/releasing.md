@@ -64,6 +64,20 @@ converges the job now fails with an `::error::` naming the version and the
 distribution that never appeared; re-running the job is the recovery, and
 `skip-existing: true` keeps the upload step a no-op.
 
+The same rule covers every other command in that workflow that opens a
+connection, because the index converging is not the file server answering: the
+sdist downloads carry `--connect-timeout` and `--max-time`
+(`SDIST_CONNECT_TIMEOUT`/`SDIST_MAX_TIME`, 10s and 120s by default), every `pip`
+carries `--timeout`, and every `gh` call is wrapped in `timeout`, which is the
+only bound `gh` accepts. Underneath them both jobs set `timeout-minutes` — 30
+for the publish job, 20 for `verify` — which bounds the actions the workflow
+`uses:` and anything a future step forgets to bound. That ceiling is a backstop
+and not the mechanism: a job stopped by `timeout-minutes` is cancelled, so
+`verify`'s failure step does not run and no `release-broken` issue is opened,
+whereas a command that fails on its own timeout fails the job and files the
+report. `tests/test_publish_release_chain.py` enforces the rule over both jobs'
+`run:` blocks.
+
 All GitHub Actions are pinned to full commit SHAs (see
 [CONTRIBUTING](../CONTRIBUTING.md)).
 

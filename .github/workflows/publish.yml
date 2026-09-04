@@ -14,6 +14,17 @@ jobs:
   build-n-publish:
     name: Build, Publish to PyPI, and Create GitHub Release
     runs-on: ubuntu-latest
+    # A backstop, not *the* bound. Every command below that talks to the network
+    # carries a timeout of its own, because a ceiling at this level cannot tell a
+    # stalled download from a slow job and cannot fail with a message naming the
+    # thing that stalled. But per-command bounds only ever cover the commands
+    # somebody has looked at, and this job also runs five actions whose HTTP is
+    # theirs and `python -m build`, which shells out to pip. So the job gets a
+    # ceiling too, and it caps the *next* unbounded command as well as the ones
+    # already found. Without it the ceiling is GitHub's six-hour default — in a
+    # job that sits between a PyPI upload and the GitHub Release, where a hang is
+    # the half-made release this whole file is trying to stop having.
+    timeout-minutes: 30
     outputs:
       # Whether the formula was actually pushed to the tap in this run — set by
       # the push step's last line, not by the presence of a token, which is only
@@ -57,10 +68,16 @@ jobs:
         with:
           python-version: "3.13"
 
+      # `--timeout` is pip's socket timeout, and it has a default (15s), so pip
+      # is the one network client here that cannot hang on a peer that stops
+      # writing. It is set explicitly all the same: an invariant that holds only
+      # because of a default is one a pip release can retire without anybody
+      # reading a diff, and it is the value this job is willing to wait, not
+      # pip's.
       - name: Install build dependencies
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install build
+          python -m pip install --timeout 30 --upgrade pip
+          python -m pip install --timeout 30 build
 
       - name: Build package distributions
         run: python -m build --sdist --wheel --outdir dist/
@@ -79,10 +96,13 @@ jobs:
       # in the upload dir. The SBOM still ships with the GitHub Release.
       - name: Generate CycloneDX SBOM
         run: |
-          python -m pip install cyclonedx-bom
+          python -m pip install --timeout 30 cyclonedx-bom
           mkdir -p release
           python -m venv --without-pip sbom-venv
-          python -m pip --python sbom-venv/bin/python install --no-deps dist/*.whl
+          # A local wheel with `--no-deps` reaches no index, so this one carries
+          # the bound for uniformity rather than for need: a rule with a
+          # remembered exception is a rule nobody can check mechanically.
+          python -m pip --python sbom-venv/bin/python install --timeout 30 --no-deps dist/*.whl
           cyclonedx-py environment sbom-venv \
             --pyproject pyproject.toml \
             --mc-type application \
@@ -160,7 +180,28 @@ jobs:
 
           # Prove it before publishing anywhere. A tap one release behind still
           # installs; a tap holding an uninstallable formula does not.
-          curl -fsSL "$sdist_url" -o published-sdist.tar.gz
+          #
+          # Bounded for the same reason the poll above is, and against the same
+          # host: the wait returning says the *index* converged, not that the
+          # file server will answer. A peer that accepts this connection and then
+          # never writes held the step open with no bound but the job's, one line
+          # past the wait that was fixed for exactly this — after the upload,
+          # before the Release. `--connect-timeout` covers the peer that never
+          # completes the handshake, `--max-time` the one that completes it and
+          # then stops.
+          #
+          # The defaults are the release's values — 120s is generous for an sdist
+          # of a few hundred kilobytes — and they are read from the environment
+          # for the reason `wait-for-pypi-dists.sh` reads its budget that way: a
+          # bound nothing can drive is a bound nothing can test, and this step's
+          # `run:` body is executed against a stalling stub in
+          # `tests/test_pypi_index_wait.py`. The environment, as always here —
+          # an Actions expression would be substituted into this script's source
+          # before bash parsed it (see tests/test_workflow_run_blocks.py).
+          curl -fsSL \
+            --connect-timeout "${SDIST_CONNECT_TIMEOUT:-10}" \
+            --max-time "${SDIST_MAX_TIME:-120}" \
+            "$sdist_url" -o published-sdist.tar.gz
           got="$(sha256sum published-sdist.tar.gz | cut -d' ' -f1)"
           if [ "$got" != "$sdist_sha" ]; then
             echo "::error::PyPI's declared digest is not the artifact's; refusing to publish a formula"
@@ -255,13 +296,20 @@ jobs:
           TAP: berkayturanci/homebrew-ai-jury
         run: |
           set -euo pipefail
-          gh api "repos/${TAP}/contents/Formula/ai-jury.rb" --jq .sha > .tap-sha || echo "" > .tap-sha
-          gh api -X PUT "repos/${TAP}/contents/Formula/ai-jury.rb" \
+          # `gh` has no request timeout of its own — not a flag, not an
+          # environment variable — so the bound has to come from outside it, and
+          # `timeout` is the outside. All three calls run after the GitHub
+          # Release exists, so a hang here is not a half-made release; it is a
+          # runner held for six hours reporting nothing, and a tap left unpushed
+          # either way. `timeout` exits 124 on expiry, which `set -e` turns into
+          # a failed step that says which call never returned.
+          timeout 60 gh api "repos/${TAP}/contents/Formula/ai-jury.rb" --jq .sha > .tap-sha || echo "" > .tap-sha
+          timeout 120 gh api -X PUT "repos/${TAP}/contents/Formula/ai-jury.rb" \
             -f message="chore: sync formula for ${GITHUB_REF_NAME} (from ${GITHUB_REPOSITORY}@${GITHUB_SHA})" \
             -f content="$(base64 -w0 release/ai-jury.rb)" \
             $( [ -s .tap-sha ] && echo -f sha="$(cat .tap-sha)" )
           # A 200 from the push is not proof the tap serves the new bytes.
-          gh api "repos/${TAP}/contents/Formula/ai-jury.rb" --jq .content | base64 -d > tap-formula.rb
+          timeout 60 gh api "repos/${TAP}/contents/Formula/ai-jury.rb" --jq .content | base64 -d > tap-formula.rb
           diff release/ai-jury.rb tap-formula.rb
           # Last line, after the readback: `verify` may only demand the tap carry
           # this release if the tap demonstrably has it.
@@ -279,6 +327,17 @@ jobs:
     name: Verify the published release installs and runs
     needs: build-n-publish
     runs-on: ubuntu-latest
+    # The same backstop, for the reason spelled out on `build-n-publish`. This
+    # job talks to three services and every one of its own waits is bounded —
+    # 300s for the index, 6 × 10s for pip, 10 × 15s for the tap — so twenty
+    # minutes is a ceiling nothing here should ever approach.
+    #
+    # And it is genuinely a last resort here, not the mechanism: a job stopped
+    # by `timeout-minutes` is *cancelled*, so the `if: failure()` step below
+    # does not run and no `release-broken` issue is opened. Which is the whole
+    # argument for bounding each command instead: a step that fails on its own
+    # timeout fails the job, names what stalled, and files the report.
+    timeout-minutes: 20
     permissions:
       contents: read
       issues: write   # open/update `release-broken: <tag>` when this job fails
@@ -326,11 +385,11 @@ jobs:
           set -euo pipefail
           version="${GITHUB_REF_NAME#v}"
           python -m venv /tmp/verify-venv
-          /tmp/verify-venv/bin/python -m pip install --upgrade pip
+          /tmp/verify-venv/bin/python -m pip install --timeout 30 --upgrade pip
           # The JSON API can know a version before the installer index serves it.
           installed=""
           for attempt in 1 2 3 4 5 6; do
-            if /tmp/verify-venv/bin/python -m pip install "ai-jury==${version}"; then
+            if /tmp/verify-venv/bin/python -m pip install --timeout 30 "ai-jury==${version}"; then
               installed=1
               break
             fi
@@ -376,14 +435,21 @@ jobs:
           # file list.
           .github/scripts/wait-for-pypi-dists.sh
           read -r sdist_url sdist_sha < published-sdist.txt
-          curl -fsSL "$sdist_url" -o published-sdist.tar.gz
+          # Bounded exactly as the render step's identical download is: the wait
+          # returning means the index converged, not that the file server will
+          # answer, and this job's failure path opens an issue — which never
+          # happens if the step never ends.
+          curl -fsSL \
+            --connect-timeout "${SDIST_CONNECT_TIMEOUT:-10}" \
+            --max-time "${SDIST_MAX_TIME:-120}" \
+            "$sdist_url" -o published-sdist.tar.gz
           got="$(sha256sum published-sdist.tar.gz | cut -d' ' -f1)"
           if [ "$got" != "$sdist_sha" ]; then
             echo "::error::the sdist PyPI serves does not hash to the digest PyPI declares"
             exit 1
           fi
 
-          gh release download "${GITHUB_REF_NAME}" --pattern ai-jury.rb --dir . --clobber
+          timeout 120 gh release download "${GITHUB_REF_NAME}" --pattern ai-jury.rb --dir . --clobber
           asset_url="$(grep -m1 -oE 'url "[^"]+"' ai-jury.rb | cut -d'"' -f2)"
           asset_sha="$(grep -m1 -oE 'sha256 "[0-9a-f]{64}"' ai-jury.rb | cut -d'"' -f2)"
           if [ "$asset_url" != "$sdist_url" ]; then
@@ -417,7 +483,11 @@ jobs:
           got="$(cat sdist.sha256)"
           tap_sha=""
           for attempt in $(seq 1 10); do
-            gh api "repos/${TAP}/contents/Formula/ai-jury.rb" \
+            # Ten attempts is not 150 seconds if one of them can never return:
+            # the `|| true` tolerates a failed request, but nothing ends a
+            # request that has been accepted and then abandoned, so attempt two
+            # is never made. `timeout` is what makes the ten attempts a poll.
+            timeout 30 gh api "repos/${TAP}/contents/Formula/ai-jury.rb" \
               -H "Accept: application/vnd.github.raw" > tap-formula.rb || true
             if grep -qF "ai_jury-${version}.tar.gz" tap-formula.rb; then
               tap_sha="$(grep -m1 -oE 'sha256 "[0-9a-f]{64}"' tap-formula.rb | cut -d'"' -f2)"
@@ -468,13 +538,13 @@ jobs:
           # `|| true`: a hiccup listing issues must not stop the report being
           # filed. Worst case a duplicate is opened, which is strictly better
           # than a broken release with nothing on a list.
-          existing="$(gh issue list --state open --search "\"${title}\" in:title" \
+          existing="$(timeout 60 gh issue list --state open --search "\"${title}\" in:title" \
             --json number,title --jq "[.[] | select(.title == \"${title}\")][0].number // empty" \
             || true)"
           if [ -n "$existing" ]; then
-            gh issue comment "$existing" --body "$body"
+            timeout 60 gh issue comment "$existing" --body "$body"
             echo "commented on #${existing}"
           else
-            gh issue create --title "$title" --body "$body" \
+            timeout 60 gh issue create --title "$title" --body "$body" \
               --label "area:release" --label "bug" --label "priority:high"
           fi

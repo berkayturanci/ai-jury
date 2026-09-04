@@ -25,12 +25,17 @@
 # The poll is bounded twice over, in attempts *and* in wall-clock seconds,
 # because attempts alone are not a bound: one response that stalls after the
 # connection has been accepted holds the loop open for as long as the peer keeps
-# the socket open. No job in `publish.yml` sets `timeout-minutes`, so the ceiling
-# would be GitHub's six-hour default — in a step that sits after the upload and
-# before the Release, which is the same half-made release this script exists to
-# remove, only slower. Every request therefore carries `--connect-timeout` and
+# the socket open. Every request therefore carries `--connect-timeout` and
 # `--max-time`, and `--max-time` is clamped to the budget still unspent, so the
 # five minutes below is the real ceiling rather than an estimate.
+#
+# Both jobs in `publish.yml` do now set `timeout-minutes`, but that is a backstop
+# and not this bound. A job stopped by `timeout-minutes` is cancelled: it reports
+# nothing about which request stalled, its `if: failure()` steps do not run, and
+# the ceiling it enforces is tens of minutes in a step that sits after the upload
+# and before the Release. Five minutes ending in a message naming the version and
+# the missing distribution is the failure this script owes its caller; the job
+# ceiling only catches what nobody has bounded yet.
 #
 # On success:
 #   - `$PYPI_JSON_OUT`  (default `pypi.json`) holds the metadata document, and
