@@ -44,21 +44,26 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
-      # `shell: bash` so `timeout` is the same program on all three runners:
-      # git-bash's coreutils on Windows, not `timeout.exe` the sleep utility that
-      # `pwsh` would resolve. The smoke step below already relies on git-bash for
-      # the same reason.
+      # The one step in this repository whose network calls carry no wrapper, and
+      # the reason is the matrix: `timeout(1)` is GNU coreutils, and the
+      # `macos-latest` runner does not ship it — a `timeout 300` here exits 127
+      # on that leg before pip is reached, which is a red required check on every
+      # pull request rather than a bound. `ubuntu` has it and git-bash on Windows
+      # has it; one step is shared by all five legs, so the bound available to
+      # all five is the job's `timeout-minutes` above.
       #
-      # `pip`'s own `--timeout` is deliberately not used as the bound. It is a
-      # socket timeout — it limits one quiet read, not the call — so a peer that
-      # sends a byte inside every window holds a resolve open indefinitely. Only
-      # the wrapper bounds the wall clock, and it is the only bound the scan
-      # counts.
+      # Not `pip --timeout`: that is pip's *socket* timeout, a bound on one quiet
+      # read rather than on the call, so a peer that sends a byte inside every
+      # window holds the resolve open regardless. Writing it here would look like
+      # a bound while adding none, which is worse than the honest gap.
+      #
+      # Listed in `KNOWN_UNBOUNDED` in `tests/test_publish_release_chain.py` with
+      # this reason, so the scan reports it as a waiver rather than passing over
+      # it, and so a stale waiver fails that suite.
       - name: Install package
-        shell: bash
         run: |
-          timeout 120 python -m pip install --upgrade pip
-          timeout 300 python -m pip install -e .
+          python -m pip install --upgrade pip
+          python -m pip install -e .
       - name: Run offline (mock) unit tests
         run: python -m unittest discover -s tests -v
       - name: Smoke-test the CLI in mock mode

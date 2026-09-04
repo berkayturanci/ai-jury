@@ -76,6 +76,33 @@ NETWORK_TOOLS: dict[str, tuple[str, ...]] = {
     "brew": (),
 }
 
+#: The calls that cannot take a bound, each keyed on the job it lives in and the
+#: command as the scan renders it, and each carrying the reason. A waiver, not an
+#: exemption: the job still needs a ceiling, the entry still has to name a call
+#: that is really there and really unbounded, and a call that later takes a
+#: wrapper fails this suite until it is removed from here. That is the difference
+#: between a list nobody maintains and one that cannot go stale quietly.
+KNOWN_UNBOUNDED: dict[tuple[str, str], str] = {
+    (
+        ".github/workflows/ci.yml (test)",
+        "python -m pip install --upgrade pip",
+    ): (
+        "`timeout(1)` is GNU coreutils and the `macos-latest` runner does not ship "
+        "it, so a wrapper here exits 127 on that leg of the matrix before pip runs "
+        "— a red required check on every pull request rather than a bound. One step "
+        "serves all five legs, so the bound available to all five is the job's "
+        "`timeout-minutes`. `pip --timeout` is not a substitute: it bounds one "
+        "quiet read, not the call."
+    ),
+    (
+        ".github/workflows/ci.yml (test)",
+        "python -m pip install -e .",
+    ): (
+        "The same step, the same reason: no `timeout` on `macos-latest`, one step "
+        "across five matrix legs, and the job's `timeout-minutes` as the bound."
+    ),
+}
+
 #: `pip` and `git` reach the network in only some of their moods. Both the
 #: network set and the local one are named, because the scan has to be able to
 #: tell "this is a local subcommand" from "this is a subcommand I do not know",
@@ -610,6 +637,21 @@ def every_job() -> list[Job]:
     ]
     assert found, "no jobs were found in any workflow"
     return found
+
+
+def is_waived(call: NetworkCall) -> bool:
+    """Whether this call is one of `KNOWN_UNBOUNDED`, under either label.
+
+    :func:`every_job` labels a call ``path (job)``; :func:`scan`, which reads one
+    file's text — real or mutated — labels it with the bare job name. Both have to
+    reach the same waiver, so the job is matched by its name either way and the
+    command has to match exactly.
+    """
+    for where, command in KNOWN_UNBOUNDED:
+        job = where.rsplit("(", 1)[-1].rstrip(")")
+        if command == call.command and call.job in (where, job):
+            return True
+    return False
 
 
 def ceiling_seconds(body: list[str]) -> int | None:
@@ -1287,13 +1329,35 @@ class EveryWorkflowBoundsItsNetworkCalls(unittest.TestCase):
         self.assertGreaterEqual(tools["git"], 1, f"the `git fetch` was not found: {tools}")
 
     def test_no_command_in_any_workflow_reaches_the_network_unbounded(self):
-        """Nothing is listed as known-unbounded: every call found took a bound.
+        """Every network call takes a bound, or appears in `KNOWN_UNBOUNDED`.
 
-        If one ever cannot take one, this is the assertion to relax — by naming
-        that call and the reason, in this file, where the next reader meets it.
+        Two do — both in `ci.yml`'s cross-OS `test` job, where `timeout(1)` is
+        absent from the `macos-latest` runner and one step serves five matrix
+        legs. Their bound is that job's ceiling, which the class below requires.
         """
-        unbounded = [call.why() for call in self.calls if not call.bounded]
+        unbounded = [call.why() for call in self.calls if not call.bounded and not is_waived(call)]
         self.assertEqual(unbounded, [], "unbounded network commands:\n" + "\n".join(unbounded))
+
+    def test_every_waiver_names_a_call_that_is_really_there_and_really_unbounded(self):
+        """A waiver that has gone stale is a bound quietly dropped.
+
+        Both directions: an entry naming a call that no longer exists, or that has
+        since been wrapped, fails here rather than sitting in the file waiving
+        nothing — and a call that becomes unbounded without an entry fails above.
+        """
+        self.assertEqual(
+            set(KNOWN_UNBOUNDED),
+            {(call.job, call.command) for call in self.calls if not call.bounded},
+            "the waiver list and the unbounded calls have drifted apart",
+        )
+
+    def test_every_waiver_states_a_reason_and_sits_under_a_ceiling(self):
+        """A waiver is only defensible because the job still has a backstop."""
+        ceilings = {job.where(): ceiling_seconds(job.body) for job in self.jobs}
+        for (where, command), reason in KNOWN_UNBOUNDED.items():
+            with self.subTest(command=command):
+                self.assertGreater(len(reason.split()), 12, f"{command}: no reason given")
+                self.assertIsNotNone(ceilings.get(where), f"{where} waives a bound and sets none")
 
     def test_it_would_have_caught_the_check_run_writes_left_unbounded(self):
         """The two `gh api` calls that write the gating check, stripped.
@@ -1319,10 +1383,11 @@ class EveryWorkflowBoundsItsNetworkCalls(unittest.TestCase):
         """
         source = (WORKFLOW_DIR / "ci.yml").read_text(encoding="utf-8")
         broken = source.replace(
-            "timeout 300 python -m pip install -e .", "python -m pip install --timeout 30 -e ."
+            'timeout 300 python -m pip install -e ".[dev]"',
+            'python -m pip install --timeout 30 -e ".[dev]"',
         )
         self.assertNotEqual(broken, source, "the mutation matched nothing; rewrite it")
-        caught = [call for call in scan(broken) if not call.bounded]
+        caught = [call for call in scan(broken) if not call.bounded and not is_waived(call)]
         self.assertEqual([call.tool for call in caught], ["pip"], [c.why() for c in caught])
         self.assertIn("`timeout` wrapper", caught[0].why())
 
