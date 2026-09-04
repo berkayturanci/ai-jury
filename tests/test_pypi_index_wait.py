@@ -58,6 +58,7 @@ import json
 import os
 import re
 import shutil
+import socketserver
 import subprocess
 import sys
 import tempfile
@@ -96,6 +97,12 @@ WHEEL_URL = "https://files.pythonhosted.org/packages/ef/01/ai_jury-9.9.9-py3-non
 def _file(packagetype: str, url: str, sha: str = "b" * 64) -> dict:
     return {"packagetype": packagetype, "url": url, "digests": {"sha256": sha}}
 
+
+#: The script's own measurement, printed on the failure line: `... after N
+#: attempts over Ms.` `M` is taken inside bash, from one line above the poll
+#: loop to one line below it, so it is the duration of the thing under test and
+#: nothing else — not the stub, not the interpreter probe, not this harness.
+POLL_ELAPSED = re.compile(r"after (\d+) attempts over (\d+)s\.")
 
 #: An answer the stub never sends: the request is accepted and then left open,
 #: which is the shape a bound in attempts alone does not bound at all.
@@ -160,11 +167,30 @@ class _Handler(BaseHTTPRequestHandler):
         pass
 
 
+class _StubServer(ThreadingHTTPServer):
+    """A `ThreadingHTTPServer` that binds without asking the resolver anything.
+
+    `http.server.HTTPServer.server_bind` sets `server_name` from
+    `socket.getfqdn(host)` — a reverse lookup, which is a network call, in a
+    module whose whole claim is that it makes none. It is usually free and on a
+    macOS runner it is not: the first lookup of `127.0.0.1` there cost about
+    thirty-five seconds, and every stub in this module paid for it once through
+    whichever test happened to build the first one. `server_name` is read back
+    only into headers nothing here asserts on, so the bound host serves for it.
+    """
+
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self)
+        host, port = self.server_address[:2]
+        self.server_name = host
+        self.server_port = port
+
+
 class StubIndex:
     """A loopback index whose answers are a script, not a fixture."""
 
     def __init__(self, answers, *, stall_tarball: bool = False):
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+        self.server = _StubServer(("127.0.0.1", 0), _Handler)
         self.server.answers = list(answers)
         self.server.paths = []
         self.server.stall_tarball = stall_tarball
@@ -206,6 +232,11 @@ class WaitAgainstStub(unittest.TestCase):
     ):
         index = StubIndex(answers)
         self.addCleanup(index.close)
+        # Set below, around `subprocess.run` alone. A clock started before
+        # `StubIndex` measures the harness building a stub as well as the poll,
+        # which is how a thirty-second bound came to be failed by a
+        # thirty-seven-second reverse-DNS lookup on a macOS runner.
+        self.wait_seconds = None
         workdir = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, workdir, True)
         env = {
@@ -222,6 +253,7 @@ class WaitAgainstStub(unittest.TestCase):
         if budget is not None:
             env["PYPI_BUDGET_SECONDS"] = budget
         env.pop("GITHUB_REF_NAME", None)
+        started = time.monotonic()
         completed = subprocess.run(
             ["bash", str(SCRIPT)],
             cwd=workdir,
@@ -230,7 +262,22 @@ class WaitAgainstStub(unittest.TestCase):
             text=True,
             timeout=120,
         )
+        self.wait_seconds = time.monotonic() - started
         return completed, Path(workdir), index
+
+    def poll_seconds(self, completed) -> int:
+        """The script's own elapsed seconds, read off its failure line.
+
+        Tighter than any clock this harness can hold and immune to what the
+        harness costs, because bash measured it across the loop alone. A run
+        that does not report one fails here rather than passing vacuously.
+        """
+        match = POLL_ELAPSED.search(completed.stdout)
+        self.assertIsNotNone(
+            match,
+            f"the failure did not report its own elapsed time:\n{completed.stdout}",
+        )
+        return int(match.group(2))
 
 
 class TheWaitRunsAgainstAStubIndex(WaitAgainstStub):
@@ -350,13 +397,19 @@ class AStalledResponseIsNotAllowedToHoldTheStepOpen(WaitAgainstStub):
 
     def test_a_response_that_never_arrives_is_abandoned_and_the_poll_ends(self):
         """The reviewer's repro: a stalling stub, two attempts, no interval."""
-        started = time.monotonic()
         completed, _, index = self.run_wait([STALL], attempts=2, max_time="1")
-        elapsed = time.monotonic() - started
         self.assertEqual(completed.returncode, 1)
         # Two requests actually issued: the first was abandoned, not waited on.
         self.assertEqual(len(index.paths), 2)
-        self.assertLess(elapsed, 30, "the stalled response was not abandoned promptly")
+        # Two requests of one second each. The number asserted on is the
+        # script's own, not a wall clock spanning this harness; unbound, the
+        # first request never returns at all and there is no number to read.
+        self.assertLessEqual(
+            self.poll_seconds(completed),
+            10,
+            "the stalled response was not abandoned promptly",
+        )
+        self.assertLess(self.wait_seconds, 30, "the stalled response was not abandoned promptly")
         self.assertIn("timed out", completed.stdout)
         self.assertIn("::error::PyPI never served ai-jury 9.9.9", completed.stdout)
 
@@ -367,11 +420,14 @@ class AStalledResponseIsNotAllowedToHoldTheStepOpen(WaitAgainstStub):
         is what stops it — and `--max-time` is clamped to the budget left, so the
         one request that stalls cannot outlive the poll it belongs to.
         """
-        started = time.monotonic()
         completed, _, index = self.run_wait([STALL], attempts=30, budget="2", max_time="60")
-        elapsed = time.monotonic() - started
         self.assertEqual(completed.returncode, 1)
-        self.assertLess(elapsed, 30, "the budget did not bound the poll")
+        # A two-second budget, so the script should report about two seconds.
+        # Unclamped, the one stalled request runs for its own sixty and the
+        # budget stops the poll only after it — which the wall clock this
+        # assertion replaced could not tell apart from harness cost.
+        self.assertLessEqual(self.poll_seconds(completed), 10, "the budget did not bound the poll")
+        self.assertLess(self.wait_seconds, 30, "the budget did not bound the poll")
         self.assertLess(len(index.paths), 30, "the poll ran to its attempt count, not its budget")
         self.assertIn("::error::PyPI never served ai-jury 9.9.9", completed.stdout)
 
@@ -526,6 +582,9 @@ class TheRenderStepRunsAgainstAStubIndex(unittest.TestCase):
             "PYPI_PYTHON": sys.executable,
             **extra,
         }
+        # Timed around the step alone, for the same reason `run_wait` is: a
+        # clock started before `StubIndex` measures stub construction too.
+        started = time.monotonic()
         completed = subprocess.run(
             ["bash", "-c", render_step_shell()],
             cwd=workdir,
@@ -534,6 +593,7 @@ class TheRenderStepRunsAgainstAStubIndex(unittest.TestCase):
             text=True,
             timeout=120,
         )
+        self.step_seconds = time.monotonic() - started
         return completed, workdir
 
     def test_the_step_body_was_actually_extracted(self):
@@ -569,20 +629,18 @@ class TheRenderStepRunsAgainstAStubIndex(unittest.TestCase):
         here so the suite is not the thing that waits; the release's default is
         asserted separately below.
         """
-        started = time.monotonic()
         completed, workdir = self.render(
             [SERVED],
             stall_tarball=True,
             SDIST_MAX_TIME="2",
             SDIST_CONNECT_TIMEOUT="2",
         )
-        elapsed = time.monotonic() - started
         output = completed.stdout + completed.stderr
         # The wait did its job: this is a download that hangs, not an index that
         # never converged, and the test would be vacuous if it were the latter.
         self.assertIn("sdist and wheel both indexed", completed.stdout)
         self.assertEqual(completed.returncode, 28, output)  # curl's own timeout
-        self.assertLess(elapsed, 30, "the stalled download was not abandoned")
+        self.assertLess(self.step_seconds, 30, "the stalled download was not abandoned")
         self.assertIn("timed out", output)
         self.assertFalse((workdir / "release" / "ai-jury.rb").exists())
 
