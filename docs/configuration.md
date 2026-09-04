@@ -60,11 +60,15 @@ adapter table, so a genuinely custom vendor keeps its own identity at the gate
 and stops warning.
 
 **Spelling is normalised before any rule reads it.** `vendor` is stripped and
-lower-cased once, at the top of validation, so `"XAI-API"`, `" xai-api "` and
-`"xai-api"` are the same vendor to validation, to the adapter lookup and to the
-cross-vendor gate alike. A vendor this tool recognises is recognised by *every*
-rule: `vendor = "XAI-API"` with no `command` is a valid hosted-API seat, not a
-seat missing a command. Messages still quote the string you wrote.
+lower-cased once, when the seat is built, so `"XAI-API"`, `" xai-api "` and
+`"xai-api"` are the same vendor to validation, to the adapter lookup, to
+`--doctor`, to the read-only guard and to the cross-vendor gate alike. A vendor
+this tool recognises is recognised by *every* rule: `vendor = "XAI-API"` with no
+`command` is a valid hosted-API seat, not a seat missing a command, and
+`vendor = " XAI "` gets the same invocation `vendor = "xai"` gets — no sandbox
+flag from another vendor's CLI. Because normalising is only strip-and-lowercase,
+the vendor *name* you wrote is what every surface below shows; its whitespace and
+capitalisation are not. Validation messages still quote the file verbatim.
 
 ### Which vendor string is which
 
@@ -74,9 +78,9 @@ different facts, and every place that shows one says which it is:
 | Where | Shows | Why |
 | --- | --- | --- |
 | `--doctor` `panel.vendors_configured` / `vendors_available` | **Identity** | These are the gate's arithmetic. They equal what a run counts for the same config, so doctor cannot call a bench cross-vendor ready that the run then refuses. |
-| `--doctor` agent rows (`vendor`, and the text report's `vendor=…`) | **Configured string**, with `vendor_identity` beside it | Provenance, plus the one number that matters next to it. The text report renders `vendor=xa1 -> counts as cli` only when the two differ. |
+| `--doctor` agent rows (`vendor`, and the text report's `vendor=…`) | **Configured vendor** (normalised spelling), with `vendor_identity` beside it | Provenance, plus the one number that matters next to it. The text report renders `vendor=xa1 -> counts as cli` only when the two differ. |
 | `--metadata-json` `panel.vendors` | **Identity** | It is the number `min_vendors` is compared against. |
-| `--metadata-json` `agents[].vendor`, the markdown report's `vendor` column, the ballots, `--format keel-reviews` | **Configured string** | These attribute output to the seat that produced it. Collapsing the gate is not a licence to rewrite provenance. |
+| `--metadata-json` `agents[].vendor`, the markdown report's `vendor` column, the ballots, `--format keel-reviews` | **Configured vendor** (normalised spelling) | These attribute output to the seat that produced it. Collapsing the gate is not a licence to rewrite provenance — and normalising the spelling does not rewrite it either: the vendor named is the vendor you configured. |
 
 ## Execution budget (`total_timeout` / `phase_timeout` / `retries`)
 
