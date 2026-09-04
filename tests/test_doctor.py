@@ -519,8 +519,23 @@ TOP_LEVEL_TYPES = {
     "python": str,
     "config_path": str,
     "ready": bool,
+    # Cross-vendor readiness (#682). Added inside `v1` rather than bumping to
+    # `v2`: `ai-jury.doctor.v1` has not been released yet — it and this key ship
+    # in the same version — so no consumer can be pinned to a shape without it.
+    "panel": dict,
     "agents": list,
     "warnings": list,
+}
+
+#: The panel block, pinned the same way. `contributing_vendors` is always None
+#: from doctor and is in the export deliberately: a consumer must be able to see
+#: that availability was checked and contribution was NOT.
+PANEL_TYPES = {
+    "vendors_configured": int,
+    "vendors_available": int,
+    "min_vendors": int,
+    "contributing_vendors": type(None),
+    "multi_vendor_ready": bool,
 }
 
 AGENT_TYPES = {
@@ -572,6 +587,105 @@ def _export(config_text=MIXED_TRANSPORT_CONFIG):
     return diag, doctor.doctor_report_dict(diag)
 
 
+#: Three distinct vendors, all CLI — the shape the shipped `jury.toml` sets up,
+#: and the shape whose silent collapse to one vendor #682 is about.
+THREE_VENDOR_CONFIG = """\
+[jury]
+rounds = 1
+chair = "claude"
+
+[[agent]]
+name = "claude"
+vendor = "anthropic"
+command = "claude"
+
+[[agent]]
+name = "codex"
+vendor = "openai"
+command = "codex"
+
+[[agent]]
+name = "agy"
+vendor = "google"
+command = "agy"
+"""
+
+
+class CrossVendorReadinessTests(unittest.TestCase):
+    """What offline diagnostics can, and cannot, say about the panel (#682)."""
+
+    def _diag(self, config_text, available: set[str]):
+        path = _write_config(config_text)
+        self.addCleanup(os.unlink, path)
+        with (
+            mock.patch.dict(os.environ, {}, clear=True),
+            mock.patch.object(doctor, "_probe_models", return_value=None),
+            mock.patch.object(
+                doctor.shutil,
+                "which",
+                lambda cmd: f"/usr/local/bin/{cmd}" if cmd in available else None,
+            ),
+        ):
+            return doctor.build_diagnostics(path)
+
+    def test_a_reachable_three_vendor_panel_is_ready(self):
+        diag = self._diag(THREE_VENDOR_CONFIG, {"claude", "codex", "agy"})
+        panel = diag["panel"]
+        self.assertEqual(panel["vendors_configured"], 3)
+        self.assertEqual(panel["vendors_available"], 3)
+        self.assertEqual(panel["min_vendors"], 2)
+        self.assertTrue(panel["multi_vendor_ready"])
+        self.assertFalse([w for w in diag["config_warnings"] if "cross-vendor guard" in w])
+
+    def test_a_panel_that_would_fail_the_gate_says_so_up_front(self):
+        """Doctor was green on the #635 machine. It should not have been silent."""
+        diag = self._diag(THREE_VENDOR_CONFIG, {"claude"})
+        panel = diag["panel"]
+        self.assertEqual(panel["vendors_configured"], 3)
+        self.assertEqual(panel["vendors_available"], 1)
+        self.assertFalse(panel["multi_vendor_ready"])
+        warning = [w for w in diag["config_warnings"] if "cross-vendor guard" in w]
+        self.assertTrue(warning, diag["config_warnings"])
+        self.assertIn("--no-min-vendors", warning[0])
+
+    def test_a_single_vendor_config_is_not_nagged(self):
+        """It never claimed cross-vendor consensus, so there is nothing to warn about."""
+        single = """\
+[jury]
+chair = "claude"
+
+[[agent]]
+name = "claude"
+vendor = "anthropic"
+command = "claude"
+"""
+        diag = self._diag(single, set())
+        self.assertFalse([w for w in diag["config_warnings"] if "cross-vendor guard" in w])
+
+    def test_opting_out_silences_the_gate_warning(self):
+        opted_out = THREE_VENDOR_CONFIG.replace(
+            'chair = "claude"', 'chair = "claude"\n\n[jury.ci]\nmin_vendors = 0'
+        )
+        diag = self._diag(opted_out, {"claude"})
+        self.assertEqual(diag["panel"]["min_vendors"], 0)
+        self.assertTrue(diag["panel"]["multi_vendor_ready"])
+        self.assertFalse([w for w in diag["config_warnings"] if "cross-vendor guard" in w])
+
+    def test_an_unloadable_config_proves_nothing_rather_than_claiming_readiness(self):
+        path = _write_config("this is not toml = = =")
+        self.addCleanup(os.unlink, path)
+        diag = doctor.build_diagnostics(path)
+        self.assertFalse(diag["panel"]["multi_vendor_ready"])
+        self.assertEqual(diag["panel"]["vendors_configured"], 0)
+
+    def test_the_human_report_states_the_limit_of_an_offline_check(self):
+        """Availability is not contribution, and the report must not imply it."""
+        text = doctor.render_report(self._diag(THREE_VENDOR_CONFIG, {"claude", "codex", "agy"}))
+        self.assertIn("Cross-vendor readiness", text)
+        self.assertIn("vendors reachable: 3", text)
+        self.assertIn("availability, not contribution", text)
+
+
 class DoctorJsonSchemaTests(unittest.TestCase):
     """Pin the ai-jury.doctor.v1 shape: keys and types, not sample values."""
 
@@ -585,6 +699,17 @@ class DoctorJsonSchemaTests(unittest.TestCase):
         self.assertEqual(set(report), set(TOP_LEVEL_TYPES))
         for key, expected in TOP_LEVEL_TYPES.items():
             self.assertIsInstance(report[key], expected, key)
+
+    def test_panel_keys_and_types(self):
+        _diag, report = _export()
+        self.assertEqual(set(report["panel"]), set(PANEL_TYPES))
+        for key, expected in PANEL_TYPES.items():
+            self.assertIsInstance(report["panel"][key], expected, key)
+
+    def test_doctor_never_claims_a_contributed_vendor_count(self):
+        """It runs no review, so it cannot know one — and must not imply it."""
+        _diag, report = _export()
+        self.assertIsNone(report["panel"]["contributing_vendors"])
 
     def test_agent_keys_and_types(self):
         _diag, report = _export()

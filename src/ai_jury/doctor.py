@@ -239,6 +239,65 @@ def _detect_warnings(cfg) -> list[str]:
     return warnings
 
 
+def _panel_readiness(cfg, agents) -> dict:
+    """How close this machine is to being able to form cross-vendor consensus.
+
+    Doctor is offline and runs no review, so it can only report what it can
+    see: how many distinct vendors are ENABLED, and how many of those are
+    reachable. ``contributing_vendors`` is therefore always ``None`` here — the
+    contributed-vendor count is a property of a run, and lives in the run
+    metadata's ``panel.vendors``. Saying so in the export is the point: an
+    available CLI that returns nothing is exactly the failure #635 was, and a
+    green doctor is not evidence against it.
+    """
+    entries = {entry["name"]: entry for entry in agents}
+    enabled = list(getattr(cfg, "enabled_agents", []) or [])
+    configured = {(a.vendor or "").strip().lower() for a in enabled} - {""}
+    available = {
+        (a.vendor or "").strip().lower()
+        for a in enabled
+        if entries.get(a.name, {}).get("available")
+    } - {""}
+    minimum = int(getattr(cfg.ci, "min_vendors", 0) or 0)
+    return {
+        "vendors_configured": len(configured),
+        "vendors_available": len(available),
+        "min_vendors": minimum,
+        "contributing_vendors": None,
+        "multi_vendor_ready": minimum <= 0 or len(available) >= minimum,
+    }
+
+
+#: What a machine with no loadable config can prove about its panel: nothing.
+_NO_PANEL = {
+    "vendors_configured": 0,
+    "vendors_available": 0,
+    "min_vendors": 0,
+    "contributing_vendors": None,
+    "multi_vendor_ready": False,
+}
+
+
+def _panel_warning(panel) -> str | None:
+    """The one actionable thing offline diagnostics can say about the panel.
+
+    Fires only when the config claims cross-vendor consensus (two or more
+    distinct vendors enabled) and this machine cannot deliver it, because then
+    the run would exit 3 and the operator would rather know now.
+    """
+    minimum = panel["min_vendors"]
+    if minimum <= 0 or panel["vendors_configured"] < 2:
+        return None
+    if panel["vendors_available"] >= minimum:
+        return None
+    return (
+        f"{panel['vendors_configured']} vendors are enabled but only "
+        f"{panel['vendors_available']} is/are reachable; a run would fail the "
+        f"cross-vendor guard (min_vendors = {minimum}, exit 3). Install the "
+        f"missing CLI, or opt out with `--no-min-vendors`."
+    )
+
+
 def _recommendations(config_path, config_summary, agents) -> dict:
     """Build actionable next-steps from the diagnostics (issue: doctor UX).
 
@@ -305,6 +364,7 @@ def build_diagnostics(config_path=None, probe_models: bool = False):
     config_summary = None
     config_warnings: list[str] = []
     agents: list = []
+    panel: dict = dict(_NO_PANEL)
 
     try:
         cfg = load_config(config_path)
@@ -329,6 +389,12 @@ def build_diagnostics(config_path=None, probe_models: bool = False):
                 continue
             for warning in entry.get("capability_warnings", []):
                 config_warnings.append(f"agent '{entry['name']}': {warning}")
+        # Cross-vendor readiness (issue #682), after the availability probes the
+        # agent entries already ran — this adds no probe of its own.
+        panel = _panel_readiness(cfg, agents)
+        panel_warning = _panel_warning(panel)
+        if panel_warning:
+            config_warnings.append(panel_warning)
 
     return {
         "tool_version": __version__,
@@ -340,6 +406,7 @@ def build_diagnostics(config_path=None, probe_models: bool = False):
         "agents": agents,
         "config": config_summary,
         "config_warnings": config_warnings,
+        "panel": panel,
         "recommendations": _recommendations(config_path, config_summary, agents),
     }
 
@@ -417,6 +484,11 @@ def doctor_report_dict(diagnostics) -> dict:
         "python": diagnostics.get("python_version"),
         "config_path": diagnostics.get("config_path"),
         "ready": bool(recommendations.get("ready")),
+        # Cross-vendor readiness (issue #682). ``contributing_vendors`` is null
+        # by construction: doctor runs no review, so the contributed count is
+        # only ever known from a run's metadata (``panel.vendors``). A consumer
+        # reading this must not treat availability as contribution.
+        "panel": dict(diagnostics.get("panel") or _NO_PANEL),
         "agents": agents,
         "warnings": list(diagnostics.get("config_warnings") or []),
     }
@@ -486,6 +558,19 @@ def render_report(diagnostics) -> str:
         lines.append(f"  context mode:  {config['context_mode']}")
         enabled = ", ".join(config["enabled_agents"]) or "(none)"
         lines.append(f"  enabled:       {enabled}")
+    lines.append("")
+
+    panel = report["panel"]
+    lines.append("Cross-vendor readiness")
+    lines.append("-" * 40)
+    lines.append(f"  vendors enabled:   {panel['vendors_configured']}")
+    lines.append(f"  vendors reachable: {panel['vendors_available']}")
+    lines.append(f"  min_vendors gate:  {panel['min_vendors'] or 'off'}")
+    lines.append(f"  cross-vendor ready: {'yes' if panel['multi_vendor_ready'] else 'no'}")
+    lines.append(
+        "  note: this checks availability, not contribution. A reachable CLI "
+        "can still return no review (#635) — only a run can prove the panel."
+    )
     lines.append("")
 
     lines.append("Warnings")
