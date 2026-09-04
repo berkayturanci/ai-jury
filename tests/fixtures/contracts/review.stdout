@@ -1,0 +1,12 @@
+The diff removes nothing and adds a comment, but `parse()` still calls `int(x)`
+without handling `ValueError`, so bad input propagates as an unhandled exception.
+
+```json
+[
+  {"severity": "major", "file": "src/example.py", "line": 4,
+   "claim": "int(x) can raise ValueError on unvalidated input",
+   "evidence": "the added comment documents the gap without closing it",
+   "suggested_fix": "catch ValueError and raise a domain error",
+   "confidence": "high", "reviewer": "contract-probe"}
+]
+```

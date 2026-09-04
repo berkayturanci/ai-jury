@@ -127,6 +127,15 @@ ERR_MISSING_API_KEY = "missing_api_key"
 # letting http.client raise (and risk echoing a transformed/escaped copy of
 # the secret in its exception text — see _HostedApiAdapter._invalid_key_reason).
 ERR_INVALID_API_KEY = "invalid_api_key"
+# The agent exited 0 and printed something, but that something is not a review
+# (issue #682): a refusal, or the CLI's own usage/argument-error/version banner
+# echoed back because the invocation never reached the model. Distinct from
+# ERR_EMPTY_OUTPUT (nothing at all on stdout) so a report can tell "the CLI is
+# broken/misinvoked" apart from "the model declined", and distinct from ok=True
+# so neither can be counted as a vendor that contributed to consensus. #635 is
+# the shape: `agy` passed every availability probe, printed an argument error,
+# and the panel silently became single-vendor.
+ERR_NO_REVIEW = "no_review"
 ERR_UNKNOWN = "unknown"
 
 ERROR_CODES = frozenset(
@@ -142,6 +151,7 @@ ERROR_CODES = frozenset(
         ERR_CONNECTION,
         ERR_MISSING_API_KEY,
         ERR_INVALID_API_KEY,
+        ERR_NO_REVIEW,
         ERR_UNKNOWN,
     }
 )
@@ -150,7 +160,8 @@ ERROR_CODES = frozenset(
 # #30): a timeout, a rate-limit, a process that failed to spawn, or a local
 # server that was briefly unreachable (#43). Auth, missing-CLI,
 # permission-prompt, empty-output, and generic nonzero-exit are treated as
-# deterministic — retrying them just burns time and tokens.
+# deterministic — retrying them just burns time and tokens. So is a
+# no-review output: a misinvoked CLI prints the same usage banner every time.
 RETRYABLE_ERROR_CODES = frozenset(
     {
         ERR_TIMEOUT,
@@ -215,6 +226,76 @@ def classify_stderr(returncode: int, stderr: str) -> str:
         return ERR_PERMISSION_PROMPT
     del returncode
     return ERR_NONZERO_EXIT
+
+
+# --- "Exit 0, but nothing reviewable came back" (issue #682) ------------------
+#
+# A CLI that exits 0 and prints its own usage text is indistinguishable, to
+# everything downstream, from a reviewer that read the diff — the run stays
+# fail-soft and the panel quietly loses a vendor (#635). These patterns turn
+# that into a typed failure at the adapter boundary, on SHAPE alone: never on
+# whether a review is any good, only on whether it is a review at all.
+
+#: An output longer than this is treated as a review even if it opens with a
+#: refusal-shaped sentence. A real review that mentions "I cannot verify X"
+#: mid-argument must never be discarded; an actual refusal is a short paragraph.
+_NO_REVIEW_MAX_CHARS = 600
+
+#: How much of the output is examined for a usage/argument-error banner. A CLI
+#: that is going to print one prints it first.
+_NO_REVIEW_HEAD_CHARS = 400
+
+# The #635 class: the launcher rejected the argv, so the model was never
+# reached. Every one of these is text a CLI writes about ITSELF.
+_USAGE_ECHO_RE = re.compile(
+    r"^\s*usage\b"
+    r"|^\s*(?:error:\s*)?(?:unknown|unrecognized|invalid|unexpected)\s+"
+    r"(?:flag|option|argument|command|subcommand)\b"
+    r"|\bflag needs an argument\b"
+    r"|\bcommand not found\b"
+    r"|\bfor more information,? (?:try|see)\b",
+    re.IGNORECASE,
+)
+
+#: Nothing but a version/probe banner, e.g. "1.1.22" or "agy version 1.1.22".
+_VERSION_ONLY_RE = re.compile(r"^[\w.@/+-]{0,40}(?:\s+version)?\s*v?\d+\.\d+[\w.+-]*$")
+
+#: A refusal, matched on the lowercased text and only inside the length bound
+#: above. Deliberately narrow: these are first-person declines, not any
+#: sentence containing the word "cannot".
+_REFUSAL_RE = re.compile(
+    r"i(?:'|\u2019)?m (?:sorry|unable|not able)"
+    r"|i am (?:sorry|unable|not able)"
+    r"|i (?:can(?:'|\u2019)?t|cannot|won(?:'|\u2019)?t|will not)"
+    r" (?:help|assist|do|review|comply|provide|analyz|analys)"
+    r"|sorry,? (?:but )?i "
+    r"|as an ai\b"
+    r"|i (?:do not|don(?:'|\u2019)?t) have (?:access|the ability)"
+)
+
+
+def no_review_reason(text: str) -> str | None:
+    """Why ``text`` cannot be a review, or ``None`` when it could be one.
+
+    PURE, and a judgement of SHAPE only — it never scores a review's quality.
+    An adapter calls it on an exit-0 stdout so that a refusal, a usage banner
+    or a bare version string is recorded as a typed failure (``ERR_NO_REVIEW``)
+    rather than as a contributing vendor. Fail-soft still applies: the run
+    continues, but with a dead seat that says so.
+
+    Returns a short human-readable reason, safe to embed in an error string
+    (it names the category, never the agent's text).
+    """
+    body = (text or "").strip()
+    if not body:
+        return "the agent produced no output"
+    if _USAGE_ECHO_RE.search(body[:_NO_REVIEW_HEAD_CHARS]):
+        return "the CLI printed usage or argument-error text instead of a review"
+    if _VERSION_ONLY_RE.match(body):
+        return "the CLI printed only a version banner instead of a review"
+    if len(body) <= _NO_REVIEW_MAX_CHARS and _REFUSAL_RE.search(body.lower()):
+        return "the agent declined to review"
+    return None
 
 
 # --- Reasoning effort (issue #662) -------------------------------------------
@@ -732,6 +813,21 @@ class Adapter:
                 error_code=ERR_EMPTY_OUTPUT,
                 exit_code=proc.returncode,
             )
+        # Exit 0 with output that is not a review (issue #682): a refusal, or the
+        # CLI's own usage/version banner because the argv never reached the model
+        # (#635). Counting it as a review is what makes a panel collapse silent.
+        no_review = no_review_reason(out)
+        if no_review is not None:
+            return AgentResult(
+                self.name,
+                self.spec.vendor,
+                False,
+                "",
+                dur,
+                f"no review returned: {no_review}: {redaction.redact(out)[0][:200]}",
+                error_code=ERR_NO_REVIEW,
+                exit_code=proc.returncode,
+            )
         return AgentResult(self.name, self.spec.vendor, True, out, dur, exit_code=proc.returncode)
 
 
@@ -1157,6 +1253,17 @@ class LocalAdapter(Adapter):
                 "local model returned empty content",
                 error_code=ERR_EMPTY_OUTPUT,
             )
+        no_review = no_review_reason(content)
+        if no_review is not None:
+            return AgentResult(
+                self.name,
+                self.spec.vendor,
+                False,
+                "",
+                dur,
+                f"no review returned: {no_review}",
+                error_code=ERR_NO_REVIEW,
+            )
         return AgentResult(self.name, self.spec.vendor, True, content, dur)
 
 
@@ -1431,6 +1538,17 @@ class _HostedApiAdapter(Adapter):
                 dur,
                 "hosted API returned empty content",
                 error_code=ERR_EMPTY_OUTPUT,
+            )
+        no_review = no_review_reason(content)
+        if no_review is not None:
+            return AgentResult(
+                self.name,
+                self.spec.vendor,
+                False,
+                "",
+                dur,
+                f"no review returned: {no_review}",
+                error_code=ERR_NO_REVIEW,
             )
         return AgentResult(self.name, self.spec.vendor, True, content, dur)
 
@@ -1897,6 +2015,19 @@ class GenericCLIAdapter(Adapter):
                 duration,
                 "agent produced empty output",
                 error_code=ERR_EMPTY_OUTPUT,
+                exit_code=res.returncode,
+            )
+
+        no_review = no_review_reason(out)
+        if no_review is not None:
+            return AgentResult(
+                self.spec.name,
+                self.spec.vendor,
+                False,
+                "",
+                duration,
+                f"no review returned: {no_review}: {redaction.redact(out)[0][:200]}",
+                error_code=ERR_NO_REVIEW,
                 exit_code=res.returncode,
             )
 

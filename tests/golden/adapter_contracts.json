@@ -1,0 +1,118 @@
+{
+  "_comment": [
+    "Locked invocation contract per shipped adapter (issue #682).",
+    "Every entry was measured against the real CLI before being written down:",
+    "claude -p with the prompt on stdin (#287), codex exec -s read-only (#100),",
+    "agy stream-json in/out with the prompt as one NDJSON frame (#635, agy 1.1.22).",
+    "A change here is a VENDOR change, not a refactor: update it together with a",
+    "CHANGELOG note saying which CLI changed and what was verified against it.",
+    "'stdin' is what the adapter feeds the child: 'prompt' verbatim, 'stream-json'",
+    "one NDJSON frame carrying it, or 'none' when it goes in argv instead.",
+    "'prompt_absent_from_argv' encodes #287: the redacted diff must never be",
+    "readable in `ps` to another local user."
+  ],
+  "claude": {
+    "vendor": "anthropic",
+    "command": "claude",
+    "model": "claude-probe-1",
+    "extra_args": [
+      "--output-format",
+      "text",
+      "--disallowed-tools",
+      "Edit,Write,NotebookEdit,Bash",
+      "--dangerously-skip-permissions"
+    ],
+    "argv": [
+      "claude",
+      "-p",
+      "--model",
+      "claude-probe-1",
+      "--output-format",
+      "text",
+      "--disallowed-tools",
+      "Edit,Write,NotebookEdit,Bash",
+      "--dangerously-skip-permissions"
+    ],
+    "write_argv": [
+      "claude",
+      "-p",
+      "--model",
+      "claude-probe-1",
+      "--output-format",
+      "text",
+      "--dangerously-skip-permissions"
+    ],
+    "stdin": "prompt",
+    "prompt_absent_from_argv": true,
+    "sandbox_flags": ["--disallowed-tools"],
+    "stdout_fixture": "review.stdout"
+  },
+  "codex": {
+    "vendor": "openai",
+    "command": "codex",
+    "model": "gpt-probe-1",
+    "extra_args": ["-s", "read-only"],
+    "argv": ["codex", "exec", "-m", "gpt-probe-1", "-s", "read-only"],
+    "write_argv": ["codex", "exec", "-m", "gpt-probe-1", "-s", "workspace-write"],
+    "stdin": "prompt",
+    "prompt_absent_from_argv": true,
+    "sandbox_flags": ["-s", "read-only"],
+    "stdout_fixture": "review.stdout"
+  },
+  "agy": {
+    "vendor": "google",
+    "command": "agy",
+    "model": "gemini-probe-1",
+    "extra_args": ["--dangerously-skip-permissions", "--sandbox"],
+    "argv": [
+      "agy",
+      "--input-format",
+      "stream-json",
+      "--output-format",
+      "stream-json",
+      "--model",
+      "gemini-probe-1",
+      "--dangerously-skip-permissions",
+      "--sandbox"
+    ],
+    "write_argv": [
+      "agy",
+      "--input-format",
+      "stream-json",
+      "--output-format",
+      "stream-json",
+      "--model",
+      "gemini-probe-1",
+      "--dangerously-skip-permissions"
+    ],
+    "stdin": "stream-json",
+    "prompt_absent_from_argv": true,
+    "sandbox_flags": ["--sandbox"],
+    "stdout_fixture": "agy.stdout.ndjson"
+  },
+  "generic-cli-stdin": {
+    "vendor": "cli",
+    "command": "aider",
+    "model": "probe-model",
+    "extra_args": ["--no-auto-commits"],
+    "argv": ["aider", "--no-auto-commits"],
+    "write_argv": ["aider", "--no-auto-commits"],
+    "stdin": "prompt",
+    "prompt_absent_from_argv": true,
+    "sandbox_flags": [],
+    "stdout_fixture": "review.stdout"
+  },
+  "generic-cli-arg": {
+    "vendor": "cli",
+    "command": "goose",
+    "model": "probe-model",
+    "prompt_mode": "arg",
+    "extra_args": ["run", "-t"],
+    "argv": ["goose", "run", "-t", "<PROMPT>"],
+    "write_argv": ["goose", "run", "-t", "<PROMPT>"],
+    "stdin": "none",
+    "prompt_absent_from_argv": false,
+    "sandbox_flags": [],
+    "stdout_fixture": "review.stdout"
+  }
+}
