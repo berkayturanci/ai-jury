@@ -145,6 +145,27 @@ _DURATION = re.compile(r"^\d+(\.\d+)?[smhd]?$")
 #: equality test silently stopped reading (see :func:`shell`).
 _BLOCK_SCALAR = re.compile(r"^run:[ \t]*[|>](?:[+-][1-9]?|[1-9][+-]?)?[ \t]*$")
 
+#: The lead of a step written as a list item — the dash and the padding after it.
+#: Its length is the column that item's own keys stand in, and that is the column
+#: a `run:` written `- run: |` has to be measured against: measured from the dash
+#: instead, the block's body and the step's *sibling* keys (`env:`, `name:`, a
+#: step-level `timeout-minutes:`) sit at indents the reader cannot tell apart, so
+#: a script would be collected with those keys inside it.
+#:
+#: Nothing in this repository writes a step that way today, which is exactly how
+#: it went unnoticed: `- run: |` matched neither of the reader's two patterns, so
+#: a workflow whose only step was spelled like that was scanned to *nothing* and
+#: every assertion in this module passed over it.
+_LIST_ITEM = re.compile(r"^([ \t]*-[ \t]+)")
+
+#: The first character of a `run:` value the reader does not follow onto the next
+#: line: the two quoted flow scalars, and a block header carrying anything else
+#: (a trailing comment). A plain scalar has none of these, and its continuation
+#: lines *are* collected. The two lists are the same list on purpose —
+#: :func:`unreadable_runs` refuses exactly the values :func:`shell` stops at, so
+#: the reader never half-reads a step without saying so.
+_UNFOLLOWED_VALUES = ("'", '"', "|", ">")
+
 #: A quoted heredoc's opening: `<<'EOF'`, `<< "EOF"`, `<<-'EOF'`, `<<\\EOF`. Its
 #: body is literal text, so the words in it are not commands. The backslash form
 #: is the third spelling bash accepts for a *non-expanding* heredoc, and missing
@@ -182,9 +203,31 @@ def indent_of(line: str) -> int:
     return len(line) - len(line.lstrip())
 
 
+def key_indent(line: str) -> int:
+    """The column the line's first key stands in, a `- ` lead counted as indent."""
+    match = _LIST_ITEM.match(line.expandtabs())
+    return len(match.group(1)) if match else indent_of(line.expandtabs())
+
+
+def key_text(line: str) -> str:
+    """The line without its indent and without a step's `- ` lead.
+
+    `- run: |` and `run: |` are the same key written at two depths, and every
+    pattern in this module is anchored at the head of the string, so they have to
+    arrive at those patterns spelled the same way.
+    """
+    return _LIST_ITEM.sub("", line.strip(), count=1)
+
+
 def block_after(lines: list[str], index: int) -> list[str]:
-    """The run of lines indented deeper than ``lines[index]``, blanks included."""
-    indent = indent_of(lines[index])
+    """The run of lines indented deeper than ``lines[index]``, blanks included.
+
+    Depth is measured from the *key*, not from the start of the line. A step
+    written `- run: |` puts its key two columns in from its dash and its sibling
+    keys in that same column, so measuring from the dash would collect `env:` and
+    `name:` as lines of the script.
+    """
+    indent = key_indent(lines[index])
     body: list[str] = []
     for line in lines[index + 1 :]:
         if line.strip() and indent_of(line) <= indent:
@@ -222,14 +265,42 @@ def shell(block: list[str]) -> str:
     command with its continuation, so a bound spelled on the next line would
     count, while splitting reports the head of the command as carrying no
     bound. A false alarm is fixable; a step nobody scans is not.
+
+    Two more forms were neither read nor refused, which is the one outcome this
+    module is not allowed to produce. A step written as a list item (``- run: |``,
+    the spelling that needs no ``name:``) matched neither branch, so a workflow
+    whose only step was written that way scanned to nothing; it is read now, and
+    :func:`block_after` measures its body from the key rather than from the dash
+    so the step's sibling keys stay out of the script. And a *plain* scalar
+    continued over several lines — ``run: something &&`` with the rest indented
+    below — was collected by its first line alone, so half a command was scanned
+    and the half carrying the request could be the half that was dropped. Its
+    continuation lines are collected too, and read the same line-by-line way a
+    folded scalar is, for the same reason.
+
+    The values this stops at are the values :func:`unreadable_runs` refuses. That
+    is the whole contract: a form is read, or it is a finding — never skipped.
     """
     code: list[str] = []
-    for index, line in enumerate(block):
-        stripped = line.strip()
-        if _BLOCK_SCALAR.match(stripped):
-            code.extend(block_after(block, index))
-        elif stripped.startswith("run: "):
-            code.append(stripped[len("run: ") :])
+    index = 0
+    while index < len(block):
+        key, body = key_text(block[index]), []
+        if _BLOCK_SCALAR.match(key):
+            body = block_after(block, index)
+            code.extend(body)
+        elif key.startswith("run: "):
+            value = key[len("run: ") :]
+            code.append(value)
+            if not value.startswith(_UNFOLLOWED_VALUES):
+                body = block_after(block, index)
+                # The blank line between two steps is indented deeper than
+                # nothing, so it lands in that run as well; dropping it keeps the
+                # collected script equal to the script for a one-liner that has
+                # no continuation at all.
+                code.extend(line for line in body if line.strip())
+        # Past the body as well as the header: a `run:` written *inside* a script
+        # — a heredoc that writes a workflow, say — is content, not a second step.
+        index += len(body) + 1
     return "\n".join(line for line in code if not line.strip().startswith("#"))
 
 
@@ -695,16 +766,26 @@ def unreadable_runs(lines: list[str]) -> list[str]:
     while every continuation line is dropped. Half a command read is worse than
     none: the half that is read can carry the bound, and the half that is not can
     carry the request.
+
+    A *plain* scalar continued over several lines had that same defect and is not
+    on this list, because it was fixed rather than forbidden: :func:`shell` now
+    follows a plain value onto the lines below it. The rule the two functions keep
+    between them is that they stop at the same values — whatever `shell` will not
+    follow, this refuses — so no spelling is quietly half-read.
+
+    Read through :func:`key_text`, so a step written as a list item is judged by
+    the same rules: `- run: "…"` is the quoted flow scalar again, and used to
+    match nothing at all here or in :func:`shell`.
     """
     unreadable: list[str] = []
     for number, line in enumerate(lines, start=1):
-        stripped = line.strip()
-        if not _RUN_KEY.match(stripped) or _BLOCK_SCALAR.match(stripped):
+        key = key_text(line)
+        if not _RUN_KEY.match(key) or _BLOCK_SCALAR.match(key):
             continue
-        value = stripped[len("run:") :].strip()
-        if value and not value.startswith(("'", '"', "|", ">")):
-            continue  # a plain one-liner, which `shell()` collects
-        unreadable.append(f"{number}: {stripped}")
+        value = key[len("run:") :].strip()
+        if value and not value.startswith(_UNFOLLOWED_VALUES):
+            continue  # a plain scalar, which `shell()` collects whole
+        unreadable.append(f"{number}: {line.strip()}")
     return unreadable
 
 
@@ -1428,6 +1509,39 @@ class EveryWorkflowBoundsItsNetworkCalls(unittest.TestCase):
         self.assertEqual(len(writes), 3, [call.command[:60] for call in writes])
 
 
+#: A whole workflow rather than a step, so the case goes through the same
+#: `jobs:` walk the real files do — which is where the list-item spelling was
+#: lost: `scan()` returned *nothing* for this file, and returning nothing is how
+#: every assertion in this module passes over a step it never saw.
+_SCRATCH_WORKFLOW = """name: Scratch
+on: workflow_dispatch
+jobs:
+  scratch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+{step}"""
+
+#: A step written as a list item: `- run: |`, the spelling a step with no `name:`
+#: takes. `env:` follows the script deliberately — it is a sibling key of `run:`,
+#: indented deeper than the *dash*, so a reader measuring the body from the dash
+#: collects it as a line of shell.
+_LIST_ITEM_STEP = """      - run: |
+          curl -fsSL https://example.invalid/thing -o thing
+          gh api repos/example/example
+        env:
+          GH_TOKEN: not-a-command
+"""
+
+#: A plain scalar continued over two lines — legal YAML that Actions folds into
+#: one command. Its first line was collected and the rest dropped, so the request
+#: on the second line was never scanned while the step looked read.
+_CONTINUED_PLAIN_STEP = """      - name: A command split across two lines
+        run: curl -fsSL https://example.invalid/thing -o thing &&
+          gh api repos/example/example
+"""
+
+
 class NoWorkflowSpellsARunTheScanCannotRead(unittest.TestCase):
     """The blind spot that is left, turned into a rule instead of a footnote.
 
@@ -1460,10 +1574,73 @@ class NoWorkflowSpellsARunTheScanCannotRead(unittest.TestCase):
 
     def test_the_readable_spellings_are_accepted(self):
         readable = [f"        run: {header}" for header in _HEADERS]
+        readable.extend(f"      - run: {header}" for header in _HEADERS)
         readable.append("        run: python -m pip install -e .")
+        readable.append("      - run: python -m pip install -e .")
         readable.append("        runs-on: ubuntu-latest")
         readable.append("        # a comment about a run: block")
         self.assertEqual(unreadable_runs(readable), [])
+
+    def test_a_step_written_as_a_list_item_is_read_and_not_skipped(self):
+        """The form that matched neither pattern, so it was scanned to nothing.
+
+        `- run: |` needs no `name:` and Actions runs it like any other step. It
+        was not refused either — `unreadable_runs` did not recognise it as a
+        `run:` at all — so a workflow whose only step was written that way passed
+        every assertion in this module by never reaching one. Read or refused,
+        never skipped: this one is read.
+        """
+        source = _SCRATCH_WORKFLOW.format(step=_LIST_ITEM_STEP)
+        self.assertEqual(unreadable_runs(source.splitlines()), [], "read, so not a finding")
+        caught = scan(source)
+        self.assertEqual(
+            [call.tool for call in caught], ["curl", "gh"], [c.command for c in caught]
+        )
+        self.assertEqual([call.bounded for call in caught], [False, False])
+        # The step's own `env:` is a sibling of `run:`, not a line of its script.
+        code = shell(job_body(source.splitlines(), "scratch"))
+        self.assertIn("gh api repos/example/example", code)
+        self.assertNotIn("GH_TOKEN", code)
+
+    def test_a_plain_scalar_continued_over_several_lines_is_read_whole(self):
+        """The form that was half-read, which is the worse of the two failures.
+
+        Its first line was collected, so the step looked scanned; every line
+        below it was dropped. The half that is read can be the half that carries
+        the bound and the half that is dropped the half that carries the request
+        — here the `gh api`, which takes no bound of its own at all.
+        """
+        source = _SCRATCH_WORKFLOW.format(step=_CONTINUED_PLAIN_STEP)
+        self.assertEqual(unreadable_runs(source.splitlines()), [], "read, so not a finding")
+        caught = scan(source)
+        self.assertEqual(
+            [call.tool for call in caught], ["curl", "gh"], [c.command for c in caught]
+        )
+        self.assertEqual([call.bounded for call in caught], [False, False])
+
+    def test_a_one_liner_with_nothing_under_it_reads_as_itself(self):
+        """The other side of following a plain value: it must not over-collect.
+
+        A `run:` one-liner is followed by its step's siblings and by the next
+        step, neither of which is indented deeper than the key. If they were
+        collected, `name:` and `uses:` lines would be lexed as shell.
+        """
+        step = (
+            "      - name: One line\n"
+            "        run: curl -fsSL https://example.invalid/thing -o thing\n"
+            "        env:\n"
+            "          GH_TOKEN: not-a-command\n"
+            "      - name: Another\n"
+            "        run: gh api repos/example/example\n"
+        )
+        code = shell(job_body(_SCRATCH_WORKFLOW.format(step=step).splitlines(), "scratch"))
+        self.assertEqual(
+            code.splitlines(),
+            [
+                "curl -fsSL https://example.invalid/thing -o thing",
+                "gh api repos/example/example",
+            ],
+        )
 
     def test_each_spelling_the_scan_cannot_read_is_named(self):
         """Prove it fails: the three spellings, one at a time."""
@@ -1471,6 +1648,12 @@ class NoWorkflowSpellsARunTheScanCannotRead(unittest.TestCase):
             ('        run: "python -m pip install -e ."', "a quoted flow scalar"),
             ("        run: | # install the package", "a header with a trailing comment"),
             ("        run:", "a value on the following line"),
+            # The same three written as a list item. They used to match nothing
+            # here, so the spelling this module forbids was legal with a `- `
+            # in front of it.
+            ('      - run: "python -m pip install -e ."', "a list item, quoted"),
+            ("      - run: | # install the package", "a list item, commented header"),
+            ("      - run:", "a list item, value below"),
         ):
             with self.subTest(spelling=why):
                 self.assertEqual(len(unreadable_runs([line])), 1, why)
