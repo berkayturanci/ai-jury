@@ -16,6 +16,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from . import panel
 from .config import normalise_vendor, vendor_identity
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -27,7 +28,12 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 # v4 (issue #501) added: ``panel`` (configured vs effective size, abstentions) and
 # per-agent ``review_status``. A slot that returns no review is an abstention, not an
 # approval, and until now nothing in the output said so.
-SCHEMA_VERSION = 4
+# v5 (issue #699) added, inside ``panel``: ``ballots``, ``reviews_supplied``,
+# ``chair`` and ``chair_ballot`` — the number of reviews a downstream consumer
+# actually receives (the ballots; the chair's synthesis record is not one of
+# them), and whether the chairing agent cast a ballot of its own.
+# Purely additive: every v4 key keeps its name and meaning.
+SCHEMA_VERSION = 5
 
 
 #: What a reviewer slot actually contributed (issue #501). ``clean`` and
@@ -53,7 +59,7 @@ def review_status(result) -> str:
     return "clean" if getattr(result, "structured", False) else "abstained"
 
 
-def panel_accounting(reviews) -> dict:
+def panel_accounting(reviews, chair: str = "") -> dict:
     """Configured versus *effective* panel size, and the per-status breakdown.
 
     A consumer gating on the panel needs the effective number — keel downgrades a
@@ -67,8 +73,20 @@ def panel_accounting(reviews) -> dict:
     ``cli`` fallback and is counted as ``cli``, so two unidentifiable seats are
     one vendor here even though the report still names each one honestly
     (issue #701).
+
+    ``reviews_supplied`` is a different number again, and the one #699 was about:
+    how many reviews the bundle hands on. It is the ballots (slots that returned
+    something) and only the ballots — not ``configured`` (a silent slot casts no
+    ballot), not ``effective`` (a slot that returned prose but no findings block
+    still states a stance), and *not* ballots plus the chair record, because a
+    consumer splits the ``reviewers`` array on ``role`` and reads the ``chair``
+    entry as the panel's consensus rather than as one more review.
+    ``chair_ballot`` says whether the chairing agent cast a ballot of its own,
+    which is the difference between a chair that reviewed and one that only
+    synthesised — and that ballot, when present, is counted like any other.
     """
     reviews = list(reviews or [])
+    ballots = panel.ballot_slots(reviews)
 
     # bolt: Consolidate multiple metrics into a single-pass O(N) explicit loop
     effective_count = 0
@@ -95,6 +113,10 @@ def panel_accounting(reviews) -> dict:
         "abstained": abstained_count,
         "failed": failed_count,
         "short": effective_count < len(reviews),
+        "ballots": len(ballots),
+        "reviews_supplied": panel.review_count(reviews),
+        "chair": chair or "",
+        "chair_ballot": bool(chair) and any(getattr(r, "agent", "") == chair for r in ballots),
     }
 
 
@@ -309,7 +331,7 @@ def build_run_metadata(
         "agents": agents,
         # Configured vs effective panel size (issue #501): a slot that returned no
         # review is an abstention, not an approval, and must not inflate the panel.
-        "panel": panel_accounting(outcome.reviews),
+        "panel": panel_accounting(outcome.reviews, chair=getattr(outcome, "chair", "") or ""),
         "economics": estimate_economics(all_results),
         "rounds_executed": _rounds_executed(outcome),
         "from_cache": bool(getattr(outcome, "from_cache", False)),

@@ -122,7 +122,7 @@ per panelist that returned output, plus the chair as `reviewer: "chair"`:
 | --- | --- |
 | `reviewer` | The panelist's name, or `"chair"`. |
 | `verdict` | The ballot verdict above (a single token). |
-| `scope` | One paragraph: the distinct files that panelist named in its structured findings (capped at 8, with a `(+N more)` tail), followed by up to three "checked / examined / inspected / reviewed" clauses lifted from its prose. |
+| `scope` | One paragraph: the distinct files that panelist named in its structured findings (capped at 8, with a `(+N more)` tail), followed by up to three "checked / examined / inspected / reviewed" clauses lifted from its prose. The chair's record additionally names the agent that chaired, says whether that agent's own ballot is in the bundle, states how many reviews the bundle carries and that this record is not one of them; the ballot cast by the chairing agent says so on its own scope too. |
 | `findings` | That panelist's own findings as `{severity, path, line, message}` — ai-jury's `file` → `path`, `claim` → `message`. The chair carries the consensus-group representatives the verifier did **not** reject. |
 | `testing` | The panelist's stated verification, lifted verbatim from its prose, or `"not stated"`. The chair's comes from the verification round. |
 | `vendor` | The adapter's vendor, **as configured** — provenance, not the identity the cross-vendor gate collapses to. |
@@ -135,5 +135,27 @@ capped per clause and per count, and taken only from **prose**: a review's fence
 otherwise swamp the summary with its own serialized claim text. Marker matching
 is word-anchored, which is load-bearing rather than tidy — the house phrasing
 "un**checked** return value" is a finding, not a claim to have checked something.
+
+**The chairing agent sits on the panel.** The chair is drawn from the *usable*
+agents and round 1 runs every usable agent, so that agent reviews like anyone
+else: an *n*-agent bench supplies *n* ballots — one of them the chairing agent's —
+and one further record, the chair's synthesis.
+
+**A review is a ballot.** The synthesis record is the panel's consensus, not an
+*n+1*-th review: a consumer splits the report's `reviewers` array on `role`, keeps
+the `chair` entry aside as the consensus record, and counts the rest. The chairing
+agent's ballot carries `role: "panelist"` like any other and is counted with them.
+So an *n*-agent bench supplies *n* reviews, and ai-jury announces *n* — counting
+the chair record would claim one review the consumer will not find ([#699]).
+
+The bundle now says which agent chaired and where its ballot is, because a record
+that does not say is indistinguishable from a synthesis-only entry, and a reader
+who guesses hands on the wrong number. A chair that ran and returned nothing has
+no ballot in the bundle; that record says that too, rather than looking identical.
+
+Use `[jury.ci] min_reviews` / `--min-reviews N` to require a review count: the
+shortfall is then named before the panel runs, not by the consumer afterwards.
+
+[#699]: https://github.com/berkayturanci/ai-jury/issues/699
 
 Neither format ever carries diff text, prompt text or secrets.
