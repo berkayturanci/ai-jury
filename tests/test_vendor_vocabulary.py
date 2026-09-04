@@ -31,7 +31,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from ai_jury import adapters, cli  # noqa: E402
+from ai_jury import adapters, cli, doctor  # noqa: E402
 from ai_jury import config as config_module
 from ai_jury.adapters import (  # noqa: E402
     GenericCLIAdapter,
@@ -46,13 +46,16 @@ from ai_jury.config import (  # noqa: E402
     AgentSpec,
     ConfigError,
     _from_dict,
+    is_commandless_vendor,
     is_recognised_vendor,
+    load_config,
+    normalise_vendor,
     recognised_vendors,
     register_vendor,
     validate_config,
     vendor_identity,
 )
-from ai_jury.doctor import _transport  # noqa: E402
+from ai_jury.doctor import _transport, doctor_report_dict  # noqa: E402
 from ai_jury.metadata import collapse_reason, distinct_vendors, panel_accounting  # noqa: E402
 from ai_jury.privilege import enable_write, enforce_read_only  # noqa: E402
 from ai_jury.runagent import builtin_spec, strip_transport  # noqa: E402
@@ -509,6 +512,204 @@ class TheContractGoldenLocksTheGrokInvocation(unittest.TestCase):
         with mock.patch.object(adapters.shutil, "which", lambda cmd: f"/bin/{cmd}"):
             argv = make_adapter(spec).build_argv("PROMPT")
         self.assertEqual(argv, ["cursor-agent", "-p", "--model", "cursor-grok-4.6-high-fast"])
+
+
+# --- round 2: one vocabulary, one arithmetic, and each place says which ------
+
+
+_TWO_FALLBACK_SEATS = """
+[jury]
+[jury.ci]
+min_vendors = 2
+
+[[agent]]
+name = "grok"
+vendor = "xa1"
+command = "sh"
+
+[[agent]]
+name = "grok2"
+vendor = "grok-cli"
+command = "sh"
+"""
+
+
+class TheDoctorCountsWhatTheGateCounts(unittest.TestCase):
+    """The two numbers an operator compares must agree (review round 2).
+
+    `--doctor` counted raw vendor strings while the gate counted collapsed
+    identity, so a bench of two unidentifiable seats was reported as
+    cross-vendor ready and then counted as a single vendor by the run. Same
+    vocabulary, same arithmetic, or the vocabulary is back in two places.
+    """
+
+    @contextlib.contextmanager
+    def _config(self, text=_TWO_FALLBACK_SEATS):
+        """A config file whose every seat is forced reachable.
+
+        Availability is not what these tests are about: they are about the
+        arithmetic doctor does over whatever it found.
+        """
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            mock.patch.object(doctor, "_is_available", lambda _spec: True),
+        ):
+            path = Path(tmp) / "jury.toml"
+            path.write_text(text)
+            yield path
+
+    def _report(self, path):
+        return doctor_report_dict(doctor.build_diagnostics(str(path)))
+
+    def test_configured_count_equals_the_gate_count(self):
+        with self._config() as path:
+            gate = distinct_vendors(load_config(str(path)).enabled_agents)
+            panel = self._report(path)["panel"]
+        self.assertEqual(gate, 1)
+        self.assertEqual(panel["vendors_configured"], gate)
+
+    def test_available_count_is_collapsed_too(self):
+        """Both reachable seats are the same vendor, so they are one available vendor."""
+        with self._config() as path:
+            panel = self._report(path)["panel"]
+        self.assertEqual(panel["vendors_available"], 1)
+
+    def test_two_real_vendors_still_count_as_two(self):
+        """The collapse is not a cap: recognised names keep their own identity."""
+        text = _TWO_FALLBACK_SEATS.replace('"xa1"', '"xai"').replace('"grok-cli"', '"cli"')
+        with self._config(text) as path:
+            gate = distinct_vendors(load_config(str(path)).enabled_agents)
+            panel = self._report(path)["panel"]
+        self.assertEqual(gate, 2)
+        self.assertEqual(panel["vendors_configured"], 2)
+        self.assertEqual(panel["vendors_available"], 2)
+
+    def test_the_agent_row_still_carries_the_configured_string(self):
+        """Collapsing the gate is not a licence to rewrite provenance."""
+        with self._config() as path:
+            agents = self._report(path)["agents"]
+        self.assertEqual([a["vendor"] for a in agents], ["xa1", "grok-cli"])
+
+    def test_the_agent_row_also_states_the_identity_it_carries(self):
+        with self._config() as path:
+            agents = self._report(path)["agents"]
+        self.assertEqual([a["vendor_identity"] for a in agents], [GENERIC_VENDOR, GENERIC_VENDOR])
+
+    def test_a_recognised_seat_reports_itself_as_its_own_identity(self):
+        text = _TWO_FALLBACK_SEATS.replace('"xa1"', '"xai"')
+        with self._config(text) as path:
+            agents = self._report(path)["agents"]
+        self.assertEqual(agents[0]["vendor"], "xai")
+        self.assertEqual(agents[0]["vendor_identity"], "xai")
+
+    def test_the_human_report_says_which_number_is_which(self):
+        with self._config() as path:
+            text = doctor.render_report(doctor.build_diagnostics(str(path)))
+        self.assertIn("vendors enabled:   1 (by vendor identity)", text)
+        self.assertIn("vendors reachable: 1 (by vendor identity)", text)
+        self.assertIn("counted by vendor identity", text)
+
+    def test_a_collapsed_row_shows_both_strings(self):
+        with self._config() as path:
+            text = doctor.render_report(doctor.build_diagnostics(str(path)))
+        self.assertIn("vendor=xa1 -> counts as cli", text)
+
+    def test_a_recognised_row_is_left_alone(self):
+        """No arrow where there is nothing to explain."""
+        text_cfg = _TWO_FALLBACK_SEATS.replace('"xa1"', '"xai"')
+        with self._config(text_cfg) as path:
+            text = doctor.render_report(doctor.build_diagnostics(str(path)))
+        self.assertIn("vendor=xai,", text)
+        self.assertNotIn("vendor=xai ->", text)
+
+
+class ARecognisedVendorIsRecognisedByEveryRule(unittest.TestCase):
+    """Normalise once, then every rule reads the normalised value (round 2).
+
+    `is_recognised_vendor("XAI-API")` was True while `validate_config` failed
+    the same seat for having no `command`, because the commandless-vendor test
+    ran on the un-normalised string. A vendor the tool recognises must be
+    recognised by validation, by the adapter lookup and by the gate alike.
+    """
+
+    def _validate(self, vendor, **extra):
+        agent = {"name": "grok", "vendor": vendor, "model": "grok-4"}
+        agent.update(extra)
+        return validate_config({"jury": {"chair": "grok"}, "agent": [agent]})
+
+    def test_a_padded_api_vendor_needs_no_command(self):
+        for spelling in ("XAI-API", " xai-api ", "Xai-Api", "\tXAI-API\n"):
+            with self.subTest(spelling=spelling):
+                self.assertEqual(self._validate(spelling), [])
+
+    def test_the_other_api_vendors_normalise_too(self):
+        for spelling in ("OpenAI-API", " ANTHROPIC-API", "Google-API ", "LOCAL"):
+            with self.subTest(spelling=spelling):
+                self.assertEqual(self._validate(spelling), [])
+
+    def test_a_padded_cli_vendor_still_needs_a_command(self):
+        """Normalising is not a licence to skip the command check."""
+        with self.assertRaises(ConfigError) as caught:
+            self._validate(" XAI ")
+        self.assertIn("is missing a non-empty 'command'", str(caught.exception))
+
+    def test_a_padded_recognised_vendor_does_not_warn_as_unknown(self):
+        self.assertEqual(self._validate(" XAI ", command="cursor-agent"), [])
+
+    def test_the_unknown_warning_quotes_what_the_operator_wrote(self):
+        """The message is provenance: it must echo the spelling in the file."""
+        warnings = self._validate(" Xa1 ", command="cursor-agent")
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("unknown vendor ' Xa1 '", warnings[0])
+
+    def test_the_missing_model_warning_quotes_it_too(self):
+        warnings = validate_config(
+            {"jury": {"chair": "grok"}, "agent": [{"name": "grok", "vendor": "XAI-API"}]}
+        )
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("(vendor 'XAI-API') has no 'model'", warnings[0])
+
+    def test_the_adapter_lookup_sees_the_same_normalised_string(self):
+        spec = AgentSpec(name="grok", vendor=" XAI-API ", model="grok-4")
+        self.assertIsInstance(make_adapter(spec), XaiApiAdapter)
+
+    def test_the_gate_sees_the_same_normalised_string(self):
+        self.assertEqual(vendor_identity(" XAI-API "), "xai-api")
+        self.assertEqual(distinct_vendors([AgentSpec(name="a", vendor=" XAI-API ")]), 1)
+
+    def test_one_seat_cannot_be_two_vendors_by_spelling(self):
+        """`xai` and ` XAI ` are one vendor, not a free second perspective."""
+        config = _from_dict(
+            {
+                "agent": [
+                    {"name": "a", "vendor": "xai", "command": "cursor-agent"},
+                    {"name": "b", "vendor": " XAI ", "command": "cursor-agent"},
+                ]
+            }
+        )
+        self.assertEqual(distinct_vendors(config.enabled_agents), 1)
+
+    def test_registering_a_padded_name_registers_the_normalised_one(self):
+        registry = dict(adapters._VENDOR_ADAPTERS)
+        registered = set(config_module._REGISTERED_VENDORS)
+        try:
+            adapters.register_adapter("  My-Vendor  ", GenericCLIAdapter)
+            self.assertEqual(vendor_identity("my-vendor"), "my-vendor")
+            spec = AgentSpec(name="x", vendor="MY-VENDOR", command="mine")
+            self.assertIsInstance(make_adapter(spec), GenericCLIAdapter)
+            self.assertIn("my-vendor", recognised_vendors())
+        finally:
+            adapters._VENDOR_ADAPTERS.clear()
+            adapters._VENDOR_ADAPTERS.update(registry)
+            config_module._REGISTERED_VENDORS.clear()
+            config_module._REGISTERED_VENDORS.update(registered)
+
+    def test_a_non_string_vendor_normalises_to_nothing(self):
+        """A config mistake to warn about, not a crash."""
+        self.assertEqual(normalise_vendor(3), "")
+        self.assertFalse(is_commandless_vendor(3))
+        self.assertFalse(is_commandless_vendor("xai"))
+        self.assertTrue(is_commandless_vendor(" LOCAL "))
 
 
 if __name__ == "__main__":  # pragma: no cover

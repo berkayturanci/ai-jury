@@ -2220,13 +2220,13 @@ def register_adapter(vendor: str, adapter_cls: type[Adapter]) -> None:
     disagree about what "known" means.
     """
     config_module.register_vendor(vendor)
-    _VENDOR_ADAPTERS[vendor.lower()] = adapter_cls
+    _VENDOR_ADAPTERS[config_module.normalise_vendor(vendor)] = adapter_cls
 
 
 def make_adapter(spec: AgentSpec, mock: bool = False) -> Adapter:
     if mock:
         return MockAdapter(spec)
-    cls = _VENDOR_ADAPTERS.get((spec.vendor or "").lower())
+    cls = _VENDOR_ADAPTERS.get(config_module.normalise_vendor(spec.vendor))
     if cls is not None:
         return cls(spec)
     if spec.endpoint or (spec.api_key_env and not spec.command):

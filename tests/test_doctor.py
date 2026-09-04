@@ -541,6 +541,10 @@ PANEL_TYPES = {
 AGENT_TYPES = {
     "name": str,
     "vendor": str,
+    # Provenance and the gate's view, side by side (#701, round 2): `vendor` is
+    # the configured string, `vendor_identity` is what the seat counts as under
+    # min_vendors.
+    "vendor_identity": str,
     "transport": str,
     "available": bool,
     "reason": (str, type(None)),

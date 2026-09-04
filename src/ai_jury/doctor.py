@@ -24,7 +24,13 @@ from pathlib import Path
 
 from . import __version__
 from .adapters import effort_supported, make_adapter
-from .config import ConfigError, load_config
+from .config import (
+    ConfigError,
+    is_commandless_vendor,
+    load_config,
+    normalise_vendor,
+    vendor_identity,
+)
 from .redaction import redact, redact_url_userinfo
 
 #: Version of the machine-readable export emitted by ``jury --doctor --json``.
@@ -90,14 +96,8 @@ def _resolved_command(spec):
     when nothing is found on PATH.
     """
     command = getattr(spec, "command", "") or ""
-    vendor = (getattr(spec, "vendor", "") or "").lower()
     has_endpoint = bool(getattr(spec, "endpoint", None))
-    if (
-        not command
-        or vendor in ("local", "anthropic-api", "openai-api", "google-api", "openai-compatible")
-        or vendor.endswith("-api")
-        or has_endpoint
-    ):
+    if not command or is_commandless_vendor(getattr(spec, "vendor", "")) or has_endpoint:
         return None
     try:
         return shutil.which(command)
@@ -130,7 +130,7 @@ def _endpoint_for(spec):
     """
     if getattr(spec, "endpoint", None):
         return redact_url_userinfo(spec.endpoint)
-    vendor = (getattr(spec, "vendor", "") or "").lower()
+    vendor = normalise_vendor(getattr(spec, "vendor", ""))
     if vendor == "local":
         return _DEFAULT_LOCAL_ENDPOINT
     try:
@@ -149,7 +149,7 @@ def _unavailable_reason(spec, capability_warnings) -> str:
     """
     if capability_warnings:
         return "; ".join(capability_warnings)
-    vendor = (getattr(spec, "vendor", "") or "").lower()
+    vendor = normalise_vendor(getattr(spec, "vendor", ""))
     if vendor == "local":
         endpoint = redact_url_userinfo(spec.endpoint or _DEFAULT_LOCAL_ENDPOINT)
         return f"endpoint '{endpoint}' is not reachable"
@@ -169,7 +169,13 @@ def _agent_entry(spec, probe_models: bool = False):
         "command": _redact_value(spec.command),
         "endpoint": _endpoint_for(spec),
         "resolved": _resolved_command(spec),
+        # Two vendor fields, because they answer two different questions and a
+        # row that showed only one was read as answering both (#701, round 2).
+        # `vendor` is provenance: what the operator configured, verbatim.
+        # `vendor_identity` is the gate's view: what this seat counts as under
+        # `min_vendors`, which is `cli` for anything the build cannot identify.
         "vendor": _redact_value(spec.vendor),
+        "vendor_identity": vendor_identity(getattr(spec, "vendor", "")),
         "available": available,
         "reason": None if available else _unavailable_reason(spec, capability_warnings),
         "version": _redact_value(caps.get("version")),
@@ -249,14 +255,19 @@ def _panel_readiness(cfg, agents) -> dict:
     metadata's ``panel.vendors``. Saying so in the export is the point: an
     available CLI that returns nothing is exactly the failure #635 was, and a
     green doctor is not evidence against it.
+
+    Both counts are of :func:`config.vendor_identity`, the same arithmetic
+    :func:`metadata.distinct_vendors` does at the gate, so
+    ``vendors_configured`` equals what a run would count for the same config
+    (#701, round 2). Counting raw strings here meant two seats on the generic
+    fallback read as two vendors in ``--doctor`` and as one vendor in the run:
+    doctor called the bench cross-vendor ready and the run then refused it.
     """
     entries = {entry["name"]: entry for entry in agents}
     enabled = list(getattr(cfg, "enabled_agents", []) or [])
-    configured = {(a.vendor or "").strip().lower() for a in enabled} - {""}
+    configured = {vendor_identity(a.vendor) for a in enabled} - {""}
     available = {
-        (a.vendor or "").strip().lower()
-        for a in enabled
-        if entries.get(a.name, {}).get("available")
+        vendor_identity(a.vendor) for a in enabled if entries.get(a.name, {}).get("available")
     } - {""}
     minimum = int(getattr(cfg.ci, "min_vendors", 0) or 0)
     panel = {
@@ -486,6 +497,7 @@ def doctor_report_dict(diagnostics) -> dict:
         item = {
             "name": entry.get("name"),
             "vendor": vendor,
+            "vendor_identity": entry.get("vendor_identity") or "",
             "transport": transport,
             "available": bool(entry.get("available")),
             "reason": entry.get("reason"),
@@ -558,7 +570,14 @@ def render_report(diagnostics) -> str:
                 address = f"command={agent.get('command', '')}"
             else:
                 address = f"endpoint={agent.get('endpoint') or '(unknown)'}"
-            lines.append(f"  [{status:>9}] {agent['name']} (vendor={agent['vendor']}, {address})")
+            # A seat whose configured vendor is not the identity it carries
+            # says so on its own row, so the row and the panel count below can
+            # be read together without arithmetic (#701, round 2).
+            identity = agent.get("vendor_identity") or ""
+            vendor_field = agent["vendor"]
+            if identity and identity != (vendor_field or "").strip().lower():
+                vendor_field = f"{vendor_field} -> counts as {identity}"
+            lines.append(f"  [{status:>9}] {agent['name']} (vendor={vendor_field}, {address})")
             if agent.get("command"):
                 resolved = agent.get("resolved") or "(not found on PATH)"
                 lines.append(f"              resolved: {resolved}")
@@ -590,13 +609,19 @@ def render_report(diagnostics) -> str:
     panel = report["panel"]
     lines.append("Cross-vendor readiness")
     lines.append("-" * 40)
-    lines.append(f"  vendors enabled:   {panel['vendors_configured']}")
-    lines.append(f"  vendors reachable: {panel['vendors_available']}")
+    lines.append(f"  vendors enabled:   {panel['vendors_configured']} (by vendor identity)")
+    lines.append(f"  vendors reachable: {panel['vendors_available']} (by vendor identity)")
     lines.append(f"  min_vendors gate:  {panel['min_vendors'] or 'off'}")
     lines.append(f"  cross-vendor ready: {'yes' if panel['multi_vendor_ready'] else 'no'}")
     lines.append(
         "  note: this checks availability, not contribution. A reachable CLI "
         "can still return no review (#635) — only a run can prove the panel."
+    )
+    lines.append(
+        "  note: counted by vendor identity, the same arithmetic min_vendors "
+        "uses — a vendor this build does not recognise counts as 'cli', so two "
+        "such seats are one vendor here and in the run. The Agents rows above "
+        "show each seat's configured vendor string."
     )
     lines.append("")
 

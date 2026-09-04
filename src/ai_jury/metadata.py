@@ -156,6 +156,9 @@ def _agent_entry(result) -> dict:
     """
     return {
         "name": result.agent,
+        # PROVENANCE: the vendor string as configured, never the collapsed
+        # identity. `panel.vendors` is the gate's count of `vendor_identity`;
+        # this is what the seat said it was (#701).
         "vendor": result.vendor,
         "status": "ok" if result.ok else "failed",
         "duration_s": round(float(result.duration_s), 3),

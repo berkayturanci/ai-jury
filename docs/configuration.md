@@ -59,6 +59,25 @@ only the *gate* collapses.
 adapter table, so a genuinely custom vendor keeps its own identity at the gate
 and stops warning.
 
+**Spelling is normalised before any rule reads it.** `vendor` is stripped and
+lower-cased once, at the top of validation, so `"XAI-API"`, `" xai-api "` and
+`"xai-api"` are the same vendor to validation, to the adapter lookup and to the
+cross-vendor gate alike. A vendor this tool recognises is recognised by *every*
+rule: `vendor = "XAI-API"` with no `command` is a valid hosted-API seat, not a
+seat missing a command. Messages still quote the string you wrote.
+
+### Which vendor string is which
+
+The configured string and the identity a seat carries at the gate are two
+different facts, and every place that shows one says which it is:
+
+| Where | Shows | Why |
+| --- | --- | --- |
+| `--doctor` `panel.vendors_configured` / `vendors_available` | **Identity** | These are the gate's arithmetic. They equal what a run counts for the same config, so doctor cannot call a bench cross-vendor ready that the run then refuses. |
+| `--doctor` agent rows (`vendor`, and the text report's `vendor=…`) | **Configured string**, with `vendor_identity` beside it | Provenance, plus the one number that matters next to it. The text report renders `vendor=xa1 -> counts as cli` only when the two differ. |
+| `--metadata-json` `panel.vendors` | **Identity** | It is the number `min_vendors` is compared against. |
+| `--metadata-json` `agents[].vendor`, the markdown report's `vendor` column, the ballots, `--format keel-reviews` | **Configured string** | These attribute output to the seat that produced it. Collapsing the gate is not a licence to rewrite provenance. |
+
 ## Execution budget (`total_timeout` / `phase_timeout` / `retries`)
 
 `total_timeout` and `phase_timeout` bound how long a run may take. The effective
@@ -224,6 +243,7 @@ The document is `schema_version: "ai-jury.doctor.v1"`:
     {
       "name": "agy",
       "vendor": "google",
+      "vendor_identity": "google",
       "transport": "cli",
       "available": true,
       "reason": null,
@@ -245,6 +265,8 @@ The document is `schema_version: "ai-jury.doctor.v1"`:
 | `schema_version` | `ai-jury.doctor.v1`. Bumped on any breaking shape change. |
 | `ready` | At least one configured agent is reachable. |
 | `panel` | Cross-vendor readiness (see below). |
+| `vendor` | The vendor **as configured**, verbatim (provenance). |
+| `vendor_identity` | The vendor this seat counts as at the cross-vendor gate: its own name when recognised, `cli` when it fell back to the generic adapter. This is what `panel` counts. |
 | `transport` | `cli` (a command on PATH), `api` (a hosted vendor API), or `local` (an OpenAI-compatible server you run). |
 | `command` / `endpoint` | Exactly one, named for the transport: a `cli` agent carries `command`, everything else carries the `endpoint` its adapter would actually call. |
 | `reason` | Why an agent is unusable, or `null` when it is available. |
@@ -257,8 +279,8 @@ The document is `schema_version: "ai-jury.doctor.v1"`:
 
 | Field | Meaning |
 | --- | --- |
-| `vendors_configured` | Distinct vendors among the **enabled** agents. Slots are not vendors: three agents on one vendor count as 1. |
-| `vendors_available` | How many of those are reachable right now. |
+| `vendors_configured` | Distinct vendor **identities** among the **enabled** agents — the same count `min_vendors` is compared against, so this number and a run's agree. Slots are not vendors: three agents on one vendor count as 1, and two seats on the generic `cli` fallback count as 1. |
+| `vendors_available` | How many of those identities are reachable right now. |
 | `min_vendors` | The effective `[jury.ci] min_vendors` threshold (`0` when opted out). |
 | `contributing_vendors` | **Always `null` here.** Doctor runs no review, so it cannot know how many vendors would actually contribute. The real number is `panel.vendors` in a run's `--metadata-json`. |
 | `multi_vendor_ready` | `false` exactly when a run on this machine would fail the gate — the guard is on, this config names at least `min_vendors` distinct vendors, and fewer than that are reachable. `true` when the guard is off, when the config never claimed that many vendors, or when enough are reachable. (Also `false` when no config could be loaded: there is nothing to be ready for.) |

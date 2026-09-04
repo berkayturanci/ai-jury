@@ -255,7 +255,7 @@ _REGISTERED_VENDORS: set[str] = set()
 
 def register_vendor(vendor: str) -> None:
     """Record *vendor* as a recognised name (called by ``register_adapter``)."""
-    name = (vendor or "").strip().lower()
+    name = normalise_vendor(vendor)
     if name:
         _REGISTERED_VENDORS.add(name)
 
@@ -265,8 +265,15 @@ def recognised_vendors() -> tuple[str, ...]:
     return (*KNOWN_VENDORS, *sorted(_REGISTERED_VENDORS - set(KNOWN_VENDORS)))
 
 
-def _vendor_key(vendor) -> str:
-    """Normalise a configured vendor value to its lookup key (pure).
+def normalise_vendor(vendor) -> str:
+    """The single spelling of a configured vendor every rule reads (pure).
+
+    ``vendor = "XAI-API"`` and ``vendor = " xai-api "`` name the same vendor as
+    ``vendor = "xai-api"``, so they must normalise to it *before* any rule looks
+    at them. This is the one place that decides what a configured vendor string
+    means: validation, the adapter lookup and :func:`vendor_identity` all go
+    through it, so a seat cannot pass validation under one spelling and reach
+    the cross-vendor gate under another (issue #701, review round 2).
 
     Anything that is not a string is not a vendor name, so it normalises to
     ``""`` rather than raising: ``vendor = 3`` is a config mistake to warn
@@ -277,8 +284,20 @@ def _vendor_key(vendor) -> str:
 
 def is_recognised_vendor(vendor) -> bool:
     """Whether *vendor* names a vendor the tool actually knows (pure-ish)."""
-    key = _vendor_key(vendor)
+    key = normalise_vendor(vendor)
     return bool(key) and key in set(recognised_vendors())
+
+
+def is_commandless_vendor(vendor) -> bool:
+    """Whether *vendor* talks HTTP directly and so needs no ``command`` (pure).
+
+    The one reader of :data:`_NO_COMMAND_VENDORS`. Validation asked this
+    question of the raw string while doctor asked it of a copy of the same
+    tuple, which is how ``vendor = "XAI-API"`` could be a recognised vendor and
+    still be told it was missing a ``command``.
+    """
+    key = normalise_vendor(vendor)
+    return bool(key) and (key in _NO_COMMAND_VENDORS or key.endswith("-api"))
 
 
 def vendor_identity(vendor: str) -> str:
@@ -294,7 +313,7 @@ def vendor_identity(vendor: str) -> str:
 
     Returns ``""`` for an empty vendor, which counts as no vendor at all.
     """
-    name = _vendor_key(vendor)
+    name = normalise_vendor(vendor)
     if not name:
         return ""
     return name if name in set(recognised_vendors()) else GENERIC_VENDOR
@@ -472,6 +491,16 @@ def validate_config(data: dict, strict: bool = False) -> list:
         name = agent.get("name", "")
         label = name or f"agent[{idx}]"
 
+        # Normalise the vendor ONCE, here, and let every later rule read the
+        # normalised value (issue #701, review round 2). A vendor that is
+        # recognised must be recognised by every rule: deciding "commandless
+        # API vendor" on the raw string made `vendor = "XAI-API"` a known
+        # vendor that was nonetheless failed for having no `command`.
+        # `vendor_value` is kept for the messages, which quote what the
+        # operator actually wrote.
+        vendor_value = agent.get("vendor", "")
+        vendor = normalise_vendor(vendor_value)
+
         # Unique, non-empty name (hard for duplicates).
         if not name:
             errors.append(f"agent[{idx}] is missing a non-empty 'name'.")
@@ -489,11 +518,8 @@ def validate_config(data: dict, strict: bool = False) -> list:
         # validate since the URL isn't a config value. Every other vendor
         # requires a non-empty ``command``.
         command = agent.get("command", "")
-        vendor_value = agent.get("vendor", "")
         has_endpoint = bool(agent.get("endpoint"))
-        is_local_or_http = (
-            vendor_value in _NO_COMMAND_VENDORS or vendor_value.endswith("-api") or has_endpoint
-        )
+        is_local_or_http = is_commandless_vendor(vendor) or has_endpoint
         if is_local_or_http:
             if not agent.get("model"):
                 warnings.append(
@@ -566,10 +592,9 @@ def validate_config(data: dict, strict: bool = False) -> list:
         # Known vendor (soft). The warning names the CONSEQUENCE, not just the
         # fact: the fallback seat still runs, but it answers to `cli` at the
         # cross-vendor gate, so two of them are one vendor (issue #701).
-        vendor = agent.get("vendor", "")
         if not is_recognised_vendor(vendor):
             warnings.append(
-                f"agent '{label}' has unknown vendor '{vendor}' (expected one "
+                f"agent '{label}' has unknown vendor '{vendor_value}' (expected one "
                 f"of {', '.join(recognised_vendors())}); using the generic "
                 f"'{GENERIC_VENDOR}' fallback, which counts as vendor "
                 f"'{GENERIC_VENDOR}' for min_vendors — two such seats are one "
