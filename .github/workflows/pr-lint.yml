@@ -17,6 +17,11 @@ jobs:
   description:
     name: PR has a real description + linked issue
     runs-on: ubuntu-latest
+    # Nothing in this job reaches the network — the check reads the PR body out
+    # of `env:` and the template off the checkout — so the ceiling is the whole
+    # bound. It runs on every pull request, and a required check that hangs
+    # blocks a merge without ever reporting.
+    timeout-minutes: 10
     steps:
       # Checkout so the check can read the PR template and discount any line the
       # author left verbatim (placeholders, checklists) — comparing against the

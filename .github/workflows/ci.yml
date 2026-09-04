@@ -19,6 +19,13 @@ jobs:
   test:
     name: Tests (py${{ matrix.python-version }} · ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # Every job here sets one (#697). Without it the ceiling is GitHub's six-hour
+    # default, and a resolve that stalls against a slow index holds a required
+    # check *open* rather than failing it — worse than a failure, because nothing
+    # is reported and nobody is told. The `timeout` wrappers below are the
+    # diagnosis; this is the backstop under them, and the ceiling test in
+    # `tests/test_publish_release_chain.py` checks it clears their sum.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -37,10 +44,21 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
+      # `shell: bash` so `timeout` is the same program on all three runners:
+      # git-bash's coreutils on Windows, not `timeout.exe` the sleep utility that
+      # `pwsh` would resolve. The smoke step below already relies on git-bash for
+      # the same reason.
+      #
+      # `pip`'s own `--timeout` is deliberately not used as the bound. It is a
+      # socket timeout — it limits one quiet read, not the call — so a peer that
+      # sends a byte inside every window holds a resolve open indefinitely. Only
+      # the wrapper bounds the wall clock, and it is the only bound the scan
+      # counts.
       - name: Install package
+        shell: bash
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e .
+          timeout 120 python -m pip install --upgrade pip
+          timeout 300 python -m pip install -e .
       - name: Run offline (mock) unit tests
         run: python -m unittest discover -s tests -v
       - name: Smoke-test the CLI in mock mode
@@ -55,6 +73,7 @@ jobs:
   lint:
     name: Lint + format (ruff)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
@@ -66,7 +85,7 @@ jobs:
       # goes red on ruff's release schedule rather than on anything in this
       # repository. That is the failure that teaches people to ignore a check.
       - name: Install ruff (pinned to the pre-commit hook)
-        run: python -m pip install --upgrade pip && pip install "ruff==0.16.3"
+        run: timeout 120 python -m pip install --upgrade pip && timeout 300 pip install "ruff==0.16.3"
       - name: Lint
         run: ruff check .
       # Without this the tree drifts back: `ruff-format` is a *rewriting* hook,
@@ -84,6 +103,7 @@ jobs:
     # monotonicity comparison silently did nothing on every run.
     name: Version integrity (silent-revert guard)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -117,6 +137,7 @@ jobs:
     name: Bot push guard
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       # The commit list is read from the API, not from the checkout, so a
@@ -146,8 +167,11 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
           BASE_REF: ${{ github.event.pull_request.base.ref }}
+        # Wrapped even though the scan does not recognise a bare `python` as a
+        # network client: this script reads the commit list from the API, so it
+        # is a request like any other and a hung one holds this check open.
         run: |
-          python scripts/bot_push_after_human_push_check.py \
+          timeout 120 python scripts/bot_push_after_human_push_check.py \
             --repo "$REPO" \
             --pr "$PR_NUMBER" \
             --head-ref "$HEAD_REF" \
@@ -159,6 +183,7 @@ jobs:
     # cross-OS path noise. The threshold (fail_under) lives in pyproject.toml
     # under [tool.coverage.report].
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
@@ -166,8 +191,8 @@ jobs:
           python-version: "3.13"
       - name: Install package with dev tools
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[dev]"
+          timeout 120 python -m pip install --upgrade pip
+          timeout 300 python -m pip install -e ".[dev]"
       - name: Run tests under coverage
         run: python -m coverage run -m unittest discover -s tests
       - name: Enforce minimum coverage
@@ -191,6 +216,7 @@ jobs:
     # green throughout.
     name: Action pins match upstream
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
@@ -201,7 +227,7 @@ jobs:
           AI_JURY_CHECK_PINS: "1"
           # Lifts the anonymous API rate limit; read-only, no extra scope needed.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python -m unittest tests.test_action_pins -v
+        run: timeout 300 python -m unittest tests.test_action_pins -v
 
       # Lives in this job because it needs the same thing: network, and a job
       # that is already a required check. The job keeps its name deliberately —
@@ -224,4 +250,4 @@ jobs:
           AI_JURY_CHECK_EXTERNAL: "1"
           PYTHONPATH: src
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python -m unittest tests.test_homebrew_formula -v
+        run: timeout 300 python -m unittest tests.test_homebrew_formula -v

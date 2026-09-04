@@ -557,7 +557,7 @@ class AnInterpolatedExpressionIsCaught(unittest.TestCase):
         return directory
 
     def test_an_expression_in_a_block_scalar_is_reported_with_file_job_and_line(self):
-        guard_call = "          python scripts/bot_push_after_human_push_check.py \\"
+        guard_call = "          timeout 120 python scripts/bot_push_after_human_push_check.py \\"
         directory = self._mutated("ci.yml", guard_call, f"          {self.OFFENDING}\n{guard_call}")
         offenders = interpolating_blocks(directory)
         self.assertEqual(len(offenders), 1, offenders)

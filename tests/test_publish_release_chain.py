@@ -38,7 +38,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-WORKFLOW = REPO_ROOT / ".github" / "workflows" / "publish.yml"
+WORKFLOW_DIR = REPO_ROOT / ".github" / "workflows"
+WORKFLOW = WORKFLOW_DIR / "publish.yml"
 
 PUBLISH_JOB = "build-n-publish"
 VERIFY_JOB = "verify"
@@ -118,12 +119,21 @@ _DURATION = re.compile(r"^\d+(\.\d+)?[smhd]?$")
 _BLOCK_SCALAR = re.compile(r"^run:[ \t]*[|>](?:[+-][1-9]?|[1-9][+-]?)?[ \t]*$")
 
 #: A quoted heredoc's opening: `<<'EOF'`, `<< "EOF"`, `<<-'EOF'`, `<<\\EOF`. Its
-#: body is literal text, so the words in it are not commands — `<<<` is a
-#: herestring and not a heredoc, hence the lookahead. The backslash form is the
-#: third spelling bash accepts for a *non-expanding* heredoc, and missing it made
-#: prose in a document that happens to mention `curl` read as an unbounded
-#: request: a false alarm, which is how a scanner gets switched off.
-_HEREDOC = re.compile(r"<<(?!<)-?[ \t]*(?:'([^']*)'|\"([^\"]*)\"|\\(\w+))")
+#: body is literal text, so the words in it are not commands. The backslash form
+#: is the third spelling bash accepts for a *non-expanding* heredoc, and missing
+#: it made prose in a document that happens to mention `curl` read as an
+#: unbounded request: a false alarm, which is how a scanner gets switched off.
+#:
+#: `<<<` is a herestring, not a heredoc, and it takes *both* guards. The
+#: lookahead alone only refuses the match that starts at the first `<`; the lexer
+#: advances a character at a time, so on the next pass `<<<"$x"` matches from the
+#: second `<` with `"$x"` read as the delimiter — and a delimiter that never
+#: appears on a line of its own makes the lexer skip the whole remaining script.
+#: `keel-ship.yml` writes `read -r id stamp <<<"$existing"` in the middle of the
+#: step that publishes the gating check-run, so every command after it —
+#: including the two `gh api` calls that write the check — was invisible to this
+#: scan, which would have reported them bounded by never seeing them at all.
+_HEREDOC = re.compile(r"(?<!<)<<(?!<)-?[ \t]*(?:'([^']*)'|\"([^\"]*)\"|\\(\w+))")
 
 #: A wrapper's or a loop's duration as it is actually written: `30`, `1m`,
 #: `${SDIST_MAX_TIME:-120}` — the defaulted form the workflow reads its bounds
@@ -207,7 +217,7 @@ class NetworkCall:
 
     def why(self) -> str:
         wanted = NETWORK_TOOLS.get(self.tool, ())
-        need = " and ".join(wanted) if wanted else "a `timeout` wrapper"
+        need = " and ".join(wanted) if wanted else "`timeout` wrapper"
         return f"{self.job}: `{self.command}` carries no {need}"
 
 
@@ -437,12 +447,12 @@ def job_names(lines: list[str]) -> list[str]:
         for match in [_JOB_NAME.match(line)]
         if match
     ]
-    assert names, "no jobs were found; `publish.yml` has been restructured"
+    assert names, "no jobs were found; the workflow has been restructured"
     return names
 
 
 def scan(source: str) -> list[NetworkCall]:
-    """Every network call in every job of a `publish.yml`, real or mutated."""
+    """Every network call in every job of one workflow's text, real or mutated."""
     lines = source.splitlines()
     return [
         call for job in job_names(lines) for call in network_calls(shell(job_body(lines, job)), job)
@@ -553,6 +563,107 @@ def permissions(block: list[str]) -> list[str]:
     at = [i for i, line in enumerate(block) if line.strip() == "permissions:"]
     assert len(at) == 1, f"expected one permissions block, found {len(at)}"
     return [line.strip() for line in block_after(block, at[0]) if line.strip()]
+
+
+#: A ``run:`` key, whatever it carries. Not ``runs-on:``, and not a line of a
+#: script that happens to mention one: a key stands alone on its line.
+_RUN_KEY = re.compile(r"^run:(?:[ \t].*)?$")
+
+
+def workflow_paths() -> list[Path]:
+    """Every workflow, discovered from the directory rather than listed.
+
+    A list is a scan of the files somebody remembered. `#695` scanned exactly
+    one, and the six it left out had unbounded `pip`, `gh` and `git` calls and
+    no `timeout-minutes` between them — including the two jobs that publish the
+    check-run a merge is gated on. Reading the directory means the next workflow
+    arrives inside these checks rather than beside them.
+    """
+    found = sorted(path for path in WORKFLOW_DIR.iterdir() if path.suffix in (".yml", ".yaml"))
+    assert found, f"no workflows found under {WORKFLOW_DIR}"
+    return found
+
+
+@dataclass(frozen=True)
+class Job:
+    """One job of one workflow, and the lines of its body."""
+
+    workflow: str
+    name: str
+    body: list[str]
+
+    def where(self) -> str:
+        return f".github/workflows/{self.workflow} ({self.name})"
+
+
+def every_job() -> list[Job]:
+    """Every job of every workflow, discovered the same way.
+
+    A job, not a file: a workflow gains jobs too, and a new one reaching the
+    network with no ceiling over it is the same hole one file lower down.
+    """
+    found = [
+        Job(path.name, name, job_body(lines, name))
+        for path in workflow_paths()
+        for lines in [path.read_text(encoding="utf-8").splitlines()]
+        for name in job_names(lines)
+    ]
+    assert found, "no jobs were found in any workflow"
+    return found
+
+
+def ceiling_seconds(body: list[str]) -> int | None:
+    """One job's ``timeout-minutes`` in seconds, or ``None`` if it sets none.
+
+    Job level only — four spaces in, under a job named two spaces in. A step may
+    carry its own `timeout-minutes`, and counting one of those as the job's would
+    report a ceiling over a single step as a ceiling over the whole job.
+    """
+    found = [
+        line.strip()
+        for line in body
+        if indent_of(line) == 4 and line.strip().startswith("timeout-minutes:")
+    ]
+    if len(found) != 1:
+        return None
+    return int(found[0].split(":", 1)[1].strip()) * 60
+
+
+def unreadable_runs(lines: list[str]) -> list[str]:
+    """Every ``run:`` key this scan would not read, with its line number.
+
+    :func:`shell` reads two spellings: a block-scalar header, whose body is the
+    lines below it, and a plain one-liner. YAML has three more that Actions runs
+    identically — a quoted flow scalar, a block header carrying a trailing
+    comment, and a value on the line below the key — and telling those apart
+    from the two it reads needs the file *parsed* rather than lexed, which needs
+    a YAML library this project does not depend on (``dependencies = []``; the
+    reasoning is in ``test_github_action.py``).
+
+    So rather than claim the scan reads every spelling, this refuses the three
+    it does not. A step written any of those ways is a finding here, and the fix
+    is to write it as a block scalar — which turns a silent hole into a failing
+    test on the pull request that opens it. The hole is not hypothetical: an
+    equality test against ``"run: |"`` left a step spelled ``run: >-`` unread by
+    *every* assertion in this module, and the same step is what a ``run:`` on the
+    following line would be today.
+
+    A quoted flow scalar is refused for a sharper reason than the other two. Its
+    first line *is* collected, by the one-liner branch, so the step looks read —
+    while every continuation line is dropped. Half a command read is worse than
+    none: the half that is read can carry the bound, and the half that is not can
+    carry the request.
+    """
+    unreadable: list[str] = []
+    for number, line in enumerate(lines, start=1):
+        stripped = line.strip()
+        if not _RUN_KEY.match(stripped) or _BLOCK_SCALAR.match(stripped):
+            continue
+        value = stripped[len("run:") :].strip()
+        if value and not value.startswith(("'", '"', "|", ">")):
+            continue  # a plain one-liner, which `shell()` collects
+        unreadable.append(f"{number}: {stripped}")
+    return unreadable
 
 
 class WorkflowScan(unittest.TestCase):
@@ -872,10 +983,11 @@ class EveryNetworkCommandIsBoundedInTime(unittest.TestCase):
     timeouts, `pip` its socket timeout, and anything with no timeout of its own —
     `gh` above all — must be wrapped in `timeout`.
 
-    Scoped to `publish.yml` deliberately. It is the file where an unbounded
-    command lands between a PyPI upload and a GitHub Release, which is a state no
-    other workflow here can reach; the other six are worth the same treatment and
-    are not in the diff that fixes a broken release.
+    This class stays on `publish.yml`, where the mutations it runs live: that is
+    the file where an unbounded command lands between a PyPI upload and a GitHub
+    Release, a state no other workflow can reach. The other six get the same
+    treatment from `EveryWorkflowBoundsItsNetworkCalls` below, which discovers
+    them rather than naming them (#697).
     """
 
     @classmethod
@@ -919,7 +1031,7 @@ class EveryNetworkCommandIsBoundedInTime(unittest.TestCase):
         self.assertNotEqual(broken, self.source, "the mutation matched nothing; rewrite it")
         caught = [call for call in scan(broken) if not call.bounded]
         self.assertEqual([call.tool for call in caught], ["gh"], [c.why() for c in caught])
-        self.assertIn("a `timeout` wrapper", caught[0].why())
+        self.assertIn("`timeout` wrapper", caught[0].why())
 
     def test_it_would_have_caught_a_pip_call_left_to_its_socket_timeout(self):
         """`--timeout` is not a bound on the call, and used to be accepted as one.
@@ -937,7 +1049,7 @@ class EveryNetworkCommandIsBoundedInTime(unittest.TestCase):
         self.assertNotEqual(broken, self.source, "the mutation matched nothing; rewrite it")
         caught = [call for call in scan(broken) if not call.bounded]
         self.assertEqual([call.tool for call in caught], ["pip"], [c.why() for c in caught])
-        self.assertIn("a `timeout` wrapper", caught[0].why())
+        self.assertIn("`timeout` wrapper", caught[0].why())
 
     def test_every_pip_call_is_counted_by_the_ceiling_it_is_bounded_by(self):
         """The two halves agreeing: what makes pip bounded is what makes it countable.
@@ -1019,9 +1131,10 @@ class EveryBlockScalarSpellingIsRead(unittest.TestCase):
     Block scalars are not every spelling of a `run:`, and this class does not
     claim they are. A quoted flow scalar, a block header carrying a trailing
     comment, and a value on the following line are all legal YAML that Actions
-    runs, and all three still pass this scan unread. Seeing them needs the file
-    parsed rather than lexed, which needs a YAML library this project does not
-    depend on, so the gap is tracked on #697 rather than papered over here.
+    runs, and reading them needs the file parsed rather than lexed — a YAML
+    library this project does not depend on. Since #697 they are refused instead
+    of tolerated: `NoWorkflowSpellsARunTheScanCannotRead` fails on any of the
+    three, in any workflow, so the hole cannot be opened without a red check.
 
     That is the failure worth a test of its own, because it is silent and
     total. A step spelled `run: >-` holding an unbounded `curl`, an unbounded
@@ -1100,6 +1213,231 @@ class EveryBlockScalarSpellingIsRead(unittest.TestCase):
         )
 
 
+class EveryWorkflowBoundsItsNetworkCalls(unittest.TestCase):
+    """The same scan, over every workflow in the directory rather than one.
+
+    #695 bounded `publish.yml` because that is the file whose stall left 1.16.0
+    on PyPI with no Release. The scan it wrote was scoped there, and the six
+    workflows it did not read had, between them, eleven unbounded `pip install`
+    calls, four unbounded `gh` calls, an unbounded `git fetch`, and no
+    `timeout-minutes` on any of their twelve jobs.
+
+    `keel-ship.yml` is the one that mattered. Its `evidence` job publishes the
+    check-run branch protection gates the merge on, and a hung `gh api` there
+    leaves that check *open* — not failed. A failed check is a thing somebody
+    fixes; an open one is a pull request that cannot merge with nothing to read,
+    which is the state #668, #670, #671, #672 and #674 were each rerun out of by
+    hand.
+
+    Discovery is the point, not the seven files. A workflow added tomorrow, or a
+    job added to one of these, is inside this test the day it lands rather than
+    the day somebody remembers to add it here.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.workflows = workflow_paths()
+        cls.jobs = every_job()
+        cls.calls = [
+            call for job in cls.jobs for call in network_calls(shell(job.body), job.where())
+        ]
+
+    def test_the_directory_is_read_and_every_file_in_it_declares_jobs(self):
+        """Vacuity, twice over: a glob that matched nothing passes everything.
+
+        The named files are an anchor against a typo'd suffix or a moved
+        directory — not the list the scan walks, which is whatever is there.
+        """
+        names = {path.name for path in self.workflows}
+        self.assertLessEqual(
+            {
+                "ci.yml",
+                "codeql.yml",
+                "keel-ship.yml",
+                "pages.yml",
+                "pr-lint.yml",
+                "publish.yml",
+                "scorecard.yml",
+            },
+            names,
+            f"the workflow directory read as {sorted(names)}",
+        )
+        self.assertEqual(
+            names,
+            {job.workflow for job in self.jobs},
+            "a workflow in the directory contributed no jobs to the scan",
+        )
+
+    def test_the_scan_found_the_calls_that_are_actually_there(self):
+        """Vacuity again: an empty scan satisfies the assertion below it.
+
+        Anchored per workflow, because a scan that reads six files and silently
+        collects nothing from one of them is the exact failure #695 shipped.
+        """
+        by_workflow = Counter(call.job.split(" (")[0].rsplit("/", 1)[-1] for call in self.calls)
+        for workflow in ("ci.yml", "keel-ship.yml", "pages.yml", "publish.yml"):
+            with self.subTest(workflow=workflow):
+                self.assertTrue(
+                    by_workflow[workflow],
+                    f"{workflow} contributed no network calls; the scan read {by_workflow}",
+                )
+        tools = Counter(call.tool for call in self.calls)
+        self.assertGreaterEqual(tools["pip"], 12, f"too few `pip` calls found: {tools}")
+        self.assertGreaterEqual(tools["gh"], 11, f"too few `gh` calls found: {tools}")
+        self.assertGreaterEqual(tools["git"], 1, f"the `git fetch` was not found: {tools}")
+
+    def test_no_command_in_any_workflow_reaches_the_network_unbounded(self):
+        """Nothing is listed as known-unbounded: every call found took a bound.
+
+        If one ever cannot take one, this is the assertion to relax — by naming
+        that call and the reason, in this file, where the next reader meets it.
+        """
+        unbounded = [call.why() for call in self.calls if not call.bounded]
+        self.assertEqual(unbounded, [], "unbounded network commands:\n" + "\n".join(unbounded))
+
+    def test_it_would_have_caught_the_check_run_writes_left_unbounded(self):
+        """The two `gh api` calls that write the gating check, stripped.
+
+        `gh` has no timeout flag and no environment variable for one, so the
+        wrapper is the whole bound. These are the writes that leave a required
+        check incomplete when they hang, which is why they are the ones mutated.
+        """
+        source = (WORKFLOW_DIR / "keel-ship.yml").read_text(encoding="utf-8")
+        broken, swapped = re.subn(r"timeout 60 gh api -X (PATCH|POST)", r"gh api -X \1", source)
+        self.assertEqual(swapped, 2, "the mutation did not strip both writes; rewrite it")
+        caught = [call for call in scan(broken) if not call.bounded]
+        self.assertEqual([call.tool for call in caught], ["gh", "gh"], [c.why() for c in caught])
+        self.assertIn("`timeout` wrapper", caught[0].why())
+
+    def test_it_would_have_caught_a_pip_install_left_to_its_socket_timeout(self):
+        """`--timeout` is pip's socket timeout, and is not accepted as a bound.
+
+        It limits one quiet read, not the call: a peer that sends a byte inside
+        every window holds the resolve open for as long as it likes. The rule is
+        `NETWORK_TOOLS["pip"] == ()` — only a wrapper counts — and it has to
+        hold in the workflows this change widened to, not just in `publish.yml`.
+        """
+        source = (WORKFLOW_DIR / "ci.yml").read_text(encoding="utf-8")
+        broken = source.replace(
+            "timeout 300 python -m pip install -e .", "python -m pip install --timeout 30 -e ."
+        )
+        self.assertNotEqual(broken, source, "the mutation matched nothing; rewrite it")
+        caught = [call for call in scan(broken) if not call.bounded]
+        self.assertEqual([call.tool for call in caught], ["pip"], [c.why() for c in caught])
+        self.assertIn("`timeout` wrapper", caught[0].why())
+
+    def test_it_would_have_caught_the_base_branch_fetch_left_unbounded(self):
+        """`git fetch` is a network call in a job that gates every merge."""
+        source = (WORKFLOW_DIR / "keel-ship.yml").read_text(encoding="utf-8")
+        broken = source.replace("timeout 60 git fetch", "git fetch")
+        self.assertNotEqual(broken, source, "the mutation matched nothing; rewrite it")
+        caught = [call for call in scan(broken) if not call.bounded]
+        self.assertEqual([call.tool for call in caught], ["git"], [c.why() for c in caught])
+
+    def test_a_herestring_does_not_swallow_the_rest_of_the_script(self):
+        """`<<<` is not a heredoc, and reading it as one hid a whole step.
+
+        The lexer walks a character at a time, so a lookahead alone only refuses
+        the match starting at the *first* `<`: on the next pass `<<<"$existing"`
+        matched from the second one with `"$existing"` read as the delimiter.
+        A delimiter that never appears on a line of its own means the skip runs
+        to the end of the script — so in `keel-ship.yml`'s `evidence` step,
+        everything after `read -r id stamp <<<"$existing"` was invisible,
+        including both `gh api` calls that publish the gating check-run. The scan
+        reported them bounded by never having seen them, which is worse than
+        reporting them unbounded.
+        """
+        code = 'read -r a b <<<"$pair"\ngh api repos/example/example\n'
+        self.assertEqual([call.tool for call in network_calls(code, "x")], ["gh"])
+        self.assertFalse(network_calls(code, "x")[0].bounded)
+        # A real quoted heredoc is still skipped whole.
+        self.assertEqual(
+            network_calls('cat <<"EOF" > n.md\ngh api repos/example/example\nEOF\n', "x"), []
+        )
+        # And the workflow this was found in has both writes in the scan again.
+        writes = [
+            call
+            for call in self.calls
+            if "keel-ship.yml" in call.job and "check-runs" in call.command
+        ]
+        self.assertEqual(len(writes), 3, [call.command[:60] for call in writes])
+
+
+class NoWorkflowSpellsARunTheScanCannotRead(unittest.TestCase):
+    """The blind spot that is left, turned into a rule instead of a footnote.
+
+    `shell()` reads block scalars and plain one-liners. A quoted flow scalar, a
+    block header with a trailing comment, and a value on the line below the key
+    are legal YAML that Actions runs and this scan does not read — and a step it
+    does not read is a step every assertion in this module passes on without
+    having seen. That is precisely how a `run: >-` holding an unbounded `curl`,
+    an unbounded `gh api` and `git push origin HEAD:main || true` left the whole
+    module green.
+
+    Reading them needs a YAML parser and this project declares no runtime
+    dependencies, so the honest move is not to widen the reader but to narrow
+    what the files are allowed to contain. Every workflow here already writes
+    only the two readable spellings; this keeps it that way, and says so in the
+    failure message rather than in a comment nobody reads.
+    """
+
+    def test_every_run_in_every_workflow_is_written_a_way_the_scan_reads(self):
+        for path in workflow_paths():
+            with self.subTest(workflow=path.name):
+                found = unreadable_runs(path.read_text(encoding="utf-8").splitlines())
+                self.assertEqual(
+                    found,
+                    [],
+                    f"{path.name} spells a `run:` this scan cannot read, so nothing in "
+                    f"this module checks it; write it as a block scalar (`run: |`):\n"
+                    + "\n".join(found),
+                )
+
+    def test_the_readable_spellings_are_accepted(self):
+        readable = [f"        run: {header}" for header in _HEADERS]
+        readable.append("        run: python -m pip install -e .")
+        readable.append("        runs-on: ubuntu-latest")
+        readable.append("        # a comment about a run: block")
+        self.assertEqual(unreadable_runs(readable), [])
+
+    def test_each_spelling_the_scan_cannot_read_is_named(self):
+        """Prove it fails: the three spellings, one at a time."""
+        for line, why in (
+            ('        run: "python -m pip install -e ."', "a quoted flow scalar"),
+            ("        run: | # install the package", "a header with a trailing comment"),
+            ("        run:", "a value on the following line"),
+        ):
+            with self.subTest(spelling=why):
+                self.assertEqual(len(unreadable_runs([line])), 1, why)
+
+    def test_the_scan_really_cannot_read_them(self):
+        """The rule is not arbitrary: each spelling loses script to the scan.
+
+        Without this the guard could outlive the limitation it exists for, and
+        go on forbidding a spelling that had since become readable.
+        """
+        # A block header carrying a trailing comment: the whole body is lost,
+        # because the header is not recognised as one and the lines below it are
+        # never collected.
+        commented = ["      - name: s", "        run: | # install", "          gh api repos/e/e"]
+        self.assertNotIn("repos/e/e", shell(commented))
+        # A value on the following line: the same, for the same reason.
+        below = ["      - name: s", "        run:", "          gh api repos/e/e"]
+        self.assertNotIn("repos/e/e", shell(below))
+        # A quoted flow scalar is the subtle one. Its *first* line is collected
+        # by the one-liner branch and the lexer happens to strip the quote, so
+        # the step looks read — while every continuation line is silently
+        # dropped. A scan that reads half a command is worse than one that reads
+        # none of it: the half it reads can carry the bound the other half spends.
+        quoted = [
+            "      - name: s",
+            '        run: "gh api repos/e/e',
+            '          && curl http://x"',
+        ]
+        self.assertIn("repos/e/e", shell(quoted))
+        self.assertNotIn("curl", shell(quoted))
+
+
 class EveryJobHasACeiling(WorkflowScan):
     """A backstop under the per-command bounds, for the commands nobody has read.
 
@@ -1121,27 +1459,45 @@ class EveryJobHasACeiling(WorkflowScan):
     named stall, on a list — into the one it works to avoid: a cancelled job, no
     issue, and a release already on PyPI. `verify` was in that state at twenty
     minutes against ~1620s of its own waits.
+
+    Since #697 this runs over every job of every workflow, discovered the same
+    way the network scan is. Twelve of the fourteen jobs here had no ceiling at
+    all — including both jobs of `keel-ship.yml`, where the six-hour default sat
+    under the writes that publish a required check.
     """
 
     def ceiling(self, name: str) -> int:
-        """The `timeout-minutes` of one job, in seconds."""
-        block = job_body(self.lines, name)
-        found = [line.strip() for line in block if line.strip().startswith("timeout-minutes")]
-        self.assertEqual(len(found), 1, f"{name} has no job-level timeout: {found}")
-        return int(found[0].split(":", 1)[1].strip()) * 60
+        """The `timeout-minutes` of one job of `publish.yml`, in seconds."""
+        found = ceiling_seconds(job_body(self.lines, name))
+        self.assertIsNotNone(found, f"{name} has no job-level timeout")
+        return found
 
-    def test_every_job_sets_a_job_level_timeout(self):
-        for name in self.jobs:
-            with self.subTest(job=name):
-                self.assertGreater(self.ceiling(name), 0)
+    def test_every_job_of_every_workflow_sets_a_job_level_timeout(self):
+        for job in every_job():
+            with self.subTest(job=job.where()):
+                self.assertIsNotNone(
+                    ceiling_seconds(job.body),
+                    f"{job.where()} sets no `timeout-minutes`, so its ceiling is GitHub's "
+                    "six-hour default and a stall there is never reported",
+                )
+
+    def test_a_job_that_loses_its_ceiling_is_named(self):
+        """Prove it fails: the assertion above, against a job stripped of one."""
+        stripped = [
+            line for line in job_body(self.lines, VERIFY_JOB) if "timeout-minutes" not in line
+        ]
+        self.assertIsNone(ceiling_seconds(stripped))
+        self.assertIsNotNone(ceiling_seconds(job_body(self.lines, VERIFY_JOB)))
 
     def test_the_ceilings_are_measured_in_minutes_and_not_in_hours(self):
         """A six-hour ceiling is GitHub's default with extra steps."""
-        for name in self.jobs:
-            with self.subTest(job=name):
-                minutes = self.ceiling(name) // 60
-                self.assertGreaterEqual(minutes, 10, f"{name}'s ceiling would fail a slow release")
-                self.assertLessEqual(minutes, 60, f"{name}'s ceiling is not a ceiling")
+        for job in every_job():
+            with self.subTest(job=job.where()):
+                minutes = ceiling_seconds(job.body) // 60
+                self.assertGreaterEqual(
+                    minutes, 10, f"{job.where()}'s ceiling would fail on a slow runner"
+                )
+                self.assertLessEqual(minutes, 60, f"{job.where()}'s ceiling is not a ceiling")
 
     def test_the_ceiling_is_above_what_the_job_is_allowed_to_spend_waiting(self):
         """The sum is computed from the file, because a written-down one was wrong.
@@ -1160,14 +1516,15 @@ class EveryJobHasACeiling(WorkflowScan):
         declares, so a wait added tomorrow is in the sum tomorrow.
         """
         budget = script_budget((REPO_ROOT / WAIT_SCRIPT).read_text(encoding="utf-8"))
-        for name in self.jobs:
-            with self.subTest(job=name):
-                spend = wait_seconds(shell(job_body(self.lines, name)), budget)
+        for job in every_job():
+            with self.subTest(job=job.where()):
+                spend = wait_seconds(shell(job.body), budget)
+                ceiling = ceiling_seconds(job.body)
                 self.assertGreater(
-                    self.ceiling(name),
+                    ceiling,
                     spend,
-                    f"{name} may spend {spend}s inside its own bounds under a "
-                    f"{self.ceiling(name)}s ceiling; a job cancelled that way files no report",
+                    f"{job.where()} may spend {spend}s inside its own bounds under a "
+                    f"{ceiling}s ceiling; a job cancelled that way files no report",
                 )
 
     def test_the_prose_a_maintainer_reads_states_the_ceiling_the_file_sets(self):
@@ -1178,6 +1535,12 @@ class EveryJobHasACeiling(WorkflowScan):
         ceiling in the workflow and leaving the old minutes in the prose is how
         a reader concludes the ceiling sits *below* the sum, which is the
         cancellation this whole change is against. It happened on this branch.
+
+        Scoped to `publish.yml`'s jobs on purpose, and not widened with the two
+        tests above: `docs/releasing.md` is the release runbook, and demanding it
+        state `pr-lint`'s ten minutes would make the guard about coverage rather
+        than about the numbers a releaser reads. The ceilings on the other
+        workflows are stated where they are set, in a comment beside each one.
         """
         prose = (REPO_ROOT / "docs" / "releasing.md").read_text(encoding="utf-8")
         budget = script_budget((REPO_ROOT / WAIT_SCRIPT).read_text(encoding="utf-8"))
