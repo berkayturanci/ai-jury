@@ -69,14 +69,22 @@ connection, because the index converging is not the file server answering: the
 sdist downloads carry `--connect-timeout` and `--max-time`
 (`SDIST_CONNECT_TIMEOUT`/`SDIST_MAX_TIME`, 10s and 120s by default), every `pip`
 carries `--timeout`, and every `gh` call is wrapped in `timeout`, which is the
-only bound `gh` accepts. Underneath them both jobs set `timeout-minutes` — 30
-for the publish job, 20 for `verify` — which bounds the actions the workflow
-`uses:` and anything a future step forgets to bound. That ceiling is a backstop
-and not the mechanism: a job stopped by `timeout-minutes` is cancelled, so
-`verify`'s failure step does not run and no `release-broken` issue is opened,
-whereas a command that fails on its own timeout fails the job and files the
-report. `tests/test_publish_release_chain.py` enforces the rule over both jobs'
-`run:` blocks.
+only bound `gh` accepts. `0` is refused for either sdist timeout rather than
+passed on, because `${SDIST_MAX_TIME:-120}` substitutes only when the variable is
+unset or empty and curl reads `0` as "no limit" — the unbounded download, reached
+through the bound.
+
+Underneath them both jobs set `timeout-minutes` — 30 for the publish job, 35 for
+`verify` — which bounds the actions the workflow `uses:` and anything a future
+step forgets to bound. That ceiling is a backstop and not the mechanism: a job
+stopped by `timeout-minutes` is cancelled, so `verify`'s failure step does not
+run and no `release-broken` issue is opened, whereas a command that fails on its
+own timeout fails the job and files the report. It must therefore sit *above*
+the sum of the bounds beneath it — `verify` may spend about 1620s inside its own
+waits and its failure report, so twenty minutes would have cancelled a job that
+was still inside every deadline it sets itself.
+`tests/test_publish_release_chain.py` recomputes that sum from the workflow, for
+every job the file declares, so neither a new wait nor a new job escapes it.
 
 All GitHub Actions are pinned to full commit SHAs (see
 [CONTRIBUTING](../CONTRIBUTING.md)).

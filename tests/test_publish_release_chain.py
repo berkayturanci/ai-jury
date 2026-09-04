@@ -91,6 +91,9 @@ _LEADING_KEYWORDS = frozenset(
 )
 _ASSIGNMENT = re.compile(r"^[A-Za-z_]\w*=")
 
+#: A job's key under `jobs:` — two spaces in, a name, a colon, nothing else.
+_JOB_NAME = re.compile(r"^  ([A-Za-z_][\w-]*):[ \t]*$")
+
 #: Commands whose argument is itself a command — `timeout` is the only bound
 #: `gh` can be given, so a scan that could not see through it would report every
 #: wrapped call as unbounded.
@@ -98,6 +101,33 @@ _WRAPPERS = frozenset({"timeout", "env", "nice", "command", "exec", "stdbuf"})
 
 #: `60`, `1m`, `30s` — a wrapper's duration, which is not its command.
 _DURATION = re.compile(r"^\d+(\.\d+)?[smhd]?$")
+
+#: The header of a ``run:`` whose body is the lines below it. All seven of
+#: YAML's block-scalar spellings: `|` and `>`, each with an optional chomping
+#: indicator (`-`/`+`) and an optional indentation indicator (`1`-`9`), in
+#: either order. `run: |` is what this file writes; the other six are what an
+#: equality test silently stopped reading (see :func:`shell`).
+_BLOCK_SCALAR = re.compile(r"^run:[ \t]*[|>](?:[+-][1-9]?|[1-9][+-]?)?[ \t]*$")
+
+#: A quoted heredoc's opening: `<<'EOF'`, `<< "EOF"`, `<<-'EOF'`. Its body is
+#: literal text, so the words in it are not commands — `<<<` is a herestring and
+#: not a heredoc, hence the lookahead.
+_HEREDOC = re.compile(r"<<(?!<)-?[ \t]*(?:'([^']*)'|\"([^\"]*)\")")
+
+#: A wrapper's or a loop's duration as it is actually written: `30`, `1m`,
+#: `${SDIST_MAX_TIME:-120}` — the defaulted form the workflow reads its bounds
+#: from — or `$max_time`, a reference to one of those.
+_SUFFIXES = {"": 1, "s": 1, "m": 60, "h": 3600, "d": 86400}
+_LITERAL_SECONDS = re.compile(r"^(\d+)([smhd]?)$")
+_DEFAULTED_SECONDS = re.compile(r"^\$\{[A-Za-z_]\w*:-(\d+)\}$")
+_ASSIGNS_DEFAULT = re.compile(r"^([A-Za-z_]\w*)=\$\{[A-Za-z_]\w*:-(\d+)\}$")
+_REFERENCE = re.compile(r"^\$\{?([A-Za-z_]\w*)\}?$")
+
+#: Tokens whose next argument is a number of seconds this job may spend. Matched
+#: as whole tokens, which is what keeps `--timeout` out: that is pip's *socket*
+#: timeout, a bound on one quiet read rather than on the call, and counting it
+#: would put a number in the sum that no stall is limited to.
+_BOUND_TOKENS = frozenset({"timeout", "sleep", "--max-time", "--connect-timeout"})
 
 
 def indent_of(line: str) -> int:
@@ -125,15 +155,30 @@ def job_body(lines: list[str], name: str) -> list[str]:
 def shell(block: list[str]) -> str:
     """Every ``run:`` body in ``block``, comment lines removed.
 
-    Both spellings are collected: the folded ``run: |`` blocks and the
-    one-liners. A restructure that turned a block into a one-liner would
-    otherwise drop it from the scan silently, and every ``assertNotIn`` below
-    would go on passing.
+    Every spelling is collected: the block scalars and the one-liners. A
+    restructure that turned a block into a one-liner would otherwise drop it
+    from the scan silently, and every ``assertNotIn`` below would go on passing.
+
+    The header is matched with a pattern rather than compared to ``"run: |"``,
+    which is the form this file happens to use today. YAML spells a block scalar
+    six more ways — ``|-``, ``|+``, ``>``, ``>-``, ``>+`` and any of those with
+    an indentation indicator — GitHub accepts all of them, and against an
+    equality test every one of them collected nothing: the body was never read,
+    so each ``assertNotIn`` passed on a step it had not seen and each network
+    call in it went unscanned. A step written ``run: >-`` holding an unbounded
+    ``curl``, an unbounded ``gh api`` and ``git push origin HEAD:main || true``
+    left this whole module green.
+
+    A folded scalar (``>``) is read line by line here, not folded into one line
+    as YAML would. That is the stricter reading of the two: folding joins a
+    command with its continuation, so a bound spelled on the next line would
+    count, while splitting reports the head of the command as carrying no
+    bound. A false alarm is fixable; a step nobody scans is not.
     """
     code: list[str] = []
     for index, line in enumerate(block):
         stripped = line.strip()
-        if stripped == "run: |":
+        if _BLOCK_SCALAR.match(stripped):
             code.extend(block_after(block, index))
         elif stripped.startswith("run: "):
             code.append(stripped[len("run: ") :])
@@ -167,10 +212,19 @@ def _lex(code: str) -> list[str]:
     a subshell: the issue body this job files quotes `pip install ai-jury==…` in
     Markdown, and the escape is what says so. But a real ``"$(timeout 60 gh …)"``
     is a command, quoted or not, so substitutions are entered, not skipped.
+
+    A *quoted* heredoc is skipped whole. Its body is literal text — no
+    expansion, no substitution — so `curl` written inside one is a word in a
+    document, not a request, and reporting it would be the same false alarm as
+    reporting `brew` inside an `::error::`. The unquoted form is left alone:
+    `$(…)` inside it does run, so its words are still worth reading.
     """
     out: list[str] = []
     word: list[str] = []
     quote: str | None = None
+    #: Delimiters of quoted heredocs opened on the line being lexed; their
+    #: bodies start after the next newline, in the order they were opened.
+    heredocs: list[str] = []
     #: The quoting context each open substitution suspended, and how it opened.
     #: `"$(timeout 60 gh …)"` restarts quoting inside the parentheses — without
     #: that, every word of the substitution runs together into one, and the `gh`
@@ -208,12 +262,32 @@ def _lex(code: str) -> list[str]:
             quote = None
             index += 2 if char == "$" else 1
             continue
+        if quote is None:
+            opener = _HEREDOC.match(code, index)
+            if opener:
+                flush()
+                heredocs.append(opener.group(1) or opener.group(2) or "")
+                index = opener.end()
+                continue
         if quote == '"':
             if char == '"':
                 quote = None
             else:
                 word.append(char)
             index += 1
+            continue
+        if char == "\n" and heredocs:
+            flush()
+            out.append(_BREAK)
+            index += 1
+            for delimiter in heredocs:
+                while index < end:
+                    stop = code.find("\n", index)
+                    stop = end if stop == -1 else stop
+                    body, index = code[index:stop], stop + 1
+                    if body.strip() == delimiter:
+                        break
+            heredocs.clear()
             continue
         if char in "'\"":
             quote = char
@@ -335,14 +409,133 @@ def network_calls(code: str, job: str) -> list[NetworkCall]:
     return calls
 
 
+def job_names(lines: list[str]) -> list[str]:
+    """Every top-level job in the workflow, in the order the file declares them.
+
+    Read from the file rather than named here. A hardcoded pair is a scan that
+    covers the jobs somebody thought of: add a third job — a smoke test, a
+    rollback, an announcement — and it would reach the network with nothing
+    checking its bounds and no ceiling required of it, while both tests went on
+    reporting success over the two jobs they know.
+    """
+    at = [i for i, line in enumerate(lines) if line.rstrip() == "jobs:"]
+    assert len(at) == 1, f"expected one top-level `jobs:` mapping, found {len(at)}"
+    names = [
+        match.group(1)
+        for line in block_after(lines, at[0])
+        for match in [_JOB_NAME.match(line)]
+        if match
+    ]
+    assert names, "no jobs were found; `publish.yml` has been restructured"
+    return names
+
+
 def scan(source: str) -> list[NetworkCall]:
-    """Every network call in both jobs of a `publish.yml`, real or mutated."""
+    """Every network call in every job of a `publish.yml`, real or mutated."""
     lines = source.splitlines()
     return [
-        call
-        for job in (PUBLISH_JOB, VERIFY_JOB)
-        for call in network_calls(shell(job_body(lines, job)), job)
+        call for job in job_names(lines) for call in network_calls(shell(job_body(lines, job)), job)
     ]
+
+
+def _seconds(token: str, assigned: dict[str, int]) -> int | None:
+    """``30``, ``1m``, ``${SDIST_MAX_TIME:-120}`` or ``$max_time``, in seconds."""
+    literal = _LITERAL_SECONDS.match(token)
+    if literal:
+        return int(literal.group(1)) * _SUFFIXES[literal.group(2)]
+    defaulted = _DEFAULTED_SECONDS.match(token)
+    if defaulted:
+        return int(defaulted.group(1))
+    reference = _REFERENCE.match(token)
+    if reference:
+        return assigned.get(reference.group(1))
+    return None
+
+
+def _iterations(words: list[str]) -> int:
+    """How many times a ``for … in …`` loop runs its body.
+
+    Refused rather than guessed when the line does not say. A loop of unknown
+    length around a wrapped request is precisely what a fixed ceiling cannot
+    survive, so it has to stop this sum rather than be estimated into it.
+    """
+    shown = " ".join(words)
+    assert "in" in words, f"a loop with no readable iteration count: `{shown}`"
+    items = words[words.index("in") + 1 :]
+    if items[:1] == ["seq"]:
+        numbers = [word for word in items[1:] if word.isdigit()]
+        assert len(numbers) == 2, f"a `seq` this cannot count: `{shown}`"
+        return int(numbers[1]) - int(numbers[0]) + 1
+    assert items and all(not word.startswith("$") for word in items), (
+        f"a loop with no readable iteration count: `{shown}`"
+    )
+    return len(items)
+
+
+def script_budget(script: str) -> int:
+    """The wall-clock ceiling of one `wait-for-pypi-dists.sh` call, in seconds.
+
+    Read out of the script's own defaults rather than restated: attempts ×
+    interval is the budget it holds itself to, and the guard that enforces it is
+    at the *top* of each attempt — so the last attempt may still spend a whole
+    request and the sleep after it beyond that line.
+    """
+    defaults = dict(re.findall(r'^(\w+)="\$\{(?:\w+):-(\d+)\}"$', script, re.MULTILINE))
+    attempts, interval = int(defaults["attempts"]), int(defaults["interval"])
+    return attempts * interval + int(defaults["max_time"]) + interval
+
+
+def wait_seconds(code: str, budget: int) -> int:
+    """The seconds one job's shell may spend inside bounds it sets for itself.
+
+    Every ``timeout N``, every ``--max-time``/``--connect-timeout``, every
+    ``sleep N`` multiplied by the iterations of the loop it sits in, and one
+    ``budget`` per call to the shared wait. Computed from the text because the
+    alternative — three numbers written down beside the ceiling — is what let
+    the ceiling fall below the sum: the figure in the test was the same
+    undercount as the figure in the comment, so neither could catch the other.
+
+    Deliberately an over-estimate in two places. ``--connect-timeout`` is added
+    to ``--max-time`` though curl's ``--max-time`` already covers connecting,
+    and the branches of an ``if``/``else`` are summed rather than maximised. A
+    ceiling has to clear the worst case; an over-estimate keeps clearing it.
+    """
+    commands = _commands(code)
+    assigned = {
+        match.group(1): int(match.group(2))
+        for tokens in commands
+        for token in tokens
+        for match in [_ASSIGNS_DEFAULT.match(token)]
+        if match
+    }
+    total, factors = 0, [1]
+    for tokens in commands:
+        words = [token for token in tokens if token != _OPENS]
+        if not words:
+            continue
+        if words[0] == "done":
+            if len(factors) > 1:
+                factors.pop()
+            continue
+        if words[0] in ("for", "while", "until"):
+            factors.append(factors[-1] * _iterations(words))
+            continue
+        here = 0
+        for index, token in enumerate(words):
+            if token.rsplit("/", 1)[-1] == WAIT_SCRIPT.rsplit("/", 1)[-1]:
+                here += budget
+                continue
+            if token not in _BOUND_TOKENS:
+                continue
+            # `timeout`'s own options stand between it and its duration.
+            rest = [word for word in words[index + 1 :] if not word.startswith("-")]
+            seconds = _seconds(rest[0], assigned) if rest else None
+            assert seconds is not None, (
+                f"`{token}` in `{' '.join(words)}` names no readable number of seconds"
+            )
+            here += seconds
+        total += here * factors[-1]
+    return total
 
 
 def permissions(block: list[str]) -> list[str]:
@@ -358,6 +551,7 @@ class WorkflowScan(unittest.TestCase):
     def setUpClass(cls):
         lines = WORKFLOW.read_text(encoding="utf-8").splitlines()
         cls.lines = lines
+        cls.jobs = job_names(lines)
         cls.publish = job_body(lines, PUBLISH_JOB)
         cls.verify = job_body(lines, VERIFY_JOB)
         cls.publish_code = shell(cls.publish)
@@ -386,6 +580,19 @@ class TheScanReadSomething(WorkflowScan):
     def test_the_permission_blocks_were_found(self):
         self.assertTrue(self.publish_permissions)
         self.assertTrue(self.verify_permissions)
+
+    def test_the_jobs_are_read_from_the_file_and_not_named_here(self):
+        """Both known jobs, and nothing invented: the list is the file's, not ours.
+
+        `scan()` and the ceiling test both walk this list. A job added to
+        `publish.yml` therefore arrives inside both checks rather than beside
+        them — which is the difference between a scan of the workflow and a scan
+        of the two jobs somebody remembered.
+        """
+        self.assertLessEqual({PUBLISH_JOB, VERIFY_JOB}, set(self.jobs))
+        for name in self.jobs:
+            with self.subTest(job=name):
+                self.assertTrue(job_body(self.lines, name), f"`{name}:` is not a job")
 
 
 class ReleasingWritesNothingToThisRepository(WorkflowScan):
@@ -719,6 +926,113 @@ class EveryNetworkCommandIsBoundedInTime(unittest.TestCase):
                 self.assertNotIn("Post-publish verification", call.command)
 
 
+#: A step of the shape the reviewer inserted: an unbounded `curl`, an unbounded
+#: `gh api`, and the `git push origin HEAD:main || true` of #633 — the exact
+#: line whose absence three tests in this module assert. `{header}` is spelled
+#: with each of YAML's block scalars in turn.
+_HOSTILE_STEP = """      - name: A step written the other way
+        run: {header}
+          curl -fsSL https://example.invalid/thing -o thing
+          gh api repos/example/example
+          git push origin HEAD:main || true
+"""
+
+#: Where to graft it: a step of `build-n-publish`, named uniquely in the file.
+_ANCHOR = "      - name: Build package distributions\n"
+
+#: Every block-scalar header GitHub accepts, `run: |` included so the test also
+#: proves the graft itself works.
+_HEADERS = ("|", "|-", "|+", ">", ">-", ">+", "|2", "|-2", "|2-")
+
+
+class EveryBlockScalarSpellingIsRead(unittest.TestCase):
+    """`run: |` is one of seven spellings, and only one of them was collected.
+
+    `shell()` decided a step's body had begun by comparing the line to the
+    string `"run: |"`. YAML writes the same block six other ways — `|-`, `|+`,
+    `>`, `>-`, `>+`, and any of those carrying an indentation indicator — and
+    GitHub Actions runs all of them identically. Against an equality test every
+    one of them collected *nothing*: `block_after` was never called, the body
+    never reached the scan, and each `assertNotIn` in this module passed on a
+    step it had not read.
+
+    That is the failure worth a test of its own, because it is silent and
+    total. A step spelled `run: >-` holding an unbounded `curl`, an unbounded
+    `gh api` and `git push origin HEAD:main || true` — the push of #633, the
+    thing `ReleasingWritesNothingToThisRepository` exists to forbid — left this
+    entire module green.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.source = WORKFLOW.read_text(encoding="utf-8")
+
+    def graft(self, header: str) -> list[str]:
+        """`publish.yml` with the hostile step added to `build-n-publish`."""
+        step = _HOSTILE_STEP.format(header=header)
+        self.assertIn(_ANCHOR, self.source, "the anchor step is gone; rewrite this test")
+        return self.source.replace(_ANCHOR, step + _ANCHOR, 1).splitlines()
+
+    def test_the_header_pattern_matches_what_yaml_actually_writes(self):
+        for header in _HEADERS:
+            with self.subTest(header=header):
+                self.assertTrue(_BLOCK_SCALAR.match(f"run: {header}"))
+        for other in ("run: echo |", "run: ./script.sh", "runs-on: |", "run: |x"):
+            with self.subTest(line=other):
+                self.assertIsNone(_BLOCK_SCALAR.match(other))
+
+    def test_a_step_spelled_any_other_way_is_still_read(self):
+        """The bodies must be collected, whatever header stands above them."""
+        for header in _HEADERS:
+            with self.subTest(header=header):
+                code = shell(job_body(self.graft(header), PUBLISH_JOB))
+                self.assertIn("curl -fsSL https://example.invalid/thing", code)
+                self.assertIn("git push origin HEAD:main", code)
+
+    def test_the_module_fails_on_a_step_spelled_any_other_way(self):
+        """The assertions this module is made of, against the grafted step.
+
+        Not "the body was collected" but "the checks that read it now fail" —
+        which is what the reviewer got no failure from, and the only property
+        that makes the fix worth anything.
+        """
+        for header in _HEADERS:
+            with self.subTest(header=header):
+                lines = self.graft(header)
+                code = shell(job_body(lines, PUBLISH_JOB))
+                # `ReleasingWritesNothingToThisRepository`, verbatim.
+                self.assertIn("git push", code)
+                self.assertIn("HEAD:main", code)
+                # `EveryNetworkCommandIsBoundedInTime`, verbatim.
+                unbounded = [call.tool for call in scan("\n".join(lines)) if not call.bounded]
+                self.assertEqual(sorted(unbounded), ["curl", "gh", "git"], unbounded)
+
+    def test_a_quoted_heredoc_is_not_read_as_a_command(self):
+        """The other half of reading shell: text that only looks like a call.
+
+        A quoted heredoc expands nothing, so `curl` inside one is a word in a
+        document. Reporting it would be the false alarm that gets a scanner
+        switched off — the same mistake as reading `brew upgrade …` out of an
+        `::error::` string. Nothing in `publish.yml` writes one today; the lexer
+        handles it so that the first step that does is not a puzzle.
+        """
+        code = (
+            'cat <<"EOF" > note.md\n'
+            "curl https://example.invalid/x\n"
+            "gh api repos/example/example\n"
+            "EOF\n"
+            "timeout 60 gh api repos/example/example\n"
+        )
+        found = network_calls(code, VERIFY_JOB)
+        self.assertEqual([call.tool for call in found], ["gh"])
+        self.assertTrue(found[0].bounded)
+        # Unquoted, `$(…)` inside the body does run, so it is still read.
+        self.assertEqual(
+            [call.tool for call in network_calls(code.replace('<<"EOF"', "<<EOF"), VERIFY_JOB)],
+            ["curl", "gh", "gh"],
+        )
+
+
 class EveryJobHasACeiling(WorkflowScan):
     """A backstop under the per-command bounds, for the commands nobody has read.
 
@@ -734,29 +1048,83 @@ class EveryJobHasACeiling(WorkflowScan):
     is opened. A command that fails on its own timeout fails the job, names what
     stalled, and files the report. Both are worth having; only one of them is a
     diagnosis.
+
+    Which is why the ceiling has to clear the sum of the bounds beneath it. A
+    ceiling *below* that sum converts the failure this file works to produce — a
+    named stall, on a list — into the one it works to avoid: a cancelled job, no
+    issue, and a release already on PyPI. `verify` was in that state at twenty
+    minutes against ~1620s of its own waits.
     """
 
-    def test_both_jobs_set_a_job_level_timeout(self):
-        for name, block in ((PUBLISH_JOB, self.publish), (VERIFY_JOB, self.verify)):
+    def ceiling(self, name: str) -> int:
+        """The `timeout-minutes` of one job, in seconds."""
+        block = job_body(self.lines, name)
+        found = [line.strip() for line in block if line.strip().startswith("timeout-minutes")]
+        self.assertEqual(len(found), 1, f"{name} has no job-level timeout: {found}")
+        return int(found[0].split(":", 1)[1].strip()) * 60
+
+    def test_every_job_sets_a_job_level_timeout(self):
+        for name in self.jobs:
             with self.subTest(job=name):
-                found = [
-                    line.strip() for line in block if line.strip().startswith("timeout-minutes")
-                ]
-                self.assertEqual(len(found), 1, f"{name} has no job-level timeout: {found}")
+                self.assertGreater(self.ceiling(name), 0)
 
     def test_the_ceilings_are_measured_in_minutes_and_not_in_hours(self):
         """A six-hour ceiling is GitHub's default with extra steps."""
-        for name, block in ((PUBLISH_JOB, self.publish), (VERIFY_JOB, self.verify)):
+        for name in self.jobs:
             with self.subTest(job=name):
-                line = next(ln for ln in block if ln.strip().startswith("timeout-minutes"))
-                minutes = int(line.split(":", 1)[1].strip())
+                minutes = self.ceiling(name) // 60
                 self.assertGreaterEqual(minutes, 10, f"{name}'s ceiling would fail a slow release")
                 self.assertLessEqual(minutes, 60, f"{name}'s ceiling is not a ceiling")
 
     def test_the_ceiling_is_above_what_the_job_is_allowed_to_spend_waiting(self):
-        """`verify`'s own waits: 300s for the index, 60s for pip, 150s for the tap."""
-        line = next(ln for ln in self.verify if ln.strip().startswith("timeout-minutes"))
-        self.assertGreater(int(line.split(":", 1)[1].strip()) * 60, 300 + 60 + 150)
+        """The sum is computed from the file, because a written-down one was wrong.
+
+        This test used to assert `20 × 60 > 300 + 60 + 150`, three numbers typed
+        beside a comment that listed the same three. Both were the same
+        undercount, and the arithmetic they agreed on left out the *second* call
+        to the shared wait, the sdist download, the `gh release download` and
+        every `timeout 30` inside the tap poll — about 1440s of bounds under a
+        1200s ceiling. So the job could be cancelled while still inside its own
+        deadlines, and a cancelled job runs no `if: failure()` step: no
+        `release-broken` issue, for a release already on PyPI.
+
+        A restatement cannot catch a miscount of the thing it restates. This
+        reads the bounds out of the workflow instead, over every job the file
+        declares, so a wait added tomorrow is in the sum tomorrow.
+        """
+        budget = script_budget((REPO_ROOT / WAIT_SCRIPT).read_text(encoding="utf-8"))
+        for name in self.jobs:
+            with self.subTest(job=name):
+                spend = wait_seconds(shell(job_body(self.lines, name)), budget)
+                self.assertGreater(
+                    self.ceiling(name),
+                    spend,
+                    f"{name} may spend {spend}s inside its own bounds under a "
+                    f"{self.ceiling(name)}s ceiling; a job cancelled that way files no report",
+                )
+
+    def test_the_sum_it_checks_against_is_not_an_empty_one(self):
+        """Vacuity again: `0 < any ceiling`, so a sum of nothing would pass.
+
+        The two waits, the pip loop, the two downloads and the tap poll are all
+        in `verify`, and they come to more than the twenty minutes this job used
+        to allow — which is the finding the test above exists to keep.
+        """
+        budget = script_budget((REPO_ROOT / WAIT_SCRIPT).read_text(encoding="utf-8"))
+        self.assertEqual(budget, 30 * 10 + 30 + 10)
+        self.assertGreater(wait_seconds(self.verify_code, budget), 20 * 60)
+        self.assertGreater(wait_seconds(self.publish_code, budget), budget)
+
+    def test_a_wait_added_to_a_loop_is_counted_once_per_iteration(self):
+        """`10 × timeout 30` is 300 seconds, not 30 — the miscount, in miniature."""
+        one = "timeout 30 gh api repos/x/y"
+        looped = f"for attempt in $(seq 1 10); do\n{one}\nsleep 15\ndone"
+        self.assertEqual(wait_seconds(one, 0), 30)
+        self.assertEqual(wait_seconds(looped, 0), 10 * (30 + 15))
+
+    def test_a_loop_it_cannot_count_stops_the_sum_instead_of_being_guessed(self):
+        with self.assertRaises(AssertionError):
+            wait_seconds('while [ -z "$x" ]; do\ntimeout 30 gh api repos/x/y\ndone', 0)
 
 
 if __name__ == "__main__":  # pragma: no cover

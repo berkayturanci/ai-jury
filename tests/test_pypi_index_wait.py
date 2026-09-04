@@ -341,10 +341,11 @@ class AStalledResponseIsNotAllowedToHoldTheStepOpen(WaitAgainstStub):
 
     A peer that accepts the connection and then says nothing defeats an
     attempt-only bound completely: the first request never returns, so the
-    second is never made. `publish.yml` sets no `timeout-minutes` anywhere, so
-    the ceiling on that would be GitHub's six-hour default — in the step between
-    the upload and the GitHub Release, which is the half-made release this whole
-    change exists to remove, only arrived at slowly.
+    second is never made. `publish.yml` does now set `timeout-minutes`, but a
+    job stopped that way is cancelled rather than failed — it reports nothing
+    about which request stalled, and tens of minutes of it pass in the step
+    between the upload and the GitHub Release, which is the half-made release
+    this whole change exists to remove, only arrived at slowly.
     """
 
     def test_a_response_that_never_arrives_is_abandoned_and_the_poll_ends(self):
@@ -592,8 +593,29 @@ class TheRenderStepRunsAgainstAStubIndex(unittest.TestCase):
         proves nothing about what the release runs with. Those are the defaults.
         """
         body = render_step_shell()
-        self.assertIn('--connect-timeout "${SDIST_CONNECT_TIMEOUT:-10}"', body)
-        self.assertIn('--max-time "${SDIST_MAX_TIME:-120}"', body)
+        self.assertIn('connect_timeout="${SDIST_CONNECT_TIMEOUT:-10}"', body)
+        self.assertIn('max_time="${SDIST_MAX_TIME:-120}"', body)
+        self.assertIn('--connect-timeout "$connect_timeout"', body)
+        self.assertIn('--max-time "$max_time"', body)
+
+    def test_a_zero_timeout_is_refused_rather_than_passed_to_curl(self):
+        """`${SDIST_MAX_TIME:-120}` defaults on *unset or empty*, and 0 is neither.
+
+        curl reads `--max-time 0` as "no limit", so an explicit zero is the
+        unbounded download this bound was added to remove, reached through the
+        bound itself. `wait-for-pypi-dists.sh` already refused a zero
+        `PYPI_MAX_TIME` for exactly this reason; both copies of the download now
+        refuse one too, before the request is made.
+        """
+        for name in ("SDIST_MAX_TIME", "SDIST_CONNECT_TIMEOUT"):
+            for value in ("0", "-1", "lots"):
+                with self.subTest(variable=name, value=value):
+                    completed, workdir = self.render([SERVED], **{name: value})
+                    output = completed.stdout + completed.stderr
+                    self.assertEqual(completed.returncode, 1, output)
+                    self.assertIn("::error::SDIST_CONNECT_TIMEOUT", output)
+                    self.assertIn("SDIST_MAX_TIME", output)
+                    self.assertFalse((workdir / "published-sdist.tar.gz").exists())
 
     def test_an_index_that_never_converges_fails_before_anything_is_rendered(self):
         completed, workdir = self.render([EMPTY], attempts=2)

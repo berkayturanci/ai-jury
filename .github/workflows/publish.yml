@@ -198,9 +198,27 @@ jobs:
           # `tests/test_pypi_index_wait.py`. The environment, as always here —
           # an Actions expression would be substituted into this script's source
           # before bash parsed it (see tests/test_workflow_run_blocks.py).
+          connect_timeout="${SDIST_CONNECT_TIMEOUT:-10}"
+          max_time="${SDIST_MAX_TIME:-120}"
+          # `:-` substitutes only when a variable is unset or *empty*, so an
+          # explicit `SDIST_MAX_TIME=0` reaches curl untouched — and curl reads
+          # `0` as "no limit", which is exactly the unbounded download this
+          # bound exists to remove. A defaulted expansion is not a check.
+          # `wait-for-pypi-dists.sh` refuses a zero `PYPI_MAX_TIME` for the same
+          # reason; this is that refusal, for the same host and same request.
+          case "${connect_timeout}${max_time}" in
+            "" | *[!0-9]*)
+              echo "::error::SDIST_CONNECT_TIMEOUT ('${connect_timeout}') and SDIST_MAX_TIME ('${max_time}') must be whole numbers of seconds"
+              exit 1
+              ;;
+          esac
+          if [ "$((10#$connect_timeout))" -lt 1 ] || [ "$((10#$max_time))" -lt 1 ]; then
+            echo "::error::SDIST_CONNECT_TIMEOUT and SDIST_MAX_TIME must be at least 1 second — curl reads 0 as 'no limit', which is the bound this download needs"
+            exit 1
+          fi
           curl -fsSL \
-            --connect-timeout "${SDIST_CONNECT_TIMEOUT:-10}" \
-            --max-time "${SDIST_MAX_TIME:-120}" \
+            --connect-timeout "$connect_timeout" \
+            --max-time "$max_time" \
             "$sdist_url" -o published-sdist.tar.gz
           got="$(sha256sum published-sdist.tar.gz | cut -d' ' -f1)"
           if [ "$got" != "$sdist_sha" ]; then
@@ -327,17 +345,33 @@ jobs:
     name: Verify the published release installs and runs
     needs: build-n-publish
     runs-on: ubuntu-latest
-    # The same backstop, for the reason spelled out on `build-n-publish`. This
-    # job talks to three services and every one of its own waits is bounded —
-    # 300s for the index, 6 × 10s for pip, 10 × 15s for the tap — so twenty
-    # minutes is a ceiling nothing here should ever approach.
+    # The same backstop, for the reason spelled out on `build-n-publish` — and
+    # here the ceiling has to sit *above* the sum of this job's own bounds
+    # rather than at a round number that reads generously. All of them, in
+    # order:
     #
-    # And it is genuinely a last resort here, not the mechanism: a job stopped
-    # by `timeout-minutes` is *cancelled*, so the `if: failure()` step below
-    # does not run and no `release-broken` issue is opened. Which is the whole
-    # argument for bounding each command instead: a step that fails on its own
-    # timeout fails the job, names what stalled, and files the report.
-    timeout-minutes: 20
+    #   - the index wait, twice (the step below and the formula check): a 300s
+    #     budget each, plus the request still in flight when the budget runs out
+    #     (30s) and the sleep after it (10s) — 340s apiece. The second one
+    #     returns on the first attempt in practice, but nothing enforces that,
+    #     so it is counted at full price;
+    #   - the pip resolve loop: 6 × 10s of sleeps = 60s;
+    #   - the sdist download: `--max-time` 120s, plus a 10s connect timeout;
+    #   - `gh release download`, wrapped at 120s;
+    #   - the tap poll: 10 × `timeout 30` + 10 × `sleep 15` = 450s;
+    #   - the `if: failure()` report: three `timeout 60` `gh` calls = 180s.
+    #
+    # That is ~1620s, and the twenty minutes this used to say was *below* it: a
+    # job that spent its own bounds honestly would be cancelled at 1200s rather
+    # than fail. Which matters more here than anywhere, because a job stopped by
+    # `timeout-minutes` is *cancelled* — the `if: failure()` step below does not
+    # run and no `release-broken` issue is opened, for a release that is already
+    # public. So the ceiling has to leave room for the report as well as for the
+    # waits. It is still a last resort and not the mechanism: a step that fails
+    # on its own timeout fails the job, names what stalled, and files that
+    # report. `tests/test_publish_release_chain.py` recomputes the sum above
+    # from this file, so a new wait cannot quietly outgrow the ceiling again.
+    timeout-minutes: 35
     permissions:
       contents: read
       issues: write   # open/update `release-broken: <tag>` when this job fails
@@ -438,10 +472,25 @@ jobs:
           # Bounded exactly as the render step's identical download is: the wait
           # returning means the index converged, not that the file server will
           # answer, and this job's failure path opens an issue — which never
-          # happens if the step never ends.
+          # happens if the step never ends. The zero check is the render step's
+          # too, and for the same reason: `${SDIST_MAX_TIME:-120}` substitutes
+          # only when the variable is unset or empty, and curl reads an explicit
+          # `0` as "no limit" — the unbounded download, spelled differently.
+          connect_timeout="${SDIST_CONNECT_TIMEOUT:-10}"
+          max_time="${SDIST_MAX_TIME:-120}"
+          case "${connect_timeout}${max_time}" in
+            "" | *[!0-9]*)
+              echo "::error::SDIST_CONNECT_TIMEOUT ('${connect_timeout}') and SDIST_MAX_TIME ('${max_time}') must be whole numbers of seconds"
+              exit 1
+              ;;
+          esac
+          if [ "$((10#$connect_timeout))" -lt 1 ] || [ "$((10#$max_time))" -lt 1 ]; then
+            echo "::error::SDIST_CONNECT_TIMEOUT and SDIST_MAX_TIME must be at least 1 second — curl reads 0 as 'no limit', which is the bound this download needs"
+            exit 1
+          fi
           curl -fsSL \
-            --connect-timeout "${SDIST_CONNECT_TIMEOUT:-10}" \
-            --max-time "${SDIST_MAX_TIME:-120}" \
+            --connect-timeout "$connect_timeout" \
+            --max-time "$max_time" \
             "$sdist_url" -o published-sdist.tar.gz
           got="$(sha256sum published-sdist.tar.gz | cut -d' ' -f1)"
           if [ "$got" != "$sdist_sha" ]; then
