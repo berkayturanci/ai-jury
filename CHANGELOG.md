@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.16.0] - 2026-09-05
+
 ### Added
 - **A CI guard for a bot push landing on top of a human push** (#676): on 2026-09-03 the reviewed head of #648 — a Bolt-owned branch — was rebased onto `main` by the maintainer, who then added a test of their own. Bolt pushed once more on top of that from its own stale checkout, and the push replaced the tree with the bot's old copy (25 files, 2,491 deletions), silently reverting two already-merged pull requests. The suite went red, but nothing named the cause, and on a smaller bot pull request the same shape would have gone green and shipped the revert.
   - The policy is now written down in `CONTRIBUTING.md`: **a bot-owned pull request branch is a read-only input**. Reviewed changes are re-landed on a fresh `fix/`, `perf/` or `docs/` branch cut from `main`, and the bot's pull request is closed with a link to the replacement.
