@@ -83,10 +83,20 @@ class TheEvidenceWorkflowIsPresent(unittest.TestCase):
         return matches[0]
 
     def test_the_gate_actually_runs(self):
-        self.assertTrue(
-            any(line.strip().startswith("keel evidence-verify") for line in self.code),
-            "no uncommented line invokes the gate",
-        )
+        """Bounded since #697, so the call is no longer the head of its line.
+
+        `keel evidence-verify` reads the pull request over the network, and this
+        job publishes the check-run a merge is gated on: an unbounded call there
+        leaves that check incomplete rather than failing it. Matched on the
+        command anywhere in the line so the wrapper is allowed, and the wrapper
+        itself is required by `tests/test_publish_release_chain.py`.
+        """
+        invocations = [
+            line.strip()
+            for line in self.code
+            if re.match(r"^(timeout \d+ )?keel evidence-verify\b", line.strip())
+        ]
+        self.assertEqual(len(invocations), 1, f"expected one gate invocation, saw {invocations}")
 
     def test_the_gate_cannot_pass_while_unarmed(self):
         """`--require-armed`: a gate that evaluated nothing must not report success.
