@@ -648,6 +648,33 @@ class CrossVendorReadinessTests(unittest.TestCase):
         self.assertTrue(warning, diag["config_warnings"])
         self.assertIn("--no-min-vendors", warning[0])
 
+    def test_a_threshold_the_default_gate_would_skip_is_not_warned_about(self):
+        """The warning must predict the run, not merely restate the config.
+
+        Two vendors under `min_vendors = 3`: `collapse_reason` leaves that run
+        alone (it never claimed three), so doctor must too.
+        """
+        two_of_three = """\
+[jury]
+chair = "claude"
+
+[jury.ci]
+min_vendors = 3
+
+[[agent]]
+name = "claude"
+vendor = "anthropic"
+command = "claude"
+
+[[agent]]
+name = "codex"
+vendor = "openai"
+command = "codex"
+"""
+        diag = self._diag(two_of_three, {"claude"})
+        self.assertEqual(diag["panel"]["vendors_configured"], 2)
+        self.assertFalse([w for w in diag["config_warnings"] if "cross-vendor guard" in w])
+
     def test_a_single_vendor_config_is_not_nagged(self):
         """It never claimed cross-vendor consensus, so there is nothing to warn about."""
         single = """\

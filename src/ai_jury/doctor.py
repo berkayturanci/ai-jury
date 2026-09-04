@@ -284,9 +284,16 @@ def _panel_warning(panel) -> str | None:
     Fires only when the config claims cross-vendor consensus (two or more
     distinct vendors enabled) and this machine cannot deliver it, because then
     the run would exit 3 and the operator would rather know now.
+
+    The `max(2, minimum)` mirrors the runtime scoping in
+    :func:`metadata.collapse_reason` exactly: a two-vendor config under
+    ``min_vendors = 3`` is not failed by the default gate, so warning about it
+    here would advertise a failure that is never going to happen. A warning that
+    does not predict the run is worse than none — it is the kind people learn to
+    scroll past.
     """
     minimum = panel["min_vendors"]
-    if minimum <= 0 or panel["vendors_configured"] < 2:
+    if minimum <= 0 or panel["vendors_configured"] < max(2, minimum):
         return None
     if panel["vendors_available"] >= minimum:
         return None
