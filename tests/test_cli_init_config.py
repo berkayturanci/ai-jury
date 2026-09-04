@@ -50,6 +50,41 @@ class InitTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertTrue(out.exists())
 
+    def test_every_preset_scaffolds_the_cross_vendor_guard(self):
+        """`jury init --preset <p>` ships `[jury.ci]` + the hint, for all four (#692).
+
+        `scaffold.py` has defined a min-vendors hint since #682, but `render_toml`
+        emitted `[jury.ci]` only when the caller passed `ci_fail_on` — which no
+        preset sets. So every generated `jury.toml` was silent about the guard
+        that exits 3, `--preset thorough` included: three or four vendors, and
+        therefore exactly the config that collapses on a one-CLI machine.
+
+        Driven through the real CLI so the whole path is covered, and over
+        `PRESETS` rather than a literal list so a fifth preset is covered too.
+        Local-model discovery is mocked; nothing here touches the network.
+        """
+        from ai_jury.config import load_config
+        from ai_jury.scaffold import PRESETS
+
+        self.assertEqual(sorted(PRESETS), ["balanced", "fast", "offline", "thorough"])
+        for name in sorted(PRESETS):
+            with self.subTest(preset=name):
+                out = self.d / f"{name}.toml"
+                with mock.patch(
+                    "ai_jury.adapters.list_local_models", return_value=["qwen2.5-coder:7b"]
+                ):
+                    code, _, _ = run(["init", "--preset", name, "-o", str(out), "--force"])
+                self.assertEqual(code, 0)
+                text = out.read_text(encoding="utf-8")
+                self.assertIn("[jury.ci]", text)
+                self.assertIn("# min_vendors = 2", text)
+                self.assertIn("exit 3", text)
+                self.assertIn("--no-min-vendors", text)
+                # Comments only: the file must still load, and must not pin a
+                # value that would outrank the shipped default.
+                config = load_config(str(out), validate=True)
+                self.assertEqual(config.ci.min_vendors, 2)
+
     def test_init_list_agents(self):
         code, out, _ = run(["init", "--list-agents"])
         self.assertEqual(code, 0)
@@ -234,16 +269,21 @@ class InitWizardTests(unittest.TestCase):
         self.assertIn('decision = "vote"', text)
         self.assertIn("[jury.context]", text)
         self.assertIn('mode = "expanded"', text)
-        # Skipped CI gate -> no [jury.ci] section.
-        self.assertNotIn("[jury.ci]", text)
+        # Skipped CI gate -> the section is still written (#692), but with no
+        # `fail_on` in it: the wizard records only what was actually chosen.
+        self.assertIn("[jury.ci]", text)
+        self.assertNotIn("fail_on", text)
 
     def test_wizard_plain_init_unchanged(self):
-        # Plain `jury init --agents` must not gain any new sections (back-compat).
+        # Plain `jury init --agents` must not gain any wizard-only *values*.
+        # `[jury.ci]` is unconditional since #692, and carries only the commented
+        # cross-vendor hint here — no key, so nothing a reader did not ask for.
         out = self.d / "plain.toml"
         code, _, _ = run(["init", "--agents", "claude,codex", "-o", str(out), "--force"])
         self.assertEqual(code, 0)
         text = out.read_text(encoding="utf-8")
-        self.assertNotIn("[jury.ci]", text)
+        self.assertIn("[jury.ci]", text)
+        self.assertNotIn("fail_on", text)
         self.assertNotIn("[jury.context]", text)
         self.assertNotIn("decision", text)
         self.assertNotIn("auto_depth", text)
