@@ -332,7 +332,10 @@ class ReviewersArray(unittest.TestCase):
         doc = json.loads(to_json(outcome, config))
         entries = doc["reviewers"]
         self.assertEqual([e["name"] for e in entries], ["alpha", "beta", "gamma", "chair"])
-        self.assertEqual([e.get("role") for e in entries], [None, None, None, "chair"])
+        self.assertEqual(
+            [e.get("role") for e in entries],
+            ["panelist", "panelist", "panelist", "chair"],
+        )
 
     def test_ballots_carry_vendor_and_effective_model(self):
         outcome, config = _panel_outcome()

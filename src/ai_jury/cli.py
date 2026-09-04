@@ -20,7 +20,7 @@ import os
 import sys
 from pathlib import Path
 
-from . import __version__
+from . import __version__, panel
 from . import doctor as doctor_module
 from .adapters import EFFORT_LEVELS, effort_warnings, make_adapter
 from .ci import evaluate_ci
@@ -342,6 +342,18 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "opt out of the cross-vendor guard: accept a run whose panel "
             "collapsed to a single vendor (same as --min-vendors 0)"
+        ),
+    )
+    p.add_argument(
+        "--min-reviews",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "require at least N reviews for a downstream consumer (one per panel "
+            "ballot; the chair's synthesis record is not one); 0 disables. "
+            "Checked before the panel runs and again on the result (exit 3). "
+            "Default from config ([jury.ci] min_reviews, shipped as 0)"
         ),
     )
     p.add_argument(
@@ -2121,6 +2133,11 @@ def main(argv: list[str] | None = None) -> int:
         config.seed = args.seed
     if args.chair:
         config.chair = args.chair
+    # Applied to the config (rather than resolved late like --min-vendors)
+    # because the pre-run half of this gate lives in the orchestrator: it has to
+    # be able to refuse a bench that is too small BEFORE the panel is paid for.
+    if args.min_reviews is not None:
+        config.ci.min_reviews = max(0, args.min_reviews)
     # --effort is a whole-panel override: it wins over every [[agent]] effort so
     # one flag raises (or lowers) the depth of the entire run.
     if args.effort is not None:
@@ -2508,6 +2525,23 @@ def main(argv: list[str] | None = None) -> int:
     )
     if collapsed:
         log(collapsed)
+        ci_exit = 3
+    # The other half of the #699 gate. The orchestrator refuses a bench that is
+    # too small before spending it; this catches the case a pre-flight cannot
+    # predict — an agent that was present, ran, and returned nothing, so its slot
+    # casts no ballot and the bundle silently shrinks below what the consumer
+    # requires. Exit 3, the same family as a collapsed panel: the panel, not the
+    # findings, is what fell short. Evaluated on cached outcomes too, which is
+    # why `min_reviews` is kept out of the cache key.
+    panel_meta = metadata.get("panel") or {}
+    short_panel = panel.shortfall(
+        panel_meta.get("ballots", 0),
+        config.ci.min_reviews,
+        stage="after the panel ran",
+        silent=panel_meta.get("configured", 0) - panel_meta.get("ballots", 0),
+    )
+    if short_panel:
+        log(short_panel)
         ci_exit = 3
     if args.ci:
         fail_on = config.ci.fail_on

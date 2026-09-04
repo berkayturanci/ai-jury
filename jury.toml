@@ -78,6 +78,16 @@ ignore_unverified = true
 # pass --no-min-vendors) to accept a collapsed panel; --strict reports the
 # missing CLI at startup instead.
 min_vendors = 2
+# Panel-size guard (#699): REVIEWS this run must be able to hand a downstream
+# consumer — one ballot per agent that answers. The chairing agent reviews too,
+# so its ballot is one of them; the chair's synthesis record is carried beside
+# them and is NOT a review, because a gate like `keel review --from-jury` splits
+# the reviewers array on `role` and counts only the ballots. Not the agent count
+# either: an agent that is installed, runs and returns nothing casts no ballot.
+# Checked BEFORE the panel runs, so a bench that cannot reach it costs nothing,
+# and again on the result (exit 3), because no pre-flight can predict a silent
+# agent. 0 disables it, and is the default: most consumers have no minimum.
+min_reviews = 0
 
 # Context policy: what gets sent to each agent, and whether secrets are redacted.
 # mode = "diff-only" sends only the diff; "expanded" also sends PR context.
