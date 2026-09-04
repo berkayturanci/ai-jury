@@ -66,7 +66,12 @@ reference (every flag + `jury.toml` key, with values and examples) is
 - `--post-inline` — inline comments on located findings. `--label` — apply effort/risk/security labels.
 
 **Gate a merge (CI):**
-- `--ci --fail-on critical,major` — exit non-zero when a blocking finding remains.
+- `--ci --fail-on critical,major` — exit `1` when a blocking finding remains.
+- **Exit `3` is not a findings failure.** It means the panel collapsed: fewer than
+  `min_vendors` distinct vendors (default 2) actually contributed a review, so the run
+  is not cross-vendor consensus and its verdict should not be reported as one. It is
+  checked on every run, with or without `--ci`. Re-run once the missing CLI is
+  installed; `--no-min-vendors` accepts a single-vendor panel deliberately.
 
 **Scope & cost:**
 - `--incremental` — only the diff since the last jury run on the PR.

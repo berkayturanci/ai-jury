@@ -779,7 +779,8 @@ documented and a documented flag can't silently disappear.
 | Unknown flag / bad arguments | argparse exits with code `2` |
 | `--version` | prints `jury <version>` and exits `0` |
 | Successful review (no `--ci`) | exits `0` |
-| `--ci` with blocking findings remaining | exits non-zero (see `ci.evaluate_ci`) |
+| `--ci` with blocking findings remaining | exits `1` (see `ci.evaluate_ci`) |
+| Fewer than `min_vendors` **distinct vendors contributed** a review | exits `3` — the cross-vendor guard, *not* a findings failure. Checked on every run, with or without `--ci`, and it outranks the `--ci` severity gate. Default `2` (`[jury.ci] min_vendors`); the default is scoped to runs that claimed cross-vendor consensus, so a config with fewer distinct vendors enabled than the threshold is never failed by it. An explicit `--min-vendors N` is enforced as asked. Opt out with `--no-min-vendors` (or `min_vendors = 0`); to fail at *startup* on a missing CLI instead, use `--strict`. |
 
 **Stable report headings** (substrings other tooling may parse):
 `AI Jury`, `Chair verdict`, `Round 1` (and subsequent `Round N`).

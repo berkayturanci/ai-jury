@@ -179,7 +179,7 @@ The document is `schema_version: "ai-jury.doctor.v1"`:
 ```json
 {
   "schema_version": "ai-jury.doctor.v1",
-  "tool_version": "1.15.1",
+  "tool_version": "1.16.0",
   "python": "3.12.14",
   "config_path": "/path/to/jury.toml",
   "ready": true,

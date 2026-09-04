@@ -48,6 +48,11 @@ agent* (adapters), so new vendors are a ~20-line addition.
    notable single-reviewer findings. If the chair is unavailable, the first available
    agent chairs. With `decision = "vote"` the verdict is a panel tally instead.
 
+Each reviewer's own stance survives the synthesis as a **per-reviewer ballot** — how a
+ballot's verdict is derived, and the `keel-reviews` bundle that renders one record per
+panelist plus the chair, are specified in
+[docs/report-format.md](report-format.md#per-reviewer-ballots-reviewers).
+
 The whole run is bounded by an optional **budget** (`total_timeout` / `phase_timeout`)
 with opt-in **retries** for transient failures, and can be served from / stored in an
 optional **result cache** (`--cache`). Large diffs are measured, filtered (binary /

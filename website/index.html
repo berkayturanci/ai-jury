@@ -573,7 +573,11 @@ jury <span class="k">--issue</span> 42 <span class="k">--decision</span> vote   
 jury <span class="k">--issue</span> 42 <span class="k">--post</span>                <span class="cm"># post the verdict back to the issue thread</span>
 jury <span class="k">--issue</span> 42 <span class="k">--live --post</span>         <span class="cm"># stream + post each step to the issue as it lands</span>
 
-jury <span class="k">--ci --fail-on</span> critical,major    <span class="cm"># gate CI on blocking findings</span></code></pre>
+jury <span class="k">--ci --fail-on</span> critical,major    <span class="cm"># gate CI on blocking findings (exit 1)</span>
+jury <span class="k">--pr</span> 123 <span class="k">--no-min-vendors</span>       <span class="cm"># accept a panel that collapsed to one vendor (else exit 3)</span>
+
+jury run-agent <span class="k">--agent</span> claude <span class="k">--role</span> review <span class="k">--prompt-file</span> p.md
+                                      <span class="cm"># one agent, one role, one JSON result (for an orchestrator)</span></code></pre>
       <p class="muted reveal" style="margin-top:1rem">
         Requires Python 3.11+ and at least one reviewer — an agent CLI (<code class="mono" style="color:var(--accent-2)">claude</code>,
         <code class="mono" style="color:var(--accent-2)">codex</code>, <code class="mono" style="color:var(--accent-2)">agy</code>),
@@ -599,7 +603,8 @@ jury init <span class="k">--preset</span> balanced <span class="cm"># or fast/of
 jury init <span class="k">--list-agents</span>     <span class="cm"># CLIs available</span>
 jury init <span class="k">--list-models</span>     <span class="cm"># local Ollama models</span>
 jury config show            <span class="cm"># effective config</span>
-jury <span class="k">--doctor</span>               <span class="cm"># readiness + steps</span></code></pre>
+jury <span class="k">--doctor</span>               <span class="cm"># readiness + steps</span>
+jury <span class="k">--doctor --json</span>        <span class="cm"># the same facts as one JSON document</span></code></pre>
         </div>
         <div>
           <h3>A <code class="mono" style="color:var(--accent-2);font-size:.9rem">jury.toml</code></h3>
@@ -630,7 +635,8 @@ endpoint = <span class="s">"http://localhost:11434/v1"</span></code></pre>
         <div class="cfg-key"><code>[[agent]]</code><span>Per reviewer: <code>vendor</code>, <code>command</code>, <code>extra_args</code>; for a local seat use <code>vendor = "local"</code> + <code>endpoint</code> + <code>model</code>.</span></div>
         <div class="cfg-key"><code>timeout · retries</code><span><code>total_timeout</code> / <code>phase_timeout</code> / <code>retries</code> bound a run; results can be cached and reviews made incremental.</span></div>
         <div class="cfg-key"><code>[jury.diff]</code><span>Large diffs are filtered + chunked; <code>[jury.context]</code> is <code>diff-only</code> by default with secret redaction on.</span></div>
-        <div class="cfg-key"><code>[jury.ci]</code><span>Exit-code gating for CI; pick the report <code>format</code> (markdown / json / sarif) and PR posting behaviour.</span></div>
+        <div class="cfg-key"><code>[jury.ci]</code><span>Exactly three keys: <code>fail_on</code> (severities that fail <code class="mono">--ci</code>), <code>ignore_unverified</code>, and <code>min_vendors</code> — the cross-vendor guard. Report format is a flag (<code class="mono">--format</code>), not a key here.</span></div>
+        <div class="cfg-key"><code>min_vendors</code><span>Distinct vendors that must have <em>contributed</em> a review before the run counts as cross-vendor consensus. Ships at <code>2</code>: fewer, and the run exits <code>3</code> — its own code, so a collapsed panel never reads as a clean pass. It only applies once that many vendors are enabled, so a deliberate one-CLI setup is untouched; <code class="mono">--no-min-vendors</code> (or <code>min_vendors = 0</code>) accepts a collapsed panel, <code class="mono">--strict</code> fails at startup on a missing CLI instead.</span></div>
       </div>
 
       <p class="muted reveal cfg-note">

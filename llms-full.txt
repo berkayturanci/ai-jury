@@ -64,10 +64,28 @@ be served from / stored in an optional **cache** (`--cache`). Full detail:
 - `jury comment --text "/jury review …" --pr N` — parse an allowlisted PR-comment
   command (`review`/`summary`, `--rounds` only) and dispatch a safe run (`--print-args`
   to just resolve, `--no-post` to skip posting).
+- `jury apply <index|all> [--report <path>] [--dry-run] [--yes]` — apply verified
+  suggested patches from a report or patch file (stdin by default). The index is
+  required: applying every suggestion is the wrong default for a command that writes.
+- `jury replay <outcome.json> [--theater] [--theater-style flat|pixel] [--decision
+  chair|vote] [--mode code|issue]` — replay a saved outcome (a cache entry or a
+  serialized outcome dict) in the deliberation theater. No agents run.
+- `jury run-agent --agent <name|vendor[:model]> --role implement|review|gate|chair|fix
+  --prompt-file <path|->` — run ONE configured agent for one role and print one
+  `ai-jury.run-agent.v1` JSON document (`--format text` prints only the agent's text).
+  The integration point for an orchestrator that needs a single agent, not a panel.
+  `review`/`gate`/`chair` are always read-only and `--allow-write` on them warns and is
+  ignored; `implement`/`fix` refuse to run (exit 2) without it. `--detach` / `--wait
+  <id>` / `--wait-timeout <s>` / `--status` / `--run-id <id>` manage background runs;
+  `--cwd`, `--timeout`, `--effort`, `--config`, `--cache-dir`, `--mock` also apply.
+  Exit `0` ran and produced output, `1` ran and failed, `2` the request was refused.
+- `jury examples` — print copy-paste example commands; `jury guide` — a short
+  walkthrough (install → config → first review → posting → CI).
 
 ## CLI flags
 
-Input (choose one): `--pr <num/url>` (+ optional `--repo owner/name`), `--diff-file <path|->`.
+Input (choose exactly one): `--pr <num/url>`, `--issue <num/url>` (both take an optional
+`--repo owner/name`), `--diff-file <path|->`, `--commit <rev>`, `--commits <range>`.
 
 - `--config <path>` — path to `jury.toml`; `--config-validate` validates and exits;
   `--strict-config` treats config warnings as errors.
@@ -77,20 +95,44 @@ Input (choose one): `--pr <num/url>` (+ optional `--repo owner/name`), `--diff-f
 - `--early-stop` / `--no-early-stop`, `--max-rounds <n>` — adaptive debate (issue #40).
 - `--chair <name>` — agent that synthesizes. `--seed <n>` — reproducible orchestration.
 - `--verify` / `--no-verify` — verification round (default from config).
+- `--decision chair|vote` — chair synthesis (default) or a panel tally (overrides `[jury] decision`).
+- `--effort low|medium|high` — reasoning effort for every agent this run; overrides
+  `[[agent]] effort` and warns once per run for vendors with no effort control (#662).
 - `--total-timeout <s>`, `--phase-timeout <s>`, `--retries <n>` — run budget + retries (#30).
 - `--max-diff-bytes <n>`, `--chunk` / `--no-chunk`, `--exclude <glob>`, `--include <glob>`
   — large-diff filtering/chunking (#31).
-- `--auto` — auto-depth: set rounds/verify from a pre-review diff profile (#120; config `auto_depth`).
+- `--auto` / `--no-auto` — auto-depth: set rounds/verify from a pre-review diff profile
+  (#120; config `auto_depth`).
+- `--tiered` — opt-in risk-aware tiered model routing with a frontier anchor (#524).
+- `--hints` — local static-analysis pre-pass (Ruff/ESLint) whose findings are injected as hints (#523).
 - `--incremental` — review only changes since the last jury run on `--pr` (#9).
 - `--suggest-patches`, `--patches-out <path>` — inspectable patches for verified findings (#10).
 - `--cache`, `--cache-dir <path>`, `--clear-cache` — optional result cache (#33).
 - `--context-mode diff-only|expanded`, `--redact` / `--no-redact` — what leaves your machine.
 - `--format markdown|json|sarif|keel-reviews`, `-o/--output <path>`, `--metadata-json <path>`.
+  `keel-reviews` is a bundle, not a report: one review record per panelist plus the chair.
+- `--transcript` / `--no-transcript` — the full play-by-play instead of the summary;
+  `--verbose` — summary **and** transcript in one document.
+- `--live` — stream each step as it lands; `--theater` / `--no-theater` /
+  `--theater-style flat|pixel` — the animated deliberation scene (needs a TTY; falls
+  back to `--live`).
 - `--post-summary` (alias `--post`), `--post-inline`, `--dry-run`, `--label` — GitHub output.
 - `--post-progress` — live sticky PR status comment updated each round/chunk (#125; needs `--pr`).
 - `--post-mode single|phased` — `phased` posts Round 1 / debate / decision as separate comments (#126).
-- `--ci`, `--fail-on <sev,...>` — CI gating.
-- `--mock`, `--strict`, `--doctor`, `-q/--quiet`, `--version`.
+- `--ci`, `--fail-on <sev,...>` — CI gating on blocking findings (exit `1`).
+- `--min-vendors <n>` / `--no-min-vendors` — the cross-vendor guard: fewer than `n`
+  distinct vendors *contributing* a review exits `3`, checked on every run and outranking
+  the `--ci` severity gate. Default from `[jury.ci] min_vendors` (shipped as `2`) and
+  scoped to runs that enabled that many vendors; an explicit `-n` is enforced as asked.
+  `--strict` is the other half — it fails at *startup* on a missing CLI (#682).
+- `--doctor` — local readiness report; `--json` makes it the `ai-jury.doctor.v1` document
+  and the only thing on stdout; `--write <path>` also writes the diagnostics as JSON (#662).
+- `--mock`, `--strict`, `-q/--quiet`, `--version`.
+
+### Exit codes
+
+`0` ran and nothing blocked · `1` `--ci` with blocking findings remaining · `2` bad
+arguments / invalid config · `3` the panel collapsed below `min_vendors`.
 
 ## Configuration schema — `jury.toml`
 
@@ -105,9 +147,11 @@ verify = true
 # auto_depth = false                              # risk-aware auto-depth (#120; CLI --auto)
 # total_timeout = 1200 ; phase_timeout = 600 ; retries = 0   # run budget (#30)
 
-[jury.ci]
-fail_on = ["critical", "major"]   # severities that fail `--ci`
-ignore_unverified = true
+[jury.ci]                         # exactly these three keys (`--format` is a flag)
+fail_on = ["critical", "major"]   # severities that fail `--ci` (exit 1)
+ignore_unverified = true          # only verified findings can fail CI
+min_vendors = 2                   # distinct vendors that must have CONTRIBUTED a
+                                  # review; fewer exits 3. 0 disables the guard (#682)
 
 [jury.context]
 mode = "diff-only"      # "diff-only" (default) or "expanded"
@@ -119,9 +163,12 @@ redact_secrets = true   # scrub recognized secrets before sending (default on)
 
 [[agent]]
 name = "claude"
-vendor = "anthropic"    # anthropic | openai | google | local
+vendor = "anthropic"    # anthropic | openai | google | local | anthropic-api |
+                        # openai-api | google-api | openai-compatible | cli
 command = "claude"
 # model = "claude-opus-4-8"
+# effort = "medium"     # low | medium | high; google + the *-api/openai-compatible
+                        # vendors act on it, the claude/codex CLIs warn and ignore it
 extra_args = ["--output-format", "text", "--disallowed-tools", "Edit,Write,NotebookEdit,Bash", "--dangerously-skip-permissions"]
 
 # A free, offline local / open-weight reviewer (#43):
@@ -163,7 +210,9 @@ Antigravity `--sandbox`; `privilege.py` audits this. Invocations:
 - GitHub: one summary comment (`--post-summary`) and/or inline review comments
   (`--post-inline`) via `gh`; opt-in classification labels (`--label`).
 - Suggested patches for verified findings (`--suggest-patches`, `--patches-out`).
-- CI: exit code is non-zero when blocking findings remain (`--ci`, `--fail-on`).
+- CI: exit `1` when blocking findings remain (`--ci`, `--fail-on`), and exit `3` when
+  fewer than `min_vendors` distinct vendors contributed a review — a collapsed panel is
+  its own outcome, checked with or without `--ci`.
 
 ## Security / data-flow model
 
