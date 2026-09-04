@@ -183,6 +183,13 @@ The document is `schema_version: "ai-jury.doctor.v1"`:
   "python": "3.12.14",
   "config_path": "/path/to/jury.toml",
   "ready": true,
+  "panel": {
+    "vendors_configured": 3,
+    "vendors_available": 1,
+    "min_vendors": 2,
+    "contributing_vendors": null,
+    "multi_vendor_ready": false
+  },
   "agents": [
     {
       "name": "agy",
@@ -207,6 +214,7 @@ The document is `schema_version: "ai-jury.doctor.v1"`:
 | --- | --- |
 | `schema_version` | `ai-jury.doctor.v1`. Bumped on any breaking shape change. |
 | `ready` | At least one configured agent is reachable. |
+| `panel` | Cross-vendor readiness (see below). |
 | `transport` | `cli` (a command on PATH), `api` (a hosted vendor API), or `local` (an OpenAI-compatible server you run). |
 | `command` / `endpoint` | Exactly one, named for the transport: a `cli` agent carries `command`, everything else carries the `endpoint` its adapter would actually call. |
 | `reason` | Why an agent is unusable, or `null` when it is available. |
@@ -214,6 +222,28 @@ The document is `schema_version: "ai-jury.doctor.v1"`:
 | `models` | Model ids discovered for that agent (`agy models`, or a local server's `/v1/models`), or `null` when nothing could be listed. Discovered **only** for `--json`: it costs a probe per agent, and the text report does not show it. |
 | `effort_supported` / `effort` | Whether the vendor has an effort control, and the level configured for this agent. |
 | `warnings` | The same config warnings the human report lists. |
+
+### `panel`: readiness, not contribution
+
+| Field | Meaning |
+| --- | --- |
+| `vendors_configured` | Distinct vendors among the **enabled** agents. Slots are not vendors: three agents on one vendor count as 1. |
+| `vendors_available` | How many of those are reachable right now. |
+| `min_vendors` | The effective `[jury.ci] min_vendors` threshold (`0` when opted out). |
+| `contributing_vendors` | **Always `null` here.** Doctor runs no review, so it cannot know how many vendors would actually contribute. The real number is `panel.vendors` in a run's `--metadata-json`. |
+| `multi_vendor_ready` | `vendors_available >= min_vendors` (or `true` when the guard is off). |
+
+`contributing_vendors` is in the export precisely *because* it is null: a
+consumer must be able to see that availability was checked and contribution was
+not. A CLI can be installed, pass its version probe, be reported `[available]`,
+and still return nothing — that is [#635], and it is why a green doctor is not
+evidence of a cross-vendor panel. Only a run proves that.
+
+When two or more vendors are enabled and fewer than `min_vendors` are reachable,
+the same fact also appears in `warnings` (and in the human report's
+**Cross-vendor readiness** block), because the run that follows will exit 3.
+
+[#635]: https://github.com/berkayturanci/ai-jury/issues/635
 
 **Secrets are never included** — only environment *variable names* (e.g.
 `OPENAI_API_KEY is not set in the environment`), never their values, and
@@ -224,6 +254,42 @@ they cannot disagree about the panel.
 `--write PATH` is unchanged and still writes the *full* internal diagnostics dict
 (a superset, no schema promise); under `--json` its confirmation line moves to
 stderr so stdout stays a single JSON document.
+
+## CI gate & the cross-vendor guard (`[jury.ci]`)
+
+```toml
+[jury.ci]
+fail_on = ["critical", "major"]   # severities that fail `jury --ci` (exit 1)
+ignore_unverified = true          # only verified findings can fail the build
+min_vendors = 2                   # distinct vendors that must have REVIEWED
+```
+
+`fail_on` / `ignore_unverified` apply only under `--ci`. `min_vendors` applies to
+**every** run, because it is not a judgement about findings — it is the question
+of whether a jury happened at all.
+
+| Key | Default | Effect |
+| --- | --- | --- |
+| `min_vendors` | `2` | Exit **3** unless at least this many *distinct vendors contributed a review*. `0` disables. |
+
+It **fails closed**, and it is scoped so that default is safe:
+
+- it applies only when **two or more distinct vendors are enabled** — a
+  deliberate single-agent setup never claimed cross-vendor consensus, so it is
+  never failed for not delivering one;
+- an agent that abstained (replied with no findings block) or came back
+  `ok=False` — including the typed `no_review` failure for a refusal or a CLI
+  usage banner — does not count toward the total;
+- `--min-vendors N` overrides the key, and a threshold given on the command line
+  is enforced as given, scoping or not;
+- `--no-min-vendors` (or `min_vendors = 0`) is the explicit opt-out.
+
+Exit 3 is distinct from the `--ci` findings failure (exit 1), and a collapsed
+panel outranks it: `evaluate_ci` reports on findings the panel did or did not
+raise, and a panel that never formed is not evidence either way.
+
+The official GitHub Action exposes the same knob as a `min-vendors` input,
+defaulting to `2` — see [cookbook §15](cookbook.md#15-zero-friction-ci-with-the-official-github-action).
 
 ## Large-diff handling (`[jury.diff]`)
 

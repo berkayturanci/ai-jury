@@ -332,6 +332,64 @@ trialing the tool with one CLI.
 > Trimming to one agent is fine for smoke tests and cost control, but use ≥2
 > vendors when you want the real jury effect.
 
+### Proving the panel did not collapse
+
+Configuring three vendors is not the same as *hearing from* three. An agent can
+be on `PATH`, pass its version probe, be reported `[available]` by `jury
+--doctor`, and still contribute nothing — a refusal, a CLI whose flags changed
+under it, a reply with no findings block. The run continues (fail-soft), and its
+report looks exactly like a healthy one.
+
+Two things stop that being silent.
+
+**Before the run — `jury --doctor`.** The report ends with a readiness block, and
+`--doctor --json` carries the same facts under `panel`:
+
+```console
+$ jury --doctor
+...
+Cross-vendor readiness
+----------------------------------------
+  vendors enabled:   3
+  vendors reachable: 1
+  min_vendors gate:  2
+  cross-vendor ready: no
+  note: this checks availability, not contribution. A reachable CLI can still
+        return no review (#635) — only a run can prove the panel.
+```
+
+```bash
+jury --doctor --json | jq '.panel'
+# { "vendors_configured": 3, "vendors_available": 1, "min_vendors": 2,
+#   "contributing_vendors": null, "multi_vendor_ready": false }
+```
+
+`contributing_vendors` is `null` on purpose: doctor runs no review, so it can
+only report reachability. Do not read a green doctor as proof of a cross-vendor
+panel.
+
+**After the run — the `--min-vendors` guard**, which counts vendors that actually
+**contributed a review** and exits **3** when there are too few:
+
+```bash
+jury --pr 123 --ci                     # guard on by default (min_vendors = 2)
+jury --pr 123 --min-vendors 3          # require all three vendors
+jury --pr 123 --no-min-vendors         # accept a collapsed panel (explicit)
+```
+
+It fails closed, and only for a run that claimed cross-vendor consensus: with
+fewer than two distinct vendors enabled — Option A above, or a single installed
+CLI — the default gate never fires. Exit 3 is distinct from the `--ci` findings
+failure (exit 1), so a caller can tell "the reviewers disagreed with you" from
+"the reviewers never ran".
+
+The run's own count is in `--metadata-json` under `panel.vendors`:
+
+```bash
+jury --pr 123 --metadata-json run.json && jq '.panel' run.json
+# { "configured": 3, "effective": 1, "vendors": 1, "abstained": 0, "failed": 2, "short": true }
+```
+
 ---
 
 ## 8. Incremental review on PR updates
@@ -577,7 +635,25 @@ jobs:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           args: "--auto --post --ci"
+          # min-vendors: "2"   # the default; see below
 ```
+
+**The Action refuses a collapsed panel by default.** `min-vendors` defaults to
+`2`, so a workflow that says nothing still gets the cross-vendor guard — before
+this, an Action consumer inherited a fail-soft run that exited 0 on a panel that
+had quietly become single-vendor. The input is appended as `--min-vendors N`
+unless `args` already names `--min-vendors` or `--no-min-vendors`, so an explicit
+choice in `args` always wins.
+
+| Value | Effect |
+| --- | --- |
+| `"2"` (default) | Fail the step (exit 3) when fewer than 2 distinct vendors contributed a review. |
+| `"3"` | Require all three of a three-vendor panel. |
+| `"0"` | Opt out — accept a single-vendor run, the pre-#682 behaviour. |
+
+The guard is inert for a single-vendor configuration, so a workflow running one
+reviewer does not need `min-vendors: "0"`. A non-integer value fails the step
+with a clear message rather than being spliced into the command line.
 
 ---
 

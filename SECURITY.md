@@ -26,6 +26,16 @@ This tool invokes local agent CLIs and may pass PR diffs or repository context t
 tools. Review your configured agent CLIs, authentication state, and `jury.toml`
 before running it on sensitive repositories.
 
+**Fail-soft is not a multi-vendor guarantee.** If you gate a merge on this
+tool's verdict, note that adapters fail soft by design: an agent that is
+missing, broken, unauthenticated, or whose CLI flags changed under it is
+skipped and the run continues. A verdict from a panel that collapsed to one
+vendor is not a cross-vendor verdict, and it is not visually distinguishable
+from one that is. If your process depends on the cross-vendor property, keep
+the `--min-vendors` guard on (it is, by default — exit 3 when too few vendors
+contributed) rather than opting out with `--no-min-vendors`, and treat a green
+`jury --doctor` as evidence of *reachability*, never of participation.
+
 ## Jury data flow & redaction
 
 What the jury sends to each configured agent is deliberately narrow.

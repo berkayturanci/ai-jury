@@ -170,10 +170,34 @@ Gemini `thinkingConfig`); a vendor with no effort control warns once on stderr
 | `--phase-timeout` | seconds | unset | Per-phase wall-clock budget. |
 | `--retries` | integer ≥ 0 | `0` | Extra attempts for *transient* failures (timeout / rate-limit / spawn). |
 | `--strict` | flag | off | Fail the run if any configured agent CLI is missing. |
+| `--min-vendors` | integer ≥ 0 | from config (`2`) | Fail (**exit 3**) unless at least N **distinct vendors contributed a review**. `0` disables. |
+| `--no-min-vendors` | flag | off | Explicit opt-out: accept a panel that collapsed to one vendor (same as `--min-vendors 0`). |
 
 **Example:** `jury --pr 123 --total-timeout 900 --phase-timeout 240 --retries 1`
 caps the whole run at 15 min, each phase at 4 min, and retries transient
 failures once.
+
+#### The cross-vendor guard (`--min-vendors`)
+
+`--strict` checks **availability at startup**; `--min-vendors` checks
+**participation at the end**. They catch different failures: an agent can be on
+`PATH`, exit 0 on its version probe, be reported `[available]` by `jury
+--doctor`, and still contribute nothing to the panel — which is how a
+three-vendor jury silently becomes a single-vendor rubber stamp.
+
+It counts *vendors*, not slots: three agents from one vendor are one
+perspective, and an abstention (a reply with no findings block) is not one at
+all. Exit **3** is deliberately distinct from the `--ci` findings failure (exit
+1), so a caller can tell "the reviewers disagreed with you" from "the reviewers
+never ran", and a collapsed panel outranks the severity gate when both apply.
+
+It fails **closed** by default: the threshold is `2`, from `[jury.ci]
+min_vendors`. It only applies to a run that claimed cross-vendor consensus in
+the first place — two or more distinct vendors enabled — so a deliberate
+single-agent setup keeps exiting 0. A threshold you type is enforced as typed:
+`--min-vendors 2` on a one-vendor config fails, because you asked for it.
+
+Opt out with `--no-min-vendors`, or `min_vendors = 0` under `[jury.ci]`.
 
 ### Large-diff handling
 
