@@ -269,7 +269,7 @@ The document is `schema_version: "ai-jury.doctor.v1"`:
 | `schema_version` | `ai-jury.doctor.v1`. Bumped on any breaking shape change. |
 | `ready` | At least one configured agent is reachable. |
 | `panel` | Cross-vendor readiness (see below). |
-| `vendor` | The vendor **as configured**, verbatim (provenance). |
+| `vendor` | The vendor as configured, in its normalised spelling — stripped and lowercased once when the seat is built, so ` XAI-API ` reads back as `xai-api`. Provenance, as distinct from `vendor_identity`. |
 | `vendor_identity` | The vendor this seat counts as at the cross-vendor gate: its own name when recognised, `cli` when it fell back to the generic adapter. This is what `panel` counts. |
 | `transport` | `cli` (a command on PATH), `api` (a hosted vendor API), or `local` (an OpenAI-compatible server you run). |
 | `command` / `endpoint` | Exactly one, named for the transport: a `cli` agent carries `command`, everything else carries the `endpoint` its adapter would actually call. |
