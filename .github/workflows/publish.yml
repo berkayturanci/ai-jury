@@ -14,6 +14,17 @@ jobs:
   build-n-publish:
     name: Build, Publish to PyPI, and Create GitHub Release
     runs-on: ubuntu-latest
+    # A backstop, not *the* bound. Every command below that talks to the network
+    # carries a timeout of its own, because a ceiling at this level cannot tell a
+    # stalled download from a slow job and cannot fail with a message naming the
+    # thing that stalled. But per-command bounds only ever cover the commands
+    # somebody has looked at, and this job also runs five actions whose HTTP is
+    # theirs and `python -m build`, which shells out to pip. So the job gets a
+    # ceiling too, and it caps the *next* unbounded command as well as the ones
+    # already found. Without it the ceiling is GitHub's six-hour default — in a
+    # job that sits between a PyPI upload and the GitHub Release, where a hang is
+    # the half-made release this whole file is trying to stop having.
+    timeout-minutes: 30
     outputs:
       # Whether the formula was actually pushed to the tap in this run — set by
       # the push step's last line, not by the presence of a token, which is only
@@ -57,10 +68,16 @@ jobs:
         with:
           python-version: "3.13"
 
+      # `--timeout` is pip's socket timeout, and it has a default (15s), so pip
+      # is the one network client here that cannot hang on a peer that stops
+      # writing. It is set explicitly all the same: an invariant that holds only
+      # because of a default is one a pip release can retire without anybody
+      # reading a diff, and it is the value this job is willing to wait, not
+      # pip's.
       - name: Install build dependencies
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install build
+          timeout 60 python -m pip install --timeout 30 --upgrade pip
+          timeout 180 python -m pip install --timeout 30 build
 
       - name: Build package distributions
         run: python -m build --sdist --wheel --outdir dist/
@@ -79,10 +96,13 @@ jobs:
       # in the upload dir. The SBOM still ships with the GitHub Release.
       - name: Generate CycloneDX SBOM
         run: |
-          python -m pip install cyclonedx-bom
+          timeout 180 python -m pip install --timeout 30 cyclonedx-bom
           mkdir -p release
           python -m venv --without-pip sbom-venv
-          python -m pip --python sbom-venv/bin/python install --no-deps dist/*.whl
+          # A local wheel with `--no-deps` reaches no index, so this one carries
+          # the bound for uniformity rather than for need: a rule with a
+          # remembered exception is a rule nobody can check mechanically.
+          timeout 60 python -m pip --python sbom-venv/bin/python install --timeout 30 --no-deps dist/*.whl
           cyclonedx-py environment sbom-venv \
             --pyproject pyproject.toml \
             --mc-type application \
@@ -144,35 +164,62 @@ jobs:
           # PyPI no longer serves, so it 404'd — and took the digest from the
           # locally built sdist rather than the uploaded one (#562).
           #
-          # Five minutes, the same budget the `verify` job uses. It was sixty
-          # seconds, which is a worse failure than it looks: this step runs after
-          # the upload and before the GitHub Release, so a slow index left the
-          # release half-made — exactly the state this PR exists to remove.
-          indexed=""
-          for attempt in $(seq 1 30); do
-            if curl -fsSL "https://pypi.org/pypi/ai-jury/${tag_version}/json" -o pypi.json; then
-              indexed=1
-              break
-            fi
-            echo "PyPI has not indexed ${tag_version} yet (attempt ${attempt}/30); retrying in 10s"
-            sleep 10
-          done
-          if [ -z "$indexed" ]; then
-            echo "::error::PyPI has no metadata for ${tag_version}; cannot render a formula"
-            exit 1
-          fi
-
-          read -r sdist_url sdist_sha <<EOF
-          $(python3 -c "
-          import json
-          urls = json.load(open('pypi.json'))['urls']
-          sdist = next(f for f in urls if f['packagetype'] == 'sdist')
-          print(sdist['url'], sdist['digests']['sha256'])")
-          EOF
+          # The wait is `.github/scripts/wait-for-pypi-dists.sh`, the same script
+          # the `verify` job runs — one implementation, three call sites, so the
+          # five-minute budget and the failure message cannot drift apart (#694).
+          #
+          # The wait that used to live here polled until the version endpoint
+          # answered at all, which on 1.16.0 it already did; what had not
+          # converged was the `urls` array inside the answer, so `next(f for f in
+          # urls if …)` raised `StopIteration`, the url stayed empty and `curl`
+          # rejected it — after the upload, before the Release. The script waits
+          # on the file list itself and hands back the sdist's url and digest,
+          # so nothing downstream re-parses the document.
+          .github/scripts/wait-for-pypi-dists.sh
+          read -r sdist_url sdist_sha < published-sdist.txt
 
           # Prove it before publishing anywhere. A tap one release behind still
           # installs; a tap holding an uninstallable formula does not.
-          curl -fsSL "$sdist_url" -o published-sdist.tar.gz
+          #
+          # Bounded for the same reason the poll above is, and against the same
+          # host: the wait returning says the *index* converged, not that the
+          # file server will answer. A peer that accepts this connection and then
+          # never writes held the step open with no bound but the job's, one line
+          # past the wait that was fixed for exactly this — after the upload,
+          # before the Release. `--connect-timeout` covers the peer that never
+          # completes the handshake, `--max-time` the one that completes it and
+          # then stops.
+          #
+          # The defaults are the release's values — 120s is generous for an sdist
+          # of a few hundred kilobytes — and they are read from the environment
+          # for the reason `wait-for-pypi-dists.sh` reads its budget that way: a
+          # bound nothing can drive is a bound nothing can test, and this step's
+          # `run:` body is executed against a stalling stub in
+          # `tests/test_pypi_index_wait.py`. The environment, as always here —
+          # an Actions expression would be substituted into this script's source
+          # before bash parsed it (see tests/test_workflow_run_blocks.py).
+          connect_timeout="${SDIST_CONNECT_TIMEOUT:-10}"
+          max_time="${SDIST_MAX_TIME:-120}"
+          # `:-` substitutes only when a variable is unset or *empty*, so an
+          # explicit `SDIST_MAX_TIME=0` reaches curl untouched — and curl reads
+          # `0` as "no limit", which is exactly the unbounded download this
+          # bound exists to remove. A defaulted expansion is not a check.
+          # `wait-for-pypi-dists.sh` refuses a zero `PYPI_MAX_TIME` for the same
+          # reason; this is that refusal, for the same host and same request.
+          case "${connect_timeout}${max_time}" in
+            "" | *[!0-9]*)
+              echo "::error::SDIST_CONNECT_TIMEOUT ('${connect_timeout}') and SDIST_MAX_TIME ('${max_time}') must be whole numbers of seconds"
+              exit 1
+              ;;
+          esac
+          if [ "$((10#$connect_timeout))" -lt 1 ] || [ "$((10#$max_time))" -lt 1 ]; then
+            echo "::error::SDIST_CONNECT_TIMEOUT and SDIST_MAX_TIME must be at least 1 second — curl reads 0 as 'no limit', which is the bound this download needs"
+            exit 1
+          fi
+          curl -fsSL \
+            --connect-timeout "$connect_timeout" \
+            --max-time "$max_time" \
+            "$sdist_url" -o published-sdist.tar.gz
           got="$(sha256sum published-sdist.tar.gz | cut -d' ' -f1)"
           if [ "$got" != "$sdist_sha" ]; then
             echo "::error::PyPI's declared digest is not the artifact's; refusing to publish a formula"
@@ -267,13 +314,20 @@ jobs:
           TAP: berkayturanci/homebrew-ai-jury
         run: |
           set -euo pipefail
-          gh api "repos/${TAP}/contents/Formula/ai-jury.rb" --jq .sha > .tap-sha || echo "" > .tap-sha
-          gh api -X PUT "repos/${TAP}/contents/Formula/ai-jury.rb" \
+          # `gh` has no request timeout of its own — not a flag, not an
+          # environment variable — so the bound has to come from outside it, and
+          # `timeout` is the outside. All three calls run after the GitHub
+          # Release exists, so a hang here is not a half-made release; it is a
+          # runner held for six hours reporting nothing, and a tap left unpushed
+          # either way. `timeout` exits 124 on expiry, which `set -e` turns into
+          # a failed step that says which call never returned.
+          timeout 60 gh api "repos/${TAP}/contents/Formula/ai-jury.rb" --jq .sha > .tap-sha || echo "" > .tap-sha
+          timeout 120 gh api -X PUT "repos/${TAP}/contents/Formula/ai-jury.rb" \
             -f message="chore: sync formula for ${GITHUB_REF_NAME} (from ${GITHUB_REPOSITORY}@${GITHUB_SHA})" \
             -f content="$(base64 -w0 release/ai-jury.rb)" \
             $( [ -s .tap-sha ] && echo -f sha="$(cat .tap-sha)" )
           # A 200 from the push is not proof the tap serves the new bytes.
-          gh api "repos/${TAP}/contents/Formula/ai-jury.rb" --jq .content | base64 -d > tap-formula.rb
+          timeout 60 gh api "repos/${TAP}/contents/Formula/ai-jury.rb" --jq .content | base64 -d > tap-formula.rb
           diff release/ai-jury.rb tap-formula.rb
           # Last line, after the readback: `verify` may only demand the tap carry
           # this release if the tap demonstrably has it.
@@ -291,12 +345,63 @@ jobs:
     name: Verify the published release installs and runs
     needs: build-n-publish
     runs-on: ubuntu-latest
+    # The same backstop, for the reason spelled out on `build-n-publish` — and
+    # here the ceiling has to sit *above* the sum of this job's own bounds
+    # rather than at a round number that reads generously. All of them, in
+    # order:
+    #
+    #   - the index wait, twice (the step below and the formula check): a 300s
+    #     budget each, plus the request still in flight when the budget runs out
+    #     (30s) and the sleep after it (10s) — 340s apiece. The second one
+    #     returns on the first attempt in practice, but nothing enforces that,
+    #     so it is counted at full price;
+    #   - the pip upgrade, wrapped at 60s, and the resolve loop:
+    #     6 × (`timeout 90` + `sleep 10`) = 660s in all. pip's own
+    #     `--timeout` is a socket timeout — a bound on one quiet read, not
+    #     on the call — so a peer that drips a byte inside it holds the
+    #     loop open for as long as it likes. Only the wrapper bounds it,
+    #     and only the wrapper is countable here;
+    #   - the sdist download: `--max-time` 120s, plus a 10s connect timeout;
+    #   - `gh release download`, wrapped at 120s;
+    #   - the tap poll: 10 × `timeout 30` + 10 × `sleep 15` = 450s;
+    #   - the `if: failure()` report: three `timeout 60` `gh` calls = 180s.
+    #
+    # That is ~2220s, and the twenty minutes this used to say was *below* it: a
+    # job that spent its own bounds honestly would be cancelled at 1200s rather
+    # than fail. Which matters more here than anywhere, because a job stopped by
+    # `timeout-minutes` is *cancelled* — the `if: failure()` step below does not
+    # run and no `release-broken` issue is opened, for a release that is already
+    # public. So the ceiling has to leave room for the report as well as for the
+    # waits. It is still a last resort and not the mechanism: a step that fails
+    # on its own timeout fails the job, names what stalled, and files that
+    # report. `tests/test_publish_release_chain.py` recomputes the sum above
+    # from this file, so a new wait cannot quietly outgrow the ceiling again.
+    timeout-minutes: 45
     permissions:
       contents: read
       issues: write   # open/update `release-broken: <tag>` when this job fails
     env:
       GH_REPO: ${{ github.repository }}
     steps:
+      # Only `.github/scripts`, and deliberately not the package source: this
+      # job's whole point is to install what the index serves rather than what
+      # the checkout holds, so a full tree here would put the thing under test
+      # on the runner beside the thing being tested (#694).
+      #
+      # `sparse-checkout-cone-mode: false` is load-bearing, not tidiness. Cone
+      # mode always materialises every file at the repository *root* whatever
+      # the pattern says, so the default would hand this runner `jury.toml` and
+      # `pyproject.toml` among others — and `jury --doctor`, two steps down,
+      # discovers `jury.toml` from the working directory. A check whose whole
+      # point is a clean environment would then be reading this repository's own
+      # configuration. Out of cone mode the pattern is gitignore-shaped and
+      # anchored, so the workspace holds `.github/scripts/` and nothing else.
+      - name: Check out the release scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+          sparse-checkout-cone-mode: false
+
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
@@ -305,31 +410,25 @@ jobs:
       # Bounded, not unbounded: publishing is synchronous but indexing is not,
       # and a job that waits forever for a release that will never appear is
       # indistinguishable from a hung runner.
+      #
+      # The same script the render step runs, asking the same question of the
+      # same endpoint (#694). It waits on the *file list*, not merely on the
+      # version endpoint answering: a 200 whose `urls` array is still empty is
+      # what broke the render, and it would equally mean `pip install` has
+      # nothing to resolve.
       - name: Wait for PyPI to serve the release
-        run: |
-          set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
-          for attempt in $(seq 1 30); do
-            if curl -fsS -o /dev/null "https://pypi.org/pypi/ai-jury/${version}/json"; then
-              echo "PyPI serves ${version}"
-              exit 0
-            fi
-            echo "not indexed yet (attempt ${attempt}/30); retrying in 10s"
-            sleep 10
-          done
-          echo "::error::PyPI did not serve ${version} within five minutes"
-          exit 1
+        run: .github/scripts/wait-for-pypi-dists.sh
 
       - name: Install the published release into a clean virtualenv
         run: |
           set -euo pipefail
           version="${GITHUB_REF_NAME#v}"
           python -m venv /tmp/verify-venv
-          /tmp/verify-venv/bin/python -m pip install --upgrade pip
+          timeout 60 /tmp/verify-venv/bin/python -m pip install --timeout 30 --upgrade pip
           # The JSON API can know a version before the installer index serves it.
           installed=""
           for attempt in 1 2 3 4 5 6; do
-            if /tmp/verify-venv/bin/python -m pip install "ai-jury==${version}"; then
+            if timeout 90 /tmp/verify-venv/bin/python -m pip install --timeout 30 "ai-jury==${version}"; then
               installed=1
               break
             fi
@@ -368,23 +467,43 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
-          curl -fsSL "https://pypi.org/pypi/ai-jury/${version}/json" -o pypi.json
-          read -r sdist_url sdist_sha <<EOF
-          $(python3 -c "
-          import json
-          urls = json.load(open('pypi.json'))['urls']
-          sdist = next(f for f in urls if f['packagetype'] == 'sdist')
-          print(sdist['url'], sdist['digests']['sha256'])")
-          EOF
-          curl -fsSL "$sdist_url" -o published-sdist.tar.gz
+          # The same shared wait again rather than a second hand-rolled read of
+          # the same document (#694). By now it returns on the first attempt;
+          # calling it keeps this step self-contained and leaves exactly one
+          # place in the workflow that knows how to find the sdist in PyPI's
+          # file list.
+          .github/scripts/wait-for-pypi-dists.sh
+          read -r sdist_url sdist_sha < published-sdist.txt
+          # Bounded exactly as the render step's identical download is: the wait
+          # returning means the index converged, not that the file server will
+          # answer, and this job's failure path opens an issue — which never
+          # happens if the step never ends. The zero check is the render step's
+          # too, and for the same reason: `${SDIST_MAX_TIME:-120}` substitutes
+          # only when the variable is unset or empty, and curl reads an explicit
+          # `0` as "no limit" — the unbounded download, spelled differently.
+          connect_timeout="${SDIST_CONNECT_TIMEOUT:-10}"
+          max_time="${SDIST_MAX_TIME:-120}"
+          case "${connect_timeout}${max_time}" in
+            "" | *[!0-9]*)
+              echo "::error::SDIST_CONNECT_TIMEOUT ('${connect_timeout}') and SDIST_MAX_TIME ('${max_time}') must be whole numbers of seconds"
+              exit 1
+              ;;
+          esac
+          if [ "$((10#$connect_timeout))" -lt 1 ] || [ "$((10#$max_time))" -lt 1 ]; then
+            echo "::error::SDIST_CONNECT_TIMEOUT and SDIST_MAX_TIME must be at least 1 second — curl reads 0 as 'no limit', which is the bound this download needs"
+            exit 1
+          fi
+          curl -fsSL \
+            --connect-timeout "$connect_timeout" \
+            --max-time "$max_time" \
+            "$sdist_url" -o published-sdist.tar.gz
           got="$(sha256sum published-sdist.tar.gz | cut -d' ' -f1)"
           if [ "$got" != "$sdist_sha" ]; then
             echo "::error::the sdist PyPI serves does not hash to the digest PyPI declares"
             exit 1
           fi
 
-          gh release download "${GITHUB_REF_NAME}" --pattern ai-jury.rb --dir . --clobber
+          timeout 120 gh release download "${GITHUB_REF_NAME}" --pattern ai-jury.rb --dir . --clobber
           asset_url="$(grep -m1 -oE 'url "[^"]+"' ai-jury.rb | cut -d'"' -f2)"
           asset_sha="$(grep -m1 -oE 'sha256 "[0-9a-f]{64}"' ai-jury.rb | cut -d'"' -f2)"
           if [ "$asset_url" != "$sdist_url" ]; then
@@ -418,7 +537,11 @@ jobs:
           got="$(cat sdist.sha256)"
           tap_sha=""
           for attempt in $(seq 1 10); do
-            gh api "repos/${TAP}/contents/Formula/ai-jury.rb" \
+            # Ten attempts is not 150 seconds if one of them can never return:
+            # the `|| true` tolerates a failed request, but nothing ends a
+            # request that has been accepted and then abandoned, so attempt two
+            # is never made. `timeout` is what makes the ten attempts a poll.
+            timeout 30 gh api "repos/${TAP}/contents/Formula/ai-jury.rb" \
               -H "Accept: application/vnd.github.raw" > tap-formula.rb || true
             if grep -qF "ai_jury-${version}.tar.gz" tap-formula.rb; then
               tap_sha="$(grep -m1 -oE 'sha256 "[0-9a-f]{64}"' tap-formula.rb | cut -d'"' -f2)"
@@ -469,13 +592,13 @@ jobs:
           # `|| true`: a hiccup listing issues must not stop the report being
           # filed. Worst case a duplicate is opened, which is strictly better
           # than a broken release with nothing on a list.
-          existing="$(gh issue list --state open --search "\"${title}\" in:title" \
+          existing="$(timeout 60 gh issue list --state open --search "\"${title}\" in:title" \
             --json number,title --jq "[.[] | select(.title == \"${title}\")][0].number // empty" \
             || true)"
           if [ -n "$existing" ]; then
-            gh issue comment "$existing" --body "$body"
+            timeout 60 gh issue comment "$existing" --body "$body"
             echo "commented on #${existing}"
           else
-            gh issue create --title "$title" --body "$body" \
+            timeout 60 gh issue create --title "$title" --body "$body" \
               --label "area:release" --label "bug" --label "priority:high"
           fi

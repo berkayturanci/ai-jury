@@ -46,6 +46,48 @@ For each release, the publish workflow builds and attaches:
 Nothing after the tag commits to this repository. A release is exactly one write
 to `main`: the release pull request.
 
+Uploading to PyPI is synchronous; being indexed by it is not, and the formula is
+rendered from the *published* sdist — a read-after-write against a service that
+is only eventually consistent. Both jobs therefore run one shared wait,
+`.github/scripts/wait-for-pypi-dists.sh`, which polls
+`https://pypi.org/pypi/ai-jury/<version>/json` for five minutes (30 × 10s) until
+**both** distributions appear in its `urls` array, and hands back the sdist's own
+url and sha256. The five minutes is a ceiling and not an estimate: every request
+carries a connect timeout and a maximum time, and the poll stops once the budget
+is spent, so a response that stalls after the connection is accepted cannot hold
+the step open. Before #694 the render waited only for that endpoint to answer at
+all: on v1.16.0 it answered with an empty file list, the read raised
+`StopIteration`, and `curl` was handed an empty url — failing *after* the upload
+and *before* the GitHub Release, which left 1.16.0 live on PyPI with no release
+and no `releases/latest/download/ai-jury.rb`. If the index genuinely never
+converges the job now fails with an `::error::` naming the version and the
+distribution that never appeared; re-running the job is the recovery, and
+`skip-existing: true` keeps the upload step a no-op.
+
+The same rule covers every other command in that workflow that opens a
+connection, because the index converging is not the file server answering: the
+sdist downloads carry `--connect-timeout` and `--max-time`
+(`SDIST_CONNECT_TIMEOUT`/`SDIST_MAX_TIME`, 10s and 120s by default), and every
+`pip install` and every `gh` call is wrapped in `timeout`. `gh` accepts no other
+bound at all; `pip` appears to, but its `--timeout` limits one quiet read rather
+than the call, so a peer that sends a byte inside every window is unbounded by
+it. The wrapper is the only bound that is both real and countable here. `0` is refused for either sdist timeout rather than
+passed on, because `${SDIST_MAX_TIME:-120}` substitutes only when the variable is
+unset or empty and curl reads `0` as "no limit" — the unbounded download, reached
+through the bound.
+
+Underneath them both jobs set `timeout-minutes` — 30 for the publish job, 45 for
+`verify` — which bounds the actions the workflow `uses:` and anything a future
+step forgets to bound. That ceiling is a backstop and not the mechanism: a job
+stopped by `timeout-minutes` is cancelled, so `verify`'s failure step does not
+run and no `release-broken` issue is opened, whereas a command that fails on its
+own timeout fails the job and files the report. It must therefore sit *above*
+the sum of the bounds beneath it — `verify` may spend about 2220s inside its own
+waits and its failure report, so twenty minutes would have cancelled a job that
+was still inside every deadline it sets itself.
+`tests/test_publish_release_chain.py` recomputes that sum from the workflow, for
+every job the file declares, so neither a new wait nor a new job escapes it.
+
 All GitHub Actions are pinned to full commit SHAs (see
 [CONTRIBUTING](../CONTRIBUTING.md)).
 
