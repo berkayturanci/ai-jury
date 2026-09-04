@@ -536,6 +536,10 @@ PANEL_TYPES = {
     "min_vendors": int,
     "contributing_vendors": type(None),
     "multi_vendor_ready": bool,
+    # #699: the number a downstream consumer counts, which is not the agent count.
+    "panelists_available": int,
+    "reviews_supplied_max": int,
+    "min_reviews": int,
 }
 
 AGENT_TYPES = {

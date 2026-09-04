@@ -172,6 +172,7 @@ Gemini `thinkingConfig`); a vendor with no effort control warns once on stderr
 | `--strict` | flag | off | Fail the run if any configured agent CLI is missing. |
 | `--min-vendors` | integer ≥ 0 | from config (`2`) | Fail (**exit 3**) unless at least N **distinct vendors contributed a review**. `0` disables. |
 | `--no-min-vendors` | flag | off | Explicit opt-out: accept a panel that collapsed to one vendor (same as `--min-vendors 0`). |
+| `--min-reviews` | integer ≥ 0 | from config (`0`) | Require N **review records** for a downstream consumer — one ballot per agent that answers, plus the chair's record. Checked before the panel runs (exit **2**, nothing is spent) and again on the result (exit **3**). `0` disables. See [`docs/configuration.md`](configuration.md#the-panel-size-guard-min_reviews). |
 
 **Example:** `jury --pr 123 --total-timeout 900 --phase-timeout 240 --retries 1`
 caps the whole run at 15 min, each phase at 4 min, and retries transient

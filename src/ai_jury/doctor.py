@@ -25,6 +25,7 @@ from pathlib import Path
 from . import __version__
 from .adapters import effort_supported, make_adapter
 from .config import ConfigError, load_config
+from .panel import bundle_size, shortfall
 from .redaction import redact, redact_url_userinfo
 
 #: Version of the machine-readable export emitted by ``jury --doctor --json``.
@@ -259,11 +260,20 @@ def _panel_readiness(cfg, agents) -> dict:
         if entries.get(a.name, {}).get("available")
     } - {""}
     minimum = int(getattr(cfg.ci, "min_vendors", 0) or 0)
+    # The number a downstream consumer counts, which doctor never reported and
+    # which is not the agent count (#699): one record per agent that answers,
+    # plus the chair's. Doctor can only see reachability, so this is the CEILING
+    # — an agent that runs and returns nothing casts no ballot — which is why it
+    # is labelled "at most" where it is rendered.
+    seats = sum(1 for a in enabled if entries.get(a.name, {}).get("available"))
     panel = {
         "vendors_configured": len(configured),
         "vendors_available": len(available),
         "min_vendors": minimum,
         "contributing_vendors": None,
+        "panelists_available": seats,
+        "reviews_supplied_max": bundle_size(seats),
+        "min_reviews": int(getattr(cfg.ci, "min_reviews", 0) or 0),
     }
     # Derived from the same predicate the warning uses, so the field and the
     # warning cannot disagree about the same machine (#682, round 3).
@@ -280,6 +290,9 @@ _NO_PANEL = {
     "vendors_available": 0,
     "min_vendors": 0,
     "contributing_vendors": None,
+    "panelists_available": 0,
+    "reviews_supplied_max": 0,
+    "min_reviews": 0,
     "multi_vendor_ready": False,
 }
 
@@ -422,6 +435,16 @@ def build_diagnostics(config_path=None, probe_models: bool = False):
         panel_warning = _panel_warning(panel)
         if panel_warning:
             config_warnings.append(panel_warning)
+        # A bench that cannot reach the consumer's minimum is a shortfall this
+        # machine can prove offline (#699) — worth saying here rather than after
+        # the run, which is where it used to surface.
+        short = shortfall(
+            panel["panelists_available"],
+            panel["min_reviews"],
+            stage="on this machine",
+        )
+        if short:
+            config_warnings.append(short)
 
     return {
         "tool_version": __version__,
@@ -594,6 +617,15 @@ def render_report(diagnostics) -> str:
     lines.append(f"  vendors reachable: {panel['vendors_available']}")
     lines.append(f"  min_vendors gate:  {panel['min_vendors'] or 'off'}")
     lines.append(f"  cross-vendor ready: {'yes' if panel['multi_vendor_ready'] else 'no'}")
+    # The number a consumer counts, said in the same breath as readiness (#699).
+    # "cross-vendor ready: yes" on a bench that cannot supply the reviews a gate
+    # requires is a true statement that answers the wrong question.
+    lines.append(
+        f"  reviews for a consumer: at most {panel['reviews_supplied_max']} "
+        f"({panel['panelists_available']} panel ballot(s) + 1 chair record; "
+        f"the chair reviews too, so its ballot is one of them)"
+    )
+    lines.append(f"  min_reviews gate:  {panel['min_reviews'] or 'off'}")
     lines.append(
         "  note: this checks availability, not contribution. A reachable CLI "
         "can still return no review (#635) — only a run can prove the panel."

@@ -28,6 +28,7 @@ import re
 from typing import Any
 
 from .findings import flatten_inline
+from .panel import ballot_slots, bundle_size
 from .voting import is_abstention, tally_votes
 
 #: Stance recorded for a panelist that did not actually review — an empty reply,
@@ -201,10 +202,12 @@ def participating(outcome: Any) -> list:
     still carry a complete review on stdout (see :class:`ai_jury.adapters.Adapter`).
     Such a slot has a stance worth recording; ``round1_ok`` says the adapter
     reported failure. A slot with nothing at all is not a ballot.
+
+    The predicate itself lives in :mod:`ai_jury.panel` because the number this
+    returns *is* the number a consumer receives, minus the chair record — and
+    the report, ``--doctor`` and the pre-run gate all have to quote it (#699).
     """
-    return [
-        r for r in getattr(outcome, "reviews", []) or [] if (getattr(r, "output", "") or "").strip()
-    ]
+    return ballot_slots(getattr(outcome, "reviews", []) or [])
 
 
 def _stance_by_reviewer(outcome: Any, names: list[str], mode: str) -> dict[str, str]:
@@ -261,15 +264,23 @@ def reviewer_ballots(
 ) -> list[dict]:
     """The JSON report's ``reviewers`` array: one ballot per panelist, then the chair.
 
-    Panelist entries carry ``name``, ``vendor``, ``model``, ``verdict``,
-    ``findings`` (indexes into the report's top-level ``findings`` array),
-    ``round1_ok``, ``verified_count`` and ``duration_s``. The chair's entry is the
-    one carrying ``role: "chair"`` and is always last.
+    Panelist entries carry ``name``, ``role: "panelist"``, ``chaired``,
+    ``vendor``, ``model``, ``verdict``, ``findings`` (indexes into the report's
+    top-level ``findings`` array), ``round1_ok``, ``verified_count`` and
+    ``duration_s``. The chair's entry is the one carrying ``role: "chair"`` and is
+    always last.
+
+    ``chaired`` and the chair entry's ``agent``/``ballot_counted`` exist because
+    the chair reviews too (#699): without them a reader cannot tell that the
+    ``claude`` ballot and the ``chair`` record are the same agent, nor whether the
+    chair contributed a ballot at all — and a reader who guesses drops a review
+    the panel actually cast.
     """
     slots = participating(outcome)
     names = [getattr(r, "agent", "") for r in slots]
     stances = _stance_by_reviewer(outcome, names, mode)
     all_findings = list(getattr(outcome, "findings", []) or [])
+    chair_name = getattr(outcome, "chair", "") or ""
 
     entries: list[dict] = []
     for r in slots:
@@ -277,6 +288,8 @@ def reviewer_ballots(
         entries.append(
             {
                 "name": name,
+                "role": "panelist",
+                "chaired": bool(chair_name) and name == chair_name,
                 "vendor": getattr(r, "vendor", "") or "",
                 "model": _model_for(config, name),
                 "verdict": _verdict_for(r, stances),
@@ -287,11 +300,15 @@ def reviewer_ballots(
             }
         )
 
-    chair_name = getattr(outcome, "chair", "") or ""
     entries.append(
         {
             "name": CHAIR_NAME,
             "role": "chair",
+            "agent": chair_name,
+            # The chair record is itself one of the reviews a consumer counts,
+            # which is the fact the bundle never stated (#699).
+            "ballot_counted": any(e["chaired"] for e in entries),
+            "reviews_supplied": bundle_size(len(entries)),
             "vendor": _vendor_for(config, chair_name),
             "model": _model_for(config, chair_name),
             "verdict": chair_verdict(outcome, vote),
@@ -320,15 +337,40 @@ def _chair_findings(outcome: Any) -> list:
     ]
 
 
+def _chair_role_sentence(chair_agent: str, chaired_ballot: dict | None) -> str:
+    """State, in the record itself, whether this chair's ballot is counted (#699).
+
+    A chair that reviewed and a chair that only synthesised produce records that
+    are otherwise identical, and a reader who cannot tell them apart guesses —
+    which is how a bundle of four reviews is handed on as two. So the record says
+    which agent chaired and where (or whether) its own ballot is in the bundle.
+    """
+    who = f"`{chair_agent}`" if chair_agent else "This run's chair"
+    if chaired_ballot is not None:
+        return (
+            f"The chair is {who}, which also sat on the panel: its ballot is the "
+            f"'{chaired_ballot['name']}' review in this bundle and is counted "
+            f"alongside this synthesis."
+        )
+    return (
+        f"The chair is {who}, which returned no panel review of its own, so this "
+        f"bundle carries no ballot from it — only this synthesis."
+    )
+
+
 def _chair_scope(outcome: Any, panelists: list[dict]) -> str:
     groups = getattr(outcome, "groups", []) or []
     files = _files_named([g.representative for g in groups])
     listed = ", ".join(files[:_FILES_LISTED]) if files else "no specific file"
     more = len(files) - _FILES_LISTED
     suffix = f" (+{more} more)" if more > 0 else ""
+    chair_agent = getattr(outcome, "chair", "") or ""
+    chaired = next((p for p in panelists if p.get("chaired")), None)
     return (
         f"Chair synthesis over {len(panelists)} panel review(s) and "
-        f"{len(groups)} consensus group(s), across {listed}{suffix}."
+        f"{len(groups)} consensus group(s), across {listed}{suffix}. "
+        f"{_chair_role_sentence(chair_agent, chaired)} This bundle carries "
+        f"{bundle_size(len(panelists))} review(s) in total."
     )
 
 
@@ -349,11 +391,20 @@ def keel_reviews(outcome: Any, config: Any, *, vote: Any = None, mode: str = "co
     for b in panelists:
         result = by_name.get(b["name"])
         own = [all_findings[i] for i in b["findings"]]
+        scope = describe_scope(result, own)
+        if b.get("chaired"):
+            # Said on the ballot as well as on the chair record, because the two
+            # are read in different places: a consumer that posts one verdict per
+            # review shows this text on its own, with no chair record beside it.
+            scope += (
+                " This reviewer also chaired the run (verification and synthesis);"
+                " this ballot is counted alongside the chair record below."
+            )
         records.append(
             {
                 "reviewer": b["name"],
                 "verdict": b["verdict"],
-                "scope": describe_scope(result, own),
+                "scope": scope,
                 "findings": [_keel_finding(f) for f in own],
                 "testing": describe_testing(result),
                 "vendor": b["vendor"],

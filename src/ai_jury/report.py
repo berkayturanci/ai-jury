@@ -127,6 +127,24 @@ def _metadata_block(metadata: dict) -> list[str]:
             f"{panel.get('vendors', 0)} vendor(s) contributed. An abstention is not "
             "an approval; treat cross-vendor consensus accordingly."
         )
+    # What a downstream consumer will actually be handed, and the chair's role in
+    # it (#699). Stated on every run, not only a short one: the number that got a
+    # tier-3 review refused was produced by a panel nothing had flagged as short.
+    if panel.get("reviews_supplied"):
+        chair_name = panel.get("chair") or ""
+        if panel.get("chair_ballot"):
+            role = (
+                f"chair `{chair_name}` also sat on the panel — its ballot is counted "
+                f"alongside its synthesis"
+            )
+        elif chair_name:
+            role = f"chair `{chair_name}` returned no ballot of its own — synthesis only"
+        else:  # pragma: no cover - a run always resolves a chair
+            role = "no chair was resolved"
+        lines.append(
+            f"- reviews for a downstream consumer: {panel['reviews_supplied']} "
+            f"({panel.get('ballots', 0)} panel ballot(s) + 1 chair record); {role}"
+        )
     total = metadata["total_wall_clock_s"]
     lines.append(f"- total wall-clock (cost proxy, not $): {total:.0f}s")
     lines.append("")

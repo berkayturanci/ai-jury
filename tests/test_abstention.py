@@ -102,6 +102,12 @@ class TestPanelAccounting(unittest.TestCase):
                 "abstained": 2,
                 "failed": 0,
                 "short": True,
+                # These fixtures carry no output at all, so no slot is a ballot:
+                # the bundle would be the chair record alone (#699).
+                "ballots": 0,
+                "reviews_supplied": 1,
+                "chair": "",
+                "chair_ballot": False,
             },
         )
 
@@ -150,6 +156,10 @@ class TestPanelAccounting(unittest.TestCase):
                 "abstained": 0,
                 "failed": 0,
                 "short": False,
+                "ballots": 0,
+                "reviews_supplied": 1,
+                "chair": "",
+                "chair_ballot": False,
             },
         )
 

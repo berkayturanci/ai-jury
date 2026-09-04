@@ -361,7 +361,12 @@ and verdict through the in-browser theater (fully client-side — nothing is upl
 
 A JSON **array** of per-reviewer review records — one per panelist that returned
 output, plus the chair as `reviewer: "chair"` — in the shape a consumer of
-head-pinned per-reviewer verdicts accepts (keel's `keel review --reviews <file>`):
+head-pinned per-reviewer verdicts accepts (keel's `keel review --reviews <file>`).
+The chair **sits on the panel**: it reviews in round 1 like anyone else, so a
+three-agent bench supplies four records and the chair's own ballot is counted
+alongside its synthesis. Each record says so, so a counted chair is not
+indistinguishable from one that only synthesised. `--min-reviews N` requires a
+bundle size and names a shortfall before the panel runs.
 
 ```json
 [
@@ -756,7 +761,8 @@ accidental changes are caught in review.
   `--transcript` / `--no-transcript`, `--verbose`, `--live`, `-q` / `--quiet`
 - *GitHub posting:* `--post-summary` / `--post`, `--post-inline`,
   `--post-progress`, `--post-mode {single,phased}`, `--dry-run`, `--label`
-- *CI gating:* `--ci`, `--fail-on`, `--min-vendors`, `--no-min-vendors`
+- *CI gating:* `--ci`, `--fail-on`, `--min-vendors`, `--no-min-vendors`,
+  `--min-reviews`
 - *Cache & incremental:* `--cache`, `--clear-cache`, `--cache-dir`,
   `--incremental`
 - *Patches:* `--suggest-patches`, `--patches-out`
@@ -781,6 +787,7 @@ documented and a documented flag can't silently disappear.
 | Successful review (no `--ci`) | exits `0` |
 | `--ci` with blocking findings remaining | exits `1` (see `ci.evaluate_ci`) |
 | Fewer than `min_vendors` **distinct vendors contributed** a review | exits `3` — the cross-vendor guard, *not* a findings failure. Checked on every run, with or without `--ci`, and it outranks the `--ci` severity gate. Default `2` (`[jury.ci] min_vendors`); the default is scoped to runs that claimed cross-vendor consensus, so a config with fewer distinct vendors enabled than the threshold is never failed by it. An explicit `--min-vendors N` is enforced as asked. Opt out with `--no-min-vendors` (or `min_vendors = 0`); to fail at *startup* on a missing CLI instead, use `--strict`. |
+| Fewer **review records** than `min_reviews` — panel ballots plus the chair record | exits `3` — the panel-size guard, *not* a findings failure, and it outranks the `--ci` severity gate. Off by default (`[jury.ci] min_reviews = 0`, `--min-reviews N`). When the *available* bench cannot reach it, the run refuses **before** the panel runs and exits `2` with `error: panel too small before the panel runs: …`. |
 
 **Stable report headings** (substrings other tooling may parse):
 `AI Jury`, `Chair verdict`, `Round 1` (and subsequent `Round N`).

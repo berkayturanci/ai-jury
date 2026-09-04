@@ -13,7 +13,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 
-from . import convergence, injection, largediff, prompts
+from . import convergence, injection, largediff, panel, prompts
 from .adapters import RETRYABLE_ERROR_CODES, Adapter, AgentResult, make_adapter
 from .config import JuryConfig
 from .consensus import FindingGroup, demote_local_only_groups, group_findings
@@ -416,6 +416,17 @@ def run_jury(
         raise RuntimeError("no usable agents — install at least one agent CLI or use --mock")
 
     usable_names = [a.name for a in usable]
+
+    # State the number a downstream consumer will actually receive, BEFORE the
+    # panel is paid for (#699). "3 agents reviewing" is not that number: the
+    # bundle is one record per agent that answers, plus the chair's. When a
+    # consumer's minimum is configured and the bench cannot reach it, this is a
+    # shortfall the run should name here rather than at the consumer, an hour and
+    # three CLI invocations later.
+    log(panel.describe(len(usable), available=len(usable)))
+    too_small = panel.shortfall(len(usable), config.ci.min_reviews, stage="before the panel runs")
+    if too_small:
+        raise RuntimeError(too_small)
 
     # Round 1: independent reviews.
     log(f"round 1: {len(usable)} agents reviewing")
