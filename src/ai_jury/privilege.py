@@ -24,6 +24,8 @@ Required read-only invocation per adapter (documented here and in docs/security.
 
 from __future__ import annotations
 
+from .config import GENERIC_CLI_VENDORS
+
 # Flags that grant broad write/tool/network powers — dangerous for a reviewer.
 _DANGEROUS_FLAGS: tuple[str, ...] = (
     "--dangerously-skip-permissions",
@@ -145,16 +147,23 @@ def _ensure_value_sandbox(extra_args: list[str], default: list[str]) -> list[str
     return [*default, *args]
 
 
-#: Vendors that reach their model over the network rather than by spawning a
-#: CLI. They have no sandbox/tool surface at all, in either direction, so both
-#: :func:`enforce_read_only` and :func:`enable_write` return their args as-is.
+#: Vendors whose args this module leaves exactly as configured, in either
+#: direction — :func:`enforce_read_only` and :func:`enable_write` both return
+#: them unchanged. Two reasons land a vendor here. Most reach their model over
+#: the network rather than by spawning a CLI, so they have no sandbox/tool
+#: surface at all. The generic bring-your-own-CLI profiles (`cli`, and `xai`
+#: for a Grok seat driven through Cursor's `cursor-agent`, issue #701) do spawn
+#: a CLI, but it is the operator's CLI: there is no vendor-specific sandbox
+#: flag this tool could add or remove, and injecting agy's `--sandbox` into an
+#: unrelated binary breaks the seat rather than confining it.
 _NO_SANDBOX_VENDORS: tuple[str, ...] = (
     "local",
     "anthropic-api",
     "openai-api",
     "google-api",
+    "xai-api",
     "openai-compatible",
-    "cli",
+    *GENERIC_CLI_VENDORS,
 )
 
 

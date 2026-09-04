@@ -209,20 +209,96 @@ DEFAULT_CONFIG: dict = {
 # Vendors that talk HTTP directly (no CLI subprocess), so they need no
 # `command`: `local` (a user-supplied OpenAI-compatible server, issue #43) and
 # the hosted-API adapters (a real vendor API keyed by an env-var API key,
-# issue #430/#432).
-_NO_COMMAND_VENDORS = ("local", "anthropic-api", "openai-api", "google-api", "openai-compatible")
+# issue #430/#432, joined by `xai-api` in #701).
+_NO_COMMAND_VENDORS = (
+    "local",
+    "anthropic-api",
+    "openai-api",
+    "google-api",
+    "xai-api",
+    "openai-compatible",
+)
 
 KNOWN_VENDORS = (
     "anthropic",
     "openai",
     "google",
+    "xai",
     "local",
     "anthropic-api",
     "openai-api",
     "google-api",
+    "xai-api",
     "openai-compatible",
     "cli",
 )
+
+#: The vendor identity every unrecognised vendor collapses into (issue #701).
+#: ``cli`` is a real, documented vendor — "some CLI I brought myself" — and the
+#: generic fallback lands a seat in exactly that bucket, so that is the identity
+#: it carries for the cross-vendor gate.
+GENERIC_VENDOR = "cli"
+
+#: Vendors serviced by the generic bring-your-own-CLI adapter. The operator
+#: supplies ``command``/``extra_args``; the tool knows no vendor-specific
+#: sandbox flag to add or remove for them (issue #701).
+GENERIC_CLI_VENDORS = ("cli", "xai")
+
+#: Vendors registered at runtime through ``adapters.register_adapter`` — the
+#: documented extension point for a custom adapter. Registering an adapter is
+#: what makes a vendor name *known*: without it the name is a typo as far as
+#: this tool can tell, and :func:`vendor_identity` folds it into
+#: ``GENERIC_VENDOR``. Module-level mutable state, deliberately: it mirrors
+#: ``adapters._VENDOR_ADAPTERS``, which is mutable for the same reason.
+_REGISTERED_VENDORS: set[str] = set()
+
+
+def register_vendor(vendor: str) -> None:
+    """Record *vendor* as a recognised name (called by ``register_adapter``)."""
+    name = (vendor or "").strip().lower()
+    if name:
+        _REGISTERED_VENDORS.add(name)
+
+
+def recognised_vendors() -> tuple[str, ...]:
+    """Every vendor name this run understands: shipped plus runtime-registered."""
+    return (*KNOWN_VENDORS, *sorted(_REGISTERED_VENDORS - set(KNOWN_VENDORS)))
+
+
+def _vendor_key(vendor) -> str:
+    """Normalise a configured vendor value to its lookup key (pure).
+
+    Anything that is not a string is not a vendor name, so it normalises to
+    ``""`` rather than raising: ``vendor = 3`` is a config mistake to warn
+    about, not a crash.
+    """
+    return vendor.strip().lower() if isinstance(vendor, str) else ""
+
+
+def is_recognised_vendor(vendor) -> bool:
+    """Whether *vendor* names a vendor the tool actually knows (pure-ish)."""
+    key = _vendor_key(vendor)
+    return bool(key) and key in set(recognised_vendors())
+
+
+def vendor_identity(vendor: str) -> str:
+    """The identity a seat carries for the cross-vendor gate (issue #701).
+
+    A recognised vendor keeps its own name. Everything else — a typo, a vendor
+    this build predates, anything routed to the generic fallback — answers to
+    ``GENERIC_VENDOR``, because that is what it is: two seats the tool could not
+    identify are not two perspectives, and counting them as two is how a bench
+    satisfies ``min_vendors`` without being diverse (#682, reached through
+    configuration). The raw string is still what the ballots and the report
+    carry; only the *gate* collapses, so provenance is never rewritten.
+
+    Returns ``""`` for an empty vendor, which counts as no vendor at all.
+    """
+    name = _vendor_key(vendor)
+    if not name:
+        return ""
+    return name if name in set(recognised_vendors()) else GENERIC_VENDOR
+
 
 KNOWN_TOP_LEVEL_KEYS = ("jury", "agent")
 KNOWN_JURY_KEYS = (
@@ -487,12 +563,17 @@ def validate_config(data: dict, strict: bool = False) -> list:
                 f"{', '.join(KNOWN_EFFORTS)} (got {effort!r})."
             )
 
-        # Known vendor (soft).
+        # Known vendor (soft). The warning names the CONSEQUENCE, not just the
+        # fact: the fallback seat still runs, but it answers to `cli` at the
+        # cross-vendor gate, so two of them are one vendor (issue #701).
         vendor = agent.get("vendor", "")
-        if vendor not in KNOWN_VENDORS:
+        if not is_recognised_vendor(vendor):
             warnings.append(
                 f"agent '{label}' has unknown vendor '{vendor}' (expected one "
-                f"of {', '.join(KNOWN_VENDORS)}); using generic fallback."
+                f"of {', '.join(recognised_vendors())}); using the generic "
+                f"'{GENERIC_VENDOR}' fallback, which counts as vendor "
+                f"'{GENERIC_VENDOR}' for min_vendors — two such seats are one "
+                f"vendor, not two."
             )
 
         if name and agent.get("enabled", True):

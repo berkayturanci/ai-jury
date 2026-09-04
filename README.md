@@ -482,7 +482,7 @@ parallel = true
 
 [[agent]]
 name = "claude"
-vendor = "anthropic"   # anthropic | openai | google
+vendor = "anthropic"   # anthropic | openai | google | xai
 command = "claude"
 # model = "claude-opus-4-8"
 extra_args = ["--output-format", "text", "--disallowed-tools", "Edit,Write,NotebookEdit,Bash", "--dangerously-skip-permissions"]

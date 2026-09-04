@@ -25,6 +25,7 @@ import subprocess
 import time
 from dataclasses import dataclass, field
 
+from . import config as config_module
 from . import privilege, redaction
 from .config import AgentSpec
 from .findings import emitted_findings_block
@@ -463,7 +464,7 @@ _AGY_MODEL_SUFFIXES = tuple(f"-{level}" for level in EFFORT_LEVELS)
 # them reject an unknown request field outright, which would turn a hint into a
 # failed review.
 _EFFORT_VENDORS = frozenset(
-    {"google", "anthropic-api", "openai-api", "openai-compatible", "google-api"}
+    {"google", "anthropic-api", "openai-api", "xai-api", "openai-compatible", "google-api"}
 )
 
 
@@ -567,7 +568,7 @@ def effort_args(
             }
         )
 
-    if name in ("openai-api", "openai-compatible"):
+    if name in ("openai-api", "xai-api", "openai-compatible"):
         return EffortPlan(payload={"reasoning_effort": level})
 
     if name == "google-api":
@@ -1406,6 +1407,7 @@ class LocalAdapter(Adapter):
 _ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
 _ANTHROPIC_API_VERSION = "2023-06-01"
 _OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
+_XAI_API_URL = "https://api.x.ai/v1/chat/completions"
 # The Anthropic Messages API requires max_tokens on every request; there is no
 # server-side default. Generous enough for a review response, small enough to
 # bound cost/latency if a run is ever misconfigured to loop.
@@ -1787,6 +1789,28 @@ class OpenAiApiAdapter(_HostedApiAdapter):
             return ""
         message = choices[0].get("message") or {}
         return (message.get("content") or "").strip()
+
+
+class XaiApiAdapter(OpenAiApiAdapter):
+    """Hosted xAI (Grok) API reviewer, keyed by ``XAI_API_KEY`` (issue #701).
+
+    Configure as a normal ``[[agent]]`` with ``vendor = "xai-api"`` and a
+    ``model`` (a Grok model id) — no ``command``, no CLI install. xAI serves
+    the OpenAI chat-completions shape at its own host, so this is
+    :class:`OpenAiApiAdapter` with a different URL and a different credential
+    env var; the request body, the response parsing and the effort knob
+    (``reasoning_effort``) are inherited rather than re-stated, because a
+    second copy of them is a second thing to keep in step.
+
+    ``vendor = "openai-compatible"`` with ``endpoint = "https://api.x.ai/v1"``
+    still works and is still documented; this spelling exists so a Grok seat
+    can carry the vendor identity ``xai-api`` instead of borrowing OpenAI's.
+    """
+
+    _ENV_VAR_NAME = "XAI_API_KEY"
+
+    def _api_url(self) -> str:
+        return _XAI_API_URL
 
 
 _GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
@@ -2176,13 +2200,26 @@ _VENDOR_ADAPTERS: dict[str, type[Adapter]] = {
     "anthropic-api": AnthropicApiAdapter,
     "openai-api": OpenAiApiAdapter,
     "google-api": GoogleApiAdapter,
+    "xai-api": XaiApiAdapter,
     "openai-compatible": GenericOpenAICompatibleAdapter,
+    # `xai` is a bring-your-own-CLI seat (Grok through Cursor's `cursor-agent`,
+    # issue #701): the operator supplies `command`/`extra_args`, exactly as for
+    # `cli`, but the seat keeps its own vendor identity at the panel gate.
+    "xai": GenericCLIAdapter,
     "cli": GenericCLIAdapter,
 }
 
 
 def register_adapter(vendor: str, adapter_cls: type[Adapter]) -> None:
-    """Register a custom adapter class for a vendor string."""
+    """Register a custom adapter class for a vendor string.
+
+    Registering also teaches ``config`` the name (issue #701): a vendor with an
+    adapter behind it is a vendor this run genuinely knows, so it must not warn
+    as unknown and must not be folded into the generic ``cli`` identity at the
+    cross-vendor gate. The two registries are updated together so they cannot
+    disagree about what "known" means.
+    """
+    config_module.register_vendor(vendor)
     _VENDOR_ADAPTERS[vendor.lower()] = adapter_cls
 
 

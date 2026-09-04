@@ -397,7 +397,7 @@ run`) or a CI script. See the [cookbook recipe](cookbook.md#21-run-one-agent-for
 
 | Flag | Value | Description |
 | --- | --- | --- |
-| `--agent` | name \| `vendor[:model]` | A `[[agent]]` name from `jury.toml`, or a built-in vendor (`claude`, `codex`, `agy`, `anthropic-api`, `openai-api`, `google-api`). A configured entry wins over a built-in of the same name. `:model` overrides the model. |
+| `--agent` | name \| `vendor[:model]` | A `[[agent]]` name from `jury.toml`, or a built-in vendor (`claude`, `codex`, `agy`, `anthropic-api`, `openai-api`, `google-api`, `xai-api`). A configured entry wins over a built-in of the same name. `:model` overrides the model. |
 | `--role` | `implement` \| `review` \| `gate` \| `chair` \| `fix` | What the agent is asked to do. Decides privilege — see below. |
 | `--prompt-file` | path \| `-` | The prompt to send (`-` reads stdin; not allowed with `--detach`). |
 | `--cwd` | directory | Run the agent in this directory (default: the current one). |
@@ -540,7 +540,7 @@ transcript = true   # default the markdown report to the full play-by-play
 | Key | Type | Default | Allowed / notes |
 | --- | --- | --- | --- |
 | `name` | string | — | **Required**, unique, non-empty. |
-| `vendor` | string | — | `anthropic` \| `openai` \| `google` \| `local` \| `anthropic-api` \| `openai-api` \| `google-api` \| `openai-compatible` \| `cli` \| custom registered vendor. |
+| `vendor` | string | — | `anthropic` \| `openai` \| `google` \| `xai` \| `local` \| `anthropic-api` \| `openai-api` \| `google-api` \| `xai-api` \| `openai-compatible` \| `cli` \| custom registered vendor. An unrecognised value warns and runs on the generic `cli` fallback, where it is counted as vendor `cli` by `min_vendors`. |
 | `command` | string | — | CLI command (not required for HTTP/API vendors or when `endpoint` is set). |
 | `model` | string | unset | Model identifier. Required for API providers and local models. |
 | `endpoint` | string | `http://localhost:11434/v1` (local) | Base URL for OpenAI-compatible HTTP providers (Ollama, OpenRouter, DeepSeek, Groq, Mistral, LiteLLM). |
@@ -575,8 +575,14 @@ ties resolve to the **stricter** stance.
 `chair` (default — the chair synthesizes the verdict) · `vote` (panel vote; the chair's synthesis becomes supporting reasoning). Rendering-only — not part of the config hash, cache key, or the `--ci` gate.
 
 ### Vendors
-`anthropic` · `openai` · `google` · `local` (OpenAI-compatible: Ollama, llama.cpp, vLLM,
-LM Studio) · `anthropic-api` · `openai-api` · `google-api` · `openai-compatible` (OpenRouter, DeepSeek, Groq, Mistral, LiteLLM) · `cli` (arbitrary CLI agents: Aider, Goose, OpenHands) · custom registered vendors via `register_adapter()`.
+`anthropic` · `openai` · `google` · `xai` (Grok through a CLI such as Cursor's
+`cursor-agent`) · `local` (OpenAI-compatible: Ollama, llama.cpp, vLLM,
+LM Studio) · `anthropic-api` · `openai-api` · `google-api` · `xai-api` · `openai-compatible` (OpenRouter, DeepSeek, Groq, Mistral, LiteLLM) · `cli` (arbitrary CLI agents: Aider, Goose, OpenHands) · custom registered vendors via `register_adapter()`.
+
+Any other value is a warning, not an error: the seat runs on the generic `cli`
+fallback and is **counted as the vendor `cli`** by the cross-vendor guard, so two
+fallback seats cannot satisfy `min_vendors = 2` between them. The seat's
+configured string is still what the report and the ballots carry.
 
 ### Presets
 Set with `jury init --preset`.
@@ -590,7 +596,7 @@ Set with `jury init --preset`.
 
 ### Reasoning effort (`--effort` / `[[agent]] effort`)
 `low` · `medium` · `high`. Supported by `google` (agy), `anthropic-api`,
-`openai-api`, `openai-compatible` and `google-api`; ignored with a one-line
+`openai-api`, `xai-api`, `openai-compatible` and `google-api`; ignored with a one-line
 warning for `anthropic`/`openai` (the `claude`/`codex` CLIs), `local`, `cli` and
 custom vendors.
 
@@ -626,6 +632,7 @@ Used by `jury comment`: `review` (full review) · `summary` (fast single-round p
 | `ANTHROPIC_API_KEY` | API key used by `vendor = "anthropic-api"`. |
 | `OPENAI_API_KEY` | API key used by `vendor = "openai-api"` and default for `openai-compatible`. |
 | `GEMINI_API_KEY` | API key used by `vendor = "google-api"`. |
+| `XAI_API_KEY` | API key used by `vendor = "xai-api"`. |
 | `OPENROUTER_API_KEY` | Default API key for `openrouter` template. |
 | `DEEPSEEK_API_KEY` | Default API key for `deepseek` template. |
 | `GROQ_API_KEY` | Default API key for `groq` template. |

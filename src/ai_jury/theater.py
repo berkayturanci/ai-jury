@@ -38,6 +38,8 @@ _VENDOR_SGR = {
     "openai-api": "38;2;16;163;127",  # OpenAI API
     "google": "38;2;66;133;244",  # Antigravity #4285f4
     "google-api": "38;2;66;133;244",  # Gemini API
+    "xai": "38;2;120;120;130",  # Grok / xAI  #787882
+    "xai-api": "38;2;120;120;130",  # xAI API
     "local": "38;2;168;85;247",  # local / open-weight #a855f7
     "openai-compatible": "38;2;139;92;246",  # OpenRouter/DeepSeek/Groq #8b5cf6
     "cli": "38;2;236;72;153",  # arbitrary CLI agent #ec4899
@@ -50,6 +52,8 @@ _VENDOR_RGB = {
     "openai-api": (16, 163, 127),
     "google": (66, 133, 244),
     "google-api": (66, 133, 244),
+    "xai": (120, 120, 130),
+    "xai-api": (120, 120, 130),
     "local": (168, 85, 247),
     "openai-compatible": (139, 92, 246),
     "cli": (236, 72, 153),

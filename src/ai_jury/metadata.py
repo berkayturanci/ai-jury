@@ -16,6 +16,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from .config import vendor_identity
+
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from .config import JuryConfig
     from .orchestrator import JuryOutcome
@@ -59,6 +61,12 @@ def panel_accounting(reviews) -> dict:
     report says the panel was short. ``vendors`` counts distinct vendors that
     actually contributed a review, which is the number that matters for
     cross-vendor consensus: three slots from one vendor are not three perspectives.
+
+    Vendors are counted by :func:`config.vendor_identity`, not by the raw
+    string: a seat whose vendor the tool does not recognise ran on the generic
+    ``cli`` fallback and is counted as ``cli``, so two unidentifiable seats are
+    one vendor here even though the report still names each one honestly
+    (issue #701).
     """
     reviews = list(reviews or [])
 
@@ -72,7 +80,7 @@ def panel_accounting(reviews) -> dict:
         st = review_status(r)
         if st in ("findings", "clean"):
             effective_count += 1
-            vendor = getattr(r, "vendor", "")
+            vendor = vendor_identity(getattr(r, "vendor", ""))
             if vendor:
                 contributing_vendors.add(vendor)
         elif st == "abstained":
@@ -97,8 +105,12 @@ def distinct_vendors(specs) -> int:
     ``[[agent]]`` entries all pointing at one vendor are one perspective, so a
     run configured that way never claimed cross-vendor consensus and must not be
     failed for not delivering it.
+
+    Counted by :func:`config.vendor_identity`, so a pair of seats naming
+    vendors this build does not know collapses to the single ``cli`` identity
+    they actually share (issue #701) rather than reading as two.
     """
-    return len({(getattr(s, "vendor", "") or "").strip().lower() for s in specs or []} - {""})
+    return len({vendor_identity(getattr(s, "vendor", "")) for s in specs or []} - {""})
 
 
 def collapse_reason(reviews, required: int, configured_vendors: int | None = None) -> str | None:
