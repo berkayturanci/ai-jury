@@ -130,7 +130,11 @@ def _metadata_block(metadata: dict) -> list[str]:
     # What a downstream consumer will actually be handed, and the chair's role in
     # it (#699). Stated on every run, not only a short one: the number that got a
     # tier-3 review refused was produced by a panel nothing had flagged as short.
-    if panel.get("reviews_supplied"):
+    # Presence, not truth: an all-silent panel supplies 0 reviews, and 0 is
+    # falsy, so a truthiness guard deleted the line in the one run where a
+    # reader most needs the number — while the run's own log still announced the
+    # seats it had. Zero is a count, and it is printed as one.
+    if panel.get("reviews_supplied") is not None:
         chair_name = panel.get("chair") or ""
         if panel.get("chair_ballot"):
             role = f"chair `{chair_name}` also sat on the panel — its ballot is one of them"

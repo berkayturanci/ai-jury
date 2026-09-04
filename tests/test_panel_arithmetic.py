@@ -118,6 +118,21 @@ def _jury(argv: list[str], *, silent: frozenset[str] = frozenset(), toml: str = 
     return code, out.getvalue(), err.getvalue()
 
 
+def _jury_with_metadata(
+    argv: list[str], *, silent: frozenset[str] = frozenset(), toml: str = _THREE_CLI_TOML
+):
+    """``_jury``, plus the ``--metadata-json`` document that same run wrote.
+
+    The count is published in three places — the run's own log, the markdown
+    report, and this document — and a test that only reads one of them cannot
+    see them disagree, which is the whole defect.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        meta = Path(tmp) / "metadata.json"
+        code, out, err = _jury([*argv, "--metadata-json", str(meta)], silent=silent, toml=toml)
+        return code, out, err, json.loads(meta.read_text(encoding="utf-8"))
+
+
 def _bundle(**kwargs) -> list[dict]:
     code, out, _err = _jury(["--format", "keel-reviews", "-q"], **kwargs)
     assert code in (0, 3), code
@@ -311,6 +326,42 @@ class TheRunSaysHowManyReviewsItWillSupply(unittest.TestCase):
         _code, out, _err = _jury(["-q"], silent=frozenset({"claude"}))
         self.assertIn("reviews for a downstream consumer: 2 (one per panel ballot", out)
         self.assertIn("chair `claude` returned no ballot of its own", out)
+
+
+class TheCountIsStatedEvenWhenItIsZero(unittest.TestCase):
+    """The count is a number, not a signal — and zero is a number (round 3).
+
+    The report line was guarded by the count's *truthiness*, so the one run that
+    supplies no reviews at all — every seat installed, invoked, and silent — was
+    the one run whose report said nothing about it, while the pre-flight log
+    still announced the three seats the bench had. A reader comparing the two
+    saw an announcement of three and a report that had gone quiet. Presence, not
+    truth: all three publications of the count agree on 0 the way they agree
+    on 3.
+    """
+
+    #: Every seat back with nothing: no ballots, so no reviews for a consumer.
+    _ALL_SILENT = frozenset({"claude", "codex", "agy"})
+
+    def test_the_markdown_report_prints_the_zero_instead_of_dropping_the_line(self):
+        _code, out, _err, metadata = _jury_with_metadata(["-q"], silent=self._ALL_SILENT)
+        supplied = metadata["panel"]["reviews_supplied"]
+        self.assertEqual(supplied, 0)
+        # Derived from the metadata rather than restated, so the two cannot drift.
+        self.assertIn(f"reviews for a downstream consumer: {supplied} (one per panel ballot", out)
+        self.assertIn("chair `claude` returned no ballot of its own", out)
+
+    def test_the_report_the_log_and_the_metadata_all_state_the_same_zero(self):
+        # ``--min-reviews`` makes the run announce the count it actually ended
+        # with, which is the announcement the report has to agree with.
+        code, out, err, metadata = _jury_with_metadata(
+            ["--min-reviews", str(_TIER_THREE)], silent=self._ALL_SILENT
+        )
+        self.assertEqual(code, 3)
+        supplied = metadata["panel"]["reviews_supplied"]
+        self.assertEqual(supplied, 0)
+        self.assertIn(f"panel too small after the panel ran: {supplied} review(s) available", err)
+        self.assertIn(f"reviews for a downstream consumer: {supplied} (one per panel ballot", out)
 
 
 class TheShortfallIsNamedBeforeThePanelRuns(unittest.TestCase):
