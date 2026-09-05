@@ -761,6 +761,46 @@ class CliTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("limit", err)
 
+    def test_a_non_table_headers_seat_exits_2_without_a_traceback(self):
+        """A malformed `headers` is a config error here, not an AttributeError.
+
+        `run-agent` loads its config WITHOUT validation on purpose — it drives
+        one named seat, so an unrelated seat's mistake must not stop it — so
+        `_from_dict` is the only thing standing between a `headers` written as
+        a string and `'str' object has no attribute 'items'` (issue #716,
+        review r1). It raises `ConfigError`, which this path already prints and
+        exits 2 on, and the value is never echoed into the message.
+        """
+        config = SAMPLE_CONFIG + textwrap.dedent(
+            """
+            [[agent]]
+            name = "router"
+            vendor = "openai-compatible"
+            model = "m"
+            endpoint = "http://127.0.0.1:9/v1/chat/completions"
+            headers = "Authorization = Bearer sk-secret-42"
+            """
+        )
+        with _workspace(config_text=config) as root:
+            code, out, err = _run(
+                [
+                    "--agent",
+                    "claude",  # a DIFFERENT, well-formed seat
+                    "--role",
+                    "review",
+                    "--prompt-file",
+                    str(root / "prompt.md"),
+                    "--config",
+                    str(root / "jury.toml"),
+                    "--mock",
+                ]
+            )
+        self.assertEqual(code, 2)
+        self.assertIn("error: agent 'router' headers must be a table", err)
+        self.assertNotIn("Traceback", err)
+        self.assertNotIn("AttributeError", err)
+        self.assertNotIn("sk-secret-42", err + out)
+
     def test_prompt_from_stdin(self):
         with _workspace() as root:
             stdin = mock.MagicMock()

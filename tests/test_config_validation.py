@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
+import tomllib
 import unittest
 import unittest.mock
 from pathlib import Path
@@ -19,6 +20,7 @@ from ai_jury.config import (  # noqa: E402
     ConfigError,
     _from_dict,
     config_hash,
+    load_config,
     load_raw_config,
     validate_config,
 )
@@ -299,6 +301,172 @@ class FailOnVocabulary(unittest.TestCase):
 
     def test_the_shipped_default_config_passes_its_own_gate(self):
         self.assertEqual(validate_config(DEFAULT_CONFIG), [])
+
+
+class HeadersValidation(unittest.TestCase):
+    """`[[agent]] headers` is checked, and the severity follows usability (#716).
+
+    The old behaviour is what makes the shape errors hard rather than soft:
+    `_from_dict` coerced every non-table to `{}`, so a misspelled or mis-typed
+    `headers` passed `--config-validate` AND `--strict-config` and the seat ran
+    with no extra headers at all. For a routing header the provider honours by
+    default, that is a run against a backend nobody chose.
+
+    The split is this module's usual one, applied here (review r1): a shape that
+    cannot become headers is a hard error (not a table; a non-string key), and a
+    shape that becomes working headers by a documented coercion is a warning (a
+    non-string VALUE — `X-Retries = 3` is sent as `X-Retries: 3`), exactly as a
+    malformed `api_key_env` name warns and falls back.
+    """
+
+    @staticmethod
+    def _with_headers(value):
+        return {
+            "jury": {"rounds": 1, "chair": "a"},
+            "agent": [
+                {
+                    "name": "a",
+                    "vendor": "openai-compatible",
+                    "model": "m",
+                    "endpoint": "http://127.0.0.1:8000/v1/chat/completions",
+                    "headers": value,
+                }
+            ],
+        }
+
+    def test_a_table_of_strings_is_accepted_and_materialised(self):
+        data = self._with_headers({"X-Route": "premium", "HTTP-Referer": "https://ai-jury.org"})
+        self.assertEqual(validate_config(data), [])
+        self.assertEqual(
+            _from_dict(data).agents[0].headers,
+            {"X-Route": "premium", "HTTP-Referer": "https://ai-jury.org"},
+        )
+
+    def test_a_string_is_a_hard_error_naming_the_agent(self):
+        # The issue's own reproduction: TOML written as `headers = "A = B"`.
+        with self.assertRaises(ConfigError) as ctx:
+            validate_config(self._with_headers("Authorization = Bearer y"))
+        message = str(ctx.exception)
+        self.assertIn("agent 'a' headers must be a table", message)
+        self.assertIn("got str", message)
+
+    def test_a_list_is_a_hard_error(self):
+        with self.assertRaises(ConfigError) as ctx:
+            validate_config(self._with_headers([["X-Route", "premium"]]))
+        self.assertIn("agent 'a' headers must be a table", str(ctx.exception))
+
+    def test_a_non_string_value_warns_and_is_coerced(self):
+        """`X-Retries = 3` is a working header, so it warns rather than fails."""
+        data = self._with_headers({"X-Retries": 3})
+        warnings = validate_config(data)
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("agent 'a' headers value for 'X-Retries'", warnings[0])
+        self.assertIn("int", warnings[0])
+        self.assertIn("coerced", warnings[0])
+        # And the coercion the warning describes is the one that happens.
+        self.assertEqual(_from_dict(data).agents[0].headers, {"X-Retries": "3"})
+
+    def test_a_non_string_value_is_fatal_only_under_strict(self):
+        """Where an operator asks for a warning to be fatal — `--strict-config`."""
+        with self.assertRaises(ConfigError) as ctx:
+            validate_config(self._with_headers({"X-Retries": 3}), strict=True)
+        self.assertIn("agent 'a' headers value for 'X-Retries'", str(ctx.exception))
+
+    def test_a_non_string_header_name_is_a_hard_error(self):
+        """A non-string key cannot be a header name, so it cannot be coerced.
+
+        tomllib never produces one — every TOML key, bare or quoted, parses to
+        `str`, so `3 = "premium"` is a *bare* key spelled `"3"` — which is why
+        this rule guards a config dict built in Python (an embedder calling
+        `validate_config` / `_from_dict` directly, or a test like this one)
+        rather than anything a written `jury.toml` can express.
+        """
+        self.assertEqual(list(tomllib.loads('[a]\n3 = "premium"\n')["a"]), ["3"])
+        with self.assertRaises(ConfigError) as ctx:
+            validate_config(self._with_headers({3: "premium"}))
+        self.assertIn("agent 'a' headers has a non-string header name", str(ctx.exception))
+
+    def test_the_offending_value_is_never_echoed_back(self):
+        """A header is where a credential lives; no message may carry one."""
+        secret = "Bearer sk-secret-42"
+        warnings = validate_config(self._with_headers({"Authorization": ["Bearer sk-secret-42"]}))
+        self.assertEqual(len(warnings), 1)
+        self.assertNotIn("sk-secret-42", warnings[0])
+        with self.assertRaises(ConfigError) as ctx:
+            validate_config(self._with_headers(f"Authorization = {secret}"))
+        self.assertNotIn("sk-secret-42", str(ctx.exception))
+        with self.assertRaises(ConfigError) as ctx:
+            _from_dict(self._with_headers(f"Authorization = {secret}"))
+        self.assertNotIn("sk-secret-42", str(ctx.exception))
+
+    def test_materialising_a_non_table_raises_the_config_error_not_an_attribute_error(self):
+        """The unvalidated path must fail as a config error, not a traceback.
+
+        `load_config` defaults to `validate=False` and `jury run-agent` keeps it
+        that way on purpose, so `_from_dict` is reached with a raw dict nothing
+        checked. Dropping the old `isinstance` guard would otherwise turn a
+        string `headers` into `'str' object has no attribute 'items'` there.
+        """
+        for value in ("Authorization = Bearer y", [["X-Route", "premium"]], 3):
+            with self.subTest(value=value), self.assertRaises(ConfigError) as ctx:
+                _from_dict(self._with_headers(value))
+            self.assertIn("agent 'a' headers must be a table", str(ctx.exception))
+
+    def test_materialising_a_non_string_key_raises_the_config_error(self):
+        """`_from_dict` classifies exactly as `validate_config` does."""
+        with self.assertRaises(ConfigError) as ctx:
+            _from_dict(self._with_headers({3: "premium"}))
+        self.assertIn("agent 'a' headers has a non-string header name", str(ctx.exception))
+
+    def test_an_unnamed_agent_is_still_located_in_the_message(self):
+        """`_from_dict` runs before `name` is read, so it falls back to the index."""
+        data = self._with_headers("nope")
+        del data["agent"][0]["name"]
+        with self.assertRaises(ConfigError) as ctx:
+            _from_dict(data)
+        self.assertIn("agent 'agent[0]' headers must be a table", str(ctx.exception))
+
+    def test_loading_an_unvalidated_file_reports_the_config_error(self):
+        """End-to-end on the default `load_config(validate=False)` path."""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "jury.toml"
+            path.write_text(
+                '[jury]\nchair = "a"\n\n[[agent]]\nname = "a"\nvendor = "openai-compatible"\n'
+                'model = "m"\nheaders = "Authorization = Bearer y"\n',
+                encoding="utf-8",
+            )
+            with self.assertRaises(ConfigError) as ctx:
+                load_config(path)
+        self.assertIn("agent 'a' headers must be a table", str(ctx.exception))
+        self.assertIn("got str", str(ctx.exception))
+
+    def test_absent_headers_stay_an_empty_table(self):
+        data = self._with_headers({})
+        del data["agent"][0]["headers"]
+        self.assertEqual(validate_config(data), [])
+        self.assertEqual(_from_dict(data).agents[0].headers, {})
+
+    def test_headers_split_the_cache_key(self):
+        """Two seats differing only in a routing header are not the same run."""
+        premium = _from_dict(self._with_headers({"X-Route": "premium"}))
+        cheap = _from_dict(self._with_headers({"X-Route": "cheap"}))
+        none = _from_dict(self._with_headers({}))
+        self.assertNotEqual(config_hash(premium), config_hash(cheap))
+        self.assertNotEqual(config_hash(premium), config_hash(none))
+
+    def test_header_order_does_not_split_the_cache_key(self):
+        """The digest is a function of the mapping, not of how it was written."""
+        one = _from_dict(self._with_headers({"A": "1", "B": "2"}))
+        other = _from_dict(self._with_headers({"B": "2", "A": "1"}))
+        self.assertEqual(config_hash(one), config_hash(other))
+
+    def test_api_key_env_splits_the_cache_key(self):
+        """A different key can mean a different account, hence a different run."""
+        base = self._with_headers({})
+        first = dict(base, agent=[dict(base["agent"][0], api_key_env="ROUTER_A_KEY")])
+        second = dict(base, agent=[dict(base["agent"][0], api_key_env="ROUTER_B_KEY")])
+        self.assertNotEqual(config_hash(_from_dict(first)), config_hash(_from_dict(second)))
+        self.assertNotEqual(config_hash(_from_dict(first)), config_hash(_from_dict(base)))
 
 
 class SoftWarnings(unittest.TestCase):
