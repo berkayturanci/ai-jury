@@ -449,6 +449,52 @@ class ChunkingDoesNotDowngradeTheBand(unittest.TestCase):
         self.assertTrue(outcome.routing["escalated"])
 
 
+class TheRecordNamesOnlyWorkThatHappened(unittest.TestCase):
+    """Review round 3: two ways the record could still overstate."""
+
+    def test_a_benched_seat_whose_debate_call_failed_did_not_join(self):
+        real = orchestrator._run_phase
+
+        def bench_debate_fails(adapters, prompt_for, phase, parallel, **kwargs):
+            results = real(adapters, prompt_for, phase, parallel, **kwargs)
+            if phase == "debate":
+                for r in results:
+                    if r.agent == "gpt":
+                        r.ok = False
+                        r.output = ""
+            return results
+
+        with patch("ai_jury.orchestrator._run_phase", side_effect=bench_debate_fails):
+            outcome = orchestrator.run_jury(_tiered_config(rounds=2), ROUTINE_DIFF, mock=True)
+        self.assertTrue(outcome.routing["escalated"])
+        self.assertIn("only the chair was escalated", outcome.routing["escalation_reason"])
+        self.assertNotIn("gpt joined", outcome.routing["escalation_reason"])
+
+    def test_a_chunked_run_recomputes_the_effect_from_the_merged_debate(self):
+        config = _tiered_config(rounds=2)
+        config.diff.chunk = True
+        config.diff.max_bytes = 60
+        config.diff.chunk_max_bytes = 60
+        two_files = ROUTINE_DIFF + ROUTINE_DIFF.replace("a.py", "b.py")
+        outcome, plan = orchestrator.review_diff(config, two_files, mock=True)
+        self.assertEqual(plan.mode, "chunked")
+        reason = outcome.routing["escalation_reason"]
+        self.assertIn("chunk(s)", reason)
+        self.assertIn("gpt joined the debate", reason)
+        self.assertNotIn("finding group(s) after round 1;", reason)
+
+    def test_a_chunked_run_that_never_escalates_keeps_the_plain_reason(self):
+        config = _tiered_config(rounds=2)
+        config.diff.chunk = True
+        config.diff.max_bytes = 60
+        config.diff.chunk_max_bytes = 60
+        two_files = ROUTINE_DIFF + ROUTINE_DIFF.replace("a.py", "b.py")
+        with patch("ai_jury.routing.should_escalate", return_value=(False, "quiet")):
+            outcome, _plan = orchestrator.review_diff(config, two_files, mock=True)
+        self.assertFalse(outcome.routing["escalated"])
+        self.assertEqual(outcome.routing["escalation_reason"], "quiet")
+
+
 class TheRoutingRecordSurvivesTheCache(unittest.TestCase):
     """A cached tiered run reports the plan it ran, not a standard one (#714).
 

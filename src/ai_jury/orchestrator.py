@@ -742,7 +742,10 @@ def run_jury(
         # the debate it was going to have. The benched seats that actually
         # produced a debate result are the answer, whatever the reason.
         bench_names = {a.name for a in benched}
-        joined = [r.agent for r in debate if r.agent in bench_names]
+        # `ok` matters: a benched seat whose debate call failed produced a row
+        # but no cross-examination, and counting it would put the frontier seat
+        # in the record for work it did not do (review round 3).
+        joined = [r.agent for r in debate if r.agent in bench_names and r.ok]
         plan.escalation_reason = f"{plan.escalation_reason}; {routing.escalation_effect(joined)}"
         log(f"tiered routing: {plan.escalation_reason}")
 
@@ -1303,19 +1306,31 @@ def _merge_chunk_outcomes(outcomes: list[JuryOutcome], config: JuryConfig) -> Ju
         # Every chunk routed off the same band and the same bench, so the first
         # chunk's plan describes the run; escalation is true when ANY chunk
         # escalated, because the benched seats really did review by then.
-        routing={
-            **base.routing,
-            "escalated": any(o.routing.get("escalated") for o in outcomes),
-            "escalation_reason": next(
-                (
-                    o.routing.get("escalation_reason", "")
-                    for o in outcomes
-                    if o.routing.get("escalated")
-                ),
-                base.routing.get("escalation_reason", ""),
-            ),
-        },
+        routing=_merged_routing(outcomes, base, debate),
     )
+
+
+def _merged_routing(outcomes: list[JuryOutcome], base: JuryOutcome, debate: list) -> dict:
+    """The routing record of a chunked run, read off the merged run (#714, r3).
+
+    Every chunk routed off the same band and the same bench, so the first
+    chunk's plan describes the panel. Escalation is per chunk — round 1 of one
+    chunk can carry a major finding while another is quiet — so the record says
+    on how many it escalated, and what escalation then did is recomputed from
+    the **merged** debate rather than copied from whichever chunk escalated
+    first. Copying it was wrong the way predicting was wrong: the sentence
+    described one chunk and was published as the run's.
+    """
+    escalated = [o for o in outcomes if (o.routing or {}).get("escalated")]
+    merged = {**base.routing, "escalated": bool(escalated)}
+    if escalated:
+        bench = set(base.routing.get("benched") or [])
+        joined = [r.agent for r in debate if r.agent in bench and r.ok]
+        merged["escalation_reason"] = (
+            f"escalated on {len(escalated)} of {len(outcomes)} chunk(s); "
+            f"{routing.escalation_effect(joined)}"
+        )
+    return merged
 
 
 def review_diff(
