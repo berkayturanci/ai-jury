@@ -350,7 +350,8 @@ The document is `schema_version: "ai-jury.doctor.v1"`:
       "capabilities": ["headless", "model-selection"],
       "models": ["gemini-3.8-flash-high", "gemini-3.8-flash-low"],
       "effort_supported": true,
-      "effort": "high"
+      "effort": "high",
+      "tier": "frontier"
     }
   ],
   "warnings": []
@@ -371,6 +372,7 @@ The document is `schema_version: "ai-jury.doctor.v1"`:
 | `capabilities` | Labels from the version probe: `headless`, `model-selection`. |
 | `models` | Model ids discovered for that agent (`agy models`, or a local server's `/v1/models`), or `null` when nothing could be listed. Discovered **only** for `--json`: it costs a probe per agent, and the text report does not show it. |
 | `effort_supported` / `effort` | Whether the vendor has an effort control, and the level configured for this agent. |
+| `tier` | The seat's cost tier from `[[agent]] tier`: `frontier` (the default) or `economical`. What tiered routing reads once part 2 of #714 lands; reported here already so a bench can be checked before it is routed. |
 | `warnings` | The same config warnings the human report lists. On a config with a **hard** error — an `adapter` this build does not have, no `[[agent]]` at all — this carries that error, `agents` is empty and `ready` is `false`: the doctor validates what a run validates, so it never describes a bench the run refuses. |
 
 ### `panel`: readiness, not contribution
