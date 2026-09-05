@@ -164,8 +164,9 @@ redact_secrets = true   # scrub recognized secrets before sending (default on)
 
 [[agent]]
 name = "claude"
-vendor = "anthropic"    # anthropic | openai | google | local | anthropic-api |
-                        # openai-api | google-api | openai-compatible | cli
+vendor = "anthropic"    # anthropic | openai | google | xai | local |
+                        # anthropic-api | openai-api | google-api | xai-api |
+                        # openai-compatible | cli
 command = "claude"
 # model = "claude-opus-4-8"
 # effort = "medium"     # low | medium | high; google + the *-api/openai-compatible

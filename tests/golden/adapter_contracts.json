@@ -13,7 +13,12 @@
     "The '-bare' entries carry an EMPTY extra_args on purpose: every other spec",
     "here supplies its own sandbox flags, so the sandbox assertion could only",
     "prove they were echoed back. With nothing supplied, the same assertion",
-    "proves the adapter ADDS the read-only sandbox itself (#288)."
+    "proves the adapter ADDS the read-only sandbox itself (#288).",
+    "'grok-cursor' is vendor 'xai' on the same generic bring-your-own-CLI",
+    "adapter as the 'cli' entries: the flags are the cursor-agent invocation",
+    "reported in #701, and the locked argv is the pass-through this tool",
+    "performs on them -- it adds no sandbox flag of its own, which is exactly",
+    "what an empty 'sandbox_flags' here asserts."
   ],
   "claude": {
     "vendor": "anthropic",
@@ -176,6 +181,18 @@
     "write_argv": ["goose", "run", "-t", "<PROMPT>"],
     "stdin": "none",
     "prompt_absent_from_argv": false,
+    "sandbox_flags": [],
+    "stdout_fixture": "review.stdout"
+  },
+  "grok-cursor": {
+    "vendor": "xai",
+    "command": "cursor-agent",
+    "model": "probe-model",
+    "extra_args": ["-p", "--model", "cursor-grok-4.6-high-fast", "--force", "--output-format", "text"],
+    "argv": ["cursor-agent", "-p", "--model", "cursor-grok-4.6-high-fast", "--force", "--output-format", "text"],
+    "write_argv": ["cursor-agent", "-p", "--model", "cursor-grok-4.6-high-fast", "--force", "--output-format", "text"],
+    "stdin": "prompt",
+    "prompt_absent_from_argv": true,
     "sandbox_flags": [],
     "stdout_fixture": "review.stdout"
   }

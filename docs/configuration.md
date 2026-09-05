@@ -30,6 +30,58 @@ errors (exit `2`).
 - **Warnings** (fail only under `--strict-config`): unknown vendor, `chair` not
   matching an enabled agent, unknown top-level/section/agent keys.
 
+### The vendor vocabulary
+
+`vendor` must be one of:
+
+`anthropic` · `openai` · `google` · `xai` · `local` · `anthropic-api` ·
+`openai-api` · `google-api` · `xai-api` · `openai-compatible` · `cli` · any
+vendor registered at runtime with `register_adapter()`.
+
+Anything else is a **warning, not an error** — the seat still runs, on the
+generic `cli` fallback — but it is counted as the vendor `cli` by the
+cross-vendor guard, and the warning says so:
+
+```
+agent 'cursor' has unknown vendor 'xa1' (expected one of anthropic, openai,
+google, xai, ...); using the generic 'cli' fallback, which counts as vendor
+'cli' for min_vendors — two such seats are one vendor, not two.
+```
+
+Two seats that both land on the fallback therefore cannot satisfy
+`min_vendors = 2` between them. A misspelled or unrecognised vendor is a
+configuration mistake, and the failure mode it used to produce was a bench that
+looked diverse and was not. The seat's own `vendor` string is still what the
+report, the ballots and `--metadata-json` carry — provenance is never rewritten,
+only the *gate* collapses.
+
+`register_adapter("my-vendor", MyAdapter)` teaches the vocabulary as well as the
+adapter table, so a genuinely custom vendor keeps its own identity at the gate
+and stops warning.
+
+**Spelling is normalised before any rule reads it.** `vendor` is stripped and
+lower-cased once, when the seat is built, so `"XAI-API"`, `" xai-api "` and
+`"xai-api"` are the same vendor to validation, to the adapter lookup, to
+`--doctor`, to the read-only guard and to the cross-vendor gate alike. A vendor
+this tool recognises is recognised by *every* rule: `vendor = "XAI-API"` with no
+`command` is a valid hosted-API seat, not a seat missing a command, and
+`vendor = " XAI "` gets the same invocation `vendor = "xai"` gets — no sandbox
+flag from another vendor's CLI. Because normalising is only strip-and-lowercase,
+the vendor *name* you wrote is what every surface below shows; its whitespace and
+capitalisation are not. Validation messages still quote the file verbatim.
+
+### Which vendor string is which
+
+The configured string and the identity a seat carries at the gate are two
+different facts, and every place that shows one says which it is:
+
+| Where | Shows | Why |
+| --- | --- | --- |
+| `--doctor` `panel.vendors_configured` / `vendors_available` | **Identity** | These are the gate's arithmetic. They equal what a run counts for the same config, so doctor cannot call a bench cross-vendor ready that the run then refuses. |
+| `--doctor` agent rows (`vendor`, and the text report's `vendor=…`) | **Configured vendor** (normalised spelling), with `vendor_identity` beside it | Provenance, plus the one number that matters next to it. The text report renders `vendor=xa1 -> counts as cli` only when the two differ. |
+| `--metadata-json` `panel.vendors` | **Identity** | It is the number `min_vendors` is compared against. |
+| `--metadata-json` `agents[].vendor`, the markdown report's `vendor` column, the ballots, `--format keel-reviews` | **Configured vendor** (normalised spelling) | These attribute output to the seat that produced it. Collapsing the gate is not a licence to rewrite provenance — and normalising the spelling does not rewrite it either: the vendor named is the vendor you configured. |
+
 ## Execution budget (`total_timeout` / `phase_timeout` / `retries`)
 
 `total_timeout` and `phase_timeout` bound how long a run may take. The effective
@@ -121,6 +173,7 @@ lives in exactly one place (`adapters.effort_args`):
 | `google` (`agy` CLI) | model-id suffix | `<model>-low` | `<model>-medium` | `<model>-high` |
 | `anthropic-api` | `thinking.budget_tokens` (extended thinking) | `2048` | `8192` | `27904` † |
 | `openai-api` | `reasoning_effort` | `low` | `medium` | `high` |
+| `xai-api` | `reasoning_effort` | `low` | `medium` | `high` |
 | `openai-compatible` | `reasoning_effort` | `low` | `medium` | `high` |
 | `google-api` | `generationConfig.thinkingConfig.thinkingBudget` | `1024` | `8192` | `32768` |
 | `anthropic` (`claude` CLI) | — no headless control | ignored | ignored | ignored |
@@ -197,6 +250,7 @@ The document is `schema_version: "ai-jury.doctor.v1"`:
     {
       "name": "agy",
       "vendor": "google",
+      "vendor_identity": "google",
       "transport": "cli",
       "available": true,
       "reason": null,
@@ -218,6 +272,8 @@ The document is `schema_version: "ai-jury.doctor.v1"`:
 | `schema_version` | `ai-jury.doctor.v1`. Bumped on any breaking shape change. |
 | `ready` | At least one configured agent is reachable. |
 | `panel` | Cross-vendor readiness (see below). |
+| `vendor` | The vendor as configured, in its normalised spelling — stripped and lowercased once when the seat is built, so ` XAI-API ` reads back as `xai-api`. Provenance, as distinct from `vendor_identity`. |
+| `vendor_identity` | The vendor this seat counts as at the cross-vendor gate: its own name when recognised, `cli` when it fell back to the generic adapter. This is what `panel` counts. |
 | `transport` | `cli` (a command on PATH), `api` (a hosted vendor API), or `local` (an OpenAI-compatible server you run). |
 | `command` / `endpoint` | Exactly one, named for the transport: a `cli` agent carries `command`, everything else carries the `endpoint` its adapter would actually call. |
 | `reason` | Why an agent is unusable, or `null` when it is available. |
@@ -230,8 +286,8 @@ The document is `schema_version: "ai-jury.doctor.v1"`:
 
 | Field | Meaning |
 | --- | --- |
-| `vendors_configured` | Distinct vendors among the **enabled** agents. Slots are not vendors: three agents on one vendor count as 1. |
-| `vendors_available` | How many of those are reachable right now. |
+| `vendors_configured` | Distinct vendor **identities** among the **enabled** agents — the same count `min_vendors` is compared against, so this number and a run's agree. Slots are not vendors: three agents on one vendor count as 1, and two seats on the generic `cli` fallback count as 1. |
+| `vendors_available` | How many of those identities are reachable right now. |
 | `min_vendors` | The effective `[jury.ci] min_vendors` threshold (`0` when opted out). |
 | `contributing_vendors` | **Always `null` here.** Doctor runs no review, so it cannot know how many vendors would actually contribute. The real number is `panel.vendors` in a run's `--metadata-json`. |
 | `panelists_available` | Enabled agents reachable right now — each of them a ballot in the bundle, the chairing agent included (it reviews too). |
@@ -374,10 +430,11 @@ sensitive — the same trust level as the diff. It defaults to `$JURY_CACHE_DIR`
 `ai-jury` supports **any AI agent provider**:
 
 1. **Vendor Native CLIs**: `claude` (Anthropic Claude Code), `codex` (OpenAI Codex CLI), `agy` (Google Antigravity CLI).
-2. **Hosted OpenAI-Compatible APIs**: `vendor = "openai-compatible"` works with OpenRouter, DeepSeek, Groq, Mistral, Anyscale, LiteLLM, or Azure OpenAI proxies. Configurable via `endpoint`, `api_key_env`, and custom `headers`.
-3. **Local / Open-Weight Models**: `vendor = "local"` over Ollama, `llama.cpp`, vLLM, or LM Studio.
-4. **Arbitrary Coding CLI Agents**: `vendor = "cli"` (such as Aider, Goose, OpenHands) with `prompt_mode = "stdin"` or `"arg"`.
-5. **Pluggable Python Adapters**: Register custom adapters in Python via `ai_jury.adapters.register_adapter("my-vendor", MyAdapter)`.
+2. **Hosted Vendor APIs**: `vendor = "anthropic-api"` / `"openai-api"` / `"google-api"` / `"xai-api"` — no CLI install, keyed by an env-var API key.
+3. **Hosted OpenAI-Compatible APIs**: `vendor = "openai-compatible"` works with OpenRouter, DeepSeek, Groq, Mistral, Anyscale, LiteLLM, or Azure OpenAI proxies. Configurable via `endpoint`, `api_key_env`, and custom `headers`.
+4. **Local / Open-Weight Models**: `vendor = "local"` over Ollama, `llama.cpp`, vLLM, or LM Studio.
+5. **Arbitrary Coding CLI Agents**: `vendor = "cli"` (such as Aider, Goose, OpenHands) — or `vendor = "xai"` for a Grok seat driven through Cursor's `cursor-agent` — with `prompt_mode = "stdin"` or `"arg"`.
+6. **Pluggable Python Adapters**: Register custom adapters in Python via `ai_jury.adapters.register_adapter("my-vendor", MyAdapter)`.
 
 ### Configuration Examples (`jury.toml`)
 
@@ -418,10 +475,21 @@ endpoint = "https://api.groq.com/openai/v1/chat/completions"
 api_key_env = "GROQ_API_KEY"
 ```
 
-#### Grok / xAI API (`vendor = "openai-compatible"`)
+#### Grok / xAI API (`vendor = "xai-api"`)
 
 ```toml
-# Direct xAI API (https://api.x.ai/v1)
+# Direct xAI API — fixed endpoint, keyed by XAI_API_KEY
+[[agent]]
+name = "grok"
+vendor = "xai-api"
+model = "grok-2-latest"
+```
+
+The `openai-compatible` spelling still works and is still supported — xAI serves
+the OpenAI chat-completions shape — but it makes the seat's vendor identity
+`openai-compatible`, which is not what a Grok seat is:
+
+```toml
 [[agent]]
 name = "grok"
 vendor = "openai-compatible"
@@ -471,6 +539,14 @@ vendor = "cli"
 command = "cursor-agent"
 extra_args = ["--print", "--trust", "--model", "claude-4.6-sonnet-medium"]
 prompt_mode = "arg"
+
+# The same CLI pointed at a Grok model: `vendor = "xai"` so the seat is counted
+# as xAI by the cross-vendor guard rather than as one more generic `cli`.
+[[agent]]
+name = "grok-cursor"
+vendor = "xai"
+command = "cursor-agent"
+extra_args = ["-p", "--model", "cursor-grok-4.6-high-fast", "--force", "--output-format", "text"]
 
 # Aider CLI
 [[agent]]

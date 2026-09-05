@@ -24,7 +24,13 @@ from pathlib import Path
 
 from . import __version__
 from .adapters import effort_supported, make_adapter
-from .config import ConfigError, load_config
+from .config import (
+    ConfigError,
+    is_commandless_vendor,
+    load_config,
+    normalise_vendor,
+    vendor_identity,
+)
 from .panel import shortfall
 from .redaction import redact, redact_url_userinfo
 
@@ -91,14 +97,8 @@ def _resolved_command(spec):
     when nothing is found on PATH.
     """
     command = getattr(spec, "command", "") or ""
-    vendor = (getattr(spec, "vendor", "") or "").lower()
     has_endpoint = bool(getattr(spec, "endpoint", None))
-    if (
-        not command
-        or vendor in ("local", "anthropic-api", "openai-api", "google-api", "openai-compatible")
-        or vendor.endswith("-api")
-        or has_endpoint
-    ):
+    if not command or is_commandless_vendor(getattr(spec, "vendor", "")) or has_endpoint:
         return None
     try:
         return shutil.which(command)
@@ -131,7 +131,7 @@ def _endpoint_for(spec):
     """
     if getattr(spec, "endpoint", None):
         return redact_url_userinfo(spec.endpoint)
-    vendor = (getattr(spec, "vendor", "") or "").lower()
+    vendor = normalise_vendor(getattr(spec, "vendor", ""))
     if vendor == "local":
         return _DEFAULT_LOCAL_ENDPOINT
     try:
@@ -139,6 +139,24 @@ def _endpoint_for(spec):
         return api_url() if callable(api_url) else None
     except Exception:  # noqa: BLE001 - diagnostics must never crash
         return None
+
+
+def _unavailable_transport(spec) -> str:
+    """Which transport failed for an unavailable seat: local, hosted-api or cli.
+
+    The single classifier behind both unavailability messages — the per-agent
+    ``reason`` in the export and the corresponding line in ``warnings`` (issue
+    #701, review round 3). Two readers asking the same question of the same seat
+    must get the same answer, so they ask it here, once, of the normalised
+    vendor: ``vendor = "XAI-API"`` used to be a hosted API to one reader and a
+    CLI with a missing ``command`` to the other.
+    """
+    vendor = normalise_vendor(getattr(spec, "vendor", ""))
+    if vendor == "local":
+        return "local"
+    if vendor in _HOSTED_API_VENDORS or vendor.endswith("-api"):
+        return "hosted-api"
+    return "cli"
 
 
 def _unavailable_reason(spec, capability_warnings) -> str:
@@ -150,11 +168,11 @@ def _unavailable_reason(spec, capability_warnings) -> str:
     """
     if capability_warnings:
         return "; ".join(capability_warnings)
-    vendor = (getattr(spec, "vendor", "") or "").lower()
-    if vendor == "local":
+    transport = _unavailable_transport(spec)
+    if transport == "local":
         endpoint = redact_url_userinfo(spec.endpoint or _DEFAULT_LOCAL_ENDPOINT)
         return f"endpoint '{endpoint}' is not reachable"
-    if vendor in _HOSTED_API_VENDORS or vendor.endswith("-api"):
+    if transport == "hosted-api":
         return "the hosted API is not reachable"
     if getattr(spec, "command", ""):
         return f"command '{_redact_value(spec.command)}' is not on PATH"
@@ -170,7 +188,15 @@ def _agent_entry(spec, probe_models: bool = False):
         "command": _redact_value(spec.command),
         "endpoint": _endpoint_for(spec),
         "resolved": _resolved_command(spec),
+        # Two vendor fields, because they answer two different questions and a
+        # row that showed only one was read as answering both (#701, round 2).
+        # `vendor` is provenance: the vendor the operator named, in the one
+        # normalised spelling every rule reads (round 3 — the spec normalises on
+        # construction, so this is the same string the doctor reasons about).
+        # `vendor_identity` is the gate's view: what this seat counts as under
+        # `min_vendors`, which is `cli` for anything the build cannot identify.
         "vendor": _redact_value(spec.vendor),
+        "vendor_identity": vendor_identity(getattr(spec, "vendor", "")),
         "available": available,
         "reason": None if available else _unavailable_reason(spec, capability_warnings),
         "version": _redact_value(caps.get("version")),
@@ -202,7 +228,7 @@ def _config_summary(cfg):
 # Hosted-API vendors (issue #430/#432): no `command`/`endpoint`, so neither
 # the "local" nor the "CLI on PATH" branch below is the right diagnosis when
 # one is unavailable.
-_HOSTED_API_VENDORS = ("anthropic-api", "openai-api", "google-api")
+_HOSTED_API_VENDORS = ("anthropic-api", "openai-api", "google-api", "xai-api")
 
 
 def _detect_warnings(cfg) -> list[str]:
@@ -219,13 +245,18 @@ def _detect_warnings(cfg) -> list[str]:
     for agent in enabled:
         if _is_available(agent):
             continue
-        if agent.vendor == "local":
+        # Classified by the SAME predicate `_unavailable_reason` uses, so the
+        # warning list and the per-agent `reason` cannot diagnose one seat two
+        # different ways (issue #701, review round 3). They differ only in
+        # wording; disagreeing about *which* transport failed was the bug.
+        transport = _unavailable_transport(agent)
+        if transport == "local":
             warnings.append(
                 f"agent '{_redact_value(agent.name)}' (local) endpoint "
-                f"'{redact_url_userinfo(agent.endpoint or 'http://localhost:11434/v1')}' "
+                f"'{redact_url_userinfo(agent.endpoint or _DEFAULT_LOCAL_ENDPOINT)}' "
                 f"is not reachable"
             )
-        elif agent.vendor in _HOSTED_API_VENDORS:
+        elif transport == "hosted-api":
             # Reuse the adapter's own capability warning (issue #430) instead
             # of re-deriving the vendor -> env-var mapping here, so the
             # message can't drift from what the adapter actually reports.
@@ -250,14 +281,19 @@ def _panel_readiness(cfg, agents) -> dict:
     metadata's ``panel.vendors``. Saying so in the export is the point: an
     available CLI that returns nothing is exactly the failure #635 was, and a
     green doctor is not evidence against it.
+
+    Both counts are of :func:`config.vendor_identity`, the same arithmetic
+    :func:`metadata.distinct_vendors` does at the gate, so
+    ``vendors_configured`` equals what a run would count for the same config
+    (#701, round 2). Counting raw strings here meant two seats on the generic
+    fallback read as two vendors in ``--doctor`` and as one vendor in the run:
+    doctor called the bench cross-vendor ready and the run then refused it.
     """
     entries = {entry["name"]: entry for entry in agents}
     enabled = list(getattr(cfg, "enabled_agents", []) or [])
-    configured = {(a.vendor or "").strip().lower() for a in enabled} - {""}
+    configured = {vendor_identity(a.vendor) for a in enabled} - {""}
     available = {
-        (a.vendor or "").strip().lower()
-        for a in enabled
-        if entries.get(a.name, {}).get("available")
+        vendor_identity(a.vendor) for a in enabled if entries.get(a.name, {}).get("available")
     } - {""}
     minimum = int(getattr(cfg.ci, "min_vendors", 0) or 0)
     # The number a downstream consumer counts, which doctor never reported and
@@ -478,7 +514,7 @@ def capability_labels(capabilities) -> list[str]:
 
 def _transport(vendor: str, command: str, endpoint) -> str:
     """Classify how an agent is reached: ``cli``, ``api`` or ``local`` (pure)."""
-    name = (vendor or "").strip().lower()
+    name = normalise_vendor(vendor)
     if name == "local":
         return "local"
     if name.endswith("-api") or name == "openai-compatible":
@@ -511,6 +547,7 @@ def doctor_report_dict(diagnostics) -> dict:
         item = {
             "name": entry.get("name"),
             "vendor": vendor,
+            "vendor_identity": entry.get("vendor_identity") or "",
             "transport": transport,
             "available": bool(entry.get("available")),
             "reason": entry.get("reason"),
@@ -583,7 +620,14 @@ def render_report(diagnostics) -> str:
                 address = f"command={agent.get('command', '')}"
             else:
                 address = f"endpoint={agent.get('endpoint') or '(unknown)'}"
-            lines.append(f"  [{status:>9}] {agent['name']} (vendor={agent['vendor']}, {address})")
+            # A seat whose configured vendor is not the identity it carries
+            # says so on its own row, so the row and the panel count below can
+            # be read together without arithmetic (#701, round 2).
+            identity = agent.get("vendor_identity") or ""
+            vendor_field = agent["vendor"]
+            if identity and identity != normalise_vendor(vendor_field):
+                vendor_field = f"{vendor_field} -> counts as {identity}"
+            lines.append(f"  [{status:>9}] {agent['name']} (vendor={vendor_field}, {address})")
             if agent.get("command"):
                 resolved = agent.get("resolved") or "(not found on PATH)"
                 lines.append(f"              resolved: {resolved}")
@@ -615,8 +659,8 @@ def render_report(diagnostics) -> str:
     panel = report["panel"]
     lines.append("Cross-vendor readiness")
     lines.append("-" * 40)
-    lines.append(f"  vendors enabled:   {panel['vendors_configured']}")
-    lines.append(f"  vendors reachable: {panel['vendors_available']}")
+    lines.append(f"  vendors enabled:   {panel['vendors_configured']} (by vendor identity)")
+    lines.append(f"  vendors reachable: {panel['vendors_available']} (by vendor identity)")
     lines.append(f"  min_vendors gate:  {panel['min_vendors'] or 'off'}")
     lines.append(f"  cross-vendor ready: {'yes' if panel['multi_vendor_ready'] else 'no'}")
     # The number a consumer counts, said in the same breath as readiness (#699).
@@ -632,6 +676,12 @@ def render_report(diagnostics) -> str:
     lines.append(
         "  note: this checks availability, not contribution. A reachable CLI "
         "can still return no review (#635) — only a run can prove the panel."
+    )
+    lines.append(
+        "  note: counted by vendor identity, the same arithmetic min_vendors "
+        "uses — a vendor this build does not recognise counts as 'cli', so two "
+        "such seats are one vendor here and in the run. The Agents rows above "
+        "show each seat's configured vendor string."
     )
     lines.append("")
 

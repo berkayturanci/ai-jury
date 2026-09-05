@@ -124,7 +124,9 @@ def _metadata_block(metadata: dict) -> list[str]:
             f"{panel.get('configured', 0)} reviewer(s)** "
             f"({panel.get('abstained', 0)} returned no review, "
             f"{panel.get('failed', 0)} failed) — "
-            f"{panel.get('vendors', 0)} vendor(s) contributed. An abstention is not "
+            f"{panel.get('vendors', 0)} vendor(s) contributed "
+            "(counted by vendor identity; the table below shows each seat's "
+            "configured vendor). An abstention is not "
             "an approval; treat cross-vendor consensus accordingly."
         )
     # What a downstream consumer will actually be handed, and the chair's role in
@@ -150,6 +152,9 @@ def _metadata_block(metadata: dict) -> list[str]:
     total = metadata["total_wall_clock_s"]
     lines.append(f"- total wall-clock (cost proxy, not $): {total:.0f}s")
     lines.append("")
+    # The `vendor` column is PROVENANCE: the string the operator configured,
+    # verbatim, even when the gate counts the seat as `cli` (#701). The count in
+    # the short-panel line above is the gate's arithmetic, and says so.
     lines.append("| agent | vendor | status | duration |")
     lines.append("| --- | --- | --- | --- |")
     for a in metadata["agents"]:

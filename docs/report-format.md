@@ -81,7 +81,7 @@ the chair:
 | Field | Meaning |
 | --- | --- |
 | `name` | The agent slot's name, as configured. |
-| `vendor` | The adapter's vendor (`anthropic`, `openai`, …). |
+| `vendor` | The adapter's vendor (`anthropic`, `openai`, …), **as configured**. A seat on the generic fallback keeps its own string here and counts as `cli` only in `metadata.panel.vendors`. |
 | `model` | The effective model id, or `""` when the CLI's own default is in force. |
 | `verdict` | That panelist's own round-1 stance (see below). |
 | `findings` | Indexes into the report's top-level `findings` array. |
@@ -125,7 +125,7 @@ per panelist that returned output, plus the chair as `reviewer: "chair"`:
 | `scope` | One paragraph: the distinct files that panelist named in its structured findings (capped at 8, with a `(+N more)` tail), followed by up to three "checked / examined / inspected / reviewed" clauses lifted from its prose. The chair's record additionally names the agent that chaired, says whether that agent's own ballot is in the bundle, states how many reviews the bundle carries and that this record is not one of them; the ballot cast by the chairing agent says so on its own scope too. |
 | `findings` | That panelist's own findings as `{severity, path, line, message}` — ai-jury's `file` → `path`, `claim` → `message`. The chair carries the consensus-group representatives the verifier did **not** reject. |
 | `testing` | The panelist's stated verification, lifted verbatim from its prose, or `"not stated"`. The chair's comes from the verification round. |
-| `vendor` | The adapter's vendor. |
+| `vendor` | The adapter's vendor, **as configured** — provenance, not the identity the cross-vendor gate collapses to. |
 | `model` | The effective model id (`""` when the CLI default is in force). |
 
 `scope` and `testing` are the only fields lifted from free text, and reviewer

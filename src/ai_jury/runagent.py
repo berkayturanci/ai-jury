@@ -120,6 +120,7 @@ BUILTIN_AGENTS: tuple[str, ...] = (
     "anthropic-api",
     "openai-api",
     "google-api",
+    "xai-api",
 )
 
 #: A model id as the vendors actually spell them: ``gemini-3.8-flash-high``,
@@ -231,7 +232,15 @@ def transport_for(spec: AgentSpec) -> str:
 #: ``qwen2.5-coder:7b`` is not. Mirrors keel's ``agents._TRANSPORT_PREFIXES``,
 #: which is what consumes these labels.
 _TRANSPORT_PREFIXES = frozenset(
-    {"anthropic-api", "openai-api", "google-api", "openai-compatible", "ollama", "local"}
+    {
+        "anthropic-api",
+        "openai-api",
+        "google-api",
+        "xai-api",
+        "openai-compatible",
+        "ollama",
+        "local",
+    }
 )
 
 
