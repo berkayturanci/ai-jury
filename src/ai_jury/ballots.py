@@ -257,22 +257,19 @@ _MAX_NESTED_MARKS = 2
 #: safe direction — an unresolved token is reported as unresolved.
 _MAX_JOINED_PIECES = 6
 
-#: Punctuation a token may be wrapped or trailed by. Stripped from both ends
-#: before the token is resolved, so ``(src/a.py),`` and ``src/a.py`` are one
-#: token. A trailing ``:`` goes too, but a ``:42`` does not — that is a line.
-#: ``_`` is deliberately **not** here: it is part of the identifier, and
-#: stripping it turned ``_stated_line`` into a symbol the change does not have.
-#: ``.`` *is* here — a trailing full stop ends a sentence far more often than it
-#: opens a filename — but it is put back when the change says it belongs to the
-#: name. See :func:`_edge_stripped`.
-_TOKEN_EDGE = "`'\"“”‘’()[]{}<>*.,;:!?"
+#: Punctuation a token may be **wrapped** in: brackets and quotes, plus the
+#: markdown emphasis mark. Stripped from either end, so ``(src/a.py)`` and
+#: ``src/a.py`` are one token. Nothing here can begin a file name, which is why
+#: taking it off either end is unconditional. See :func:`_edge_stripped`.
+_WRAP_EDGE = "`'\"“”‘’()[]{}<>*"
 
-#: How many stripped edge characters may be **put back** while a strip is
-#: retried against the change. The full strip is always tried first and is the
-#: token when the index confirms nothing, and every retry only ever restores, so
-#: the cap can cost a resolution but never invent one — and a name wrapped in
-#: four layers of punctuation is past the point of being a name.
-_MAX_EDGE_RESTORE = 3
+#: Sentence punctuation a token may be **trailed** by, stripped from the end
+#: only — a full stop ends a sentence far more often than it opens a filename,
+#: but a *leading* dot is part of the name and is never touched. A trailing
+#: ``:`` goes too, but a ``:42`` does not — that is a line. ``_`` is in neither
+#: set: it is part of the identifier, and stripping it turned ``_stated_line``
+#: into a symbol the change does not have.
+_TRAIL_EDGE = ".,;:!?"
 
 #: ``path:line`` / ``path:line-line`` — the line part is dropped before the path
 #: is looked up, because a diff index knows files, not line numbers.
@@ -366,73 +363,33 @@ def _path_base(token: str) -> str:
     return match.group("path") if match else token
 
 
-def _edge_trims(piece: str) -> list[str]:
-    """*piece* with its edge punctuation removed, most-stripped first (pure).
+def _edge_stripped(piece: str) -> str:
+    """*piece* with its edge punctuation removed (pure).
 
-    The first entry is the full strip; the rest put the stripped characters back
-    one at a time, from either end, so a caller can ask the index which trim was
-    the reviewer's intent. Ordered **most-stripped first**, which is the order
-    :func:`_edge_stripped` reads them in — see there for why that matters.
+    Wrapping punctuation — brackets and quotes, :data:`_WRAP_EDGE` — comes off
+    either end; trailing sentence punctuation (:data:`_TRAIL_EDGE`) comes off
+    the end. **A character that begins a name is never removed**: a dot followed
+    by a letter or a digit, a letter, a digit and ``_`` are in neither set, so
+    ``(.gitignore).`` is ``.gitignore``, ``src/a.py,`` is ``src/a.py``, and
+    ``all.`` is ``all``.
+
+    A leading dot is part of a file name, and the earlier rounds of #710 stripped
+    it with everything else and then tried to put it back: the trims that
+    restored the stripped characters were offered to the change index,
+    most-stripped first, and the first trim the index confirmed was the token.
+    That asked the diff a question the token had already answered — and the diff
+    answered it wrongly whenever it happened to contain the stripped remnant.
+    With ``env`` (or ``bin/env``) changed, ``Checked: .env`` resolved on the
+    fully stripped ``env``, matching on a component boundary in a *different*
+    file, and the ballot counted as a review of a file the reviewer never named;
+    ``.gitignore`` did the same against a changed ``src/gitignore`` (#709/#710,
+    round 5). Never stripping the dot removes the question rather than adding a
+    case to it: ``.env`` against a changed ``env`` is a name this change does not
+    have, reported unresolved under ``not_in_change`` — and one deterministic
+    strip is all a token needs, so no trim is enumerated against the index at
+    all.
     """
-    trims = [piece.strip(_TOKEN_EDGE)]
-    head = min(len(piece) - len(piece.lstrip(_TOKEN_EDGE)), _MAX_EDGE_RESTORE)
-    tail = min(len(piece) - len(piece.rstrip(_TOKEN_EDGE)), _MAX_EDGE_RESTORE)
-    for left in range(head, -1, -1):
-        for right in range(tail, -1, -1):
-            end = len(piece) - right
-            candidate = piece[left:end] if end >= left else ""
-            if candidate not in trims:
-                trims.append(candidate)
-    return trims
-
-
-def _edge_stripped(piece: str, changed: Any) -> str:
-    """*piece* stripped of edge punctuation, but never past a path (pure).
-
-    Stripping both ends is what makes ``(src/a.py),`` and ``src/a.py`` one
-    token, and :data:`_TOKEN_EDGE` contains ``.`` because a trailing full stop
-    is sentence punctuation far more often than it is part of a name. On a
-    *leading* dot that is exactly backwards: with ``.gitignore`` in the change,
-    ``Checked: .gitignore`` stripped down to ``gitignore``, which
-    :meth:`~ai_jury.largediff.ChangeIndex.has_path` does not match (it needs a
-    path-component boundary, and ``.gitignore`` has none before the ``g``). The
-    remnant is not name-shaped either, so it was dropped as connective prose and
-    the ballot came back ``named_nothing`` — a scope claiming the line named no
-    path at all, for a file the reviewer named exactly. Same for ``.env``,
-    ``.editorconfig``, and every other dotfile (#710, round 3).
-
-    So the rule is that **edge-stripping never removes a character that makes
-    the token a path in the change**: the trims of :func:`_edge_trims` are
-    offered to the index most-stripped first, and the first one it confirms is
-    the token. A retry can only ever rescue a name, never invent one.
-
-    **And when the index confirms nothing, the strip still may not eat the
-    name** (#710, round 4). Falling straight back to the full strip only moved
-    the defect to the dotfile this change does *not* contain: ``Checked:
-    .gitignore`` against a diff touching ``src/a.py`` came back as
-    ``gitignore``, which :data:`_NAME_SHAPED_RE` does not recognise, so the
-    token was dropped as connective prose and the ballot recorded
-    ``named_nothing`` — the cause that says the line named nothing at all, for a
-    line that named a file precisely. The documented split puts a line naming
-    only absent paths under ``not_in_change``, so a token that is still a name
-    has to survive as one and be reported unresolved.
-
-    The fallback is therefore the **first name-shaped trim** — the fewest
-    characters put back that leave a path- or identifier-shaped token. Fewest,
-    not most: with ``(src/made/up.py),`` absent, the full strip
-    ``src/made/up.py`` is already name-shaped and is what the abstention should
-    quote, not the parenthesised original. Prose is unaffected, because no trim
-    of ``all.`` is name-shaped at any restoration; the full strip is still what
-    a piece that is a name at no trim comes back as, and it is still dropped.
-    """
-    trims = _edge_trims(piece)
-    for candidate in trims:
-        if candidate and changed.has_path(_path_base(candidate)):
-            return candidate
-    for candidate in trims:
-        if candidate and _NAME_SHAPED_RE.search(candidate):
-            return candidate
-    return trims[0]
+    return piece.lstrip(_WRAP_EDGE).rstrip(_WRAP_EDGE + _TRAIL_EDGE)
 
 
 def _joined_against_change(pieces: list[str], changed: Any) -> list[str]:
@@ -458,11 +415,11 @@ def _joined_against_change(pieces: list[str], changed: Any) -> list[str]:
         joined = ""
         width = 1
         for size in range(min(_MAX_JOINED_PIECES, len(pieces) - index), 1, -1):
-            candidate = _edge_stripped(" ".join(pieces[index : index + size]), changed)
+            candidate = _edge_stripped(" ".join(pieces[index : index + size]))
             if changed.has_path(_path_base(candidate)):
                 joined, width = candidate, size
                 break
-        tokens.append(joined or _edge_stripped(pieces[index], changed))
+        tokens.append(joined or _edge_stripped(pieces[index]))
         index += width
     return tokens
 

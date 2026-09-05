@@ -229,36 +229,36 @@ changes `docs/my file.py`, so a real review of a real file was refused under
   accepted on its own say-so, so this can turn a non-token into a token but not
   the reverse — the failure direction stays *unresolved*, which is reported.
 
-Wrapping and trailing punctuation is then stripped from each end, so `(src/a.py),`
-and `src/a.py` are one token — but **the strip never removes a character that
-makes the token a path in the change**. A full stop ends a sentence more often
-than it opens a filename, so `.` is stripped like any other edge character; on a
-dotfile that was exactly backwards. `Checked: .gitignore` stripped down to
-`gitignore`, which names nothing in a diff that changes `.gitignore` (the match
-wants a path-component boundary, and there is none before the `g`), and the
-remnant is not name-shaped either, so it was dropped as connective prose and the
-ballot came back `named_nothing` — a scope claiming the line named no path at
-all, for a file the reviewer named exactly. The same went for `.env`,
-`.editorconfig`, and every other dotfile. So the strip is now put to the change:
-the fully stripped token is offered first, then the trims that put the stripped
-characters back one at a time, and the first the index confirms is the token. A
-retry can rescue a name the punctuation hid, never invent one.
+Edge punctuation is then stripped from each token, in one pass: **wrapping
+punctuation** — brackets and quotes — comes off either end, and **trailing
+sentence punctuation** (`.` `,` `;` `:`) comes off the end. A character that
+begins a name is never removed: a dot followed by a letter or a digit, a letter,
+a digit, `_`. So `(.gitignore).` is `.gitignore`, `src/a.py,` is `src/a.py`, and
+`all.` is `all`.
 
-**When the index confirms none of them, the strip still may not eat the name.**
-Falling straight back to the full strip only moved the defect to the dotfile the
-change does *not* contain: against a diff touching `src/a.py`, `Checked:
-.gitignore` came back as `gitignore` — not name-shaped, since `gitignore` is
-nine characters rather than an extension — so the token was dropped as
-connective prose and the ballot recorded `named_nothing`, the cause that says
-the line named nothing checkable at all, for a line that named a file precisely.
-The fallback is the first **name-shaped** trim instead: the fewest characters
-put back that leave a path- or identifier-shaped token. An absent `.gitignore`
-therefore stays a name, is reported as the claim that failed, and buckets under
-`not_in_change` — which is the documented split, since the line named only
-absent paths. Fewest characters, not most: an absent `(src/made/up.py),` is
-quoted as `src/made/up.py`, not in its parentheses. A piece that is a name at no
-trim still comes back fully stripped and is still dropped, so `Checked: nothing
-at all.` names nothing exactly as before.
+The leading dot is the whole of it. A full stop ends a sentence more often than
+it opens a filename, so `.` used to be stripped from both ends like any other
+edge character — and on a dotfile that was exactly backwards: `Checked:
+.gitignore` stripped down to `gitignore`, which names nothing in a diff that
+changes `.gitignore` (the match wants a path-component boundary, and there is
+none before the `g`), so the ballot came back `named_nothing` for a file the
+reviewer named exactly. The first fix put the strip to the change — the fully
+stripped token offered first, then the trims that put the stripped characters
+back, and the first the index confirmed was the token — which resolved the
+dotfile the diff contains, and then broke in the other direction: offering the
+stripped form *first* meant `.env` was offered as `env`, so a diff that changed
+a file named `env`, or `bin/env`, confirmed it and the ballot counted as a
+review of a file the reviewer never named. Same for `.gitignore` against a
+changed `src/gitignore`.
+
+Not stripping the leading dot answers all of it without a search: the dot is
+part of the name, so `.env` is `.env` whatever the diff contains. Against a
+change that touches `.env` it resolves; against one that touches `env` or
+`bin/env` it is a name this change does not have, reported as the claim that
+failed under `not_in_change` — which is the documented split, since the line
+named only absent paths. A piece that is a name at no strip — `nothing at all.`
+— is still dropped as connective prose, so such a line still names nothing
+exactly as before.
 
 **A mixed line is carried by the tokens that resolve.** `Checked:
 src/ai_jury/ballots.py, src/made/up.py` is a review of `src/ai_jury/ballots.py`,

@@ -830,5 +830,62 @@ class AnAbsentDotfileIsNamedNotNothing(unittest.TestCase):
         )
 
 
+def _change_to(path: str):
+    """A one-file change index touching *path* and nothing else."""
+    return change_index(
+        f"diff --git a/{path} b/{path}\n--- a/{path}\n+++ b/{path}\n@@ -1 +1 @@\n-old\n+new\n"
+    )
+
+
+class AStrippedDotIsNotAnotherFile(unittest.TestCase):
+    """#710, round 5: the strip may not turn one file's name into another's.
+
+    Rounds 3 and 4 stripped the leading dot with the rest of the edge
+    punctuation and then tried to undo it — the fully stripped form first, then
+    the trims that put the stripped characters back, and the first trim the
+    change index confirmed was the token. Offering the fully stripped form first
+    is what breaks: ``.env`` is offered as ``env``, and in a diff that changes a
+    file *named* ``env`` — or ``bin/env``, where the lookup matches on a
+    component boundary — the index confirms it. The ballot then counted as a
+    review of a file the reviewer never named, on a token the strip invented.
+    Same shape for ``.gitignore`` against a changed ``src/gitignore``.
+
+    The rule is simpler now instead of longer: a leading dot is part of the file
+    name and is never stripped, so ``.env`` stays ``.env`` and a change that
+    does not contain it reports the claim that failed under ``not_in_change``.
+    """
+
+    def _ballot(self, checked: str, changed) -> dict:
+        config = _config([{"name": "seat", "vendor": "anthropic", "command": "claude"}])
+        result = AgentResult("seat", "anthropic", True, _reply(checked), 0.0)
+        return reviewer_ballots(_outcome([result], changed=changed), config)[0]
+
+    def test_a_dotfile_is_not_the_undotted_file_of_the_same_name(self):
+        """The reported defect. Fails on c49eec4: `.env` resolves on `env`."""
+        ballot = self._ballot(".env", _change_to("env"))
+        self.assertFalse(ballot["counts_as_review"])
+        self.assertEqual(ballot["abstention_cause"], panel.NOT_IN_CHANGE)
+        self.assertIn(".env", ballot["scope"])
+        self.assertEqual(resolve_stated_scope(".env", _change_to("env")), ([], [".env"]))
+
+    def test_a_dotfile_is_not_the_undotted_file_in_a_directory(self):
+        """Fails on c49eec4 too: stripped to `env`, `bin/env` matches on the
+        component boundary the dot was hiding."""
+        ballot = self._ballot(".env", _change_to("bin/env"))
+        self.assertFalse(ballot["counts_as_review"])
+        self.assertEqual(ballot["abstention_cause"], panel.NOT_IN_CHANGE)
+        self.assertIn(".env", ballot["scope"])
+        self.assertEqual(resolve_stated_scope(".env", _change_to("bin/env")), ([], [".env"]))
+
+    def test_the_same_holds_for_a_longer_dotfile_name(self):
+        """`.gitignore` against a changed `src/gitignore`. Fails on c49eec4."""
+        changed = _change_to("src/gitignore")
+        ballot = self._ballot(".gitignore", changed)
+        self.assertFalse(ballot["counts_as_review"])
+        self.assertEqual(ballot["abstention_cause"], panel.NOT_IN_CHANGE)
+        self.assertIn(".gitignore", ballot["scope"])
+        self.assertEqual(resolve_stated_scope(".gitignore", changed), ([], [".gitignore"]))
+
+
 if __name__ == "__main__":  # pragma: no cover - manual runs
     unittest.main()
