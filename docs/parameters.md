@@ -608,8 +608,10 @@ values, as declared in `src/ai_jury/cli.py`
 (`choices=["markdown", "json", "sarif", "keel-reviews"]`).
 
 `keel-reviews` is a bundle rather than a report: a JSON array carrying one review
-record per panelist that returned output, plus the chair, for an orchestrator
-that shows a verdict per reviewer instead of one consolidated document. See
+record per seat that ran — a seat that returned nothing is present as an
+abstention naming it, flagged `counts_as_review: false` — plus the chair, for an
+orchestrator that shows a verdict per reviewer instead of one consolidated
+document. See
 [Output & format](#output--format) above and
 [report-format.md](report-format.md#the-keel-reviews-bundle).
 

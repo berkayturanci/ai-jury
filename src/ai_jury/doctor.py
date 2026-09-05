@@ -310,7 +310,8 @@ def _panel_readiness(cfg, agents) -> dict:
     # panel's consensus, not as a review, and adding it is how a bench with
     # nothing reachable came to advertise one review. Doctor can only see
     # reachability, so this is the CEILING — an agent that runs and returns
-    # nothing casts no ballot — which is why it is labelled "at most" below.
+    # nothing, or names nothing checkable, casts no review (#700) — which is why
+    # it is labelled "at most" below.
     seats = sum(1 for a in enabled if entries.get(a.name, {}).get("available"))
     panel = {
         "vendors_configured": len(configured),

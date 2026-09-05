@@ -795,8 +795,12 @@ keel review --reviews reviews.json --dry-run
 ```
 
 The file is a JSON array of `{reviewer, verdict, scope, findings, testing,
-vendor, model}` records, one per panelist that returned output plus the chair as
-`reviewer: "chair"` — see [report-format.md](report-format.md#the-keel-reviews-bundle).
+vendor, model, model_source, counts_as_review}` records, one per seat that ran
+plus the chair as `reviewer: "chair"` — see
+[report-format.md](report-format.md#the-keel-reviews-bundle). A seat that
+returned nothing, or answered without naming a file, line or symbol, is recorded
+as an abstention and carries `counts_as_review: false`; that is the flag to count
+on, because keel refuses such a verdict itself.
 Because every record carries its own `vendor`, a three-seat panel spread over
 three vendors satisfies Keel's distinct-vendor evidence requirement on its own.
 Producing the bundle is an `ai-jury` concern only; the Keel-side consumption of

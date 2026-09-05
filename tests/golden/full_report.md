@@ -70,6 +70,8 @@ REQUEST CHANGES — one confirmed major issue.
 
 ### `claude` (anthropic) — 0s
 
+Checked: src/example.py
+Tested: nothing run (offline mock reviewer)
 - **[major]** `src/example.py:42` — claude: unchecked return value may swallow an error.
 - **[minor]** `src/example.py:7` — claude: missing docstring.
 
@@ -82,6 +84,8 @@ REQUEST CHANGES — one confirmed major issue.
 
 ### `codex` (openai) — 0s
 
+Checked: src/example.py
+Tested: nothing run (offline mock reviewer)
 - **[major]** `src/example.py:42` — codex: unchecked return value may swallow an error.
 - **[minor]** `src/example.py:7` — codex: missing docstring.
 
@@ -94,6 +98,8 @@ REQUEST CHANGES — one confirmed major issue.
 
 ### `agy` (google) — 0s
 
+Checked: src/example.py
+Tested: nothing run (offline mock reviewer)
 - **[major]** `src/example.py:42` — agy: unchecked return value may swallow an error.
 - **[minor]** `src/example.py:7` — agy: missing docstring.
 
@@ -140,7 +146,7 @@ REQUEST CHANGES — one confirmed major issue.
 - rounds executed: 2
 - verify: on
 - context mode: diff-only
-- reviews for a downstream consumer: 3 (one per panel ballot; the chair's synthesis record is carried alongside them and is not a review); chair `claude` also sat on the panel — its ballot is one of them
+- reviews for a downstream consumer: 3 of 3 ballot(s) (a ballot counts only when it names what it read and votes; the chair's synthesis record is carried alongside them and is not a review); chair `claude` also sat on the panel — its review is one of them
 - total wall-clock (cost proxy, not $): 0s
 
 | agent | vendor | status | duration |
@@ -151,7 +157,7 @@ REQUEST CHANGES — one confirmed major issue.
 
 ### 💰 Run Economics (estimated)
 
-- total tokens (est): ~7,279 · cost (est): ~$0.0177 USD
+- total tokens (est): ~7,330 · cost (est): ~$0.0179 USD
 
 _Wall-clock seconds and token counts are approximate cost proxies (no direct billing telemetry is extracted from CLIs), not guaranteed dollar costs._
 

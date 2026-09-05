@@ -350,9 +350,10 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="N",
         help=(
-            "require at least N reviews for a downstream consumer (one per panel "
-            "ballot; the chair's synthesis record is not one); 0 disables. "
-            "Checked before the panel runs and again on the result (exit 3). "
+            "require at least N reviews for a downstream consumer (a panel ballot "
+            "that names what it read and votes; neither the chair's synthesis "
+            "record nor an abstaining ballot is one); 0 disables. Checked before "
+            "the panel runs and again on the result (exit 3). "
             "Default from config ([jury.ci] min_reviews, shipped as 0)"
         ),
     )
@@ -2453,12 +2454,14 @@ def main(argv: list[str] | None = None) -> int:
             court.set_vote(vote)
         court.close()
 
-    metadata = build_run_metadata(outcome, config, decision=decision, vote=vote)
-
     # Ballot vocabulary follows the review mode, exactly as the vote tally does:
     # an issue review votes on completeness (READY/UNCLEAR/NEEDS_INFO), not on a
-    # diff's correctness.
+    # diff's correctness. Resolved BEFORE the metadata, which now derives the
+    # ballots to count them (#700, round 2) and must derive the same ones the
+    # report renders.
     ballot_mode = "issue" if args.issue else "code"
+
+    metadata = build_run_metadata(outcome, config, decision=decision, vote=vote, mode=ballot_mode)
 
     if args.format == "json":
         from .formats import to_json
@@ -2537,18 +2540,24 @@ def main(argv: list[str] | None = None) -> int:
         log(collapsed)
         ci_exit = 3
     # The other half of the #699 gate. The orchestrator refuses a bench that is
-    # too small before spending it; this catches the case a pre-flight cannot
-    # predict — an agent that was present, ran, and returned nothing, so its slot
-    # casts no ballot and the bundle silently shrinks below what the consumer
-    # requires. Exit 3, the same family as a collapsed panel: the panel, not the
+    # too small before spending it; this catches the two cases a pre-flight
+    # cannot predict — an agent that was present, ran, and returned nothing, and
+    # one that answered with prose naming nothing a reader could check. Both are
+    # recorded as abstentions and neither is a review, so the number the consumer
+    # will accept can fall below its minimum while every seat "answered" (#700,
+    # round 2: `--min-reviews 3` used to be satisfied by three "Looks good to me"
+    # replies). Exit 3, the same family as a collapsed panel: the panel, not the
     # findings, is what fell short. Evaluated on cached outcomes too, which is
     # why `min_reviews` is kept out of the cache key.
     panel_meta = metadata.get("panel") or {}
     short_panel = panel.shortfall(
-        panel_meta.get("ballots", 0),
+        panel_meta.get("reviews_supplied") or 0,
         config.ci.min_reviews,
         stage="after the panel ran",
-        silent=panel_meta.get("configured", 0) - panel_meta.get("ballots", 0),
+        # Every cause the metadata publishes, passed by the one mapping that
+        # names them: a call site listing two of the four printed the other two
+        # under a cause their own ballots contradicted (#700, round 5).
+        **{key: panel_meta.get(key) or 0 for key in panel.PANEL_METADATA_KEYS.values()},
     )
     if short_panel:
         log(short_panel)

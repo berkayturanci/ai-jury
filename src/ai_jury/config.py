@@ -821,7 +821,9 @@ class CiConfig:
     # ``metadata.collapse_reason``). ``0`` disables the guard entirely.
     min_vendors: int = DEFAULT_MIN_VENDORS
     # REVIEWS the run must be able to hand a downstream consumer before it is
-    # worth running at all (issue #699) — one per panel ballot, which is the
+    # worth running at all (issue #699) — one per ballot that *reviewed*, i.e.
+    # ``panel.is_review``: a substantive scope and a voting verdict, so an
+    # abstention is not one (#700). That is the
     # number a gate like `keel review --from-jury` counts: it splits the
     # ``reviewers`` array on ``role`` and reads the ``chair`` entry as the
     # panel's consensus, not as a review. ``0`` (the default)

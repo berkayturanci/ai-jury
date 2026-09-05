@@ -70,6 +70,8 @@ REQUEST CHANGES — one confirmed major issue.
 
 ### `claude` (anthropic) — 0s
 
+Checked: src/example.py
+Tested: nothing run (offline mock reviewer)
 - **[major]** `src/example.py:42` — claude: unchecked return value may swallow an error.
 - **[minor]** `src/example.py:7` — claude: missing docstring.
 
@@ -82,6 +84,8 @@ REQUEST CHANGES — one confirmed major issue.
 
 ### `codex` (openai) — 0s
 
+Checked: src/example.py
+Tested: nothing run (offline mock reviewer)
 - **[major]** `src/example.py:42` — codex: unchecked return value may swallow an error.
 - **[minor]** `src/example.py:7` — codex: missing docstring.
 
@@ -94,6 +98,8 @@ REQUEST CHANGES — one confirmed major issue.
 
 ### `agy` (google) — 0s
 
+Checked: src/example.py
+Tested: nothing run (offline mock reviewer)
 - **[major]** `src/example.py:42` — agy: unchecked return value may swallow an error.
 - **[minor]** `src/example.py:7` — agy: missing docstring.
 

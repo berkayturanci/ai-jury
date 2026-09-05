@@ -28,11 +28,14 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 # v4 (issue #501) added: ``panel`` (configured vs effective size, abstentions) and
 # per-agent ``review_status``. A slot that returns no review is an abstention, not an
 # approval, and until now nothing in the output said so.
-# v5 (issue #699) added, inside ``panel``: ``ballots``, ``reviews_supplied``,
-# ``chair`` and ``chair_ballot`` — the number of reviews a downstream consumer
-# actually receives (the ballots; the chair's synthesis record is not one of
-# them), and whether the chairing agent cast a ballot of its own.
-# Purely additive: every v4 key keeps its name and meaning.
+# v5 (issues #699/#700) added, inside ``panel``: ``ballots``, ``reviews_supplied``,
+# ``silent``, ``insubstantial``, ``refused``, ``adapter_failed``, ``chair`` and
+# ``chair_ballot`` — the number of reviews a downstream consumer actually
+# receives (the ballots that named something and voted; the chair's synthesis
+# record is not one of them, and neither is an abstaining ballot), the four ways
+# a seat that ran produced no review, and whether the chairing agent's own ballot
+# is one of the counted reviews. The four causes and ``reviews_supplied`` sum to
+# ``ballots``. Purely additive: every v4 key keeps its name and meaning.
 SCHEMA_VERSION = 5
 
 
@@ -59,7 +62,7 @@ def review_status(result) -> str:
     return "clean" if getattr(result, "structured", False) else "abstained"
 
 
-def panel_accounting(reviews, chair: str = "") -> dict:
+def panel_accounting(reviews, chair: str = "", ballots=None) -> dict:
     """Configured versus *effective* panel size, and the per-status breakdown.
 
     A consumer gating on the panel needs the effective number — keel downgrades a
@@ -75,18 +78,56 @@ def panel_accounting(reviews, chair: str = "") -> dict:
     (issue #701).
 
     ``reviews_supplied`` is a different number again, and the one #699 was about:
-    how many reviews the bundle hands on. It is the ballots (slots that returned
-    something) and only the ballots — not ``configured`` (a silent slot casts no
-    ballot), not ``effective`` (a slot that returned prose but no findings block
-    still states a stance), and *not* ballots plus the chair record, because a
-    consumer splits the ``reviewers`` array on ``role`` and reads the ``chair``
-    entry as the panel's consensus rather than as one more review.
-    ``chair_ballot`` says whether the chairing agent cast a ballot of its own,
-    which is the difference between a chair that reviewed and one that only
-    synthesised — and that ballot, when present, is counted like any other.
+    how many reviews the bundle hands on. It is not ``configured`` (every seat
+    that ran, silent ones included), not ``effective`` (a slot that returned
+    prose but no findings block may still have named nothing), and not
+    ``ballots`` plus the chair record — a consumer splits the ``reviewers`` array
+    on ``role`` and reads the ``chair`` entry as the panel's consensus rather
+    than as one more review.
+
+    It is :func:`ai_jury.panel.review_count` over the **ballot records**, which
+    is why they are passed in rather than derived here: whether a seat reviewed
+    is a fact about the record it produced — its scope and its verdict — and no
+    predicate over the raw round-1 result can see it. That was the defect at this
+    line (#700, round 2): a prose-only non-review abstained on its ballot and was
+    still counted here, so ``--min-reviews`` could be satisfied by seats that
+    reviewed nothing. With ``ballots`` omitted the count is reported as ``None``
+    rather than guessed, because every guess available over-counts.
+
+    ``silent``, ``insubstantial``, ``refused`` and ``adapter_failed`` split the
+    seats that produced no review by cause, for the shortfall message: a silent
+    agent is a CLI that broke or a budget that ran out, a seat that answered and
+    named nothing is a reviewer that did not review, a refusal is a model
+    declining the task, and a failed adapter is an invocation to fix. They come
+    from :func:`ai_jury.panel.abstention_buckets` — each ballot classified by the
+    cause it carries — so that they and ``reviews_supplied`` add up to
+    ``ballots`` with nothing left over.
+
+    ``insubstantial`` was derived by subtraction until #700's fifth round, and
+    the subtraction was the defect: ``ballots - silent - supplied`` swept up
+    every seat that was neither silent nor a counted review, and once a ballot
+    could carry a substantive scope and still abstain that included the seat that
+    named a file and then refused, and the one whose adapter died holding a file
+    name. Both were then rendered as "named nothing checkable" — a cause their
+    own ballot contradicted. It now means exactly ``named_nothing``: the seats
+    that answered and named nothing a reader could check, and only those.
+
+    ``chair_ballot`` says whether the chairing agent's own ballot is one of the
+    *counted* reviews — a chairing agent that ran and abstained has a ballot in
+    the bundle and has supplied no review.
     """
     reviews = list(reviews or [])
-    ballots = panel.ballot_slots(reviews)
+    seats = panel.ballot_seats(reviews)
+    records = list(ballots) if ballots is not None else None
+    counted = [r for r in (records or []) if panel.is_review(r)]
+    supplied = len(counted) if records is not None else None
+    # Without the records there is nothing to classify: the cause is a fact the
+    # ballot carries, and every guess available from the raw results is the
+    # subtraction this replaced. ``silent`` is the exception, and only because
+    # :func:`ai_jury.ballots.abstention_cause` tests silence first and on the
+    # same predicate — the two readings are the same number by construction.
+    buckets = panel.abstention_buckets(records) if records is not None else None
+    silent = sum(1 for r in seats if not panel.responded(r))
 
     # bolt: Consolidate multiple metrics into a single-pass O(N) explicit loop
     effective_count = 0
@@ -113,10 +154,22 @@ def panel_accounting(reviews, chair: str = "") -> dict:
         "abstained": abstained_count,
         "failed": failed_count,
         "short": effective_count < len(reviews),
-        "ballots": len(ballots),
-        "reviews_supplied": panel.review_count(reviews),
+        # One ballot record per seat that ran — including a silent one, recorded
+        # as an abstention so the report can name it. Deliberately no longer the
+        # same number as ``reviews_supplied``.
+        "ballots": len(seats),
+        "reviews_supplied": supplied,
+        # One entry per cause, from the one mapping, so a bucket cannot be added
+        # in `panel` and go unpublished here. ``silent`` is the only one that
+        # survives a call with no ballots, because it is the only one the raw
+        # results can answer.
+        **{
+            key: (buckets[cause] if buckets is not None else None)
+            for cause, key in panel.PANEL_METADATA_KEYS.items()
+        },
+        "silent": buckets[panel.SILENT] if buckets is not None else silent,
         "chair": chair or "",
-        "chair_ballot": bool(chair) and any(getattr(r, "agent", "") == chair for r in ballots),
+        "chair_ballot": bool(chair) and any(r.get("name", "") == chair for r in counted),
     }
 
 
@@ -272,7 +325,7 @@ def estimate_economics(results: list) -> dict:
 
 
 def build_run_metadata(
-    outcome: JuryOutcome, config: JuryConfig, *, decision=None, vote=None
+    outcome: JuryOutcome, config: JuryConfig, *, decision=None, vote=None, mode: str = "code"
 ) -> dict:
     """Return a machine-readable metadata dict for a jury run.
 
@@ -283,6 +336,12 @@ def build_run_metadata(
     summed across every phase (review, debate, verify, synthesis) so it captures
     the full run cost proxy even though debate/verify/synthesis are re-runs of
     panel agents rather than distinct participants.
+
+    ``mode`` selects the ballot vocabulary, matching ``--issue``. It reaches here
+    because ``panel.reviews_supplied`` is counted over the **ballots** (#700,
+    round 2), and the ballots are what ``--issue`` changes: the metadata and the
+    ``reviewers`` array must be derived under the same mode, or the run's own
+    gate would count a different document than the one it printed.
     """
     # The panel is the set of round-1 participants; this is the canonical
     # per-agent view and avoids duplicating the chair across later phases.
@@ -299,6 +358,7 @@ def build_run_metadata(
     # effective config let a run be reproduced/explained. The seed is whatever
     # the run was configured with (may be None when unseeded). The config hash
     # is a pure function of config, so it is stable across runs and over time.
+    from .ballots import reviewer_ballots
     from .classification import classify
     from .config import config_hash
 
@@ -331,7 +391,11 @@ def build_run_metadata(
         "agents": agents,
         # Configured vs effective panel size (issue #501): a slot that returned no
         # review is an abstention, not an approval, and must not inflate the panel.
-        "panel": panel_accounting(outcome.reviews, chair=getattr(outcome, "chair", "") or ""),
+        "panel": panel_accounting(
+            outcome.reviews,
+            chair=getattr(outcome, "chair", "") or "",
+            ballots=reviewer_ballots(outcome, config, vote=vote, mode=mode),
+        ),
         "economics": estimate_economics(all_results),
         "rounds_executed": _rounds_executed(outcome),
         "from_cache": bool(getattr(outcome, "from_cache", False)),

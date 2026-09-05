@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from . import classification as _classification
+from . import panel as panel_mod
 from .adapters import AgentResult
 from .findings import SEVERITY_ORDER, Finding, flatten_inline
 
@@ -139,15 +140,31 @@ def _metadata_block(metadata: dict) -> list[str]:
     if panel.get("reviews_supplied") is not None:
         chair_name = panel.get("chair") or ""
         if panel.get("chair_ballot"):
-            role = f"chair `{chair_name}` also sat on the panel — its ballot is one of them"
+            role = f"chair `{chair_name}` also sat on the panel — its review is one of them"
         elif chair_name:
-            role = f"chair `{chair_name}` returned no ballot of its own — synthesis only"
+            role = f"chair `{chair_name}` supplied no review of its own — synthesis only"
         else:  # pragma: no cover - a run always resolves a chair
             role = "no chair was resolved"
+        # The four ways a seat that ran supplies no review, named separately —
+        # they ask for different fixes, and a single "N did not review" would
+        # send a reader to the CLI logs for a reviewer that answered fine and
+        # simply reviewed nothing (#700, round 2). The phrases come from
+        # `panel.CAUSE_PHRASES`, the same table the shortfall message renders
+        # from, so this line and that one describe the same seat the same way;
+        # writing them apart is how "named nothing checkable and abstained" came
+        # to be printed over a ballot that had named a file and then refused
+        # (#700, round 5).
+        missing = [
+            f"{panel[panel_mod.PANEL_METADATA_KEYS[cause]]} {panel_mod.CAUSE_PHRASES[cause]}"
+            for cause in panel_mod.ABSTENTION_CAUSES
+            if panel.get(panel_mod.PANEL_METADATA_KEYS[cause])
+        ]
+        tail = f"; {', '.join(missing)}" if missing else ""
         lines.append(
-            f"- reviews for a downstream consumer: {panel['reviews_supplied']} "
-            f"(one per panel ballot; the chair's synthesis record is carried "
-            f"alongside them and is not a review); {role}"
+            f"- reviews for a downstream consumer: {panel['reviews_supplied']} of "
+            f"{panel.get('ballots', 0)} ballot(s) (a ballot counts only when it names "
+            f"what it read and votes; the chair's synthesis record is carried alongside "
+            f"them and is not a review); {role}{tail}"
         )
     total = metadata["total_wall_clock_s"]
     lines.append(f"- total wall-clock (cost proxy, not $): {total:.0f}s")

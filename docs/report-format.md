@@ -75,24 +75,54 @@ reads an identical document; `tests/test_formats.py::BackwardCompatibility` pins
 that field for field. `schema_version` moved `1.0` → `1.1` to signal the addition.
 Markdown and SARIF output are unchanged.
 
-One entry per panelist that **returned output**, in the stable panel order, then
-the chair:
+v1.2 ([#700]) adds `scope`, `testing`, `model_source`, `scope_substantive`,
+`counts_as_review` and `abstention_cause` to each entry, and is a version bump
+rather than a silent addition because it also changes two things a consumer may
+have keyed on:
+
+- **What `model` means.** It was the configured model id or `""` when the CLI's
+  own default was in force, and it is now never empty for a slot that has an
+  agent. A consumer testing `model == ""` to detect the default case reads
+  `model_source == "cli_default"` instead.
+- **What the array contains.** There is now one entry per seat that **ran**, not
+  per seat that returned output: an agent that came back with nothing is recorded
+  as an abstention naming it rather than dropped, so the report can say *which*
+  seat fell silent. A consumer counting the non-`chair` entries as reviews must
+  read `counts_as_review` — which is the same rule its own
+  `review-verdict-insubstantial` gate applies, so the number ai-jury announces
+  and the number the consumer accepts are the same by construction.
+
+Every top-level key, and every other `reviewers` key, is unchanged.
+
+[#700]: https://github.com/berkayturanci/ai-jury/issues/700
+
+One entry per seat that **ran**, in the stable panel order, then the chair:
 
 | Field | Meaning |
 | --- | --- |
 | `name` | The agent slot's name, as configured. |
 | `vendor` | The adapter's vendor (`anthropic`, `openai`, …), **as configured**. A seat on the generic fallback keeps its own string here and counts as `cli` only in `metadata.panel.vendors`. |
-| `model` | The effective model id, or `""` when the CLI's own default is in force. |
+| `model` | The model id actually requested of that agent's CLI — the configured id, remapped when the vendor encodes reasoning effort in the id — or, where no id was pinned, a statement that the CLI's own default answered and that the CLI does not report which model that was. Never empty for a slot that has an agent. |
+| `model_source` | The same fact as one machine token, so a consumer need not parse English: `requested` (an id was pinned and sent), `cli_default` (nothing pinned; the CLI chose and does not say), `unknown` (the answering slot has no spec in this run's config), `none` (no agent in the slot at all — an unchaired run). |
 | `verdict` | That panelist's own round-1 stance (see below). |
+| `scope` | What that panelist named that it read, followed — when it did not review — by an abstention stating why. Derived as in the `keel-reviews` table below; the two renderings are the same text by construction. |
+| `scope_substantive` | Does that `scope` name something a reader could go and check (a file, a `path:line`, a backticked symbol, a called identifier, or a `Checked …` clause)? `false` whenever the abstention is *because* nothing was named. It can be `true` on an abstention too — a seat that opened with `Checked: src/a.py` and then refused, or whose adapter failed, names a place and still did not review — which is why `counts_as_review` reads both fields rather than this one alone. |
+| `counts_as_review` | Is this entry one of the reviews a consumer receives? `role == "panelist"` **and** `scope_substantive` **and** `verdict != "ABSTAIN"` — `ai_jury.panel.is_review`, the single definition every count in the tool resolves to. Always `false` on the `chair` entry. |
+| `abstention_cause` | Why this ballot is not a review, when it is not: `silent` (returned nothing at all), `named_nothing` (answered and named nothing checkable), `refused` (declined rather than reviewed) or `adapter_failed`. Empty string on a ballot that reviewed, and on the `chair` entry, which is a consensus record rather than a seat that failed to review. It is on the record because it cannot be recovered from the record: a seat that fell silent and one that answered without naming anything leave the same `round1_ok`/`scope_substantive` behind. `metadata.panel` counts the seats by this field, which is what makes its four buckets and `reviews_supplied` add up to `ballots`. |
+| `testing` | What that panelist said it ran, or a statement that nothing was run. |
 | `findings` | Indexes into the report's top-level `findings` array. |
 | `round1_ok` | Did the adapter report success? Adapters fail soft, so a slot can carry a review *and* a nonzero exit. |
 | `verified_count` | Consensus groups this reviewer contributed to that the verifier upheld. |
 | `duration_s` | Wall-clock seconds for that slot's round-1 review. |
 
 The chair's entry is the one carrying `role: "chair"`, is always **last**, and
-carries only `name` (`"chair"`), `role`, `vendor`, `model` and `verdict` — the
-run's final verdict, which is the panel vote under `--decision vote` and
-otherwise the label the chair opened its synthesis with.
+carries `name` (`"chair"`), `role`, `vendor`, `model`, `model_source`, `scope`,
+`scope_substantive`, `counts_as_review` (always `false`), `abstention_cause`
+(always `""`), `testing` and `verdict`
+— the run's final verdict, which is the panel vote under `--decision vote` and
+otherwise the label the chair opened its synthesis with. It also carries `agent`,
+`ballot_counted` (is the chairing agent's own ballot one of the counted reviews?)
+and `reviews_supplied` (how many of the entries above it are).
 
 ### How a ballot's verdict is derived
 
@@ -106,27 +136,87 @@ not reject: critical/major → `REQUEST_CHANGES`, minor/nit → `COMMENT`, none 
 Verdicts are emitted as a single machine token: the markdown report's
 `REQUEST CHANGES` is `REQUEST_CHANGES` here, `NEEDS-INFO` is `NEEDS_INFO`.
 
-There is a fourth value, `ABSTAIN`, for a slot that returned output but did not
-review — an empty reply, a refusal, or an adapter that failed. **A non-answer is
-not an approval** (issue #251): the vote tally drops such a reviewer from the
-tally entirely, and a ballot list that has to name every slot names the
-abstention rather than inventing a stance for it.
+There is a fourth value, `ABSTAIN`, for a seat that ran but did not review —
+nothing at all, a refusal, an adapter that failed, or (since [#700]) a reply that
+exited 0 and **named nothing checkable**. **A non-answer is not an approval**
+(issue #251): the vote tally drops such a reviewer from the tally entirely, and a
+ballot list that has to name every seat names the abstention rather than
+inventing a stance for it.
+
+The fourth cause is the same principle one step further out. A reviewer whose
+reply names no file, symbol, coverage clause or located finding raised no
+findings the tally can weigh, so it would hand it the clear stance
+(`APPROVE`/`READY`) — an approval inferred from silence, which is exactly what
+#251 refuses. Its `scope` carries the reason, and is deliberately **anchorless**
+— no path, no backticked symbol, no "checked …" clause — so a consumer applying
+the same substance rule to the record reaches the same conclusion rather than
+being talked past it by prose.
+
+### What counts as a review
+
+**A review is a ballot that reviewed.** `ai_jury.panel.is_review` is the one
+definition, and every count in the tool resolves to it: the pre-run announcement,
+both halves of the `--min-reviews` gate, the markdown report's *reviews for a
+downstream consumer* line, the metadata's `panel.reviews_supplied`, the chair
+record's `reviews_supplied`, and `--doctor`'s ceiling. A record counts when it is
+a `panelist` entry, its `scope_substantive` is `true`, and its `verdict` is not
+`ABSTAIN`.
+
+Three things are therefore **in the bundle and not in the count**: the chair's
+synthesis record, a seat that returned nothing, and a seat that answered without
+naming anything checkable. All three are recorded because a report that drops
+them cannot say which agent produced what; none is counted, because the consumer
+would refuse it. Counting one is the mismatch [#699] was about, and counting an
+abstention is that same mismatch one step out — a bench of three "Looks good to
+me, no concerns." replies used to satisfy `--min-reviews 3` and exit `0`.
+
+**A ballot that did not review says why.** There are four causes — `silent`,
+`named_nothing`, `refused`, `adapter_failed` — and each ballot carries its own in
+`abstention_cause`. Every count of them is that field, tallied: run metadata
+publishes the four as `panel.silent`, `panel.insubstantial` (the name
+`named_nothing` ships under), `panel.refused` and `panel.adapter_failed`, and
+they and `panel.reviews_supplied` sum to `panel.ballots`. They used to be two
+buckets and a subtraction, which was exact arithmetic and a false description:
+everything that was neither silent nor counted was reported as having named
+nothing checkable, including the seat that opened `Checked: src/a.py` and *then*
+refused. The number is the same; the cause printed beside it is now the one its
+ballot states.
 
 ## The `keel-reviews` bundle
 
 `jury --format keel-reviews` renders the same panel as a JSON **array** of review
 records — the payload keel's `keel review --reviews <file>` accepts. One record
-per panelist that returned output, plus the chair as `reviewer: "chair"`:
+per seat that ran, plus the chair as `reviewer: "chair"`:
 
 | Field | Derivation |
 | --- | --- |
 | `reviewer` | The panelist's name, or `"chair"`. |
 | `verdict` | The ballot verdict above (a single token). |
-| `scope` | One paragraph: the distinct files that panelist named in its structured findings (capped at 8, with a `(+N more)` tail), followed by up to three "checked / examined / inspected / reviewed" clauses lifted from its prose. The chair's record additionally names the agent that chaired, says whether that agent's own ballot is in the bundle, states how many reviews the bundle carries and that this record is not one of them; the ballot cast by the chairing agent says so on its own scope too. |
+| `scope` | One paragraph naming what that panelist read, from four sources, most authoritative first: its own `Checked:` line (which the review prompt asks every reviewer to open with); the distinct files it attached to its structured findings (capped at 8, with a `(+N more)` tail); up to three "checked / examined / inspected / reviewed" clauses from its prose; and — **under `--issue` only** — failing a file, the claims it raised. A reply that yields **none** of those has no scope: the record becomes an `ABSTAIN` whose scope states why. The chair's record additionally names the agent that chaired, says whether that agent's own ballot is one of the counted reviews, states how many reviews the bundle carries and that this record is not one of them; the ballot cast by the chairing agent says so on its own scope too. |
 | `findings` | That panelist's own findings as `{severity, path, line, message}` — ai-jury's `file` → `path`, `claim` → `message`. The chair carries the consensus-group representatives the verifier did **not** reject. |
-| `testing` | The panelist's stated verification, lifted verbatim from its prose, or `"not stated"`. The chair's comes from the verification round. |
+| `testing` | The panelist's own `Tested:` line, else the first verification clause in its prose — both lifted verbatim (flattened and capped), because a testing claim carried downstream as evidence must be the reviewer's words and not a paraphrase. With neither, it says plainly that nothing was run. The chair's comes from the verification round. |
 | `vendor` | The adapter's vendor, **as configured** — provenance, not the identity the cross-vendor gate collapses to. |
-| `model` | The effective model id (`""` when the CLI default is in force). |
+| `model` | As in the `reviewers` table above: the id actually requested, or a statement that the CLI's default answered and the CLI does not report which. |
+| `model_source` | As in the `reviewers` table above. It rides along here too because `model` changed meaning in the same release and this is the shape a machine consumer actually parses — without it, telling a requested id from a CLI default meant reading English ([#700]). |
+| `counts_as_review` | As in the `reviewers` table above. The bundle carries a record for every seat, abstentions included, so a consumer counting the array needs the discriminator. |
+
+**A claim is a scope only under `--issue`.** There, a finding carries an empty
+`file` by construction — the panel is reading an issue's prose rather than a diff
+— so the claims a reviewer raised are the only thing it can name, and that is the
+one legitimate exception to "a scope names a file, line or symbol, or carries a
+`Checked …` clause". In code-review mode a claim raised against no file names no
+place in the code: the fallback used to backtick it into an anchor, so a ballot
+raising one `major` finding with `file: ""` produced `REQUEST_CHANGES` while
+naming nowhere. That ballot abstains now, and the abstention reason says which of
+the two happened — "said nothing" reads differently from "named nowhere".
+
+**Where the scope comes from: both — asked for, and derived.** The review prompt
+asks every reviewer to open with a `Checked:` / `Tested:` pair and says that a
+ballot naming nothing checkable is recorded as an abstention, so the reviewer's
+own statement of its coverage is the first source and beats anything inferred.
+Derivation stays as the floor, because a prompt is a request and not a guarantee:
+a reviewer that ignores the instruction but attaches files to its findings still
+produces a scope. Only a reply that satisfies neither abstains. ([#700])
 
 `scope` and `testing` are the only fields lifted from free text, and reviewer
 output is attacker-influenced. Both are therefore flattened to a single line,
@@ -138,23 +228,27 @@ is word-anchored, which is load-bearing rather than tidy — the house phrasing
 
 **The chairing agent sits on the panel.** The chair is drawn from the *usable*
 agents and round 1 runs every usable agent, so that agent reviews like anyone
-else: an *n*-agent bench supplies *n* ballots — one of them the chairing agent's —
+else: an *n*-agent bench yields *n* ballots — one of them the chairing agent's —
 and one further record, the chair's synthesis.
 
-**A review is a ballot.** The synthesis record is the panel's consensus, not an
-*n+1*-th review: a consumer splits the report's `reviewers` array on `role`, keeps
-the `chair` entry aside as the consensus record, and counts the rest. The chairing
-agent's ballot carries `role: "panelist"` like any other and is counted with them.
-So an *n*-agent bench supplies *n* reviews, and ai-jury announces *n* — counting
-the chair record would claim one review the consumer will not find ([#699]).
+**A ballot is not automatically a review.** The synthesis record is the panel's
+consensus, not an *n+1*-th review, and neither is an abstaining ballot: a
+consumer splits the report's `reviewers` array on `role`, keeps the `chair` entry
+aside as the consensus record, and then refuses any of the rest whose scope names
+nothing. The chairing agent's ballot carries `role: "panelist"` like any other and
+counts when it reviewed. So an *n*-agent bench supplies **at most** *n* reviews —
+which is what the pre-run line announces — and the number it actually supplied is
+what the report, the metadata and the gate all state afterwards ([#699], [#700]).
 
-The bundle now says which agent chaired and where its ballot is, because a record
-that does not say is indistinguishable from a synthesis-only entry, and a reader
-who guesses hands on the wrong number. A chair that ran and returned nothing has
-no ballot in the bundle; that record says that too, rather than looking identical.
+The bundle says which agent chaired and what became of its ballot, because a
+record that does not say is indistinguishable from a synthesis-only entry, and a
+reader who guesses hands on the wrong number. A chair that ran and returned
+nothing has a ballot in the bundle that is not a review; that record says so,
+rather than looking identical to one whose chair reviewed.
 
 Use `[jury.ci] min_reviews` / `--min-reviews N` to require a review count: the
-shortfall is then named before the panel runs, not by the consumer afterwards.
+ceiling is checked before the panel runs, and the count it actually supplied is
+checked after — no pre-flight can predict an agent that runs and says nothing.
 
 [#699]: https://github.com/berkayturanci/ai-jury/issues/699
 

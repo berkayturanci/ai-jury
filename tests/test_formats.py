@@ -12,13 +12,19 @@ from ai_jury import __version__  # noqa: E402
 from ai_jury.adapters import AgentResult  # noqa: E402
 from ai_jury.ballots import (  # noqa: E402
     ABSTAIN,
+    MODEL_CLI_DEFAULT,
+    MODEL_NONE,
+    MODEL_REQUESTED,
+    MODEL_UNKNOWN,
     NOT_STATED,
     chair_verdict,
     describe_scope,
     describe_testing,
     keel_reviews,
     normalize_verdict,
+    requested_model,
     reviewer_ballots,
+    scope_is_substantive,
 )
 from ai_jury.classification import classify  # noqa: E402
 from ai_jury.cli import main as cli_main  # noqa: E402
@@ -343,12 +349,16 @@ class ReviewersArray(unittest.TestCase):
         by_name = {e["name"]: e for e in entries}
         self.assertEqual(by_name["alpha"]["vendor"], "acme")
         self.assertEqual(by_name["alpha"]["model"], "acme-1")
+        self.assertEqual(by_name["alpha"]["model_source"], MODEL_REQUESTED)
         self.assertEqual(by_name["beta"]["vendor"], "acme")
         self.assertEqual(by_name["beta"]["model"], "acme-2")
         self.assertEqual(by_name["gamma"]["vendor"], "globex")
-        # gamma configures no model, so the CLI default is in force and there is
-        # no id to report — an empty string, not an invented one.
-        self.assertEqual(by_name["gamma"]["model"], "")
+        # gamma configures no model, so the CLI's own default answered. The field
+        # SAYS that (#700) rather than going blank: a blank cannot be told apart
+        # from "we never recorded it", and provenance is the point of the panel.
+        self.assertEqual(by_name["gamma"]["model_source"], MODEL_CLI_DEFAULT)
+        self.assertIn("gamma", by_name["gamma"]["model"])
+        self.assertIn("does not report", by_name["gamma"]["model"])
         # The chair's provenance is its own agent slot's, resolved by name.
         self.assertEqual(by_name["chair"]["vendor"], "acme")
         self.assertEqual(by_name["chair"]["model"], "acme-1")
@@ -573,10 +583,18 @@ class BallotDerivation(unittest.TestCase):
         self.assertEqual(normalize_verdict("approve"), "APPROVE")
         self.assertEqual(normalize_verdict(""), "")
 
-    def test_a_silent_slot_is_not_a_ballot(self):
+    def test_a_silent_seat_is_recorded_and_is_not_a_review(self):
+        # It used to be dropped, so the report could not say which seat had
+        # returned nothing (#700, round 2). It is named now — and excluded from
+        # the count by the same rule that excludes every other abstention.
         silent = AgentResult(agent="alpha", vendor="acme", ok=True, output="   ", duration_s=0.0)
         entries = reviewer_ballots(self._fake_outcome([silent]), self._config())
-        self.assertEqual([e["name"] for e in entries], ["chair"])
+        self.assertEqual([e["name"] for e in entries], ["alpha", "chair"])
+        self.assertEqual(entries[0]["verdict"], ABSTAIN)
+        self.assertFalse(entries[0]["counts_as_review"])
+        self.assertIn("'alpha'", entries[0]["scope"])
+        self.assertIn("returned nothing at all", entries[0]["scope"])
+        self.assertEqual(entries[-1]["reviews_supplied"], 0)
 
     def test_a_refusal_abstains_rather_than_approving(self):
         # The #251 property, restated for ballots: a slot that declined to review
@@ -608,26 +626,47 @@ class BallotDerivation(unittest.TestCase):
         self.assertEqual(entry["verdict"], ABSTAIN)
         self.assertEqual(entry["duration_s"], 2.5)
 
-    def test_a_clean_reviewer_approves(self):
+    def test_a_clean_reviewer_that_names_what_it_read_approves(self):
+        # A clean review is a real outcome and must stay expressible: no finding,
+        # no file, but it says what it covered — so it votes.
         clean = AgentResult(
             agent="alpha",
             vendor="acme",
             ok=True,
-            output="Nothing blocking. I examined the parser changes end to end.",
+            output=(
+                "Checked: src/parser.py, src/cli.py\n"
+                "Tested: nothing run\n"
+                "Nothing blocking. I examined the parser changes end to end."
+            ),
             duration_s=0.0,
         )
         entry = reviewer_ballots(self._fake_outcome([clean]), self._config())[0]
         self.assertEqual(entry["verdict"], "APPROVE")
         self.assertEqual(entry["findings"], [])
         self.assertEqual(entry["verified_count"], 0)
+        self.assertIn("src/parser.py", entry["scope"])
 
-    def test_unknown_agent_name_yields_empty_provenance(self):
-        stranger = AgentResult(agent="delta", vendor="", ok=True, output="a review", duration_s=0.0)
+    def test_unknown_agent_name_states_the_gap_instead_of_going_blank(self):
+        stranger = AgentResult(
+            agent="delta",
+            vendor="",
+            ok=True,
+            output="Checked: src/delta.py\na review",
+            duration_s=0.0,
+        )
         entry = reviewer_ballots(self._fake_outcome([stranger], chair="nobody"), self._config())
         self.assertEqual(entry[0]["vendor"], "")
-        self.assertEqual(entry[0]["model"], "")
+        # No spec by that name, so no model can be reported — and the field says
+        # which of the two "no model" situations this is (#700).
+        self.assertEqual(entry[0]["model_source"], MODEL_UNKNOWN)
+        self.assertIn("delta", entry[0]["model"])
         self.assertEqual(entry[-1]["vendor"], "")
-        self.assertEqual(entry[-1]["model"], "")
+        self.assertEqual(entry[-1]["model_source"], MODEL_UNKNOWN)
+
+    def test_a_run_with_no_chair_reports_no_model_rather_than_a_wrong_one(self):
+        entries = reviewer_ballots(self._fake_outcome([], chair=""), self._config())
+        self.assertEqual(entries[-1]["model"], "")
+        self.assertEqual(entries[-1]["model_source"], MODEL_NONE)
 
     def test_chair_verdict_prefers_the_vote(self):
         class FakeVote:
@@ -661,9 +700,11 @@ class ScopeAndTestingProse(unittest.TestCase):
     def _result(output):
         return AgentResult(agent="alpha", vendor="acme", ok=True, output=output, duration_s=0.0)
 
-    def test_scope_without_files_states_the_reviewers_actual_position(self):
-        scope = describe_scope(self._result("Looks fine."), [])
-        self.assertIn("named no specific file", scope)
+    def test_scope_is_empty_when_the_reply_names_nothing(self):
+        # The #700 shape. There is no sentence to write here: a reviewer that
+        # named nothing has no scope, and the caller turns the empty string into
+        # an abstention rather than an APPROVE with a placeholder.
+        self.assertEqual(describe_scope(self._result("Looks fine."), []), "")
 
     def test_scope_lists_files_and_truncates_a_long_list(self):
         findings = [Finding(severity="nit", file=f"f{i}.py", claim="c") for i in range(11)]
@@ -684,16 +725,20 @@ class ScopeAndTestingProse(unittest.TestCase):
     def test_scope_caps_the_number_of_coverage_clauses(self):
         # An attacker-influenced reply must not be able to make the scope
         # arbitrarily long by repeating coverage-shaped sentences.
-        output = "\n".join(f"I checked area {i}." for i in range(9))
+        output = "\n".join(f"I checked the parser in area {i}." for i in range(9))
         scope = describe_scope(self._result(output), [])
-        self.assertIn("I checked area 2.", scope)
-        self.assertNotIn("I checked area 3.", scope)
+        self.assertIn("I checked the parser in area 2.", scope)
+        self.assertNotIn("I checked the parser in area 3.", scope)
 
     def test_unchecked_is_not_a_coverage_claim(self):
         # A word-boundary match, not a substring one: the panel's own house
         # phrasing is "unchecked return value", and folding that into the
         # coverage summary would attribute a check the reviewer never made.
-        scope = describe_scope(self._result("The unchecked return value swallows an error."), [])
+        scope = describe_scope(
+            self._result("Checked: src/example.py\nThe unchecked return value swallows an error."),
+            [],
+        )
+        self.assertIn("src/example.py", scope)
         self.assertNotIn("unchecked", scope)
 
     def test_fenced_structured_findings_are_not_lifted_as_prose(self):
@@ -708,7 +753,10 @@ class ScopeAndTestingProse(unittest.TestCase):
         self.assertNotIn("reviewed nothing at all", scope)
 
     def test_an_unterminated_fence_swallows_the_rest(self):
-        scope = describe_scope(self._result("```\nI checked everything."), [])
+        scope = describe_scope(
+            self._result("Checked: src/example.py\n```\nI checked everything."), []
+        )
+        self.assertIn("src/example.py", scope)
         self.assertNotIn("I checked everything.", scope)
 
     def test_clauses_are_length_capped(self):
@@ -724,6 +772,340 @@ class ScopeAndTestingProse(unittest.TestCase):
     def test_testing_falls_back_to_not_stated(self):
         self.assertEqual(describe_testing(self._result("Looks fine.")), NOT_STATED)
         self.assertEqual(describe_testing(self._result("")), NOT_STATED)
+
+    def test_not_stated_says_nothing_was_run_rather_than_shrugging(self):
+        # "not stated" described the FIELD. This describes the review (#700): a
+        # reader can tell "the reviewer ran nothing" from "nobody filled this in".
+        self.assertIn("Nothing run", NOT_STATED)
+        self.assertNotEqual(NOT_STATED.strip().lower(), "not stated")
+
+    def test_the_reviewers_own_checked_and_tested_lines_win(self):
+        # What the review prompt now asks for. The reviewer's own statement of
+        # its coverage beats anything inferred from the surrounding prose.
+        result = self._result(
+            "**Checked:** src/ai_jury/ballots.py, src/ai_jury/panel.py\n"
+            "Tested: PYTHONPATH=src python3 -m unittest tests.test_formats — 42 passed\n"
+            "No blocking issues found."
+        )
+        scope = describe_scope(result, [])
+        self.assertIn("src/ai_jury/ballots.py", scope)
+        self.assertIn("as stated by the reviewer", scope)
+        self.assertIn("42 passed", describe_testing(result))
+
+    def test_a_reviewer_that_ran_nothing_and_says_so_is_recorded_saying_so(self):
+        self.assertEqual(
+            describe_testing(self._result("Checked: a.py\nTested: nothing run\nfine.")),
+            "Tested, as stated by the reviewer: nothing run",
+        )
+
+    def test_a_crafted_path_cannot_forge_structure_in_the_scope(self):
+        # Scope tokens are backticked so they anchor; the token itself is
+        # attacker-influenced, so its own backticks come out first.
+        scope = describe_scope(self._result("Checked: `x` and ``` fences"), [])
+        self.assertNotIn("```", scope)
+        self.assertIn("x and  fences", scope)
+
+
+class BallotsMustNameSomething(unittest.TestCase):
+    """#700: a ballot that names nothing is an abstention, never an approval.
+
+    The observed run returned three ballots reading ``scope: "Reviewed the
+    supplied diff; named no specific file."``, ``testing: "not stated"``,
+    ``model: ""`` — and on a tier whose review *is* the panel, that was the whole
+    review. The consumer refuses a hand-posted verdict shaped like that. These
+    assertions are the two halves of the fix: the placeholder cannot come back,
+    and a slot that genuinely named nothing is reported as an abstention that
+    says why.
+    """
+
+    #: The exact strings the defective run emitted. Pinned verbatim, because a
+    #: regression here is not "the wording drifted" — it is the placeholder
+    #: returning, and a substring search is the only thing that catches that.
+    PLACEHOLDER_SCOPE = "Reviewed the supplied diff; named no specific file."
+
+    @staticmethod
+    def _stub(output, *, name="alpha", ok=True):
+        return AgentResult(agent=name, vendor="acme", ok=ok, output=output, duration_s=0.1)
+
+    @staticmethod
+    def _config():
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "jury.toml"
+            path.write_text(PANEL_TOML, encoding="utf-8")
+            return load_config(path)
+
+    def _outcome_with(self, results):
+        class FakeOutcome:
+            pass
+
+        o = FakeOutcome()
+        o.reviews = results
+        o.groups = []
+        o.findings = []
+        o.synthesis = None
+        o.verify = None
+        o.chair = "alpha"
+        return o
+
+    def test_the_placeholder_scope_is_gone_from_every_rendering(self):
+        outcome, config = _panel_outcome()
+        self.assertNotIn(self.PLACEHOLDER_SCOPE, to_keel_reviews(outcome, config))
+        self.assertNotIn(self.PLACEHOLDER_SCOPE, to_json(outcome, config))
+
+    def test_every_ballot_of_a_real_run_names_something_checkable(self):
+        # The acceptance criterion, stated as the consumer states it: a path, a
+        # path:line, a backticked symbol, a called identifier, or a "checked …"
+        # clause. Applied to the chair record too — it is a verdict as well.
+        records = json.loads(to_keel_reviews(*_panel_outcome()))
+        self.assertEqual(len(records), 4)
+        for record in records:
+            self.assertTrue(
+                scope_is_substantive(record["scope"]),
+                f"{record['reviewer']} would be refused as insubstantial: {record['scope']!r}",
+            )
+
+    def test_no_ballot_reports_an_empty_model(self):
+        for record in json.loads(to_keel_reviews(*_panel_outcome())):
+            self.assertTrue(record["model"].strip(), f"{record['reviewer']} reports no model")
+
+    def test_a_stubbed_agent_returning_nothing_useful_abstains_by_name(self):
+        # The acceptance criterion's other half. This agent exits 0 and says
+        # something — so it IS a ballot — but names nothing, which on main was
+        # rendered as APPROVE with the placeholder scope.
+        outcome = self._outcome_with([self._stub("Looks good to me, no concerns.")])
+        entry = reviewer_ballots(outcome, self._config())[0]
+        self.assertEqual(entry["verdict"], ABSTAIN)
+        self.assertIn("Abstention", entry["scope"])
+        self.assertIn("alpha", entry["scope"])
+        self.assertIn("named no file, symbol, coverage clause or finding", entry["scope"])
+        # And the reason is itself anchorless, so a consumer applying the same
+        # rule reaches the same conclusion rather than being talked past it.
+        self.assertFalse(scope_is_substantive(entry["scope"]))
+
+    def test_the_abstention_reason_names_which_kind_of_nothing_came_back(self):
+        by_output = {
+            "refusal": self._stub("I cannot assist with that request."),
+            "adapter": self._stub("garbled", ok=False),
+            # The case that used to leave no record at all (#700, round 2).
+            "silent": self._stub(""),
+        }
+        entries = {
+            key: reviewer_ballots(self._outcome_with([result]), self._config())[0]
+            for key, result in by_output.items()
+        }
+        self.assertIn("returned a refusal", entries["refusal"]["scope"])
+        self.assertIn("adapter reported failure", entries["adapter"]["scope"])
+        self.assertIn("returned nothing at all", entries["silent"]["scope"])
+        for entry in entries.values():
+            self.assertEqual(entry["verdict"], ABSTAIN)
+            self.assertFalse(entry["scope_substantive"])
+            self.assertFalse(entry["counts_as_review"])
+
+    def test_a_reviewer_with_findings_but_no_file_still_names_its_claims(self):
+        # Issue mode attaches no file to any finding, so the file list is empty
+        # for a reviewer that did real work. Its claims are what it named — and
+        # that exception is scoped to issue mode (#700, round 2), because in a
+        # code review a claim raised against no file names no place in the code.
+        findings = [Finding(severity="major", file="", claim="no reproduction steps")]
+        scope = describe_scope(self._stub("The issue is thin."), findings, mode="issue")
+        self.assertIn("no reproduction steps", scope)
+        self.assertTrue(scope_is_substantive(scope))
+        self.assertEqual(describe_scope(self._stub("The issue is thin."), findings), "")
+
+    def test_the_bundle_and_the_json_report_state_the_same_scope_and_verdict(self):
+        # The bundle is a projection of the ballots, so the verdict a consumer is
+        # handed and the scope meant to justify it cannot drift apart.
+        outcome, config = _panel_outcome()
+        ballots = {b["name"]: b for b in reviewer_ballots(outcome, config)}
+        for record in keel_reviews(outcome, config):
+            ballot = ballots[record["reviewer"]]
+            self.assertEqual(record["scope"], ballot["scope"])
+            self.assertEqual(record["testing"], ballot["testing"])
+            self.assertEqual(record["verdict"], ballot["verdict"])
+            self.assertEqual(record["model"], ballot["model"])
+
+    def test_an_effort_remapped_model_is_reported_as_the_id_actually_sent(self):
+        # `agy` encodes reasoning effort in the model id, so the configured key
+        # is not what was requested. A ballot naming the unmapped id would name a
+        # model the run never asked for.
+        class Spec:
+            name = "a"
+            vendor = "google"
+            command = "agy"
+            model = "gemini-3-pro"
+            effort = "high"
+
+        self.assertEqual(requested_model(Spec()), "gemini-3-pro-high")
+
+    def test_an_unmappable_effort_degrades_to_the_configured_id(self):
+        class Spec:
+            name = "a"
+            vendor = "google"
+            command = "agy"
+            model = ""
+            effort = "high"
+
+        # Effort-as-model-id with nothing configured maps to nothing, so there is
+        # still no id to report — and the caller states the CLI-default case.
+        self.assertEqual(requested_model(Spec()), "")
+
+    def test_a_garbage_effort_level_does_not_crash_a_ballot(self):
+        class Spec:
+            name = "a"
+            vendor = "acme"
+            command = "acme"
+            model = "acme-1"
+            effort = "stupendous"
+
+        # `effort_args` raises on an unknown level — validate_config's job to
+        # refuse, never a ballot's to die on. The configured id stands.
+        self.assertEqual(requested_model(Spec()), "acme-1")
+
+    def test_a_checked_line_carrying_only_markup_does_not_consume_the_real_one(self):
+        # A reviewer that emits the header with nothing but emphasis markers on
+        # it and its files on the next line. The markup is not a statement of
+        # coverage, so the scan keeps looking rather than recording "" and
+        # stopping at the first line that merely has the right shape.
+        result = self._stub("Checked: * *\nChecked: src/ai_jury/ballots.py\nfine.")
+        self.assertIn("src/ai_jury/ballots.py", describe_scope(result, []))
+
+    def test_repeated_and_empty_claims_are_named_once(self):
+        # The claim list is what an issue-mode ballot names, so a reviewer that
+        # raised the same gap twice must not have it counted twice — the count
+        # in the scope is a statement about coverage, not about output volume.
+        findings = [
+            Finding(severity="major", file="", claim="no reproduction steps"),
+            Finding(severity="minor", file="", claim=""),
+            Finding(severity="major", file="", claim="no reproduction steps"),
+        ]
+        scope = describe_scope(self._stub("The issue is thin."), findings, mode="issue")
+        self.assertIn("Raised 1 finding(s)", scope)
+
+    def test_issue_mode_findings_with_no_claim_at_all_name_nothing(self):
+        # The exception is "the claims are what it named", so a finding carrying
+        # no claim names nothing and the ballot abstains — issue mode does not
+        # get a free pass, it gets one extra source.
+        findings = [Finding(severity="major", file="", claim="")]
+        self.assertEqual(
+            describe_scope(self._stub("The issue is thin."), findings, mode="issue"), ""
+        )
+
+
+class AClaimIsNotAPlaceInTheCode(unittest.TestCase):
+    """#700, round 2: the fallback that let a code review name nowhere.
+
+    ``describe_scope`` fell back to the reviewer's *claims* whenever its findings
+    carried no file, and ``_tick`` backticked each one — which is an anchor under
+    the substance rule. So a code-review ballot raising one ``major`` finding
+    against ``file: ""`` produced a scope that passed the gate and a verdict of
+    ``REQUEST_CHANGES``, having named no file, line or symbol at all. keel's rule
+    is that a scope must name a place or carry a ``Checked …`` clause; a claim is
+    neither.
+
+    ``--issue`` is the one legitimate exception and stays: there a finding
+    carries ``file: ""`` by construction, because the panel is reading an issue's
+    prose rather than a diff, so the claims are the only thing it can name.
+    """
+
+    @staticmethod
+    def _config():
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "jury.toml"
+            path.write_text(PANEL_TOML, encoding="utf-8")
+            return load_config(path)
+
+    def _seat(self, with_findings):
+        class FakeOutcome:
+            pass
+
+        finding = Finding(
+            severity="major",
+            file="",
+            line=None,
+            claim="the retry loop can spin forever",
+            evidence="e",
+            reviewer="alpha",
+        )
+        group = FindingGroup(
+            representative=finding,
+            reviewers=["alpha"],
+            severity="major",
+            bucket="single",
+            status="verified",
+        )
+        o = FakeOutcome()
+        o.reviews = [
+            AgentResult(
+                agent="alpha",
+                vendor="acme",
+                ok=True,
+                output="There is a serious problem here.",
+                duration_s=0.1,
+            )
+        ]
+        o.findings = [finding] if with_findings else []
+        o.groups = [group] if with_findings else []
+        o.synthesis = None
+        o.verify = None
+        # Not the chair: a chaired ballot appends its own sentence to the scope,
+        # which would confuse what is being measured here.
+        o.chair = "beta"
+        return o
+
+    def test_a_code_review_naming_no_file_abstains(self):
+        entry = reviewer_ballots(self._seat(True), self._config(), mode="code")[0]
+        # On e01e4f1 this was REQUEST_CHANGES with a scope reading
+        # "Raised 1 finding(s) against no file: `the retry loop can spin forever`."
+        self.assertEqual(entry["verdict"], ABSTAIN)
+        self.assertFalse(entry["scope_substantive"])
+        self.assertFalse(entry["counts_as_review"])
+        self.assertNotIn("the retry loop can spin forever", entry["scope"])
+        # And the reason distinguishes "said nothing" from "named nowhere".
+        self.assertIn("raised 1 finding(s) but attached none of them to a file", entry["scope"])
+
+    def test_the_same_ballot_in_issue_mode_still_votes(self):
+        entry = reviewer_ballots(self._seat(True), self._config(), mode="issue")[0]
+        self.assertEqual(entry["verdict"], "NEEDS_INFO")
+        self.assertTrue(entry["counts_as_review"])
+        self.assertIn("the retry loop can spin forever", entry["scope"])
+
+    def test_a_reviewer_that_said_nothing_gets_the_other_reason(self):
+        entry = reviewer_ballots(self._seat(False), self._config(), mode="code")[0]
+        self.assertEqual(entry["verdict"], ABSTAIN)
+        self.assertIn("named no file, symbol, coverage clause or finding", entry["scope"])
+
+
+class TheBundleCarriesTheModelDiscriminator(unittest.TestCase):
+    """#700, round 2: ``model`` changed meaning and only half the output said so.
+
+    ``to_keel_reviews`` emits the same ``model`` field as the JSON report, where
+    a CLI default is now an English sentence rather than ``""``. The report grew
+    ``model_source`` to say which of the two a value is; this projection did not,
+    so a machine consumer of the bundle — the shape keel actually parses — had to
+    read prose to tell a requested id from a default.
+    """
+
+    def test_every_record_carries_model_source_from_its_ballot(self):
+        outcome, config = _panel_outcome()
+        ballots = {b["name"]: b for b in reviewer_ballots(outcome, config)}
+        for record in json.loads(to_keel_reviews(outcome, config)):
+            self.assertEqual(record["model_source"], ballots[record["reviewer"]]["model_source"])
+
+    def test_the_default_case_is_machine_readable_without_parsing_prose(self):
+        # `gamma` pins no model, so its `model` is a sentence about the CLI.
+        by_name = {r["reviewer"]: r for r in json.loads(to_keel_reviews(*_panel_outcome()))}
+        self.assertEqual(by_name["gamma"]["model_source"], MODEL_CLI_DEFAULT)
+        self.assertEqual(by_name["alpha"]["model_source"], MODEL_REQUESTED)
+
+    def test_the_bundle_says_which_records_are_reviews(self):
+        records = json.loads(to_keel_reviews(*_panel_outcome()))
+        self.assertFalse(records[-1]["counts_as_review"])
+        self.assertTrue(all(r["counts_as_review"] for r in records[:-1]))
+
+    def test_the_record_still_satisfies_the_vendored_consumer_contract(self):
+        # Two added keys must not break the payload keel accepts.
+        items = parse_reviews_contract(json.loads(to_keel_reviews(*_panel_outcome())))
+        self.assertEqual(len(items), 4)
 
 
 if __name__ == "__main__":

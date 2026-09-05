@@ -27,7 +27,26 @@ from .metadata import build_run_metadata
 #: 1.1 (issue #663) ADDED the top-level ``reviewers`` array. Nothing was removed,
 #: renamed or reshaped, so every existing consumer of ``findings``/``consensus``/
 #: ``verdicts``/``verdict``/``metadata`` reads an identical document.
-JSON_SCHEMA_VERSION = "1.1"
+#:
+#: 1.2 (issue #700) adds ``scope``, ``testing``, ``model_source``,
+#: ``scope_substantive`` and ``counts_as_review`` to each ``reviewers`` entry —
+#: and, the reason this is a version bump rather than a silent addition, CHANGES
+#: two things a consumer may have keyed on:
+#:
+#: * ``reviewers[].model`` was "the configured model id, or ``""`` when the CLI's
+#:   default is in force"; it is now never empty for a slot that has an agent,
+#:   carrying either the id actually requested or a statement that the CLI chose
+#:   and does not report which. A consumer testing ``model == ""`` to detect the
+#:   default case must read ``model_source == "cli_default"`` instead.
+#: * the ``reviewers`` array now carries one entry per seat that **ran**, not per
+#:   seat that returned output: a silent agent is recorded as an abstention
+#:   naming it rather than dropped. A consumer counting the non-``chair`` entries
+#:   as reviews must read ``counts_as_review`` (equivalently:
+#:   ``scope_substantive`` and ``verdict != "ABSTAIN"``), which is the same rule
+#:   its own ``review-verdict-insubstantial`` gate applies.
+#:
+#: Every top-level key, and every other ``reviewers`` key, is unchanged.
+JSON_SCHEMA_VERSION = "1.2"
 
 #: Canonical SARIF schema URI and version emitted by :func:`to_sarif`.
 SARIF_SCHEMA = "https://json.schemastore.org/sarif-2.1.0.json"
@@ -102,7 +121,7 @@ def to_json(outcome: Any, config: Any, *, decision=None, vote=None, mode: str = 
 
     # Drop the wall-clock timestamp so the report is deterministic for a
     # deterministic run (matching report.py, which omits generated_at too).
-    metadata = build_run_metadata(outcome, config, decision=decision, vote=vote)
+    metadata = build_run_metadata(outcome, config, decision=decision, vote=vote, mode=mode)
     metadata.pop("generated_at", None)
 
     # Surface the deterministic PR-level classification (issue #7) at the top
@@ -137,11 +156,13 @@ def to_json(outcome: Any, config: Any, *, decision=None, vote=None, mode: str = 
 def to_keel_reviews(outcome: Any, config: Any, *, vote=None, mode: str = "code") -> str:
     """Render the panel as a per-reviewer review bundle (issue #663).
 
-    A JSON **array** — not an object — of
-    ``{reviewer, verdict, scope, findings, testing, vendor, model}`` records, one
-    per panelist that returned output plus the chair as ``reviewer: "chair"``.
-    That is the payload keel's ``keel review --reviews <file>`` accepts, so a
-    panel run can *be* the review rather than merely inform one.
+    A JSON **array** — not an object — of ``{reviewer, verdict, scope, findings,
+    testing, vendor, model, model_source, counts_as_review}`` records, one per
+    seat that ran plus the chair as ``reviewer: "chair"``. That is the payload
+    keel's ``keel review --reviews <file>`` accepts, so a panel run can *be* the
+    review rather than merely inform one. A seat that returned nothing is present
+    as an abstention naming it, and ``counts_as_review`` is how a consumer tells
+    the reviews from the records of seats that did not review.
 
     Deterministic for a deterministic outcome. Free text lifted from agent replies
     (``scope``, ``testing``) is flattened and capped in :mod:`ai_jury.ballots`; no
