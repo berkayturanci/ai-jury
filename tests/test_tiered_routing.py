@@ -146,12 +146,26 @@ class StaticHintsContractTests(unittest.TestCase):
         self.assertFalse(parse(["--diff-file", "-", "--no-hints"]).hints)
 
     def test_hints_survive_the_chunked_path(self):
-        outcome, _plan = orchestrator.review_diff(
-            _from_dict(tomllib.loads(HINTS_ON_TOML)),
-            SAMPLE_DIFF,
-            hints=HINT_BLOCK,
-            mock=True,
+        # A diff over `max_bytes` with `chunk = true` is split per file and each
+        # chunk reviewed on its own (`mode: chunked`); the hints must reach the
+        # Round 1 prompt of every chunk, not just the unchunked path.
+        config = _from_dict(
+            tomllib.loads(HINTS_ON_TOML + "\n[jury.diff]\nchunk = true\nmax_bytes = 60\n")
         )
+        two_files = SAMPLE_DIFF + SAMPLE_DIFF.replace("a.py", "b.py")
+        captured: list[str] = []
+        real = orchestrator._run_phase
+
+        def spy(adapters, prompt_for, phase, parallel, **kwargs):
+            if phase == "review":
+                captured.extend(prompt_for.values())
+            return real(adapters, prompt_for, phase, parallel, **kwargs)
+
+        with patch("ai_jury.orchestrator._run_phase", side_effect=spy):
+            outcome, plan = orchestrator.review_diff(config, two_files, hints=HINT_BLOCK, mock=True)
+        self.assertEqual(plan.mode, "chunked")
+        self.assertGreaterEqual(len(captured), 2)
+        self.assertTrue(all(HINT_MARKER in prompt for prompt in captured))
         self.assertTrue(outcome.reviews)
 
 
