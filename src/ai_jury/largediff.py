@@ -413,7 +413,10 @@ _WORD_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 #: A token immediately followed by ``(`` — a call or a definition. This is what
 #: lets a one-word, all-lowercase symbol (``run``, ``main``) resolve while the
 #: one-word, all-lowercase *non*-symbol (``nothing``, ``everything``) does not.
-_CALLABLE_RE = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)\s*\(")
+#: *Immediately*: ``nothing(`` is code, ``nothing (just wording)`` is prose, and
+#: the pattern used to allow whitespace between the two and so indexed the prose
+#: (#711 round 6).
+_CALLABLE_RE = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)\(")
 
 #: Interior case change: ``ChangeIndex``, ``buildArgv``. With ``_`` this is the
 #: whole of "looks like an identifier rather than a word".

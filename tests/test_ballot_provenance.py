@@ -889,3 +889,62 @@ class AStrippedDotIsNotAnotherFile(unittest.TestCase):
 
 if __name__ == "__main__":  # pragma: no cover - manual runs
     unittest.main()
+
+
+class APathShapedTokenIsNeverReadAsASymbol(unittest.TestCase):
+    """Round 6. ``.env`` against a hunk that adds ``env(1)`` resolved on the
+    remnant ``env`` and counted as a review of a file the reviewer never named;
+    and prose ``nothing (just wording)`` in the diff indexed ``nothing`` as a
+    callable, so ``Checked: nothing`` counted too. A path claim resolves only
+    as a path, and only ``name(`` — no space — is a call."""
+
+    _CALL_HUNK = (
+        "diff --git a/src/a.py b/src/a.py\n--- a/src/a.py\n+++ b/src/a.py\n"
+        "@@ -1 +1,2 @@\n old\n+    env(1)\n"
+    )
+    _PROSE_HUNK = (
+        "diff --git a/docs/x.md b/docs/x.md\n--- a/docs/x.md\n+++ b/docs/x.md\n"
+        "@@ -1 +1 @@\n-old\n+This changes nothing (just wording).\n"
+    )
+
+    def test_a_dotfile_does_not_resolve_on_a_called_remnant(self):
+        changed = change_index(self._CALL_HUNK)
+        self.assertTrue(changed.has_symbol("env"))
+        self.assertEqual(resolve_stated_scope(".env", changed), ([], [".env"]))
+        ballot = _reviewers_for(self._CALL_HUNK, "Checked: .env")[0]
+        self.assertFalse(ballot["counts_as_review"])
+        self.assertEqual(ballot["abstention_cause"], "not_in_change")
+
+    def test_a_known_extension_does_not_resolve_on_its_stem(self):
+        changed = change_index(self._CALL_HUNK)
+        self.assertEqual(resolve_stated_scope("env.py", changed), ([], ["env.py"]))
+
+    def test_an_identifier_still_resolves_as_the_member_named(self):
+        changed = change_index(self._CALL_HUNK)
+        self.assertEqual(resolve_stated_scope("module.env()", changed), (["module.env"], []))
+        self.assertEqual(resolve_stated_scope("env", changed), (["env"], []))
+
+    def test_prose_followed_by_a_space_and_a_parenthesis_is_not_a_call(self):
+        changed = change_index(self._PROSE_HUNK)
+        self.assertFalse(changed.has_symbol("nothing"))
+        ballot = _reviewers_for(self._PROSE_HUNK, "Checked: nothing")[0]
+        self.assertFalse(ballot["counts_as_review"])
+        self.assertEqual(ballot["abstention_cause"], "named_nothing")
+
+    def test_a_real_call_is_still_indexed(self):
+        changed = change_index(self._PROSE_HUNK.replace("nothing (just", "nothing(just"))
+        self.assertTrue(changed.has_symbol("nothing"))
+
+
+def _reviewers_for(diff: str, first_line: str) -> list[dict]:
+    """Ballot records for one seat whose reply opens with *first_line*, against *diff*."""
+    changed = change_index(diff)
+    result = AgentResult(
+        "claude", "anthropic", True, f"{first_line}\n\nTested: nothing.\n\nNo concerns.\n", 0.0
+    )
+    config = _config([{"name": "claude", "vendor": "anthropic", "command": "claude"}])
+    return [
+        r
+        for r in reviewer_ballots(_outcome([result], changed=changed), config)
+        if r.get("role") == "panelist"
+    ]

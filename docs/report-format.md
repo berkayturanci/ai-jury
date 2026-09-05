@@ -202,9 +202,15 @@ A token resolves when it names:
   `lots.py` names nothing;
 - a **`path:line`** — the path is resolved, the line is the reviewer's;
 - a **symbol that appears in the diff** — an identifier carrying a `_` or an
-  interior case change, or one that is *called* somewhere in the change. A bare
-  English word is not a symbol, which is why `Checked: nothing` resolves to
-  nothing even in a diff whose prose happens to contain the word.
+  interior case change, or one that is *called* somewhere in the change, where
+  a call is `name(` with no space before the parenthesis (`nothing (just
+  wording)` is prose, not a call). A bare English word is not a symbol, which is
+  why `Checked: nothing` resolves to nothing even in a diff whose prose happens
+  to contain the word. A path-shaped token — one with a `/`, a leading dot, or a
+  known file extension — is a path claim and is never read as a symbol: `.env`
+  does not resolve because the change calls `env()`. An identifier-shaped
+  token such as `module.function()` is asked of the index as the member the
+  reviewer named, `function`.
 
 **The change is also what splits the line into tokens.** It was split
 lexically at first — on whitespace and list punctuation — and a changed file

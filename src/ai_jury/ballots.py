@@ -467,14 +467,59 @@ def _is_name_shaped(token: str, value: str) -> bool:
     return any(f"{o}{token}{c}" in (value or "") for o, c in (("`", "`"), ('"', '"'), ("“", "”")))
 
 
+#: File extensions a bare ``name.ext`` token is read as. ``Class.method`` and
+#: ``module.run`` are symbols, not files; ``a.py`` and ``notes.md`` are files.
+_FILE_EXTENSIONS = frozenset(
+    [
+        "py",
+        "md",
+        "toml",
+        "yml",
+        "yaml",
+        "json",
+        "txt",
+        "sh",
+        "js",
+        "ts",
+        "rb",
+        "html",
+        "css",
+        "cfg",
+        "ini",
+        "lock",
+        "rst",
+        "csv",
+        "xml",
+    ]
+)
+
+
+def _path_shaped(base: str) -> bool:
+    """Does *base* claim to be a path — a directory, a dotfile, or a known extension? (pure)"""
+    if "/" in base or base.startswith("."):
+        return True
+    _, dot, ext = base.rpartition(".")
+    return bool(dot) and ext.lower() in _FILE_EXTENSIONS
+
+
 def _token_resolves(token: str, changed: Any) -> bool:
-    """Is *token* a path or symbol that is actually in the change? (pure)"""
+    """Is *token* a path or symbol that is actually in the change? (pure)
+
+    A path-shaped token — a directory, a dotfile, a known extension — is a path
+    claim and resolves only as a path. It is never split and asked of the symbol
+    index: ``.env`` against a hunk that adds ``env(1)`` used to resolve on the
+    remnant ``env`` and count as a review of a file the reviewer never named
+    (#711 round 6). An identifier-shaped token is asked as the symbol the
+    reviewer named — for ``module.function()`` the member, ``function`` —
+    because the qualification is the reviewer's and the member is the claim.
+    """
     base = _path_base(token)
     if changed.has_path(base):
         return True
-    # `module.function()` / `Class.method` — any part that is a symbol in the
-    # change resolves it; the qualification is the reviewer's, not the index's.
-    return any(changed.has_symbol(part) for part in re.split(r"[.:]+", base.rstrip("()")) if part)
+    if _path_shaped(base):
+        return False
+    member = base.rstrip("()").rsplit(".", 1)[-1]
+    return bool(member) and changed.has_symbol(member)
 
 
 def resolve_stated_scope(value: str, changed: Any) -> tuple[list[str], list[str]]:
