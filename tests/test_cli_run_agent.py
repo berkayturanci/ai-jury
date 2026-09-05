@@ -801,6 +801,44 @@ class CliTests(unittest.TestCase):
         self.assertNotIn("AttributeError", err)
         self.assertNotIn("sk-secret-42", err + out)
 
+    def test_a_scalar_nested_jury_table_exits_2_without_a_traceback(self):
+        """`[jury] context = "diff-only"` is a config error here, not a crash.
+
+        Same shape as the `headers` case above and for the same reason: this
+        path loads the config WITHOUT validation, so the reader is the only
+        thing between a scalar written where a table was meant and
+        `'str' object has no attribute 'get'` (issue #729). All three nested
+        tables answer the same way.
+        """
+        for table, scalar in (
+            ("ci", '"critical"'),
+            ("context", '"diff-only"'),
+            ("diff", "4096"),
+        ):
+            with self.subTest(table=table):
+                config = SAMPLE_CONFIG.replace(
+                    '[jury]\nchair = "claude"',
+                    f'[jury]\nchair = "claude"\n{table} = {scalar}',
+                )
+                with _workspace(config_text=config) as root:
+                    code, out, err = _run(
+                        [
+                            "--agent",
+                            "claude",
+                            "--role",
+                            "review",
+                            "--prompt-file",
+                            str(root / "prompt.md"),
+                            "--config",
+                            str(root / "jury.toml"),
+                            "--mock",
+                        ]
+                    )
+                self.assertEqual(code, 2, out + err)
+                self.assertIn(f"error: [jury.{table}] must be a table", err)
+                self.assertNotIn("Traceback", err)
+                self.assertNotIn("AttributeError", err)
+
     def test_prompt_from_stdin(self):
         with _workspace() as root:
             stdin = mock.MagicMock()
