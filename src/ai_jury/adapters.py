@@ -2219,8 +2219,15 @@ def register_adapter(vendor: str, adapter_cls: type[Adapter]) -> None:
     cross-vendor gate. The two registries are updated together so they cannot
     disagree about what "known" means.
     """
-    config_module.register_vendor(vendor)
-    _VENDOR_ADAPTERS[config_module.normalise_vendor(vendor)] = adapter_cls
+    name = config_module.normalise_vendor(vendor)
+    if not name:
+        # One guard, ahead of both tables. `register_vendor` ignores a name that is
+        # empty after normalisation, and this used to write the adapter under the
+        # key "" regardless — the two registries disagreeing for exactly the input
+        # they were joined to agree on.
+        raise ValueError("register_adapter: vendor name is empty after normalisation")
+    config_module.register_vendor(name)
+    _VENDOR_ADAPTERS[name] = adapter_cls
 
 
 def make_adapter(spec: AgentSpec, mock: bool = False) -> Adapter:

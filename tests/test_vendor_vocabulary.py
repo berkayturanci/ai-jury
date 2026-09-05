@@ -276,6 +276,29 @@ class RegisteringAnAdapterTeachesTheVocabulary(unittest.TestCase):
         register_vendor("   ")
         self.assertEqual(set(recognised_vendors()), before)
 
+    def test_an_empty_name_is_refused_before_either_table_is_touched(self):
+        """`''` used to land in the adapter table under the key `''` while the
+        vocabulary learned nothing — two registries disagreeing on the one input
+        they were joined to agree on."""
+        for name in ("", "   "):
+            with self.subTest(vendor=repr(name)):
+                registry = dict(adapters._VENDOR_ADAPTERS)
+                before = set(recognised_vendors())
+                with self.assertRaises(ValueError):
+                    adapters.register_adapter(name, GenericCLIAdapter)
+                self.assertEqual(adapters._VENDOR_ADAPTERS, registry)
+                self.assertNotIn("", adapters._VENDOR_ADAPTERS)
+                self.assertEqual(set(recognised_vendors()), before)
+
+    def test_a_name_that_normalises_onto_a_shipped_vendor_lands_on_that_key(self):
+        registry = dict(adapters._VENDOR_ADAPTERS)
+        self.addCleanup(adapters._VENDOR_ADAPTERS.update, registry)
+        self.addCleanup(config_module._REGISTERED_VENDORS.discard, "openai")
+        adapters.register_adapter("  OpenAI  ", GenericCLIAdapter)
+        self.assertIs(adapters._VENDOR_ADAPTERS["openai"], GenericCLIAdapter)
+        self.assertNotIn("  OpenAI  ", adapters._VENDOR_ADAPTERS)
+        self.assertEqual(list(recognised_vendors()).count("openai"), 1)
+
     def test_the_shipped_names_are_never_duplicated(self):
         self.addCleanup(config_module._REGISTERED_VENDORS.discard, "cli")
         register_vendor("cli")
