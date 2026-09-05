@@ -155,6 +155,21 @@ def plan_panel(
     )
 
 
+def escalation_effect(names: list[str], debate_possible: bool) -> str:
+    """What escalation will actually do, in the run it is happening in.
+
+    A run with one round has no debate to join: ``--auto`` sets exactly that on
+    a ``low``-risk diff, which is the band that benched the seats in the first
+    place, and an operator may write ``rounds = 1`` outright. Escalation still
+    moves the chair — verification and synthesis are a frontier seat reading the
+    diff and the findings — but the bench does not review, and saying it does
+    would be a record that lies about the run (#714, review round 1).
+    """
+    if not debate_possible:
+        return "no debate round in this run, so only the chair is escalated"
+    return f"{', '.join(names)} join the debate"
+
+
 def should_escalate(groups) -> tuple[bool, str]:
     """Whether round 1 warrants the benched frontier seats (pure).
 

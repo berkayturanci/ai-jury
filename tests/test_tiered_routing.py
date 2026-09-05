@@ -297,6 +297,50 @@ class TieredRoutingRunsThePanelItPlans(unittest.TestCase):
                 every_phase.append(result)
         self.assertNotIn("gpt", {r.agent for r in every_phase})
 
+    def test_a_single_round_run_escalates_the_chair_and_says_the_bench_did_not_run(self):
+        # Round-1 finding: `--auto` sets rounds = 1 on the routine band that
+        # benched the seats, and a single-round run has no debate to join. The
+        # chair still moves to a frontier seat; the record says so instead of
+        # promising a debate that never happens.
+        outcome = orchestrator.run_jury(_tiered_config(rounds=1), ROUTINE_DIFF, mock=True)
+        self.assertTrue(outcome.routing["escalated"])
+        self.assertIn("only the chair is escalated", outcome.routing["escalation_reason"])
+        self.assertEqual(outcome.debate, [])
+        self.assertEqual([r.agent for r in outcome.reviews], ["claude", "cheap"])
+        self.assertEqual(outcome.chair, "claude")
+
+    def test_an_auto_depth_single_round_run_never_claims_a_debate(self):
+        # The combination the finding named: --auto's own depth for a low-risk
+        # diff is (1 round, no verify), and --tiered reads the same band.
+        from ai_jury.diffprofile import depth_for
+
+        rounds, verify, early_stop = depth_for("low")
+        self.assertEqual(rounds, 1)
+        config = _tiered_config(rounds=rounds, verify=verify, chair="cheap")
+        config.early_stop = early_stop
+        lines: list[str] = []
+        outcome = orchestrator.run_jury(config, ROUTINE_DIFF, mock=True, log=lines.append)
+        self.assertEqual(outcome.debate, [])
+        self.assertNotIn("gpt", {r.agent for r in outcome.reviews})
+        self.assertIn("only the chair is escalated", outcome.routing["escalation_reason"])
+        self.assertFalse(any("join the debate" in line for line in lines), lines)
+        # The chair is still a frontier seat, so a frontier model reads the
+        # findings in synthesis even though no debate ran.
+        self.assertEqual(outcome.chair, "claude")
+
+    def test_a_two_round_run_does_claim_and_run_the_debate(self):
+        outcome = orchestrator.run_jury(_tiered_config(rounds=2), ROUTINE_DIFF, mock=True)
+        self.assertIn("gpt join the debate", outcome.routing["escalation_reason"])
+        self.assertEqual([r.agent for r in outcome.debate], ["claude", "cheap", "gpt"])
+
+    def test_a_panel_too_small_to_debate_says_so_too(self):
+        # One seated seat cannot debate whatever the round count says.
+        config = _tiered_config(rounds=2, chair="cheap")
+        config.agents = [a for a in config.agents if a.name != "claude"]
+        config.agents[0].tier = "economical"
+        outcome = orchestrator.run_jury(config, ROUTINE_DIFF, mock=True)
+        self.assertEqual(outcome.routing["benched"], [])
+
     def test_an_economical_chair_is_replaced_by_a_frontier_one_on_escalation(self):
         outcome = orchestrator.run_jury(_tiered_config(chair="cheap"), ROUTINE_DIFF, mock=True)
         self.assertEqual(outcome.routing["anchor"], "claude")

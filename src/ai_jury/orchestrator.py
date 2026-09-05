@@ -546,18 +546,26 @@ def run_jury(
     # per phase) is what keeps a rotating chair stable within a run (#38).
     # Escalation (#714): a critical or major finding after round 1 brings the
     # benched frontier seats into the debate and draws the chair from the
-    # frontier seats. Decided once, here, and recorded on the plan.
+    # frontier seats. Decided once, here, and recorded on the plan — including
+    # what it can actually do in THIS run: a single-round run has no debate to
+    # join, and ``--auto`` sets exactly that on the routine band that benched
+    # the seats, so the record names the chair-only case rather than promising
+    # a debate that will not happen (review round 1).
+    round1_debaters = [a for a in round1 if any(r.agent == a.name and r.ok for r in reviews)]
+    debate_possible = len(round1_debaters) >= 2 and (
+        config.effective_max_rounds >= 2 if config.early_stop else config.rounds >= 2
+    )
     if benched:
         plan.escalated, plan.escalation_reason = routing.should_escalate(groups)
         if plan.escalated:
-            log(
-                f"tiered routing: escalating — {plan.escalation_reason}; "
-                f"{', '.join(a.name for a in benched)} join the debate"
-            )
+            effect = routing.escalation_effect([a.name for a in benched], debate_possible)
+            plan.escalation_reason = f"{plan.escalation_reason}; {effect}"
+            log(f"tiered routing: escalating — {plan.escalation_reason}")
     chair_pool = [a.name for a in round1]
     if plan.escalated:
         chair_pool = routing.frontier_names(specs, usable_names) or chair_pool
-        agent_order = agent_order + [a.name for a in benched]
+        if debate_possible:
+            agent_order = agent_order + [a.name for a in benched]
     chair_name = resolve_chair(config, chair_pool, reviewer_names, run_rng)
 
     # Round 2+: debate. Only agents whose round-1 review succeeded participate.
@@ -571,8 +579,8 @@ def run_jury(
     rounds_executed = 1
     stop_reason = ""
     budget_exhausted = False
-    debaters = [a for a in round1 if any(r.agent == a.name and r.ok for r in reviews)]
-    if plan.escalated:
+    debaters = round1_debaters
+    if plan.escalated and debate_possible:
         # Benched frontier seats cross-examine: they receive every round-1
         # review as "the others" and answer in the debate format.
         debaters = debaters + benched
