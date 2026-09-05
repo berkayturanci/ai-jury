@@ -88,6 +88,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - No change to what the formula contains: still the published sdist's own url and digest, re-downloaded and confirmed against what PyPI reported.
   - Tested by running the extracted shell against a stub index on loopback whose answers are scripted (`tests/test_pypi_index_wait.py`) — including the exact answer that broke the release, a 200 with an empty `urls` — since a workflow that only truly runs on a tag cannot be exercised in the suite.
 
+### Security
+- **The release tooling is hash-locked** (#712). `publish.yml` installed `build` and `cyclonedx-bom` — the tools that produce the wheel, the sdist and the SBOM every release attests to — as whatever PyPI served at tag time. They now come from `.github/requirements/publish-tools.txt` with `--require-hashes --only-binary=:all:`, the full dependency closure pinned to the release runtime (ubuntu-latest, Python 3.13), and pip is no longer upgraded on the way. A `Release lockfiles resolve` CI job dry-runs the lock on every pull request, so a pin the index no longer serves fails there rather than during a release, and Dependabot watches the file so the pins keep moving. The `pip install -e ".[dev]"` lines in CI and the pages build are untouched: an editable install of this project with floating dev extras, not the release path.
+
 ## [1.16.0] - 2026-09-04
 
 ### Added
