@@ -27,9 +27,10 @@ errors (exit `2`).
   per-agent), duplicate agent names, missing/empty agent `name` or `command`, no
   `[[agent]]` entries at all, `decision` other than `"chair"` / `"vote"`,
   an `adapter` this build does not have, an agent `headers` that is not a table
-  of string keys and string values, malformed tables.
+  (or whose key is not a string), malformed tables.
 - **Warnings** (fail only under `--strict-config`): unknown vendor, `chair` not
-  matching an enabled agent, unknown top-level/section/agent keys.
+  matching an enabled agent, unknown top-level/section/agent keys, a non-string
+  `headers` value (it is coerced to a string and sent).
 
 ### The vendor vocabulary
 
