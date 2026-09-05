@@ -839,7 +839,10 @@ class AnAbstentionIsNotAReviewEither(unittest.TestCase):
         # apart from a requested id. The bundle is the shape a consumer actually
         # parses, so it carries it as well.
         for record in _bundle():
-            self.assertIn(record["model_source"], {"requested", "cli_default", "unknown", "none"})
+            self.assertIn(
+                record["model_source"],
+                {"requested", "recomputed", "cli_default", "unknown", "none"},
+            )
             self.assertIsInstance(record["counts_as_review"], bool)
         self.assertFalse(_bundle()[-1]["counts_as_review"])
 

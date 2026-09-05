@@ -54,6 +54,13 @@ from .metadata import build_run_metadata
 #:   computes it from the seat's ``adapter``, so on a seat where those differ
 #:   (possible since #705) the ballot could name a model the run never asked for
 #:   — under a field whose whole claim is that it is the id that was sent.
+#: * ``reviewers[].model_source`` gains a fifth value, ``recomputed``: no
+#:   invocation recorded an id for this slot, so the one in ``model`` was derived
+#:   from the run's config. It used to ship as ``requested``, which is the same
+#:   overstatement one source short — the derivation returns
+#:   ``gemini-3-pro-high`` for the seat above, whose adapter sent
+#:   ``gemini-3-pro``. A consumer switching on the four known values must accept
+#:   a fifth.
 #: * ``reviewers[].abstention_cause`` gains a fifth value, ``not_in_change``: the
 #:   seat stated a scope and none of it is in the change under review. Those
 #:   ballots were ``named_nothing`` before, when they were recorded at all — a

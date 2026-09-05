@@ -71,6 +71,22 @@ follow from it:
 * ``model_source`` rides along in the ``keel-reviews`` projection too, so a
   machine consumer of that shape can tell a requested id from a statement about
   the CLI's default without parsing English.
+
+**And what it says about itself has to be true of the run** (#709/#710, round 2).
+Two claims here were still stated more strongly than the evidence behind them:
+
+* the ``Checked:`` line was split into tokens **lexically**, on whitespace, so a
+  changed file whose name contains a space arrived as two tokens that name
+  nothing and the ballot abstained under ``not_in_change`` — the rule for
+  catching a review of nothing, refusing a real review over a space. Tokens are
+  now cut against the change index itself, and a span the reviewer quoted is one
+  token whatever is inside it;
+* a ``model`` id this module *derived* went out under ``model_source:
+  requested``, whose whole claim is that the id was on the wire. Deriving one is
+  still right where no invocation recorded one, but it is labelled
+  :data:`MODEL_RECOMPUTED` and it is never the answer for a stale result-cache
+  entry — the record format changed, so the cache refuses it rather than
+  recomputing over the gap.
 """
 
 from __future__ import annotations
@@ -133,6 +149,7 @@ _CLI_DEFAULT_MODEL = "{command} default (the CLI does not report which model ans
 #: Where a ballot's ``model`` came from, as one machine token, so a consumer can
 #: tell a real model id from a statement about one without parsing prose.
 MODEL_REQUESTED = "requested"  # an id was pinned (or mapped from `effort`) and sent
+MODEL_RECOMPUTED = "recomputed"  # no invocation recorded one; derived from the config
 MODEL_CLI_DEFAULT = "cli_default"  # nothing pinned; the CLI chose, and does not say
 MODEL_UNKNOWN = "unknown"  # the answering slot has no spec in this config
 MODEL_NONE = "none"  # there is no agent in this slot at all (an unchaired run)
@@ -203,8 +220,29 @@ _CHECKED_CLAUSE_RE = re.compile(r"\bchecked\b[^.\n]{8,}", re.IGNORECASE)
 # paths and symbols of :class:`ai_jury.largediff.ChangeIndex`, carried on the
 # outcome. The check is local and cheap: the jury holds the diff at that moment.
 
-#: Where one stated value is split into tokens: whitespace and list punctuation.
-_SCOPE_TOKEN_SPLIT = re.compile(r"[\s,;]+")
+#: List punctuation: a **hard** token boundary, kept apart from whitespace,
+#: which is not one. See :func:`_scope_tokens` — a changed file whose name
+#: contains a space is one token spelled with whitespace in the middle of it,
+#: and a lexical split on ``[\s,;]+`` cut it in half (#710, round 2).
+_LIST_SEP_SPLIT = re.compile(r"[,;]+")
+
+#: Whitespace: a *candidate* boundary, resolved against the change.
+_WHITESPACE_SPLIT = re.compile(r"\s+")
+
+#: A span the reviewer itself marked as one token — backticks, or double quotes,
+#: straight or curly. Whatever is inside is one token even when it contains a
+#: space or a comma: the reviewer drew the boundary, and re-splitting it is the
+#: same defect the joining below exists to fix. Single quotes are deliberately
+#: absent: ``'`` and ``’`` are also apostrophes, so ``the reviewer's own file``
+#: would open a span at ``'s`` and swallow the rest of the line.
+_QUOTED_SPAN_RE = re.compile(r"`([^`\n]+)`|\"([^\"\n]+)\"|“([^”\n]+)”")
+
+#: How many whitespace-separated pieces may be joined while looking for a path.
+#: A cap rather than the whole line: the search is quadratic in the window, the
+#: line is attacker-influenced, and a filename with five spaces in it is already
+#: an outlier. Exceeding it can only make a token fail to resolve, which is the
+#: safe direction — an unresolved token is reported as unresolved.
+_MAX_JOINED_PIECES = 6
 
 #: Punctuation a token may be wrapped or trailed by. Stripped from both ends
 #: before the token is resolved, so ``(src/a.py),`` and ``src/a.py`` are one
@@ -249,27 +287,110 @@ def _deanchor(text: str) -> str:
     return " ".join(flat.translate(_DEANCHOR).split())[:_CLAUSE_MAX]
 
 
-def _scope_tokens(value: str) -> list[str]:
-    """The distinct candidate tokens of one stated ``Checked:`` value (pure)."""
+def _marked_spans(value: str) -> list[tuple[str, bool]]:
+    """*value* as ``(text, quoted)`` runs (pure).
+
+    ``quoted`` runs are the spans the reviewer wrapped in backticks or double
+    quotes; the rest is everything between them. Splitting on the marks first is
+    what lets a quoted ``docs/my file.py`` survive as one token: a reviewer that
+    quoted a name has already said where it begins and ends, and no rule below
+    is entitled to a second opinion about that.
+    """
+    runs: list[tuple[str, bool]] = []
+    pos = 0
+    for match in _QUOTED_SPAN_RE.finditer(value):
+        if match.start() > pos:
+            runs.append((value[pos : match.start()], False))
+        # Exactly one alternative of :data:`_QUOTED_SPAN_RE` can have matched.
+        runs.append((match.group(1) or match.group(2) or match.group(3), True))
+        pos = match.end()
+    if pos < len(value):
+        runs.append((value[pos:], False))
+    return runs
+
+
+def _path_base(token: str) -> str:
+    """*token* with a trailing ``:line`` / ``:line-line`` dropped (pure)."""
+    match = _PATH_LINE_RE.match(token)
+    return match.group("path") if match else token
+
+
+def _joined_against_change(pieces: list[str], changed: Any) -> list[str]:
+    """One whitespace-separated run's pieces, with spaced paths rejoined (pure).
+
+    **The change index is the tokeniser, not the whitespace.** ``Checked:
+    docs/my file.py`` used to split into ``docs/my`` and ``file.py``, neither of
+    which is in a diff that changes ``docs/my file.py``: the ballot came back
+    ``scope_substantive: false``, ``counts_as_review: false``,
+    ``abstention_cause: not_in_change`` — a real review of a real file, refused
+    for a space in its name, by the rule that exists to catch reviews of nothing.
+
+    So adjacent pieces are offered to the index joined, longest window first, and
+    a join that names a changed path *is* the token. Longest-first matters: with
+    both ``my file.py`` and ``docs/my file.py`` changed, the reviewer named the
+    second. A join is only ever accepted when the index confirms it, so this can
+    turn a non-token into a token but never the reverse — the failure direction
+    is an unresolved token, which is reported as one.
+    """
+    tokens: list[str] = []
+    index = 0
+    while index < len(pieces):
+        joined = ""
+        width = 1
+        for size in range(min(_MAX_JOINED_PIECES, len(pieces) - index), 1, -1):
+            candidate = " ".join(pieces[index : index + size]).strip(_TOKEN_EDGE)
+            if changed.has_path(_path_base(candidate)):
+                joined, width = candidate, size
+                break
+        tokens.append(joined or pieces[index].strip(_TOKEN_EDGE))
+        index += width
+    return tokens
+
+
+def _scope_tokens(value: str, changed: Any) -> list[str]:
+    """The distinct candidate tokens of one stated ``Checked:`` value (pure).
+
+    Tokenised **against the change**, not lexically (#710, round 2). Three rules,
+    in this order: a span the reviewer quoted is one token whatever is inside it;
+    list punctuation is a hard boundary; and whitespace is a boundary only where
+    joining across it does not name a changed path.
+    """
     seen: list[str] = []
-    for raw in _SCOPE_TOKEN_SPLIT.split(flatten_inline(value or "")):
-        token = raw.strip().strip(_TOKEN_EDGE)
-        if token and token not in seen:
-            seen.append(token)
+    for text, quoted in _marked_spans(flatten_inline(value or "")):
+        if quoted:
+            # Only whitespace is trimmed: inside the reviewer's own marks there
+            # is no stray punctuation to strip, and stripping it would cost the
+            # leading dot of a `.gitignore` the reviewer took care to quote.
+            candidates = [text.strip()]
+        else:
+            candidates = [
+                token
+                for segment in _LIST_SEP_SPLIT.split(text)
+                for token in _joined_against_change(
+                    [p for p in _WHITESPACE_SPLIT.split(segment) if p], changed
+                )
+            ]
+        for token in candidates:
+            if token and token not in seen:
+                seen.append(token)
     return seen
 
 
 def _is_name_shaped(token: str, value: str) -> bool:
-    """Does *token* claim to name something? (pure — see :data:`_NAME_SHAPED_RE`)"""
-    return bool(_NAME_SHAPED_RE.search(token)) or f"`{token}`" in (value or "")
+    """Does *token* claim to name something? (pure — see :data:`_NAME_SHAPED_RE`)
+
+    A token the reviewer *marked* counts too, whichever mark it used: quoting a
+    token is the reviewer saying it is a name, and a claim that failed has to be
+    reported as one rather than dropped as connective prose.
+    """
+    if _NAME_SHAPED_RE.search(token):
+        return True
+    return any(f"{o}{token}{c}" in (value or "") for o, c in (("`", "`"), ('"', '"'), ("“", "”")))
 
 
 def _token_resolves(token: str, changed: Any) -> bool:
     """Is *token* a path or symbol that is actually in the change? (pure)"""
-    base = token
-    match = _PATH_LINE_RE.match(token)
-    if match:
-        base = match.group("path")
+    base = _path_base(token)
     if changed.has_path(base):
         return True
     # `module.function()` / `Class.method` — any part that is a symbol in the
@@ -285,6 +406,10 @@ def resolve_stated_scope(value: str, changed: Any) -> tuple[list[str], list[str]
     tokens that are shaped like a name and are not in the change — reported, so
     a reader sees the claim that failed, but never anchoring anything.
 
+    **The split into tokens is itself made against the change** (see
+    :func:`_scope_tokens`), because a lexical one gets a changed file whose name
+    contains a space wrong in the direction that costs a real review.
+
     **A mixed line is carried by its real tokens.** ``Checked:
     src/ai_jury/ballots.py, src/made/up.py`` is a review of
     ``src/ai_jury/ballots.py``, with the second path listed in the scope as not
@@ -295,7 +420,7 @@ def resolve_stated_scope(value: str, changed: Any) -> tuple[list[str], list[str]
     """
     resolved: list[str] = []
     unresolved: list[str] = []
-    for token in _scope_tokens(value):
+    for token in _scope_tokens(value, changed):
         if _token_resolves(token, changed):
             resolved.append(token)
         elif _is_name_shaped(token, value):
@@ -715,8 +840,12 @@ def sent_model(result: Any) -> str:
     whole of #709's fix: the ballot quotes the id the run sent instead of
     computing a second one that can differ from it.
 
-    Empty for a record no invocation produced — a hand-built result, a legacy
-    cache entry — and :func:`requested_model` answers for those instead.
+    Empty for a record no invocation produced — a hand-built result, a chair
+    slot with no round-1 seat — and :func:`requested_model` answers for those
+    instead, under :data:`MODEL_RECOMPUTED` rather than :data:`MODEL_REQUESTED`.
+    A stale result cache is deliberately *not* on that list: the record format
+    gained this field, so :data:`ai_jury.cache.CACHE_SCHEMA` refuses an entry
+    written without it rather than serving a recomputation in its place.
     """
     return (getattr(result, "model", "") or "").strip()
 
@@ -726,7 +855,9 @@ def requested_model(spec: Any) -> str:
 
     The fallback for a record that carries no sent id (:func:`sent_model`), and
     it computes the id the way the invocation path computes it — with
-    :func:`ai_jury.config.spec_adapter`, **not** ``spec.vendor``.
+    :func:`ai_jury.config.spec_adapter`, **not** ``spec.vendor``. What it returns
+    ships under :data:`MODEL_RECOMPUTED`: it is derived here, and the one thing
+    it cannot be called is the id that was sent.
 
     That distinction is #709. ``spec.model`` is what the operator wrote down, but
     it is not always what is sent: where reasoning effort is encoded *in the
@@ -775,6 +906,17 @@ def describe_model(config: Any, agent_name: str, result: Any = None) -> tuple[st
 
     ``source`` is the same fact as one machine token, so a consumer can tell an
     id from a statement about one without parsing English.
+
+    **A derived id is never labelled as a sent one** (#709, round 2). Where no
+    invocation recorded an id — a hand-built result, a chair slot with no
+    round-1 seat, a library caller — :func:`requested_model` still answers, and
+    that answer goes out under :data:`MODEL_RECOMPUTED` rather than
+    :data:`MODEL_REQUESTED`. It is a real id and worth quoting, but it is this
+    module's arithmetic over the config, not a reading of the wire: for a Google
+    seat at ``effort = high`` whose live model listing forced the adapter back to
+    ``gemini-3-pro``, this returns ``gemini-3-pro-high``. Under ``requested``
+    that is #709 restated — a model the run did not send, under a token whose
+    whole claim is that it did.
     """
     name = (agent_name or "").strip()
     if not name:
@@ -782,9 +924,12 @@ def describe_model(config: Any, agent_name: str, result: Any = None) -> tuple[st
     spec = _spec_for(config, name)
     if spec is None:
         return f"unknown (no agent named '{name}' in this run's config)", MODEL_UNKNOWN
-    model = sent_model(result) or requested_model(spec)
-    if model:
-        return model, MODEL_REQUESTED
+    sent = sent_model(result)
+    if sent:
+        return sent, MODEL_REQUESTED
+    recomputed = requested_model(spec)
+    if recomputed:
+        return recomputed, MODEL_RECOMPUTED
     command = (getattr(spec, "command", "") or getattr(spec, "vendor", "") or name).strip()
     return _CLI_DEFAULT_MODEL.format(command=command), MODEL_CLI_DEFAULT
 

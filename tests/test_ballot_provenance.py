@@ -21,6 +21,13 @@ CLIs, ``--rounds 1``, on the diff of #707 — raised each of them against itself
   of naming something with none of the substance, and it is satisfiable by an
   agent that read nothing — #700's own failure one layer up.
 
+Round 2 of each, from review of #711, is at the foot of this file. Both fixes
+overstated what they knew: the ``Checked:`` line was cut into tokens on
+whitespace, so a changed file whose *name* contains a space was two tokens that
+name nothing and the ballot abstained under ``not_in_change``; and a ``model``
+id this tool *derived*, for a record no invocation stamped, still went out under
+``model_source: requested``.
+
 Every test here is offline: no CLI is spawned, no network is touched. The #709
 tests compare a ballot against the **argv the adapter actually built**, which is
 the only comparison that cannot be satisfied by two copies of the same mistake.
@@ -35,11 +42,14 @@ import re
 import tempfile
 import unittest
 import unittest.mock as mock
+from dataclasses import replace
 from pathlib import Path
 
 from ai_jury import cli, panel
 from ai_jury.adapters import AgentResult, MockAdapter, effort_args, make_adapter
 from ai_jury.ballots import (
+    MODEL_RECOMPUTED,
+    MODEL_REQUESTED,
     ballot_seats,
     describe_scope,
     resolve_stated_scope,
@@ -475,6 +485,205 @@ command = "claude"
     def test_a_file_in_the_diff_does(self):
         ballot = self._run("src/ai_jury/ballots.py")[0]
         self.assertTrue(ballot["counts_as_review"])
+
+
+#: A change whose paths make the *tokeniser* the thing under test: one file with
+#: a space in its name, and one with a hyphen and two dots. Both are ordinary
+#: repository filenames; neither survives a lexical split intact.
+_SPACED_DIFF = """diff --git a/docs/my file.py b/docs/my file.py
+--- a/docs/my file.py
++++ b/docs/my file.py
+@@ -1,2 +1,2 @@
+-def old_name():
++def new_name():
+diff --git a/docs/release-notes.v2.md b/docs/release-notes.v2.md
+--- a/docs/release-notes.v2.md
++++ b/docs/release-notes.v2.md
+@@ -1 +1 @@
+-old
++new
+"""
+
+_SPACED = change_index(_SPACED_DIFF)
+
+
+class AStatedScopeIsTokenisedAgainstTheChange(unittest.TestCase):
+    """#710, round 2: the change index cuts the tokens, not the whitespace.
+
+    The old `_SCOPE_TOKEN_SPLIT` split a stated value on whitespace and list
+    punctuation alike, so `Checked: docs/my
+    file.py` became `docs/my` and `file.py` — two tokens, neither of them in a
+    diff that changes `docs/my file.py`. The ballot came back
+    `scope_substantive: false`, `counts_as_review: false`,
+    `abstention_cause: not_in_change`: a real review of a real file, refused for
+    a space in its name, by the rule that exists to catch reviews of nothing.
+
+    The whole point of #710 is that the tool holds the diff at that moment, so
+    the diff — not the whitespace — is what says where a token ends.
+    """
+
+    def _ballot(self, checked: str) -> dict:
+        config = _config([{"name": "seat", "vendor": "anthropic", "command": "claude"}])
+        result = AgentResult("seat", "anthropic", True, _reply(checked), 0.0)
+        return reviewer_ballots(_outcome([result], changed=_SPACED), config)[0]
+
+    def test_a_changed_path_with_a_space_in_it_is_a_review(self):
+        """The reported defect. Fails on bd8aaae with `not_in_change`."""
+        ballot = self._ballot("docs/my file.py")
+        self.assertTrue(ballot["scope_substantive"])
+        self.assertTrue(ballot["counts_as_review"])
+        self.assertEqual(ballot["abstention_cause"], "")
+        self.assertIn("`docs/my file.py`", ballot["scope"])
+
+    def test_a_changed_path_with_a_hyphen_and_a_dot_is_a_review(self):
+        ballot = self._ballot("docs/release-notes.v2.md")
+        self.assertTrue(ballot["counts_as_review"])
+        self.assertIn("`docs/release-notes.v2.md`", ballot["scope"])
+
+    def test_a_backticked_path_is_one_token_whatever_is_inside_it(self):
+        """A reviewer that quoted a name has already said where it begins and
+        ends; no rule here is entitled to a second opinion about that."""
+        ballot = self._ballot("`docs/my file.py`")
+        self.assertTrue(ballot["counts_as_review"])
+        self.assertIn("`docs/my file.py`", ballot["scope"])
+
+    def test_a_double_quoted_path_is_too(self):
+        self.assertTrue(self._ballot('"docs/my file.py"')["counts_as_review"])
+
+    def test_and_a_curly_quoted_one(self):
+        """A reviewer writing prose types the quotes its own model produces."""
+        self.assertTrue(self._ballot("\u201cdocs/my file.py\u201d")["counts_as_review"])
+
+    def test_a_quoted_span_may_sit_inside_the_line(self):
+        """The reviewer's marks bound one token; the text either side of them is
+        still tokenised against the change like any other."""
+        ballot = self._ballot("docs/release-notes.v2.md and `docs/my file.py`")
+        self.assertTrue(ballot["counts_as_review"])
+        self.assertIn("`docs/release-notes.v2.md`", ballot["scope"])
+        self.assertIn("`docs/my file.py`", ballot["scope"])
+
+    def test_the_join_stops_at_list_punctuation(self):
+        """A comma is a boundary the reviewer wrote down; whitespace is not. The
+        mixed-line rule still applies across it."""
+        ballot = self._ballot("docs/my file.py, src/made/up.py")
+        self.assertTrue(ballot["counts_as_review"])
+        self.assertIn("`docs/my file.py`", ballot["scope"])
+        self.assertIn("The same line also named", ballot["scope"])
+
+    def test_joining_never_invents_a_token_the_change_does_not_have(self):
+        """The join is only ever accepted when the index confirms it, so the
+        failure direction stays `unresolved` — `Checked: nothing at all` is not
+        rescued by having three words to try."""
+        ballot = self._ballot("nothing at all")
+        self.assertFalse(ballot["counts_as_review"])
+        self.assertEqual(ballot["abstention_cause"], panel.NAMED_NOTHING)
+
+    def test_the_longest_join_the_change_confirms_wins(self):
+        """With `my file.py` and `docs/my file.py` both changed, a reviewer that
+        wrote the second named the second."""
+        changed = change_index(
+            _SPACED_DIFF + "diff --git a/my file.py b/my file.py\n"
+            "--- a/my file.py\n+++ b/my file.py\n@@ -1 +1 @@\n-old\n+new\n"
+        )
+        self.assertEqual(resolve_stated_scope("docs/my file.py", changed)[0], ["docs/my file.py"])
+
+    def test_a_spaced_path_with_a_line_number_resolves_on_its_path(self):
+        self.assertEqual(
+            resolve_stated_scope("docs/my file.py:2", _SPACED)[0], ["docs/my file.py:2"]
+        )
+
+    def test_a_quoted_token_that_is_absent_is_still_reported_as_a_claim(self):
+        """Quoting a token is the reviewer saying it is a name. A name that is
+        not in the change is a claim that failed, and has to be reported as one
+        rather than dropped as connective prose."""
+        resolved, unresolved = resolve_stated_scope('"the whole repo"', _SPACED)
+        self.assertEqual(resolved, [])
+        self.assertEqual(unresolved, ["the whole repo"])
+
+    def test_a_quoted_leading_dot_file_keeps_its_dot(self):
+        """Inside the reviewer's own marks there is no stray punctuation to
+        strip, and stripping it would cost `.gitignore` its first character."""
+        changed = change_index(
+            "diff --git a/.gitignore b/.gitignore\n"
+            "--- a/.gitignore\n+++ b/.gitignore\n@@ -1 +1 @@\n-old\n+new\n"
+        )
+        self.assertEqual(resolve_stated_scope("`.gitignore`", changed)[0], [".gitignore"])
+
+
+class ARecomputedModelIdIsNotLabelledAsSent(unittest.TestCase):
+    """#709, round 2: the fallback needs its own provenance token.
+
+    `sent_model` is empty for every record no invocation stamped — a hand-built
+    result, a chair slot with no round-1 seat — and `describe_model` fell back to
+    `requested_model` while keeping `model_source: requested`, the token whose
+    whole claim is that the id was on the wire.
+
+    The seat from #709's own report is the witness. A Google seat at `effort =
+    high` whose live model listing does not offer `gemini-3-pro-high` is invoked
+    with `gemini-3-pro`, and its fresh ballot says so. The same seat with no
+    recorded id recomputes `gemini-3-pro-high` — the overstated provenance #709
+    removed, restated for every record the invocation did not stamp.
+
+    `recomputed` rather than reusing `unknown`: `unknown` already means *this
+    slot has no spec in the run's config*, and folding two different facts into
+    one token is the same defect one level down. The id is real and worth
+    quoting; what it is not is evidence of what was sent, and the token says so.
+    """
+
+    _SPEC = {
+        "name": "seat",
+        "vendor": "google",
+        "adapter": "google",
+        "command": "agy",
+        "model": "gemini-3-pro",
+        "effort": "high",
+    }
+
+    def _ballots(self) -> tuple[dict, dict]:
+        """``(fresh, legacy)`` ballots for one seat: stamped, and with it cleared."""
+        config = _config([dict(self._SPEC)])
+        spec = config.agents[0]
+        adapter = make_adapter(spec)
+        canned = AgentResult(spec.name, spec.vendor, True, _reply("`x`"), 0.0)
+        with (
+            mock.patch.object(type(adapter), "run", lambda *_a, **_k: canned),
+            # The live listing that forces the fallback — stubbed, because a
+            # test whose expected id depends on the machine's `agy` catalogue is
+            # not a test.
+            mock.patch.object(type(adapter), "list_models", lambda _self: ["gemini-3-pro"]),
+        ):
+            argv = adapter.build_argv("prompt")
+            fresh = _run_with_retry(
+                adapter, "prompt", "review", RunBudget(None, None), 0, lambda _m: None
+            )
+        self.assertEqual(_model_in_argv(argv), "gemini-3-pro")
+        legacy = replace(fresh, model="")  # the shape of a record written before #709
+        return (
+            reviewer_ballots(_outcome([fresh]), config)[0],
+            reviewer_ballots(_outcome([legacy]), config)[0],
+        )
+
+    def test_the_fresh_ballot_still_quotes_the_id_the_adapter_sent(self):
+        fresh, _ = self._ballots()
+        self.assertEqual(fresh["model"], "gemini-3-pro")
+        self.assertEqual(fresh["model_source"], MODEL_REQUESTED)
+
+    def test_a_record_with_no_recorded_id_is_recomputed_never_requested(self):
+        """Fails on bd8aaae: the same `gemini-3-pro-high` came back under
+        `requested`, which is exactly the claim #709 exists to stop making."""
+        fresh, legacy = self._ballots()
+        self.assertEqual(legacy["model"], "gemini-3-pro-high")
+        self.assertNotEqual(legacy["model"], fresh["model"])
+        self.assertEqual(legacy["model_source"], MODEL_RECOMPUTED)
+
+    def test_a_seat_with_nothing_pinned_is_still_the_cli_default(self):
+        """The recomputation has to be empty before `cli_default` is reached, so
+        the new branch must not swallow the #700 case."""
+        config = _config([{"name": "seat", "vendor": "anthropic", "command": "claude"}])
+        result = AgentResult("seat", "anthropic", True, _reply("`x`"), 0.0)
+        ballot = reviewer_ballots(_outcome([result]), config)[0]
+        self.assertEqual(ballot["model_source"], "cli_default")
+        self.assertIn("claude", ballot["model"])
 
 
 if __name__ == "__main__":  # pragma: no cover - manual runs

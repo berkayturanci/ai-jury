@@ -105,6 +105,14 @@ v1.3 ([#709], [#710]) changes no shape and two meanings:
   it sent and the ballot reads it back, so the field is byte-equal to the id in
   that seat's command line — including where a live model listing forced a
   fallback, which no recomputation could see.
+- **`model_source` gains a fifth value, `recomputed`.** Where no invocation
+  recorded an id — a hand-assembled outcome, a chair slot with no round-1 seat —
+  the id is still derived from the run's config, and it now says so instead of
+  going out under `requested`. That matters most in exactly the configuration
+  above: the derivation returns `gemini-3-pro-high` for a seat the adapter sent
+  `gemini-3-pro`, so `requested` there was the overstated provenance this
+  release removes, one source short. A consumer switching on the four earlier
+  values must accept a fifth.
 - **`abstention_cause` gains a fifth value, `not_in_change`.** A `Checked:` token
   now has to name a path or a symbol that is in the diff; a scope that names only
   things the change does not contain is an abstention under this cause. Some of
@@ -122,8 +130,8 @@ One entry per seat that **ran**, in the stable panel order, then the chair:
 | --- | --- |
 | `name` | The agent slot's name, as configured. |
 | `vendor` | The adapter's vendor (`anthropic`, `openai`, …), **as configured**. A seat on the generic fallback keeps its own string here and counts as `cli` only in `metadata.panel.vendors`. |
-| `model` | The model id actually requested of that agent's CLI, **read back off the invocation that sent it** — the configured id, remapped when the *adapter* encodes reasoning effort in the id, and falling back exactly as the invocation fell back when a live model listing did not offer the mapped id ([#709]). Byte-equal to the id in that seat's built argv. Where no id was pinned: a statement that the CLI's own default answered and that the CLI does not report which model that was. Never empty for a slot that has an agent. |
-| `model_source` | The same fact as one machine token, so a consumer need not parse English: `requested` (an id was pinned and sent), `cli_default` (nothing pinned; the CLI chose and does not say), `unknown` (the answering slot has no spec in this run's config), `none` (no agent in the slot at all — an unchaired run). |
+| `model` | The model id actually requested of that agent's CLI, **read back off the invocation that sent it** — the configured id, remapped when the *adapter* encodes reasoning effort in the id, and falling back exactly as the invocation fell back when a live model listing did not offer the mapped id ([#709]). Byte-equal to the id in that seat's built argv. Where no invocation recorded an id, it is **derived** from the run's config instead and `model_source` says `recomputed` — a real id, but this tool's arithmetic over the config rather than a reading of the wire. Where no id was pinned: a statement that the CLI's own default answered and that the CLI does not report which model that was. Never empty for a slot that has an agent. |
+| `model_source` | The same fact as one machine token, so a consumer need not parse English: `requested` (an id was pinned and **sent**, and this is the string that was sent), `recomputed` (no invocation recorded one, so the id in `model` was derived here from the config — see below), `cli_default` (nothing pinned; the CLI chose and does not say), `unknown` (the answering slot has no spec in this run's config), `none` (no agent in the slot at all — an unchaired run). |
 | `verdict` | That panelist's own round-1 stance (see below). |
 | `scope` | What that panelist named that it read, followed — when it did not review — by an abstention stating why. Derived as in the `keel-reviews` table below; the two renderings are the same text by construction. |
 | `scope_substantive` | Does that `scope` name something a reader could go and check (a file, a `path:line`, a backticked symbol, a called identifier, or a `Checked …` clause) — **that is actually in the change** ([#710])? `false` whenever the abstention is *because* nothing was named, or because everything named is absent from the diff. It can be `true` on an abstention too — a seat that opened with `Checked: src/a.py` and then refused, or whose adapter failed, names a place and still did not review — which is why `counts_as_review` reads both fields rather than this one alone. |
@@ -198,6 +206,25 @@ A token resolves when it names:
   English word is not a symbol, which is why `Checked: nothing` resolves to
   nothing even in a diff whose prose happens to contain the word.
 
+**The change is also what splits the line into tokens.** It was split
+lexically at first — on whitespace and list punctuation — and a changed file
+whose *name* contains a space came apart in the middle: `Checked: docs/my
+file.py` became `docs/my` and `file.py`, neither of which is in a diff that
+changes `docs/my file.py`, so a real review of a real file was refused under
+`not_in_change`. Three rules decide where a token ends, in this order:
+
+- a span the reviewer **marked** — backticks, or double quotes, straight or
+  curly — is one token whatever is inside it. A reviewer that quoted a name has
+  said where it begins and ends. (Single quotes are not marks here: `'` and `’`
+  are also apostrophes, and *the reviewer's own file* would open a span at `'s`.)
+- **list punctuation** — a comma or a semicolon — is a hard boundary. The
+  reviewer wrote it down.
+- **whitespace** is a boundary only where joining across it does not name a
+  changed path. Adjacent pieces are offered to the change index joined, longest
+  window first, and a join the index confirms is the token. A join is never
+  accepted on its own say-so, so this can turn a non-token into a token but not
+  the reverse — the failure direction stays *unresolved*, which is reported.
+
 **A mixed line is carried by the tokens that resolve.** `Checked:
 src/ai_jury/ballots.py, src/made/up.py` is a review of `src/ai_jury/ballots.py`,
 and the scope says the second path is not in this change: the reviewer
@@ -226,6 +253,39 @@ claims it raised rather than on a file.
 The review prompt states the rule it is held to: since prompt version 8 the
 code-review template says every name on the `Checked:` line is resolved against
 the diff, and that a line resolving to nothing abstains.
+
+### Where a `model` id comes from
+
+`model_source` is a claim about **evidence**, not about confidence, and the two
+id-bearing values differ in what backs them:
+
+- `requested` — the adapter recorded the id at the moment it built the argv or
+  the request body (`Adapter.resolved_model`), and the ballot reads that string
+  back. It is byte-equal to what went out, including where a live model listing
+  forced a fallback the config alone cannot predict.
+- `recomputed` — no invocation recorded an id for this slot, so the id was
+  **derived** here from the run's config: the configured id, remapped through the
+  same effort→id mapping the adapter would have used. Real, useful, and not
+  evidence of anything having been sent.
+
+The gap between them is not hypothetical. A seat configured `vendor = google`,
+`adapter = google`, `model = gemini-3-pro`, `effort = high`, whose CLI does not
+offer `gemini-3-pro-high`, is invoked with `gemini-3-pro` — and the derivation
+returns `gemini-3-pro-high`. Publishing that second string under `requested`
+would restate exactly the overstatement [#709] removes, so it has a token of its
+own. `unknown` was not reused for it: that value already means *this slot has no
+spec in the run's config*, and one token for two different facts is the same
+defect one level down.
+
+A **stale result cache** is deliberately not a source of `recomputed` ballots.
+`AgentResult` gained the recorded id in this release, so an entry written before
+it cannot support any provenance label; `cache_schema` goes to **2** and such an
+entry is not read at all. A cache exists to be an exact stand-in for a fresh run,
+and where it cannot be, one re-run is the honest price. (The cache *key* would
+have caught these entries in this release anyway, since `PROMPT_VERSION` went to
+8 for [#710] in the same change — but that is a coincidence of two fixes shipping
+together, and a change to the record's format belongs in the field that versions
+the format.)
 
 ### What counts as a review
 
@@ -272,7 +332,7 @@ per seat that ran, plus the chair as `reviewer: "chair"`:
 | `findings` | That panelist's own findings as `{severity, path, line, message}` — ai-jury's `file` → `path`, `claim` → `message`. The chair carries the consensus-group representatives the verifier did **not** reject. |
 | `testing` | The panelist's own `Tested:` line, else the first verification clause in its prose — both lifted verbatim (flattened and capped), because a testing claim carried downstream as evidence must be the reviewer's words and not a paraphrase. With neither, it says plainly that nothing was run. The chair's comes from the verification round. |
 | `vendor` | The adapter's vendor, **as configured** — provenance, not the identity the cross-vendor gate collapses to. |
-| `model` | As in the `reviewers` table above: the id the invocation actually sent, or a statement that the CLI's default answered and the CLI does not report which. |
+| `model` | As in the `reviewers` table above: the id the invocation actually sent, an id derived from the config where no invocation recorded one (`model_source: recomputed`), or a statement that the CLI's default answered and the CLI does not report which. |
 | `model_source` | As in the `reviewers` table above. It rides along here too because `model` changed meaning in the same release and this is the shape a machine consumer actually parses — without it, telling a requested id from a CLI default meant reading English ([#700]). |
 | `counts_as_review` | As in the `reviewers` table above. The bundle carries a record for every seat, abstentions included, so a consumer counting the array needs the discriminator. |
 

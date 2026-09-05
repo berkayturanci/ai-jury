@@ -278,6 +278,54 @@ class CacheHitMissTest(unittest.TestCase):
             (cache.dir / f"{key}.json").write_text(json.dumps(entry), encoding="utf-8")
             self.assertIsNone(cache.load(key))
 
+    def test_a_record_written_before_the_model_field_is_not_read(self):
+        """#709, round 2: a format change is a miss, not a recomputation.
+
+        The stored record gained ``AgentResult.model`` — the id the invocation
+        sent — and the ballot reads it to justify ``model_source: requested``.
+        An entry written without the field cannot support that label, and
+        recomputing an id to fill the gap puts a derived value under a token
+        whose whole claim is that it came off the wire. So ``CACHE_SCHEMA``
+        refuses it: a cache exists to be an exact stand-in for a fresh run, and
+        where it cannot be, one re-run is the honest price.
+
+        The cache *key* does not settle this on its own. It invalidates every
+        pre-#709 entry in this release only because ``PROMPT_VERSION`` went 7 to
+        8 for #710 in the same change; had #709 landed alone, every existing
+        entry would have keyed identically and come back a field short.
+        """
+        from ai_jury import cache as cache_mod
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Cache(tmp)
+            cfg = _config()
+            key = cache_key(cfg, SAMPLE_DIFF)
+            cache.dir.mkdir(parents=True, exist_ok=True)
+            outcome = outcome_to_dict(run_jury(cfg, SAMPLE_DIFF, mock=True))
+            for review in outcome["reviews"]:
+                del review["model"]  # the shape a pre-#709 writer produced
+            entry = {"cache_schema": 1, "cache_key": key, "outcome": outcome}
+            # Signed with the real key and stored under its own digest, so the
+            # schema is the ONLY reason this is a miss.
+            entry["mac"] = cache_mod._compute_mac(cache_mod._hmac_key(cache.dir), entry)
+            (cache.dir / f"{key}.json").write_text(json.dumps(entry), encoding="utf-8")
+            self.assertIsNone(cache.load(key))
+
+    def test_a_current_entry_round_trips_the_sent_model_id(self):
+        """The other half: what the bump protects is a field that really is read
+        back, so a fresh entry must carry it rather than being re-derived."""
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Cache(tmp)
+            cfg = _config()
+            key = cache_key(cfg, SAMPLE_DIFF)
+            outcome = run_jury(cfg, SAMPLE_DIFF, mock=True)
+            cache.store(key, outcome)
+            loaded = cache.load(key)
+            self.assertEqual(
+                [r.model for r in loaded.reviews],
+                [r.model for r in outcome.reviews],
+            )
+
     @unittest.skipIf(os.name == "nt", "POSIX permission semantics")
     def test_world_writable_dir_load_is_a_miss(self):
         with tempfile.TemporaryDirectory() as tmp:
