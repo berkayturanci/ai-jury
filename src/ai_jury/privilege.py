@@ -39,6 +39,28 @@ _DANGEROUS_FLAGS: tuple[str, ...] = (
 _WRITE_TOOLS: tuple[str, ...] = ("Edit", "Write", "NotebookEdit", "Bash")
 
 
+def _disallowed_tools_at(args: list[str], i: int) -> tuple[str, int] | None:
+    """Read a ``--disallowed-tools`` flag at *args[i]*, in either spelling.
+
+    Returns ``(value, span)`` — the comma-separated tool list and how many
+    tokens the flag occupies (2 for ``--disallowed-tools Edit,Write``, 1 for
+    ``--disallowed-tools=Edit,Write``) — or ``None`` when the token does not
+    start a readable flag, including a trailing space form with no value left.
+
+    Shared by :func:`_ensure_claude_disallowed` (which enforces the flag) and
+    :func:`_claude_is_locked_down` (which audits it) so the two spellings
+    cannot drift apart again (issue #717): the audit knew only the space form,
+    so a seat configured with ``--disallowed-tools=Edit,Write,NotebookEdit,Bash``
+    was enforced correctly, reported as *not* read-only, and aborted ``--strict``.
+    """
+    a = args[i]
+    if a == "--disallowed-tools":
+        return (args[i + 1], 2) if i + 1 < len(args) else None
+    if a.startswith("--disallowed-tools="):
+        return a.split("=", 1)[1], 1
+    return None
+
+
 def _args_str(extra_args: list[str]) -> str:
     return " ".join(extra_args)
 
@@ -110,19 +132,21 @@ def _ensure_claude_disallowed(extra_args: list[str]) -> list[str]:
     found = False
     while i < len(args):
         a = args[i]
-        # Space-separated form: --disallowed-tools Edit,Write
-        if a == "--disallowed-tools" and i + 1 < len(args):
+        # Both spellings, via the shared reader: the space form
+        # (--disallowed-tools Edit,Write) and the equals form
+        # (--disallowed-tools=Edit,Write — review of #288: the exact-match check
+        # missed it, so a narrower =-value could sit after the injected safe set
+        # and, if the CLI is last-wins, narrow the deny set). The value is
+        # rewritten in the spelling it was written in.
+        hit = _disallowed_tools_at(args, i)
+        if hit is not None:
+            value, span = hit
             found = True
-            out.extend([a, _merged(args[i + 1])])
-            i += 2
-            continue
-        # Equals form: --disallowed-tools=Edit,Write (review of #288 — the
-        # exact-match check missed this, so a narrower =-value could sit after
-        # the injected safe set and, if the CLI is last-wins, narrow the deny set).
-        if a.startswith("--disallowed-tools="):
-            found = True
-            out.append("--disallowed-tools=" + _merged(a.split("=", 1)[1]))
-            i += 1
+            if span == 2:
+                out.extend([a, _merged(value)])
+            else:
+                out.append("--disallowed-tools=" + _merged(value))
+            i += span
             continue
         out.append(a)
         i += 1
@@ -306,12 +330,24 @@ def enforce_read_only(vendor: str, name: str, extra_args: list[str]) -> list[str
 
 
 def _claude_is_locked_down(extra_args: list[str]) -> bool:
-    """True when claude is given --disallowed-tools covering all write tools."""
+    """True when claude is given --disallowed-tools covering all write tools.
+
+    Reads the flag through :func:`_disallowed_tools_at`, the same reader
+    :func:`_ensure_claude_disallowed` enforces it with (issue #717), so a seat
+    whose args this module accepts as read-only is exactly a seat that module
+    leaves unchanged — in either spelling of the flag.
+    """
     disallowed: set[str] = set()
     args = list(extra_args)
-    for i, a in enumerate(args):
-        if a == "--disallowed-tools" and i + 1 < len(args):
-            disallowed |= {t.strip() for t in args[i + 1].split(",") if t.strip()}
+    i = 0
+    while i < len(args):
+        hit = _disallowed_tools_at(args, i)
+        if hit is None:
+            i += 1
+            continue
+        value, span = hit
+        disallowed |= {t.strip() for t in value.split(",") if t.strip()}
+        i += span
     return all(t in disallowed for t in _WRITE_TOOLS)
 
 
