@@ -915,13 +915,19 @@ class APathShapedTokenIsNeverReadAsASymbol(unittest.TestCase):
         self.assertFalse(ballot["counts_as_review"])
         self.assertEqual(ballot["abstention_cause"], "not_in_change")
 
-    def test_a_known_extension_does_not_resolve_on_its_stem(self):
-        changed = change_index(self._CALL_HUNK)
-        self.assertEqual(resolve_stated_scope("env.py", changed), ([], ["env.py"]))
+    def test_a_dotted_name_without_parentheses_is_a_path_claim(self):
+        """Round 7: an extension list cannot be complete — `foo.proto` fell
+        through to the symbol index and matched a `proto()` call."""
+        hunk = self._CALL_HUNK.replace("env(1)", "proto(1)")
+        changed = change_index(hunk)
+        self.assertTrue(changed.has_symbol("proto"))
+        for token in ("env.py", "foo.proto", "module.env"):
+            with self.subTest(token=token):
+                self.assertEqual(resolve_stated_scope(token, changed), ([], [token]))
 
     def test_an_identifier_still_resolves_as_the_member_named(self):
         changed = change_index(self._CALL_HUNK)
-        self.assertEqual(resolve_stated_scope("module.env()", changed), (["module.env"], []))
+        self.assertEqual(resolve_stated_scope("module.env()", changed), (["module.env()"], []))
         self.assertEqual(resolve_stated_scope("env", changed), (["env"], []))
 
     def test_prose_followed_by_a_space_and_a_parenthesis_is_not_a_call(self):

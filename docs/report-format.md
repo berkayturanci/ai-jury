@@ -206,11 +206,12 @@ A token resolves when it names:
   a call is `name(` with no space before the parenthesis (`nothing (just
   wording)` is prose, not a call). A bare English word is not a symbol, which is
   why `Checked: nothing` resolves to nothing even in a diff whose prose happens
-  to contain the word. A path-shaped token — one with a `/`, a leading dot, or a
-  known file extension — is a path claim and is never read as a symbol: `.env`
-  does not resolve because the change calls `env()`. An identifier-shaped
-  token such as `module.function()` is asked of the index as the member the
-  reviewer named, `function`.
+  to contain the word. A path-shaped token — one with a `/`, a leading dot, or
+  any dot without a trailing `()` — is a path claim and is never read as a
+  symbol: `.env` does not resolve because the change calls `env()`, and
+  `foo.proto` does not resolve because it calls `proto()`. A symbol claim is a
+  token with no dot, or one written as code, `module.function()`, which is
+  asked of the index as the member the reviewer named, `function`.
 
 **The change is also what splits the line into tokens.** It was split
 lexically at first — on whitespace and list punctuation — and a changed file

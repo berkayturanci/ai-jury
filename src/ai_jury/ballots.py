@@ -389,7 +389,13 @@ def _edge_stripped(piece: str) -> str:
     strip is all a token needs, so no trim is enumerated against the index at
     all.
     """
-    return piece.lstrip(_WRAP_EDGE).rstrip(_WRAP_EDGE + _TRAIL_EDGE)
+    # A trailing ``()`` is a call marker, not wrapping punctuation: it is what
+    # tells :func:`_token_resolves` that ``module.function()`` is a symbol claim
+    # rather than a file (#711 round 7), so it is kept whole.
+    call = piece.rstrip(_TRAIL_EDGE).endswith("()")
+    core = piece.rstrip(_TRAIL_EDGE)[:-2] if call else piece
+    stripped = core.lstrip(_WRAP_EDGE).rstrip(_WRAP_EDGE + _TRAIL_EDGE)
+    return stripped + "()" if call and stripped else stripped
 
 
 def _joined_against_change(pieces: list[str], changed: Any) -> list[str]:
@@ -467,51 +473,29 @@ def _is_name_shaped(token: str, value: str) -> bool:
     return any(f"{o}{token}{c}" in (value or "") for o, c in (("`", "`"), ('"', '"'), ("“", "”")))
 
 
-#: File extensions a bare ``name.ext`` token is read as. ``Class.method`` and
-#: ``module.run`` are symbols, not files; ``a.py`` and ``notes.md`` are files.
-_FILE_EXTENSIONS = frozenset(
-    [
-        "py",
-        "md",
-        "toml",
-        "yml",
-        "yaml",
-        "json",
-        "txt",
-        "sh",
-        "js",
-        "ts",
-        "rb",
-        "html",
-        "css",
-        "cfg",
-        "ini",
-        "lock",
-        "rst",
-        "csv",
-        "xml",
-    ]
-)
-
-
 def _path_shaped(base: str) -> bool:
-    """Does *base* claim to be a path — a directory, a dotfile, or a known extension? (pure)"""
-    if "/" in base or base.startswith("."):
-        return True
-    _, dot, ext = base.rpartition(".")
-    return bool(dot) and ext.lower() in _FILE_EXTENSIONS
+    """Does *base* claim to be a path rather than a symbol? (pure)
+
+    A directory, a dotfile, or any dotted name written without ``()``. The
+    extension list this replaced could not be complete — ``foo.proto`` fell
+    through to the symbol index and matched a ``proto()`` call (#711 round 7) —
+    so the rule is now the reviewer's own punctuation: ``module.function()``
+    names code, ``module.function`` and ``foo.proto`` name a file.
+    """
+    return "/" in base or base.startswith(".") or ("." in base and not base.endswith("()"))
 
 
 def _token_resolves(token: str, changed: Any) -> bool:
     """Is *token* a path or symbol that is actually in the change? (pure)
 
-    A path-shaped token — a directory, a dotfile, a known extension — is a path
-    claim and resolves only as a path. It is never split and asked of the symbol
-    index: ``.env`` against a hunk that adds ``env(1)`` used to resolve on the
-    remnant ``env`` and count as a review of a file the reviewer never named
-    (#711 round 6). An identifier-shaped token is asked as the symbol the
-    reviewer named — for ``module.function()`` the member, ``function`` —
-    because the qualification is the reviewer's and the member is the claim.
+    A path-shaped token — a directory, a dotfile, or a dotted name without
+    ``()`` — is a path claim and resolves only as a path. It is never split and
+    asked of the symbol index: ``.env`` against a hunk that adds ``env(1)`` used
+    to resolve on the remnant ``env`` and count as a review of a file the
+    reviewer never named (#711 round 6). A symbol claim is a token with no dot,
+    or one ending in ``()``; for ``module.function()`` the member ``function``
+    is asked, because the qualification is the reviewer's and the member is
+    the claim.
     """
     base = _path_base(token)
     if changed.has_path(base):
