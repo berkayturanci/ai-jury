@@ -2323,7 +2323,11 @@ def main(argv: list[str] | None = None) -> int:
 
     # Optional local result cache (issue #33): a hit skips the run entirely; a
     # miss runs the jury and stores the outcome. The key covers the diff,
-    # effective config, prompt version, package version, context policy, and seed.
+    # effective config, prompt version, package version, context policy, the
+    # context text that policy admits (#738), and seed. ``context`` is passed
+    # straight through from ``_read_diff`` — the same string ``run_jury`` gets,
+    # so the key is a function of what the panel is shown and not of a second
+    # reading of the config.
     cache = None
     cache_k = None
     outcome = None
@@ -2332,7 +2336,12 @@ def main(argv: list[str] | None = None) -> int:
 
         cache = Cache(args.cache_dir)
         cache_k = cache_key(
-            config, diff, mock=args.mock, policy=policy, mode=("issue" if args.issue else "code")
+            config,
+            diff,
+            context=context,
+            mock=args.mock,
+            policy=policy,
+            mode=("issue" if args.issue else "code"),
         )
         outcome = cache.load(cache_k)
         if outcome is not None:

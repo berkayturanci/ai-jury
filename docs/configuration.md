@@ -538,6 +538,12 @@ version, the package version, the context policy, and the seed — so any change
 those is a miss (automatic invalidation). A cache hit is marked in the progress
 log and in the report's "Run metadata" section (`served from local cache`).
 
+It also covers the **context text**, but only where the panel is shown it: under
+`mode = "expanded"` the PR title and body go into every Round 1 prompt, so
+editing a PR description is a miss (#738). Under the default `diff-only` the
+context never reaches the panel and is not part of the key, so entries written
+by default-mode runs keep their keys.
+
 **Privacy.** A cache entry stores the full structured outcome, including agent
 review/debate/synthesis text derived from the diff. Treat the cache directory as
 sensitive — the same trust level as the diff. It defaults to `$JURY_CACHE_DIR` or
