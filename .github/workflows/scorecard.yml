@@ -19,6 +19,10 @@ jobs:
   analysis:
     name: Scorecard analysis
     runs-on: ubuntu-latest
+    # No shell in this job either: `ossf/scorecard-action` makes every request,
+    # including the publish to the OpenSSF REST API, and this ceiling is the only
+    # bound over it.
+    timeout-minutes: 30
     permissions:
       # Needed to publish results to the OpenSSF REST API (OIDC).
       id-token: write

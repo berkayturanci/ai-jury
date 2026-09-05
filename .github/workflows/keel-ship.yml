@@ -92,6 +92,13 @@ jobs:
     # it. Only the evidence gate needs to re-read the PR when a verdict lands.
     if: ${{ github.event_name != 'issue_comment' }}
     runs-on: ubuntu-latest
+    # This workflow writes the check-run a merge is gated on, and it runs on
+    # every pull request. Under GitHub's six-hour default a stalled request here
+    # leaves that check *open* rather than failing it — a merge blocked with
+    # nothing reported, which is worse than red. Each command below carries its
+    # own bound; this is the backstop, and the ceiling test in
+    # `tests/test_publish_release_chain.py` checks it clears their sum (#697).
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -100,11 +107,11 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install keel (pinned)
-        run: python -m pip install --upgrade pip && pip install "keel-workflow==1.19.0"
+        run: timeout 120 python -m pip install --upgrade pip && timeout 300 pip install "keel-workflow==1.19.0"
       - name: Make base branch available locally
         env:
           BASE: ${{ github.base_ref || 'main' }}
-        run: git fetch --no-tags origin "$BASE:$BASE" || true
+        run: timeout 60 git fetch --no-tags origin "$BASE:$BASE" || true
       - name: Run keel ship (informational)
         id: ship
         env:
@@ -116,7 +123,7 @@ jobs:
           if [ -n "$PR" ]; then
             ARGS+=(--pr "$PR")
           fi
-          keel ship "${ARGS[@]}" | tee ship.txt
+          timeout 600 keel ship "${ARGS[@]}" | tee ship.txt
           echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
           { echo '### 🚢 keel ship'; echo '```'; cat ship.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       - name: Comment assessment on the PR
@@ -135,7 +142,7 @@ jobs:
             echo
             echo "_decision exit code: ${CODE} (0 = not BLOCK). Informational — not a required gate._"
           } > body.md
-          gh pr comment "$PR" --body-file body.md
+          timeout 60 gh pr comment "$PR" --body-file body.md
 
   evidence:
     # Deliberately NOT "keel evidence (required)". Actions names this job's own
@@ -145,6 +152,9 @@ jobs:
     # indistinguishable to branch protection, which matches by name.
     name: keel evidence (verify)
     runs-on: ubuntu-latest
+    # See `ship` above: this is the job that publishes the gating check-run, so a
+    # hang here is a merge blocked with nothing reported.
+    timeout-minutes: 25
     # Ordered after `ship` on purpose. Arming falls through to the ship-assessment
     # comment for any branch outside evidence._SHIP_BRANCH_RE, and that comment is
     # written by the `ship` job — running the two in parallel let this gate read the
@@ -168,7 +178,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install keel (pinned)
-        run: python -m pip install --upgrade pip && pip install "keel-workflow==1.19.0"
+        run: timeout 120 python -m pip install --upgrade pip && timeout 300 pip install "keel-workflow==1.19.0"
       - name: Verify posted ship evidence
         env:
           GH_TOKEN: ${{ github.token }}
@@ -202,7 +212,7 @@ jobs:
           # be deleted. Resolve the PR's real head instead.
           HEAD_SHA="$PR_HEAD_SHA"
           if [ -z "$HEAD_SHA" ]; then
-            HEAD_SHA=$(gh pr view "$PR" --json headRefOid -q .headRefOid)
+            HEAD_SHA=$(timeout 60 gh pr view "$PR" --json headRefOid -q .headRefOid)
           fi
 
           # Stamped immediately before the read and published as the check-run's
@@ -219,7 +229,11 @@ jobs:
           EVALUATED_AT=$(date -u +%s%N)
 
           set +e
-          keel evidence-verify "${ARGS[@]}"
+          # 124 on a timeout falls through to the `*)` arm below, which publishes
+          # a `failure` conclusion. That is the point: a bounded call that gives
+          # up reports a verdict, where an unbounded one leaves the gating check
+          # incomplete and the pull request unmergeable with nothing to read.
+          timeout 300 keel evidence-verify "${ARGS[@]}"
           RC=$?
           set -e
 
@@ -253,7 +267,7 @@ jobs:
             # `select(.)` keeps "no check-run yet" as empty output: `max_by` over
             # an empty list is null, which would otherwise interpolate to a
             # single space — not empty, and parsed as an existing run with no id.
-            existing=$(gh api --method GET \
+            existing=$(timeout 60 gh api --method GET \
               "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}/check-runs" \
               -f "check_name=${CHECK_NAME}" \
               --jq '.check_runs | map(select(.id)) | max_by(.external_id | tonumber? // 0) | select(.) | "\(.id) \(.external_id // "")"' 2>/dev/null) || existing=""
@@ -286,10 +300,10 @@ jobs:
             fi
 
             if [ -n "$existing_id" ]; then
-              gh api -X PATCH "repos/${GITHUB_REPOSITORY}/check-runs/${existing_id}" \
+              timeout 60 gh api -X PATCH "repos/${GITHUB_REPOSITORY}/check-runs/${existing_id}" \
                 "${body[@]}" >/dev/null
             else
-              gh api -X POST "repos/${GITHUB_REPOSITORY}/check-runs" \
+              timeout 60 gh api -X POST "repos/${GITHUB_REPOSITORY}/check-runs" \
                 -f "name=${CHECK_NAME}" -f "head_sha=${HEAD_SHA}" "${body[@]}" >/dev/null
             fi
           }

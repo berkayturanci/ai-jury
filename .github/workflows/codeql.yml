@@ -20,6 +20,11 @@ jobs:
   analyze:
     name: Analyze (Python)
     runs-on: ubuntu-latest
+    # The analysis is entirely `uses:` steps, so there is no shell here to bound
+    # and this ceiling is the only bound the job has (#697). CodeQL downloads its
+    # bundle and uploads a SARIF; without a ceiling either of those stalls under
+    # GitHub's six-hour default on every push and pull request.
+    timeout-minutes: 30
     permissions:
       security-events: write
       actions: read
