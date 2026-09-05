@@ -365,8 +365,11 @@ def _path_base(token: str) -> str:
 
 #: A call marker ``()`` that may sit inside wrapping punctuation and before
 #: trailing sentence punctuation: ``(module.env()),`` names the call
-#: ``module.env()``. Group 1 is everything before the marker.
-_WRAPPED_CALL_RE = re.compile(r"^(.*?)\(\)[\)\]\}\"'`*.,;:!?]*$")
+#: ``module.env()``. Group 1 is everything before the marker. The trailing class
+#: is *derived* from the same two edge sets the plain strip uses, so the two
+#: cannot disagree about what counts as wrapping (#711 round 9: the hand-written
+#: class lacked ``<>`` and the curly quotes, which ``_WRAP_EDGE`` has).
+_WRAPPED_CALL_RE = re.compile(r"^(.*?)\(\)[" + re.escape(_WRAP_EDGE + _TRAIL_EDGE) + r"]*$")
 
 
 def _edge_stripped(piece: str) -> str:
