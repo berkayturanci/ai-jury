@@ -29,6 +29,7 @@ from .config import (
     is_commandless_vendor,
     load_config,
     normalise_vendor,
+    spec_adapter,
     vendor_identity,
 )
 from .panel import shortfall
@@ -98,7 +99,7 @@ def _resolved_command(spec):
     """
     command = getattr(spec, "command", "") or ""
     has_endpoint = bool(getattr(spec, "endpoint", None))
-    if not command or is_commandless_vendor(getattr(spec, "vendor", "")) or has_endpoint:
+    if not command or is_commandless_vendor(spec_adapter(spec)) or has_endpoint:
         return None
     try:
         return shutil.which(command)
@@ -131,7 +132,7 @@ def _endpoint_for(spec):
     """
     if getattr(spec, "endpoint", None):
         return redact_url_userinfo(spec.endpoint)
-    vendor = normalise_vendor(getattr(spec, "vendor", ""))
+    vendor = spec_adapter(spec)
     if vendor == "local":
         return _DEFAULT_LOCAL_ENDPOINT
     try:
@@ -151,7 +152,9 @@ def _unavailable_transport(spec) -> str:
     vendor: ``vendor = "XAI-API"`` used to be a hosted API to one reader and a
     CLI with a missing ``command`` to the other.
     """
-    vendor = normalise_vendor(getattr(spec, "vendor", ""))
+    # Asked of the adapter (#705): which transport failed is a fact about how
+    # the seat is reached, not about whose model was on the other end.
+    vendor = spec_adapter(spec)
     if vendor == "local":
         return "local"
     if vendor in _HOSTED_API_VENDORS or vendor.endswith("-api"):
@@ -197,6 +200,11 @@ def _agent_entry(spec, probe_models: bool = False):
         # `min_vendors`, which is `cli` for anything the build cannot identify.
         "vendor": _redact_value(spec.vendor),
         "vendor_identity": vendor_identity(getattr(spec, "vendor", "")),
+        # The third field answers the third question (#705): `vendor` is what the
+        # operator called the seat, `vendor_identity` is what the gate counts it
+        # as, and `adapter` is the protocol that builds its command line. A
+        # Codex seat and a GPT-through-Cursor seat differ in nothing else.
+        "adapter": spec_adapter(spec),
         "available": available,
         "reason": None if available else _unavailable_reason(spec, capability_warnings),
         "version": _redact_value(caps.get("version")),
@@ -210,7 +218,7 @@ def _agent_entry(spec, probe_models: bool = False):
         # text report would pay that for nothing, so the probe is opt-in.
         "models": _probe_models(spec) if probe_models else None,
         "effort": _redact_value(getattr(spec, "effort", None)),
-        "effort_supported": effort_supported(getattr(spec, "vendor", "")),
+        "effort_supported": effort_supported(spec_adapter(spec)),
         "capability_warnings": capability_warnings,
     }
 
@@ -541,13 +549,17 @@ def doctor_report_dict(diagnostics) -> dict:
     agents = []
     for entry in diagnostics.get("agents", []):
         vendor = entry.get("vendor") or ""
+        adapter = entry.get("adapter") or ""
         command = entry.get("command") or ""
         endpoint = entry.get("endpoint")
-        transport = _transport(vendor, command, endpoint)
+        # The transport follows the adapter (#705): `vendor = "openai",
+        # adapter = "cli"` is reached over a CLI, not over OpenAI's API.
+        transport = _transport(adapter or vendor, command, endpoint)
         item = {
             "name": entry.get("name"),
             "vendor": vendor,
             "vendor_identity": entry.get("vendor_identity") or "",
+            "adapter": adapter,
             "transport": transport,
             "available": bool(entry.get("available")),
             "reason": entry.get("reason"),
@@ -627,7 +639,14 @@ def render_report(diagnostics) -> str:
             vendor_field = agent["vendor"]
             if identity and identity != normalise_vendor(vendor_field):
                 vendor_field = f"{vendor_field} -> counts as {identity}"
-            lines.append(f"  [{status:>9}] {agent['name']} (vendor={vendor_field}, {address})")
+            # Vendor AND adapter on every row (#705), never one standing in for
+            # both: a reader must be able to tell a Codex seat (openai/openai)
+            # from a GPT-through-Cursor seat (openai/cli) at a glance, and the
+            # `--doctor` row is where that difference becomes visible.
+            lines.append(
+                f"  [{status:>9}] {agent['name']} (vendor={vendor_field}, "
+                f"adapter={agent.get('adapter') or '(default)'}, {address})"
+            )
             if agent.get("command"):
                 resolved = agent.get("resolved") or "(not found on PATH)"
                 lines.append(f"              resolved: {resolved}")

@@ -549,6 +549,11 @@ AGENT_TYPES = {
     # the configured string, `vendor_identity` is what the seat counts as under
     # min_vendors.
     "vendor_identity": str,
+    # The protocol the seat is invoked through (#705). Third field, third
+    # question: `vendor` is what the operator called it, `vendor_identity` what
+    # the gate counts it as, `adapter` how its command line is built — a Codex
+    # seat and a GPT-through-Cursor seat differ in nothing else.
+    "adapter": str,
     "transport": str,
     "available": bool,
     "reason": (str, type(None)),

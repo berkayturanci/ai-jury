@@ -82,7 +82,11 @@ def _read_only_extra_args(spec: AgentSpec) -> list[str]:
     diff is never write/tool-capable. Config may widen a codex sandbox knowingly,
     but never remove the restriction.
     """
-    return privilege.enforce_read_only(spec.vendor, spec.name, spec.extra_args)
+    # Keyed on the ADAPTER, not the vendor (issue #705): the sandbox flag is a
+    # property of the CLI being spawned, not of whose model answers. A seat with
+    # `vendor = "openai", adapter = "cli", command = "cursor-agent"` must not have
+    # codex's `-s read-only` spliced into an unrelated binary.
+    return privilege.enforce_read_only(config_module.spec_adapter(spec), spec.name, spec.extra_args)
 
 
 def _write_extra_args(spec: AgentSpec) -> list[str]:
@@ -91,7 +95,7 @@ def _write_extra_args(spec: AgentSpec) -> list[str]:
     Reached ONLY from ``jury run-agent --role implement|fix --allow-write``, via
     :meth:`Adapter.build_write_argv`. Nothing on the panel path calls it.
     """
-    return privilege.enable_write(spec.vendor, spec.name, spec.extra_args)
+    return privilege.enable_write(config_module.spec_adapter(spec), spec.name, spec.extra_args)
 
 
 # Short timeout for capability/version probes. Detection is best-effort and must
@@ -599,7 +603,10 @@ def effort_warnings(agents, adapter_factory=None) -> list[str]:
     seen: set[str] = set()
     out: list[str] = []
     for spec in agents:
-        vendor = getattr(spec, "vendor", "")
+        # The adapter, not the vendor (#705): how effort is expressed — a model
+        # suffix, a request-body field, nothing at all — is a property of the
+        # protocol the seat is invoked through.
+        vendor = config_module.spec_adapter(spec)
         effort = getattr(spec, "effort", None)
         known_models = None
         if adapter_factory is not None and effort and _effort_uses_model_listing(vendor):
@@ -781,7 +788,9 @@ class Adapter:
         """
         try:
             return effort_args(
-                self.spec.vendor, getattr(self.spec, "effort", None), self.spec.model
+                config_module.spec_adapter(self.spec),
+                getattr(self.spec, "effort", None),
+                self.spec.model,
             )
         except ValueError:
             return EffortPlan()
@@ -1045,7 +1054,7 @@ class AgyAdapter(Adapter):
             return EffortPlan()
         try:
             return effort_args(
-                self.spec.vendor,
+                config_module.spec_adapter(self.spec),
                 self.spec.effort,
                 self.spec.model,
                 known_models=self._cached_model_listing(),
@@ -2192,6 +2201,11 @@ class GenericCLIAdapter(Adapter):
         )
 
 
+#: The adapter registry: protocol name -> the class that builds its argv. Keyed
+#: by vendor name because a vendor's shipped adapter IS its default protocol —
+#: which is also why the vendor vocabulary doubles as the ``adapter`` vocabulary
+#: (``config.recognised_adapters``). A seat naming ``adapter`` picks a row here
+#: directly instead of inheriting its vendor's (issue #705).
 _VENDOR_ADAPTERS: dict[str, type[Adapter]] = {
     "anthropic": ClaudeAdapter,
     "openai": CodexAdapter,
@@ -2213,6 +2227,10 @@ _VENDOR_ADAPTERS: dict[str, type[Adapter]] = {
 def register_adapter(vendor: str, adapter_cls: type[Adapter]) -> None:
     """Register a custom adapter class for a vendor string.
 
+    The name registered is usable as BOTH a ``vendor`` and an ``adapter``
+    (issue #705): the registry is the adapter vocabulary, so a custom adapter is
+    selectable by a seat that keeps some other vendor identity.
+
     Registering also teaches ``config`` the name (issue #701): a vendor with an
     adapter behind it is a vendor this run genuinely knows, so it must not warn
     as unknown and must not be folded into the generic ``cli`` identity at the
@@ -2231,9 +2249,19 @@ def register_adapter(vendor: str, adapter_cls: type[Adapter]) -> None:
 
 
 def make_adapter(spec: AgentSpec, mock: bool = False) -> Adapter:
+    """The adapter that builds *spec*'s command line.
+
+    Selected by the seat's ADAPTER key, which is its ``vendor`` unless the
+    operator named one (issue #705). Keying this on the vendor made the two
+    inseparable: a GPT model reached through Cursor's ``cursor-agent`` got
+    ``codex exec`` argv it cannot parse, and the only way to a passthrough argv
+    was ``vendor = "cli"``, which cost the seat its identity at the panel gate.
+    Nothing else about the seat moves — the ballot, the report and
+    ``min_vendors`` all still read ``spec.vendor``.
+    """
     if mock:
         return MockAdapter(spec)
-    cls = _VENDOR_ADAPTERS.get(config_module.normalise_vendor(spec.vendor))
+    cls = _VENDOR_ADAPTERS.get(config_module.spec_adapter(spec))
     if cls is not None:
         return cls(spec)
     if spec.endpoint or (spec.api_key_env and not spec.command):

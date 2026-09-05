@@ -222,7 +222,9 @@ def transport_for(spec: AgentSpec) -> str:
     """
     from .doctor import _transport
 
-    return _transport(spec.vendor, spec.command, spec.endpoint)
+    # Keyed on the adapter (#705), like doctor's own row: how a seat is reached
+    # follows the protocol it is invoked through, not its vendor identity.
+    return _transport(spec.adapter_key, spec.command, spec.endpoint)
 
 
 # --- attribution -------------------------------------------------------------
