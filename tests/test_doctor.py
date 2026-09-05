@@ -508,6 +508,7 @@ name = "qwen"
 vendor = "local"
 model = "qwen2.5-coder:7b"
 endpoint = "http://localhost:11434/v1"
+tier = "economical"
 """
 
 #: The exported schema, pinned key-by-key. Changing any of this is a BREAKING
@@ -831,6 +832,16 @@ class DoctorJsonSchemaTests(unittest.TestCase):
         # The claude CLI has no headless effort knob.
         self.assertIsNone(by_name["claude"]["effort"])
         self.assertFalse(by_name["claude"]["effort_supported"])
+
+    def test_tier_reflects_config_and_defaults_to_frontier(self):
+        # #714: the label survives into the export as written; an unlabelled
+        # seat reads back as the default, so a bench can be checked before it
+        # is routed.
+        _diag, report = _export()
+        by_name = {a["name"]: a for a in report["agents"]}
+        self.assertEqual(by_name["qwen"]["tier"], "economical")
+        self.assertEqual(by_name["claude"]["tier"], "frontier")
+        self.assertEqual(by_name["gpt"]["tier"], "frontier")
 
     def test_unavailable_agents_carry_a_reason_and_available_ones_do_not(self):
         _diag, report = _export()
