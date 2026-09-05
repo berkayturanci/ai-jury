@@ -17,6 +17,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from . import panel
+from .config import normalise_vendor, vendor_identity
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from .config import JuryConfig
@@ -69,6 +70,12 @@ def panel_accounting(reviews, chair: str = "", ballots=None) -> dict:
     actually contributed a review, which is the number that matters for
     cross-vendor consensus: three slots from one vendor are not three perspectives.
 
+    Vendors are counted by :func:`config.vendor_identity`, not by the raw
+    string: a seat whose vendor the tool does not recognise ran on the generic
+    ``cli`` fallback and is counted as ``cli``, so two unidentifiable seats are
+    one vendor here even though the report still names each one honestly
+    (issue #701).
+
     ``reviews_supplied`` is a different number again, and the one #699 was about:
     how many reviews the bundle hands on. It is not ``configured`` (every seat
     that ran, silent ones included), not ``effective`` (a slot that returned
@@ -110,7 +117,7 @@ def panel_accounting(reviews, chair: str = "", ballots=None) -> dict:
         st = review_status(r)
         if st in ("findings", "clean"):
             effective_count += 1
-            vendor = getattr(r, "vendor", "")
+            vendor = vendor_identity(getattr(r, "vendor", ""))
             if vendor:
                 contributing_vendors.add(vendor)
         elif st == "abstained":
@@ -144,8 +151,12 @@ def distinct_vendors(specs) -> int:
     ``[[agent]]`` entries all pointing at one vendor are one perspective, so a
     run configured that way never claimed cross-vendor consensus and must not be
     failed for not delivering it.
+
+    Counted by :func:`config.vendor_identity`, so a pair of seats naming
+    vendors this build does not know collapses to the single ``cli`` identity
+    they actually share (issue #701) rather than reading as two.
     """
-    return len({(getattr(s, "vendor", "") or "").strip().lower() for s in specs or []} - {""})
+    return len({vendor_identity(getattr(s, "vendor", "")) for s in specs or []} - {""})
 
 
 def collapse_reason(reviews, required: int, configured_vendors: int | None = None) -> str | None:
@@ -191,6 +202,9 @@ def _agent_entry(result) -> dict:
     """
     return {
         "name": result.agent,
+        # PROVENANCE: the vendor string as configured, never the collapsed
+        # identity. `panel.vendors` is the gate's count of `vendor_identity`;
+        # this is what the seat said it was (#701).
         "vendor": result.vendor,
         "status": "ok" if result.ok else "failed",
         "duration_s": round(float(result.duration_s), 3),
@@ -243,7 +257,7 @@ def estimate_economics(results: list) -> dict:
 
     for r in results:
         agent = getattr(r, "agent", "unknown")
-        vendor = (getattr(r, "vendor", "") or "").lower()
+        vendor = normalise_vendor(getattr(r, "vendor", ""))
         output_len = len(getattr(r, "output", "") or "")
         # Heuristic: base prompt ~800 tokens + output tokens
         tokens_est = max(100, 800 + (output_len // 4)) if getattr(r, "ok", False) else 200

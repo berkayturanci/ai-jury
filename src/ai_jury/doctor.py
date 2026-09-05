@@ -24,7 +24,14 @@ from pathlib import Path
 
 from . import __version__
 from .adapters import effort_supported, make_adapter
-from .config import ConfigError, load_config
+from .config import (
+    ConfigError,
+    is_commandless_vendor,
+    load_config,
+    normalise_vendor,
+    spec_adapter,
+    vendor_identity,
+)
 from .panel import shortfall
 from .redaction import redact, redact_url_userinfo
 
@@ -91,14 +98,8 @@ def _resolved_command(spec):
     when nothing is found on PATH.
     """
     command = getattr(spec, "command", "") or ""
-    vendor = (getattr(spec, "vendor", "") or "").lower()
     has_endpoint = bool(getattr(spec, "endpoint", None))
-    if (
-        not command
-        or vendor in ("local", "anthropic-api", "openai-api", "google-api", "openai-compatible")
-        or vendor.endswith("-api")
-        or has_endpoint
-    ):
+    if not command or is_commandless_vendor(spec_adapter(spec)) or has_endpoint:
         return None
     try:
         return shutil.which(command)
@@ -131,7 +132,7 @@ def _endpoint_for(spec):
     """
     if getattr(spec, "endpoint", None):
         return redact_url_userinfo(spec.endpoint)
-    vendor = (getattr(spec, "vendor", "") or "").lower()
+    vendor = spec_adapter(spec)
     if vendor == "local":
         return _DEFAULT_LOCAL_ENDPOINT
     try:
@@ -139,6 +140,26 @@ def _endpoint_for(spec):
         return api_url() if callable(api_url) else None
     except Exception:  # noqa: BLE001 - diagnostics must never crash
         return None
+
+
+def _unavailable_transport(spec) -> str:
+    """Which transport failed for an unavailable seat: local, hosted-api or cli.
+
+    The single classifier behind both unavailability messages — the per-agent
+    ``reason`` in the export and the corresponding line in ``warnings`` (issue
+    #701, review round 3). Two readers asking the same question of the same seat
+    must get the same answer, so they ask it here, once, of the normalised
+    vendor: ``vendor = "XAI-API"`` used to be a hosted API to one reader and a
+    CLI with a missing ``command`` to the other.
+    """
+    # Asked of the adapter (#705): which transport failed is a fact about how
+    # the seat is reached, not about whose model was on the other end.
+    vendor = spec_adapter(spec)
+    if vendor == "local":
+        return "local"
+    if vendor in _HOSTED_API_VENDORS or vendor.endswith("-api"):
+        return "hosted-api"
+    return "cli"
 
 
 def _unavailable_reason(spec, capability_warnings) -> str:
@@ -150,11 +171,11 @@ def _unavailable_reason(spec, capability_warnings) -> str:
     """
     if capability_warnings:
         return "; ".join(capability_warnings)
-    vendor = (getattr(spec, "vendor", "") or "").lower()
-    if vendor == "local":
+    transport = _unavailable_transport(spec)
+    if transport == "local":
         endpoint = redact_url_userinfo(spec.endpoint or _DEFAULT_LOCAL_ENDPOINT)
         return f"endpoint '{endpoint}' is not reachable"
-    if vendor in _HOSTED_API_VENDORS or vendor.endswith("-api"):
+    if transport == "hosted-api":
         return "the hosted API is not reachable"
     if getattr(spec, "command", ""):
         return f"command '{_redact_value(spec.command)}' is not on PATH"
@@ -170,7 +191,20 @@ def _agent_entry(spec, probe_models: bool = False):
         "command": _redact_value(spec.command),
         "endpoint": _endpoint_for(spec),
         "resolved": _resolved_command(spec),
+        # Two vendor fields, because they answer two different questions and a
+        # row that showed only one was read as answering both (#701, round 2).
+        # `vendor` is provenance: the vendor the operator named, in the one
+        # normalised spelling every rule reads (round 3 — the spec normalises on
+        # construction, so this is the same string the doctor reasons about).
+        # `vendor_identity` is the gate's view: what this seat counts as under
+        # `min_vendors`, which is `cli` for anything the build cannot identify.
         "vendor": _redact_value(spec.vendor),
+        "vendor_identity": vendor_identity(getattr(spec, "vendor", "")),
+        # The third field answers the third question (#705): `vendor` is what the
+        # operator called the seat, `vendor_identity` is what the gate counts it
+        # as, and `adapter` is the protocol that builds its command line. A
+        # Codex seat and a GPT-through-Cursor seat differ in nothing else.
+        "adapter": spec_adapter(spec),
         "available": available,
         "reason": None if available else _unavailable_reason(spec, capability_warnings),
         "version": _redact_value(caps.get("version")),
@@ -184,7 +218,7 @@ def _agent_entry(spec, probe_models: bool = False):
         # text report would pay that for nothing, so the probe is opt-in.
         "models": _probe_models(spec) if probe_models else None,
         "effort": _redact_value(getattr(spec, "effort", None)),
-        "effort_supported": effort_supported(getattr(spec, "vendor", "")),
+        "effort_supported": effort_supported(spec_adapter(spec)),
         "capability_warnings": capability_warnings,
     }
 
@@ -202,7 +236,7 @@ def _config_summary(cfg):
 # Hosted-API vendors (issue #430/#432): no `command`/`endpoint`, so neither
 # the "local" nor the "CLI on PATH" branch below is the right diagnosis when
 # one is unavailable.
-_HOSTED_API_VENDORS = ("anthropic-api", "openai-api", "google-api")
+_HOSTED_API_VENDORS = ("anthropic-api", "openai-api", "google-api", "xai-api")
 
 
 def _detect_warnings(cfg) -> list[str]:
@@ -219,13 +253,18 @@ def _detect_warnings(cfg) -> list[str]:
     for agent in enabled:
         if _is_available(agent):
             continue
-        if agent.vendor == "local":
+        # Classified by the SAME predicate `_unavailable_reason` uses, so the
+        # warning list and the per-agent `reason` cannot diagnose one seat two
+        # different ways (issue #701, review round 3). They differ only in
+        # wording; disagreeing about *which* transport failed was the bug.
+        transport = _unavailable_transport(agent)
+        if transport == "local":
             warnings.append(
                 f"agent '{_redact_value(agent.name)}' (local) endpoint "
-                f"'{redact_url_userinfo(agent.endpoint or 'http://localhost:11434/v1')}' "
+                f"'{redact_url_userinfo(agent.endpoint or _DEFAULT_LOCAL_ENDPOINT)}' "
                 f"is not reachable"
             )
-        elif agent.vendor in _HOSTED_API_VENDORS:
+        elif transport == "hosted-api":
             # Reuse the adapter's own capability warning (issue #430) instead
             # of re-deriving the vendor -> env-var mapping here, so the
             # message can't drift from what the adapter actually reports.
@@ -250,14 +289,19 @@ def _panel_readiness(cfg, agents) -> dict:
     metadata's ``panel.vendors``. Saying so in the export is the point: an
     available CLI that returns nothing is exactly the failure #635 was, and a
     green doctor is not evidence against it.
+
+    Both counts are of :func:`config.vendor_identity`, the same arithmetic
+    :func:`metadata.distinct_vendors` does at the gate, so
+    ``vendors_configured`` equals what a run would count for the same config
+    (#701, round 2). Counting raw strings here meant two seats on the generic
+    fallback read as two vendors in ``--doctor`` and as one vendor in the run:
+    doctor called the bench cross-vendor ready and the run then refused it.
     """
     entries = {entry["name"]: entry for entry in agents}
     enabled = list(getattr(cfg, "enabled_agents", []) or [])
-    configured = {(a.vendor or "").strip().lower() for a in enabled} - {""}
+    configured = {vendor_identity(a.vendor) for a in enabled} - {""}
     available = {
-        (a.vendor or "").strip().lower()
-        for a in enabled
-        if entries.get(a.name, {}).get("available")
+        vendor_identity(a.vendor) for a in enabled if entries.get(a.name, {}).get("available")
     } - {""}
     minimum = int(getattr(cfg.ci, "min_vendors", 0) or 0)
     # The number a downstream consumer counts, which doctor never reported and
@@ -266,7 +310,8 @@ def _panel_readiness(cfg, agents) -> dict:
     # panel's consensus, not as a review, and adding it is how a bench with
     # nothing reachable came to advertise one review. Doctor can only see
     # reachability, so this is the CEILING — an agent that runs and returns
-    # nothing casts no ballot — which is why it is labelled "at most" below.
+    # nothing, or names nothing checkable, casts no review (#700) — which is why
+    # it is labelled "at most" below.
     seats = sum(1 for a in enabled if entries.get(a.name, {}).get("available"))
     panel = {
         "vendors_configured": len(configured),
@@ -340,12 +385,15 @@ def _panel_warning(panel) -> str | None:
     )
 
 
-def _recommendations(config_path, config_summary, agents) -> dict:
+def _recommendations(config_path, config_summary, agents, config_error: bool = False) -> dict:
     """Build actionable next-steps from the diagnostics (issue: doctor UX).
 
     Returns ``{"ready": bool, "steps": [str, ...]}``. ``ready`` is true when at
     least one agent is reachable. Steps point the user at the cheapest fix:
     scaffold a config, install a CLI, or use a reachable local model.
+
+    *config_error* says the config could not be loaded at all, so no seat was
+    inspected — and the only honest next step is the error itself (issue #708).
     """
     steps: list[str] = []
     available = [a for a in agents if a.get("available")]
@@ -354,6 +402,16 @@ def _recommendations(config_path, config_summary, agents) -> dict:
     # No config file in play -> suggest scaffolding one.
     if config_path is None and not Path("jury.toml").exists():
         steps.append("No jury.toml found — run `jury init` to create one.")
+
+    # Nothing was loaded, so nothing below is knowable: "install an agent CLI"
+    # would name the wrong fault for a config the RUN also refuses, and it costs
+    # a local-model probe to say it. The verdict is the config error (#708).
+    if config_error:
+        steps.append(
+            "The config could not be loaded, so no agent was inspected — fix the "
+            "config error above. A run refuses this file for the same reason."
+        )
+        return {"ready": False, "steps": steps}
 
     if not ready:
         from .adapters import list_local_models
@@ -397,6 +455,20 @@ def build_diagnostics(config_path=None, probe_models: bool = False):
     raises for a bad/missing config. The returned dict never contains the raw
     diff or any agent output.
 
+    The config is loaded WITH validation — the same call a run makes (issue
+    #708). Best-effort is about not crashing, not about being more permissive
+    than the run: this report's whole promise is that its arithmetic equals what
+    a run counts, and it cannot keep that promise while accepting a file the run
+    rejects. It used to. An `adapter` name this build does not have is a hard
+    config error, but with validation off the seat kept the name, `make_adapter`
+    missed the registry and fell through to the generic CLI adapter, and three
+    such seats reported `[available]`, `cross-vendor ready: yes` and `ready to
+    run: yes` for a config the run refused before its first round. A hard error
+    is now the report's verdict: it lands in ``config_warnings`` naming the seat
+    and the adapter, no seat is described, and ``ready to run`` is ``no``.
+    Warnings are still warnings — ``strict`` is not passed, so a soft issue
+    (unknown vendor, unknown key) is reported, not fatal, exactly as before.
+
     ``probe_models`` opts into discovering each agent's available model ids —
     a subprocess (``agy models``) or an HTTP round trip *per agent*, each
     time-boxed but not free. Only ``--doctor --json`` renders that listing, so
@@ -407,9 +479,13 @@ def build_diagnostics(config_path=None, probe_models: bool = False):
     config_warnings: list[str] = []
     agents: list = []
     panel: dict = dict(_NO_PANEL)
+    # Distinct from `config_summary is None`, which a caller may also hand
+    # `_recommendations` directly: this says a load was ATTEMPTED and failed.
+    # Cleared only on the success path, so a new `except` arm cannot forget it.
+    config_error = True
 
     try:
-        cfg = load_config(config_path)
+        cfg = load_config(config_path, validate=True)
     except FileNotFoundError as exc:
         config_warnings.append(f"config error: {redact(str(exc))[0]}")
     except tomllib.TOMLDecodeError as exc:
@@ -419,6 +495,7 @@ def build_diagnostics(config_path=None, probe_models: bool = False):
     except (KeyError, ValueError, TypeError) as exc:
         config_warnings.append(f"config error: {redact(str(exc))[0]}")
     else:
+        config_error = False
         config_summary = _config_summary(cfg)
         agents = [_agent_entry(spec, probe_models=probe_models) for spec in cfg.agents]
         config_warnings = _detect_warnings(cfg)
@@ -459,7 +536,9 @@ def build_diagnostics(config_path=None, probe_models: bool = False):
         "config": config_summary,
         "config_warnings": config_warnings,
         "panel": panel,
-        "recommendations": _recommendations(config_path, config_summary, agents),
+        "recommendations": _recommendations(
+            config_path, config_summary, agents, config_error=config_error
+        ),
     }
 
 
@@ -478,7 +557,7 @@ def capability_labels(capabilities) -> list[str]:
 
 def _transport(vendor: str, command: str, endpoint) -> str:
     """Classify how an agent is reached: ``cli``, ``api`` or ``local`` (pure)."""
-    name = (vendor or "").strip().lower()
+    name = normalise_vendor(vendor)
     if name == "local":
         return "local"
     if name.endswith("-api") or name == "openai-compatible":
@@ -505,12 +584,17 @@ def doctor_report_dict(diagnostics) -> dict:
     agents = []
     for entry in diagnostics.get("agents", []):
         vendor = entry.get("vendor") or ""
+        adapter = entry.get("adapter") or ""
         command = entry.get("command") or ""
         endpoint = entry.get("endpoint")
-        transport = _transport(vendor, command, endpoint)
+        # The transport follows the adapter (#705): `vendor = "openai",
+        # adapter = "cli"` is reached over a CLI, not over OpenAI's API.
+        transport = _transport(adapter or vendor, command, endpoint)
         item = {
             "name": entry.get("name"),
             "vendor": vendor,
+            "vendor_identity": entry.get("vendor_identity") or "",
+            "adapter": adapter,
             "transport": transport,
             "available": bool(entry.get("available")),
             "reason": entry.get("reason"),
@@ -583,7 +667,21 @@ def render_report(diagnostics) -> str:
                 address = f"command={agent.get('command', '')}"
             else:
                 address = f"endpoint={agent.get('endpoint') or '(unknown)'}"
-            lines.append(f"  [{status:>9}] {agent['name']} (vendor={agent['vendor']}, {address})")
+            # A seat whose configured vendor is not the identity it carries
+            # says so on its own row, so the row and the panel count below can
+            # be read together without arithmetic (#701, round 2).
+            identity = agent.get("vendor_identity") or ""
+            vendor_field = agent["vendor"]
+            if identity and identity != normalise_vendor(vendor_field):
+                vendor_field = f"{vendor_field} -> counts as {identity}"
+            # Vendor AND adapter on every row (#705), never one standing in for
+            # both: a reader must be able to tell a Codex seat (openai/openai)
+            # from a GPT-through-Cursor seat (openai/cli) at a glance, and the
+            # `--doctor` row is where that difference becomes visible.
+            lines.append(
+                f"  [{status:>9}] {agent['name']} (vendor={vendor_field}, "
+                f"adapter={agent.get('adapter') or '(default)'}, {address})"
+            )
             if agent.get("command"):
                 resolved = agent.get("resolved") or "(not found on PATH)"
                 lines.append(f"              resolved: {resolved}")
@@ -615,8 +713,8 @@ def render_report(diagnostics) -> str:
     panel = report["panel"]
     lines.append("Cross-vendor readiness")
     lines.append("-" * 40)
-    lines.append(f"  vendors enabled:   {panel['vendors_configured']}")
-    lines.append(f"  vendors reachable: {panel['vendors_available']}")
+    lines.append(f"  vendors enabled:   {panel['vendors_configured']} (by vendor identity)")
+    lines.append(f"  vendors reachable: {panel['vendors_available']} (by vendor identity)")
     lines.append(f"  min_vendors gate:  {panel['min_vendors'] or 'off'}")
     lines.append(f"  cross-vendor ready: {'yes' if panel['multi_vendor_ready'] else 'no'}")
     # The number a consumer counts, said in the same breath as readiness (#699).
@@ -632,6 +730,12 @@ def render_report(diagnostics) -> str:
     lines.append(
         "  note: this checks availability, not contribution. A reachable CLI "
         "can still return no review (#635) — only a run can prove the panel."
+    )
+    lines.append(
+        "  note: counted by vendor identity, the same arithmetic min_vendors "
+        "uses — a vendor this build does not recognise counts as 'cli', so two "
+        "such seats are one vendor here and in the run. The Agents rows above "
+        "show each seat's configured vendor string."
     )
     lines.append("")
 

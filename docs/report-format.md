@@ -100,7 +100,7 @@ One entry per seat that **ran**, in the stable panel order, then the chair:
 | Field | Meaning |
 | --- | --- |
 | `name` | The agent slot's name, as configured. |
-| `vendor` | The adapter's vendor (`anthropic`, `openai`, …). |
+| `vendor` | The adapter's vendor (`anthropic`, `openai`, …), **as configured**. A seat on the generic fallback keeps its own string here and counts as `cli` only in `metadata.panel.vendors`. |
 | `model` | The model id actually requested of that agent's CLI — the configured id, remapped when the vendor encodes reasoning effort in the id — or, where no id was pinned, a statement that the CLI's own default answered and that the CLI does not report which model that was. Never empty for a slot that has an agent. |
 | `model_source` | The same fact as one machine token, so a consumer need not parse English: `requested` (an id was pinned and sent), `cli_default` (nothing pinned; the CLI chose and does not say), `unknown` (the answering slot has no spec in this run's config), `none` (no agent in the slot at all — an unchaired run). |
 | `verdict` | That panelist's own round-1 stance (see below). |
@@ -180,7 +180,7 @@ per seat that ran, plus the chair as `reviewer: "chair"`:
 | `scope` | One paragraph naming what that panelist read, from four sources, most authoritative first: its own `Checked:` line (which the review prompt asks every reviewer to open with); the distinct files it attached to its structured findings (capped at 8, with a `(+N more)` tail); up to three "checked / examined / inspected / reviewed" clauses from its prose; and — **under `--issue` only** — failing a file, the claims it raised. A reply that yields **none** of those has no scope: the record becomes an `ABSTAIN` whose scope states why. The chair's record additionally names the agent that chaired, says whether that agent's own ballot is one of the counted reviews, states how many reviews the bundle carries and that this record is not one of them; the ballot cast by the chairing agent says so on its own scope too. |
 | `findings` | That panelist's own findings as `{severity, path, line, message}` — ai-jury's `file` → `path`, `claim` → `message`. The chair carries the consensus-group representatives the verifier did **not** reject. |
 | `testing` | The panelist's own `Tested:` line, else the first verification clause in its prose — both lifted verbatim (flattened and capped), because a testing claim carried downstream as evidence must be the reviewer's words and not a paraphrase. With neither, it says plainly that nothing was run. The chair's comes from the verification round. |
-| `vendor` | The adapter's vendor. |
+| `vendor` | The adapter's vendor, **as configured** — provenance, not the identity the cross-vendor gate collapses to. |
 | `model` | As in the `reviewers` table above: the id actually requested, or a statement that the CLI's default answered and the CLI does not report which. |
 | `model_source` | As in the `reviewers` table above. It rides along here too because `model` changed meaning in the same release and this is the shape a machine consumer actually parses — without it, telling a requested id from a CLI default meant reading English ([#700]). |
 | `counts_as_review` | As in the `reviewers` table above. The bundle carries a record for every seat, abstentions included, so a consumer counting the array needs the discriminator. |

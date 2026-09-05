@@ -205,6 +205,11 @@ def build_config(
         if tmpl is None:
             raise ValueError(f"unknown agent '{name}'; choose from {', '.join(templates.keys())}")
         entry = dict(tmpl)
+        # EXEMPT from `normalise_vendor` (issue #701, round 3): `entry` is a copy
+        # of one of this module's OWN templates, whose vendor strings are literals
+        # written here in normalised form. There is no operator spelling to
+        # normalise — the value is not yet configuration, it is what this function
+        # is about to write out as configuration.
         if entry.get("vendor") == "local":
             if local_model:
                 entry["model"] = local_model

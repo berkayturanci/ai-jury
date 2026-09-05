@@ -25,6 +25,7 @@ import subprocess
 import time
 from dataclasses import dataclass, field
 
+from . import config as config_module
 from . import privilege, redaction
 from .config import AgentSpec
 from .findings import emitted_findings_block
@@ -81,7 +82,11 @@ def _read_only_extra_args(spec: AgentSpec) -> list[str]:
     diff is never write/tool-capable. Config may widen a codex sandbox knowingly,
     but never remove the restriction.
     """
-    return privilege.enforce_read_only(spec.vendor, spec.name, spec.extra_args)
+    # Keyed on the ADAPTER, not the vendor (issue #705): the sandbox flag is a
+    # property of the CLI being spawned, not of whose model answers. A seat with
+    # `vendor = "openai", adapter = "cli", command = "cursor-agent"` must not have
+    # codex's `-s read-only` spliced into an unrelated binary.
+    return privilege.enforce_read_only(config_module.spec_adapter(spec), spec.name, spec.extra_args)
 
 
 def _write_extra_args(spec: AgentSpec) -> list[str]:
@@ -90,7 +95,7 @@ def _write_extra_args(spec: AgentSpec) -> list[str]:
     Reached ONLY from ``jury run-agent --role implement|fix --allow-write``, via
     :meth:`Adapter.build_write_argv`. Nothing on the panel path calls it.
     """
-    return privilege.enable_write(spec.vendor, spec.name, spec.extra_args)
+    return privilege.enable_write(config_module.spec_adapter(spec), spec.name, spec.extra_args)
 
 
 # Short timeout for capability/version probes. Detection is best-effort and must
@@ -463,7 +468,7 @@ _AGY_MODEL_SUFFIXES = tuple(f"-{level}" for level in EFFORT_LEVELS)
 # them reject an unknown request field outright, which would turn a hint into a
 # failed review.
 _EFFORT_VENDORS = frozenset(
-    {"google", "anthropic-api", "openai-api", "openai-compatible", "google-api"}
+    {"google", "anthropic-api", "openai-api", "xai-api", "openai-compatible", "google-api"}
 )
 
 
@@ -484,7 +489,7 @@ class EffortPlan:
 
 def effort_supported(vendor: str) -> bool:
     """Whether *vendor* can act on an effort level at all (pure)."""
-    return (vendor or "").strip().lower() in _EFFORT_VENDORS
+    return config_module.normalise_vendor(vendor) in _EFFORT_VENDORS
 
 
 def _anthropic_budget(level: str) -> int:
@@ -501,7 +506,7 @@ def _effort_uses_model_listing(vendor: str) -> bool:
     Those are the vendors whose mapped id can be checked against what the CLI
     actually offers, so callers know when discovering a listing is worth a probe.
     """
-    return (vendor or "").strip().lower() == "google"
+    return config_module.normalise_vendor(vendor) == "google"
 
 
 def effort_args(
@@ -530,7 +535,7 @@ def effort_args(
     if level not in EFFORT_LEVELS:
         raise ValueError(f"unknown effort {effort!r}; expected one of {', '.join(EFFORT_LEVELS)}")
 
-    name = (vendor or "").strip().lower()
+    name = config_module.normalise_vendor(vendor)
 
     if name == "google":
         # The `agy` CLI selects effort through the model id itself.
@@ -567,7 +572,7 @@ def effort_args(
             }
         )
 
-    if name in ("openai-api", "openai-compatible"):
+    if name in ("openai-api", "xai-api", "openai-compatible"):
         return EffortPlan(payload={"reasoning_effort": level})
 
     if name == "google-api":
@@ -598,7 +603,10 @@ def effort_warnings(agents, adapter_factory=None) -> list[str]:
     seen: set[str] = set()
     out: list[str] = []
     for spec in agents:
-        vendor = getattr(spec, "vendor", "")
+        # The adapter, not the vendor (#705): how effort is expressed — a model
+        # suffix, a request-body field, nothing at all — is a property of the
+        # protocol the seat is invoked through.
+        vendor = config_module.spec_adapter(spec)
         effort = getattr(spec, "effort", None)
         known_models = None
         if adapter_factory is not None and effort and _effort_uses_model_listing(vendor):
@@ -780,7 +788,9 @@ class Adapter:
         """
         try:
             return effort_args(
-                self.spec.vendor, getattr(self.spec, "effort", None), self.spec.model
+                config_module.spec_adapter(self.spec),
+                getattr(self.spec, "effort", None),
+                self.spec.model,
             )
         except ValueError:
             return EffortPlan()
@@ -1044,7 +1054,7 @@ class AgyAdapter(Adapter):
             return EffortPlan()
         try:
             return effort_args(
-                self.spec.vendor,
+                config_module.spec_adapter(self.spec),
                 self.spec.effort,
                 self.spec.model,
                 known_models=self._cached_model_listing(),
@@ -1406,6 +1416,7 @@ class LocalAdapter(Adapter):
 _ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
 _ANTHROPIC_API_VERSION = "2023-06-01"
 _OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
+_XAI_API_URL = "https://api.x.ai/v1/chat/completions"
 # The Anthropic Messages API requires max_tokens on every request; there is no
 # server-side default. Generous enough for a review response, small enough to
 # bound cost/latency if a run is ever misconfigured to loop.
@@ -1787,6 +1798,28 @@ class OpenAiApiAdapter(_HostedApiAdapter):
             return ""
         message = choices[0].get("message") or {}
         return (message.get("content") or "").strip()
+
+
+class XaiApiAdapter(OpenAiApiAdapter):
+    """Hosted xAI (Grok) API reviewer, keyed by ``XAI_API_KEY`` (issue #701).
+
+    Configure as a normal ``[[agent]]`` with ``vendor = "xai-api"`` and a
+    ``model`` (a Grok model id) — no ``command``, no CLI install. xAI serves
+    the OpenAI chat-completions shape at its own host, so this is
+    :class:`OpenAiApiAdapter` with a different URL and a different credential
+    env var; the request body, the response parsing and the effort knob
+    (``reasoning_effort``) are inherited rather than re-stated, because a
+    second copy of them is a second thing to keep in step.
+
+    ``vendor = "openai-compatible"`` with ``endpoint = "https://api.x.ai/v1"``
+    still works and is still documented; this spelling exists so a Grok seat
+    can carry the vendor identity ``xai-api`` instead of borrowing OpenAI's.
+    """
+
+    _ENV_VAR_NAME = "XAI_API_KEY"
+
+    def _api_url(self) -> str:
+        return _XAI_API_URL
 
 
 _GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
@@ -2174,6 +2207,11 @@ class GenericCLIAdapter(Adapter):
         )
 
 
+#: The adapter registry: protocol name -> the class that builds its argv. Keyed
+#: by vendor name because a vendor's shipped adapter IS its default protocol —
+#: which is also why the vendor vocabulary doubles as the ``adapter`` vocabulary
+#: (``config.recognised_adapters``). A seat naming ``adapter`` picks a row here
+#: directly instead of inheriting its vendor's (issue #705).
 _VENDOR_ADAPTERS: dict[str, type[Adapter]] = {
     "anthropic": ClaudeAdapter,
     "openai": CodexAdapter,
@@ -2182,20 +2220,70 @@ _VENDOR_ADAPTERS: dict[str, type[Adapter]] = {
     "anthropic-api": AnthropicApiAdapter,
     "openai-api": OpenAiApiAdapter,
     "google-api": GoogleApiAdapter,
+    "xai-api": XaiApiAdapter,
     "openai-compatible": GenericOpenAICompatibleAdapter,
+    # `xai` is a bring-your-own-CLI seat (Grok through Cursor's `cursor-agent`,
+    # issue #701): the operator supplies `command`/`extra_args`, exactly as for
+    # `cli`, but the seat keeps its own vendor identity at the panel gate.
+    "xai": GenericCLIAdapter,
     "cli": GenericCLIAdapter,
 }
 
 
 def register_adapter(vendor: str, adapter_cls: type[Adapter]) -> None:
-    """Register a custom adapter class for a vendor string."""
-    _VENDOR_ADAPTERS[vendor.lower()] = adapter_cls
+    """Register a custom adapter class for a vendor string.
+
+    The name registered is usable as BOTH a ``vendor`` and an ``adapter``
+    (issue #705): the registry is the adapter vocabulary, so a custom adapter is
+    selectable by a seat that keeps some other vendor identity.
+
+    Registering also teaches ``config`` the name (issue #701): a vendor with an
+    adapter behind it is a vendor this run genuinely knows, so it must not warn
+    as unknown and must not be folded into the generic ``cli`` identity at the
+    cross-vendor gate. The two registries are updated together so they cannot
+    disagree about what "known" means.
+    """
+    name = config_module.normalise_vendor(vendor)
+    if not name:
+        # One guard, ahead of both tables. `register_vendor` ignores a name that is
+        # empty after normalisation, and this used to write the adapter under the
+        # key "" regardless — the two registries disagreeing for exactly the input
+        # they were joined to agree on.
+        raise ValueError("register_adapter: vendor name is empty after normalisation")
+    config_module.register_vendor(name)
+    _VENDOR_ADAPTERS[name] = adapter_cls
 
 
 def make_adapter(spec: AgentSpec, mock: bool = False) -> Adapter:
+    """The adapter that builds *spec*'s command line.
+
+    Selected by the seat's ADAPTER key, which is its ``vendor`` unless the
+    operator named one (issue #705). Keying this on the vendor made the two
+    inseparable: a GPT model reached through Cursor's ``cursor-agent`` got
+    ``codex exec`` argv it cannot parse, and the only way to a passthrough argv
+    was ``vendor = "cli"``, which cost the seat its identity at the panel gate.
+    Nothing else about the seat moves — the ballot, the report and
+    ``min_vendors`` all still read ``spec.vendor``.
+
+    Raises ``ConfigError`` when the seat NAMES an adapter this build does not
+    have (issue #708). The generic fall-through below still catches an unknown
+    *vendor* — that seat named no protocol, so inheriting the generic one is the
+    documented behaviour — but it must never catch a named one: falling through
+    there is the silent guess #705 exists to remove, and it made every reader
+    that loads a config without validating it (``--doctor``, ``jury run-agent``)
+    disagree with the run about the very same file.
+    """
+    # ``or None`` mirrors ``AgentSpec.__post_init__``: an adapter that
+    # normalises to nothing is no adapter at all, and falls back to the vendor.
+    # A raw dict-built or hand-made spec must read the same as a loaded one.
+    adapter_error = config_module.unknown_adapter_error(
+        getattr(spec, "adapter", None) or None, getattr(spec, "name", "") or ""
+    )
+    if adapter_error is not None:
+        raise config_module.ConfigError(adapter_error)
     if mock:
         return MockAdapter(spec)
-    cls = _VENDOR_ADAPTERS.get((spec.vendor or "").lower())
+    cls = _VENDOR_ADAPTERS.get(config_module.spec_adapter(spec))
     if cls is not None:
         return cls(spec)
     if spec.endpoint or (spec.api_key_env and not spec.command):
