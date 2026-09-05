@@ -155,7 +155,7 @@ def plan_panel(
     )
 
 
-def escalation_effect(joined: list[str]) -> str:
+def escalation_effect(joined: list[str], debate_ran: bool = True) -> str:
     """What escalation actually did, read off the run rather than predicted.
 
     Called **after** the debate section, with the benched seats that produced a
@@ -168,9 +168,14 @@ def escalation_effect(joined: list[str]) -> str:
     the findings — but the bench did not review, and a record that says it did
     is a record that lies about the run (#714, review rounds 1 and 2).
     """
-    if not joined:
-        return "no debate round ran, so only the chair was escalated"
-    return f"{', '.join(joined)} joined the debate"
+    if joined:
+        return f"{', '.join(joined)} joined the debate"
+    if debate_ran:
+        # The debate happened; the bench is simply not in it, because every
+        # benched call failed. Saying "no debate round ran" would be false
+        # about the seated voices that did debate (review round 4).
+        return "the debate ran without the bench, so only the chair was escalated"
+    return "no debate round ran, so only the chair was escalated"
 
 
 def should_escalate(groups) -> tuple[bool, str]:

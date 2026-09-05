@@ -14,7 +14,7 @@ from unittest.mock import patch
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from ai_jury import orchestrator  # noqa: E402
+from ai_jury import orchestrator, routing  # noqa: E402
 from ai_jury.cli import build_parser, main  # noqa: E402
 from ai_jury.config import (  # noqa: E402
     KNOWN_JURY_KEYS,
@@ -493,6 +493,70 @@ class TheRecordNamesOnlyWorkThatHappened(unittest.TestCase):
             outcome, _plan = orchestrator.review_diff(config, two_files, mock=True)
         self.assertFalse(outcome.routing["escalated"])
         self.assertEqual(outcome.routing["escalation_reason"], "quiet")
+
+
+class RoundFourFindings(unittest.TestCase):
+    """Three ways the record or the chair could still be wrong (review round 4)."""
+
+    def test_a_debate_that_ran_without_the_bench_says_so(self):
+        # Distinct from "no debate round ran": the seated voices did debate.
+        real = orchestrator._run_phase
+
+        def bench_debate_fails(adapters, prompt_for, phase, parallel, **kwargs):
+            results = real(adapters, prompt_for, phase, parallel, **kwargs)
+            if phase == "debate":
+                for r in results:
+                    if r.agent == "gpt":
+                        r.ok = False
+                        r.output = ""
+            return results
+
+        with patch("ai_jury.orchestrator._run_phase", side_effect=bench_debate_fails):
+            outcome = orchestrator.run_jury(_tiered_config(rounds=2), ROUTINE_DIFF, mock=True)
+        self.assertIn("the debate ran without the bench", outcome.routing["escalation_reason"])
+        self.assertNotIn("no debate round ran", outcome.routing["escalation_reason"])
+        self.assertTrue(outcome.debate)
+
+    def test_a_single_round_run_still_says_no_debate_round_ran(self):
+        outcome = orchestrator.run_jury(_tiered_config(rounds=1), ROUTINE_DIFF, mock=True)
+        self.assertIn("no debate round ran", outcome.routing["escalation_reason"])
+
+    def test_the_band_is_the_filtered_diff_not_the_raw_argument(self):
+        # An excluded file is not part of the change under review, so it must
+        # not decide the band: a security-sensitive path that the filters drop
+        # would otherwise seat the full panel for a docs-only review.
+        config = _tiered_config(rounds=2)
+        config.diff.exclude = ["src/auth/**"]
+        raw = (
+            "diff --git a/src/auth/login.py b/src/auth/login.py\n@@ -0,0 +1 @@\n+secret = 1\n"
+            + ROUTINE_DIFF
+        )
+        self.assertEqual(profile_diff(raw).risk, "high")
+        outcome, plan = orchestrator.review_diff(config, raw, mock=True)
+        self.assertTrue(any(path == "src/auth/login.py" for path, _why in plan.excluded))
+        self.assertEqual(outcome.routing["risk"], "low")
+        self.assertEqual(outcome.routing["benched"], ["gpt"])
+
+    def test_a_chunked_run_publishes_the_chair_of_a_chunk_that_escalated(self):
+        # A quiet first chunk must not publish its economical chair for a run
+        # that escalated on a later chunk.
+        config = _tiered_config(rounds=2, chair="cheap")
+        config.diff.chunk = True
+        config.diff.max_bytes = 60
+        config.diff.chunk_max_bytes = 60
+        two_files = ROUTINE_DIFF + ROUTINE_DIFF.replace("a.py", "b.py")
+        calls = {"n": 0}
+        real = routing.should_escalate
+
+        def quiet_first(groups):
+            calls["n"] += 1
+            return (False, "quiet chunk") if calls["n"] == 1 else real(groups)
+
+        with patch("ai_jury.routing.should_escalate", side_effect=quiet_first):
+            outcome, plan = orchestrator.review_diff(config, two_files, mock=True)
+        self.assertEqual(plan.mode, "chunked")
+        self.assertTrue(outcome.routing["escalated"])
+        self.assertEqual(outcome.chair, "claude")
 
 
 class TheRoutingRecordSurvivesTheCache(unittest.TestCase):

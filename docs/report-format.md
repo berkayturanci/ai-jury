@@ -69,7 +69,7 @@ what decided who sat in round 1. Under `routing = "standard"` it is
 | Field | Meaning |
 | --- | --- |
 | `mode` | `standard` or `tiered`. |
-| `risk` | The diff's band from `diffprofile` (`low`, `medium`, `high`); empty under `standard`. |
+| `risk` | The band `diffprofile` gives the **filtered** diff — the change the panel is actually shown, excluded files left out; empty under `standard`. |
 | `panel` | The seats that reviewed in round 1, in config order. |
 | `benched` | The frontier seats held back, in config order; empty when nobody was. |
 | `anchor` | The frontier seat kept on a routed panel, or `null` when the full panel ran. |

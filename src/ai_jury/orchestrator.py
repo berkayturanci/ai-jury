@@ -746,7 +746,8 @@ def run_jury(
         # but no cross-examination, and counting it would put the frontier seat
         # in the record for work it did not do (review round 3).
         joined = [r.agent for r in debate if r.agent in bench_names and r.ok]
-        plan.escalation_reason = f"{plan.escalation_reason}; {routing.escalation_effect(joined)}"
+        effect = routing.escalation_effect(joined, debate_ran=bool(debate))
+        plan.escalation_reason = f"{plan.escalation_reason}; {effect}"
         log(f"tiered routing: {plan.escalation_reason}")
 
     return JuryOutcome(
@@ -1286,7 +1287,10 @@ def _merge_chunk_outcomes(outcomes: list[JuryOutcome], config: JuryConfig) -> Ju
         reviews=reviews,
         debate=debate,
         synthesis=synthesis,
-        chair=base.chair,
+        # A chunked run escalates per chunk, so a quiet first chunk must not
+        # publish its economical chair for a run that escalated later: the
+        # chair of the first chunk that escalated is the run's (#714, r4).
+        chair=next((o.chair for o in outcomes if (o.routing or {}).get("escalated")), base.chair),
         findings=findings,
         warnings=warnings,
         groups=groups,
@@ -1328,7 +1332,7 @@ def _merged_routing(outcomes: list[JuryOutcome], base: JuryOutcome, debate: list
         joined = [r.agent for r in debate if r.agent in bench and r.ok]
         merged["escalation_reason"] = (
             f"escalated on {len(escalated)} of {len(outcomes)} chunk(s); "
-            f"{routing.escalation_effect(joined)}"
+            f"{routing.escalation_effect(joined, debate_ran=bool(debate))}"
         )
     return merged
 
@@ -1409,9 +1413,13 @@ def review_diff(
     if redact_on and ctx_mode != "diff-only" and context:
         context, context_redactions = redact(context)
 
-    # One band for the whole change, computed on the filtered diff the panel
-    # will actually see, so every chunk routes off the same answer (#714).
-    whole_risk = profile_diff(diff).risk if config.routing == routing.MODE_TIERED else None
+    # One band for the whole change, computed on the FILTERED diff the panel
+    # will actually see — the excluded files are not part of the change under
+    # review, and profiling the raw argument would route off files the panel is
+    # never shown (#714, r4). Every chunk then routes off the same answer.
+    whole_risk = (
+        profile_diff("".join(plan.chunks)).risk if config.routing == routing.MODE_TIERED else None
+    )
 
     def _run(chunk: str) -> JuryOutcome:
         return run_jury(

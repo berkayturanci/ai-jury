@@ -268,9 +268,12 @@ tier = "economical"           # sits on routine diffs in place of the benched se
     or an adaptive run that converges after round 1 (`--auto` sets that on
     `medium`). Escalation then moves the chair and nothing else.
     `escalation_reason` is written **after** the debate section from what
-    actually happened — `gpt joined the debate`, or `no debate round ran, so
-    only the chair was escalated` — so the record can never claim a round the
-    run did not have. What an escalated seat contributes is
+    actually happened — `gpt joined the debate`, `the debate ran without the
+    bench, so only the chair was escalated` (every benched call failed), or
+    `no debate round ran, so only the chair was escalated` — so the record can
+    never claim a round the run did not have. A chunked review escalates per
+    chunk: the record says on how many, recomputes the effect from the merged
+    debate, and publishes the chair of the first chunk that escalated. What an escalated seat contributes is
     a **debate** voice — `AGREE` / `DISPUTE` / `MISSED` on the reviews it is
     shown — which reaches the chair's verdict but is not parsed into structured
     findings; that is how the debate round has always worked, for every seat.
