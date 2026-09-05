@@ -26,7 +26,11 @@ and the diff itself, and every decision is reported:
 * **Escalation** after round 1: when the consensus groups carry a ``critical``
   or ``major`` finding, the benched frontier seats join the debate as
   cross-examiners and the chair for verification/synthesis is drawn from the
-  frontier seats. Without escalation the benched seats stay benched.
+  frontier seats. Without escalation the benched seats stay benched. What they
+  contribute is a debate voice the chair reads, not structured findings — the
+  debate round has never been parsed for findings, for any seat — so a routed
+  run can miss a finding a full panel would have surfaced. That is the trade
+  the flag is, and the report names every seat it did not seat.
 
 Pure and deterministic; the orchestrator owns applying it and logging it.
 """

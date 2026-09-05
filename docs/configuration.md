@@ -263,7 +263,13 @@ tier = "economical"           # sits on routine diffs in place of the benched se
     frontier seats join the debate as cross-examiners (they receive every round-1
     review) and the chair for verification and synthesis is drawn from the
     frontier seats — the configured chair when it is one, else the first. Without
-    escalation the benched seats never run.
+    escalation the benched seats never run. What an escalated seat contributes is
+    a **debate** voice — `AGREE` / `DISPUTE` / `MISSED` on the reviews it is
+    shown — which reaches the chair's verdict but is not parsed into structured
+    findings; that is how the debate round has always worked, for every seat.
+    A benched seat therefore never adds a finding the CI gate can fire on. If
+    you need every seat's findings on every diff, that is what `standard`
+    routing is.
   - Every decision is recorded: `metadata.routing` in the JSON report
     (`mode`, `risk`, `panel`, `benched`, `anchor`, `reason`, `escalated`,
     `escalation_reason`), one `routing:` line in the Markdown run metadata, and
