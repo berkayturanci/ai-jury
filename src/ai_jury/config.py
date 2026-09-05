@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from .ci import fail_on_error
 from .redaction import ENV_VAR_NAME_RULE, redact, safe_env_var_name
 
 # Hosts that are safe to reach over plaintext http and never an SSRF target.
@@ -545,6 +546,24 @@ def validate_config(data: dict, strict: bool = False) -> list:
             val = diff_cfg.get(key)
             if val is not None and (not isinstance(val, int) or isinstance(val, bool) or val <= 0):
                 errors.append(f"jury.diff.{key} must be a positive integer when set (got {val!r}).")
+
+    # CI gate severities (issue #718): hard, like `effort`, and for the same
+    # reason. `fail_on = ["majr"]` matches no group, so the one setting that
+    # decides whether CI fails would report a green PASS quoting the typo, on
+    # every run, forever — a silently disabled gate is worse than no gate.
+    ci_cfg = jury.get("ci", {})
+    if not isinstance(ci_cfg, dict):
+        errors.append("[jury.ci] must be a table.")
+    else:
+        fail_on = ci_cfg.get("fail_on")
+        if fail_on is not None:
+            # A scalar is accepted here because `_ci_from_dict` wraps one in a
+            # list; validating the raw value would refuse a config that loads.
+            message = fail_on_error(
+                fail_on if isinstance(fail_on, list) else [fail_on], "jury.ci.fail_on"
+            )
+            if message:
+                errors.append(message)
 
     agents_data = data.get("agent", [])
     if not isinstance(agents_data, list):
