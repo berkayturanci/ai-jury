@@ -323,15 +323,26 @@ def result_dict(spec: AgentSpec, role: str, result) -> dict:
 
     Every key is always present, with a stable type, so a consumer can read the
     document without probing for optional fields.
+
+    ``model`` is **the id this invocation sent** (:attr:`AgentResult.model`,
+    #709) whenever the run recorded one, and only otherwise the configured
+    ``spec.model``. Those two differ exactly where reporting the wrong one
+    matters: an ``effort`` level encoded as a model-id suffix, or an adapter
+    that consulted the vendor's live listing and fell back. This export said
+    ``gemini-3-pro`` for a run that sent ``gemini-3-pro-high`` (#722), so an
+    orchestrator reading it back saw what it had asked for rather than what
+    answered. ``attribution`` is derived from the same string, because two
+    fields naming one model must not name two.
     """
     from .adapters import ERR_TIMEOUT
 
+    model = (getattr(result, "model", "") or "").strip() or spec.model
     return {
         "schema_version": SCHEMA_VERSION,
         "ok": bool(result.ok),
         "agent": spec.name,
         "vendor": spec.vendor,
-        "model": spec.model or None,
+        "model": model or None,
         "role": role,
         "transport": transport_for(spec),
         "text": result.output or "",
@@ -340,7 +351,7 @@ def result_dict(spec: AgentSpec, role: str, result) -> dict:
         "timed_out": result.error_code == ERR_TIMEOUT,
         "error_code": result.error_code,
         "error": result.error,
-        "attribution": attribution(spec.vendor, spec.model),
+        "attribution": attribution(spec.vendor, model),
     }
 
 

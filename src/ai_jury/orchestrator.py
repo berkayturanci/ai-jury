@@ -1014,12 +1014,47 @@ def _synthesize(
     return _run_with_retry(chair, prompt, "synthesis", budget, retries, log)
 
 
+def _first_sent_model(parts: list[AgentResult]) -> str:
+    """The model id a merged multi-chunk result carries (issue #722).
+
+    Every chunk of one diff is one seat invoked repeatedly through one adapter,
+    so the parts normally all carry the same stamped id (#709) and "the first
+    non-empty one" is simply "the one". Two cases make the choice visible, and
+    both want the *first*:
+
+    * A chunk that never reached the wire — a spawn failure, a timeout killed
+      before the argv was built — carries ``""``. Reading that as the merged
+      id would say *nothing was pinned* about a run that pinned a model on
+      every other chunk, so an empty part is skipped rather than allowed to
+      erase the answer.
+    * Parts that genuinely disagree, which only an adapter that consults a live
+      model listing between chunks can produce. There is no id that is true of
+      the whole merge then, and inventing one ("mixed") would be a string no
+      invocation sent. The first is a model this run really did send, and the
+      merged body opens with that chunk's output, so the ballot's id and the
+      text a reader checks it against come from the same invocation.
+
+    Empty when no part recorded one at all: a hand-assembled outcome or a
+    pre-#709 record, which :func:`ai_jury.ballots.describe_model` labels
+    ``recomputed`` rather than ``requested``. That fallback is unchanged.
+    """
+    for p in parts:
+        model = (getattr(p, "model", "") or "").strip()
+        if model:
+            return model
+    return ""
+
+
 def _merge_results_by_agent(phase_lists: list[list[AgentResult]]) -> list[AgentResult]:
     """Merge per-chunk results for the same agent into one result (issue #31).
 
     Outputs are concatenated under per-chunk headers, durations summed, ``ok`` is
     true if the agent succeeded on any chunk, and ``attempts`` keeps the max so a
     retried chunk is still visible. Agent order follows first appearance.
+
+    The model id the invocation sent (:attr:`AgentResult.model`, #709) rides
+    along too — see :func:`_first_sent_model`. Dropping it here made a chunked
+    review's provenance strictly weaker than a single-chunk one's (#722).
     """
     order: list[str] = []
     by_agent: dict[str, list[AgentResult]] = {}
@@ -1066,13 +1101,19 @@ def _merge_results_by_agent(phase_lists: list[list[AgentResult]]) -> list[AgentR
                 error=None if ok else (first_err.error if first_err else None),
                 error_code=None if ok else (first_err.error_code if first_err else None),
                 attempts=max_attempts,
+                model=_first_sent_model(parts),
             )
         )
     return merged
 
 
 def _combine_chair_results(results: list[AgentResult], chair: str) -> AgentResult | None:
-    """Combine per-chunk chair results (verify/synthesis) into one labelled result."""
+    """Combine per-chunk chair results (verify/synthesis) into one labelled result.
+
+    The combined record keeps the model id the chair's invocation sent (#722),
+    taken from the same population as ``vendor`` — the parts whose output is in
+    the body — by :func:`_first_sent_model`.
+    """
     ok_parts = [r for r in results if r.ok and r.output]
     if not ok_parts:
         return results[0] if results else None
@@ -1086,7 +1127,9 @@ def _combine_chair_results(results: list[AgentResult], chair: str) -> AgentResul
         total_duration += r.duration_s
 
     body = "\n\n".join(body_parts)
-    return AgentResult(chair, vendor, True, body, round(total_duration, 3))
+    return AgentResult(
+        chair, vendor, True, body, round(total_duration, 3), model=_first_sent_model(ok_parts)
+    )
 
 
 def _merge_chunk_outcomes(outcomes: list[JuryOutcome], config: JuryConfig) -> JuryOutcome:

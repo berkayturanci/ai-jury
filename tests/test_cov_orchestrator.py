@@ -1012,6 +1012,24 @@ class ChunkMerge(unittest.TestCase):
         self.assertIn("chunk 1", combined.output)
         self.assertIn("chunk 2", combined.output)
 
+    def test_combine_chair_keeps_the_id_the_chair_sent(self):
+        """#722: the combined record carried `model=""`, so a chunked run's chair
+        record could no longer say which model produced it."""
+        p1 = AgentResult("claude", "anthropic", True, "part1", 0.01, model="claude-x")
+        p2 = AgentResult("claude", "anthropic", True, "part2", 0.02, model="claude-x")
+        self.assertEqual(_combine_chair_results([p1, p2], "claude").model, "claude-x")
+
+    def test_combine_chair_skips_a_part_that_recorded_no_id(self):
+        p1 = AgentResult("claude", "anthropic", True, "part1", 0.01)
+        p2 = AgentResult("claude", "anthropic", True, "part2", 0.02, model="claude-x")
+        self.assertEqual(_combine_chair_results([p1, p2], "claude").model, "claude-x")
+
+    def test_combine_chair_stays_empty_when_no_part_recorded_one(self):
+        # Empty rather than derived: `describe_model` labels an unrecorded id
+        # `recomputed`, and filling it in here would restate #709.
+        p1 = AgentResult("claude", "anthropic", True, "part1", 0.01)
+        self.assertEqual(_combine_chair_results([p1], "claude").model, "")
+
     def test_merge_single_outcome_returns_it(self):
         cfg = _cfg(rounds=1)
         out = run_jury(cfg, DIFF, mock=True, seed=1)
@@ -1150,6 +1168,40 @@ class MergeResultsByAgent(unittest.TestCase):
         b = AgentResult("claude", "anthropic", True, "b", 0.1)
         merged = _merge_results_by_agent([[a, b]])
         self.assertEqual([r.agent for r in merged], ["codex", "claude"])
+
+    def test_the_sent_model_survives_the_merge(self):
+        """#722: the merged record carried `model=""`, so every chunked review
+        balloted a weaker provenance than the same run on one chunk."""
+        p1 = AgentResult("claude", "anthropic", True, "a", 0.1, model="claude-x")
+        p2 = AgentResult("claude", "anthropic", True, "b", 0.1, model="claude-x")
+        self.assertEqual(_merge_results_by_agent([[p1], [p2]])[0].model, "claude-x")
+
+    def test_a_chunk_that_never_reached_the_wire_does_not_erase_it(self):
+        # A spawn failure records no id; reading it as the merged answer would
+        # say "nothing was pinned" about a run that pinned one on every other
+        # chunk. The empty part is skipped, in either position.
+        blank = AgentResult("claude", "anthropic", False, "", 0.1, error="boom")
+        sent = AgentResult("claude", "anthropic", True, "good", 0.2, model="claude-x")
+        for parts in ([[blank], [sent]], [[sent], [blank]]):
+            with self.subTest(order=[p[0].ok for p in parts]):
+                self.assertEqual(_merge_results_by_agent(parts)[0].model, "claude-x")
+
+    def test_parts_that_disagree_report_the_first_id_the_run_sent(self):
+        # Only an adapter that re-checks the vendor's live listing between chunks
+        # can produce this. There is no id true of the whole merge, so the choice
+        # is pinned: the first — a model the run really did send, and the one
+        # whose output opens the merged body.
+        p1 = AgentResult("claude", "anthropic", True, "a", 0.1, model="claude-x")
+        p2 = AgentResult("claude", "anthropic", True, "b", 0.1, model="claude-y")
+        merged = _merge_results_by_agent([[p1], [p2]])[0]
+        self.assertEqual(merged.model, "claude-x")
+        self.assertIn("#### chunk 1\na", merged.output)
+
+    def test_no_recorded_id_anywhere_stays_empty(self):
+        # Empty rather than derived: an unrecorded id ballots as `recomputed`,
+        # and inventing one here would put it back under `requested` (#709).
+        p1 = AgentResult("claude", "anthropic", True, "a", 0.1)
+        self.assertEqual(_merge_results_by_agent([[p1]])[0].model, "")
 
 
 # --- review_diff filtering / too-large / empty branches --------------------
