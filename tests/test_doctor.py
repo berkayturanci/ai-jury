@@ -563,6 +563,8 @@ AGENT_TYPES = {
     "models": (list, type(None)),
     "effort_supported": bool,
     "effort": (str, type(None)),
+    # Cost tier (#714): `frontier` unless the operator said `economical`.
+    "tier": str,
 }
 
 

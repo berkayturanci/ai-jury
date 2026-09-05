@@ -219,6 +219,9 @@ def _agent_entry(spec, probe_models: bool = False):
         "models": _probe_models(spec) if probe_models else None,
         "effort": _redact_value(getattr(spec, "effort", None)),
         "effort_supported": effort_supported(spec_adapter(spec)),
+        # Cost tier (issue #714): which seats tiered routing may bench on a
+        # routine diff, and which one it may anchor with.
+        "tier": getattr(spec, "tier", "frontier"),
         "capability_warnings": capability_warnings,
     }
 
@@ -611,6 +614,8 @@ def doctor_report_dict(diagnostics) -> dict:
         item["models"] = list(models) if models else None
         item["effort_supported"] = bool(entry.get("effort_supported"))
         item["effort"] = entry.get("effort")
+        # Cost tier (#714): what tiered routing reads; `frontier` unless said.
+        item["tier"] = entry.get("tier") or "frontier"
         agents.append(item)
 
     recommendations = diagnostics.get("recommendations") or {}
