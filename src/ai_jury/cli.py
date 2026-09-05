@@ -23,7 +23,7 @@ from pathlib import Path
 from . import __version__, panel
 from . import doctor as doctor_module
 from .adapters import EFFORT_LEVELS, effort_warnings, make_adapter
-from .ci import evaluate_ci
+from .ci import evaluate_ci, fail_on_error
 from .classification import classify, label_strings
 from .config import (
     DEFAULT_MIN_VENDORS,
@@ -2082,6 +2082,17 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
+
+    # Same vocabulary check `validate_config` applies to `[jury.ci] fail_on`,
+    # reported with the same message (issue #718). Checked here, beside the
+    # other flag guards, so a misspelled gate is refused before an agent is
+    # paid for — and refused even without `--ci`, where the flag is inert:
+    # otherwise the typo surfaces only on the run it was supposed to gate.
+    if args.fail_on:
+        message = fail_on_error(args.fail_on.split(","), "--fail-on")
+        if message:
+            print(f"error: {message}", file=sys.stderr)
+            return 2
 
     if args.clear_cache:
         from .cache import Cache

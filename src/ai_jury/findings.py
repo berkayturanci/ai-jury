@@ -64,6 +64,14 @@ SEVERITY_ORDER: dict[str, int] = {sev: i for i, sev in enumerate(SEVERITIES)}
 # Legacy severity names mapped onto the canonical schema.
 _SEVERITY_ALIASES: dict[str, str] = {"blocker": "critical"}
 
+#: Every spelling an *operator* may write where a severity is asked for
+#: (``--fail-on``, ``[jury.ci] fail_on``): the canonical vocabulary plus the
+#: documented legacy aliases. Reviewer output is not held to this — a model that
+#: invents a severity is normalised to ``info``, not refused — but a human
+#: typing a CI gate is, because there is no safe default for "which findings
+#: fail the build" (issue #718).
+SEVERITY_INPUTS: tuple[str, ...] = SEVERITIES + tuple(_SEVERITY_ALIASES)
+
 _DEFAULT_SEVERITY = "info"
 _DEFAULT_CONFIDENCE = "medium"
 
@@ -78,6 +86,18 @@ def _normalize_severity(value: object) -> str:
         if v in SEVERITY_ORDER:
             return v
     return _DEFAULT_SEVERITY
+
+
+def canonical_severity(value: object) -> str | None:
+    """Canonical severity for an operator-supplied spelling, or ``None``.
+
+    The strict counterpart of :func:`_normalize_severity`: an unrecognised value
+    is reported as unknown instead of being demoted to ``info``, so a caller
+    that cannot tolerate a silent default (the CI gate) can refuse it.
+    """
+    v = str(value).strip().lower()
+    v = _SEVERITY_ALIASES.get(v, v)
+    return v if v in SEVERITY_ORDER else None
 
 
 def _normalize_confidence(value: object) -> str:

@@ -416,6 +416,14 @@ min_reviews = 0                   # REVIEWS a consumer must receive (ballots)
 **every** run, because it is not a judgement about findings — it is the question
 of whether a jury happened at all.
 
+Every `fail_on` entry must be a known [severity](parameters.md#severities) —
+`critical`, `major`, `minor`, `nit`, `info`, or the `blocker` alias for
+`critical` — matched case-insensitively. A value outside that vocabulary is a
+**hard config error** naming it, not a warning: a misspelling (`"majr"`) matches
+no finding, so the setting that decides whether CI fails would report a green
+`PASS` quoting the typo on every run. `--fail-on` is held to the same
+vocabulary and exits **2** with the same message.
+
 | Key | Default | Effect |
 | --- | --- | --- |
 | `min_vendors` | `2` | Exit **3** unless at least this many *distinct vendors contributed a review*. `0` disables. |
