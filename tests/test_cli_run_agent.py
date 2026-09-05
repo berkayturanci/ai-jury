@@ -512,6 +512,53 @@ class ResultSchemaTests(unittest.TestCase):
         self.assertFalse(doc["timed_out"])
 
 
+class TheDocumentNamesTheModelThatAnswered(unittest.TestCase):
+    """#722: the export reports the id that was *sent*, not the one asked for.
+
+    #711 made ``AgentResult.model`` carry the id the invocation put on the wire,
+    and ``jury run-agent`` stamps it like every other invocation path. The export
+    read ``spec.model`` anyway, so the two ids that #709 exists to keep apart
+    were collapsed again at the last step: an orchestrator consuming this JSON
+    saw what it had requested wherever an ``effort`` mapping or an adapter
+    fallback had changed it — which is exactly when it needed the difference.
+    """
+
+    _SPEC = AgentSpec(name="seat", vendor="google", command="agy", model="gemini-3-pro")
+
+    def _document(self, sent: str) -> dict:
+        result = AgentResult("seat", "google", True, "x", 0.0, model=sent)
+        return runagent.result_dict(self._SPEC, "panelist", result)
+
+    def test_the_sent_id_wins_over_the_configured_one(self):
+        doc = self._document("gemini-3-pro-high")
+        self.assertEqual(doc["model"], "gemini-3-pro-high")
+        self.assertNotEqual(doc["model"], self._SPEC.model)
+
+    def test_attribution_names_the_same_id_the_document_does(self):
+        # Two fields naming one model must not name two: before this fix the
+        # top-level `model` and `attribution.model` were both the requested id,
+        # so a consumer reconciling them agreed on the wrong answer twice.
+        doc = self._document("gemini-3-pro-high")
+        self.assertEqual(doc["attribution"]["model"], doc["model"])
+
+    def test_a_record_that_sent_nothing_falls_back_to_the_configured_id(self):
+        # A result no invocation stamped — one a caller assembled by hand — has
+        # no sent id to report, and the configured one is the honest answer left.
+        for sent in ("", "   "):
+            with self.subTest(sent=repr(sent)):
+                doc = self._document(sent)
+                self.assertEqual(doc["model"], "gemini-3-pro")
+                self.assertEqual(doc["attribution"]["model"], "gemini-3-pro")
+
+    def test_a_seat_with_nothing_pinned_at_all_still_reports_null(self):
+        spec = AgentSpec(name="seat", vendor="anthropic", command="claude")
+        result = AgentResult("seat", "anthropic", True, "x", 0.0)
+        doc = runagent.result_dict(spec, "panelist", result)
+        self.assertIsNone(doc["model"])
+        self.assertIsNone(doc["attribution"]["model"])
+        self.assertEqual(doc["attribution"]["label"], "agent:anthropic")
+
+
 class ExitCodeTests(unittest.TestCase):
     """The adapter now records the child's real exit status."""
 

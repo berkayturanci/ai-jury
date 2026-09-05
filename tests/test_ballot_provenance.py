@@ -55,9 +55,16 @@ from ai_jury.ballots import (
     resolve_stated_scope,
     reviewer_ballots,
 )
+from ai_jury.cache import outcome_from_dict, outcome_to_dict
 from ai_jury.config import _from_dict, spec_adapter
 from ai_jury.largediff import change_index
-from ai_jury.orchestrator import JuryOutcome, RunBudget, _run_with_retry
+from ai_jury.orchestrator import (
+    JuryOutcome,
+    RunBudget,
+    _combine_chair_results,
+    _merge_results_by_agent,
+    _run_with_retry,
+)
 
 #: The diff the panel is shown in the #710 tests. Two files, one of them nested,
 #: so path resolution is exercised at more than one depth.
@@ -1028,3 +1035,79 @@ def _reviewers_for(diff: str, first_line: str) -> list[dict]:
         for r in reviewer_ballots(_outcome([result], changed=changed), config)
         if r.get("role") == "panelist"
     ]
+
+
+class ChunkingADiffDoesNotWeakenTheProvenance(unittest.TestCase):
+    """#722: a two-chunk review ballots what a one-chunk review ballots.
+
+    A diff over the size limit is reviewed in chunks and the per-chunk results
+    are folded back together by ``orchestrator._merge_results_by_agent``. That
+    fold rebuilt the ``AgentResult`` field by field and did not carry ``model``,
+    so the id every chunk had recorded was dropped on the floor and
+    ``describe_model`` fell back to recomputing one — under ``recomputed``, a
+    strictly weaker claim than the same run makes on a diff one byte smaller.
+    The seat here is #709's own witness, whose recomputed id is *also the wrong
+    id*: a Google seat at ``effort = high`` whose live listing does not offer
+    ``gemini-3-pro-high`` is invoked with ``gemini-3-pro``.
+    """
+
+    _SPEC = {
+        "name": "seat",
+        "vendor": "google",
+        "adapter": "google",
+        "command": "agy",
+        "model": "gemini-3-pro",
+        "effort": "high",
+    }
+
+    def _chunks(self, count: int):
+        """``(config, [result per chunk])`` from *count* real invocations."""
+        config = _config([dict(self._SPEC)])
+        spec = config.agents[0]
+        adapter = make_adapter(spec)
+        canned = AgentResult(spec.name, spec.vendor, True, _reply("`x`"), 0.0)
+        with (
+            mock.patch.object(type(adapter), "run", lambda *_a, **_k: replace(canned)),
+            mock.patch.object(type(adapter), "list_models", lambda _self: ["gemini-3-pro"]),
+        ):
+            results = [
+                _run_with_retry(
+                    adapter, "prompt", "review", RunBudget(None, None), 0, lambda _m: None
+                )
+                for _ in range(count)
+            ]
+        return config, results
+
+    def test_a_two_chunk_review_ballots_what_a_one_chunk_review_ballots(self):
+        """The acceptance criterion. Before the fix the merged ballot came back
+        `gemini-3-pro-high` / `recomputed` — a different id, under a weaker
+        label, for the same run."""
+        config, single = self._chunks(1)
+        _, parts = self._chunks(2)
+        merged = _merge_results_by_agent([[p] for p in parts])
+        unchunked = reviewer_ballots(_outcome(single), config)[0]
+        chunked = reviewer_ballots(_outcome(merged), config)[0]
+        self.assertEqual(chunked["model"], unchunked["model"])
+        self.assertEqual(chunked["model_source"], unchunked["model_source"])
+        self.assertEqual(chunked["model_source"], MODEL_REQUESTED)
+        self.assertEqual(chunked["model"], "gemini-3-pro")
+
+    def test_the_chair_record_of_a_chunked_run_says_so_too(self):
+        """The chair's ballot reads its own round-1 seat, so it travels through
+        the same merge; the combined synthesis record keeps the id as well."""
+        config, parts = self._chunks(2)
+        merged = _merge_results_by_agent([[p] for p in parts])
+        chair = reviewer_ballots(_outcome(merged, chair="seat"), config)[-1]
+        self.assertEqual(chair["model"], "gemini-3-pro")
+        self.assertEqual(chair["model_source"], MODEL_REQUESTED)
+        self.assertEqual(_combine_chair_results(parts, "seat").model, "gemini-3-pro")
+
+    def test_the_merged_record_survives_the_result_cache(self):
+        """A cached chunked run has to quote what a fresh one quotes: the id is
+        stored and restored, so the round trip cannot re-open this gap."""
+        config, parts = self._chunks(2)
+        merged = _merge_results_by_agent([[p] for p in parts])
+        outcome = _outcome(merged)
+        restored = outcome_from_dict(json.loads(json.dumps(outcome_to_dict(outcome))))
+        self.assertEqual(restored.reviews[0].model, "gemini-3-pro")
+        self.assertEqual(reviewer_ballots(restored, config)[0]["model_source"], MODEL_REQUESTED)

@@ -19,7 +19,7 @@ usage: jury [-h] [--pr PR] [--issue ISSUE] [--repo REPO]
             [--label] [--ci] [--fail-on FAIL_ON] [--cache] [--clear-cache]
             [--cache-dir CACHE_DIR] [--suggest-patches] [--patches-out PATH]
             [--incremental] [-q] [--config-validate] [--strict-config]
-            [--tiered] [--hints] [--version]
+            [--tiered] [--hints] [--no-hints] [--version]
 
 Cross-vendor multi-agent PR review jury.
 
@@ -166,6 +166,8 @@ options:
                         anchor (issue #524)
   --hints               run local static analysis pre-pass (Ruff/ESLint) to
                         inject hints (issue #523)
+  --no-hints            skip the static analysis pre-pass even if jury.toml
+                        enables it
   --version             show program's version number and exit
 
 input:

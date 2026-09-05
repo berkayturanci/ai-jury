@@ -104,7 +104,8 @@ Input (choose exactly one): `--pr <num/url>`, `--issue <num/url>` (both take an 
 - `--auto` / `--no-auto` — auto-depth: set rounds/verify from a pre-review diff profile
   (#120; config `auto_depth`).
 - `--tiered` — opt-in risk-aware tiered model routing with a frontier anchor (#524).
-- `--hints` — local static-analysis pre-pass (Ruff/ESLint) whose findings are injected as hints (#523).
+- `--hints` / `--no-hints` — local static-analysis pre-pass (Ruff/ESLint) whose findings are
+  injected into the Round 1 prompt as their own block, under every context mode (#523, #715).
 - `--incremental` — review only changes since the last jury run on `--pr` (#9).
 - `--suggest-patches`, `--patches-out <path>` — inspectable patches for verified findings (#10).
 - `--cache`, `--cache-dir <path>`, `--clear-cache` — optional result cache (#33).
