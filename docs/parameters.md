@@ -141,7 +141,7 @@ current branch from stdin.
 | `--early-stop` / `--no-early-stop` | flag | from config (`false`) | Adaptive: stop after round 1 when reviewers agree; debate only on disagreement. |
 | `--auto` / `--no-auto` | flag | from config (`false`) | Risk-aware auto-depth: scale rounds/verify to the diff profile. |
 | `--tiered` | flag | from config (`routing = "standard"`) | Risk-aware tiered model routing: routes routine diffs to economical models while keeping frontier models as anchors for critical files. |
-| `--hints` / `--no-hints` | flag | from config (`hints = false`) | Static analysis pre-pass: runs fast local linters (Ruff, ESLint) and injects hints into Round 1 prompt context. |
+| `--hints` / `--no-hints` | flag | from config (`hints = false`) | Static analysis pre-pass: runs fast local linters (Ruff, ESLint) on the files changed by the diff under review — never the whole tree — and injects what they flag into Round 1 prompt context. No block when the change touches no `.py`/`.js`/`.ts`. |
 | `--verify` / `--no-verify` | flag | from config (`true`) | Run (or skip) the verification round. |
 | `--chair` | agent name, or `rotate` | from config (`claude`) | Which agent synthesizes the verdict (and runs verification). Must be an enabled agent. |
 | `--seed` | integer | from config (unset) | Reproducible orchestration; identical mock runs + seed ⇒ byte-identical reports. |
@@ -502,7 +502,7 @@ fails loudly.
 | `theater` | bool | `false` | Enable live interactive terminal animation. |
 | `theater_style` | `"flat"` \| `"pixel"` | `"flat"` | Visual aesthetic for terminal animation. |
 | `routing` | `"standard"` \| `"tiered"` | `"standard"` | Risk-aware tiered model routing with frontier anchor (CLI `--tiered`). Part of the config hash and cache key. |
-| `hints` | bool | `false` | Run fast static linter pre-pass to inject hints into Round 1, under every context mode (CLI `--hints` / `--no-hints`). Part of the config hash and cache key. |
+| `hints` | bool | `false` | Run a fast static linter pre-pass over the *changed* files to inject hints into Round 1, under every context mode (CLI `--hints` / `--no-hints`). Part of the config hash and cache key. |
 | `demote_local_only` | bool | `false` | Demote uncorroborated single-local-model findings to minor advisory status. |
 
 **Example:**

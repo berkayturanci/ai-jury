@@ -228,7 +228,17 @@ hints = true         # run local Ruff/ESLint pre-pass before Round 1 (default: f
 ```
 
 - **`routing = "tiered"`** (`--tiered`): Uses the diff risk classifier to route non-critical files to economical models while keeping frontier models as anchor reviewers for security-critical paths (`auth/`, `crypto/`).
-- **`hints = true`** (`--hints` / `--no-hints`): Runs fast local static linters (Ruff for Python, ESLint for JS/TS) on modified files and injects compact hints into Round 1 prompt context so reviewers focus strictly on deep logic bugs and security flaws.
+- **`hints = true`** (`--hints` / `--no-hints`): Runs fast local static linters (Ruff for Python, ESLint for JS/TS) on the files changed by the diff under review and injects compact hints into Round 1 prompt context so reviewers focus strictly on deep logic bugs and security flaws.
+
+The linters are pointed at the **changed files and nothing else**: exactly the
+paths the panel is shown, after the `[jury.diff]` `include`/`exclude` filters
+have dropped the rest. A change that touches no file a linter handles — no
+`.py` for Ruff, no `.js`/`.ts`/`.jsx`/`.tsx` for ESLint — produces **no block at
+all**; the pre-pass never falls back to linting the whole working tree, so
+pre-existing lint elsewhere in the repository cannot crowd out the diff (#737).
+`--issue` reviews prose and has no changed files, so it never gets a block
+either. Each linter reads those paths from your working tree, so a path that is
+not checked out simply yields nothing, and a missing linter is not an error.
 
 The hints are produced locally by this run, not taken from your context, so they
 are added to the Round 1 prompt as their own block **after** the
