@@ -212,6 +212,12 @@ A token resolves when it names:
   `foo.proto` does not resolve because it calls `proto()`. A symbol claim is a
   token with no dot, or one written as code, `module.function()`, which is
   asked of the index as the member the reviewer named, `function`.
+  A **bare dotted word** with no slash, no leading dot and no marks around it —
+  `foo.proto`, `e.g.`, `Ph.D.` — is read as prose rather than as a file that is
+  not in the change: a rule that told a file from a Latin aside by the shape of
+  its suffix missed a family every time it was tightened. To have an absent
+  file reported as a claim that failed, write its path, or put the name in
+  backticks.
 
 **The change is also what splits the line into tokens.** It was split
 lexically at first — on whitespace and list punctuation — and a changed file

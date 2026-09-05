@@ -407,7 +407,11 @@ class TheResolutionRuleItself(unittest.TestCase):
         self.assertEqual(
             resolve_stated_scope("ai_jury/ballots.py", _CHANGED)[0], ["ai_jury/ballots.py"]
         )
-        self.assertEqual(resolve_stated_scope("lots.py", _CHANGED), ([], ["lots.py"]))
+        # `lots.py` is not `ballots.py` — the boundary keeps a suffix from being a
+        # substring — and, bare and absent, it is prose since round 12; marked,
+        # it is a claim that failed.
+        self.assertEqual(resolve_stated_scope("lots.py", _CHANGED), ([], []))
+        self.assertEqual(resolve_stated_scope("`lots.py`", _CHANGED), ([], ["lots.py"]))
 
     def test_a_repeated_or_punctuation_only_token_is_folded_away(self):
         """One token per distinct thing named, whatever the punctuation around
@@ -923,7 +927,9 @@ class APathShapedTokenIsNeverReadAsASymbol(unittest.TestCase):
         self.assertTrue(changed.has_symbol("proto"))
         for token in ("env.py", "foo.proto", "module.env"):
             with self.subTest(token=token):
-                self.assertEqual(resolve_stated_scope(token, changed), ([], [token]))
+                # Never resolved as a symbol (round 7); and since round 12 a bare
+                # dotted word is prose, so it is not reported as a failed claim either.
+                self.assertEqual(resolve_stated_scope(token, changed), ([], []))
 
     def test_every_wrapper_the_strip_knows_keeps_the_call_marker(self):
         """Round 9: the marker regex's trailing class was written by hand and
@@ -950,33 +956,32 @@ class APathShapedTokenIsNeverReadAsASymbol(unittest.TestCase):
                 resolved, unresolved = resolve_stated_scope(token, _CHANGED)
                 self.assertEqual((len(resolved), unresolved), (1, []), token)
 
-    def test_a_long_extension_is_still_a_claim_that_failed(self):
-        """Round 10: `_path_shaped` calls every dotted name a path claim while the
-        name-shaped predicate accepted only a one-to-five-character suffix, so
-        `foo.kotlin` was refused as a path and then dropped as prose."""
+    def test_a_bare_dotted_word_is_prose_and_a_marked_or_slashed_one_is_a_claim(self):
+        """Rounds 10-12. Telling a file from a Latin aside by suffix shape or
+        segment length missed a family each time (`foo.kotlin`, then `e.g`, then
+        `Ph.D`). The reviewer's own punctuation settles it: a bare dotted word is
+        prose; a slash, a leading dot, or marks make it a claim reported when
+        absent."""
         changed = change_index(self._CALL_HUNK)
-        for token in ("foo.kotlin", "foo.gradle", "app.config", "foo.readme"):
-            with self.subTest(token=token):
-                self.assertEqual(resolve_stated_scope(token, changed), ([], [token]))
-                ballot = _reviewers_for(self._CALL_HUNK, f"Checked: {token}")[0]
-                self.assertEqual(ballot["abstention_cause"], "not_in_change", token)
-
-    def test_a_latin_abbreviation_is_prose_not_an_absent_path(self):
-        """Round 11: `e.g.` loses its trailing dot to the trail strip and `e.g`
-        then read as a dotted path claim, so a reviewer's aside was reported as
-        a file that is not in the change."""
-        changed = change_index(self._CALL_HUNK)
-        for line in (
-            "Checked: e.g. the tests",
-            "Checked: i.e. nothing",
-            "Checked: a.k.a. everything",
+        for token in ("foo.kotlin", "app.config", "e.g", "Ph.D", "et.al", "M.Sc"):
+            with self.subTest(bare=token):
+                self.assertEqual(resolve_stated_scope(token, changed), ([], []))
+        for line in ("Checked: e.g. the tests", "Checked: Ph.D. thesis", "Checked: foo.kotlin"):
+            with self.subTest(line=line):
+                self.assertEqual(
+                    _reviewers_for(self._CALL_HUNK, line)[0]["abstention_cause"], "named_nothing"
+                )
+        for line, claim in (
+            ("Checked: `foo.kotlin`", "foo.kotlin"),
+            ("Checked: docs/foo.kotlin", "docs/foo.kotlin"),
+            ("Checked: .kotlinrc", ".kotlinrc"),
         ):
             with self.subTest(line=line):
                 ballot = _reviewers_for(self._CALL_HUNK, line)[0]
-                self.assertEqual(ballot["abstention_cause"], "named_nothing", line)
-        self.assertEqual(resolve_stated_scope("e.g", changed), ([], []))
-        # A real dotted file with one-character segments and an extension is still a path claim.
-        self.assertEqual(resolve_stated_scope("a.b.py", changed), ([], ["a.b.py"]))
+                self.assertEqual(ballot["abstention_cause"], "not_in_change", line)
+                # The scope de-anchors an unresolved claim (a slash becomes a space),
+                # so check the basename rather than the exact spelling.
+                self.assertIn(claim.rsplit("/", 1)[-1].lstrip("."), ballot["scope"])
 
     def test_a_wrapped_call_keeps_its_marker(self):
         """Round 8: the marker was looked for at the raw end, so wrapping

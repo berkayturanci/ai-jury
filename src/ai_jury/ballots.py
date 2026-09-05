@@ -287,12 +287,13 @@ _PATH_LINE_RE = re.compile(r"^(?P<path>.+?):(?P<line>\d+(?:-\d+)?)$")
 #: prose and the ballot said the line named nothing, for a path the reviewer
 #: named exactly. Prose is untouched by it: a full stop that ends a sentence
 #: sits at the end of the piece before it, never at the start of the next.
-# The dotted alternative accepts any suffix, not one of one to five characters:
-# :func:`_path_shaped` treats every dotted name without ``()`` as a path claim,
-# and the two predicates disagreeing put ``foo.kotlin`` in the wrong bucket —
-# refused as a path, then dropped as prose instead of reported as a claim that
-# failed (#711 round 10).
-_NAME_SHAPED_RE = re.compile(r"[/\\]|\A\.[A-Za-z0-9]|\.[A-Za-z0-9]+$|\(\)$|_|[a-z0-9][A-Z]")
+# A bare dotted word — ``foo.proto``, ``e.g``, ``Ph.D`` — is *not* name-shaped.
+# Rounds 10 and 11 tried to tell a file from a Latin aside by the shape of the
+# suffix and by the length of the segments, and each rule had a family it
+# missed. The reviewer's own punctuation settles it instead: a slash, a leading
+# dot, or marks around the token make it a claim that is reported when absent;
+# a bare dotted word is read as prose. (#711 round 12)
+_NAME_SHAPED_RE = re.compile(r"[/\\]|\A\.[A-Za-z0-9]|\(\)$|_|[a-z0-9][A-Z]")
 
 #: Anchor-forming characters, removed before an unresolved token is quoted in an
 #: abstention. See :func:`_deanchor`.
@@ -487,22 +488,9 @@ def _is_name_shaped(token: str, value: str) -> bool:
     token is the reviewer saying it is a name, and a claim that failed has to be
     reported as one rather than dropped as connective prose.
     """
-    if _is_abbreviation(token.rstrip(_TRAIL_EDGE)):
-        return False
     if _NAME_SHAPED_RE.search(token):
         return True
     return any(f"{o}{token}{c}" in (value or "") for o, c in (("`", "`"), ('"', '"'), ("“", "”")))
-
-
-def _is_abbreviation(base: str) -> bool:
-    """``e.g``, ``i.e``, ``a.k.a`` — a dotted token whose every segment is one
-    character (pure). The trail strip leaves a dot inside it, and it is neither
-    a file nor a symbol: no file is named that way, and reading it as a path
-    claim reported a reviewer's aside as a file not in the change (#711 round
-    11). One predicate, consulted by both :func:`_path_shaped` and
-    :func:`_is_name_shaped`, so the two cannot disagree about it."""
-    segments = base.split(".")
-    return len(segments) > 1 and all(len(segment) == 1 for segment in segments)
 
 
 def _path_shaped(base: str) -> bool:
@@ -516,9 +504,7 @@ def _path_shaped(base: str) -> bool:
     """
     if "/" in base or base.startswith("."):
         return True
-    if "." not in base or base.endswith("()"):
-        return False
-    return not _is_abbreviation(base)
+    return "." in base and not base.endswith("()")
 
 
 def _token_resolves(token: str, changed: Any) -> bool:
