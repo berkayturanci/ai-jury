@@ -47,6 +47,34 @@ def _run_linter(cmd: list[str], root: Path, title: str) -> str | None:
     return f"{title}\n" + "\n".join(f"- {item}" for item in lines)
 
 
+def _inside(root: Path, files: Sequence[str] | None) -> list[str]:
+    """The subset of *files* that are files inside *root* (pure apart from stat).
+
+    A leading ``-`` would be read as a flag rather than a path, so it is dropped
+    as before; the rest are resolved against ``root`` and kept only if they stay
+    under it and exist. ``resolve()`` follows symlinks, so a link inside the
+    repository that points outside it is dropped too, which is the point: what
+    reaches the linter has to be a file this checkout actually contains.
+    """
+    kept: list[str] = []
+    try:
+        base = root.resolve()
+    except OSError:  # pragma: no cover - an unresolvable cwd is not a review
+        return kept
+    for name in files or ():
+        if not name or name.startswith("-"):
+            continue
+        try:
+            target = (base / name).resolve()
+            if not target.is_file():
+                continue
+            target.relative_to(base)
+        except (OSError, ValueError):
+            continue
+        kept.append(name)
+    return kept
+
+
 def collect_static_hints(files: Sequence[str] | None, root_dir: Path | None = None) -> str:
     """Run fast local linters on the **changed files** and return a hints string.
 
@@ -58,13 +86,26 @@ def collect_static_hints(files: Sequence[str] | None, root_dir: Path | None = No
     Ruff, no ``.js``/``.ts``/``.jsx``/``.tsx`` for ESLint — therefore produces no
     block at all.
 
-    Each linter reads those paths from the working tree, so a path that is not
-    checked out simply yields nothing. Never fails or throws: returns an empty
-    string when the linters are unavailable, clean, or error.
+    Only paths that are **files inside** ``root`` are linted. Two reasons, both
+    found in review of this change:
+
+    * A diff names paths, and a diff is attacker-controlled. Forwarding them
+      unchecked pointed the linter at anything the diff cared to name —
+      ``../../etc/x.py``, ``/tmp/abs.py`` — and the linter's reading of that
+      file went into the reviewer prompt. The old whole-tree form could not do
+      that, because it was scoped to the working directory; scoping by path
+      has to re-establish what it gave away.
+    * A path in the diff need not exist here: every deletion names one, and a
+      ``--pr`` review of a branch nobody checked out names only such paths.
+      Ruff answers a missing file with ``E902 No such file or directory`` on
+      stdout and a nonzero exit, which this module would have read as a
+      diagnostic and put in front of the panel.
+
+    Never fails or throws: returns an empty string when the linters are
+    unavailable, clean, or error.
     """
     root = root_dir or Path.cwd()
-    # A leading "-" would be read as a flag by the linter, not a path.
-    paths = [f for f in (files or ()) if f and not f.startswith("-")]
+    paths = _inside(root, files)
     if not paths:
         return ""
 
