@@ -1266,8 +1266,17 @@ def _merge_chunk_outcomes(outcomes: list[JuryOutcome], config: JuryConfig) -> Ju
 
     warnings = [w for o in outcomes for w in o.warnings]
 
-    synthesis = _combine_chair_results([o.synthesis for o in outcomes if o.synthesis], base.chair)
-    verify = _combine_chair_results([o.verify for o in outcomes if o.verify], base.chair)
+    # ONE chair name for the whole merged record (#714, r5). A chunked tiered
+    # run escalates per chunk, so the chunks can have different chairs; the run
+    # publishes the chair of the first chunk that escalated, and the combined
+    # synthesis and verify must carry that same name — labelling them with the
+    # quiet first chunk's seat while the outcome names another is a report that
+    # says one seat synthesised a body another seat's chunk opens.
+    merged_chair = next(
+        (o.chair for o in outcomes if (o.routing or {}).get("escalated")), base.chair
+    )
+    synthesis = _combine_chair_results([o.synthesis for o in outcomes if o.synthesis], merged_chair)
+    verify = _combine_chair_results([o.verify for o in outcomes if o.verify], merged_chair)
 
     # bolt: Consolidate collection aggregations (sum, extend, max, any) into a single-pass O(N) explicit loop
     redaction_count = 0
@@ -1289,8 +1298,9 @@ def _merge_chunk_outcomes(outcomes: list[JuryOutcome], config: JuryConfig) -> Ju
         synthesis=synthesis,
         # A chunked run escalates per chunk, so a quiet first chunk must not
         # publish its economical chair for a run that escalated later: the
-        # chair of the first chunk that escalated is the run's (#714, r4).
-        chair=next((o.chair for o in outcomes if (o.routing or {}).get("escalated")), base.chair),
+        # chair of the first chunk that escalated is the run's (#714, r4), and
+        # the combined synthesis and verify above carry the same name (r5).
+        chair=merged_chair,
         findings=findings,
         warnings=warnings,
         groups=groups,

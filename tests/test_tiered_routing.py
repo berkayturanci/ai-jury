@@ -557,6 +557,11 @@ class RoundFourFindings(unittest.TestCase):
         self.assertEqual(plan.mode, "chunked")
         self.assertTrue(outcome.routing["escalated"])
         self.assertEqual(outcome.chair, "claude")
+        # r5: the combined synthesis and verify must carry the same name, or
+        # the report says one seat synthesised a body another seat's chunk opens.
+        for record in (outcome.synthesis, outcome.verify):
+            if record is not None:
+                self.assertEqual(record.agent, "claude")
 
 
 class TheRoutingRecordSurvivesTheCache(unittest.TestCase):
