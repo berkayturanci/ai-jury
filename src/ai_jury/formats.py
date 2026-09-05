@@ -45,8 +45,31 @@ from .metadata import build_run_metadata
 #:   ``scope_substantive`` and ``verdict != "ABSTAIN"``), which is the same rule
 #:   its own ``review-verdict-insubstantial`` gate applies.
 #:
-#: Every top-level key, and every other ``reviewers`` key, is unchanged.
-JSON_SCHEMA_VERSION = "1.2"
+#: 1.3 (issues #709, #710) changes nothing structurally and two things
+#: semantically, which is why it is a bump rather than a silent correction:
+#:
+#: * ``reviewers[].model`` under ``model_source: "requested"`` is now the id the
+#:   invocation actually sent, read back off the result the adapter produced. It
+#:   was recomputed from the seat's ``vendor`` while every invocation path
+#:   computes it from the seat's ``adapter``, so on a seat where those differ
+#:   (possible since #705) the ballot could name a model the run never asked for
+#:   — under a field whose whole claim is that it is the id that was sent.
+#: * ``reviewers[].model_source`` gains a fifth value, ``recomputed``: no
+#:   invocation recorded an id for this slot, so the one in ``model`` was derived
+#:   from the run's config. It used to ship as ``requested``, which is the same
+#:   overstatement one source short — the derivation returns
+#:   ``gemini-3-pro-high`` for the seat above, whose adapter sent
+#:   ``gemini-3-pro``. A consumer switching on the four known values must accept
+#:   a fifth.
+#: * ``reviewers[].abstention_cause`` gains a fifth value, ``not_in_change``: the
+#:   seat stated a scope and none of it is in the change under review. Those
+#:   ballots were ``named_nothing`` before, when they were recorded at all — a
+#:   ``Checked:`` line naming anything at all used to make the ballot a **review**
+#:   (#710), so some of these entries were previously counted rather than
+#:   bucketed. A consumer switching on the four known values must accept a fifth.
+#:
+#: Every top-level key, and every ``reviewers`` key, keeps its name and shape.
+JSON_SCHEMA_VERSION = "1.3"
 
 #: Canonical SARIF schema URI and version emitted by :func:`to_sarif`.
 SARIF_SCHEMA = "https://json.schemastore.org/sarif-2.1.0.json"

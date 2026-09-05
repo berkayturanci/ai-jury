@@ -839,7 +839,10 @@ class AnAbstentionIsNotAReviewEither(unittest.TestCase):
         # apart from a requested id. The bundle is the shape a consumer actually
         # parses, so it carries it as well.
         for record in _bundle():
-            self.assertIn(record["model_source"], {"requested", "cli_default", "unknown", "none"})
+            self.assertIn(
+                record["model_source"],
+                {"requested", "recomputed", "cli_default", "unknown", "none"},
+            )
             self.assertIsInstance(record["counts_as_review"], bool)
         self.assertFalse(_bundle()[-1]["counts_as_review"])
 
@@ -996,17 +999,18 @@ class TheAbstentionBucketsNameTheCauseTheBallotCarries(unittest.TestCase):
                     else:
                         self.assertIn(entry["abstention_cause"], panel.ABSTENTION_CAUSES)
 
-    def test_the_shortfall_message_names_all_four_causes_apart(self):
+    def test_the_shortfall_message_names_every_cause_apart(self):
         message = panel.shortfall(
             0,
-            4,
+            5,
             stage="anywhere",
             silent=1,
             insubstantial=1,
+            not_in_change=1,
             refused=1,
             adapter_failed=1,
         )
-        self.assertIn("4 seat(s) ran without producing a review", message)
+        self.assertIn("5 seat(s) ran without producing a review", message)
         for cause in panel.ABSTENTION_CAUSES:
             self.assertIn(f"1 {panel.CAUSE_PHRASES[cause]}", message)
 

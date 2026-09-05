@@ -705,6 +705,13 @@ class AgentResult:
     # run-agent` reports it so an orchestrator can act on the real status
     # instead of parsing it back out of the error string.
     exit_code: int | None = None
+    # The model id this invocation actually sent (issue #709), stamped by the
+    # path that ran the adapter from :meth:`Adapter.resolved_model` — the same
+    # call that put the id in the argv/payload. Empty when nothing was pinned
+    # (the CLI chose) or when the record was not produced by an invocation.
+    # A ballot READS this rather than re-deriving it: `vendor` and `adapter` can
+    # differ since #705, and a second derivation is a second answer.
+    model: str = ""
 
 
 class Adapter:
@@ -794,6 +801,29 @@ class Adapter:
             )
         except ValueError:
             return EffortPlan()
+
+    def resolved_model(self) -> str:
+        """The model id this adapter sends, byte-for-byte (issue #709).
+
+        **The** answer to "which model was asked for", and the only one: every
+        place a model id leaves this module — the ``--model``/``-m`` argv of the
+        three CLI adapters, the ``model`` field of every network payload, the
+        Gemini URL — reads it from here, and :attr:`AgentResult.model` records
+        what it returned so a ballot can quote the id instead of deriving a
+        second one.
+
+        That second derivation was the defect. :func:`effort_args` is keyed on
+        the **adapter**, because how effort is expressed is a property of the
+        protocol a seat is invoked through; ``ai_jury.ballots.requested_model``
+        keyed it on the ``vendor``, and since #705 those can differ, so a seat
+        with ``vendor = google, adapter = cli`` was invoked with ``gemini-3-pro``
+        while its ballot reported ``gemini-3-pro-high`` under
+        ``model_source: requested`` — a field whose whole claim is that it is the
+        id actually sent. The subclass that consults a live model listing
+        (:class:`AgyAdapter`) overrides :meth:`effort_plan`, not this, so the
+        fallback it resolves is recorded here too.
+        """
+        return (self.effort_plan().model or self.spec.model or "").strip()
 
     def list_models(self) -> list[str] | None:
         """Model ids this agent could be pointed at, or None when unknown.
@@ -980,8 +1010,9 @@ class ClaudeAdapter(Adapter):
     # the prompt from stdin when no positional prompt is given.
     def _head_argv(self) -> list[str]:
         argv = [self.spec.command, "-p"]
-        if self.spec.model:
-            argv += ["--model", self.spec.model]
+        model = self.resolved_model()
+        if model:
+            argv += ["--model", model]
         return argv
 
     def build_argv(self, prompt: str) -> list[str]:
@@ -1004,8 +1035,9 @@ class CodexAdapter(Adapter):
     # reviewer only reads its prompt, since the jury fetches the diff via ``gh``.
     def _head_argv(self) -> list[str]:
         argv = [self.spec.command, "exec"]
-        if self.spec.model:
-            argv += ["-m", self.spec.model]
+        model = self.resolved_model()
+        if model:
+            argv += ["-m", model]
         return argv
 
     def build_argv(self, prompt: str) -> list[str]:
@@ -1072,7 +1104,7 @@ class AgyAdapter(Adapter):
         argv = [self.spec.command, *self._STREAM_ARGS]
         # agy encodes reasoning effort in the model id (`…-flash` -> `…-flash-high`),
         # so effort changes WHICH model is selected rather than adding a flag.
-        model = self.effort_plan().model or self.spec.model
+        model = self.resolved_model()
         if model:
             argv += ["--model", model]
         return argv
@@ -1247,7 +1279,7 @@ class LocalAdapter(Adapter):
     def build_payload(self, prompt: str) -> dict:
         """Build the OpenAI-compatible chat-completions request body (pure)."""
         return {
-            "model": self.spec.model or "",
+            "model": self.resolved_model(),
             "messages": [{"role": "user", "content": prompt}],
             "stream": False,
             "temperature": 0,
@@ -1720,7 +1752,7 @@ class AnthropicApiAdapter(_HostedApiAdapter):
         caps vary and an unbounded sum would build a request some models reject.
         """
         payload = {
-            "model": self.spec.model or "",
+            "model": self.resolved_model(),
             "max_tokens": _HOSTED_API_MAX_TOKENS,
             "messages": [{"role": "user", "content": prompt}],
         }
@@ -1776,7 +1808,7 @@ class OpenAiApiAdapter(_HostedApiAdapter):
     def build_payload(self, prompt: str) -> dict:
         """Build the OpenAI chat-completions request body (pure)."""
         payload = {
-            "model": self.spec.model or "",
+            "model": self.resolved_model(),
             "messages": [{"role": "user", "content": prompt}],
         }
         payload.update(self.effort_plan().payload)
@@ -1859,7 +1891,7 @@ class GoogleApiAdapter(_HostedApiAdapter):
         # semantics instead of staying a single `{model}` segment.
         import urllib.parse
 
-        model = urllib.parse.quote(self.spec.model or "", safe="")
+        model = urllib.parse.quote(self.resolved_model(), safe="")
         return f"{_GEMINI_API_BASE}/{model}:generateContent"
 
     def build_payload(self, prompt: str) -> dict:
@@ -2006,7 +2038,7 @@ class GenericOpenAICompatibleAdapter(_HostedApiAdapter):
 
     def build_payload(self, prompt: str) -> dict:
         payload = {
-            "model": self.spec.model or "",
+            "model": self.resolved_model(),
             "messages": [{"role": "user", "content": prompt}],
         }
         payload.update(self.effort_plan().payload)

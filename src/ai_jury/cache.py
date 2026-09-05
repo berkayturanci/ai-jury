@@ -33,9 +33,26 @@ from .config import JuryConfig, config_hash
 from .consensus import FindingGroup
 from .findings import Finding, Verdict
 from .injection import InjectionHit
+from .largediff import ChangeIndex
 from .orchestrator import JuryOutcome
 
-CACHE_SCHEMA = 1
+#: The record *format* version, bumped when a stored outcome gains a field a
+#: renderer reads back. 2 (issue #709, round 2): ``AgentResult`` gained
+#: ``model``, the id the invocation sent, and the ballot reads it to justify
+#: ``model_source: requested``. An entry written without the field cannot
+#: support that label — the run that wrote it did not record what it sent — and
+#: recomputing an id to fill the gap puts a derived value under a token whose
+#: whole claim is that it came off the wire, which is #709 itself. So such an
+#: entry is **not read**: a cache exists to be an exact stand-in for a fresh
+#: run, and where it cannot be, one re-run is the honest price.
+#:
+#: The cache *key* does not settle this on its own. It happens to invalidate
+#: every pre-#709 entry in this release, because ``prompts.PROMPT_VERSION`` went
+#: 7 → 8 for #710 in the same change — but that is a coincidence of two fixes
+#: shipping together. Had #709 landed alone the key would have been unchanged
+#: and every existing entry would have come back a field short. A change to the
+#: record's format belongs in the field that versions the format.
+CACHE_SCHEMA = 2
 _ENV_DIR = "JURY_CACHE_DIR"
 
 # Cache files are named `<64-hex sha256>.json` (entries) or
@@ -145,6 +162,14 @@ def _agent_result(d: dict | None) -> AgentResult | None:
         warnings=list(d.get("warnings", [])),
         error_code=d.get("error_code"),
         attempts=d.get("attempts", 1),
+        # The id the invocation sent (#709). Restored so a cached ballot quotes
+        # the same string a fresh one does — the cache key already pins the
+        # config, so the id cannot have been anything else. The default is for a
+        # dict that never came from a cache entry (`jury replay` takes any
+        # `outcome_to_dict` dump): a stored entry missing the field is refused
+        # by `CACHE_SCHEMA` before it reaches here, rather than balloting a
+        # recomputed id under a label that claims it was sent.
+        model=d.get("model", ""),
     )
 
 
@@ -166,6 +191,16 @@ def _hit(d: dict) -> InjectionHit:
         source=d.get("source", ""),
         line=d.get("line"),
         snippet=d.get("snippet", ""),
+    )
+
+
+def _change_index(d: dict | None) -> ChangeIndex | None:
+    """Rebuild a :class:`ai_jury.largediff.ChangeIndex`, or None for a legacy entry."""
+    if not isinstance(d, dict):
+        return None
+    return ChangeIndex(
+        paths=tuple(d.get("paths") or ()),
+        symbols=tuple(d.get("symbols") or ()),
     )
 
 
@@ -195,6 +230,10 @@ def outcome_from_dict(data: dict) -> JuryOutcome:
         rounds_executed=data.get("rounds_executed", 1),
         stop_reason=data.get("stop_reason", ""),
         from_cache=data.get("from_cache", False),
+        # What the change contained (#710). The cache key already pins the diff
+        # by digest, so a restored index describes the same bytes as the run
+        # that wrote it; a legacy entry has none and the scope rule falls back.
+        changed=_change_index(data.get("changed")),
     )
 
 

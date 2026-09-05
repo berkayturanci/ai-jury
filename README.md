@@ -341,7 +341,7 @@ A structured report with these top-level keys:
 
 | Key | Description |
 | --- | --- |
-| `schema_version` | Version of this JSON schema (currently `1.2`). |
+| `schema_version` | Version of this JSON schema (currently `1.3`). |
 | `metadata` | Run metadata (agents, rounds, context mode, redaction stats, wall-clock proxy). |
 | `findings` | All raw findings; each carries `severity`, `file`, `line`, `claim`, `evidence`, `suggested_fix`, `confidence`, `reviewer`. |
 | `consensus` | Per consensus group: `representative` finding, `agreement` count, `reviewers`, `bucket`, `verification_status`. |
@@ -369,12 +369,15 @@ became of its ballot, so a chair that reviewed is not indistinguishable from one
 that only synthesised. `--min-reviews N` requires a review count: the ceiling is
 checked before the panel runs, the number actually supplied afterwards.
 
-Every record **names what it read**: `scope` carries the reviewer's own `Checked:`
-line, the files it attached to its findings, or — under `--issue`, where a finding
-has no file to name — the claims it raised, and `testing` carries what it ran or
-says plainly that nothing was. A reviewer whose reply names nothing checkable is
-recorded as an `ABSTAIN` whose scope says why, never as an `APPROVE` with a
-placeholder — an agent that named nothing did not review.
+Every record **names what it read, and the name has to exist**: `scope` carries
+the reviewer's own `Checked:` line — resolved against the change, so only tokens
+naming a path or a symbol actually in the diff count — the files it attached to
+its findings, or, under `--issue`, where a finding has no file to name, the claims
+it raised; `testing` carries what it ran or says plainly that nothing was. A
+reviewer whose reply names nothing checkable is recorded as an `ABSTAIN` whose
+scope says why, never as an `APPROVE` with a placeholder — an agent that named
+nothing did not review, and neither did one whose `Checked: nothing` merely had
+the shape of naming something.
 
 **A ballot is not automatically a review.** `counts_as_review` on each record is
 the one definition (`ai_jury.panel.is_review`): a `panelist` entry, with a scope
@@ -385,11 +388,13 @@ produced what — and none of them is counted, because the consumer would refuse
 it. `--min-reviews` counts the same thing the consumer does.
 
 **And a ballot that did not review says why.** `abstention_cause` carries one of
-four — `silent`, `named_nothing`, `refused`, `adapter_failed` — and every count
-of the seats that supplied no review is that field tallied, in the report line,
-the `--min-reviews` failure and `--metadata-json`'s `panel` block alike. A seat
-that named a file and *then* refused is reported as a refusal, not as one that
-named nothing.
+five — `silent`, `named_nothing`, `not_in_change`, `refused`, `adapter_failed` —
+and every count of the seats that supplied no review is that field tallied, in the
+report line, the `--min-reviews` failure and `--metadata-json`'s `panel` block
+alike. A seat that named a file and *then* refused is reported as a refusal, not
+as one that named nothing; a seat that named `src/made/up.py` is reported as
+having named something this change does not contain, which is a different failure
+again.
 
 ```json
 [
