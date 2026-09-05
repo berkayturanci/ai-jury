@@ -363,6 +363,12 @@ def _path_base(token: str) -> str:
     return match.group("path") if match else token
 
 
+#: A call marker ``()`` that may sit inside wrapping punctuation and before
+#: trailing sentence punctuation: ``(module.env()),`` names the call
+#: ``module.env()``. Group 1 is everything before the marker.
+_WRAPPED_CALL_RE = re.compile(r"^(.*?)\(\)[\)\]\}\"'`*.,;:!?]*$")
+
+
 def _edge_stripped(piece: str) -> str:
     """*piece* with its edge punctuation removed (pure).
 
@@ -392,10 +398,15 @@ def _edge_stripped(piece: str) -> str:
     # A trailing ``()`` is a call marker, not wrapping punctuation: it is what
     # tells :func:`_token_resolves` that ``module.function()`` is a symbol claim
     # rather than a file (#711 round 7), so it is kept whole.
-    call = piece.rstrip(_TRAIL_EDGE).endswith("()")
-    core = piece.rstrip(_TRAIL_EDGE)[:-2] if call else piece
-    stripped = core.lstrip(_WRAP_EDGE).rstrip(_WRAP_EDGE + _TRAIL_EDGE)
-    return stripped + "()" if call and stripped else stripped
+    # The marker is looked for *inside* any wrapping, not at the raw end: on
+    # ``(module.env()),`` the last characters are wrap and trail punctuation,
+    # and a check at the raw end missed the call and then ate its parentheses
+    # as wrapping (#711 round 8).
+    marked = _WRAPPED_CALL_RE.match(piece)
+    if marked:
+        stripped = marked.group(1).lstrip(_WRAP_EDGE)
+        return stripped + "()" if stripped else ""
+    return piece.lstrip(_WRAP_EDGE).rstrip(_WRAP_EDGE + _TRAIL_EDGE)
 
 
 def _joined_against_change(pieces: list[str], changed: Any) -> list[str]:

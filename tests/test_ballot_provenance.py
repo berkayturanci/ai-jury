@@ -925,6 +925,22 @@ class APathShapedTokenIsNeverReadAsASymbol(unittest.TestCase):
             with self.subTest(token=token):
                 self.assertEqual(resolve_stated_scope(token, changed), ([], [token]))
 
+    def test_a_wrapped_call_keeps_its_marker(self):
+        """Round 8: the marker was looked for at the raw end, so wrapping
+        parentheses hid it and then were stripped along with it."""
+        changed = change_index(self._CALL_HUNK)
+        for token in (
+            "(module.env()),",
+            "[module.env()]",
+            "{module.env()}",
+            "`module.env()`.",
+            "(env())",
+        ):
+            with self.subTest(token=token):
+                resolved, _ = resolve_stated_scope(token, changed)
+                self.assertEqual(len(resolved), 1, token)
+                self.assertTrue(resolved[0].endswith("()"), resolved)
+
     def test_an_identifier_still_resolves_as_the_member_named(self):
         changed = change_index(self._CALL_HUNK)
         self.assertEqual(resolve_stated_scope("module.env()", changed), (["module.env()"], []))
