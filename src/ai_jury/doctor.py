@@ -384,12 +384,15 @@ def _panel_warning(panel) -> str | None:
     )
 
 
-def _recommendations(config_path, config_summary, agents) -> dict:
+def _recommendations(config_path, config_summary, agents, config_error: bool = False) -> dict:
     """Build actionable next-steps from the diagnostics (issue: doctor UX).
 
     Returns ``{"ready": bool, "steps": [str, ...]}``. ``ready`` is true when at
     least one agent is reachable. Steps point the user at the cheapest fix:
     scaffold a config, install a CLI, or use a reachable local model.
+
+    *config_error* says the config could not be loaded at all, so no seat was
+    inspected — and the only honest next step is the error itself (issue #708).
     """
     steps: list[str] = []
     available = [a for a in agents if a.get("available")]
@@ -398,6 +401,16 @@ def _recommendations(config_path, config_summary, agents) -> dict:
     # No config file in play -> suggest scaffolding one.
     if config_path is None and not Path("jury.toml").exists():
         steps.append("No jury.toml found — run `jury init` to create one.")
+
+    # Nothing was loaded, so nothing below is knowable: "install an agent CLI"
+    # would name the wrong fault for a config the RUN also refuses, and it costs
+    # a local-model probe to say it. The verdict is the config error (#708).
+    if config_error:
+        steps.append(
+            "The config could not be loaded, so no agent was inspected — fix the "
+            "config error above. A run refuses this file for the same reason."
+        )
+        return {"ready": False, "steps": steps}
 
     if not ready:
         from .adapters import list_local_models
@@ -441,6 +454,20 @@ def build_diagnostics(config_path=None, probe_models: bool = False):
     raises for a bad/missing config. The returned dict never contains the raw
     diff or any agent output.
 
+    The config is loaded WITH validation — the same call a run makes (issue
+    #708). Best-effort is about not crashing, not about being more permissive
+    than the run: this report's whole promise is that its arithmetic equals what
+    a run counts, and it cannot keep that promise while accepting a file the run
+    rejects. It used to. An `adapter` name this build does not have is a hard
+    config error, but with validation off the seat kept the name, `make_adapter`
+    missed the registry and fell through to the generic CLI adapter, and three
+    such seats reported `[available]`, `cross-vendor ready: yes` and `ready to
+    run: yes` for a config the run refused before its first round. A hard error
+    is now the report's verdict: it lands in ``config_warnings`` naming the seat
+    and the adapter, no seat is described, and ``ready to run`` is ``no``.
+    Warnings are still warnings — ``strict`` is not passed, so a soft issue
+    (unknown vendor, unknown key) is reported, not fatal, exactly as before.
+
     ``probe_models`` opts into discovering each agent's available model ids —
     a subprocess (``agy models``) or an HTTP round trip *per agent*, each
     time-boxed but not free. Only ``--doctor --json`` renders that listing, so
@@ -451,9 +478,13 @@ def build_diagnostics(config_path=None, probe_models: bool = False):
     config_warnings: list[str] = []
     agents: list = []
     panel: dict = dict(_NO_PANEL)
+    # Distinct from `config_summary is None`, which a caller may also hand
+    # `_recommendations` directly: this says a load was ATTEMPTED and failed.
+    # Cleared only on the success path, so a new `except` arm cannot forget it.
+    config_error = True
 
     try:
-        cfg = load_config(config_path)
+        cfg = load_config(config_path, validate=True)
     except FileNotFoundError as exc:
         config_warnings.append(f"config error: {redact(str(exc))[0]}")
     except tomllib.TOMLDecodeError as exc:
@@ -463,6 +494,7 @@ def build_diagnostics(config_path=None, probe_models: bool = False):
     except (KeyError, ValueError, TypeError) as exc:
         config_warnings.append(f"config error: {redact(str(exc))[0]}")
     else:
+        config_error = False
         config_summary = _config_summary(cfg)
         agents = [_agent_entry(spec, probe_models=probe_models) for spec in cfg.agents]
         config_warnings = _detect_warnings(cfg)
@@ -503,7 +535,9 @@ def build_diagnostics(config_path=None, probe_models: bool = False):
         "config": config_summary,
         "config_warnings": config_warnings,
         "panel": panel,
-        "recommendations": _recommendations(config_path, config_summary, agents),
+        "recommendations": _recommendations(
+            config_path, config_summary, agents, config_error=config_error
+        ),
     }
 
 

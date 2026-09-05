@@ -2258,7 +2258,23 @@ def make_adapter(spec: AgentSpec, mock: bool = False) -> Adapter:
     was ``vendor = "cli"``, which cost the seat its identity at the panel gate.
     Nothing else about the seat moves — the ballot, the report and
     ``min_vendors`` all still read ``spec.vendor``.
+
+    Raises ``ConfigError`` when the seat NAMES an adapter this build does not
+    have (issue #708). The generic fall-through below still catches an unknown
+    *vendor* — that seat named no protocol, so inheriting the generic one is the
+    documented behaviour — but it must never catch a named one: falling through
+    there is the silent guess #705 exists to remove, and it made every reader
+    that loads a config without validating it (``--doctor``, ``jury run-agent``)
+    disagree with the run about the very same file.
     """
+    # ``or None`` mirrors ``AgentSpec.__post_init__``: an adapter that
+    # normalises to nothing is no adapter at all, and falls back to the vendor.
+    # A raw dict-built or hand-made spec must read the same as a loaded one.
+    adapter_error = config_module.unknown_adapter_error(
+        getattr(spec, "adapter", None) or None, getattr(spec, "name", "") or ""
+    )
+    if adapter_error is not None:
+        raise config_module.ConfigError(adapter_error)
     if mock:
         return MockAdapter(spec)
     cls = _VENDOR_ADAPTERS.get(config_module.spec_adapter(spec))

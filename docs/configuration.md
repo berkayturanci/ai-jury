@@ -124,6 +124,19 @@ to guess — and the guess is the half-second `nonzero_exit` above, discovered
 mid-run on a review you have already paid for. (An unknown *vendor* stays a
 warning: that seat still runs, it just answers to `cli` at the gate.)
 
+That error is raised **everywhere the name is read**, not only by
+`--config-validate`. `jury --doctor` loads the config with the same validation a
+run does, so it reports the config error as its verdict — `ready to run: no`,
+naming the seat and the adapter, describing no seat — instead of a bench the run
+will refuse. And the adapter lookup itself refuses a name it does not have rather
+than falling through to the generic CLI adapter, which covers the readers that
+deliberately do *not* validate the whole file: `jury run-agent`, which drives one
+named seat, exits `2` with the same message. Falling through was the last place
+the silent guess survived: `--doctor` used to print three `[available]` rows and
+`cross-vendor ready: yes` for the very file `jury` rejected before its first
+round. (An unknown *vendor* still falls through, because that seat named no
+protocol — inheriting the generic one is its documented behaviour.)
+
 `--doctor` prints both fields on every seat row, so a Codex seat and a
 GPT-through-Cursor seat are distinguishable at a glance:
 
@@ -139,7 +152,7 @@ different facts, and every place that shows one says which it is:
 
 | Where | Shows | Why |
 | --- | --- | --- |
-| `--doctor` `panel.vendors_configured` / `vendors_available` | **Identity** | These are the gate's arithmetic. They equal what a run counts for the same config, so doctor cannot call a bench cross-vendor ready that the run then refuses. |
+| `--doctor` `panel.vendors_configured` / `vendors_available` | **Identity** | These are the gate's arithmetic. They equal what a run counts for the same config, so doctor cannot call a bench cross-vendor ready that the run then refuses — which is also why the doctor validates the config the way a run does: on a file the run rejects outright, it reports that error and counts nothing. |
 | `--doctor` agent rows (`vendor`, and the text report's `vendor=…`) | **Configured vendor** (normalised spelling), with `vendor_identity` beside it | Provenance, plus the one number that matters next to it. The text report renders `vendor=xa1 -> counts as cli` only when the two differ. |
 | `--doctor` agent rows (`adapter`, and the text report's `adapter=…`) | **Protocol** | Neither of the other two: it is how the seat's command line is built. `vendor=openai, adapter=cli` is a GPT model reached through someone else's CLI. |
 | `--metadata-json` `panel.vendors` | **Identity** | It is the number `min_vendors` is compared against. |
@@ -345,7 +358,7 @@ The document is `schema_version: "ai-jury.doctor.v1"`:
 | `capabilities` | Labels from the version probe: `headless`, `model-selection`. |
 | `models` | Model ids discovered for that agent (`agy models`, or a local server's `/v1/models`), or `null` when nothing could be listed. Discovered **only** for `--json`: it costs a probe per agent, and the text report does not show it. |
 | `effort_supported` / `effort` | Whether the vendor has an effort control, and the level configured for this agent. |
-| `warnings` | The same config warnings the human report lists. |
+| `warnings` | The same config warnings the human report lists. On a config with a **hard** error — an `adapter` this build does not have, no `[[agent]]` at all — this carries that error, `agents` is empty and `ready` is `false`: the doctor validates what a run validates, so it never describes a bench the run refuses. |
 
 ### `panel`: readiness, not contribution
 

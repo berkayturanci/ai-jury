@@ -1537,7 +1537,14 @@ def _run_run_agent(rest: list[str], spawn=None, sleep=None, clock=None) -> int:
         print(f"error: {error}", file=sys.stderr)
         return 2
 
-    adapter = make_adapter(spec, mock=ns.mock)
+    # `run-agent` loads its config without validation (it drives ONE named seat,
+    # so an unrelated seat's mistake must not stop it), which is why the adapter
+    # name is checked here, where it is used, rather than only at load (#708).
+    try:
+        adapter = make_adapter(spec, mock=ns.mock)
+    except ConfigError as exc:
+        print(redact(f"error: {exc}")[0], file=sys.stderr)
+        return 2
     print(
         f"run-agent: {spec.name} ({spec.vendor}) role={policy.role} "
         f"{'write' if policy.write else 'read-only'}",

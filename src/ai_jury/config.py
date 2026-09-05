@@ -338,6 +338,38 @@ def is_recognised_adapter(adapter) -> bool:
     return bool(key) and key in set(recognised_adapters())
 
 
+def unknown_adapter_error(adapter, label: str = "") -> str | None:
+    """The ONE diagnosis for an ``adapter`` name this build does not have (pure).
+
+    Returns the message, or ``None`` when the seat names no adapter (it inherits
+    its vendor's) or names one that exists.
+
+    Single because the name is read in two places that must not disagree
+    (issue #708). :func:`validate_config` reads it before a run and turns this
+    into a hard error; ``adapters.make_adapter`` reads it again at the moment the
+    command line is built, and refuses instead of falling through to the generic
+    adapter. Both are needed. With only the first, every caller that loads a
+    config *without* validation — ``--doctor``, ``jury run-agent`` — silently got
+    a ``GenericCLIAdapter``, so ``--doctor`` printed three ``[available]`` seats
+    and ``ready to run: yes`` for a file a real run refused outright. With only
+    the second, the same typo would surface mid-run rather than before the panel
+    starts.
+
+    The fall-through was the silent guess #705 exists to remove: a name this
+    build does not have is a typo, or a plugin that was not loaded, and invoking
+    the seat through *some other* protocol answers neither.
+    """
+    if adapter is None or is_recognised_adapter(adapter):
+        return None
+    who = f"agent '{label}'" if label else "agent"
+    return (
+        f"{who} has unknown adapter {adapter!r} (expected one "
+        f"of {', '.join(recognised_adapters())}). 'adapter' names the protocol "
+        f"used to build the command line; 'vendor' names the identity the "
+        f"cross-vendor gate counts."
+    )
+
+
 def adapter_key(vendor, adapter=None) -> str:
     """The protocol a seat is invoked through, from its two config keys (pure).
 
@@ -562,14 +594,13 @@ def validate_config(data: dict, strict: bool = False) -> list:
         # only fallbacks are to guess — which is precisely the failure #705 is
         # about: `openai` guessed `codex exec` onto `cursor-agent` and the seat
         # died in half a second, mid-run, having already been paid for. A typo
-        # here is named before the panel starts, like `effort`.
-        if adapter_value is not None and not is_recognised_adapter(adapter_value):
-            errors.append(
-                f"agent '{label}' has unknown adapter {adapter_value!r} (expected one "
-                f"of {', '.join(recognised_adapters())}). 'adapter' names the protocol "
-                f"used to build the command line; 'vendor' names the identity the "
-                f"cross-vendor gate counts."
-            )
+        # here is named before the panel starts, like `effort`. The message
+        # itself lives in `unknown_adapter_error`, because `make_adapter` asks
+        # the same question at the other end and must give the same answer
+        # (issue #708).
+        adapter_error = unknown_adapter_error(adapter_value, label)
+        if adapter_error is not None:
+            errors.append(adapter_error)
 
         # Unique, non-empty name (hard for duplicates).
         if not name:

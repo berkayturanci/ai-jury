@@ -469,6 +469,164 @@ class AnUnknownAdapterIsRejectedBeforeTheRun(unittest.TestCase):
         self.assertTrue(any("unknown vendor" in w for w in warnings))
 
 
+#: The reviewer's bench for #708, reproduced without mocks: three vendors, one
+#: adapter name this build does not have, and a `command` that exists on every
+#: machine so nothing about PATH is in play. Every seat is `[available]` if the
+#: doctor is allowed to reach the availability probe at all.
+_UNKNOWN_ADAPTER_BENCH = """
+[jury]
+rounds = 1
+chair = "gpt"
+verify = false
+
+[jury.ci]
+min_vendors = 2
+
+[[agent]]
+name = "gpt"
+vendor = "openai"
+adapter = "claude"
+command = "ls"
+
+[[agent]]
+name = "gemini"
+vendor = "google"
+adapter = "claude"
+command = "ls"
+
+[[agent]]
+name = "grok"
+vendor = "xai"
+adapter = "claude"
+command = "ls"
+"""
+
+#: The same bench, spelled in the vocabulary the file already uses for `vendor`
+#: (`cli`, the pass-through — the claude protocol would be `anthropic`). The
+#: run accepts it, so the doctor must call it ready: the equality below has to
+#: hold in BOTH directions or it is satisfied by a doctor that says no to
+#: everything.
+_KNOWN_ADAPTER_BENCH = _UNKNOWN_ADAPTER_BENCH.replace('adapter = "claude"', 'adapter = "cli"')
+
+
+def _run_accepts(config_toml: str) -> bool:
+    """Whether a real (mocked-agent) run accepts this config file at all."""
+    code, _err, _meta = _jury(config_toml)
+    return code == 0
+
+
+def _doctor(config_toml: str):
+    """``build_diagnostics`` over this config, with availability forced on.
+
+    Forcing availability removes the only variable that is not the config: what
+    is under test is whether the doctor accepts the FILE, so every seat that
+    reaches the probe must come back reachable. On the pre-#708 code all three
+    did — that is the finding.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        config = Path(tmp) / "jury.toml"
+        config.write_text(config_toml, encoding="utf-8")
+        with mock.patch.object(doctor, "_is_available", return_value=True):
+            return doctor.build_diagnostics(str(config))
+
+
+class TheDoctorsReadinessEqualsTheRunsAcceptance(unittest.TestCase):
+    """Issue #708: `--doctor` called ready a bench the run refuses.
+
+    `build_diagnostics` loaded the config with validation OFF, so an `adapter`
+    this build does not have survived into the specs, `make_adapter` missed the
+    registry and fell through to `GenericCLIAdapter`, and the report printed
+    three `[available]` rows, `cross-vendor ready: yes` and `ready to run: yes`
+    for a file `jury` itself refuses with a hard config error. `docs/
+    configuration.md` promises the doctor's arithmetic equals what a run counts;
+    this class is that promise, asserted in both directions.
+
+    Fixed at the seam rather than in the report: the doctor validates the config
+    the way a run does, AND `make_adapter` refuses a named adapter it does not
+    have instead of guessing one. Either alone leaves a reader that disagrees —
+    `jury run-agent` also loads without validating.
+    """
+
+    def test_a_config_the_run_refuses_is_not_ready(self):
+        self.assertFalse(_run_accepts(_UNKNOWN_ADAPTER_BENCH))
+        self.assertFalse(_doctor(_UNKNOWN_ADAPTER_BENCH)["recommendations"]["ready"])
+
+    def test_a_config_the_run_accepts_is_ready(self):
+        """The other direction: the fix must not be "say no to everything"."""
+        self.assertTrue(_run_accepts(_KNOWN_ADAPTER_BENCH))
+        self.assertTrue(_doctor(_KNOWN_ADAPTER_BENCH)["recommendations"]["ready"])
+
+    def test_readiness_equals_acceptance_for_both_benches(self):
+        for bench, label in (
+            (_UNKNOWN_ADAPTER_BENCH, "unknown adapter"),
+            (_KNOWN_ADAPTER_BENCH, "known adapter"),
+        ):
+            with self.subTest(bench=label):
+                self.assertEqual(
+                    _doctor(bench)["recommendations"]["ready"], _run_accepts(bench), label
+                )
+
+    def test_the_verdict_names_the_seat_and_the_unknown_adapter(self):
+        diagnostics = _doctor(_UNKNOWN_ADAPTER_BENCH)
+        warnings = "\n".join(diagnostics["config_warnings"])
+        self.assertIn("unknown adapter 'claude'", warnings)
+        self.assertIn("agent 'gpt'", warnings)
+        self.assertIsNone(diagnostics["config"])
+        self.assertEqual(diagnostics["agents"], [])
+
+    def test_no_seat_is_reported_available_and_the_gate_is_not_reported_met(self):
+        """The three claims the reviewer read off the report, all reversed."""
+        report = doctor.render_report(_doctor(_UNKNOWN_ADAPTER_BENCH))
+        self.assertNotIn("[available]", report)
+        self.assertIn("cross-vendor ready: no", report)
+        self.assertIn("ready to run: no", report)
+
+    def test_the_json_export_agrees_with_the_text_report(self):
+        exported = doctor_report_dict(_doctor(_UNKNOWN_ADAPTER_BENCH))
+        self.assertEqual(exported["agents"], [])
+        self.assertFalse(exported["panel"]["multi_vendor_ready"])
+
+    def test_make_adapter_refuses_the_name_instead_of_guessing_one(self):
+        """The other half of the seam: the fall-through WAS the silent guess."""
+        spec = AgentSpec(name="gpt", vendor="openai", adapter="claude", command="ls")
+        with self.assertRaises(ConfigError) as caught:
+            make_adapter(spec)
+        self.assertIn("unknown adapter 'claude'", str(caught.exception))
+        self.assertIn("agent 'gpt'", str(caught.exception))
+
+    def test_make_adapter_still_falls_through_for_an_unnamed_adapter(self):
+        """An unknown VENDOR named no protocol, so inheriting the generic one
+        stays the documented behaviour — the refusal is only for a named one."""
+        spec = AgentSpec(name="seat", vendor="grok-cli", command="cursor-agent")
+        self.assertIsInstance(make_adapter(spec), adapters.GenericCLIAdapter)
+
+    def test_run_agent_refuses_the_same_name_it_loads_without_validating(self):
+        """`jury run-agent` drives one seat and does not validate the file, so
+        the refusal has to live where the adapter is built, not only at load."""
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Path(tmp) / "jury.toml"
+            config.write_text(_UNKNOWN_ADAPTER_BENCH, encoding="utf-8")
+            prompt = Path(tmp) / "prompt.txt"
+            prompt.write_text("review this", encoding="utf-8")
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                code = cli.main(
+                    [
+                        "run-agent",
+                        "--role",
+                        "review",
+                        "--agent",
+                        "gpt",
+                        "--config",
+                        str(config),
+                        "--prompt-file",
+                        str(prompt),
+                    ]
+                )
+        self.assertEqual(code, 2, err.getvalue())
+        self.assertIn("unknown adapter 'claude'", err.getvalue())
+
+
 class TheVocabularyIsOneVocabulary(unittest.TestCase):
     def test_adapters_and_vendors_are_the_same_names(self):
         """One vocabulary, derived — not a second list to keep in step."""
