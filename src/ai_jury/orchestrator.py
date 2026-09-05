@@ -13,10 +13,11 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 
-from . import convergence, injection, largediff, panel, prompts
+from . import convergence, injection, largediff, panel, prompts, routing
 from .adapters import RETRYABLE_ERROR_CODES, Adapter, AgentResult, make_adapter
 from .config import JuryConfig
 from .consensus import FindingGroup, demote_local_only_groups, group_findings
+from .diffprofile import profile_diff
 from .findings import (
     Finding,
     Verdict,
@@ -163,6 +164,8 @@ class JuryOutcome:
     # from a diff" — a hand-assembled outcome, a caller that never had one — and
     # the scope rule then falls back to the structural test it applied before.
     changed: largediff.ChangeIndex | None = None
+    # What tiered routing decided (#714): the plan's dict, or the standard record.
+    routing: dict = field(default_factory=lambda: routing.standard_plan([]).as_dict())
 
 
 def _run_phase(
@@ -441,6 +444,25 @@ def run_jury(
         raise RuntimeError("no usable agents — install at least one agent CLI or use --mock")
 
     usable_names = [a.name for a in usable]
+    # Tiered routing (#714): a pure plan over the enabled bench, the usable
+    # names and the diff's risk band decides who sits in round 1, who anchors
+    # and who is benched; the standard mode records a plan too so the report
+    # always says what happened. Benched seats stay available for escalation.
+    if config.routing == routing.MODE_TIERED:
+        plan = routing.plan_panel(
+            specs,
+            usable_names,
+            profile_diff(diff).risk,
+            chair=config.chair,
+            min_vendors=int(getattr(config.ci, "min_vendors", 0) or 0),
+            min_reviews=int(getattr(config.ci, "min_reviews", 0) or 0),
+        )
+    else:
+        plan = routing.standard_plan(usable_names)
+    log(routing.describe(plan))
+    seated = set(plan.panel)
+    round1 = [a for a in usable if a.name in seated]
+    benched = [a for a in usable if a.name in set(plan.benched)]
 
     # State the number a downstream consumer will actually receive, BEFORE the
     # panel is paid for (#699). "3 agents reviewing" is not that number: it is one
@@ -452,13 +474,13 @@ def run_jury(
     # the bench cannot reach even the ceiling, this is a shortfall the run should
     # name here rather than at the consumer, an hour and three CLI invocations
     # later.
-    log(panel.describe(len(usable), available=len(usable)))
-    too_small = panel.shortfall(len(usable), config.ci.min_reviews, stage="before the panel runs")
+    log(panel.describe(len(round1), available=len(usable)))
+    too_small = panel.shortfall(len(round1), config.ci.min_reviews, stage="before the panel runs")
     if too_small:
         raise RuntimeError(too_small)
 
     # Round 1: independent reviews.
-    log(f"round 1: {len(usable)} agents reviewing")
+    log(f"round 1: {len(round1)} agents reviewing")
     review_prompt = {
         a.name: tmpl["review"].format(
             name=a.name,
@@ -467,10 +489,10 @@ def run_jury(
             policy=policy_section,
             notice=prompts._UNTRUSTED_NOTICE,
         )
-        for a in usable
+        for a in round1
     }
     reviews = _run_phase(
-        usable,
+        round1,
         review_prompt,
         "review",
         config.parallel,
@@ -481,7 +503,7 @@ def run_jury(
     # Stable ordering: the thread pool can return results in any completion
     # order. Reorder to the enabled-agent order so the report (and every
     # downstream consumer) is independent of which thread finished first.
-    agent_order = [a.name for a in usable]
+    agent_order = [a.name for a in round1]
     reviews = _order_by_agents(reviews, agent_order)
 
     # Parse structured findings from each successful review and aggregate them.
@@ -515,7 +537,21 @@ def run_jury(
     # SAME chair. ``chair = "rotate"`` and prefer-non-reviewer both consume the
     # shared run RNG / reviewer info, so resolving once (rather than recomputing
     # per phase) is what keeps a rotating chair stable within a run (#38).
-    chair_name = resolve_chair(config, usable_names, reviewer_names, run_rng)
+    # Escalation (#714): a critical or major finding after round 1 brings the
+    # benched frontier seats into the debate and draws the chair from the
+    # frontier seats. Decided once, here, and recorded on the plan.
+    if benched:
+        plan.escalated, plan.escalation_reason = routing.should_escalate(groups)
+        if plan.escalated:
+            log(
+                f"tiered routing: escalating — {plan.escalation_reason}; "
+                f"{', '.join(a.name for a in benched)} join the debate"
+            )
+    chair_pool = [a.name for a in round1]
+    if plan.escalated:
+        chair_pool = routing.frontier_names(specs, usable_names) or chair_pool
+        agent_order = agent_order + [a.name for a in benched]
+    chair_name = resolve_chair(config, chair_pool, reviewer_names, run_rng)
 
     # Round 2+: debate. Only agents whose round-1 review succeeded participate.
     # Two modes (issue #40):
@@ -528,7 +564,11 @@ def run_jury(
     rounds_executed = 1
     stop_reason = ""
     budget_exhausted = False
-    debaters = [a for a in usable if any(r.agent == a.name and r.ok for r in reviews)]
+    debaters = [a for a in round1 if any(r.agent == a.name and r.ok for r in reviews)]
+    if plan.escalated:
+        # Benched frontier seats cross-examine: they receive every round-1
+        # review as "the others" and answer in the debate format.
+        debaters = debaters + benched
     can_debate = len(debaters) >= 2
 
     if config.early_stop:
@@ -704,6 +744,7 @@ def run_jury(
         rounds_executed=rounds_executed,
         stop_reason=stop_reason,
         changed=changed,
+        routing=plan.as_dict(),
     )
 
 

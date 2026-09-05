@@ -210,3 +210,166 @@ class StaticHintsConfigContractTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+TIERED_TOML = """
+[jury]
+rounds = 2
+verify = true
+chair = "claude"
+routing = "tiered"
+
+[jury.ci]
+min_vendors = 0
+
+[[agent]]
+name = "claude"
+vendor = "anthropic"
+command = "claude"
+
+[[agent]]
+name = "gpt"
+vendor = "openai"
+command = "codex"
+
+[[agent]]
+name = "cheap"
+vendor = "google"
+command = "agy"
+tier = "economical"
+"""
+
+#: A one-file, one-line change: risk "low" under diffprofile.
+ROUTINE_DIFF = SAMPLE_DIFF
+#: A change under a security-sensitive path: risk "high".
+SENSITIVE_DIFF = "diff --git a/src/auth/login.py b/src/auth/login.py\n@@ -0,0 +1 @@\n+x = 1\n"
+
+
+def _tiered_config(**jury):
+    data = tomllib.loads(TIERED_TOML)
+    data["jury"].update(jury)
+    return _from_dict(data)
+
+
+class TieredRoutingRunsThePanelItPlans(unittest.TestCase):
+    """The plan is what round 1 runs, and the report says so (#714)."""
+
+    def test_a_routine_diff_benches_the_second_frontier_seat(self):
+        outcome = orchestrator.run_jury(_tiered_config(), ROUTINE_DIFF, mock=True)
+        self.assertEqual([r.agent for r in outcome.reviews], ["claude", "cheap"])
+        self.assertEqual(outcome.routing["mode"], "tiered")
+        self.assertEqual(outcome.routing["risk"], "low")
+        self.assertEqual(outcome.routing["benched"], ["gpt"])
+        self.assertEqual(outcome.routing["anchor"], "claude")
+
+    def test_a_sensitive_diff_seats_the_full_panel(self):
+        outcome = orchestrator.run_jury(_tiered_config(), SENSITIVE_DIFF, mock=True)
+        self.assertEqual([r.agent for r in outcome.reviews], ["claude", "gpt", "cheap"])
+        self.assertEqual(outcome.routing["risk"], "high")
+        self.assertEqual(outcome.routing["benched"], [])
+        self.assertFalse(outcome.routing["escalated"])
+
+    def test_standard_routing_is_unchanged_and_recorded(self):
+        outcome = orchestrator.run_jury(_tiered_config(routing="standard"), ROUTINE_DIFF, mock=True)
+        self.assertEqual([r.agent for r in outcome.reviews], ["claude", "gpt", "cheap"])
+        self.assertEqual(outcome.routing["mode"], "standard")
+        self.assertEqual(outcome.routing["panel"], ["claude", "gpt", "cheap"])
+
+    def test_a_major_finding_escalates_the_benched_seat_into_the_debate(self):
+        # The mock reviewer reports a major finding, so round 1 escalates: the
+        # benched frontier seat cross-examines and the chair stays frontier.
+        outcome = orchestrator.run_jury(_tiered_config(), ROUTINE_DIFF, mock=True)
+        self.assertTrue(outcome.routing["escalated"])
+        self.assertIn("major", outcome.routing["escalation_reason"])
+        self.assertEqual([r.agent for r in outcome.debate], ["claude", "cheap", "gpt"])
+        self.assertEqual(outcome.chair, "claude")
+
+    def test_without_escalation_the_benched_seat_never_runs(self):
+        with patch("ai_jury.routing.should_escalate", return_value=(False, "quiet round")):
+            outcome = orchestrator.run_jury(_tiered_config(), ROUTINE_DIFF, mock=True)
+        self.assertFalse(outcome.routing["escalated"])
+        self.assertEqual(outcome.routing["escalation_reason"], "quiet round")
+        self.assertEqual([r.agent for r in outcome.debate], ["claude", "cheap"])
+        every_phase = list(outcome.reviews) + list(outcome.debate)
+        for result in (outcome.verify, outcome.synthesis):
+            if result is not None:
+                every_phase.append(result)
+        self.assertNotIn("gpt", {r.agent for r in every_phase})
+
+    def test_an_economical_chair_is_replaced_by_a_frontier_one_on_escalation(self):
+        outcome = orchestrator.run_jury(_tiered_config(chair="cheap"), ROUTINE_DIFF, mock=True)
+        self.assertEqual(outcome.routing["anchor"], "claude")
+        self.assertTrue(outcome.routing["escalated"])
+        self.assertEqual(outcome.chair, "claude")
+
+    def test_the_vendor_floor_reaches_the_plan(self):
+        config = _tiered_config()
+        config.ci.min_vendors = 3
+        outcome = orchestrator.run_jury(config, ROUTINE_DIFF, mock=True)
+        self.assertEqual([r.agent for r in outcome.reviews], ["claude", "gpt", "cheap"])
+        self.assertIn("min_vendors=3", outcome.routing["reason"])
+
+    def test_the_log_names_the_decision(self):
+        lines: list[str] = []
+        orchestrator.run_jury(_tiered_config(), ROUTINE_DIFF, mock=True, log=lines.append)
+        self.assertTrue(any(line.startswith("tiered routing: risk=low") for line in lines), lines)
+        self.assertTrue(any("escalating" in line for line in lines), lines)
+
+
+class TieredRoutingReachesTheReports(unittest.TestCase):
+    def _json_run(self, extra):
+        import json as _json
+
+        from ai_jury.formats import to_json
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg_path = str(Path(tmp) / "jury.toml")
+            Path(cfg_path).write_text(TIERED_TOML, encoding="utf-8")
+            captured = io.StringIO()
+            prev_stdin = sys.stdin
+            sys.stdin = io.StringIO(ROUTINE_DIFF)
+            try:
+                with contextlib.redirect_stdout(captured):
+                    code = main(
+                        ["--mock", "--diff-file", "-", "--config", cfg_path, "--format", "json"]
+                        + extra
+                    )
+            finally:
+                sys.stdin = prev_stdin
+        self.assertEqual(code, 0, captured.getvalue()[-500:])
+        del to_json
+        return _json.loads(captured.getvalue())
+
+    def test_the_json_report_carries_the_routing_block(self):
+        doc = self._json_run([])
+        self.assertEqual(doc["schema_version"], "1.4")
+        self.assertEqual(doc["metadata"]["schema_version"], 7)
+        routing_meta = doc["metadata"]["routing"]
+        self.assertEqual(routing_meta["mode"], "tiered")
+        self.assertEqual(routing_meta["panel"], ["claude", "cheap"])
+        self.assertEqual(routing_meta["benched"], ["gpt"])
+        self.assertEqual(
+            [r["name"] for r in doc["reviewers"] if r["role"] == "panelist"],
+            ["claude", "cheap"],
+        )
+
+    def test_the_min_vendors_flag_reaches_the_plan(self):
+        doc = self._json_run(["--min-vendors", "3"])
+        self.assertEqual(doc["metadata"]["routing"]["panel"], ["claude", "gpt", "cheap"])
+
+    def test_the_markdown_report_names_the_decision(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg_path = str(Path(tmp) / "jury.toml")
+            Path(cfg_path).write_text(TIERED_TOML, encoding="utf-8")
+            captured = io.StringIO()
+            prev_stdin = sys.stdin
+            sys.stdin = io.StringIO(ROUTINE_DIFF)
+            try:
+                with contextlib.redirect_stdout(captured):
+                    code = main(["--mock", "--diff-file", "-", "--config", cfg_path])
+            finally:
+                sys.stdin = prev_stdin
+        self.assertEqual(code, 0)
+        text = captured.getvalue()
+        self.assertIn("routing: tiered — risk=low", text)
+        self.assertIn("escalated:", text)
