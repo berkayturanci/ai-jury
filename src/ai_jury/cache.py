@@ -234,6 +234,25 @@ def outcome_from_dict(data: dict) -> JuryOutcome:
         # by digest, so a restored index describes the same bytes as the run
         # that wrote it; a legacy entry has none and the scope rule falls back.
         changed=_change_index(data.get("changed")),
+        # The routing record rides along like every other field (#714). An
+        # entry written before this key existed is restored as the standard
+        # record naming the seats it holds, which is what those runs did: the
+        # panel was never trimmed. That is truthful without invalidating a
+        # single cache entry — `routing` and every seat's `tier` are already in
+        # `config_hash`, so a plan that would route differently has a different
+        # key and cannot hit an old entry at all.
+        routing=dict(data["routing"])
+        if data.get("routing")
+        else {
+            "mode": "standard",
+            "risk": "",
+            "panel": [r.get("agent", "") for r in data.get("reviews", [])],
+            "benched": [],
+            "anchor": None,
+            "reason": "standard routing",
+            "escalated": False,
+            "escalation_reason": "",
+        },
     )
 
 

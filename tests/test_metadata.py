@@ -56,6 +56,7 @@ class MetadataShapeTest(unittest.TestCase):
             "rounds_executed",
             "from_cache",
             "stop_reason",
+            "routing",
             "skipped",
             "retried",
             "budget_exhausted",

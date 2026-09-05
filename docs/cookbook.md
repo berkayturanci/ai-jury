@@ -850,7 +850,30 @@ jury apply --report report.md 1
 
 ## 19. Fast, frugal reviews with `--tiered` routing and `--hints`
 
-For cost optimization and noise reduction on large repositories:
+For cost optimization and noise reduction on large repositories, label the
+cheap seats and let the diff's risk decide who reviews:
+
+```toml
+# jury.toml
+[jury]
+chair = "claude"
+
+[[agent]]
+name = "claude"
+vendor = "anthropic"
+command = "claude"          # frontier (default): anchors routed panels, chairs
+
+[[agent]]
+name = "gpt"
+vendor = "openai"
+command = "codex"           # frontier: benched on routine diffs, back on escalation
+
+[[agent]]
+name = "flash"
+vendor = "google"
+command = "agy"
+tier = "economical"         # the seat routine diffs are reviewed by
+```
 
 ```bash
 # Combine fast linter pre-pass and tiered model routing with frontier protection
@@ -858,7 +881,7 @@ jury --pr 123 --hints --tiered
 ```
 
 - `--hints` runs fast local linters (Ruff, ESLint) and informs LLMs so they skip trivial formatting and focus on deep bugs.
-- `--tiered` routes routine code to economical models while keeping frontier models as anchors for complex or security-sensitive changes.
+- `--tiered` seats `flash` + `claude` on a routine diff and benches `gpt`; a security-sensitive or large diff seats all three; a `critical`/`major` finding after round 1 brings `gpt` into the debate. The decision is in `metadata.routing` of the JSON report and on the `routing:` line of the Markdown report.
 
 ---
 
