@@ -140,7 +140,7 @@ current branch from stdin.
 | `--max-rounds` | integer ≥ 1 | = `rounds` | Ceiling on adaptive rounds when early-stop is on. |
 | `--early-stop` / `--no-early-stop` | flag | from config (`false`) | Adaptive: stop after round 1 when reviewers agree; debate only on disagreement. |
 | `--auto` / `--no-auto` | flag | from config (`false`) | Risk-aware auto-depth: scale rounds/verify to the diff profile. |
-| `--tiered` | flag | from config (`routing = "standard"`) | Risk-aware tiered model routing: routes routine diffs to economical models while keeping frontier models as anchors for critical files. |
+| `--tiered` | flag | from config (`routing = "standard"`) | Risk-aware tiered routing: on a `low`/`medium`-risk diff, round 1 seats the economical seats plus one frontier anchor and benches the other frontier seats; a `high`-risk diff seats everybody; a `critical`/`major` finding escalates the benched seats into the debate and a frontier chair. See [tiered routing](configuration.md#tiered-routing-routing--tiered--static-hints-hints--true). |
 | `--hints` / `--no-hints` | flag | from config (`hints = false`) | Static analysis pre-pass: runs fast local linters (Ruff, ESLint) and injects hints into Round 1 prompt context. |
 | `--verify` / `--no-verify` | flag | from config (`true`) | Run (or skip) the verification round. |
 | `--chair` | agent name, or `rotate` | from config (`claude`) | Which agent synthesizes the verdict (and runs verification). Must be an enabled agent. |
@@ -504,7 +504,7 @@ fails loudly.
 | `decision` | `"chair"` \| `"vote"` | `"chair"` | Final-verdict source: chair synthesis or a panel vote (CLI `--decision`). Rendering-only — not part of the config hash or cache key. |
 | `theater` | bool | `false` | Enable live interactive terminal animation. |
 | `theater_style` | `"flat"` \| `"pixel"` | `"flat"` | Visual aesthetic for terminal animation. |
-| `routing` | `"standard"` \| `"tiered"` | `"standard"` | Risk-aware tiered model routing with frontier anchor (CLI `--tiered`). Part of the config hash and cache key. |
+| `routing` | `"standard"` \| `"tiered"` | `"standard"` | Risk-aware tiered routing with a frontier anchor (CLI `--tiered`): the round-1 panel follows the diff's risk band and each seat's `tier`; see [tiered routing](configuration.md#tiered-routing-routing--tiered--static-hints-hints--true). Part of the config hash and cache key. |
 | `hints` | bool | `false` | Run fast static linter pre-pass to inject hints into Round 1, under every context mode (CLI `--hints` / `--no-hints`). Part of the config hash and cache key. |
 | `demote_local_only` | bool | `false` | Demote uncorroborated single-local-model findings to minor advisory status. |
 
@@ -561,7 +561,7 @@ transcript = true   # default the markdown report to the full play-by-play
 | `prompt_mode` | string | `stdin` | Prompt delivery for `vendor = "cli"` (`stdin` \| `arg`). |
 | `headers` | table of strings | `{}` | Custom HTTP headers map for `openai-compatible` API calls. A `headers` that is not a table (a bare string, an array) is a **hard** config error naming the agent, because it cannot become headers at all — as is a non-string header name. A non-string **value** (`X-Retries = 3`) **warns** and is coerced to a string before being sent, like a malformed `api_key_env` that falls back; `--strict-config` makes that fatal. Part of the config hash, so two seats differing only in a routing header do not share a cache entry. No message quotes the offending value back — a header is where a bearer token lives. |
 | `effort` | string | unset | `low` \| `medium` \| `high`. Reasoning effort, mapped per vendor (see [effort](configuration.md#reasoning-effort-agent-effort----effort)). An unknown value is a hard config error; a vendor with no effort control warns once and ignores it. Overridden by `--effort`. |
-| `tier` | string | `frontier` | `frontier` \| `economical`. The seat's cost tier. Accepted, normalised and reported by `--doctor --json` today; **tiered routing (part 2 of #714) is what will read it** — economical seats sit on routine diffs, frontier seats anchor them and are benched otherwise. The operator says which is which; there are no model-name heuristics. An unknown value is a hard config error. Part of the config hash only when set to `economical`, so an existing config's cache entries are unchanged. |
+| `tier` | string | `frontier` | `frontier` \| `economical`. The seat's cost tier, read by `routing = "tiered"` (see [tiered routing](configuration.md#tiered-routing-routing--tiered--static-hints-hints--true)): economical seats sit on routine diffs, frontier seats anchor them and are benched otherwise. The operator says which is which — there are no model-name heuristics. An unknown value is a hard config error. Part of the config hash only when set to `economical`, so an existing config's cache entries are unchanged. |
 | `timeout` | int | `600` | Positive seconds (inherits `jury.timeout`). |
 | `enabled` | bool | `true` | Disabled agents are skipped. |
 | `extra_args` | list[str] | `[]` | Extra CLI args (e.g. the secure-default sandbox flags). |

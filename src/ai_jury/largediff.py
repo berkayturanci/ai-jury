@@ -227,7 +227,11 @@ def split_diff(diff: str) -> list[DiffFile]:
     return files
 
 
-_BINARY_RE = re.compile(r"(?m)^\s*(?:GIT binary patch|Binary files .* differ)\s*$")
+# Anchored at the TRUE start of a line — no leading whitespace (#739). Git writes
+# both markers at column 0; every line inside a hunk carries a one-character
+# prefix (``+``, ``-``, or a space for context), so column 0 is unreachable from
+# a file's content and the anchor is what separates a marker from a mention.
+_BINARY_RE = re.compile(r"(?m)^(?:GIT binary patch|Binary files .* differ)\s*$")
 
 
 def _is_binary(text: str) -> bool:
@@ -238,6 +242,14 @@ def _is_binary(text: str) -> bool:
     the text. A diff's content lines are prefixed with ``+``/``-``/`` ``, so this
     never misfires on source code that merely *mentions* those strings (e.g. this
     module's own detector).
+
+    The prefix is the whole of the guarantee, so the pattern must not skip it.
+    It used to allow leading whitespace, which ate the single space in front of a
+    **context** line: an unchanged line reading ``Binary files a/x b/x differ``
+    inside a hunk made the entire text file read as binary and silently dropped
+    it from the review (#739). An *added* (``+``) or *removed* (``-``) line is
+    content for the same reason and is likewise not a marker — the ballot should
+    review the change that wrote that line, not skip the file because of it.
     """
     # bolt: avoid allocating a huge list of strings from splitlines()
     # and generator overhead by using C-optimized regex finding.

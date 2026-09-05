@@ -225,9 +225,66 @@ Control cost optimization and deterministic pre-pass linter checks:
 [jury]
 routing = "tiered"   # "standard" (default) | "tiered" (risk-aware cost tiering)
 hints = true         # run local Ruff/ESLint pre-pass before Round 1 (default: false)
+
+[[agent]]
+name = "claude"
+vendor = "anthropic"
+command = "claude"            # tier unset → "frontier": may anchor a routed panel
+
+[[agent]]
+name = "gpt"
+vendor = "openai"
+command = "codex"             # frontier too: benched on a routine diff
+
+[[agent]]
+name = "flash"
+vendor = "google"
+command = "agy"
+tier = "economical"           # sits on routine diffs in place of the benched seats
 ```
 
-- **`routing = "tiered"`** (`--tiered`): Uses the diff risk classifier to route non-critical files to economical models while keeping frontier models as anchor reviewers for security-critical paths (`auth/`, `crypto/`).
+- **`routing = "tiered"`** (`--tiered`): decides the **round-1 panel** from the
+  diff's risk band and each seat's `[[agent]] tier` (#714). The band is the one
+  `--auto` uses (`diffprofile`: size, file count, docs-only, security-sensitive
+  paths); the tier is what the operator wrote — there are no model-name
+  heuristics.
+  - `high` risk (security-sensitive paths, large or many-file diffs) → the **full**
+    enabled panel. Nothing is saved on a change that can hurt.
+  - `low` or `medium` risk → every **economical** seat plus **one frontier anchor**:
+    the configured chair when it is frontier and usable, otherwise the first usable
+    frontier seat in config order. The remaining frontier seats are **benched**.
+  - Two floors always hold: the panel keeps at least `[jury.ci] min_vendors`
+    distinct vendors (counted as the gate counts them) and at least
+    `[jury.ci] min_reviews` seats — benched seats are added back, a new vendor
+    first, then config order, until both hold. `--min-vendors` reaches the plan.
+  - A bench with no economical seat, or no frontier seat, runs the full panel
+    (there is nothing to save, or nothing to anchor with) and the report says so.
+  - **Escalation**: if round 1 leaves a `critical` or `major` finding, the benched
+    frontier seats join the debate as cross-examiners (they receive every round-1
+    review) and the chair for verification and synthesis is drawn from the
+    frontier seats — the configured chair when it is one, else the first. Without
+    escalation the benched seats never run. Some runs have **no debate to join**:
+    one round (which is what `--auto` sets on the `low` band that benched them),
+    or an adaptive run that converges after round 1 (`--auto` sets that on
+    `medium`). Escalation then moves the chair and nothing else.
+    `escalation_reason` is written **after** the debate section from what
+    actually happened — `gpt joined the debate`, `the debate ran without the
+    bench, so only the chair was escalated` (every benched call failed), or
+    `no debate round ran, so only the chair was escalated` — so the record can
+    never claim a round the run did not have. A chunked review escalates per
+    chunk: the record says on how many, recomputes the effect from the merged
+    debate, and publishes the chair of the first chunk that escalated. What an escalated seat contributes is
+    a **debate** voice — `AGREE` / `DISPUTE` / `MISSED` on the reviews it is
+    shown — which reaches the chair's verdict but is not parsed into structured
+    findings; that is how the debate round has always worked, for every seat.
+    A benched seat therefore never adds a finding the CI gate can fire on. If
+    you need every seat's findings on every diff, that is what `standard`
+    routing is.
+  - Every decision is recorded: `metadata.routing` in the JSON report
+    (`mode`, `risk`, `panel`, `benched`, `anchor`, `reason`, `escalated`,
+    `escalation_reason`), one `routing:` line in the Markdown run metadata, and
+    a `tiered routing:` log line. `routing` and every seat's `tier` are part of
+    the config hash, so a `--cache` entry is never shared across two plans.
 - **`hints = true`** (`--hints` / `--no-hints`): Runs fast local static linters (Ruff for Python, ESLint for JS/TS) on modified files and injects compact hints into Round 1 prompt context so reviewers focus strictly on deep logic bugs and security flaws.
 
 The hints are produced locally by this run, not taken from your context, so they
