@@ -1015,28 +1015,33 @@ def _synthesize(
 
 
 def _first_sent_model(parts: list[AgentResult]) -> str:
-    """The model id a merged multi-chunk result carries (issue #722).
+    """The first model id *parts* recorded sending (issue #722).
 
     Every chunk of one diff is one seat invoked repeatedly through one adapter,
     so the parts normally all carry the same stamped id (#709) and "the first
-    non-empty one" is simply "the one". Two cases make the choice visible, and
-    both want the *first*:
+    non-empty one" is simply "the one". Where they disagree — which only an
+    adapter that consults a live model listing between invocations can produce
+    — there is no id that is true of the whole merge, and inventing one
+    ("mixed") would be a string no invocation sent. The first is a model this
+    run really did send, and it is the one whose output opens the merged body,
+    so the ballot's id and the text a reader checks it against come from the
+    same invocation.
 
-    * A chunk that never reached the wire — a spawn failure, a timeout killed
-      before the argv was built — carries ``""``. Reading that as the merged
-      id would say *nothing was pinned* about a run that pinned a model on
-      every other chunk, so an empty part is skipped rather than allowed to
-      erase the answer.
-    * Parts that genuinely disagree, which only an adapter that consults a live
-      model listing between chunks can produce. There is no id that is true of
-      the whole merge then, and inventing one ("mixed") would be a string no
-      invocation sent. The first is a model this run really did send, and the
-      merged body opens with that chunk's output, so the ballot's id and the
-      text a reader checks it against come from the same invocation.
+    **Callers pass the parts whose output is in the merged body**, because that
+    is what the id has to be true of. A failed part is not excluded by carrying
+    ``""``: :func:`_run_with_retry` stamps ``result.model`` from
+    ``adapter.resolved_model()`` after ``adapter.run`` returns, whether the run
+    succeeded or not, so a chunk that failed *does* normally record an id — and
+    it can be a different one from its siblings', since the fallback an adapter
+    performs against a live listing is exactly the kind of failure that changes
+    it. Scanning all the parts would then let a chunk that contributed no text
+    name the model for text it did not produce.
 
-    Empty when no part recorded one at all: a hand-assembled outcome or a
-    pre-#709 record, which :func:`ai_jury.ballots.describe_model` labels
-    ``recomputed`` rather than ``requested``. That fallback is unchanged.
+    A part carries ``""`` only when nothing stamped it: a hand-assembled
+    outcome, a pre-#709 record, or a failure raised before the adapter returned.
+    A merge in which no scanned part recorded an id stays empty, which
+    :func:`ai_jury.ballots.describe_model` labels ``recomputed`` rather than
+    ``requested``. That fallback is unchanged.
     """
     for p in parts:
         model = (getattr(p, "model", "") or "").strip()
@@ -1054,7 +1059,13 @@ def _merge_results_by_agent(phase_lists: list[list[AgentResult]]) -> list[AgentR
 
     The model id the invocation sent (:attr:`AgentResult.model`, #709) rides
     along too — see :func:`_first_sent_model`. Dropping it here made a chunked
-    review's provenance strictly weaker than a single-chunk one's (#722).
+    review's provenance strictly weaker than a single-chunk one's (#722). It is
+    read from the same parts the body is built from: the id has to be one that
+    produced the text under it, and a chunk can fail *after* recording a
+    different id than its siblings (an adapter that fell back against a live
+    listing). Only when no part contributed body text at all — a seat that
+    failed on every chunk — is the whole set scanned, so a failed seat still
+    reports what it sent.
     """
     order: list[str] = []
     by_agent: dict[str, list[AgentResult]] = {}
@@ -1073,6 +1084,7 @@ def _merge_results_by_agent(phase_lists: list[list[AgentResult]]) -> list[AgentR
         # into a single-pass O(N) explicit loop to bypass multiple generator instantiations
         ok = False
         body_parts = []
+        body_sources: list[AgentResult] = []
         first_err = None
         total_duration = 0.0
         max_attempts = 0
@@ -1082,6 +1094,7 @@ def _merge_results_by_agent(phase_lists: list[list[AgentResult]]) -> list[AgentR
                 ok = True
                 if p.output:
                     body_parts.append(f"#### chunk {i}\n{p.output}")
+                    body_sources.append(p)
             elif first_err is None:
                 first_err = p
 
@@ -1101,7 +1114,7 @@ def _merge_results_by_agent(phase_lists: list[list[AgentResult]]) -> list[AgentR
                 error=None if ok else (first_err.error if first_err else None),
                 error_code=None if ok else (first_err.error_code if first_err else None),
                 attempts=max_attempts,
-                model=_first_sent_model(parts),
+                model=_first_sent_model(body_sources or parts),
             )
         )
     return merged
