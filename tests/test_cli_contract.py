@@ -119,6 +119,7 @@ DOCUMENTED_FLAGS = [
     "--strict-config",
     "--tiered",
     "--hints",
+    "--no-hints",
     "--version",
     "--help",
 ]
@@ -471,6 +472,44 @@ class DoctorJsonCliTests(unittest.TestCase):
 
         action = next(a for a in build_parser()._actions if "--effort" in a.option_strings)
         self.assertEqual(list(action.choices), list(EFFORT_LEVELS))
+
+
+class FailOnVocabularyCliTests(unittest.TestCase):
+    """A misspelled `--fail-on` severity exits 2 instead of gating nothing (#718)."""
+
+    def test_typo_exits_2_naming_the_value(self):
+        code, out, err = _run_cli(
+            ["--mock", "--ci", "--fail-on", "crticial", "--diff-file", "-"], stdin=SAMPLE_DIFF
+        )
+        self.assertEqual(code, 2)
+        self.assertEqual(out, "")
+        self.assertIn("--fail-on", err)
+        self.assertIn("crticial", err)
+        self.assertIn("critical, major, minor, nit, info, blocker", err)
+
+    def test_a_typo_beside_a_valid_severity_is_refused(self):
+        code, _, err = _run_cli(
+            ["--mock", "--ci", "--fail-on", "critical,majr", "--diff-file", "-"], stdin=SAMPLE_DIFF
+        )
+        self.assertEqual(code, 2)
+        self.assertIn("majr", err)
+
+    def test_the_guard_runs_without_ci_too(self):
+        # `--fail-on` is inert without `--ci`, so a typo would otherwise surface
+        # only on the run it was supposed to gate.
+        code, _, err = _run_cli(
+            ["--mock", "--fail-on", "majr", "--diff-file", "-"], stdin=SAMPLE_DIFF
+        )
+        self.assertEqual(code, 2)
+        self.assertIn("majr", err)
+
+    def test_the_documented_alias_and_mixed_case_are_accepted(self):
+        code, out, _ = _run_cli(
+            ["--mock", "--ci", "--fail-on", " Blocker , MINOR ", "--diff-file", "-"],
+            stdin=SAMPLE_DIFF,
+        )
+        self.assertNotEqual(code, 2)
+        self.assertIn("## CI gate", out)
 
 
 class EffortCliTests(unittest.TestCase):

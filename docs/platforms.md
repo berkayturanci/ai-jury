@@ -21,7 +21,7 @@ orchestration.
 |:--|:--|:--|:--|
 | **Claude Code** (plugin) | supported | `/plugin marketplace add berkayturanci/ai-jury` → `/plugin install ai-jury@ai-jury` | `jury`, ≥1 agent CLI, `gh` |
 | **Claude Code** (manual skill) | supported | Copy [`skill/ai-jury/`](../skill/ai-jury/SKILL.md) into a project's `.claude/skills/` | `jury`, ≥1 agent CLI, `gh` |
-| **Any shell / CI** | supported | Run the CLI: `jury --pr <n>` or `jury --ci --fail-on high,critical` | `jury`, ≥1 agent CLI, `gh` (for `--pr`) |
+| **Any shell / CI** | supported | Run the CLI: `jury --pr <n>` or `jury --ci --fail-on critical,major` | `jury`, ≥1 agent CLI, `gh` (for `--pr`) |
 | **OpenAI Codex CLI** | manual / planned | Invoke `jury` from a Codex session or `AGENTS.md`; native skill manifest planned when Codex stabilizes one (see template below) | `jury`, `codex`, `gh` |
 | **Google Antigravity / Gemini CLI** | manual | Invoke `jury` from the agent session | `jury`, `agy`, `gh` |
 | **Other IDE/agent CLIs** (Cursor, etc.) | manual | Run the `jury` CLI from the integrated terminal | `jury`, ≥1 agent CLI |

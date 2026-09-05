@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 import tempfile  # noqa: E402
 
 from ai_jury.config import (  # noqa: E402
+    DEFAULT_CONFIG,
     KNOWN_AGENT_KEYS,
     KNOWN_EFFORTS,
     ConfigError,
@@ -21,6 +22,7 @@ from ai_jury.config import (  # noqa: E402
     load_raw_config,
     validate_config,
 )
+from ai_jury.findings import SEVERITY_INPUTS  # noqa: E402
 
 
 class ConfigSizeLimit(unittest.TestCase):
@@ -231,6 +233,72 @@ class EffortValidation(unittest.TestCase):
             {"jury": {"rounds": 1, "chair": "a"}, "agent": [{"name": "a", "command": "x"}]}
         )
         self.assertIsNone(cfg.agents[0].effort)
+
+
+class FailOnVocabulary(unittest.TestCase):
+    """`[jury.ci] fail_on` is a closed vocabulary — a typo is a hard error (#718).
+
+    A misspelled severity matches no finding group, so the one setting that
+    decides whether CI fails would pass green forever, quoting the typo back.
+    """
+
+    @staticmethod
+    def _with_fail_on(value):
+        return {
+            "jury": {"rounds": 1, "chair": "a", "ci": {"fail_on": value}},
+            "agent": [{"name": "a", "vendor": "openai", "command": "codex"}],
+        }
+
+    def test_every_known_severity_is_accepted(self):
+        self.assertEqual(validate_config(self._with_fail_on(list(SEVERITY_INPUTS))), [])
+
+    def test_case_and_padding_are_tolerated(self):
+        self.assertEqual(validate_config(self._with_fail_on([" CRITICAL ", "Blocker"])), [])
+
+    def test_a_scalar_is_accepted_because_the_loader_wraps_one(self):
+        self.assertEqual(validate_config(self._with_fail_on("critical")), [])
+        self.assertEqual(_from_dict(self._with_fail_on("critical")).ci.fail_on, ["critical"])
+
+    def test_empty_list_is_accepted(self):
+        # An explicitly empty gate blocks nothing, which is a choice, not a typo.
+        self.assertEqual(validate_config(self._with_fail_on([])), [])
+
+    def test_typo_is_a_hard_error_naming_the_value(self):
+        with self.assertRaises(ConfigError) as ctx:
+            validate_config(self._with_fail_on(["crticial", "majr"]))
+        message = str(ctx.exception)
+        self.assertIn("jury.ci.fail_on", message)
+        self.assertIn("crticial", message)
+        self.assertIn("majr", message)
+        self.assertIn("critical, major, minor, nit, info, blocker", message)
+
+    def test_a_typo_beside_a_valid_severity_is_still_refused(self):
+        # The gate would half-work, which is the shape that hides for months.
+        with self.assertRaises(ConfigError):
+            validate_config(self._with_fail_on(["critical", "hihg"]))
+
+    def test_scalar_typo_is_a_hard_error(self):
+        with self.assertRaises(ConfigError):
+            validate_config(self._with_fail_on("majr"))
+
+    def test_absent_ci_table_is_accepted(self):
+        data = {
+            "jury": {"rounds": 1, "chair": "a"},
+            "agent": [{"name": "a", "vendor": "openai", "command": "codex"}],
+        }
+        self.assertEqual(validate_config(data), [])
+
+    def test_non_table_ci_is_a_hard_error(self):
+        data = {
+            "jury": {"rounds": 1, "chair": "a", "ci": "critical"},
+            "agent": [{"name": "a", "vendor": "openai", "command": "codex"}],
+        }
+        with self.assertRaises(ConfigError) as ctx:
+            validate_config(data)
+        self.assertIn("[jury.ci] must be a table", str(ctx.exception))
+
+    def test_the_shipped_default_config_passes_its_own_gate(self):
+        self.assertEqual(validate_config(DEFAULT_CONFIG), [])
 
 
 class SoftWarnings(unittest.TestCase):

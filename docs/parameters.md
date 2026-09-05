@@ -294,8 +294,11 @@ calling GitHub.
 | `--fail-on` | comma-separated severities | from config (`critical,major`) | Severities that fail CI. See [severities](#severities). |
 
 `--fail-on` takes a comma-separated list drawn from the [severities](#severities)
-(`critical`, `major`, `minor`, `nit`, `info`; `blocker` aliases `critical`).
-Without `--ci`, `--fail-on` has no effect on the exit code.
+(`critical`, `major`, `minor`, `nit`, `info`; `blocker` aliases `critical`),
+matched case-insensitively. A value outside that vocabulary exits **2** naming
+it — even without `--ci`, and before any agent runs — rather than gating on a
+severity no finding can carry. Without `--ci`, `--fail-on` has no effect on the
+exit code.
 
 **Example:** `jury --pr 123 --ci --fail-on critical,major` exits non-zero when a
 confirmed critical or major finding remains — the canonical CI gate.
@@ -498,8 +501,8 @@ fails loudly.
 | `decision` | `"chair"` \| `"vote"` | `"chair"` | Final-verdict source: chair synthesis or a panel vote (CLI `--decision`). Rendering-only — not part of the config hash or cache key. |
 | `theater` | bool | `false` | Enable live interactive terminal animation. |
 | `theater_style` | `"flat"` \| `"pixel"` | `"flat"` | Visual aesthetic for terminal animation. |
-| `routing` | `"standard"` \| `"tiered"` | `"standard"` | Risk-aware tiered model routing with frontier anchor (CLI `--tiered`). |
-| `hints` | bool | `false` | Run fast static linter pre-pass to inject hints into Round 1 (CLI `--hints`). |
+| `routing` | `"standard"` \| `"tiered"` | `"standard"` | Risk-aware tiered model routing with frontier anchor (CLI `--tiered`). Part of the config hash and cache key. |
+| `hints` | bool | `false` | Run fast static linter pre-pass to inject hints into Round 1, under every context mode (CLI `--hints` / `--no-hints`). Part of the config hash and cache key. |
 | `demote_local_only` | bool | `false` | Demote uncorroborated single-local-model findings to minor advisory status. |
 
 **Example:**
@@ -565,7 +568,9 @@ transcript = true   # default the markdown report to the full play-by-play
 
 ### Severities
 Ordered most → least severe: **`critical`**, **`major`**, **`minor`**, **`nit`**, **`info`**.
-Alias: `blocker` → `critical`. Used by `--fail-on` / `[jury.ci] fail_on`.
+Alias: `blocker` → `critical`. Used by `--fail-on` / `[jury.ci] fail_on`, both of
+which **refuse** anything outside this list: a misspelled severity would match no
+finding and pass the gate green forever.
 
 ### Verdicts
 The final verdict vocabulary is **mode-aware** (the rubric differs for code vs. an issue):
