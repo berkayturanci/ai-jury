@@ -279,7 +279,7 @@ and the scope says the second path is not in this change: the reviewer
 demonstrably read something a reader can go and check, and abstaining over the
 extra token would discard a real review to punish a typo. A token *claims* to
 name something when it is shaped like one — a path separator, a leading dot, a
-file extension, a trailing `()`, an `_`, an interior case change — or when the
+leading dot, a trailing `()`, an `_`, an interior case change — or when the
 reviewer marked it; ordinary connective prose in the same line — `lines 1-4`,
 `and the tests` — claims to name nothing and is neither counted as an anchor nor
 reported as a broken one. A line with **no** resolving token is not a review,
