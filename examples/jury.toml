@@ -8,8 +8,12 @@
 # 4. Terminal Coding CLI Agents (Cursor CLI, Aider CLI)
 # ------------------------------------------------------------------------------
 
+# There is no `[jury] panel` key. The panel is every `[[agent]]` below that is
+# not marked `enabled = false`, so this file — which catalogues one seat per
+# provider type — disables the seats outside its demonstration panel of
+# claude + codex + grok + cursor. Delete an `enabled = false` line to seat that
+# provider instead, or set it on a seat you want to keep configured but silent.
 [jury]
-panel = ["claude", "codex", "grok", "cursor"]
 chair = "claude"
 rounds = 2
 verify = true
@@ -57,6 +61,7 @@ name = "agy"
 vendor = "google"
 command = "agy"
 extra_args = ["--dangerously-skip-permissions", "--sandbox"]
+enabled = false
 
 
 # ------------------------------------------------------------------------------
@@ -70,6 +75,7 @@ vendor = "openai-compatible"
 model = "anthropic/claude-3.5-sonnet"
 endpoint = "https://openrouter.ai/api/v1/chat/completions"
 api_key_env = "OPENROUTER_API_KEY"
+enabled = false
 
 # DeepSeek API (Reasoner / V3)
 [[agent]]
@@ -78,6 +84,7 @@ vendor = "openai-compatible"
 model = "deepseek-reasoner"
 endpoint = "https://api.deepseek.com/v1/chat/completions"
 api_key_env = "DEEPSEEK_API_KEY"
+enabled = false
 
 # Groq Ultra-Fast Llama Inference API
 [[agent]]
@@ -86,6 +93,7 @@ vendor = "openai-compatible"
 model = "llama-3.3-70b-versatile"
 endpoint = "https://api.groq.com/openai/v1/chat/completions"
 api_key_env = "GROQ_API_KEY"
+enabled = false
 
 # xAI Grok API
 [[agent]]
@@ -102,6 +110,7 @@ vendor = "openai-compatible"
 model = "moonshot-v1-8k"
 endpoint = "https://api.moonshot.cn/v1/chat/completions"
 api_key_env = "MOONSHOT_API_KEY"
+enabled = false
 
 # OmniRoute / Unified LLM Gateway & Proxy (LiteLLM, One API)
 [[agent]]
@@ -110,6 +119,7 @@ vendor = "openai-compatible"
 model = "anthropic/claude-3-5-sonnet"
 endpoint = "http://localhost:8000/v1/chat/completions"
 api_key_env = "OMNIROUTE_API_KEY"
+enabled = false
 
 
 # ------------------------------------------------------------------------------
@@ -122,6 +132,7 @@ name = "local-ollama"
 vendor = "local"
 model = "qwen2.5-coder:14b"
 endpoint = "http://localhost:11434/v1"
+enabled = false
 
 # LM Studio / vLLM Server
 [[agent]]
@@ -129,6 +140,7 @@ name = "local-lmstudio"
 vendor = "local"
 model = "local-model"
 endpoint = "http://localhost:1234/v1"
+enabled = false
 
 
 # ------------------------------------------------------------------------------
@@ -149,3 +161,4 @@ name = "aider"
 vendor = "cli"
 command = "aider --message"
 prompt_mode = "arg"
+enabled = false
