@@ -754,5 +754,81 @@ class ARecomputedModelIdIsNotLabelledAsSent(unittest.TestCase):
         self.assertIn("claude", ballot["model"])
 
 
+#: A change that touches one ordinary path and no dotfile — the index against
+#: which every dotfile a reviewer might name is *absent*.
+_NO_DOTFILE = change_index(
+    "diff --git a/src/a.py b/src/a.py\n--- a/src/a.py\n+++ b/src/a.py\n@@ -1 +1 @@\n-old\n+new\n"
+)
+
+
+class AnAbsentDotfileIsNamedNotNothing(unittest.TestCase):
+    """#710, round 4: the strip may not eat the name on the way to the fallback.
+
+    Round 3 taught :func:`ai_jury.ballots._edge_stripped` to put a stripped edge
+    character back when the change index confirms the restored trim, which fixed
+    the dotfile the diff *contains*. The dotfile it does not contain fell
+    through the other side: no trim resolves, the full strip is returned,
+    ``.gitignore`` arrives as ``gitignore`` — not name-shaped, so dropped as
+    connective prose — and the ballot recorded ``named_nothing``.
+
+    That is the wrong half of the documented split. ``named_nothing`` says the
+    line named nothing checkable; ``not_in_change`` says it named things and
+    none of them are here. A reviewer that wrote ``Checked: .gitignore`` named a
+    file exactly, and the two causes send their reader to opposite places. The
+    fallback now returns the first name-shaped trim, so an absent dotfile stays
+    a name and is reported as the claim that failed.
+    """
+
+    def _ballot(self, checked: str) -> dict:
+        config = _config([{"name": "seat", "vendor": "anthropic", "command": "claude"}])
+        result = AgentResult("seat", "anthropic", True, _reply(checked), 0.0)
+        return reviewer_ballots(_outcome([result], changed=_NO_DOTFILE), config)[0]
+
+    def test_an_absent_top_level_dotfile_is_not_in_change(self):
+        """The reported defect. Fails on cd5a122 with `named_nothing`."""
+        ballot = self._ballot(".gitignore")
+        self.assertFalse(ballot["counts_as_review"])
+        self.assertEqual(ballot["abstention_cause"], panel.NOT_IN_CHANGE)
+        self.assertIn("gitignore", ballot["scope"])
+        self.assertIn("no such path or symbol is in this change", ballot["scope"])
+
+    def test_the_absent_dotfile_is_the_token_the_scope_reports(self):
+        """De-anchored in the sentence, but a name in the split it came from."""
+        self.assertEqual(resolve_stated_scope(".gitignore", _NO_DOTFILE), ([], [".gitignore"]))
+
+    def test_an_absent_nested_dotfile_buckets_the_same_way(self):
+        ballot = self._ballot("docs/.env")
+        self.assertEqual(ballot["abstention_cause"], panel.NOT_IN_CHANGE)
+        self.assertEqual(resolve_stated_scope("docs/.env", _NO_DOTFILE), ([], ["docs/.env"]))
+
+    def test_a_dotfile_the_change_does_contain_is_still_a_review(self):
+        """Round 3's case is untouched: the index still confirms the restored
+        trim before the name-shaped fallback is ever reached."""
+        config = _config([{"name": "seat", "vendor": "anthropic", "command": "claude"}])
+        result = AgentResult("seat", "anthropic", True, _reply(".gitignore"), 0.0)
+        ballot = reviewer_ballots(_outcome([result], changed=_DOTFILE), config)[0]
+        self.assertTrue(ballot["counts_as_review"])
+        self.assertEqual(ballot["abstention_cause"], "")
+        self.assertIn("`.gitignore`", ballot["scope"])
+
+    def test_prose_is_not_rescued_by_the_fallback(self):
+        """The fallback restores nothing that is not a name, so a line of prose
+        is still a line that named nothing — the full strip, dropped."""
+        for stated in ("nothing at all.", "nothing", "everything, really."):
+            with self.subTest(stated=stated):
+                ballot = self._ballot(stated)
+                self.assertFalse(ballot["counts_as_review"])
+                self.assertEqual(ballot["abstention_cause"], panel.NAMED_NOTHING)
+
+    def test_a_wrapped_path_still_resolves_and_still_strips(self):
+        """`(src/a.py),` is one token with the change, and an absent one comes
+        back fully stripped rather than in its parentheses: the fallback puts
+        back the *fewest* characters that leave a name, not the most."""
+        self.assertEqual(resolve_stated_scope("(src/a.py),", _NO_DOTFILE)[0], ["src/a.py"])
+        self.assertEqual(
+            resolve_stated_scope("(src/made/up.py),", _NO_DOTFILE)[1], ["src/made/up.py"]
+        )
+
+
 if __name__ == "__main__":  # pragma: no cover - manual runs
     unittest.main()

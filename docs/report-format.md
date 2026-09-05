@@ -241,18 +241,36 @@ ballot came back `named_nothing` — a scope claiming the line named no path at
 all, for a file the reviewer named exactly. The same went for `.env`,
 `.editorconfig`, and every other dotfile. So the strip is now put to the change:
 the fully stripped token is offered first, then the trims that put the stripped
-characters back one at a time, and the first the index confirms is the token.
-Confirming none of them leaves the full strip, so a retry can rescue a name the
-punctuation hid but never invent one.
+characters back one at a time, and the first the index confirms is the token. A
+retry can rescue a name the punctuation hid, never invent one.
+
+**When the index confirms none of them, the strip still may not eat the name.**
+Falling straight back to the full strip only moved the defect to the dotfile the
+change does *not* contain: against a diff touching `src/a.py`, `Checked:
+.gitignore` came back as `gitignore` — not name-shaped, since `gitignore` is
+nine characters rather than an extension — so the token was dropped as
+connective prose and the ballot recorded `named_nothing`, the cause that says
+the line named nothing checkable at all, for a line that named a file precisely.
+The fallback is the first **name-shaped** trim instead: the fewest characters
+put back that leave a path- or identifier-shaped token. An absent `.gitignore`
+therefore stays a name, is reported as the claim that failed, and buckets under
+`not_in_change` — which is the documented split, since the line named only
+absent paths. Fewest characters, not most: an absent `(src/made/up.py),` is
+quoted as `src/made/up.py`, not in its parentheses. A piece that is a name at no
+trim still comes back fully stripped and is still dropped, so `Checked: nothing
+at all.` names nothing exactly as before.
 
 **A mixed line is carried by the tokens that resolve.** `Checked:
 src/ai_jury/ballots.py, src/made/up.py` is a review of `src/ai_jury/ballots.py`,
 and the scope says the second path is not in this change: the reviewer
 demonstrably read something a reader can go and check, and abstaining over the
-extra token would discard a real review to punish a typo. Ordinary connective
-prose in the same line — `lines 1-4`, `and the tests` — claims to name nothing
-and is neither counted as an anchor nor reported as a broken one. A line with
-**no** resolving token is not a review, whatever else it says.
+extra token would discard a real review to punish a typo. A token *claims* to
+name something when it is shaped like one — a path separator, a leading dot, a
+file extension, a trailing `()`, an `_`, an interior case change — or when the
+reviewer marked it; ordinary connective prose in the same line — `lines 1-4`,
+`and the tests` — claims to name nothing and is neither counted as an anchor nor
+reported as a broken one. A line with **no** resolving token is not a review,
+whatever else it says.
 
 An unresolved token is named in the abstention so a reader can see the claim that
 failed, but it is written **de-anchored** — the path separators, the colons, the

@@ -278,12 +278,19 @@ _MAX_EDGE_RESTORE = 3
 #: is looked up, because a diff index knows files, not line numbers.
 _PATH_LINE_RE = re.compile(r"^(?P<path>.+?):(?P<line>\d+(?:-\d+)?)$")
 
-#: A token that *claims* to name something: a path, a ``path:line``, a call, or
-#: an identifier (an ``_`` or an interior case change). Ordinary connective
-#: prose in the same sentence — "lines", "and", "the tests" — claims nothing, so
-#: it is neither counted as an anchor nor reported as a broken one. A token the
-#: reviewer backticked counts too: the reviewer marked it as a name itself.
-_NAME_SHAPED_RE = re.compile(r"[/\\]|\.[A-Za-z0-9]{1,5}$|\(\)$|_|[a-z0-9][A-Z]")
+#: A token that *claims* to name something: a path, a ``path:line``, a call, a
+#: dotfile, or an identifier (an ``_`` or an interior case change). Ordinary
+#: connective prose in the same sentence — "lines", "and", "the tests" — claims
+#: nothing, so it is neither counted as an anchor nor reported as a broken one. A
+#: token the reviewer backticked counts too: the reviewer marked it as a name.
+#:
+#: The **leading-dot** alternative is what makes ``.gitignore`` a name (#710,
+#: round 4). The trailing-extension one never reached it — ``gitignore`` is nine
+#: characters, not a suffix — so an *absent* dotfile was dropped as connective
+#: prose and the ballot said the line named nothing, for a path the reviewer
+#: named exactly. Prose is untouched by it: a full stop that ends a sentence
+#: sits at the end of the piece before it, never at the start of the next.
+_NAME_SHAPED_RE = re.compile(r"[/\\]|\A\.[A-Za-z0-9]|\.[A-Za-z0-9]{1,5}$|\(\)$|_|[a-z0-9][A-Z]")
 
 #: Anchor-forming characters, removed before an unresolved token is quoted in an
 #: abstention. See :func:`_deanchor`.
@@ -362,10 +369,10 @@ def _path_base(token: str) -> str:
 def _edge_trims(piece: str) -> list[str]:
     """*piece* with its edge punctuation removed, most-stripped first (pure).
 
-    The first entry is the full strip — what the token is when the change
-    confirms none of them. The rest put the stripped characters back one at a
-    time, from either end, so a caller can ask the index which trim was the
-    reviewer's intent. See :func:`_edge_stripped` for why that question matters.
+    The first entry is the full strip; the rest put the stripped characters back
+    one at a time, from either end, so a caller can ask the index which trim was
+    the reviewer's intent. Ordered **most-stripped first**, which is the order
+    :func:`_edge_stripped` reads them in — see there for why that matters.
     """
     trims = [piece.strip(_TOKEN_EDGE)]
     head = min(len(piece) - len(piece.lstrip(_TOKEN_EDGE)), _MAX_EDGE_RESTORE)
@@ -397,12 +404,33 @@ def _edge_stripped(piece: str, changed: Any) -> str:
     So the rule is that **edge-stripping never removes a character that makes
     the token a path in the change**: the trims of :func:`_edge_trims` are
     offered to the index most-stripped first, and the first one it confirms is
-    the token. Nothing confirmed leaves the full strip, exactly as before — a
-    retry can only ever rescue a name, never invent one.
+    the token. A retry can only ever rescue a name, never invent one.
+
+    **And when the index confirms nothing, the strip still may not eat the
+    name** (#710, round 4). Falling straight back to the full strip only moved
+    the defect to the dotfile this change does *not* contain: ``Checked:
+    .gitignore`` against a diff touching ``src/a.py`` came back as
+    ``gitignore``, which :data:`_NAME_SHAPED_RE` does not recognise, so the
+    token was dropped as connective prose and the ballot recorded
+    ``named_nothing`` — the cause that says the line named nothing at all, for a
+    line that named a file precisely. The documented split puts a line naming
+    only absent paths under ``not_in_change``, so a token that is still a name
+    has to survive as one and be reported unresolved.
+
+    The fallback is therefore the **first name-shaped trim** — the fewest
+    characters put back that leave a path- or identifier-shaped token. Fewest,
+    not most: with ``(src/made/up.py),`` absent, the full strip
+    ``src/made/up.py`` is already name-shaped and is what the abstention should
+    quote, not the parenthesised original. Prose is unaffected, because no trim
+    of ``all.`` is name-shaped at any restoration; the full strip is still what
+    a piece that is a name at no trim comes back as, and it is still dropped.
     """
     trims = _edge_trims(piece)
     for candidate in trims:
         if candidate and changed.has_path(_path_base(candidate)):
+            return candidate
+    for candidate in trims:
+        if candidate and _NAME_SHAPED_RE.search(candidate):
             return candidate
     return trims[0]
 
