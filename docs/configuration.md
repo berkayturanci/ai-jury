@@ -222,7 +222,14 @@ hints = true         # run local Ruff/ESLint pre-pass before Round 1 (default: f
 ```
 
 - **`routing = "tiered"`** (`--tiered`): Uses the diff risk classifier to route non-critical files to economical models while keeping frontier models as anchor reviewers for security-critical paths (`auth/`, `crypto/`).
-- **`hints = true`** (`--hints`): Runs fast local static linters (Ruff for Python, ESLint for JS/TS) on modified files and injects compact hints into Round 1 prompt context so reviewers focus strictly on deep logic bugs and security flaws.
+- **`hints = true`** (`--hints` / `--no-hints`): Runs fast local static linters (Ruff for Python, ESLint for JS/TS) on modified files and injects compact hints into Round 1 prompt context so reviewers focus strictly on deep logic bugs and security flaws.
+
+The hints are produced locally by this run, not taken from your context, so they
+are added to the Round 1 prompt as their own block **after** the
+`[jury.context] mode` filter — `hints = true` reaches the panel under
+`diff-only` (the default) as well as `expanded`. Both keys are
+orchestration-affecting: they are part of the config hash and the cache key, so
+a `--cache` entry is never shared across two different settings.
 
 ## Reasoning effort (`[[agent]] effort` / `--effort`)
 

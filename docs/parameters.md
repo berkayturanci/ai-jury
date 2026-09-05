@@ -496,8 +496,8 @@ fails loudly.
 | `decision` | `"chair"` \| `"vote"` | `"chair"` | Final-verdict source: chair synthesis or a panel vote (CLI `--decision`). Rendering-only — not part of the config hash or cache key. |
 | `theater` | bool | `false` | Enable live interactive terminal animation. |
 | `theater_style` | `"flat"` \| `"pixel"` | `"flat"` | Visual aesthetic for terminal animation. |
-| `routing` | `"standard"` \| `"tiered"` | `"standard"` | Risk-aware tiered model routing with frontier anchor (CLI `--tiered`). |
-| `hints` | bool | `false` | Run fast static linter pre-pass to inject hints into Round 1 (CLI `--hints`). |
+| `routing` | `"standard"` \| `"tiered"` | `"standard"` | Risk-aware tiered model routing with frontier anchor (CLI `--tiered`). Part of the config hash and cache key. |
+| `hints` | bool | `false` | Run fast static linter pre-pass to inject hints into Round 1, under every context mode (CLI `--hints` / `--no-hints`). Part of the config hash and cache key. |
 | `demote_local_only` | bool | `false` | Demote uncorroborated single-local-model findings to minor advisory status. |
 
 **Example:**

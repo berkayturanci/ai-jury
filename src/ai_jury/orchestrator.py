@@ -318,6 +318,7 @@ def run_jury(
     diff: str,
     *,
     context: str = "",
+    hints: str = "",
     mock: bool = False,
     strict: bool = False,
     seed: int | None = None,
@@ -384,6 +385,13 @@ def run_jury(
         redaction_count = _n1 + _n2
         if redaction_count:
             log(f"redacted {redaction_count} secret(s) before sending to agents")
+
+    # Static-analysis pre-pass block (#523), joined into the Round 1 prompt AFTER
+    # the context-mode filter above (#715). It is not user context: it is produced
+    # locally by this run's linters, so the "diff-only" mode — the default — must
+    # not discard it. Carrying it inside ``context`` did exactly that, and
+    # `hints = true` reached no reviewer under any default configuration.
+    review_context = "\n\n".join(part for part in (context, hints) if part.strip())
 
     # Prompt-injection heuristic (OWASP LLM01): scan untrusted diff/context for
     # patterns that try to override instructions, then SURFACE them as a synthetic
@@ -454,7 +462,7 @@ def run_jury(
     review_prompt = {
         a.name: tmpl["review"].format(
             name=a.name,
-            context=prompts.neutralize_sentinels(context or "_(none)_"),
+            context=prompts.neutralize_sentinels(review_context or "_(none)_"),
             diff=prompts.neutralize_sentinels(diff),
             policy=policy_section,
             notice=prompts._UNTRUSTED_NOTICE,
@@ -1182,6 +1190,7 @@ def review_diff(
     diff: str,
     *,
     context: str = "",
+    hints: str = "",
     mock: bool = False,
     strict: bool = False,
     seed: int | None = None,
@@ -1257,6 +1266,7 @@ def review_diff(
             config,
             chunk,
             context=context,
+            hints=hints,
             mock=mock,
             strict=strict,
             seed=seed,

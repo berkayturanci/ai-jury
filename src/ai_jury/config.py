@@ -429,6 +429,11 @@ KNOWN_JURY_KEYS = (
     "theater_style",
     # Large-diff handling (issue #31).
     "diff",
+    # Risk-aware tiered model routing (issue #524) and the static-analysis
+    # pre-pass (issue #523). Both are read by `_from_dict` and documented in
+    # docs/configuration.md, so `--strict-config` must not reject them (#715).
+    "routing",
+    "hints",
 )
 KNOWN_AGENT_KEYS = (
     "name",
@@ -1155,6 +1160,14 @@ def config_hash(config: JuryConfig) -> str:
         "anonymize_debate": config.anonymize_debate,
         "prefer_non_reviewer_chair": config.prefer_non_reviewer_chair,
         "demote_local_only": config.demote_local_only,
+        # The static-analysis pre-pass changes what Round 1 is shown, and the
+        # routing mode changes which models the panel is built from, so two runs
+        # that disagree about either are not the same run and must not share a
+        # cache entry (#715). Like `min_vendors` before them, adding these keys
+        # invalidates every existing review cache entry ONCE on upgrade — noted
+        # in the CHANGELOG, since a user's first run after the bump is a full one.
+        "hints": config.hints,
+        "routing": config.routing,
         "ci": {
             "fail_on": list(config.ci.fail_on),
             "ignore_unverified": config.ci.ignore_unverified,
