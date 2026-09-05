@@ -839,6 +839,28 @@ class CliTests(unittest.TestCase):
                 self.assertNotIn("Traceback", err)
                 self.assertNotIn("AttributeError", err)
 
+    def test_a_scalar_top_level_jury_exits_2_without_a_traceback(self):
+        """`jury = "x"` at the top level is a config error here, not a crash (#732)."""
+        config = SAMPLE_CONFIG.replace('[jury]\nchair = "claude"', 'jury = "x"')
+        with _workspace(config_text=config) as root:
+            code, out, err = _run(
+                [
+                    "--agent",
+                    "claude",
+                    "--role",
+                    "review",
+                    "--prompt",
+                    "hi",
+                    "--config",
+                    str(root / "jury.toml"),
+                    "--mock",
+                ]
+            )
+        self.assertEqual(code, 2, out + err)
+        self.assertIn("error: [jury] must be a table", err)
+        self.assertNotIn("Traceback", err)
+        self.assertNotIn("AttributeError", err)
+
     def test_prompt_from_stdin(self):
         with _workspace() as root:
             stdin = mock.MagicMock()
