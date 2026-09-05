@@ -30,6 +30,41 @@ class AuditAgentTest(unittest.TestCase):
         )
         self.assertEqual(privilege.audit_agent(spec), [])
 
+    def test_claude_locked_down_equals_form_has_no_warning(self):
+        # Issue #717: the audit knew only the space form, so this seat — which
+        # `enforce_read_only` leaves untouched, because it is already locked
+        # down — was reported as not read-only and aborted `--strict`.
+        spec = AgentSpec(
+            name="claude",
+            vendor="anthropic",
+            command="claude",
+            extra_args=["--disallowed-tools=Edit,Write,NotebookEdit,Bash"],
+        )
+        self.assertEqual(privilege.audit_agent(spec), [])
+        self.assertEqual(
+            privilege.enforce_read_only("anthropic", "claude", list(spec.extra_args)),
+            list(spec.extra_args),
+        )
+
+    def test_claude_partial_disallowed_equals_form_still_warns(self):
+        spec = AgentSpec(
+            name="claude",
+            vendor="anthropic",
+            command="claude",
+            extra_args=["--disallowed-tools=Edit,Write"],
+        )
+        self.assertTrue(privilege.audit_agent(spec))
+
+    def test_claude_valueless_disallowed_flag_still_warns(self):
+        # A trailing `--disallowed-tools` with no value after it denies nothing.
+        spec = AgentSpec(
+            name="claude",
+            vendor="anthropic",
+            command="claude",
+            extra_args=["--disallowed-tools"],
+        )
+        self.assertTrue(privilege.audit_agent(spec))
+
     def test_claude_partial_disallowed_still_warns(self):
         spec = AgentSpec(
             name="claude",

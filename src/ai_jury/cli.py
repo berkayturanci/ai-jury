@@ -23,7 +23,7 @@ from pathlib import Path
 from . import __version__, panel
 from . import doctor as doctor_module
 from .adapters import EFFORT_LEVELS, effort_warnings, make_adapter
-from .ci import evaluate_ci
+from .ci import evaluate_ci, fail_on_error
 from .classification import classify, label_strings
 from .config import (
     DEFAULT_MIN_VENDORS,
@@ -568,8 +568,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--hints",
+        dest="hints",
         action="store_true",
+        default=None,
         help="run local static analysis pre-pass (Ruff/ESLint) to inject hints (issue #523)",
+    )
+    p.add_argument(
+        "--no-hints",
+        dest="hints",
+        action="store_false",
+        help="skip the static analysis pre-pass even if jury.toml enables it",
     )
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return p
@@ -2075,6 +2083,17 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
 
+    # Same vocabulary check `validate_config` applies to `[jury.ci] fail_on`,
+    # reported with the same message (issue #718). Checked here, beside the
+    # other flag guards, so a misspelled gate is refused before an agent is
+    # paid for — and refused even without `--ci`, where the flag is inert:
+    # otherwise the typo surfaces only on the run it was supposed to gate.
+    if args.fail_on:
+        message = fail_on_error(args.fail_on.split(","), "--fail-on")
+        if message:
+            print(f"error: {message}", file=sys.stderr)
+            return 2
+
     if args.clear_cache:
         from .cache import Cache
 
@@ -2282,15 +2301,24 @@ def main(argv: list[str] | None = None) -> int:
 
     if getattr(args, "tiered", False):
         config.routing = "tiered"
-    if getattr(args, "hints", False):
-        config.hints = True
+    # ``--hints`` / ``--no-hints`` override ``[jury] hints`` in BOTH directions;
+    # the sentinel (None) means "not passed", so the config value stands (#715).
+    hints_override = getattr(args, "hints", None)
+    if hints_override is not None:
+        config.hints = hints_override
 
+    # The pre-pass block is carried SEPARATELY from the user context (#715).
+    # Appending it to ``context`` here made it invisible under the default
+    # context mode: ``run_jury`` clears ``context`` when the mode is "diff-only",
+    # so the linters ran, this line was logged, and the panel saw nothing. The
+    # orchestrator joins the block into the Round 1 prompt after that filter.
+    hints_block = ""
     if config.hints:
         from .hints import collect_static_hints
 
         sh = collect_static_hints()
         if sh:
-            context = (context + "\n\n" + sh) if context else sh
+            hints_block = sh
             log("injected static analysis hints into review context")
 
     # Optional local result cache (issue #33): a hit skips the run entirely; a
@@ -2396,6 +2424,7 @@ def main(argv: list[str] | None = None) -> int:
                     config,
                     diff,
                     context=context,
+                    hints=hints_block,
                     mock=args.mock,
                     strict=args.strict,
                     policy=policy,
@@ -2408,6 +2437,7 @@ def main(argv: list[str] | None = None) -> int:
                     config,
                     diff,
                     context=context,
+                    hints=hints_block,
                     mock=args.mock,
                     strict=args.strict,
                     policy=policy,

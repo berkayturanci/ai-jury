@@ -294,8 +294,11 @@ calling GitHub.
 | `--fail-on` | comma-separated severities | from config (`critical,major`) | Severities that fail CI. See [severities](#severities). |
 
 `--fail-on` takes a comma-separated list drawn from the [severities](#severities)
-(`critical`, `major`, `minor`, `nit`, `info`; `blocker` aliases `critical`).
-Without `--ci`, `--fail-on` has no effect on the exit code.
+(`critical`, `major`, `minor`, `nit`, `info`; `blocker` aliases `critical`),
+matched case-insensitively. A value outside that vocabulary exits **2** naming
+it — even without `--ci`, and before any agent runs — rather than gating on a
+severity no finding can carry. Without `--ci`, `--fail-on` has no effect on the
+exit code.
 
 **Example:** `jury --pr 123 --ci --fail-on critical,major` exits non-zero when a
 confirmed critical or major finding remains — the canonical CI gate.
@@ -446,8 +449,13 @@ verbatim when that is what you need.
 `agent`, `vendor`, `model`, `role`, `transport` (`cli`/`api`/`local`), `text`,
 `exit_code`, `duration_s`, `timed_out`, `error_code`, `error`, and
 `attribution` (`vendor`, `model`, and a `label` of `agent:<vendor>` plus a
-versionless `model:<base>`). Exit codes: `0` ran and produced output, `1` ran
-and failed, `2` the request was refused.
+versionless `model:<base>`). `model` — and the `model` inside `attribution`,
+which is the same string — is the id the invocation **sent**, which is not
+always the configured one: an `effort` level encoded as a model-id suffix, or
+an adapter that fell back after checking the vendor's live listing, changes it.
+The configured id is reported only when the run recorded no id at all. Exit
+codes: `0` ran and produced output, `1` ran and failed, `2` the request was
+refused.
 
 ### Other subcommands
 
@@ -493,8 +501,8 @@ fails loudly.
 | `decision` | `"chair"` \| `"vote"` | `"chair"` | Final-verdict source: chair synthesis or a panel vote (CLI `--decision`). Rendering-only — not part of the config hash or cache key. |
 | `theater` | bool | `false` | Enable live interactive terminal animation. |
 | `theater_style` | `"flat"` \| `"pixel"` | `"flat"` | Visual aesthetic for terminal animation. |
-| `routing` | `"standard"` \| `"tiered"` | `"standard"` | Risk-aware tiered model routing with frontier anchor (CLI `--tiered`). |
-| `hints` | bool | `false` | Run fast static linter pre-pass to inject hints into Round 1 (CLI `--hints`). |
+| `routing` | `"standard"` \| `"tiered"` | `"standard"` | Risk-aware tiered model routing with frontier anchor (CLI `--tiered`). Part of the config hash and cache key. |
+| `hints` | bool | `false` | Run fast static linter pre-pass to inject hints into Round 1, under every context mode (CLI `--hints` / `--no-hints`). Part of the config hash and cache key. |
 | `demote_local_only` | bool | `false` | Demote uncorroborated single-local-model findings to minor advisory status. |
 
 **Example:**
@@ -548,7 +556,7 @@ transcript = true   # default the markdown report to the full play-by-play
 | `endpoint` | string | `http://localhost:11434/v1` (local) | Base URL for OpenAI-compatible HTTP providers (Ollama, OpenRouter, DeepSeek, Groq, Mistral, LiteLLM). |
 | `api_key_env` | string | unset (`OPENAI_API_KEY` default) | Environment variable **name** holding the API key for `openai-compatible` vendors (e.g. `DEEPSEEK_API_KEY`, `OPENROUTER_API_KEY`). Must match `[A-Za-z_][A-Za-z0-9_]*` (max 128 chars); anything else warns and falls back to the vendor default, because this name is echoed into `jury --doctor` and its JSON export. The warning names the agent and the rule but never quotes the rejected value back. The key's **value** is read from the environment and never displayed. |
 | `prompt_mode` | string | `stdin` | Prompt delivery for `vendor = "cli"` (`stdin` \| `arg`). |
-| `headers` | table | `{}` | Custom HTTP headers map for `openai-compatible` API calls. |
+| `headers` | table of strings | `{}` | Custom HTTP headers map for `openai-compatible` API calls. A `headers` that is not a table (a bare string, an array) is a **hard** config error naming the agent, because it cannot become headers at all — as is a non-string header name. A non-string **value** (`X-Retries = 3`) **warns** and is coerced to a string before being sent, like a malformed `api_key_env` that falls back; `--strict-config` makes that fatal. Part of the config hash, so two seats differing only in a routing header do not share a cache entry. No message quotes the offending value back — a header is where a bearer token lives. |
 | `effort` | string | unset | `low` \| `medium` \| `high`. Reasoning effort, mapped per vendor (see [effort](configuration.md#reasoning-effort-agent-effort----effort)). An unknown value is a hard config error; a vendor with no effort control warns once and ignores it. Overridden by `--effort`. |
 | `timeout` | int | `600` | Positive seconds (inherits `jury.timeout`). |
 | `enabled` | bool | `true` | Disabled agents are skipped. |
@@ -560,7 +568,9 @@ transcript = true   # default the markdown report to the full play-by-play
 
 ### Severities
 Ordered most → least severe: **`critical`**, **`major`**, **`minor`**, **`nit`**, **`info`**.
-Alias: `blocker` → `critical`. Used by `--fail-on` / `[jury.ci] fail_on`.
+Alias: `blocker` → `critical`. Used by `--fail-on` / `[jury.ci] fail_on`, both of
+which **refuse** anything outside this list: a misspelled severity would match no
+finding and pass the gate green forever.
 
 ### Verdicts
 The final verdict vocabulary is **mode-aware** (the rubric differs for code vs. an issue):
