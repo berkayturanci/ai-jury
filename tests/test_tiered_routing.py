@@ -363,6 +363,35 @@ class ChunkingDoesNotDowngradeTheBand(unittest.TestCase):
         self.assertTrue(outcome.routing["escalated"])
 
 
+class TheRoutingRecordSurvivesTheCache(unittest.TestCase):
+    """A cached tiered run reports the plan it ran, not a standard one (#714).
+
+    `outcome_to_dict` serialises the whole dataclass; the reader rebuilds it
+    field by field, and a field it forgets is a field a `--cache` hit reports
+    wrongly — the defect class of #722.
+    """
+
+    def test_the_plan_round_trips(self):
+        from ai_jury.cache import outcome_from_dict, outcome_to_dict
+
+        outcome = orchestrator.run_jury(_tiered_config(), ROUTINE_DIFF, mock=True)
+        restored = outcome_from_dict(outcome_to_dict(outcome))
+        self.assertEqual(restored.routing, outcome.routing)
+        self.assertEqual(restored.routing["benched"], ["gpt"])
+        self.assertTrue(restored.routing["escalated"])
+
+    def test_an_entry_written_before_the_key_reads_as_the_standard_run_it_was(self):
+        from ai_jury.cache import outcome_from_dict, outcome_to_dict
+
+        outcome = orchestrator.run_jury(_tiered_config(routing="standard"), ROUTINE_DIFF, mock=True)
+        stored = outcome_to_dict(outcome)
+        del stored["routing"]
+        restored = outcome_from_dict(stored)
+        self.assertEqual(restored.routing["mode"], "standard")
+        self.assertEqual(restored.routing["panel"], ["claude", "gpt", "cheap"])
+        self.assertEqual(restored.routing["benched"], [])
+
+
 class TieredRoutingReachesTheReports(unittest.TestCase):
     def _json_run(self, extra):
         import json as _json
