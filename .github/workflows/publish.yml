@@ -74,10 +74,19 @@ jobs:
       # because of a default is one a pip release can retire without anybody
       # reading a diff, and it is the value this job is willing to wait, not
       # pip's.
-      - name: Install build dependencies
+      # Hash-locked (#712): the tools that build the wheel, the sdist and the SBOM
+      # are the one install on the release path, and whatever the index served at
+      # tag time used to be what the attestation vouched for. The lock carries the
+      # full closure with sha256 hashes for the runtime above; `release lockfiles
+      # resolve` in ci.yml dry-runs it on every pull request so a stale pin fails
+      # there, not here. pip itself is not upgraded: the runner's pip resolves the
+      # lock, and an unpinned upgrade would be exactly the floating install this
+      # step stops making.
+      - name: Install build dependencies (hash-locked)
         run: |
-          timeout 60 python -m pip install --timeout 30 --upgrade pip
-          timeout 180 python -m pip install --timeout 30 build
+          timeout 300 python -m pip install --timeout 30 \
+            --require-hashes --only-binary=:all: \
+            -r .github/requirements/publish-tools.txt
 
       - name: Build package distributions
         run: python -m build --sdist --wheel --outdir dist/
@@ -94,9 +103,9 @@ jobs:
       # with the project metadata. Written into release/ (NOT dist/) so the PyPI
       # upload sees only the wheel + sdist — twine rejects non-distribution files
       # in the upload dir. The SBOM still ships with the GitHub Release.
+      # cyclonedx-bom itself came in with the hash-locked install above.
       - name: Generate CycloneDX SBOM
         run: |
-          timeout 180 python -m pip install --timeout 30 cyclonedx-bom
           mkdir -p release
           python -m venv --without-pip sbom-venv
           # A local wheel with `--no-deps` reaches no index, so this one carries

@@ -28,3 +28,23 @@ updates:
       python-tooling:
         patterns:
           - "*"
+
+  # Keep the hash-locked release tooling moving (#712). Dependabot rewrites the
+  # hashes with the version. The file has no dependency graph of its own, so a
+  # bump the resolver cannot satisfy is caught by the `release lockfiles
+  # resolve` CI job, not here.
+  - package-ecosystem: "pip"
+    directory: "/.github/requirements"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "build"
+    labels:
+      - "dependencies"
+      - "area:ci"
+    ignore:
+      # cyclonedx-bom requires chardet<6.0; a major bump of chardet is
+      # unsatisfiable, and this flat pin file cannot tell Dependabot so. Drop
+      # the rule when cyclonedx-bom relaxes the bound.
+      - dependency-name: "chardet"
+        update-types: ["version-update:semver-major"]
