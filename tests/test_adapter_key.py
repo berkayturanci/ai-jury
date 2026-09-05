@@ -626,6 +626,42 @@ class TheDoctorsReadinessEqualsTheRunsAcceptance(unittest.TestCase):
         self.assertEqual(code, 2, err.getvalue())
         self.assertIn("unknown adapter 'claude'", err.getvalue())
 
+    def test_an_adapter_that_normalises_to_nothing_is_refused_on_every_path(self):
+        """`adapter = 7` and `adapter = "   "` used to normalise to `None` — read as
+        "unset", so `run-agent` built the vendor's adapter and ran while a full run
+        and `--doctor` refused the same file. The refusal is now at construction."""
+        for raw in (7, "   ", ""):
+            with self.subTest(adapter=repr(raw)):
+                with self.assertRaises(ConfigError):
+                    AgentSpec(name="gpt", vendor="openai", command="ls", adapter=raw)
+        with tempfile.TemporaryDirectory() as tmp:
+            for raw in ("7", '"   "'):
+                config = Path(tmp) / "jury.toml"
+                config.write_text(
+                    _UNKNOWN_ADAPTER_BENCH.replace('adapter = "claude"', f"adapter = {raw}"),
+                    encoding="utf-8",
+                )
+                prompt = Path(tmp) / "prompt.txt"
+                prompt.write_text("review this", encoding="utf-8")
+                out, err = io.StringIO(), io.StringIO()
+                with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                    code = cli.main(
+                        [
+                            "run-agent",
+                            "--role",
+                            "review",
+                            "--agent",
+                            "gpt",
+                            "--config",
+                            str(config),
+                            "--prompt-file",
+                            str(prompt),
+                        ]
+                    )
+                with self.subTest(adapter=raw, path="run-agent"):
+                    self.assertEqual(code, 2, err.getvalue())
+                    self.assertIn("adapter", err.getvalue())
+
 
 class TheVocabularyIsOneVocabulary(unittest.TestCase):
     def test_adapters_and_vendors_are_the_same_names(self):

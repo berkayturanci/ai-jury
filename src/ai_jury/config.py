@@ -788,9 +788,19 @@ class AgentSpec:
         self.vendor = normalise_vendor(self.vendor)
         # Same treatment for the adapter, and for the same reason (#701 r3):
         # `adapter = "CLI"` and `adapter = "cli"` name one protocol, so they must
-        # be one string before any lookup sees them. An adapter that normalises
-        # to nothing is no adapter at all — it falls back to the vendor.
-        self.adapter = normalise_vendor(self.adapter) or None
+        # be one string before any lookup sees them. A key that is *present* but
+        # normalises to nothing — `7`, `"   "` — is refused here rather than read
+        # as "unset": `validate_config` already calls it an unknown adapter, and
+        # `jury run-agent` builds seats without validating, so treating it as a
+        # fallback to the vendor let that one path run what the other two refused.
+        if self.adapter is not None:
+            key = normalise_vendor(self.adapter)
+            if not key:
+                raise ConfigError(
+                    unknown_adapter_error(self.adapter, f"agent {self.name!r}")
+                    or f"agent {self.name!r}: adapter {self.adapter!r} names no protocol"
+                )
+            self.adapter = key
 
     @property
     def adapter_key(self) -> str:
