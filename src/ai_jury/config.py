@@ -527,6 +527,17 @@ def _headers_coerced_value_warning(label: str, header: str, value) -> str:
 # (written where `[jury.context] mode = "diff-only"` was meant) passed
 # `--config-validate --strict-config` and then died in `_context_from_dict` with
 # `'str' object has no attribute 'get'`.
+#: Top-level shape messages, shared by ``validate_config`` and ``_from_dict`` so the
+#: validating and the non-validating path (``jury run-agent``, ``load_config``'s
+#: default) say the same thing (issue #732).
+_JURY_NOT_A_TABLE = "[jury] must be a table."
+_AGENTS_NOT_AN_ARRAY = "[[agent]] must be an array of tables."
+
+
+def _agent_not_a_table_message(idx: int) -> str:
+    return f"agent[{idx}] must be a table."
+
+
 def _nested_table_message(table: str) -> str:
     """`[jury.<table>]` is not a table, so its reader cannot read it (hard)."""
     return f"[jury.{table}] must be a table."
@@ -559,7 +570,7 @@ def validate_config(data: dict, strict: bool = False) -> list:
 
     jury = data.get("jury", {})
     if not isinstance(jury, dict):
-        raise ConfigError("[jury] must be a table.")
+        raise ConfigError(_JURY_NOT_A_TABLE)
 
     for key in jury:
         if key not in KNOWN_JURY_KEYS:
@@ -662,7 +673,7 @@ def validate_config(data: dict, strict: bool = False) -> list:
 
     agents_data = data.get("agent", [])
     if not isinstance(agents_data, list):
-        raise ConfigError("[[agent]] must be an array of tables.")
+        raise ConfigError(_AGENTS_NOT_AN_ARRAY)
 
     # At least one agent (hard).
     if not agents_data:
@@ -672,7 +683,7 @@ def validate_config(data: dict, strict: bool = False) -> list:
     enabled_names: set = set()
     for idx, agent in enumerate(agents_data):
         if not isinstance(agent, dict):
-            errors.append(f"agent[{idx}] must be a table.")
+            errors.append(_agent_not_a_table_message(idx))
             continue
 
         for key in agent:
@@ -1216,9 +1227,21 @@ def _opt_positive_int(raw) -> int | None:
 
 def _from_dict(data: dict) -> JuryConfig:
     jury = data.get("jury", {})
+    # The top-level tables get the same treatment the nested ones got in #731: this
+    # function is reached without validation on real paths (`jury run-agent`,
+    # `load_config`'s default), and a scalar where a table was meant used to fall
+    # through to `AttributeError` here instead of the `ConfigError` those callers
+    # already handle (issue #732).
+    if not isinstance(jury, dict):
+        raise ConfigError(_JURY_NOT_A_TABLE)
+    agents_raw = data.get("agent", [])
+    if not isinstance(agents_raw, list):
+        raise ConfigError(_AGENTS_NOT_AN_ARRAY)
     default_timeout = int(jury.get("timeout", 600))
     agents: list[AgentSpec] = []
-    for raw in data.get("agent", []):
+    for idx, raw in enumerate(agents_raw):
+        if not isinstance(raw, dict):
+            raise ConfigError(_agent_not_a_table_message(idx))
         # `headers` no longer coerces a non-table to `{}` (issue #716). That
         # coercion is what made the mistake invisible: the seat materialised
         # cleanly carrying no headers, and only the remote API — or nobody —

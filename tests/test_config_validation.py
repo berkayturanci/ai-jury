@@ -832,6 +832,44 @@ def _documented_jury_blocks() -> list:
     return blocks
 
 
+class TopLevelTableShapeOnTheUnvalidatedPath(unittest.TestCase):
+    """A scalar `jury` or a malformed `agent` is a `ConfigError` in `_from_dict` too (#732).
+
+    #731 closed the nested tables; the top level had the same hole one level up.
+    `validate_config` already refused these shapes — the reader did not, and the
+    non-validating callers only handle `ConfigError`.
+    """
+
+    _AGENT = {"name": "a", "vendor": "anthropic", "command": "claude"}
+
+    def test_a_scalar_jury_is_a_config_error_not_an_attribute_error(self):
+        with self.assertRaises(ConfigError) as ctx:
+            _from_dict({"jury": "x", "agent": [self._AGENT]})
+        self.assertEqual(str(ctx.exception), "[jury] must be a table.")
+
+    def test_a_scalar_agent_is_a_config_error(self):
+        with self.assertRaises(ConfigError) as ctx:
+            _from_dict({"jury": {}, "agent": "claude"})
+        self.assertEqual(str(ctx.exception), "[[agent]] must be an array of tables.")
+
+    def test_an_agent_entry_that_is_not_a_table_is_a_config_error_naming_its_index(self):
+        with self.assertRaises(ConfigError) as ctx:
+            _from_dict({"jury": {}, "agent": [self._AGENT, "codex"]})
+        self.assertEqual(str(ctx.exception), "agent[1] must be a table.")
+
+    def test_the_reader_and_the_validator_say_the_same_thing(self):
+        for data in (
+            {"jury": "x", "agent": [self._AGENT]},
+            {"jury": {}, "agent": "claude"},
+        ):
+            with self.subTest(data=data):
+                with self.assertRaises(ConfigError) as validated:
+                    validate_config(data)
+                with self.assertRaises(ConfigError) as materialised:
+                    _from_dict(data)
+                self.assertEqual(str(validated.exception), str(materialised.exception))
+
+
 class DocumentedExamplesAreStrictClean(unittest.TestCase):
     """Every documented `[jury…]` example survives `--strict-config` (#719).
 
