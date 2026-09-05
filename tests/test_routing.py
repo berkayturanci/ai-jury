@@ -126,6 +126,21 @@ class TheFloorsAlwaysHold(unittest.TestCase):
         self.assertIn("gpt", plan.panel)
         self.assertNotIn("opus", plan.panel)
 
+    def test_a_bench_with_no_new_vendor_falls_back_to_config_order(self):
+        # Every benched seat is the vendor the panel already has, so no choice
+        # improves the count; the floor still unbenches, in config order, and
+        # the reason says which seat and why.
+        bench = _bench(
+            ("claude", "anthropic", "frontier"),
+            ("opus", "anthropic", "frontier"),
+            ("cheap", "anthropic", "economical"),
+        )
+        names = [s.name for s in bench]
+        plan = routing.plan_panel(bench, names, "low", chair="claude", min_vendors=2)
+        self.assertEqual(plan.panel, names)
+        self.assertEqual(plan.benched, [])
+        self.assertIn("opus unbenched for min_vendors=2", plan.reason)
+
     def test_a_floor_the_bench_cannot_reach_takes_everyone_and_stops(self):
         bench = _bench(("claude", "anthropic", "frontier"), ("cheap", "anthropic", "economical"))
         plan = routing.plan_panel(bench, ["claude", "cheap"], "low", chair="claude", min_vendors=3)
