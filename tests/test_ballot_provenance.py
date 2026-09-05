@@ -925,6 +925,23 @@ class APathShapedTokenIsNeverReadAsASymbol(unittest.TestCase):
             with self.subTest(token=token):
                 self.assertEqual(resolve_stated_scope(token, changed), ([], [token]))
 
+    def test_every_wrapper_the_strip_knows_keeps_the_call_marker(self):
+        """Round 9: the marker regex's trailing class was written by hand and
+        lacked the angle brackets and curly quotes _WRAP_EDGE lists, so
+        <module.env()> lost its marker. Enumerate the set instead of a sample."""
+        from ai_jury.ballots import _WRAP_EDGE
+
+        changed = change_index(self._CALL_HUNK)
+        pairs = {"(": ")", "[": "]", "{": "}", "<": ">", "\u201c": "\u201d", "\u2018": "\u2019"}
+        for opener in _WRAP_EDGE:
+            closer = pairs.get(opener, opener)
+            if opener in pairs.values() and opener not in pairs:
+                continue  # a closer on its own is exercised by its opener
+            token = f"{opener}module.env(){closer},"
+            with self.subTest(token=token):
+                resolved, unresolved = resolve_stated_scope(token, changed)
+                self.assertEqual((resolved, unresolved), (["module.env()"], []), token)
+
     def test_a_wrapped_call_keeps_its_marker(self):
         """Round 8: the marker was looked for at the raw end, so wrapping
         parentheses hid it and then were stripped along with it."""
