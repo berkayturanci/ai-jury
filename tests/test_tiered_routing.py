@@ -303,6 +303,20 @@ class TieredRoutingRunsThePanelItPlans(unittest.TestCase):
         self.assertTrue(outcome.routing["escalated"])
         self.assertEqual(outcome.chair, "claude")
 
+    def test_the_shipped_vendor_floor_still_benches(self):
+        # The realistic case: `[jury.ci] min_vendors` ships as 2, and the routed
+        # panel (claude + cheap) already carries two identities, so the feature
+        # is not defeated by the default the cross-vendor gate is set to.
+        config = _tiered_config()
+        config.ci.min_vendors = 2
+        outcome = orchestrator.run_jury(config, ROUTINE_DIFF, mock=True)
+        self.assertEqual([r.agent for r in outcome.reviews], ["claude", "cheap"])
+        self.assertEqual(outcome.routing["benched"], ["gpt"])
+        # And the gate that runs after the panel is paid for is satisfied.
+        from ai_jury.metadata import collapse_reason
+
+        self.assertIsNone(collapse_reason(outcome.reviews, 2))
+
     def test_the_vendor_floor_reaches_the_plan(self):
         config = _tiered_config()
         config.ci.min_vendors = 3
