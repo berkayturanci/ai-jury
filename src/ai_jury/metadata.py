@@ -29,12 +29,13 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 # per-agent ``review_status``. A slot that returns no review is an abstention, not an
 # approval, and until now nothing in the output said so.
 # v5 (issues #699/#700) added, inside ``panel``: ``ballots``, ``reviews_supplied``,
-# ``silent``, ``insubstantial``, ``chair`` and ``chair_ballot`` — the number of
-# reviews a downstream consumer actually receives (the ballots that named
-# something and voted; the chair's synthesis record is not one of them, and
-# neither is an abstaining ballot), the two ways a seat that ran produced no
-# review, and whether the chairing agent's own ballot is one of the counted
-# reviews. Purely additive: every v4 key keeps its name and meaning.
+# ``silent``, ``insubstantial``, ``refused``, ``adapter_failed``, ``chair`` and
+# ``chair_ballot`` — the number of reviews a downstream consumer actually
+# receives (the ballots that named something and voted; the chair's synthesis
+# record is not one of them, and neither is an abstaining ballot), the four ways
+# a seat that ran produced no review, and whether the chairing agent's own ballot
+# is one of the counted reviews. The four causes and ``reviews_supplied`` sum to
+# ``ballots``. Purely additive: every v4 key keeps its name and meaning.
 SCHEMA_VERSION = 5
 
 
@@ -93,18 +94,39 @@ def panel_accounting(reviews, chair: str = "", ballots=None) -> dict:
     reviewed nothing. With ``ballots`` omitted the count is reported as ``None``
     rather than guessed, because every guess available over-counts.
 
-    ``silent`` and ``insubstantial`` split the seats that produced no review by
-    cause, for the shortfall message: a silent agent is a CLI that broke or a
-    budget that ran out, a seat that answered and named nothing is a reviewer
-    that did not review. ``chair_ballot`` says whether the chairing agent's own
-    ballot is one of the *counted* reviews — a chairing agent that ran and
-    abstained has a ballot in the bundle and has supplied no review.
+    ``silent``, ``insubstantial``, ``refused`` and ``adapter_failed`` split the
+    seats that produced no review by cause, for the shortfall message: a silent
+    agent is a CLI that broke or a budget that ran out, a seat that answered and
+    named nothing is a reviewer that did not review, a refusal is a model
+    declining the task, and a failed adapter is an invocation to fix. They come
+    from :func:`ai_jury.panel.abstention_buckets` — each ballot classified by the
+    cause it carries — so that they and ``reviews_supplied`` add up to
+    ``ballots`` with nothing left over.
+
+    ``insubstantial`` was derived by subtraction until #700's fifth round, and
+    the subtraction was the defect: ``ballots - silent - supplied`` swept up
+    every seat that was neither silent nor a counted review, and once a ballot
+    could carry a substantive scope and still abstain that included the seat that
+    named a file and then refused, and the one whose adapter died holding a file
+    name. Both were then rendered as "named nothing checkable" — a cause their
+    own ballot contradicted. It now means exactly ``named_nothing``: the seats
+    that answered and named nothing a reader could check, and only those.
+
+    ``chair_ballot`` says whether the chairing agent's own ballot is one of the
+    *counted* reviews — a chairing agent that ran and abstained has a ballot in
+    the bundle and has supplied no review.
     """
     reviews = list(reviews or [])
     seats = panel.ballot_seats(reviews)
     records = list(ballots) if ballots is not None else None
     counted = [r for r in (records or []) if panel.is_review(r)]
     supplied = len(counted) if records is not None else None
+    # Without the records there is nothing to classify: the cause is a fact the
+    # ballot carries, and every guess available from the raw results is the
+    # subtraction this replaced. ``silent`` is the exception, and only because
+    # :func:`ai_jury.ballots.abstention_cause` tests silence first and on the
+    # same predicate — the two readings are the same number by construction.
+    buckets = panel.abstention_buckets(records) if records is not None else None
     silent = sum(1 for r in seats if not panel.responded(r))
 
     # bolt: Consolidate multiple metrics into a single-pass O(N) explicit loop
@@ -137,8 +159,15 @@ def panel_accounting(reviews, chair: str = "", ballots=None) -> dict:
         # same number as ``reviews_supplied``.
         "ballots": len(seats),
         "reviews_supplied": supplied,
-        "silent": silent,
-        "insubstantial": (len(seats) - silent - supplied) if supplied is not None else None,
+        # One entry per cause, from the one mapping, so a bucket cannot be added
+        # in `panel` and go unpublished here. ``silent`` is the only one that
+        # survives a call with no ballots, because it is the only one the raw
+        # results can answer.
+        **{
+            key: (buckets[cause] if buckets is not None else None)
+            for cause, key in panel.PANEL_METADATA_KEYS.items()
+        },
+        "silent": buckets[panel.SILENT] if buckets is not None else silent,
         "chair": chair or "",
         "chair_ballot": bool(chair) and any(r.get("name", "") == chair for r in counted),
     }

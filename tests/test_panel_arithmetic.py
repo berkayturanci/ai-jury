@@ -869,5 +869,180 @@ class TheConfigKey(unittest.TestCase):
         self.assertEqual(config_hash(base), config_hash(gated))
 
 
+class TheAbstentionBucketsNameTheCauseTheBallotCarries(unittest.TestCase):
+    """#700, round 5: the number was right and the cause beside it was invented.
+
+    ``metadata.panel_accounting`` derived ``insubstantial`` by subtraction —
+    ``len(seats) - silent - supplied`` — which was exact arithmetic over two
+    buckets and a total. It stopped being an exact *description* in round 3, when
+    a ballot became able to carry a substantive scope and still abstain: the
+    remainder then also held the seat that opened ``Checked: src/a.py`` and
+    refused, and the one whose adapter died holding a file name. Both were
+    published, and printed, as *named nothing checkable* — a cause their own
+    ballot flatly contradicts, in the two places a human reads the number:
+    ``report._metadata_block``'s *reviews for a downstream consumer* line and
+    ``panel.shortfall``.
+
+    Two reviewers on different vendors reproduced it independently, which is what
+    a sentence that reads plausibly and is false of the record beside it does.
+    Each seat is now classified by the cause its ballot records, in
+    ``ai_jury.panel.abstention_buckets``, and every renderer reads those buckets.
+    """
+
+    def _panel(self, **kwargs):
+        code, out, err, metadata = _jury_with_metadata(
+            ["--min-reviews", str(_TIER_THREE)], **kwargs
+        )
+        self.assertEqual(code, 3)
+        return metadata["panel"], out, err
+
+    def test_a_seat_that_named_a_file_and_refused_is_not_billed_as_naming_nothing(self):
+        # Fails on 1c90683: `insubstantial` was 1 and both sentences read
+        # "named nothing checkable" over a ballot whose scope names `src/a.py`.
+        panel_meta, out, err = self._panel(refusing=frozenset({"claude"}))
+        # The two sentences a human reads, first: on 1c90683 both said the seat
+        # named nothing checkable.
+        self.assertNotIn("named nothing checkable", err)
+        self.assertNotIn("named nothing checkable and abstained", out)
+        self.assertIn("1 returned a refusal rather than a review", err)
+        self.assertIn("1 returned a refusal rather than a review", out)
+        # And the buckets they are rendered from.
+        self.assertEqual(panel_meta["refused"], 1)
+        self.assertEqual(panel_meta["insubstantial"], 0)
+        self.assertEqual((panel_meta["silent"], panel_meta["adapter_failed"]), (0, 0))
+        # The ballot the number describes: it named a place, and then refused.
+        ballot = _reviewers(refusing=frozenset({"claude"}))[0]
+        self.assertTrue(ballot["scope_substantive"])
+        self.assertFalse(ballot["counts_as_review"])
+        self.assertEqual(ballot["abstention_cause"], panel.REFUSED)
+
+    def test_a_seat_whose_adapter_failed_is_not_billed_as_naming_nothing_either(self):
+        # The same defect reached the other way, and the second reviewer's case.
+        panel_meta, out, err = self._panel(broken=frozenset({"claude"}))
+        self.assertNotIn("named nothing checkable", err)
+        self.assertNotIn("named nothing checkable and abstained", out)
+        self.assertIn("1 reported an adapter failure", err)
+        self.assertIn("1 reported an adapter failure", out)
+        self.assertEqual(panel_meta["adapter_failed"], 1)
+        self.assertEqual(panel_meta["insubstantial"], 0)
+        self.assertEqual((panel_meta["silent"], panel_meta["refused"]), (0, 0))
+        ballot = _reviewers(broken=frozenset({"claude"}))[0]
+        self.assertTrue(ballot["scope_substantive"])
+        self.assertEqual(ballot["abstention_cause"], panel.ADAPTER_FAILED)
+
+    def test_a_seat_that_answered_and_named_nothing_still_is(self):
+        # The bucket keeps its meaning for the case it was named for: narrowing
+        # it must not empty it.
+        panel_meta, out, err = self._panel(prose_only=frozenset({"claude"}))
+        self.assertEqual(panel_meta["insubstantial"], 1)
+        self.assertEqual((panel_meta["refused"], panel_meta["adapter_failed"]), (0, 0))
+        self.assertIn("1 answered but named nothing checkable", err)
+        self.assertIn("1 answered but named nothing checkable", out)
+
+    def test_a_silent_seat_is_silent_whichever_side_the_number_is_read_from(self):
+        # `silent` is the one bucket the raw results can also answer, and
+        # `panel_accounting` still answers it from them when it is handed no
+        # ballots. The two readings key on the same predicate, so a run must not
+        # be able to report one number from the records and another from the
+        # results.
+        panel_meta, _out, err = self._panel(silent=frozenset({"claude"}))
+        self.assertEqual(panel_meta["silent"], 1)
+        self.assertEqual(panel_meta["insubstantial"], 0)
+        self.assertIn("1 returned nothing at all", err)
+
+    def test_every_seat_lands_in_exactly_one_bucket_in_every_run_shape(self):
+        # The invariant subtraction cannot state and cannot violate: the four
+        # causes and the reviews partition the ballots. Derived from the
+        # document, never from a written-down integer — an expected number here
+        # is how the count and the cause drifted apart in the first place.
+        shapes = (
+            {},
+            {"refusing": frozenset({"claude"})},
+            {"broken": frozenset({"claude"})},
+            {"silent": frozenset({"claude"})},
+            {"prose_only": frozenset({"claude"})},
+            {"refusing": frozenset({"claude", "codex"})},
+            {
+                "silent": frozenset({"codex"}),
+                "refusing": frozenset({"claude"}),
+                "broken": frozenset({"agy"}),
+            },
+            {"prose_only": frozenset({"claude", "codex", "agy"})},
+        )
+        for kwargs in shapes:
+            with self.subTest(**{k: sorted(v) for k, v in kwargs.items()}):
+                _code, _out, _err, metadata = _jury_with_metadata(["-q"], **kwargs)
+                panel_meta = metadata["panel"]
+                buckets = [
+                    panel_meta[panel.PANEL_METADATA_KEYS[c]] for c in panel.ABSTENTION_CAUSES
+                ]
+                self.assertEqual(
+                    panel_meta["reviews_supplied"] + sum(buckets),
+                    panel_meta["ballots"],
+                    panel_meta,
+                )
+                # And the buckets are the ballots' own causes, counted — not a
+                # second classification that happens to total the same.
+                entries = _reviewers(**kwargs)
+                recorded = [e for e in entries if (e.get("role") or "") != _CHAIR_ROLE]
+                self.assertEqual(
+                    panel.abstention_buckets(entries),
+                    dict(zip(panel.ABSTENTION_CAUSES, buckets, strict=True)),
+                )
+                # Every non-review names a cause; every review names none.
+                for entry in recorded:
+                    if entry["counts_as_review"]:
+                        self.assertEqual(entry["abstention_cause"], "")
+                    else:
+                        self.assertIn(entry["abstention_cause"], panel.ABSTENTION_CAUSES)
+
+    def test_the_shortfall_message_names_all_four_causes_apart(self):
+        message = panel.shortfall(
+            0,
+            4,
+            stage="anywhere",
+            silent=1,
+            insubstantial=1,
+            refused=1,
+            adapter_failed=1,
+        )
+        self.assertIn("4 seat(s) ran without producing a review", message)
+        for cause in panel.ABSTENTION_CAUSES:
+            self.assertIn(f"1 {panel.CAUSE_PHRASES[cause]}", message)
+
+    def test_a_hand_written_ballot_without_a_cause_is_read_from_its_fields(self):
+        # `panel_accounting` accepts ballot records from anywhere, and a record
+        # that predates the field must still be classified rather than dropped —
+        # the sum invariant above is the whole point. The reading cannot see
+        # silence, which is why the field exists, and errs toward "named
+        # nothing", which is true of a silent seat too.
+        def ballot(**fields):
+            return {"role": "panelist", "verdict": "ABSTAIN", **fields}
+
+        self.assertEqual(
+            panel.abstention_cause(ballot(round1_ok=False, scope_substantive=True)),
+            panel.ADAPTER_FAILED,
+        )
+        self.assertEqual(
+            panel.abstention_cause(ballot(scope_substantive=False)), panel.NAMED_NOTHING
+        )
+        self.assertEqual(panel.abstention_cause(ballot(scope_substantive=True)), panel.REFUSED)
+        # A recorded cause always wins over the reading.
+        self.assertEqual(
+            panel.abstention_cause(ballot(scope_substantive=True, abstention_cause=panel.SILENT)),
+            panel.SILENT,
+        )
+
+    def test_the_chair_record_is_not_a_seat_in_any_bucket(self):
+        # It is never a review and it is not an abstaining seat either: counting
+        # it would make the buckets sum to one more than the panel has.
+        entries = _reviewers()
+        chair = entries[-1]
+        self.assertEqual(chair["role"], _CHAIR_ROLE)
+        self.assertEqual(chair["abstention_cause"], "")
+        self.assertEqual(panel.panelist_ballots(entries), entries[:-1])
+        self.assertEqual(sum(panel.abstention_buckets(entries).values()), 0)
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

@@ -112,7 +112,13 @@ class TestPanelAccounting(unittest.TestCase):
                 # whether a seat reviewed is a fact about the record it produced,
                 # and every guess available from the raw results over-counts.
                 "reviews_supplied": None,
+                # Every cause but silence is unanswerable without the ballots:
+                # which of the four happened is a fact the record carries, and
+                # the subtraction that used to stand in for it is the defect
+                # this round removes (#700, round 5).
                 "insubstantial": None,
+                "refused": None,
+                "adapter_failed": None,
                 "chair": "",
                 "chair_ballot": False,
             },
@@ -210,6 +216,8 @@ class TestPanelAccounting(unittest.TestCase):
                 "silent": 0,
                 "reviews_supplied": None,
                 "insubstantial": None,
+                "refused": None,
+                "adapter_failed": None,
                 "chair": "",
                 "chair_ballot": False,
             },

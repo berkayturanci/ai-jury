@@ -70,8 +70,13 @@ from typing import Any
 from .findings import flatten_inline
 from .panel import (
     ABSTAIN,
+    ADAPTER_FAILED,
+    CAUSE_FIELD,
     CHAIR_ROLE,
+    NAMED_NOTHING,
     PANELIST_ROLE,
+    REFUSED,
+    SILENT,
     ballot_seats,
     bundle_records,
     is_review,
@@ -378,23 +383,61 @@ def describe_scope(result: Any, findings: list, *, mode: str = "code") -> str:
     return scope if scope_is_substantive(scope) else ""
 
 
+def abstention_cause(result: Any) -> str:
+    """Which of :data:`ai_jury.panel.ABSTENTION_CAUSES` this seat's ballot records.
+
+    **The** classification, and the only one: the ballot carries its answer under
+    :data:`ai_jury.panel.CAUSE_FIELD`, the two abstention sentences below are
+    written from it, and :func:`ai_jury.panel.abstention_buckets` counts by it. A
+    second reading of the raw result is a second place for the count and the
+    prose to part company, which is how a seat that named a file and then refused
+    came to be counted as one that named nothing (#700, round 5).
+
+    Silence is tested **first**, so ``silent`` keeps meaning exactly what
+    :func:`ai_jury.panel.responded` says and the metadata's ``silent`` is the
+    same number whether it is taken from the results or from the ballots. A seat
+    that produced no output at all is silent even when its adapter also reported
+    failure: "nothing came back" is the fact an operator acts on, and the adapter
+    status is on the record beside it.
+
+    Only ever asked of a ballot that did not review; a seat that reviewed has no
+    cause, and :func:`reviewer_ballots` records an empty string for it.
+    """
+    if not responded(result):
+        return SILENT
+    if not getattr(result, "ok", False):
+        return ADAPTER_FAILED
+    if is_abstention(getattr(result, "output", "")):
+        return REFUSED
+    return NAMED_NOTHING
+
+
+#: The sentence each cause contributes to the scope of a ballot that could not
+#: state one. Keyed by :func:`abstention_cause` so the reason and the bucket are
+#: one classification; ``named_nothing`` is refined below by whether the seat
+#: raised findings it attached to nothing.
+_NO_SCOPE_REASONS = {
+    SILENT: "it ran and returned nothing at all — an empty reply from the CLI",
+    ADAPTER_FAILED: "its adapter reported failure and what came back named nothing",
+    REFUSED: "it returned a refusal rather than a review",
+}
+
+
 def _no_scope_reason(result: Any, findings: list | None = None) -> str:
     """Why nothing checkable could be lifted from this seat (pure).
 
     Five causes, kept apart because they ask for different fixes: a broken
     adapter, a CLI that answered with nothing at all, a refusal, a code review
-    whose findings named no location, and a reply that reviewed nothing. Two of
-    them are new in #700's second round — the empty reply did not reach here at
-    all (the seat was dropped from the bundle rather than recorded, so the report
-    could not name the agent that had gone quiet), and the location-less findings
-    used to be dressed up as a scope instead.
+    whose findings named no location, and a reply that reviewed nothing. The
+    first three are :func:`abstention_cause`'s, read from the one classifier
+    rather than re-tested here; the last two are the two shapes of
+    ``named_nothing``, and the split matters because "said nothing" sends its
+    reader somewhere different from "raised findings and attached none of them
+    to a file".
     """
-    if not getattr(result, "ok", False):
-        return "its adapter reported failure and what came back named nothing"
-    if not responded(result):
-        return "it ran and returned nothing at all — an empty reply from the CLI"
-    if is_abstention(getattr(result, "output", "")):
-        return "it returned a refusal rather than a review"
+    stated = _NO_SCOPE_REASONS.get(abstention_cause(result))
+    if stated:
+        return stated
     raised = len(findings or [])
     if raised:
         return (
@@ -580,6 +623,15 @@ def chair_verdict(outcome: Any, vote: Any = None) -> str:
     return normalize_verdict(label) or ABSTAIN
 
 
+#: The clause each cause contributes to a *scoped* abstention's sentence. Only
+#: two causes can reach it: a seat whose scope stands named something, so it was
+#: neither silent nor a reply that named nothing.
+_SCOPED_ABSTENTION_REASONS = {
+    ADAPTER_FAILED: "its adapter reported failure",
+    REFUSED: "it returned a refusal rather than a review",
+}
+
+
 def _abstained_because(result: Any) -> str:
     """Why a seat that *did* name something checkable still abstained (pure).
 
@@ -587,12 +639,12 @@ def _abstained_because(result: Any) -> str:
     function: this ballot's scope is substantive, so every reason phrased around
     "it named nothing" would be false of it. Only two of :func:`_verdict_for`'s
     three gates can fire while the scope stands — a failed adapter and a refusal
-    — and the third (an empty scope) never reaches here, because a seat with no
-    scope gets :func:`abstention_scope` instead.
+    — and the other two causes never reach here, because a seat with no scope
+    gets :func:`abstention_scope` instead. Read from
+    :func:`abstention_cause` all the same, so this sentence and the bucket the
+    same seat is counted in cannot name two different things.
     """
-    if not getattr(result, "ok", False):
-        return "its adapter reported failure"
-    return "it returned a refusal rather than a review"
+    return _SCOPED_ABSTENTION_REASONS.get(abstention_cause(result), "it cast no vote")
 
 
 def _chaired_ballot_sentence(result: Any, ballot: dict) -> str:
@@ -701,6 +753,13 @@ def reviewer_ballots(
         # Derived, never asserted: the answer this record carries is the one the
         # gate and the announcements use, computed by the same function.
         entry["counts_as_review"] = is_review(entry)
+        # And, when the answer is no, *why* — the fact a reader of the record
+        # alone cannot recover, because a seat that fell silent and one that
+        # answered without naming anything leave the same two fields behind. It
+        # travels with the ballot so every renderer counts and describes the same
+        # seat the same way instead of subtracting one bucket from another
+        # (#700, round 5). Empty on a ballot that reviewed: it has no cause.
+        entry[CAUSE_FIELD] = "" if entry["counts_as_review"] else abstention_cause(r)
         # After the answer, never before it: the chair's sentence *reports* that
         # answer, so it cannot be written while the answer is still unknown.
         if scoped and chaired:
@@ -732,6 +791,10 @@ def reviewer_ballots(
             # This synthesis record is NOT one of the reviews, whatever its
             # scope says: the consumer reads it as the panel's consensus.
             "counts_as_review": False,
+            # Empty, and present rather than absent: the chair is not a seat that
+            # failed to review, it is the record carried alongside the seats, and
+            # a key missing here would read as a cause nobody wrote down.
+            CAUSE_FIELD: "",
             "testing": describe_testing(verify) if verify is not None else NOT_STATED,
         }
     )

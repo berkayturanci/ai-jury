@@ -384,6 +384,13 @@ anything are all *in* the bundle — the report has to be able to say which agen
 produced what — and none of them is counted, because the consumer would refuse
 it. `--min-reviews` counts the same thing the consumer does.
 
+**And a ballot that did not review says why.** `abstention_cause` carries one of
+four — `silent`, `named_nothing`, `refused`, `adapter_failed` — and every count
+of the seats that supplied no review is that field tallied, in the report line,
+the `--min-reviews` failure and `--metadata-json`'s `panel` block alike. A seat
+that named a file and *then* refused is reported as a refusal, not as one that
+named nothing.
+
 ```json
 [
   {

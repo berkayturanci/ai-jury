@@ -75,9 +75,10 @@ reads an identical document; `tests/test_formats.py::BackwardCompatibility` pins
 that field for field. `schema_version` moved `1.0` → `1.1` to signal the addition.
 Markdown and SARIF output are unchanged.
 
-v1.2 ([#700]) adds `scope`, `testing`, `model_source`, `scope_substantive` and
-`counts_as_review` to each entry, and is a version bump rather than a silent
-addition because it also changes two things a consumer may have keyed on:
+v1.2 ([#700]) adds `scope`, `testing`, `model_source`, `scope_substantive`,
+`counts_as_review` and `abstention_cause` to each entry, and is a version bump
+rather than a silent addition because it also changes two things a consumer may
+have keyed on:
 
 - **What `model` means.** It was the configured model id or `""` when the CLI's
   own default was in force, and it is now never empty for a slot that has an
@@ -107,6 +108,7 @@ One entry per seat that **ran**, in the stable panel order, then the chair:
 | `scope` | What that panelist named that it read, followed — when it did not review — by an abstention stating why. Derived as in the `keel-reviews` table below; the two renderings are the same text by construction. |
 | `scope_substantive` | Does that `scope` name something a reader could go and check (a file, a `path:line`, a backticked symbol, a called identifier, or a `Checked …` clause)? `false` whenever the abstention is *because* nothing was named. It can be `true` on an abstention too — a seat that opened with `Checked: src/a.py` and then refused, or whose adapter failed, names a place and still did not review — which is why `counts_as_review` reads both fields rather than this one alone. |
 | `counts_as_review` | Is this entry one of the reviews a consumer receives? `role == "panelist"` **and** `scope_substantive` **and** `verdict != "ABSTAIN"` — `ai_jury.panel.is_review`, the single definition every count in the tool resolves to. Always `false` on the `chair` entry. |
+| `abstention_cause` | Why this ballot is not a review, when it is not: `silent` (returned nothing at all), `named_nothing` (answered and named nothing checkable), `refused` (declined rather than reviewed) or `adapter_failed`. Empty string on a ballot that reviewed, and on the `chair` entry, which is a consensus record rather than a seat that failed to review. It is on the record because it cannot be recovered from the record: a seat that fell silent and one that answered without naming anything leave the same `round1_ok`/`scope_substantive` behind. `metadata.panel` counts the seats by this field, which is what makes its four buckets and `reviews_supplied` add up to `ballots`. |
 | `testing` | What that panelist said it ran, or a statement that nothing was run. |
 | `findings` | Indexes into the report's top-level `findings` array. |
 | `round1_ok` | Did the adapter report success? Adapters fail soft, so a slot can carry a review *and* a nonzero exit. |
@@ -115,7 +117,8 @@ One entry per seat that **ran**, in the stable panel order, then the chair:
 
 The chair's entry is the one carrying `role: "chair"`, is always **last**, and
 carries `name` (`"chair"`), `role`, `vendor`, `model`, `model_source`, `scope`,
-`scope_substantive`, `counts_as_review` (always `false`), `testing` and `verdict`
+`scope_substantive`, `counts_as_review` (always `false`), `abstention_cause`
+(always `""`), `testing` and `verdict`
 — the run's final verdict, which is the panel vote under `--decision vote` and
 otherwise the label the chair opened its synthesis with. It also carries `agent`,
 `ballot_counted` (is the chairing agent's own ballot one of the counted reviews?)
@@ -166,6 +169,18 @@ them cannot say which agent produced what; none is counted, because the consumer
 would refuse it. Counting one is the mismatch [#699] was about, and counting an
 abstention is that same mismatch one step out — a bench of three "Looks good to
 me, no concerns." replies used to satisfy `--min-reviews 3` and exit `0`.
+
+**A ballot that did not review says why.** There are four causes — `silent`,
+`named_nothing`, `refused`, `adapter_failed` — and each ballot carries its own in
+`abstention_cause`. Every count of them is that field, tallied: run metadata
+publishes the four as `panel.silent`, `panel.insubstantial` (the name
+`named_nothing` ships under), `panel.refused` and `panel.adapter_failed`, and
+they and `panel.reviews_supplied` sum to `panel.ballots`. They used to be two
+buckets and a subtraction, which was exact arithmetic and a false description:
+everything that was neither silent nor counted was reported as having named
+nothing checkable, including the seat that opened `Checked: src/a.py` and *then*
+refused. The number is the same; the cause printed beside it is now the one its
+ballot states.
 
 ## The `keel-reviews` bundle
 

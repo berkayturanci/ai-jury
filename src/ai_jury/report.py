@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from . import classification as _classification
+from . import panel as panel_mod
 from .adapters import AgentResult
 from .findings import SEVERITY_ORDER, Finding, flatten_inline
 
@@ -144,15 +145,20 @@ def _metadata_block(metadata: dict) -> list[str]:
             role = f"chair `{chair_name}` supplied no review of its own — synthesis only"
         else:  # pragma: no cover - a run always resolves a chair
             role = "no chair was resolved"
-        # The two ways a seat that ran supplies no review, named separately —
+        # The four ways a seat that ran supplies no review, named separately —
         # they ask for different fixes, and a single "N did not review" would
         # send a reader to the CLI logs for a reviewer that answered fine and
-        # simply reviewed nothing (#700, round 2).
-        missing = []
-        if panel.get("silent"):
-            missing.append(f"{panel['silent']} returned nothing")
-        if panel.get("insubstantial"):
-            missing.append(f"{panel['insubstantial']} named nothing checkable and abstained")
+        # simply reviewed nothing (#700, round 2). The phrases come from
+        # `panel.CAUSE_PHRASES`, the same table the shortfall message renders
+        # from, so this line and that one describe the same seat the same way;
+        # writing them apart is how "named nothing checkable and abstained" came
+        # to be printed over a ballot that had named a file and then refused
+        # (#700, round 5).
+        missing = [
+            f"{panel[panel_mod.PANEL_METADATA_KEYS[cause]]} {panel_mod.CAUSE_PHRASES[cause]}"
+            for cause in panel_mod.ABSTENTION_CAUSES
+            if panel.get(panel_mod.PANEL_METADATA_KEYS[cause])
+        ]
         tail = f"; {', '.join(missing)}" if missing else ""
         lines.append(
             f"- reviews for a downstream consumer: {panel['reviews_supplied']} of "

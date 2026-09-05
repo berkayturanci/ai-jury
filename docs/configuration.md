@@ -435,9 +435,19 @@ It is checked twice, because neither check alone is enough:
   and exits **2** with a message naming the shortfall;
 - **on the result**, exit **3**, because no pre-flight can predict an agent that
   is installed, runs, and returns nothing, nor one that answers with prose naming
-  nothing checkable — both are recorded as abstentions, neither is a review, and
-  the number supplied falls under the minimum ([#635] again, restated for
-  ballots).
+  nothing checkable, nor one that names a file and then declines — all are
+  recorded as abstentions, none is a review, and the number supplied falls under
+  the minimum ([#635] again, restated for ballots).
+
+The failure message names the seats that ran without reviewing **by cause**, in
+the four buckets `--metadata-json` publishes under `panel` — `silent`,
+`insubstantial` (answered, named nothing checkable), `refused` and
+`adapter_failed` — because the remedies differ: a silent agent is a CLI that
+broke or a budget that ran out, a seat that named nothing is a reviewer that did
+not review, a refusal is a model declining the task, and a failed adapter is an
+invocation to fix. Each seat is counted under the cause its own ballot records
+(`reviewers[].abstention_cause`), so the four and `reviews_supplied` add up to
+`ballots` and no sentence describes a seat as something its ballot denies.
 
 `--min-reviews N` overrides the key. It is `0` by default: most consumers have no
 minimum, and a gate that failed closed here would break every single-agent

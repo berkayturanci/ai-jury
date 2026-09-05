@@ -35,6 +35,14 @@ Four facts settle the arithmetic, and all four live here so that every renderer,
   abstention naming *which* seat and *why* — visible in the bundle, and excluded
   from the count. So the number of reviews is knowable only as an upper bound
   before the run, which is why the gate is checked on both sides of it.
+* **Every seat is in exactly one bucket, and the bucket is the cause.**
+  :func:`abstention_buckets` splits the non-reviewing seats four ways — silent,
+  named nothing, refused, adapter failed — by reading each ballot's own recorded
+  cause. It replaces a subtraction (``ballots - silent - supplied``) that was
+  arithmetically right and descriptively false: once a ballot could carry a
+  substantive scope and still abstain, the remainder held seats that had named a
+  file and then refused, and every renderer billed them as having named nothing
+  checkable — a cause the ballot beside the number contradicted (#700, round 5).
 
 Everything here is pure: no I/O, no clock, no randomness.
 """
@@ -58,6 +66,53 @@ CHAIR_ROLE = "chair"
 #: Named rather than inlined as ``+ 1`` so that prose about the bundle's *shape*
 #: and prose about its *review count* cannot quietly become the same number.
 CHAIR_SYNTHESIS_RECORDS = 1
+
+#: Why a seat that balloted did not review. Four causes, because four different
+#: things happen to a seat and they ask for four different fixes.
+SILENT = "silent"
+NAMED_NOTHING = "named_nothing"
+REFUSED = "refused"
+ADAPTER_FAILED = "adapter_failed"
+
+#: The causes in the order every renderer lists them, and the key set of
+#: :func:`abstention_buckets` — so a renderer cannot iterate a cause the buckets
+#: do not carry, nor miss one they do.
+ABSTENTION_CAUSES = (SILENT, NAMED_NOTHING, REFUSED, ADAPTER_FAILED)
+
+#: The clause each cause contributes to a count sentence, subject ``"N "``. One
+#: table, because the markdown report and :func:`shortfall` describe the same
+#: seats and used to phrase them apart — and the phrasing was where they lied.
+#: Every clause is true of *every* ballot in its bucket; in particular none of
+#: them says the seat named nothing, except the one bucket where that is what
+#: happened. "N named nothing checkable" asserted over a seat that named a file
+#: and *then* refused is the defect this table exists to make impossible
+#: (#700, round 5).
+CAUSE_PHRASES = {
+    SILENT: "returned nothing at all",
+    NAMED_NOTHING: "answered but named nothing checkable",
+    REFUSED: "returned a refusal rather than a review",
+    ADAPTER_FAILED: "reported an adapter failure",
+}
+
+#: The run-metadata key each cause is published under. Kept here because three
+#: modules read those keys and one of them is not spelled like its cause:
+#: ``named_nothing`` ships as ``insubstantial``, the name it has had since #700's
+#: second round, and renaming a published key to tidy a table would break every
+#: consumer reading it. A renderer iterating this mapping cannot leave a cause
+#: out, which is what a hand-written pair of ``if`` statements did.
+PANEL_METADATA_KEYS = {
+    SILENT: "silent",
+    NAMED_NOTHING: "insubstantial",
+    REFUSED: "refused",
+    ADAPTER_FAILED: "adapter_failed",
+}
+
+#: The key a ballot record carries its cause under. Read from the record, never
+#: recomputed from it: whether a seat fell silent or refused is a fact about the
+#: result that produced the ballot, and no predicate over the record alone can
+#: tell those two apart — both are ``scope_substantive: false`` when the refusal
+#: named nothing, which is why subtraction was reached for in the first place.
+CAUSE_FIELD = "abstention_cause"
 
 
 def responded(result) -> bool:
@@ -126,6 +181,68 @@ def review_count(ballots) -> int:
     return sum(1 for b in ballots or [] if is_review(b))
 
 
+def panelist_ballots(ballots) -> list:
+    """The ballot records that are *seats* — everything but the chair's synthesis.
+
+    The unit the buckets and the count are both taken over, so "how many seats
+    balloted" and "how many of them reviewed" can never be measured against two
+    different populations.
+    """
+    return [
+        b
+        for b in ballots or []
+        if isinstance(b, Mapping) and (b.get("role") or "") == PANELIST_ROLE
+    ]
+
+
+def abstention_cause(ballot: Mapping[str, Any]) -> str:
+    """Why this ballot is not a review — one of :data:`ABSTENTION_CAUSES` (pure).
+
+    **Read** from :data:`CAUSE_FIELD` rather than recomputed. Which of the four
+    happened is a fact about the result that produced the ballot: a seat that
+    fell silent and one that answered with nothing checkable leave the same two
+    structural fields behind, so a record that does not carry its cause has lost
+    it. The ballot is what the consumer is handed, so the cause travels with it.
+
+    A record written by an older build — or by hand, as tests do — carries no
+    cause, and is read from the fields every ballot has rather than refused: a
+    failed adapter says so in ``round1_ok``, and an empty ``scope_substantive``
+    means nothing checkable was named. That reading cannot see silence, which is
+    exactly why the field exists; it errs toward ``named_nothing``, which is true
+    of a silent seat as well.
+    """
+    if not isinstance(ballot, Mapping):  # pragma: no cover - defensive
+        return NAMED_NOTHING
+    recorded = (ballot.get(CAUSE_FIELD) or "").strip()
+    if recorded in ABSTENTION_CAUSES:
+        return recorded
+    if not ballot.get("round1_ok", True):
+        return ADAPTER_FAILED
+    if not ballot.get("scope_substantive"):
+        return NAMED_NOTHING
+    return REFUSED
+
+
+def abstention_buckets(ballots) -> dict[str, int]:
+    """The seats that balloted without reviewing, counted by cause (pure).
+
+    The four counts and :func:`review_count` partition the panelist ballots:
+    every seat lands in exactly one, because each is classified by what happened
+    to it. Subtraction is what this replaces, and what subtraction shipped: with
+    ``insubstantial`` derived as ``ballots - silent - supplied``, every seat that
+    was neither silent nor a counted review was billed as "named nothing
+    checkable" — including, since a ballot could carry a substantive scope and
+    still abstain, the seat that named a file and *then* refused, and the one
+    whose adapter died holding a file name. The number was right and the cause
+    printed beside it was contradicted by the ballot it described (#700, round 5).
+    """
+    counts = dict.fromkeys(ABSTENTION_CAUSES, 0)
+    for ballot in panelist_ballots(ballots):
+        if not is_review(ballot):
+            counts[abstention_cause(ballot)] += 1
+    return counts
+
+
 def bundle_records(ballots: int) -> int:
     """Total records in the bundle: the ballots, plus the chair's synthesis.
 
@@ -170,6 +287,8 @@ def shortfall(
     stage: str,
     silent: int = 0,
     insubstantial: int = 0,
+    refused: int = 0,
+    adapter_failed: int = 0,
 ) -> str | None:
     """Why this run cannot supply ``required`` reviews, or ``None`` if it can.
 
@@ -177,10 +296,15 @@ def shortfall(
     ("before the panel runs" / "after the panel ran" / "on this machine") read as
     one message with the timing filled in rather than as unrelated errors.
 
-    ``silent`` and ``insubstantial`` are the two ways a seat that ran produces no
-    review, and they are named separately because the remedy differs: a silent
-    agent is usually a CLI that broke or a budget that ran out, while a seat that
-    answered and named nothing is a reviewer that did not review.
+    The four counts are :func:`abstention_buckets` — the ways a seat that ran
+    produces no review — and they are named separately because the remedies
+    differ: a silent agent is usually a CLI that broke or a budget that ran out,
+    a seat that answered and named nothing is a reviewer that did not review, a
+    refusal is a model declining the task, and a failed adapter is an
+    invocation to fix. ``insubstantial`` keeps its name for the second of those;
+    it means exactly ``named_nothing`` and nothing else. Pass them as the buckets
+    report them: a caller that folds three causes into one prints a sentence the
+    ballots contradict.
     """
     required = int(required or 0)
     if required <= 0:
@@ -188,12 +312,16 @@ def shortfall(
     supplied = int(supplied)
     if supplied >= required:
         return None
-    reasons = []
-    if silent:
-        reasons.append(f"{silent} returned nothing at all")
-    if insubstantial:
-        reasons.append(f"{insubstantial} answered but named nothing checkable")
-    missing = int(silent) + int(insubstantial)
+    counted = {
+        SILENT: int(silent),
+        NAMED_NOTHING: int(insubstantial),
+        REFUSED: int(refused),
+        ADAPTER_FAILED: int(adapter_failed),
+    }
+    reasons = [
+        f"{counted[cause]} {CAUSE_PHRASES[cause]}" for cause in ABSTENTION_CAUSES if counted[cause]
+    ]
+    missing = sum(counted.values())
     clause = (
         f" {missing} seat(s) ran without producing a review "
         f"({'; '.join(reasons)}), so they are recorded as abstentions "

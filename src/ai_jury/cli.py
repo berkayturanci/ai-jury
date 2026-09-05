@@ -2554,8 +2554,10 @@ def main(argv: list[str] | None = None) -> int:
         panel_meta.get("reviews_supplied") or 0,
         config.ci.min_reviews,
         stage="after the panel ran",
-        silent=panel_meta.get("silent") or 0,
-        insubstantial=panel_meta.get("insubstantial") or 0,
+        # Every cause the metadata publishes, passed by the one mapping that
+        # names them: a call site listing two of the four printed the other two
+        # under a cause their own ballots contradicted (#700, round 5).
+        **{key: panel_meta.get(key) or 0 for key in panel.PANEL_METADATA_KEYS.values()},
     )
     if short_panel:
         log(short_panel)
