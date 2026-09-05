@@ -319,6 +319,83 @@ def vendor_identity(vendor: str) -> str:
     return name if name in set(recognised_vendors()) else GENERIC_VENDOR
 
 
+def recognised_adapters() -> tuple[str, ...]:
+    """Every name a seat may give ``[[agent]] adapter`` (issue #705).
+
+    The adapter vocabulary IS the vendor vocabulary, because ``adapters``' own
+    registry is keyed by vendor name: ``anthropic`` selects the claude protocol,
+    ``cli`` the bring-your-own-CLI passthrough, ``openai-api`` the hosted API
+    call. Derived rather than re-typed so the two cannot drift, and so
+    ``register_adapter`` — which teaches this build a name — makes that name
+    usable as an ``adapter`` in the same breath.
+    """
+    return recognised_vendors()
+
+
+def is_recognised_adapter(adapter) -> bool:
+    """Whether *adapter* names an adapter this build actually has (pure-ish)."""
+    key = normalise_vendor(adapter)
+    return bool(key) and key in set(recognised_adapters())
+
+
+def unknown_adapter_error(adapter, label: str = "") -> str | None:
+    """The ONE diagnosis for an ``adapter`` name this build does not have (pure).
+
+    Returns the message, or ``None`` when the seat names no adapter (it inherits
+    its vendor's) or names one that exists.
+
+    Single because the name is read in two places that must not disagree
+    (issue #708). :func:`validate_config` reads it before a run and turns this
+    into a hard error; ``adapters.make_adapter`` reads it again at the moment the
+    command line is built, and refuses instead of falling through to the generic
+    adapter. Both are needed. With only the first, every caller that loads a
+    config *without* validation — ``--doctor``, ``jury run-agent`` — silently got
+    a ``GenericCLIAdapter``, so ``--doctor`` printed three ``[available]`` seats
+    and ``ready to run: yes`` for a file a real run refused outright. With only
+    the second, the same typo would surface mid-run rather than before the panel
+    starts.
+
+    The fall-through was the silent guess #705 exists to remove: a name this
+    build does not have is a typo, or a plugin that was not loaded, and invoking
+    the seat through *some other* protocol answers neither.
+    """
+    if adapter is None or is_recognised_adapter(adapter):
+        return None
+    who = f"agent '{label}'" if label else "agent"
+    return (
+        f"{who} has unknown adapter {adapter!r} (expected one "
+        f"of {', '.join(recognised_adapters())}). 'adapter' names the protocol "
+        f"used to build the command line; 'vendor' names the identity the "
+        f"cross-vendor gate counts."
+    )
+
+
+def adapter_key(vendor, adapter=None) -> str:
+    """The protocol a seat is invoked through, from its two config keys (pure).
+
+    ``vendor`` answers "what is this seat?" — the identity the cross-vendor gate
+    counts (:func:`vendor_identity`). ``adapter`` answers "how is its command
+    line built?". Before issue #705 one key answered both, so a GPT model
+    reached through Cursor's ``cursor-agent`` had to choose between running
+    (``vendor = "cli"``, and three such seats are then one vendor) and being
+    counted (``vendor = "openai"``, and ``cursor-agent exec`` is not a command).
+
+    An unset ``adapter`` falls back to the vendor, which is what makes every
+    configuration written before this key existed byte-identical in argv.
+    """
+    return normalise_vendor(adapter) or normalise_vendor(vendor)
+
+
+def spec_adapter(spec) -> str:
+    """:func:`adapter_key` for any spec-like object (duck-typed, pure).
+
+    Readers outside this module — ``privilege``, ``doctor``, ``adapters`` — are
+    handed specs by tests as well as by the loader, so they ask here instead of
+    reaching for two attributes each and disagreeing about the fallback.
+    """
+    return adapter_key(getattr(spec, "vendor", ""), getattr(spec, "adapter", None))
+
+
 KNOWN_TOP_LEVEL_KEYS = ("jury", "agent")
 KNOWN_JURY_KEYS = (
     "rounds",
@@ -355,6 +432,9 @@ KNOWN_JURY_KEYS = (
 KNOWN_AGENT_KEYS = (
     "name",
     "vendor",
+    # The protocol used to build this seat's command line (issue #705).
+    # Optional: it defaults to the vendor's shipped adapter.
+    "adapter",
     "command",
     "model",
     "timeout",
@@ -501,6 +581,27 @@ def validate_config(data: dict, strict: bool = False) -> list:
         vendor_value = agent.get("vendor", "")
         vendor = normalise_vendor(vendor_value)
 
+        # The adapter is the PROTOCOL, the vendor is the IDENTITY (issue #705).
+        # Every question below of the form "how is this seat invoked?" — does it
+        # need a `command`, which sandbox flag does it accept — is asked of the
+        # adapter, which is the vendor itself unless the operator said otherwise.
+        adapter_value = agent.get("adapter")
+        adapter = adapter_key(vendor, adapter_value)
+
+        # Unknown adapter (HARD, unlike an unknown vendor). An unknown vendor
+        # still names a seat that can run; it just answers to `cli` at the gate.
+        # An unknown adapter names a protocol this build does not have, and the
+        # only fallbacks are to guess — which is precisely the failure #705 is
+        # about: `openai` guessed `codex exec` onto `cursor-agent` and the seat
+        # died in half a second, mid-run, having already been paid for. A typo
+        # here is named before the panel starts, like `effort`. The message
+        # itself lives in `unknown_adapter_error`, because `make_adapter` asks
+        # the same question at the other end and must give the same answer
+        # (issue #708).
+        adapter_error = unknown_adapter_error(adapter_value, label)
+        if adapter_error is not None:
+            errors.append(adapter_error)
+
         # Unique, non-empty name (hard for duplicates).
         if not name:
             errors.append(f"agent[{idx}] is missing a non-empty 'name'.")
@@ -519,11 +620,20 @@ def validate_config(data: dict, strict: bool = False) -> list:
         # requires a non-empty ``command``.
         command = agent.get("command", "")
         has_endpoint = bool(agent.get("endpoint"))
-        is_local_or_http = is_commandless_vendor(vendor) or has_endpoint
+        # Asked of the ADAPTER, not the vendor (#705): whether a seat needs a
+        # `command` is a fact about how it is invoked. `vendor = "openai",
+        # adapter = "cli"` runs a CLI and needs one; `vendor = "openai",
+        # adapter = "openai-api"` makes an HTTP call and does not.
+        is_local_or_http = is_commandless_vendor(adapter) or has_endpoint
         if is_local_or_http:
             if not agent.get("model"):
+                who = (
+                    f"vendor '{vendor_value}'"
+                    if adapter == vendor
+                    else f"adapter '{adapter_value}'"
+                )
                 warnings.append(
-                    f"agent '{label}' (vendor '{vendor_value}') has no 'model'; the "
+                    f"agent '{label}' ({who}) has no 'model'; the "
                     f"server or API call will likely reject the request."
                 )
             endpoint = agent.get("endpoint")
@@ -662,12 +772,40 @@ class AgentSpec:
     # Reasoning effort: "low" | "medium" | "high" (issue #662). None leaves the
     # vendor default alone. Mapped per vendor by ``adapters.effort_args``.
     effort: str | None = None
+    # The protocol this seat is invoked through (issue #705): which adapter
+    # builds its command line. ``None`` means "the vendor's shipped adapter",
+    # which is what every configuration written before this key existed means —
+    # so their argv is unchanged, byte for byte. Declared last, after every
+    # other field, so no positional construction site is silently re-bound.
+    # Read it through :attr:`adapter_key`, never directly: the fallback to the
+    # vendor belongs in one place.
+    adapter: str | None = None
 
     def __post_init__(self) -> None:
         # The single normalisation point. Every construction site — `_from_dict`,
         # `runagent`'s built-in templates, `cli`'s ad-hoc local seat, a test —
         # goes through it, so no reader downstream can be handed the raw form.
         self.vendor = normalise_vendor(self.vendor)
+        # Same treatment for the adapter, and for the same reason (#701 r3):
+        # `adapter = "CLI"` and `adapter = "cli"` name one protocol, so they must
+        # be one string before any lookup sees them. A key that is *present* but
+        # normalises to nothing — `7`, `"   "` — is refused here rather than read
+        # as "unset": `validate_config` already calls it an unknown adapter, and
+        # `jury run-agent` builds seats without validating, so treating it as a
+        # fallback to the vendor let that one path run what the other two refused.
+        if self.adapter is not None:
+            key = normalise_vendor(self.adapter)
+            if not key:
+                raise ConfigError(
+                    unknown_adapter_error(self.adapter, self.name)
+                    or f"agent {self.name!r}: adapter {self.adapter!r} names no protocol"
+                )
+            self.adapter = key
+
+    @property
+    def adapter_key(self) -> str:
+        """The adapter name this seat resolves to — its ``adapter`` or its vendor."""
+        return adapter_key(self.vendor, self.adapter)
 
 
 @dataclass
@@ -927,6 +1065,10 @@ def _from_dict(data: dict) -> JuryConfig:
                 prompt_mode=prompt_mode_val,
                 headers=headers_dict,
                 effort=effort_val or None,
+                # Raw, like `vendor`: `AgentSpec.__post_init__` normalises both,
+                # and a second normalisation here would be a second place to keep
+                # in step (issue #701 r3, extended by #705).
+                adapter=raw.get("adapter"),
             )
         )
     return JuryConfig(
@@ -1027,6 +1169,15 @@ def config_hash(config: JuryConfig) -> str:
                 # Effort changes the model id / request body an agent sends, so
                 # it is orchestration-affecting and must split the cache key.
                 "effort": a.effort,
+                # The adapter decides which command line is built, so two seats
+                # that differ only in it are not the same run and must not share
+                # a cache entry (issue #705). Present ONLY when it differs from
+                # the vendor: a seat with no `adapter`, or one naming its own
+                # vendor, means exactly what it meant before this key existed, so
+                # its canonical payload — and therefore every existing cache
+                # entry — stays byte-identical. The conditional is the point,
+                # not an optimisation: this change invalidates no one's cache.
+                **({"adapter": a.adapter_key} if a.adapter_key != a.vendor else {}),
             }
             for a in config.agents
         ],

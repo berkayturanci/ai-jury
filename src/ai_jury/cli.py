@@ -30,7 +30,6 @@ from .config import (
     ConfigError,
     load_config,
     load_raw_config,
-    normalise_vendor,
     validate_config,
 )
 from .github import (
@@ -1203,9 +1202,12 @@ def _render_effective_config(cfg) -> str:
     lines.append("agents:")
     for a in cfg.agents:
         flag = "" if a.enabled else "  (disabled)"
-        target = a.endpoint if normalise_vendor(a.vendor) == "local" else (a.command or "—")
+        target = a.endpoint if a.adapter_key == "local" else (a.command or "—")
         model = f" model={a.model}" if a.model else ""
-        lines.append(f"  - {a.name} ({a.vendor}) → {target}{model}{flag}")
+        # The adapter is shown only when it is not the vendor's own (#705), so
+        # this line keeps its shape for every configuration that predates the key.
+        via = f" via {a.adapter_key}" if a.adapter_key != a.vendor else ""
+        lines.append(f"  - {a.name} ({a.vendor}{via}) → {target}{model}{flag}")
     return "\n".join(lines)
 
 
@@ -1523,7 +1525,7 @@ def _run_run_agent(rest: list[str], spawn=None, sleep=None, clock=None) -> int:
         spec = dataclasses.replace(spec, timeout=ns.timeout)
     if ns.effort:
         spec = dataclasses.replace(spec, effort=ns.effort)
-        warning = effort_args(spec.vendor, ns.effort, spec.model).warning
+        warning = effort_args(spec.adapter_key, ns.effort, spec.model).warning
         if warning:
             print(f"warning: {warning}", file=sys.stderr)
 
@@ -1535,7 +1537,14 @@ def _run_run_agent(rest: list[str], spawn=None, sleep=None, clock=None) -> int:
         print(f"error: {error}", file=sys.stderr)
         return 2
 
-    adapter = make_adapter(spec, mock=ns.mock)
+    # `run-agent` loads its config without validation (it drives ONE named seat,
+    # so an unrelated seat's mistake must not stop it), which is why the adapter
+    # name is checked here, where it is used, rather than only at load (#708).
+    try:
+        adapter = make_adapter(spec, mock=ns.mock)
+    except ConfigError as exc:
+        print(redact(f"error: {exc}")[0], file=sys.stderr)
+        return 2
     print(
         f"run-agent: {spec.name} ({spec.vendor}) role={policy.role} "
         f"{'write' if policy.write else 'read-only'}",

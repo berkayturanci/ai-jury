@@ -24,7 +24,7 @@ Required read-only invocation per adapter (documented here and in docs/security.
 
 from __future__ import annotations
 
-from .config import GENERIC_CLI_VENDORS, normalise_vendor
+from .config import GENERIC_CLI_VENDORS, normalise_vendor, spec_adapter
 
 # Flags that grant broad write/tool/network powers — dangerous for a reviewer.
 _DANGEROUS_FLAGS: tuple[str, ...] = (
@@ -228,6 +228,11 @@ def _drop_bare_sandbox(extra_args: list[str]) -> list[str]:
 def enable_write(vendor: str, name: str, extra_args: list[str]) -> list[str]:
     """Return ``extra_args`` with the vendor's write/tool mode enabled (issue #661).
 
+    *vendor* is the seat's ADAPTER key — the protocol whose flags this function
+    speaks — which is the vendor itself unless the seat named an ``adapter``
+    (issue #705). The flags belong to the CLI being spawned, not to whose model
+    answers, so a GPT seat driven through ``cursor-agent`` is handled as ``cli``.
+
     The deliberate mirror image of :func:`enforce_read_only`, and the ONLY place
     the read-only guarantee is lifted. It exists for ``jury run-agent --role
     implement|fix --allow-write``: an orchestrator dispatching an *implementer*
@@ -257,6 +262,11 @@ def enable_write(vendor: str, name: str, extra_args: list[str]) -> list[str]:
 
 def enforce_read_only(vendor: str, name: str, extra_args: list[str]) -> list[str]:
     """Return ``extra_args`` with the mandatory read-only restriction guaranteed.
+
+    *vendor* is the seat's ADAPTER key — the protocol whose flags this function
+    speaks — which is the vendor itself unless the seat named an ``adapter``
+    (issue #705). The flags belong to the CLI being spawned, not to whose model
+    answers, so a GPT seat driven through ``cursor-agent`` is handled as ``cli``.
 
     The sandbox is enforced here (issue #288) rather than left to config, so an
     empty or misconfigured ``extra_args`` cannot produce a write-capable reviewer
@@ -309,7 +319,13 @@ def audit_agent(spec) -> list[str]:
     """Return least-privilege warnings for a single agent spec."""
     warnings: list[str] = []
     name = (getattr(spec, "name", "") or "").lower()
-    vendor = normalise_vendor(getattr(spec, "vendor", ""))
+    # The ADAPTER, not the vendor (issue #705). Every question this function
+    # asks — is there a subprocess, which sandbox flag would confine it, is one
+    # present — is about the CLI that gets spawned. A seat with
+    # `vendor = "openai", adapter = "cli"` spawns the operator's own binary, for
+    # which this tool knows no sandbox flag; auditing it as codex would demand a
+    # `-s read-only` that `cursor-agent` does not have.
+    vendor = spec_adapter(spec)
     extra_args = list(getattr(spec, "extra_args", []) or [])
     args_text = _args_str(extra_args)
     label = getattr(spec, "name", "agent")

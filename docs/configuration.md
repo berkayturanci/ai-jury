@@ -26,7 +26,7 @@ errors (exit `2`).
 - **Hard errors** (always fail): `rounds < 1`, non-positive `timeout` (jury or
   per-agent), duplicate agent names, missing/empty agent `name` or `command`, no
   `[[agent]]` entries at all, `decision` other than `"chair"` / `"vote"`,
-  malformed tables.
+  an `adapter` this build does not have, malformed tables.
 - **Warnings** (fail only under `--strict-config`): unknown vendor, `chair` not
   matching an enabled agent, unknown top-level/section/agent keys.
 
@@ -70,6 +70,81 @@ flag from another vendor's CLI. Because normalising is only strip-and-lowercase,
 the vendor *name* you wrote is what every surface below shows; its whitespace and
 capitalisation are not. Validation messages still quote the file verbatim.
 
+### Identity vs. protocol: the `adapter` key
+
+`vendor` answers *what is this seat?* — the identity `min_vendors` counts, and
+the string the ballots carry. `adapter` answers *how is its command line built?*
+It is optional and defaults to the vendor's own adapter, so a config that names
+only `vendor` builds exactly the argv it always did.
+
+They were one key until #705, and one key could not describe a bench built from a
+CLI that fronts several vendors' models — Cursor's `cursor-agent`, a corporate
+gateway, a local proxy, an `aider`-style front:
+
+```toml
+[[agent]]
+name = "gpt"
+vendor = "openai"        # identity: what the cross-vendor gate counts
+adapter = "cli"          # protocol: pass extra_args through untouched
+command = "cursor-agent"
+extra_args = ["-p", "--model", "gpt-5.3-codex-high", "--force", "--output-format", "text"]
+```
+
+Without `adapter`, `vendor = "openai"` also selected the Codex adapter, which
+runs `<command> exec …` — and `cursor-agent exec` is not a command, so the seat
+died in half a second with `nonzero_exit`. The only pass-through adapter was
+reachable as `vendor = "cli"`, which made every such seat the *same* vendor at
+the gate. A bench of Cursor-fronted GPT, Gemini and Grok seats could run, or be
+counted as three vendors — not both. With `adapter` it does both.
+
+The adapter vocabulary **is** the vendor vocabulary, because the adapter registry
+is keyed by vendor name: the claude protocol is `adapter = "anthropic"` (not
+`"claude"`), the codex protocol is `"openai"`, agy's is `"google"`,
+bring-your-own-CLI pass-through is `"cli"`, and each hosted API is its own
+`…-api` name. `register_adapter("my-protocol", MyAdapter)` adds a name usable as
+either key.
+
+Everything about *how a seat is invoked* follows the adapter: the argv, the
+read-only sandbox flag the tool guarantees (`--sandbox` is never spliced into a
+CLI that has no such flag), whether a `command` is required at all, how `effort`
+is expressed, and the transport `--doctor` reports. Everything about *who the
+seat is* follows the vendor: `min_vendors`, `panel.vendors`, the report's vendor
+column, the ballots and `--format keel-reviews`.
+
+**A mismatched pair is unusual, not invalid.** `vendor = "openai", adapter =
+"anthropic"` validates silently and runs: it invokes `claude -p` and counts as
+the vendor `openai`. That is deliberate. The supported configuration this key
+exists for — `vendor = "openai", adapter = "cli"` — *is* a mismatch, so any rule
+that flagged "the adapter is not the vendor's own" would fire on the main use
+case; and the tool cannot tell a sensible pair from a silly one without knowing
+which CLI fronts which vendor, which is precisely the knowledge it does not have.
+What it can check, it checks strictly: an `adapter` naming a protocol this build
+does not have is a **hard error**, not a warning, because the only alternative is
+to guess — and the guess is the half-second `nonzero_exit` above, discovered
+mid-run on a review you have already paid for. (An unknown *vendor* stays a
+warning: that seat still runs, it just answers to `cli` at the gate.)
+
+That error is raised **everywhere the name is read**, not only by
+`--config-validate`. `jury --doctor` loads the config with the same validation a
+run does, so it reports the config error as its verdict — `ready to run: no`,
+naming the seat and the adapter, describing no seat — instead of a bench the run
+will refuse. And the adapter lookup itself refuses a name it does not have rather
+than falling through to the generic CLI adapter, which covers the readers that
+deliberately do *not* validate the whole file: `jury run-agent`, which drives one
+named seat, exits `2` with the same message. Falling through was the last place
+the silent guess survived: `--doctor` used to print three `[available]` rows and
+`cross-vendor ready: yes` for the very file `jury` rejected before its first
+round. (An unknown *vendor* still falls through, because that seat named no
+protocol — inheriting the generic one is its documented behaviour.)
+
+`--doctor` prints both fields on every seat row, so a Codex seat and a
+GPT-through-Cursor seat are distinguishable at a glance:
+
+```
+  [available] codex (vendor=openai, adapter=openai, command=codex)
+  [available] gpt   (vendor=openai, adapter=cli, command=cursor-agent)
+```
+
 ### Which vendor string is which
 
 The configured string and the identity a seat carries at the gate are two
@@ -77,8 +152,9 @@ different facts, and every place that shows one says which it is:
 
 | Where | Shows | Why |
 | --- | --- | --- |
-| `--doctor` `panel.vendors_configured` / `vendors_available` | **Identity** | These are the gate's arithmetic. They equal what a run counts for the same config, so doctor cannot call a bench cross-vendor ready that the run then refuses. |
+| `--doctor` `panel.vendors_configured` / `vendors_available` | **Identity** | These are the gate's arithmetic. They equal what a run counts for the same config, so doctor cannot call a bench cross-vendor ready that the run then refuses — which is also why the doctor validates the config the way a run does: on a file the run rejects outright, it reports that error and counts nothing. |
 | `--doctor` agent rows (`vendor`, and the text report's `vendor=…`) | **Configured vendor** (normalised spelling), with `vendor_identity` beside it | Provenance, plus the one number that matters next to it. The text report renders `vendor=xa1 -> counts as cli` only when the two differ. |
+| `--doctor` agent rows (`adapter`, and the text report's `adapter=…`) | **Protocol** | Neither of the other two: it is how the seat's command line is built. `vendor=openai, adapter=cli` is a GPT model reached through someone else's CLI. |
 | `--metadata-json` `panel.vendors` | **Identity** | It is the number `min_vendors` is compared against. |
 | `--metadata-json` `agents[].vendor`, the markdown report's `vendor` column, the ballots, `--format keel-reviews` | **Configured vendor** (normalised spelling) | These attribute output to the seat that produced it. Collapsing the gate is not a licence to rewrite provenance — and normalising the spelling does not rewrite it either: the vendor named is the vendor you configured. |
 
@@ -251,6 +327,7 @@ The document is `schema_version: "ai-jury.doctor.v1"`:
       "name": "agy",
       "vendor": "google",
       "vendor_identity": "google",
+      "adapter": "google",
       "transport": "cli",
       "available": true,
       "reason": null,
@@ -274,13 +351,14 @@ The document is `schema_version: "ai-jury.doctor.v1"`:
 | `panel` | Cross-vendor readiness (see below). |
 | `vendor` | The vendor as configured, in its normalised spelling — stripped and lowercased once when the seat is built, so ` XAI-API ` reads back as `xai-api`. Provenance, as distinct from `vendor_identity`. |
 | `vendor_identity` | The vendor this seat counts as at the cross-vendor gate: its own name when recognised, `cli` when it fell back to the generic adapter. This is what `panel` counts. |
+| `adapter` | The protocol that builds this seat's command line — its `[[agent]] adapter`, or its vendor's own adapter when the key is unset. Neither provenance nor identity: `vendor: "openai", adapter: "cli"` is a GPT model reached through a CLI this tool does not otherwise know. |
 | `transport` | `cli` (a command on PATH), `api` (a hosted vendor API), or `local` (an OpenAI-compatible server you run). |
 | `command` / `endpoint` | Exactly one, named for the transport: a `cli` agent carries `command`, everything else carries the `endpoint` its adapter would actually call. |
 | `reason` | Why an agent is unusable, or `null` when it is available. |
 | `capabilities` | Labels from the version probe: `headless`, `model-selection`. |
 | `models` | Model ids discovered for that agent (`agy models`, or a local server's `/v1/models`), or `null` when nothing could be listed. Discovered **only** for `--json`: it costs a probe per agent, and the text report does not show it. |
 | `effort_supported` / `effort` | Whether the vendor has an effort control, and the level configured for this agent. |
-| `warnings` | The same config warnings the human report lists. |
+| `warnings` | The same config warnings the human report lists. On a config with a **hard** error — an `adapter` this build does not have, no `[[agent]]` at all — this carries that error, `agents` is empty and `ready` is `false`: the doctor validates what a run validates, so it never describes a bench the run refuses. |
 
 ### `panel`: readiness, not contribution
 
