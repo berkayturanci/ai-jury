@@ -28,6 +28,17 @@ ballots were the whole review. The consumer refuses a hand-posted verdict shaped
 like that (:data:`_SCOPE_ANCHORS` mirrors the rule: a path, a ``path:line``, a
 backticked symbol, a called identifier, or a "checked …" clause), precisely
 because a verdict naming nothing cannot be told apart from one never performed.
+
+**And the name has to exist** (issue #710). Mirroring the consumer's *shapes* was
+not enough on its own: ``describe_scope`` backticked whatever the reviewer wrote
+on its ``Checked:`` line, so ``Checked: nothing`` was rendered as an anchor,
+passed the shape test and counted as a review — the form of naming something with
+none of the substance, satisfiable by an agent that read nothing. Every stated
+token is now resolved against the change the panel was shown
+(:class:`ai_jury.largediff.ChangeIndex`, carried on the outcome), and the shape
+test is what the *resolved* tokens then have to pass. This module is therefore
+deliberately **stricter** than the consumer on that one path and never looser:
+a scope it accepts is one the consumer accepts.
 So the placeholder is gone in three directions:
 
 * the review prompt asks the reviewer for its own ``Checked:`` / ``Tested:``
@@ -74,6 +85,7 @@ from .panel import (
     CAUSE_FIELD,
     CHAIR_ROLE,
     NAMED_NOTHING,
+    NOT_IN_CHANGE,
     PANELIST_ROLE,
     REFUSED,
     SILENT,
@@ -163,6 +175,10 @@ _STATED_TESTING_RE = re.compile(r"^tested\s*\**\s*:\s*\**\s*(.+)$", re.IGNORECAS
 #: to the consumer's own rule (keel's ``review-verdict-insubstantial``): a scope
 #: this tool is happy with but the consumer rejects is the defect in #700, and
 #: the only way the two cannot drift is for the same shapes to be listed here.
+#: Drift in the other direction is fine and intended: since #710 a stated
+#: ``Checked:`` token must also *resolve* against the change before it is
+#: rendered as one of these shapes, so this tool is stricter there and never
+#: looser — a scope it accepts is one the consumer accepts.
 _SCOPE_ANCHORS = (
     re.compile(r"[\w./-]+\.[A-Za-z0-9]{1,5}:\d+"),  # path/to/file.py:42
     re.compile(r"[\w-]+/[\w./-]+\.[A-Za-z0-9]{1,5}\b"),  # src/ai_jury/thing.py
@@ -174,6 +190,117 @@ _SCOPE_ANCHORS = (
 #: genuinely clean review ("checked X, Y and Z; found nothing") is a real
 #: outcome and must not be forced to invent a file reference.
 _CHECKED_CLAUSE_RE = re.compile(r"\bchecked\b[^.\n]{8,}", re.IGNORECASE)
+
+# --- Resolving a stated `Checked:` line against the change (issue #710) -----
+#
+# `_tick` backticks any non-empty stated value, and a backticked token is an
+# anchor, so `Checked: nothing` — or `everything`, or `the diff` — was rendered
+# as an anchor, passed :func:`scope_is_substantive`, and made the ballot a
+# review. That is the *shape* of an anchor with none of the substance, and a rule
+# satisfied by an agent that read nothing is #700's own failure one layer up.
+#
+# So a stated token is resolved against the change the panel was shown — the
+# paths and symbols of :class:`ai_jury.largediff.ChangeIndex`, carried on the
+# outcome. The check is local and cheap: the jury holds the diff at that moment.
+
+#: Where one stated value is split into tokens: whitespace and list punctuation.
+_SCOPE_TOKEN_SPLIT = re.compile(r"[\s,;]+")
+
+#: Punctuation a token may be wrapped or trailed by. Stripped from both ends
+#: before the token is resolved, so ``(src/a.py),`` and ``src/a.py`` are one
+#: token. A trailing ``:`` goes too, but a ``:42`` does not — that is a line.
+#: ``_`` is deliberately **not** here: it is part of the identifier, and
+#: stripping it turned ``_stated_line`` into a symbol the change does not have.
+_TOKEN_EDGE = "`'\"“”‘’()[]{}<>*.,;:!?"
+
+#: ``path:line`` / ``path:line-line`` — the line part is dropped before the path
+#: is looked up, because a diff index knows files, not line numbers.
+_PATH_LINE_RE = re.compile(r"^(?P<path>.+?):(?P<line>\d+(?:-\d+)?)$")
+
+#: A token that *claims* to name something: a path, a ``path:line``, a call, or
+#: an identifier (an ``_`` or an interior case change). Ordinary connective
+#: prose in the same sentence — "lines", "and", "the tests" — claims nothing, so
+#: it is neither counted as an anchor nor reported as a broken one. A token the
+#: reviewer backticked counts too: the reviewer marked it as a name itself.
+_NAME_SHAPED_RE = re.compile(r"[/\\]|\.[A-Za-z0-9]{1,5}$|\(\)$|_|[a-z0-9][A-Z]")
+
+#: Anchor-forming characters, removed before an unresolved token is quoted in an
+#: abstention. See :func:`_deanchor`.
+_DEANCHOR = str.maketrans(dict.fromkeys("`/\\:()[]{}<>", " "))
+
+#: ...and the one word that forms an anchor without punctuation, under
+#: :data:`_CHECKED_CLAUSE_RE`. Elided rather than dropped silently.
+_CHECKED_WORD_RE = re.compile(r"\bchecked\b", re.IGNORECASE)
+
+
+def _deanchor(text: str) -> str:
+    """A reviewer's token, quoted so it cannot pass for an anchor (pure).
+
+    An unresolved token is named in the abstention — a reader has to see that
+    the reviewer claimed ``src/made/up.py`` — but the abstention is
+    *deliberately anchorless* (see :func:`abstention_scope`): a consumer applying
+    the same substance rule has to reach the same conclusion this module did,
+    and it would not if the sentence explaining that nothing was checked itself
+    contained a path. So the shapes that make an anchor are removed: the
+    punctuation of :data:`_SCOPE_ANCHORS` and the ``checked …`` clause. The
+    reviewer's words survive; only their ability to masquerade as evidence does.
+    """
+    flat = _CHECKED_WORD_RE.sub("…", flatten_inline(text))
+    return " ".join(flat.translate(_DEANCHOR).split())[:_CLAUSE_MAX]
+
+
+def _scope_tokens(value: str) -> list[str]:
+    """The distinct candidate tokens of one stated ``Checked:`` value (pure)."""
+    seen: list[str] = []
+    for raw in _SCOPE_TOKEN_SPLIT.split(flatten_inline(value or "")):
+        token = raw.strip().strip(_TOKEN_EDGE)
+        if token and token not in seen:
+            seen.append(token)
+    return seen
+
+
+def _is_name_shaped(token: str, value: str) -> bool:
+    """Does *token* claim to name something? (pure — see :data:`_NAME_SHAPED_RE`)"""
+    return bool(_NAME_SHAPED_RE.search(token)) or f"`{token}`" in (value or "")
+
+
+def _token_resolves(token: str, changed: Any) -> bool:
+    """Is *token* a path or symbol that is actually in the change? (pure)"""
+    base = token
+    match = _PATH_LINE_RE.match(token)
+    if match:
+        base = match.group("path")
+    if changed.has_path(base):
+        return True
+    # `module.function()` / `Class.method` — any part that is a symbol in the
+    # change resolves it; the qualification is the reviewer's, not the index's.
+    return any(changed.has_symbol(part) for part in re.split(r"[.:]+", base.rstrip("()")) if part)
+
+
+def resolve_stated_scope(value: str, changed: Any) -> tuple[list[str], list[str]]:
+    """Split one ``Checked:`` value into ``(resolved, unresolved)`` tokens (pure).
+
+    ``resolved`` are the tokens that name a path or a symbol present in
+    *changed*; they are what makes the scope substantive. ``unresolved`` are the
+    tokens that are shaped like a name and are not in the change — reported, so
+    a reader sees the claim that failed, but never anchoring anything.
+
+    **A mixed line is carried by its real tokens.** ``Checked:
+    src/ai_jury/ballots.py, src/made/up.py`` is a review of
+    ``src/ai_jury/ballots.py``, with the second path listed in the scope as not
+    in the change: the reviewer demonstrably read something a reader can go and
+    check, and abstaining over the extra token would discard a real review to
+    punish a typo. A line with *no* resolving token is not a review, whatever
+    else it says.
+    """
+    resolved: list[str] = []
+    unresolved: list[str] = []
+    for token in _scope_tokens(value):
+        if _token_resolves(token, changed):
+            resolved.append(token)
+        elif _is_name_shaped(token, value):
+            unresolved.append(token)
+    return resolved, unresolved
 
 
 def normalize_verdict(verdict: str) -> str:
@@ -336,12 +463,42 @@ def _claims_named(findings: list) -> list[str]:
     return seen
 
 
-def describe_scope(result: Any, findings: list, *, mode: str = "code") -> str:
+def _stated_scope_sentence(stated: str, changed: Any) -> str:
+    """The scope sentence for a reviewer's own ``Checked:`` line (pure).
+
+    ``""`` when the line resolved to nothing in the change — the caller then has
+    no sentence to add from this source, and the ballot falls through to the
+    next one exactly as a reply with no ``Checked:`` line does. The unresolved
+    tokens are not silently dropped: :func:`_no_scope_reason` names them in the
+    abstention, where they cannot be mistaken for evidence.
+
+    With ``changed`` as ``None`` there is nothing to resolve against — a
+    hand-built outcome, a caller that never had a diff — and the pre-#710
+    structural rule applies. "Not verifiable here" is not "does not exist".
+    """
+    if changed is None:
+        return f"Checked, as stated by the reviewer: {_tick(stated)}."
+    resolved, unresolved = resolve_stated_scope(stated, changed)
+    if not resolved:
+        return ""
+    sentence = f"Checked, as stated by the reviewer: {', '.join(_tick(t) for t in resolved)}."
+    if unresolved:
+        listed = ", ".join(_deanchor(t) for t in unresolved[:_FILES_LISTED])
+        sentence += (
+            f" The same line also named {listed} — not in this change, and so"
+            f" anchoring nothing; the rest of the line is what this ballot rests on."
+        )
+    return sentence
+
+
+def describe_scope(result: Any, findings: list, *, mode: str = "code", changed: Any = None) -> str:
     """What this panelist named that it read — or ``""`` when it named nothing.
 
     Pure and deterministic. Four sources, most authoritative first:
 
-    1. the reviewer's own ``Checked:`` line, which the review prompt asks for;
+    1. the reviewer's own ``Checked:`` line, **resolved against the change** —
+       a token counts only when it names a path or a symbol that is actually in
+       the diff (#710), so ``Checked: nothing`` contributes nothing;
     2. the distinct files it attached to its structured findings;
     3. up to three "checked / examined / reviewed" clauses from its prose;
     4. **in ``--issue`` mode only**, failing a file, the claims it raised.
@@ -352,6 +509,14 @@ def describe_scope(result: Any, findings: list, *, mode: str = "code") -> str:
     fallback — "Reviewed the supplied diff; named no specific file." — asserted
     coverage from the absence of evidence for it, and read identically whether
     the agent had reviewed all 17 files or returned an empty string.
+
+    ``changed`` is what the first source is resolved against (#710). Until then
+    :func:`_tick` backticked whatever the reviewer wrote and
+    :func:`scope_is_substantive` accepted any backticked token, so ``Checked:
+    nothing`` was rendered as an anchor and the ballot counted as a review — the
+    shape of naming something, satisfiable by an agent that read nothing. The
+    ``Checked:`` path is now held to the standard the findings-derived path
+    already met: it must name a place that exists in the change.
 
     ``mode`` gates the fourth source, and that gate is the whole of #700's third
     round. keel's rule is that a scope must name a file, line or symbol, or carry
@@ -364,7 +529,9 @@ def describe_scope(result: Any, findings: list, *, mode: str = "code") -> str:
     parts: list[str] = []
     stated = _stated_line(result, _STATED_SCOPE_RE)
     if stated:
-        parts.append(f"Checked, as stated by the reviewer: {_tick(stated)}.")
+        sentence = _stated_scope_sentence(stated, changed)
+        if sentence:
+            parts.append(sentence)
     files = _files_named(findings)
     if files:
         listed = ", ".join(_tick(f) for f in files[:_FILES_LISTED])
@@ -383,7 +550,18 @@ def describe_scope(result: Any, findings: list, *, mode: str = "code") -> str:
     return scope if scope_is_substantive(scope) else ""
 
 
-def abstention_cause(result: Any) -> str:
+def _named_only_absent(result: Any, changed: Any) -> bool:
+    """Did this seat state a ``Checked:`` line that names only absent things? (pure)"""
+    if changed is None:
+        return False
+    stated = _stated_line(result, _STATED_SCOPE_RE)
+    if not stated:
+        return False
+    resolved, unresolved = resolve_stated_scope(stated, changed)
+    return not resolved and bool(unresolved)
+
+
+def abstention_cause(result: Any, changed: Any = None) -> str:
     """Which of :data:`ai_jury.panel.ABSTENTION_CAUSES` this seat's ballot records.
 
     **The** classification, and the only one: the ballot carries its answer under
@@ -392,6 +570,11 @@ def abstention_cause(result: Any) -> str:
     second reading of the raw result is a second place for the count and the
     prose to part company, which is how a seat that named a file and then refused
     came to be counted as one that named nothing (#700, round 5).
+
+    ``changed`` is the change under review, and it separates the last two
+    causes: without it a seat that named only absent things is indistinguishable
+    from one that named nothing, so the cause degrades to ``named_nothing``
+    rather than being guessed.
 
     Silence is tested **first**, so ``silent`` keeps meaning exactly what
     :func:`ai_jury.panel.responded` says and the metadata's ``silent`` is the
@@ -409,6 +592,13 @@ def abstention_cause(result: Any) -> str:
         return ADAPTER_FAILED
     if is_abstention(getattr(result, "output", "")):
         return REFUSED
+    # The two shapes of "its scope did not stand", kept apart because they send
+    # their reader to opposite places (#710). A seat whose ``Checked:`` line
+    # named `src/made/up.py` did not fail to say what it read — it said it read
+    # something this change does not contain, and "named nothing checkable"
+    # printed over that ballot is a description its own scope contradicts.
+    if _named_only_absent(result, changed):
+        return NOT_IN_CHANGE
     return NAMED_NOTHING
 
 
@@ -423,21 +613,42 @@ _NO_SCOPE_REASONS = {
 }
 
 
-def _no_scope_reason(result: Any, findings: list | None = None) -> str:
+def _no_scope_reason(result: Any, findings: list | None = None, changed: Any = None) -> str:
     """Why nothing checkable could be lifted from this seat (pure).
 
-    Five causes, kept apart because they ask for different fixes: a broken
-    adapter, a CLI that answered with nothing at all, a refusal, a code review
-    whose findings named no location, and a reply that reviewed nothing. The
-    first three are :func:`abstention_cause`'s, read from the one classifier
-    rather than re-tested here; the last two are the two shapes of
-    ``named_nothing``, and the split matters because "said nothing" sends its
-    reader somewhere different from "raised findings and attached none of them
-    to a file".
+    Six reasons, kept apart because they ask for different fixes: a broken
+    adapter, a CLI that answered with nothing at all, a refusal, a ``Checked:``
+    line naming only things this change does not contain, a ``Checked:`` line
+    naming nothing at all, a code review whose findings named no location, and a
+    reply that reviewed nothing. The first three are :func:`abstention_cause`'s,
+    read from the one classifier rather than re-tested here; the rest are the
+    shapes of ``named_nothing`` and ``not_in_change``, and the splits matter
+    because "said nothing" sends its reader somewhere different from "named a
+    file that is not in the diff" and from "raised findings and attached none of
+    them to a file".
+
+    Every quoted token passes through :func:`_deanchor` first: this sentence
+    lands in the ballot's ``scope``, and a scope explaining that nothing was
+    checked must not itself read as an anchor to the consumer applying the same
+    rule.
     """
-    stated = _NO_SCOPE_REASONS.get(abstention_cause(result))
+    cause = abstention_cause(result, changed)
+    stated = _NO_SCOPE_REASONS.get(cause)
     if stated:
         return stated
+    named = _stated_line(result, _STATED_SCOPE_RE)
+    if cause == NOT_IN_CHANGE:
+        listed = ", ".join(_deanchor(t) for t in resolve_stated_scope(named, changed)[1])
+        return (
+            f"it stated it read {listed}, and no such path or symbol is in this change — "
+            f"so the ballot names a place a reader cannot go to, which is not the same as "
+            f"naming none"
+        )
+    if named:
+        return (
+            f"it stated it read {_deanchor(named)}, which names no path, line or symbol in "
+            f"this change at all — the shape of a scope with nothing in it"
+        )
     raised = len(findings or [])
     if raised:
         return (
@@ -448,7 +659,7 @@ def _no_scope_reason(result: Any, findings: list | None = None) -> str:
     return "its reply named no file, symbol, coverage clause or finding"
 
 
-def abstention_scope(result: Any, findings: list | None = None) -> str:
+def abstention_scope(result: Any, findings: list | None = None, changed: Any = None) -> str:
     """The scope of a ballot that could not state one: the reason, in the field.
 
     Deliberately anchorless — no path, no backticked symbol, no "checked …"
@@ -465,7 +676,7 @@ def abstention_scope(result: Any, findings: list | None = None) -> str:
     name = flatten_inline(getattr(result, "agent", "") or "").strip() or "this reviewer"
     return (
         f"Abstention: no scope can be stated for '{name}' because "
-        f"{_no_scope_reason(result, findings)}. Recorded as an abstention rather than an "
+        f"{_no_scope_reason(result, findings, changed)}. Recorded as an abstention rather than an "
         f"approval — an agent that named nothing did not review, and counting it "
         f"as one that did is the difference between a panel and a receipt."
     )
@@ -495,31 +706,64 @@ def _spec_for(config: Any, agent_name: str) -> Any:
     return None
 
 
-def requested_model(spec: Any) -> str:
-    """The model id this agent's CLI was actually asked for (``""`` for none).
+def sent_model(result: Any) -> str:
+    """The model id this seat's invocation recorded having sent (``""`` if none).
 
-    ``spec.model`` is what the operator wrote down, but it is not always what
-    was sent: for a vendor that encodes reasoning effort *in the model id*, the
-    ``effort`` knob rewrites it, and a ballot reporting the unmapped id would
-    name a model the run never asked for. :func:`ai_jury.adapters.effort_args` is
-    pure and is the one place that mapping lives, so it is called rather than
-    re-derived. An effort level it rejects degrades to the configured id — a bad
-    config value is ``validate_config``'s to refuse, never a ballot's to crash on.
+    :attr:`ai_jury.adapters.AgentResult.model`, stamped by the path that ran the
+    adapter from :meth:`ai_jury.adapters.Adapter.resolved_model` — the same call
+    that put the id in the argv or the request payload. Reading it back is the
+    whole of #709's fix: the ballot quotes the id the run sent instead of
+    computing a second one that can differ from it.
+
+    Empty for a record no invocation produced — a hand-built result, a legacy
+    cache entry — and :func:`requested_model` answers for those instead.
+    """
+    return (getattr(result, "model", "") or "").strip()
+
+
+def requested_model(spec: Any) -> str:
+    """The model id this agent's CLI would be asked for, from the spec alone.
+
+    The fallback for a record that carries no sent id (:func:`sent_model`), and
+    it computes the id the way the invocation path computes it — with
+    :func:`ai_jury.config.spec_adapter`, **not** ``spec.vendor``.
+
+    That distinction is #709. ``spec.model`` is what the operator wrote down, but
+    it is not always what is sent: where reasoning effort is encoded *in the
+    model id*, the ``effort`` knob rewrites it. How effort is expressed is a
+    property of the protocol the seat is invoked through, so every adapter keys
+    :func:`ai_jury.adapters.effort_args` on the adapter; this keyed it on the
+    vendor, and since #705 the two can differ. A seat configured
+    ``vendor = google, adapter = cli, model = gemini-3-pro, effort = high`` was
+    invoked with ``gemini-3-pro`` and balloted ``gemini-3-pro-high``, under a
+    ``model_source: requested`` that claims to be the id actually sent.
+
+    One thing this cannot see, and the reason the sent id is preferred over it:
+    the invocation may consult the vendor's live model listing and fall back when
+    the mapped id is not offered. That is I/O, and this module is pure.
+
+    An effort level :func:`ai_jury.adapters.effort_args` rejects degrades to the
+    configured id — a bad config value is ``validate_config``'s to refuse, never
+    a ballot's to crash on.
     """
     from .adapters import effort_args
+    from .config import spec_adapter
 
     configured = (getattr(spec, "model", "") or "").strip()
     try:
-        plan = effort_args(
-            getattr(spec, "vendor", "") or "", getattr(spec, "effort", None), configured
-        )
+        plan = effort_args(spec_adapter(spec), getattr(spec, "effort", None), configured)
     except ValueError:
         return configured
     return (getattr(plan, "model", "") or configured or "").strip()
 
 
-def describe_model(config: Any, agent_name: str) -> tuple[str, str]:
+def describe_model(config: Any, agent_name: str, result: Any = None) -> tuple[str, str]:
     """``(model, source)`` for the agent that answered in this slot.
+
+    ``result`` is that seat's own round-1 result when there is one, and it is
+    the first source: it carries the id its invocation sent (#709), so
+    ``model_source: "requested"`` names the string that was actually on the wire
+    rather than a second derivation of it.
 
     Never the empty string for a slot that has an agent. An empty ``model`` was
     the provenance half of #700: a ballot naming ``vendor: "openai"`` and
@@ -538,7 +782,7 @@ def describe_model(config: Any, agent_name: str) -> tuple[str, str]:
     spec = _spec_for(config, name)
     if spec is None:
         return f"unknown (no agent named '{name}' in this run's config)", MODEL_UNKNOWN
-    model = requested_model(spec)
+    model = sent_model(result) or requested_model(spec)
     if model:
         return model, MODEL_REQUESTED
     command = (getattr(spec, "command", "") or getattr(spec, "vendor", "") or name).strip()
@@ -715,6 +959,18 @@ def reviewer_ballots(
     them had no guarantee the second described the first.
     """
     seats = participating(outcome)
+    # What the panel was actually shown (#710), so a reviewer's `Checked:` line
+    # is resolved against the change rather than accepted on its shape. ``None``
+    # on an outcome that was not built from a diff; the rule then falls back to
+    # the structural test, because "not verifiable" is not "does not exist".
+    #
+    # ``--issue`` is the one mode that supplies no change to resolve against: the
+    # panel is reading an issue's prose, and a reviewer naming "the acceptance
+    # criteria section" has named exactly what it was asked to name. That is the
+    # same exception :func:`_claims_named` documents — there a finding carries no
+    # file by construction — and applying a diff rule to a document with no diff
+    # would abstain over a clean triage that did its job.
+    changed = None if mode == ISSUE_MODE else getattr(outcome, "changed", None)
     names = [getattr(r, "agent", "") for r in seats]
     stances = _stance_by_reviewer(outcome, names, mode)
     all_findings = list(getattr(outcome, "findings", []) or [])
@@ -726,11 +982,11 @@ def reviewer_ballots(
         chaired = bool(chair_name) and name == chair_name
         indexes = [i for i, f in enumerate(all_findings) if f.reviewer == name]
         own_findings = [all_findings[i] for i in indexes]
-        scope = describe_scope(r, own_findings, mode=mode)
+        scope = describe_scope(r, own_findings, mode=mode, changed=changed)
         scoped = bool(scope)
         if not scoped:
-            scope = abstention_scope(r, own_findings)
-        model, model_source = describe_model(config, name)
+            scope = abstention_scope(r, own_findings, changed)
+        model, model_source = describe_model(config, name, r)
         entry = {
             "name": name,
             "role": PANELIST_ROLE,
@@ -759,14 +1015,18 @@ def reviewer_ballots(
         # travels with the ballot so every renderer counts and describes the same
         # seat the same way instead of subtracting one bucket from another
         # (#700, round 5). Empty on a ballot that reviewed: it has no cause.
-        entry[CAUSE_FIELD] = "" if entry["counts_as_review"] else abstention_cause(r)
+        entry[CAUSE_FIELD] = "" if entry["counts_as_review"] else abstention_cause(r, changed)
         # After the answer, never before it: the chair's sentence *reports* that
         # answer, so it cannot be written while the answer is still unknown.
         if scoped and chaired:
             entry["scope"] += _chaired_ballot_sentence(r, entry)
         entries.append(entry)
 
-    chair_model, chair_model_source = describe_model(config, chair_name)
+    # The chair's own round-1 seat, when it has one: the chairing agent reviews
+    # too, and every phase of it runs through the same adapter, so the id its
+    # ballot recorded is the id its synthesis was produced with.
+    chair_result = next((r for r in seats if getattr(r, "agent", "") == chair_name), None)
+    chair_model, chair_model_source = describe_model(config, chair_name, chair_result)
     verify = getattr(outcome, "verify", None)
     chair_scope = _chair_scope(outcome, entries)
     entries.append(

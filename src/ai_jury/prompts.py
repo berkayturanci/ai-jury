@@ -36,7 +36,11 @@ import re
 # nothing produced a placeholder scope and "not stated" — the least checkable
 # evidence in the run. Asking the reviewer to state its own coverage beats this
 # tool guessing at it, and a reply that still names nothing now abstains.
-PROMPT_VERSION = 7
+# v8 (issue #710): the code-review template says that every name on the
+# `Checked:` line is resolved against the diff, and that a line resolving to
+# nothing abstains. The rule changed — `Checked: nothing` used to satisfy it —
+# and a reviewer held to a rule the prompt does not state is a trap.
+PROMPT_VERSION = 8
 
 
 # Neutralize sentinel fences inside untrusted content (issue #301). Every fence
@@ -147,9 +151,12 @@ Rules:
 - Open your reply with exactly these two lines, before anything else:
   Checked: <the files, paths or symbols you actually read, comma-separated>
   Tested: <the commands you ran and what they showed, or "nothing run" if you ran none>
-  They are recorded verbatim as this ballot's scope and testing evidence. A
-  ballot that names nothing checkable is recorded as an ABSTENTION, not an
-  approval — so name what you read even when you found nothing wrong.
+  They are recorded verbatim as this ballot's scope and testing evidence. Every
+  name on the Checked line is resolved against the diff above: a path, a
+  path:line, or a symbol that appears in it. "nothing", "everything" and "the
+  diff" name none of those. A ballot whose Checked line resolves to nothing is
+  recorded as an ABSTENTION, not an approval — so name what you read even when
+  you found nothing wrong.
 - Be specific: cite `path:line` for every finding.
 - Only report issues you are genuinely confident about. No style nitpicks unless
   they cause real harm.

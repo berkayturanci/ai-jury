@@ -440,13 +440,15 @@ It is checked twice, because neither check alone is enough:
   the minimum ([#635] again, restated for ballots).
 
 The failure message names the seats that ran without reviewing **by cause**, in
-the four buckets `--metadata-json` publishes under `panel` — `silent`,
-`insubstantial` (answered, named nothing checkable), `refused` and
-`adapter_failed` — because the remedies differ: a silent agent is a CLI that
-broke or a budget that ran out, a seat that named nothing is a reviewer that did
-not review, a refusal is a model declining the task, and a failed adapter is an
-invocation to fix. Each seat is counted under the cause its own ballot records
-(`reviewers[].abstention_cause`), so the four and `reviews_supplied` add up to
+the five buckets `--metadata-json` publishes under `panel` — `silent`,
+`insubstantial` (answered, named nothing checkable), `not_in_change` (named a
+path or symbol this change does not contain), `refused` and `adapter_failed` —
+because the remedies differ: a silent agent is a CLI that broke or a budget that
+ran out, a seat that named nothing is a reviewer that did not review, a seat that
+named only absent things reviewed something that is not this diff, a refusal is a
+model declining the task, and a failed adapter is an invocation to fix. Each seat
+is counted under the cause its own ballot records
+(`reviewers[].abstention_cause`), so the five and `reviews_supplied` add up to
 `ballots` and no sentence describes a seat as something its ballot denies.
 
 `--min-reviews N` overrides the key. It is `0` by default: most consumers have no

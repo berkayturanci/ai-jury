@@ -36,9 +36,9 @@ Four facts settle the arithmetic, and all four live here so that every renderer,
   from the count. So the number of reviews is knowable only as an upper bound
   before the run, which is why the gate is checked on both sides of it.
 * **Every seat is in exactly one bucket, and the bucket is the cause.**
-  :func:`abstention_buckets` splits the non-reviewing seats four ways — silent,
-  named nothing, refused, adapter failed — by reading each ballot's own recorded
-  cause. It replaces a subtraction (``ballots - silent - supplied``) that was
+  :func:`abstention_buckets` splits the non-reviewing seats five ways — silent,
+  named nothing, named only what is not in the change, refused, adapter failed —
+  by reading each ballot's own recorded cause. It replaces a subtraction (``ballots - silent - supplied``) that was
   arithmetically right and descriptively false: once a ballot could carry a
   substantive scope and still abstain, the remainder held seats that had named a
   file and then refused, and every renderer billed them as having named nothing
@@ -67,17 +67,23 @@ CHAIR_ROLE = "chair"
 #: and prose about its *review count* cannot quietly become the same number.
 CHAIR_SYNTHESIS_RECORDS = 1
 
-#: Why a seat that balloted did not review. Four causes, because four different
-#: things happen to a seat and they ask for four different fixes.
+#: Why a seat that balloted did not review. Five causes, because five different
+#: things happen to a seat and they ask for five different fixes.
 SILENT = "silent"
 NAMED_NOTHING = "named_nothing"
+#: The seat named something and none of it is in the change (#710). Split out of
+#: ``named_nothing`` because the two send their reader to opposite places: a
+#: reviewer that named nothing did not say what it read, while one that named
+#: `src/made/up.py` said it read a file that is not in the diff — a claim about
+#: coverage that the change itself contradicts, and a much louder signal.
+NOT_IN_CHANGE = "not_in_change"
 REFUSED = "refused"
 ADAPTER_FAILED = "adapter_failed"
 
 #: The causes in the order every renderer lists them, and the key set of
 #: :func:`abstention_buckets` — so a renderer cannot iterate a cause the buckets
 #: do not carry, nor miss one they do.
-ABSTENTION_CAUSES = (SILENT, NAMED_NOTHING, REFUSED, ADAPTER_FAILED)
+ABSTENTION_CAUSES = (SILENT, NAMED_NOTHING, NOT_IN_CHANGE, REFUSED, ADAPTER_FAILED)
 
 #: The clause each cause contributes to a count sentence, subject ``"N "``. One
 #: table, because the markdown report and :func:`shortfall` describe the same
@@ -90,6 +96,7 @@ ABSTENTION_CAUSES = (SILENT, NAMED_NOTHING, REFUSED, ADAPTER_FAILED)
 CAUSE_PHRASES = {
     SILENT: "returned nothing at all",
     NAMED_NOTHING: "answered but named nothing checkable",
+    NOT_IN_CHANGE: "named only things that are not in this change",
     REFUSED: "returned a refusal rather than a review",
     ADAPTER_FAILED: "reported an adapter failure",
 }
@@ -103,6 +110,7 @@ CAUSE_PHRASES = {
 PANEL_METADATA_KEYS = {
     SILENT: "silent",
     NAMED_NOTHING: "insubstantial",
+    NOT_IN_CHANGE: "not_in_change",
     REFUSED: "refused",
     ADAPTER_FAILED: "adapter_failed",
 }
@@ -226,7 +234,7 @@ def abstention_cause(ballot: Mapping[str, Any]) -> str:
 def abstention_buckets(ballots) -> dict[str, int]:
     """The seats that balloted without reviewing, counted by cause (pure).
 
-    The four counts and :func:`review_count` partition the panelist ballots:
+    The five counts and :func:`review_count` partition the panelist ballots:
     every seat lands in exactly one, because each is classified by what happened
     to it. Subtraction is what this replaces, and what subtraction shipped: with
     ``insubstantial`` derived as ``ballots - silent - supplied``, every seat that
@@ -287,6 +295,7 @@ def shortfall(
     stage: str,
     silent: int = 0,
     insubstantial: int = 0,
+    not_in_change: int = 0,
     refused: int = 0,
     adapter_failed: int = 0,
 ) -> str | None:
@@ -296,15 +305,16 @@ def shortfall(
     ("before the panel runs" / "after the panel ran" / "on this machine") read as
     one message with the timing filled in rather than as unrelated errors.
 
-    The four counts are :func:`abstention_buckets` — the ways a seat that ran
+    The five counts are :func:`abstention_buckets` — the ways a seat that ran
     produces no review — and they are named separately because the remedies
     differ: a silent agent is usually a CLI that broke or a budget that ran out,
     a seat that answered and named nothing is a reviewer that did not review, a
-    refusal is a model declining the task, and a failed adapter is an
-    invocation to fix. ``insubstantial`` keeps its name for the second of those;
-    it means exactly ``named_nothing`` and nothing else. Pass them as the buckets
-    report them: a caller that folds three causes into one prints a sentence the
-    ballots contradict.
+    seat that named only things absent from the change reviewed something that
+    is not this diff, a refusal is a model declining the task, and a failed
+    adapter is an invocation to fix. ``insubstantial`` keeps its name for
+    ``named_nothing`` and means exactly that. Pass them as the buckets report
+    them: a caller that folds causes into one prints a sentence the ballots
+    contradict.
     """
     required = int(required or 0)
     if required <= 0:
@@ -315,6 +325,7 @@ def shortfall(
     counted = {
         SILENT: int(silent),
         NAMED_NOTHING: int(insubstantial),
+        NOT_IN_CHANGE: int(not_in_change),
         REFUSED: int(refused),
         ADAPTER_FAILED: int(adapter_failed),
     }

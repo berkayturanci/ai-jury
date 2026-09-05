@@ -32,11 +32,17 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 # ``silent``, ``insubstantial``, ``refused``, ``adapter_failed``, ``chair`` and
 # ``chair_ballot`` — the number of reviews a downstream consumer actually
 # receives (the ballots that named something and voted; the chair's synthesis
-# record is not one of them, and neither is an abstaining ballot), the four ways
+# record is not one of them, and neither is an abstaining ballot), the ways
 # a seat that ran produced no review, and whether the chairing agent's own ballot
-# is one of the counted reviews. The four causes and ``reviews_supplied`` sum to
+# is one of the counted reviews. The causes and ``reviews_supplied`` sum to
 # ``ballots``. Purely additive: every v4 key keeps its name and meaning.
-SCHEMA_VERSION = 5
+# v6 (issue #710) added, inside ``panel``: ``not_in_change`` — the seats whose
+# stated scope named only paths or symbols the change does not contain. Split
+# out of ``insubstantial``, which keeps meaning exactly "answered and named
+# nothing checkable": naming `src/made/up.py` is a different failure from naming
+# nothing, and the two ask for different fixes. Additive, and the buckets still
+# sum to ``ballots`` — the seats moved between buckets, none was added or lost.
+SCHEMA_VERSION = 6
 
 
 #: What a reviewer slot actually contributed (issue #501). ``clean`` and

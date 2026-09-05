@@ -94,7 +94,27 @@ have keyed on:
 
 Every top-level key, and every other `reviewers` key, is unchanged.
 
+v1.3 ([#709], [#710]) changes no shape and two meanings:
+
+- **`model` under `model_source: "requested"` is the id the run actually sent.**
+  It was recomputed from the seat's `vendor`, while every path that invokes a
+  seat computes it from the seat's `adapter` — the same string until `adapter`
+  became configurable, and since then not. A seat with `vendor = google`,
+  `adapter = cli`, `model = gemini-3-pro`, `effort = high` was invoked with
+  `gemini-3-pro` and balloted `gemini-3-pro-high`. The adapter now records the id
+  it sent and the ballot reads it back, so the field is byte-equal to the id in
+  that seat's command line — including where a live model listing forced a
+  fallback, which no recomputation could see.
+- **`abstention_cause` gains a fifth value, `not_in_change`.** A `Checked:` token
+  now has to name a path or a symbol that is in the diff; a scope that names only
+  things the change does not contain is an abstention under this cause. Some of
+  those ballots were previously *counted as reviews*, because any backticked
+  token passed the substance test — `Checked: nothing` included. A consumer
+  switching on the four earlier values must accept a fifth.
+
 [#700]: https://github.com/berkayturanci/ai-jury/issues/700
+[#709]: https://github.com/berkayturanci/ai-jury/issues/709
+[#710]: https://github.com/berkayturanci/ai-jury/issues/710
 
 One entry per seat that **ran**, in the stable panel order, then the chair:
 
@@ -102,13 +122,13 @@ One entry per seat that **ran**, in the stable panel order, then the chair:
 | --- | --- |
 | `name` | The agent slot's name, as configured. |
 | `vendor` | The adapter's vendor (`anthropic`, `openai`, …), **as configured**. A seat on the generic fallback keeps its own string here and counts as `cli` only in `metadata.panel.vendors`. |
-| `model` | The model id actually requested of that agent's CLI — the configured id, remapped when the vendor encodes reasoning effort in the id — or, where no id was pinned, a statement that the CLI's own default answered and that the CLI does not report which model that was. Never empty for a slot that has an agent. |
+| `model` | The model id actually requested of that agent's CLI, **read back off the invocation that sent it** — the configured id, remapped when the *adapter* encodes reasoning effort in the id, and falling back exactly as the invocation fell back when a live model listing did not offer the mapped id ([#709]). Byte-equal to the id in that seat's built argv. Where no id was pinned: a statement that the CLI's own default answered and that the CLI does not report which model that was. Never empty for a slot that has an agent. |
 | `model_source` | The same fact as one machine token, so a consumer need not parse English: `requested` (an id was pinned and sent), `cli_default` (nothing pinned; the CLI chose and does not say), `unknown` (the answering slot has no spec in this run's config), `none` (no agent in the slot at all — an unchaired run). |
 | `verdict` | That panelist's own round-1 stance (see below). |
 | `scope` | What that panelist named that it read, followed — when it did not review — by an abstention stating why. Derived as in the `keel-reviews` table below; the two renderings are the same text by construction. |
-| `scope_substantive` | Does that `scope` name something a reader could go and check (a file, a `path:line`, a backticked symbol, a called identifier, or a `Checked …` clause)? `false` whenever the abstention is *because* nothing was named. It can be `true` on an abstention too — a seat that opened with `Checked: src/a.py` and then refused, or whose adapter failed, names a place and still did not review — which is why `counts_as_review` reads both fields rather than this one alone. |
+| `scope_substantive` | Does that `scope` name something a reader could go and check (a file, a `path:line`, a backticked symbol, a called identifier, or a `Checked …` clause) — **that is actually in the change** ([#710])? `false` whenever the abstention is *because* nothing was named, or because everything named is absent from the diff. It can be `true` on an abstention too — a seat that opened with `Checked: src/a.py` and then refused, or whose adapter failed, names a place and still did not review — which is why `counts_as_review` reads both fields rather than this one alone. |
 | `counts_as_review` | Is this entry one of the reviews a consumer receives? `role == "panelist"` **and** `scope_substantive` **and** `verdict != "ABSTAIN"` — `ai_jury.panel.is_review`, the single definition every count in the tool resolves to. Always `false` on the `chair` entry. |
-| `abstention_cause` | Why this ballot is not a review, when it is not: `silent` (returned nothing at all), `named_nothing` (answered and named nothing checkable), `refused` (declined rather than reviewed) or `adapter_failed`. Empty string on a ballot that reviewed, and on the `chair` entry, which is a consensus record rather than a seat that failed to review. It is on the record because it cannot be recovered from the record: a seat that fell silent and one that answered without naming anything leave the same `round1_ok`/`scope_substantive` behind. `metadata.panel` counts the seats by this field, which is what makes its four buckets and `reviews_supplied` add up to `ballots`. |
+| `abstention_cause` | Why this ballot is not a review, when it is not: `silent` (returned nothing at all), `named_nothing` (answered and named nothing checkable), `not_in_change` (named things, none of them in this change), `refused` (declined rather than reviewed) or `adapter_failed`. Empty string on a ballot that reviewed, and on the `chair` entry, which is a consensus record rather than a seat that failed to review. It is on the record because it cannot be recovered from the record: a seat that fell silent and one that answered without naming anything leave the same `round1_ok`/`scope_substantive` behind. `metadata.panel` counts the seats by this field, which is what makes its five buckets and `reviews_supplied` add up to `ballots`. |
 | `testing` | What that panelist said it ran, or a statement that nothing was run. |
 | `findings` | Indexes into the report's top-level `findings` array. |
 | `round1_ok` | Did the adapter report success? Adapters fail soft, so a slot can carry a review *and* a nonzero exit. |
@@ -137,8 +157,9 @@ Verdicts are emitted as a single machine token: the markdown report's
 `REQUEST CHANGES` is `REQUEST_CHANGES` here, `NEEDS-INFO` is `NEEDS_INFO`.
 
 There is a fourth value, `ABSTAIN`, for a seat that ran but did not review —
-nothing at all, a refusal, an adapter that failed, or (since [#700]) a reply that
-exited 0 and **named nothing checkable**. **A non-answer is not an approval**
+nothing at all, a refusal, an adapter that failed, a reply that exited 0 and
+**named nothing checkable** (since [#700]), or one that named only things this
+change does not contain (since [#710]). **A non-answer is not an approval**
 (issue #251): the vote tally drops such a reviewer from the tally entirely, and a
 ballot list that has to name every seat names the abstention rather than
 inventing a stance for it.
@@ -151,6 +172,60 @@ findings the tally can weigh, so it would hand it the clear stance
 — no path, no backticked symbol, no "checked …" clause — so a consumer applying
 the same substance rule to the record reaches the same conclusion rather than
 being talked past it by prose.
+
+### What a stated scope has to name
+
+The review prompt asks every reviewer to open with a `Checked:` line, and that
+line is the most authoritative of the four scope sources — it is the reviewer's
+own statement of what it read. Until [#710] it was also the weakest: any
+non-empty value was backticked, a backticked token is an anchor, so `Checked:
+nothing` — or `everything`, or `the diff` — produced a substantive scope and the
+ballot counted as a review. That is the *shape* of naming something with none of
+the substance, and it is satisfiable by an agent that read nothing, which is the
+failure [#700] exists to remove, one layer up.
+
+The line is now resolved against the change the panel was shown, token by token.
+A token resolves when it names:
+
+- a **path in the diff** — matched on a path-component boundary and from either
+  root, so `ballots.py`, `ai_jury/ballots.py` and `src/ai_jury/ballots.py` all
+  name the same changed file (which root a path is quoted against is a property
+  of how the diff was produced, not of whether the reviewer read the file), while
+  `lots.py` names nothing;
+- a **`path:line`** — the path is resolved, the line is the reviewer's;
+- a **symbol that appears in the diff** — an identifier carrying a `_` or an
+  interior case change, or one that is *called* somewhere in the change. A bare
+  English word is not a symbol, which is why `Checked: nothing` resolves to
+  nothing even in a diff whose prose happens to contain the word.
+
+**A mixed line is carried by the tokens that resolve.** `Checked:
+src/ai_jury/ballots.py, src/made/up.py` is a review of `src/ai_jury/ballots.py`,
+and the scope says the second path is not in this change: the reviewer
+demonstrably read something a reader can go and check, and abstaining over the
+extra token would discard a real review to punish a typo. Ordinary connective
+prose in the same line — `lines 1-4`, `and the tests` — claims to name nothing
+and is neither counted as an anchor nor reported as a broken one. A line with
+**no** resolving token is not a review, whatever else it says.
+
+An unresolved token is named in the abstention so a reader can see the claim that
+failed, but it is written **de-anchored** — the path separators, the colons, the
+parentheses and the `checked …` clause are stripped out — for the same reason the
+rest of an abstention is anchorless: a consumer applying this substance rule to
+the record has to reach the same conclusion the tool did, not be talked past it by
+the very sentence explaining that nothing was checked.
+
+The resolution is skipped, and the pre-[#710] structural rule applies, in two
+places. When the report is rendered from an outcome that was not built from a
+diff (a library caller, a hand-assembled outcome): *not verifiable here* is not
+*does not exist*. And under `--issue`, which supplies no change to resolve
+against — the panel is reading an issue's prose, a reviewer naming "the
+acceptance criteria section" has named exactly what it was asked to name, and
+this is the same exception that already lets an issue-mode ballot anchor on the
+claims it raised rather than on a file.
+
+The review prompt states the rule it is held to: since prompt version 8 the
+code-review template says every name on the `Checked:` line is resolved against
+the diff, and that a line resolving to nothing abstains.
 
 ### What counts as a review
 
@@ -170,12 +245,13 @@ would refuse it. Counting one is the mismatch [#699] was about, and counting an
 abstention is that same mismatch one step out — a bench of three "Looks good to
 me, no concerns." replies used to satisfy `--min-reviews 3` and exit `0`.
 
-**A ballot that did not review says why.** There are four causes — `silent`,
-`named_nothing`, `refused`, `adapter_failed` — and each ballot carries its own in
-`abstention_cause`. Every count of them is that field, tallied: run metadata
-publishes the four as `panel.silent`, `panel.insubstantial` (the name
-`named_nothing` ships under), `panel.refused` and `panel.adapter_failed`, and
-they and `panel.reviews_supplied` sum to `panel.ballots`. They used to be two
+**A ballot that did not review says why.** There are five causes — `silent`,
+`named_nothing`, `not_in_change`, `refused`, `adapter_failed` — and each ballot
+carries its own in `abstention_cause`. Every count of them is that field,
+tallied: run metadata publishes them as `panel.silent`, `panel.insubstantial`
+(the name `named_nothing` ships under), `panel.not_in_change`, `panel.refused`
+and `panel.adapter_failed`, and they and `panel.reviews_supplied` sum to
+`panel.ballots`. They used to be two
 buckets and a subtraction, which was exact arithmetic and a false description:
 everything that was neither silent nor counted was reported as having named
 nothing checkable, including the seat that opened `Checked: src/a.py` and *then*
@@ -192,11 +268,11 @@ per seat that ran, plus the chair as `reviewer: "chair"`:
 | --- | --- |
 | `reviewer` | The panelist's name, or `"chair"`. |
 | `verdict` | The ballot verdict above (a single token). |
-| `scope` | One paragraph naming what that panelist read, from four sources, most authoritative first: its own `Checked:` line (which the review prompt asks every reviewer to open with); the distinct files it attached to its structured findings (capped at 8, with a `(+N more)` tail); up to three "checked / examined / inspected / reviewed" clauses from its prose; and — **under `--issue` only** — failing a file, the claims it raised. A reply that yields **none** of those has no scope: the record becomes an `ABSTAIN` whose scope states why. The chair's record additionally names the agent that chaired, says whether that agent's own ballot is one of the counted reviews, states how many reviews the bundle carries and that this record is not one of them; the ballot cast by the chairing agent says so on its own scope too. |
+| `scope` | One paragraph naming what that panelist read, from four sources, most authoritative first: its own `Checked:` line (which the review prompt asks every reviewer to open with), **resolved against the change** — a token counts only when it names a path or a symbol that is in the diff ([#710]); the distinct files it attached to its structured findings (capped at 8, with a `(+N more)` tail); up to three "checked / examined / inspected / reviewed" clauses from its prose; and — **under `--issue` only** — failing a file, the claims it raised. A reply that yields **none** of those has no scope: the record becomes an `ABSTAIN` whose scope states why. The chair's record additionally names the agent that chaired, says whether that agent's own ballot is one of the counted reviews, states how many reviews the bundle carries and that this record is not one of them; the ballot cast by the chairing agent says so on its own scope too. |
 | `findings` | That panelist's own findings as `{severity, path, line, message}` — ai-jury's `file` → `path`, `claim` → `message`. The chair carries the consensus-group representatives the verifier did **not** reject. |
 | `testing` | The panelist's own `Tested:` line, else the first verification clause in its prose — both lifted verbatim (flattened and capped), because a testing claim carried downstream as evidence must be the reviewer's words and not a paraphrase. With neither, it says plainly that nothing was run. The chair's comes from the verification round. |
 | `vendor` | The adapter's vendor, **as configured** — provenance, not the identity the cross-vendor gate collapses to. |
-| `model` | As in the `reviewers` table above: the id actually requested, or a statement that the CLI's default answered and the CLI does not report which. |
+| `model` | As in the `reviewers` table above: the id the invocation actually sent, or a statement that the CLI's default answered and the CLI does not report which. |
 | `model_source` | As in the `reviewers` table above. It rides along here too because `model` changed meaning in the same release and this is the shape a machine consumer actually parses — without it, telling a requested id from a CLI default meant reading English ([#700]). |
 | `counts_as_review` | As in the `reviewers` table above. The bundle carries a record for every seat, abstentions included, so a consumer counting the array needs the discriminator. |
 

@@ -391,3 +391,134 @@ def plan_diff(
         kept_bytes=kept_bytes,
         reason=reason,
     )
+
+
+# --- What the change actually contains (issue #710) -------------------------
+#
+# A ballot's ``Checked:`` line is free text an agent wrote. `Checked: nothing`
+# has the *shape* of an anchor — one backticked token — without naming anything,
+# and a rule that accepts the shape can be satisfied by an agent that read
+# nothing, which is the failure #700 exists to remove. So the token is resolved
+# against the change the panel was actually shown, and the index below is what
+# it is resolved against: the paths in the diff, and the symbols in it.
+#
+# It lives here, with the rest of "what this diff contains", so that
+# :mod:`ai_jury.ballots` holds the *rule* and not a second diff parser.
+
+#: Word-shaped tokens in the diff. Deliberately not "every word": a symbol is
+#: what a reader can go and look up, and an English word that happens to appear
+#: in a comment is not one. See :func:`_is_symbol_shaped`.
+_WORD_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+#: A token immediately followed by ``(`` — a call or a definition. This is what
+#: lets a one-word, all-lowercase symbol (``run``, ``main``) resolve while the
+#: one-word, all-lowercase *non*-symbol (``nothing``, ``everything``) does not.
+_CALLABLE_RE = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)\s*\(")
+
+#: Interior case change: ``ChangeIndex``, ``buildArgv``. With ``_`` this is the
+#: whole of "looks like an identifier rather than a word".
+_CAMEL_RE = re.compile(r"[a-z0-9][A-Z]")
+
+#: Caps. The index rides along on the outcome and into the result cache, so a
+#: hostile 5 MB diff must not turn into a 5 MB index. Truncation can only make a
+#: token fail to resolve, never make one resolve that should not: an unresolved
+#: token is reported as unresolved, which is the safe direction.
+MAX_INDEXED_PATHS = 1000
+MAX_INDEXED_SYMBOLS = 5000
+
+
+def _is_symbol_shaped(token: str) -> bool:
+    """Does *token* look like an identifier rather than an English word? (pure)"""
+    return len(token) > 1 and ("_" in token or bool(_CAMEL_RE.search(token)))
+
+
+@dataclass(frozen=True)
+class ChangeIndex:
+    """The paths and symbols present in the change under review (pure).
+
+    Built once per run from the (already redacted) diff and carried on the
+    outcome, so every renderer resolves a reviewer's stated scope against the
+    same bytes the panel was shown. ``None`` in place of one of these — a
+    hand-built outcome, a library caller that never had a diff — means "not
+    verifiable here", never "nothing exists".
+
+    Both tuples are sorted, so an outcome serialized into the result cache and
+    read back is byte-identical to the one that produced it.
+    """
+
+    paths: tuple[str, ...] = ()
+    symbols: tuple[str, ...] = ()
+
+    def has_path(self, path: str) -> bool:
+        """Is *path* one of the changed files? (pure)
+
+        Matched on a path-component boundary, in **both** directions: a reviewer
+        that writes ``ballots.py`` or ``ai_jury/ballots.py`` for the diff's
+        ``src/ai_jury/ballots.py`` named the file, and so does one that writes
+        ``src/a.py`` for a diff generated from a subdirectory that spells it
+        ``a.py``. Which root a path is quoted against is a property of how the
+        diff was produced, not of whether the reviewer read the file, and
+        abstaining over it would discard real reviews. ``lots.py`` matches
+        nothing: the boundary is what keeps a suffix from being a substring.
+        """
+        candidate = (path or "").strip().strip("/")
+        if not candidate:
+            return False
+        for known in self.paths:
+            if (
+                known == candidate
+                or known.endswith("/" + candidate)
+                or candidate.endswith("/" + known)
+            ):
+                return True
+        return False
+
+    def has_symbol(self, token: str) -> bool:
+        """Is *token* a symbol that appears in the change? (pure)"""
+        return bool(token) and token in self.symbols
+
+
+def change_index(diff: str) -> ChangeIndex:
+    """Index the paths and symbols in *diff* (pure).
+
+    Paths come from :func:`split_diff`, so the one diff parser in this project
+    answers "which files" here too. Symbols are the identifier-shaped tokens in
+    the diff text — the whole diff, context lines included, because a reviewer
+    that names a symbol it read in the context around a hunk read it in this
+    change. A token qualifies when it carries an ``_`` or an interior case
+    change, or when it is called somewhere in the diff; a bare lowercase word is
+    not a symbol, which is exactly why ``Checked: nothing`` resolves to nothing
+    even in a diff whose prose contains the word.
+    """
+    text = diff or ""
+    paths = sorted({f.path for f in split_diff(text) if f.path})[:MAX_INDEXED_PATHS]
+    callables = set(_CALLABLE_RE.findall(text))
+    symbols = sorted(
+        {
+            token
+            for token in _WORD_RE.findall(text)
+            if _is_symbol_shaped(token) or token in callables
+        }
+    )[:MAX_INDEXED_SYMBOLS]
+    return ChangeIndex(paths=tuple(paths), symbols=tuple(symbols))
+
+
+def merge_change_indexes(indexes) -> ChangeIndex | None:
+    """One index over several chunks of the same review (pure).
+
+    A chunked review runs one jury per chunk and merges the outcomes; the scope
+    rule has to see the whole change, or a reviewer that named a file from
+    another chunk would be told it does not exist.
+    """
+    present = [i for i in indexes if i is not None]
+    if not present:
+        return None
+    paths: set[str] = set()
+    symbols: set[str] = set()
+    for index in present:
+        paths.update(index.paths)
+        symbols.update(index.symbols)
+    return ChangeIndex(
+        paths=tuple(sorted(paths)[:MAX_INDEXED_PATHS]),
+        symbols=tuple(sorted(symbols)[:MAX_INDEXED_SYMBOLS]),
+    )
