@@ -74,10 +74,11 @@ options:
                         panel collapsed to a single vendor (same as --min-
                         vendors 0)
   --min-reviews N       require at least N reviews for a downstream consumer
-                        (one per panel ballot; the chair's synthesis record is
-                        not one); 0 disables. Checked before the panel runs
-                        and again on the result (exit 3). Default from config
-                        ([jury.ci] min_reviews, shipped as 0)
+                        (a panel ballot that names what it read and votes;
+                        neither the chair's synthesis record nor an abstaining
+                        ballot is one); 0 disables. Checked before the panel
+                        runs and again on the result (exit 3). Default from
+                        config ([jury.ci] min_reviews, shipped as 0)
   --verify              run the verification round (default: from config)
   --no-verify           skip the verification round
   --doctor              print a local readiness diagnostics report and exit

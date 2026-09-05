@@ -102,15 +102,64 @@ class TestPanelAccounting(unittest.TestCase):
                 "abstained": 2,
                 "failed": 0,
                 "short": True,
-                # These fixtures carry no output at all, so no slot is a ballot
-                # and the bundle supplies no review — only the chair's synthesis
-                # record, which a consumer does not count as one (#699).
-                "ballots": 0,
-                "reviews_supplied": 0,
+                # Every seat that ran gets a ballot record, silent ones included
+                # (#700, round 2) — that is how the report can name the agent
+                # that returned nothing. These fixtures carry no output at all,
+                # so all three are silent.
+                "ballots": 3,
+                "silent": 3,
+                # No ballot records were passed, and the count is not guessed:
+                # whether a seat reviewed is a fact about the record it produced,
+                # and every guess available from the raw results over-counts.
+                "reviews_supplied": None,
+                "insubstantial": None,
                 "chair": "",
                 "chair_ballot": False,
             },
         )
+
+    def test_the_count_is_read_from_the_ballots_it_is_given(self):
+        # The #700 round-2 defect at this line: a seat that answered and named
+        # nothing abstained on its ballot and was still counted here, so
+        # ``--min-reviews`` could be satisfied by seats that reviewed nothing.
+        panel = [
+            _result("claude", "anthropic", findings=[1], structured=True),
+            _result("codex", "openai", structured=True),
+        ]
+        ballots = [
+            {
+                "name": "claude",
+                "role": "panelist",
+                "scope_substantive": True,
+                "verdict": "APPROVE",
+            },
+            {
+                "name": "codex",
+                "role": "panelist",
+                "scope_substantive": False,
+                "verdict": "ABSTAIN",
+            },
+            {"name": "chair", "role": "chair", "scope_substantive": True, "verdict": "APPROVE"},
+        ]
+        accounting = panel_accounting(panel, chair="claude", ballots=ballots)
+        self.assertEqual(accounting["ballots"], 2)
+        self.assertEqual(accounting["reviews_supplied"], 1)
+        self.assertTrue(accounting["chair_ballot"])
+
+    def test_a_chairing_agent_that_abstained_supplied_no_review(self):
+        # "Did it cast a ballot" is the wrong question now that every seat does.
+        panel = [_result("claude", "anthropic", structured=True)]
+        ballots = [
+            {
+                "name": "claude",
+                "role": "panelist",
+                "scope_substantive": False,
+                "verdict": "ABSTAIN",
+            },
+        ]
+        accounting = panel_accounting(panel, chair="claude", ballots=ballots)
+        self.assertEqual(accounting["reviews_supplied"], 0)
+        self.assertFalse(accounting["chair_ballot"])
 
     def test_a_full_panel_is_not_short(self):
         panel = [
@@ -158,7 +207,9 @@ class TestPanelAccounting(unittest.TestCase):
                 "failed": 0,
                 "short": False,
                 "ballots": 0,
-                "reviews_supplied": 0,
+                "silent": 0,
+                "reviews_supplied": None,
+                "insubstantial": None,
                 "chair": "",
                 "chair_ballot": False,
             },

@@ -345,7 +345,7 @@ A structured report with these top-level keys:
 | `metadata` | Run metadata (agents, rounds, context mode, redaction stats, wall-clock proxy). |
 | `findings` | All raw findings; each carries `severity`, `file`, `line`, `claim`, `evidence`, `suggested_fix`, `confidence`, `reviewer`. |
 | `consensus` | Per consensus group: `representative` finding, `agreement` count, `reviewers`, `bucket`, `verification_status`. |
-| `reviewers` | Per-panelist ballots — who said what, what they read (`scope`), what they ran (`testing`), with vendor/model provenance — plus the chair. See [the report-format contract](docs/report-format.md#per-reviewer-ballots-reviewers). |
+| `reviewers` | One ballot per seat that ran — who said what, what they read (`scope`), what they ran (`testing`), whether it counts as a review (`counts_as_review`), with vendor/model provenance — plus the chair. See [the report-format contract](docs/report-format.md#per-reviewer-ballots-reviewers). |
 | `verdicts` | Verification verdicts (`file`, `line`, `claim`, `status`, `reasoning`). |
 | `verdict` | The chair synthesis text, if any. |
 
@@ -359,24 +359,30 @@ and verdict through the in-browser theater (fully client-side — nothing is upl
 
 ### keel-reviews
 
-A JSON **array** of per-reviewer review records — one per panelist that returned
-output, plus the chair as `reviewer: "chair"` — in the shape a consumer of
-head-pinned per-reviewer verdicts accepts (keel's `keel review --reviews <file>`).
-The chairing agent **sits on the panel**: it reviews in round 1 like anyone else,
-so a three-agent bench supplies three ballots — the chairing agent's among them —
-and a fourth record, the chair's synthesis. A consumer counts the ballots: keel
-splits the report's `reviewers` array on `role` and reads the `chair` entry as the
-panel's consensus record rather than as a review. Each record says which agent
-chaired and whether its ballot is in the bundle, so a chair that reviewed is not
-indistinguishable from one that only synthesised. `--min-reviews N` requires a
-review count and names a shortfall before the panel runs.
+A JSON **array** of per-reviewer review records — one per seat that ran, plus the
+chair as `reviewer: "chair"` — in the shape a consumer of head-pinned per-reviewer
+verdicts accepts (keel's `keel review --reviews <file>`). The chairing agent
+**sits on the panel**: it reviews in round 1 like anyone else, so a three-agent
+bench yields three ballots — the chairing agent's among them — and a fourth
+record, the chair's synthesis. Each record says which agent chaired and what
+became of its ballot, so a chair that reviewed is not indistinguishable from one
+that only synthesised. `--min-reviews N` requires a review count: the ceiling is
+checked before the panel runs, the number actually supplied afterwards.
 
 Every record **names what it read**: `scope` carries the reviewer's own `Checked:`
-line, the files it attached to its findings, or the claims it raised, and
-`testing` carries what it ran or says plainly that nothing was. A reviewer whose
-reply names nothing checkable is recorded as an `ABSTAIN` whose scope says why,
-never as an `APPROVE` with a placeholder — an agent that named nothing did not
-review.
+line, the files it attached to its findings, or — under `--issue`, where a finding
+has no file to name — the claims it raised, and `testing` carries what it ran or
+says plainly that nothing was. A reviewer whose reply names nothing checkable is
+recorded as an `ABSTAIN` whose scope says why, never as an `APPROVE` with a
+placeholder — an agent that named nothing did not review.
+
+**A ballot is not automatically a review.** `counts_as_review` on each record is
+the one definition (`ai_jury.panel.is_review`): a `panelist` entry, with a scope
+naming something checkable, and a verdict that is not `ABSTAIN`. The chair's
+synthesis, a seat that returned nothing, and a seat that answered without naming
+anything are all *in* the bundle — the report has to be able to say which agent
+produced what — and none of them is counted, because the consumer would refuse
+it. `--min-reviews` counts the same thing the consumer does.
 
 ```json
 [
@@ -389,7 +395,9 @@ review.
     ],
     "testing": "Tested, as stated by the reviewer: python -m pytest tests/test_example.py — 12 passed",
     "vendor": "anthropic",
-    "model": "claude-sonnet-4-5"
+    "model": "claude-sonnet-4-5",
+    "model_source": "requested",
+    "counts_as_review": true
   }
 ]
 ```
@@ -797,7 +805,7 @@ documented and a documented flag can't silently disappear.
 | Successful review (no `--ci`) | exits `0` |
 | `--ci` with blocking findings remaining | exits `1` (see `ci.evaluate_ci`) |
 | Fewer than `min_vendors` **distinct vendors contributed** a review | exits `3` — the cross-vendor guard, *not* a findings failure. Checked on every run, with or without `--ci`, and it outranks the `--ci` severity gate. Default `2` (`[jury.ci] min_vendors`); the default is scoped to runs that claimed cross-vendor consensus, so a config with fewer distinct vendors enabled than the threshold is never failed by it. An explicit `--min-vendors N` is enforced as asked. Opt out with `--no-min-vendors` (or `min_vendors = 0`); to fail at *startup* on a missing CLI instead, use `--strict`. |
-| Fewer **reviews** than `min_reviews` — one per panel ballot; the chair's synthesis record is not a review | exits `3` — the panel-size guard, *not* a findings failure, and it outranks the `--ci` severity gate. Off by default (`[jury.ci] min_reviews = 0`, `--min-reviews N`). When the *available* bench cannot reach it, the run refuses **before** the panel runs and exits `2` with `error: panel too small before the panel runs: …`. |
+| Fewer **reviews** than `min_reviews` — a review is a panel ballot that named what it read and voted; neither the chair's synthesis record nor an abstaining ballot is one | exits `3` — the panel-size guard, *not* a findings failure, and it outranks the `--ci` severity gate. Off by default (`[jury.ci] min_reviews = 0`, `--min-reviews N`). When the *available* bench cannot reach even the ceiling, the run refuses **before** the panel runs and exits `2` with `error: panel too small before the panel runs: …`. |
 
 **Stable report headings** (substrings other tooling may parse):
 `AI Jury`, `Chair verdict`, `Round 1` (and subsequent `Round N`).

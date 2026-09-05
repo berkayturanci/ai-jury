@@ -583,10 +583,18 @@ class BallotDerivation(unittest.TestCase):
         self.assertEqual(normalize_verdict("approve"), "APPROVE")
         self.assertEqual(normalize_verdict(""), "")
 
-    def test_a_silent_slot_is_not_a_ballot(self):
+    def test_a_silent_seat_is_recorded_and_is_not_a_review(self):
+        # It used to be dropped, so the report could not say which seat had
+        # returned nothing (#700, round 2). It is named now — and excluded from
+        # the count by the same rule that excludes every other abstention.
         silent = AgentResult(agent="alpha", vendor="acme", ok=True, output="   ", duration_s=0.0)
         entries = reviewer_ballots(self._fake_outcome([silent]), self._config())
-        self.assertEqual([e["name"] for e in entries], ["chair"])
+        self.assertEqual([e["name"] for e in entries], ["alpha", "chair"])
+        self.assertEqual(entries[0]["verdict"], ABSTAIN)
+        self.assertFalse(entries[0]["counts_as_review"])
+        self.assertIn("'alpha'", entries[0]["scope"])
+        self.assertIn("returned nothing at all", entries[0]["scope"])
+        self.assertEqual(entries[-1]["reviews_supplied"], 0)
 
     def test_a_refusal_abstains_rather_than_approving(self):
         # The #251 property, restated for ballots: a slot that declined to review
@@ -878,23 +886,31 @@ class BallotsMustNameSomething(unittest.TestCase):
         by_output = {
             "refusal": self._stub("I cannot assist with that request."),
             "adapter": self._stub("garbled", ok=False),
+            # The case that used to leave no record at all (#700, round 2).
+            "silent": self._stub(""),
         }
         entries = {
             key: reviewer_ballots(self._outcome_with([result]), self._config())[0]
             for key, result in by_output.items()
         }
-        self.assertIn("empty reply or a refusal", entries["refusal"]["scope"])
+        self.assertIn("returned a refusal", entries["refusal"]["scope"])
         self.assertIn("adapter reported failure", entries["adapter"]["scope"])
+        self.assertIn("returned nothing at all", entries["silent"]["scope"])
         for entry in entries.values():
             self.assertEqual(entry["verdict"], ABSTAIN)
+            self.assertFalse(entry["scope_substantive"])
+            self.assertFalse(entry["counts_as_review"])
 
     def test_a_reviewer_with_findings_but_no_file_still_names_its_claims(self):
         # Issue mode attaches no file to any finding, so the file list is empty
-        # for a reviewer that did real work. Its claims are what it named.
+        # for a reviewer that did real work. Its claims are what it named — and
+        # that exception is scoped to issue mode (#700, round 2), because in a
+        # code review a claim raised against no file names no place in the code.
         findings = [Finding(severity="major", file="", claim="no reproduction steps")]
-        scope = describe_scope(self._stub("The issue is thin."), findings)
+        scope = describe_scope(self._stub("The issue is thin."), findings, mode="issue")
         self.assertIn("no reproduction steps", scope)
         self.assertTrue(scope_is_substantive(scope))
+        self.assertEqual(describe_scope(self._stub("The issue is thin."), findings), "")
 
     def test_the_bundle_and_the_json_report_state_the_same_scope_and_verdict(self):
         # The bundle is a projection of the ballots, so the verdict a consumer is
@@ -962,8 +978,134 @@ class BallotsMustNameSomething(unittest.TestCase):
             Finding(severity="minor", file="", claim=""),
             Finding(severity="major", file="", claim="no reproduction steps"),
         ]
-        scope = describe_scope(self._stub("The issue is thin."), findings)
+        scope = describe_scope(self._stub("The issue is thin."), findings, mode="issue")
         self.assertIn("Raised 1 finding(s)", scope)
+
+    def test_issue_mode_findings_with_no_claim_at_all_name_nothing(self):
+        # The exception is "the claims are what it named", so a finding carrying
+        # no claim names nothing and the ballot abstains — issue mode does not
+        # get a free pass, it gets one extra source.
+        findings = [Finding(severity="major", file="", claim="")]
+        self.assertEqual(
+            describe_scope(self._stub("The issue is thin."), findings, mode="issue"), ""
+        )
+
+
+class AClaimIsNotAPlaceInTheCode(unittest.TestCase):
+    """#700, round 2: the fallback that let a code review name nowhere.
+
+    ``describe_scope`` fell back to the reviewer's *claims* whenever its findings
+    carried no file, and ``_tick`` backticked each one — which is an anchor under
+    the substance rule. So a code-review ballot raising one ``major`` finding
+    against ``file: ""`` produced a scope that passed the gate and a verdict of
+    ``REQUEST_CHANGES``, having named no file, line or symbol at all. keel's rule
+    is that a scope must name a place or carry a ``Checked …`` clause; a claim is
+    neither.
+
+    ``--issue`` is the one legitimate exception and stays: there a finding
+    carries ``file: ""`` by construction, because the panel is reading an issue's
+    prose rather than a diff, so the claims are the only thing it can name.
+    """
+
+    @staticmethod
+    def _config():
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "jury.toml"
+            path.write_text(PANEL_TOML, encoding="utf-8")
+            return load_config(path)
+
+    def _seat(self, with_findings):
+        class FakeOutcome:
+            pass
+
+        finding = Finding(
+            severity="major",
+            file="",
+            line=None,
+            claim="the retry loop can spin forever",
+            evidence="e",
+            reviewer="alpha",
+        )
+        group = FindingGroup(
+            representative=finding,
+            reviewers=["alpha"],
+            severity="major",
+            bucket="single",
+            status="verified",
+        )
+        o = FakeOutcome()
+        o.reviews = [
+            AgentResult(
+                agent="alpha",
+                vendor="acme",
+                ok=True,
+                output="There is a serious problem here.",
+                duration_s=0.1,
+            )
+        ]
+        o.findings = [finding] if with_findings else []
+        o.groups = [group] if with_findings else []
+        o.synthesis = None
+        o.verify = None
+        # Not the chair: a chaired ballot appends its own sentence to the scope,
+        # which would confuse what is being measured here.
+        o.chair = "beta"
+        return o
+
+    def test_a_code_review_naming_no_file_abstains(self):
+        entry = reviewer_ballots(self._seat(True), self._config(), mode="code")[0]
+        # On e01e4f1 this was REQUEST_CHANGES with a scope reading
+        # "Raised 1 finding(s) against no file: `the retry loop can spin forever`."
+        self.assertEqual(entry["verdict"], ABSTAIN)
+        self.assertFalse(entry["scope_substantive"])
+        self.assertFalse(entry["counts_as_review"])
+        self.assertNotIn("the retry loop can spin forever", entry["scope"])
+        # And the reason distinguishes "said nothing" from "named nowhere".
+        self.assertIn("raised 1 finding(s) but attached none of them to a file", entry["scope"])
+
+    def test_the_same_ballot_in_issue_mode_still_votes(self):
+        entry = reviewer_ballots(self._seat(True), self._config(), mode="issue")[0]
+        self.assertEqual(entry["verdict"], "NEEDS_INFO")
+        self.assertTrue(entry["counts_as_review"])
+        self.assertIn("the retry loop can spin forever", entry["scope"])
+
+    def test_a_reviewer_that_said_nothing_gets_the_other_reason(self):
+        entry = reviewer_ballots(self._seat(False), self._config(), mode="code")[0]
+        self.assertEqual(entry["verdict"], ABSTAIN)
+        self.assertIn("named no file, symbol, coverage clause or finding", entry["scope"])
+
+
+class TheBundleCarriesTheModelDiscriminator(unittest.TestCase):
+    """#700, round 2: ``model`` changed meaning and only half the output said so.
+
+    ``to_keel_reviews`` emits the same ``model`` field as the JSON report, where
+    a CLI default is now an English sentence rather than ``""``. The report grew
+    ``model_source`` to say which of the two a value is; this projection did not,
+    so a machine consumer of the bundle — the shape keel actually parses — had to
+    read prose to tell a requested id from a default.
+    """
+
+    def test_every_record_carries_model_source_from_its_ballot(self):
+        outcome, config = _panel_outcome()
+        ballots = {b["name"]: b for b in reviewer_ballots(outcome, config)}
+        for record in json.loads(to_keel_reviews(outcome, config)):
+            self.assertEqual(record["model_source"], ballots[record["reviewer"]]["model_source"])
+
+    def test_the_default_case_is_machine_readable_without_parsing_prose(self):
+        # `gamma` pins no model, so its `model` is a sentence about the CLI.
+        by_name = {r["reviewer"]: r for r in json.loads(to_keel_reviews(*_panel_outcome()))}
+        self.assertEqual(by_name["gamma"]["model_source"], MODEL_CLI_DEFAULT)
+        self.assertEqual(by_name["alpha"]["model_source"], MODEL_REQUESTED)
+
+    def test_the_bundle_says_which_records_are_reviews(self):
+        records = json.loads(to_keel_reviews(*_panel_outcome()))
+        self.assertFalse(records[-1]["counts_as_review"])
+        self.assertTrue(all(r["counts_as_review"] for r in records[:-1]))
+
+    def test_the_record_still_satisfies_the_vendored_consumer_contract(self):
+        # Two added keys must not break the payload keel accepts.
+        items = parse_reviews_contract(json.loads(to_keel_reviews(*_panel_outcome())))
+        self.assertEqual(len(items), 4)
 
 
 if __name__ == "__main__":

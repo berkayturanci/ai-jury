@@ -235,7 +235,7 @@ The document is `schema_version: "ai-jury.doctor.v1"`:
 | `min_vendors` | The effective `[jury.ci] min_vendors` threshold (`0` when opted out). |
 | `contributing_vendors` | **Always `null` here.** Doctor runs no review, so it cannot know how many vendors would actually contribute. The real number is `panel.vendors` in a run's `--metadata-json`. |
 | `panelists_available` | Enabled agents reachable right now — each of them a ballot in the bundle, the chairing agent included (it reviews too). |
-| `reviews_supplied_max` | **Reviews** a downstream consumer would receive: one per reachable agent, so the same number as `panelists_available`. The chair's synthesis record is carried beside them and is **not** added — a gate like `keel review --from-jury` splits the `reviewers` array on `role` and counts only the ballots. An **upper bound**: an agent that runs and returns nothing casts no ballot. |
+| `reviews_supplied_max` | **Reviews** a downstream consumer would receive: at most one per reachable agent, so the same number as `panelists_available`. The chair's synthesis record is carried beside them and is **not** added — a gate like `keel review --from-jury` splits the `reviewers` array on `role`, counts only the ballots, and then refuses any whose scope names nothing. A strict **upper bound**, which is why the text report prints it as `at most N`: an agent that runs and returns nothing, or answers without naming a file, line or symbol, casts a ballot that is recorded and not counted. |
 | `min_reviews` | The effective `[jury.ci] min_reviews` threshold (`0` when off). |
 | `multi_vendor_ready` | `false` exactly when a run on this machine would fail the gate — the guard is on, this config names at least `min_vendors` distinct vendors, and fewer than that are reachable. `true` when the guard is off, when the config never claimed that many vendors, or when enough are reachable. (Also `false` when no config could be loaded: there is nothing to be ready for.) |
 
@@ -278,27 +278,32 @@ of whether a jury happened at all.
 | Key | Default | Effect |
 | --- | --- | --- |
 | `min_vendors` | `2` | Exit **3** unless at least this many *distinct vendors contributed a review*. `0` disables. |
-| `min_reviews` | `0` | Refuse the run unless it can supply this many *reviews* to a downstream consumer — one per panel ballot. `0` disables. |
+| `min_reviews` | `0` | Refuse the run unless it can supply this many *reviews* to a downstream consumer — a panel ballot that named what it read and voted. `0` disables. |
 
 ### The panel-size guard (`min_reviews`)
 
 A different question from `min_vendors`: not *how many perspectives did the panel
 have* but *how many reviews does the thing downstream get handed*. That number is
-one review per agent that answered, and **not** one more for the chair: a consumer
-splits the report's `reviewers` array on `role` and reads the `chair` entry as the
-panel's consensus record, not as a review. The chairing agent still reviews — it is
-drawn from the usable agents and runs in round 1 — and its ballot is an ordinary
-`panelist` entry that the consumer counts like any other. The report says which
-agent chaired and whether its ballot is in the bundle, so neither half is a guess.
+one review per agent that answered **and named what it read**, and **not** one
+more for the chair: a consumer splits the report's `reviewers` array on `role`,
+reads the `chair` entry as the panel's consensus record rather than a review, and
+then refuses any remaining verdict whose scope names no file, line or symbol. The
+chairing agent still reviews — it is drawn from the usable agents and runs in
+round 1 — and its ballot is an ordinary `panelist` entry that counts like any
+other when it reviewed. The report says which agent chaired and what became of
+its ballot, so neither half is a guess.
 
 It is checked twice, because neither check alone is enough:
 
-- **before the panel runs**, from the agents that are actually available, so a
-  bench that cannot reach the minimum costs nothing and exits **2** with a message
-  naming the shortfall;
+- **before the panel runs**, from the agents that are actually available. That
+  can only be a *ceiling* — every seat is a seat that might review — so the line
+  reads `at most N`, and a bench that cannot reach even the ceiling costs nothing
+  and exits **2** with a message naming the shortfall;
 - **on the result**, exit **3**, because no pre-flight can predict an agent that
-  is installed, runs, and returns nothing — that slot casts no ballot and the
-  bundle shrinks under it ([#635] again, restated for ballots).
+  is installed, runs, and returns nothing, nor one that answers with prose naming
+  nothing checkable — both are recorded as abstentions, neither is a review, and
+  the number supplied falls under the minimum ([#635] again, restated for
+  ballots).
 
 `--min-reviews N` overrides the key. It is `0` by default: most consumers have no
 minimum, and a gate that failed closed here would break every single-agent

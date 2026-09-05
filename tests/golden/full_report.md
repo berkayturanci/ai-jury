@@ -146,7 +146,7 @@ Tested: nothing run (offline mock reviewer)
 - rounds executed: 2
 - verify: on
 - context mode: diff-only
-- reviews for a downstream consumer: 3 (one per panel ballot; the chair's synthesis record is carried alongside them and is not a review); chair `claude` also sat on the panel — its ballot is one of them
+- reviews for a downstream consumer: 3 of 3 ballot(s) (a ballot counts only when it names what it read and votes; the chair's synthesis record is carried alongside them and is not a review); chair `claude` also sat on the panel — its review is one of them
 - total wall-clock (cost proxy, not $): 0s
 
 | agent | vendor | status | duration |

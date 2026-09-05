@@ -419,11 +419,14 @@ def run_jury(
 
     # State the number a downstream consumer will actually receive, BEFORE the
     # panel is paid for (#699). "3 agents reviewing" is not that number: it is one
-    # review per agent that *answers*, and the chair's synthesis record rides
-    # along beside them without being one. When a consumer's minimum is
-    # configured and the bench cannot reach it, this is a shortfall the run
-    # should name here rather than at the consumer, an hour and three CLI
-    # invocations later.
+    # review per agent that answers *and names what it read*, and the chair's
+    # synthesis record rides along beside them without being one. What is knowable
+    # here is only the ceiling — the line says "at most" — because a seat that
+    # returns nothing, or returns prose naming nothing checkable, abstains and is
+    # not a review (#700, round 2). When a consumer's minimum is configured and
+    # the bench cannot reach even the ceiling, this is a shortfall the run should
+    # name here rather than at the consumer, an hour and three CLI invocations
+    # later.
     log(panel.describe(len(usable), available=len(usable)))
     too_small = panel.shortfall(len(usable), config.ci.min_reviews, stage="before the panel runs")
     if too_small:
