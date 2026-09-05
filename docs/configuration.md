@@ -26,7 +26,8 @@ errors (exit `2`).
 - **Hard errors** (always fail): `rounds < 1`, non-positive `timeout` (jury or
   per-agent), duplicate agent names, missing/empty agent `name` or `command`, no
   `[[agent]]` entries at all, `decision` other than `"chair"` / `"vote"`,
-  an `adapter` this build does not have, malformed tables.
+  an `adapter` this build does not have, an agent `headers` that is not a table
+  of string keys and string values, malformed tables.
 - **Warnings** (fail only under `--strict-config`): unknown vendor, `chair` not
   matching an enabled agent, unknown top-level/section/agent keys.
 

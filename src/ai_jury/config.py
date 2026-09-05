@@ -686,6 +686,39 @@ def validate_config(data: dict, strict: bool = False) -> list:
                 f"name (expected {ENV_VAR_NAME_RULE}); the vendor default will be used."
             )
 
+        # `headers` carries the extra HTTP headers a hosted adapter sends, and a
+        # value that is not a table of strings cannot become one (issue #716).
+        # Hard, not soft, for the reason `effort` is hard: the old behaviour
+        # coerced anything else to `{}` in `_from_dict`, so a misspelling passed
+        # `--config-validate` and `--strict-config` and the seat then either
+        # failed at the remote API or — worse, for a routing header the provider
+        # honours by default — ran happily against a backend the operator did not
+        # choose. Warning would only move that discovery later.
+        #
+        # The offending VALUE is deliberately never echoed back, for the reason
+        # `api_key_env` gives above and one more of its own: a header is exactly
+        # where an `Authorization: Bearer …` credential lives, and these messages
+        # are printed to terminals and pasted into issues. The header NAME and
+        # the value's type say what is wrong without reproducing what is secret.
+        raw_headers = agent.get("headers")
+        if raw_headers is not None and not isinstance(raw_headers, dict):
+            errors.append(
+                f"agent '{label}' headers must be a table of string keys and string "
+                f"values (got {type(raw_headers).__name__})."
+            )
+        elif isinstance(raw_headers, dict):
+            for header_name, header_value in raw_headers.items():
+                if not isinstance(header_name, str):
+                    errors.append(
+                        f"agent '{label}' headers has a non-string header name "
+                        f"({type(header_name).__name__}); header names must be strings."
+                    )
+                elif not isinstance(header_value, str):
+                    errors.append(
+                        f"agent '{label}' headers value for '{header_name}' must be a "
+                        f"string (got {type(header_value).__name__})."
+                    )
+
         # Reasoning effort (hard when present and not a known level, issue
         # #662): a typo like `effort = "max"` would otherwise be silently
         # dropped, and the operator would pay for a run they think is deeper
@@ -1039,12 +1072,15 @@ def _from_dict(data: dict) -> JuryConfig:
     default_timeout = int(jury.get("timeout", 600))
     agents: list[AgentSpec] = []
     for raw in data.get("agent", []):
+        # No `isinstance` fallback any more (issue #716). Coercing a non-table
+        # `headers` to `{}` here was what made the mistake invisible: the seat
+        # materialised cleanly with no headers at all and only the remote API —
+        # or nobody — ever noticed. `validate_config` now rejects that shape, so
+        # a config that reaches materialisation through the validating path has
+        # a table or nothing; one that does not is malformed in the same way a
+        # missing `name` is, and fails the same way rather than quietly.
         raw_headers = raw.get("headers", {})
-        headers_dict = (
-            {str(k): str(v) for k, v in raw_headers.items()}
-            if isinstance(raw_headers, dict)
-            else {}
-        )
+        headers_dict = {str(k): str(v) for k, v in raw_headers.items()}
         api_key_env_val = str(raw["api_key_env"]) if raw.get("api_key_env") else None
         prompt_mode_val = str(raw["prompt_mode"]) if raw.get("prompt_mode") else None
         raw_effort = raw.get("effort")
@@ -1180,6 +1216,24 @@ def config_hash(config: JuryConfig) -> str:
                 # entry — stays byte-identical. The conditional is the point,
                 # not an optimisation: this change invalidates no one's cache.
                 **({"adapter": a.adapter_key} if a.adapter_key != a.vendor else {}),
+                # Where the request goes and under whose key (issue #716). A
+                # provider-routing header — `X-Route: premium`, an OpenRouter
+                # `HTTP-Referer`, an Azure deployment selector — can put a
+                # byte-identical seat in front of a different model, and
+                # `api_key_env` can put it in front of a different account. Both
+                # are therefore orchestration-affecting under the same rule as
+                # `min_vendors` above, and two configs that disagree about
+                # either are not the same run.
+                #
+                # Unconditional, unlike `adapter`: there is no spelling of these
+                # keys that means "what it meant before", so this DOES invalidate
+                # every existing review cache entry once on upgrade. That is the
+                # honest price of a key that was wrong, and it is noted in the
+                # CHANGELOG — the user's first run after the bump is a full one.
+                # Sorted so the digest depends on the mapping, not on the order
+                # the table happened to be written in.
+                "api_key_env": a.api_key_env,
+                "headers": sorted(a.headers.items()),
             }
             for a in config.agents
         ],

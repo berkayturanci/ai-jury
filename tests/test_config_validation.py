@@ -233,6 +233,99 @@ class EffortValidation(unittest.TestCase):
         self.assertIsNone(cfg.agents[0].effort)
 
 
+class HeadersValidation(unittest.TestCase):
+    """`[[agent]] headers` must be a table of strings — anything else is hard (#716).
+
+    The old behaviour is what makes these hard errors rather than warnings:
+    `_from_dict` coerced every non-table to `{}`, so a misspelled or mis-typed
+    `headers` passed `--config-validate` AND `--strict-config` and the seat ran
+    with no extra headers at all. For a routing header the provider honours by
+    default, that is a run against a backend nobody chose.
+    """
+
+    @staticmethod
+    def _with_headers(value):
+        return {
+            "jury": {"rounds": 1, "chair": "a"},
+            "agent": [
+                {
+                    "name": "a",
+                    "vendor": "openai-compatible",
+                    "model": "m",
+                    "endpoint": "http://127.0.0.1:8000/v1/chat/completions",
+                    "headers": value,
+                }
+            ],
+        }
+
+    def test_a_table_of_strings_is_accepted_and_materialised(self):
+        data = self._with_headers({"X-Route": "premium", "HTTP-Referer": "https://ai-jury.org"})
+        self.assertEqual(validate_config(data), [])
+        self.assertEqual(
+            _from_dict(data).agents[0].headers,
+            {"X-Route": "premium", "HTTP-Referer": "https://ai-jury.org"},
+        )
+
+    def test_a_string_is_a_hard_error_naming_the_agent(self):
+        # The issue's own reproduction: TOML written as `headers = "A = B"`.
+        with self.assertRaises(ConfigError) as ctx:
+            validate_config(self._with_headers("Authorization = Bearer y"))
+        message = str(ctx.exception)
+        self.assertIn("agent 'a' headers must be a table", message)
+        self.assertIn("got str", message)
+
+    def test_a_list_is_a_hard_error(self):
+        with self.assertRaises(ConfigError) as ctx:
+            validate_config(self._with_headers([["X-Route", "premium"]]))
+        self.assertIn("agent 'a' headers must be a table", str(ctx.exception))
+
+    def test_a_non_string_value_is_a_hard_error_naming_the_header(self):
+        with self.assertRaises(ConfigError) as ctx:
+            validate_config(self._with_headers({"X-Retries": 3}))
+        message = str(ctx.exception)
+        self.assertIn("agent 'a' headers value for 'X-Retries'", message)
+        self.assertIn("got int", message)
+
+    def test_a_non_string_header_name_is_a_hard_error(self):
+        with self.assertRaises(ConfigError) as ctx:
+            validate_config(self._with_headers({3: "premium"}))
+        self.assertIn("agent 'a' headers has a non-string header name", str(ctx.exception))
+
+    def test_the_offending_value_is_never_echoed_back(self):
+        """A header is where a credential lives; the message must not carry one."""
+        with self.assertRaises(ConfigError) as ctx:
+            validate_config(self._with_headers({"Authorization": ["Bearer sk-secret-42"]}))
+        self.assertNotIn("sk-secret-42", str(ctx.exception))
+
+    def test_absent_headers_stay_an_empty_table(self):
+        data = self._with_headers({})
+        del data["agent"][0]["headers"]
+        self.assertEqual(validate_config(data), [])
+        self.assertEqual(_from_dict(data).agents[0].headers, {})
+
+    def test_headers_split_the_cache_key(self):
+        """Two seats differing only in a routing header are not the same run."""
+        premium = _from_dict(self._with_headers({"X-Route": "premium"}))
+        cheap = _from_dict(self._with_headers({"X-Route": "cheap"}))
+        none = _from_dict(self._with_headers({}))
+        self.assertNotEqual(config_hash(premium), config_hash(cheap))
+        self.assertNotEqual(config_hash(premium), config_hash(none))
+
+    def test_header_order_does_not_split_the_cache_key(self):
+        """The digest is a function of the mapping, not of how it was written."""
+        one = _from_dict(self._with_headers({"A": "1", "B": "2"}))
+        other = _from_dict(self._with_headers({"B": "2", "A": "1"}))
+        self.assertEqual(config_hash(one), config_hash(other))
+
+    def test_api_key_env_splits_the_cache_key(self):
+        """A different key can mean a different account, hence a different run."""
+        base = self._with_headers({})
+        first = dict(base, agent=[dict(base["agent"][0], api_key_env="ROUTER_A_KEY")])
+        second = dict(base, agent=[dict(base["agent"][0], api_key_env="ROUTER_B_KEY")])
+        self.assertNotEqual(config_hash(_from_dict(first)), config_hash(_from_dict(second)))
+        self.assertNotEqual(config_hash(_from_dict(first)), config_hash(_from_dict(base)))
+
+
 class SoftWarnings(unittest.TestCase):
     def test_valid_returns_no_warnings(self):
         self.assertEqual(validate_config(_cfg()), [])
