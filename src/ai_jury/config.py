@@ -515,6 +515,23 @@ def _headers_coerced_value_warning(label: str, header: str, value) -> str:
     )
 
 
+# The nested `[jury.*]` shape message lives here for the same reason the
+# `headers` ones do (issue #729): TWO paths reject the same shape and must say
+# the same thing. `validate_config` collects it into its error list, and the
+# `_*_from_dict` readers raise it directly for a config that reached
+# materialisation unvalidated — `load_config` defaults to `validate=False`, and
+# `jury run-agent` keeps it that way on purpose.
+#
+# `[jury.ci]` and `[jury.diff]` were checked with this wording written out
+# inline; `[jury.context]` was not checked at all, so `context = "diff-only"`
+# (written where `[jury.context] mode = "diff-only"` was meant) passed
+# `--config-validate --strict-config` and then died in `_context_from_dict` with
+# `'str' object has no attribute 'get'`.
+def _nested_table_message(table: str) -> str:
+    """`[jury.<table>]` is not a table, so its reader cannot read it (hard)."""
+    return f"[jury.{table}] must be a table."
+
+
 def validate_config(data: dict, strict: bool = False) -> list:
     """Validate a raw config dict.
 
@@ -561,12 +578,17 @@ def validate_config(data: dict, strict: bool = False) -> list:
     # what it says — with the dotted path in the message so the operator is
     # told which table to look in.
     #
-    # A non-table is skipped here and left to the shape checks below, which
-    # already say `[jury.ci] must be a table`; iterating a string would produce
-    # one warning per character.
+    # A non-table is reported as a shape error and NOT iterated for unknown
+    # keys: iterating a string would produce one warning per character, and the
+    # value cannot carry keys anyway. All three tables are checked in this one
+    # loop (issue #729) — `ci` and `diff` had the check written out inline below
+    # and `context` had none, which is exactly how the missing one went unnoticed.
     for table, known_nested in KNOWN_NESTED_JURY_KEYS.items():
         nested = jury.get(table)
+        if nested is None:
+            continue
         if not isinstance(nested, dict):
+            errors.append(_nested_table_message(table))
             continue
         for key in nested:
             if key not in known_nested:
@@ -616,9 +638,7 @@ def validate_config(data: dict, strict: bool = False) -> list:
 
     # Large-diff handling (issue #31): [jury.diff] sizes are positive ints.
     diff_cfg = jury.get("diff", {})
-    if not isinstance(diff_cfg, dict):
-        errors.append("[jury.diff] must be a table.")
-    else:
+    if isinstance(diff_cfg, dict):
         for key in ("max_bytes", "chunk_max_bytes"):
             val = diff_cfg.get(key)
             if val is not None and (not isinstance(val, int) or isinstance(val, bool) or val <= 0):
@@ -629,9 +649,7 @@ def validate_config(data: dict, strict: bool = False) -> list:
     # decides whether CI fails would report a green PASS quoting the typo, on
     # every run, forever — a silently disabled gate is worse than no gate.
     ci_cfg = jury.get("ci", {})
-    if not isinstance(ci_cfg, dict):
-        errors.append("[jury.ci] must be a table.")
-    else:
+    if isinstance(ci_cfg, dict):
         fail_on = ci_cfg.get("fail_on")
         if fail_on is not None:
             # A scalar is accepted here because `_ci_from_dict` wraps one in a
@@ -1111,6 +1129,13 @@ class JuryConfig:
 
 
 def _ci_from_dict(data: dict) -> CiConfig:
+    # `ConfigError`, not the `AttributeError` a `.get` on a string would raise:
+    # materialisation is reached WITHOUT validation on real paths — `load_config`
+    # defaults to `validate=False` and `jury run-agent` keeps it that way — and
+    # those callers handle `ConfigError` (`run-agent` prints it and exits 2)
+    # where a traceback would just be a crash (issue #729, following #716).
+    if not isinstance(data, dict):
+        raise ConfigError(_nested_table_message("ci"))
     fail_on = data.get("fail_on", ["critical", "major"])
     if not isinstance(fail_on, list):
         fail_on = [fail_on]
@@ -1124,6 +1149,8 @@ def _ci_from_dict(data: dict) -> CiConfig:
 
 
 def _context_from_dict(data: dict) -> ContextConfig:
+    if not isinstance(data, dict):
+        raise ConfigError(_nested_table_message("context"))
     mode = str(data.get("mode", "diff-only")).strip().lower()
     if mode not in ("diff-only", "expanded"):
         mode = "diff-only"
@@ -1140,6 +1167,8 @@ def _str_list(value) -> list[str]:
 
 
 def _diff_from_dict(data: dict) -> DiffConfig:
+    if not isinstance(data, dict):
+        raise ConfigError(_nested_table_message("diff"))
     default = DiffConfig()
     return DiffConfig(
         max_bytes=_opt_positive_int(data.get("max_bytes")) or default.max_bytes,
