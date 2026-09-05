@@ -719,20 +719,21 @@ class NestedJuryTableUnknownKeys(unittest.TestCase):
             with self.subTest(table=table):
                 self.assertEqual(validate_config(self._with_nested(table, {})), [])
 
-    def test_a_non_table_is_left_to_the_shape_check(self):
-        # `[jury.ci] = "critical"` is already a hard error; the unknown-key loop
-        # must not iterate the string and emit one warning per character.
-        with self.assertRaises(ConfigError) as ctx:
-            validate_config(self._with_nested("ci", "critical"))
-        message = str(ctx.exception)
-        self.assertIn("[jury.ci] must be a table", message)
-        self.assertNotIn("unknown key", message)
-
-    def test_a_non_table_context_warns_about_nothing(self):
-        # `[jury.context]` has no shape check of its own (that is a separate
-        # concern); the point here is that the loop skips it silently rather
-        # than reporting each character as an unknown key.
-        self.assertEqual(validate_config(self._with_nested("context", "expanded")), [])
+    def test_a_non_table_is_a_hard_error_and_reports_no_unknown_keys(self):
+        # Every nested table is checked with the same wording (issue #729), and
+        # none of them is iterated for unknown keys: a string would otherwise
+        # report one unknown key per character.
+        for table, scalar in (
+            ("ci", "critical"),
+            ("context", "diff-only"),
+            ("diff", 4096),
+        ):
+            with self.subTest(table=table):
+                with self.assertRaises(ConfigError) as ctx:
+                    validate_config(self._with_nested(table, scalar))
+                message = str(ctx.exception)
+                self.assertIn(f"[jury.{table}] must be a table", message)
+                self.assertNotIn("unknown key", message)
 
     def test_the_known_key_tuples_match_what_the_readers_read(self):
         for reader, known in (
@@ -755,6 +756,59 @@ class NestedJuryTableUnknownKeys(unittest.TestCase):
             if hasattr(getattr(defaults, name, None), "__dataclass_fields__")
         }
         self.assertEqual(nested, set(KNOWN_NESTED_JURY_KEYS))
+
+
+class NestedTableShapeOnTheUnvalidatedPath(unittest.TestCase):
+    """A scalar `[jury.*]` is a `ConfigError` in the readers too (issue #729).
+
+    `validate_config` is not on every path to a `JuryConfig`: `load_config`
+    defaults to `validate=False`, and `jury run-agent` keeps it that way on
+    purpose so one seat's (or one table's) mistake cannot stop a single-seat
+    run. Before this, `context = "diff-only"` reached `_context_from_dict` and
+    raised `'str' object has no attribute 'get'` — a traceback rather than the
+    message the caller already knows how to print. `ci` and `diff` had the same
+    hole; the fix is the same in all three, with the wording `validate_config`
+    uses.
+    """
+
+    _SCALARS = (("ci", "critical"), ("context", "diff-only"), ("diff", 4096))
+
+    _READERS = {"ci": _ci_from_dict, "context": _context_from_dict, "diff": _diff_from_dict}
+
+    def test_each_reader_rejects_a_scalar_with_the_shared_message(self):
+        for table, scalar in self._SCALARS:
+            reader = self._READERS[table]
+            with self.subTest(table=table):
+                with self.assertRaises(ConfigError) as ctx:
+                    reader(scalar)
+                self.assertIn(f"[jury.{table}] must be a table", str(ctx.exception))
+
+    def test_from_dict_raises_config_error_not_attribute_error(self):
+        for table, scalar in self._SCALARS:
+            with self.subTest(table=table):
+                data = {
+                    "jury": {"chair": "a", table: scalar},
+                    "agent": [{"name": "a", "vendor": "anthropic", "command": "claude"}],
+                }
+                with self.assertRaises(ConfigError) as ctx:
+                    _from_dict(data)
+                self.assertIn(f"[jury.{table}] must be a table", str(ctx.exception))
+
+    def test_a_well_formed_nested_table_still_materialises(self):
+        cfg = _from_dict(
+            {
+                "jury": {
+                    "chair": "a",
+                    "ci": {"min_vendors": 1},
+                    "context": {"mode": "expanded"},
+                    "diff": {"max_bytes": 4096},
+                },
+                "agent": [{"name": "a", "vendor": "anthropic", "command": "claude"}],
+            }
+        )
+        self.assertEqual(cfg.ci.min_vendors, 1)
+        self.assertEqual(cfg.context.mode, "expanded")
+        self.assertEqual(cfg.diff.max_bytes, 4096)
 
 
 #: `jury.toml` examples live in these two docs; both are copy-pasted by readers.
