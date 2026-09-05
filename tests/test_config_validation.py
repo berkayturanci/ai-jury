@@ -301,6 +301,8 @@ class FailOnVocabulary(unittest.TestCase):
 
     def test_the_shipped_default_config_passes_its_own_gate(self):
         self.assertEqual(validate_config(DEFAULT_CONFIG), [])
+
+
 class HeadersValidation(unittest.TestCase):
     """`[[agent]] headers` is checked, and the severity follows usability (#716).
 
