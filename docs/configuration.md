@@ -26,9 +26,11 @@ errors (exit `2`).
 - **Hard errors** (always fail): `rounds < 1`, non-positive `timeout` (jury or
   per-agent), duplicate agent names, missing/empty agent `name` or `command`, no
   `[[agent]]` entries at all, `decision` other than `"chair"` / `"vote"`,
-  an `adapter` this build does not have, malformed tables.
+  an `adapter` this build does not have, an agent `headers` that is not a table
+  (or whose key is not a string), malformed tables.
 - **Warnings** (fail only under `--strict-config`): unknown vendor, `chair` not
-  matching an enabled agent, unknown top-level/section/agent keys.
+  matching an enabled agent, unknown top-level/section/agent keys, a non-string
+  `headers` value (it is coerced to a string and sent).
 
 ### The vendor vocabulary
 
@@ -222,7 +224,14 @@ hints = true         # run local Ruff/ESLint pre-pass before Round 1 (default: f
 ```
 
 - **`routing = "tiered"`** (`--tiered`): Uses the diff risk classifier to route non-critical files to economical models while keeping frontier models as anchor reviewers for security-critical paths (`auth/`, `crypto/`).
-- **`hints = true`** (`--hints`): Runs fast local static linters (Ruff for Python, ESLint for JS/TS) on modified files and injects compact hints into Round 1 prompt context so reviewers focus strictly on deep logic bugs and security flaws.
+- **`hints = true`** (`--hints` / `--no-hints`): Runs fast local static linters (Ruff for Python, ESLint for JS/TS) on modified files and injects compact hints into Round 1 prompt context so reviewers focus strictly on deep logic bugs and security flaws.
+
+The hints are produced locally by this run, not taken from your context, so they
+are added to the Round 1 prompt as their own block **after** the
+`[jury.context] mode` filter — `hints = true` reaches the panel under
+`diff-only` (the default) as well as `expanded`. Both keys are
+orchestration-affecting: they are part of the config hash and the cache key, so
+a `--cache` entry is never shared across two different settings.
 
 ## Reasoning effort (`[[agent]] effort` / `--effort`)
 
@@ -408,6 +417,14 @@ min_reviews = 0                   # REVIEWS a consumer must receive (ballots)
 `fail_on` / `ignore_unverified` apply only under `--ci`. `min_vendors` applies to
 **every** run, because it is not a judgement about findings — it is the question
 of whether a jury happened at all.
+
+Every `fail_on` entry must be a known [severity](parameters.md#severities) —
+`critical`, `major`, `minor`, `nit`, `info`, or the `blocker` alias for
+`critical` — matched case-insensitively. A value outside that vocabulary is a
+**hard config error** naming it, not a warning: a misspelling (`"majr"`) matches
+no finding, so the setting that decides whether CI fails would report a green
+`PASS` quoting the typo on every run. `--fail-on` is held to the same
+vocabulary and exits **2** with the same message.
 
 | Key | Default | Effect |
 | --- | --- | --- |

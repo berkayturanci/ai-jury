@@ -318,6 +318,7 @@ def run_jury(
     diff: str,
     *,
     context: str = "",
+    hints: str = "",
     mock: bool = False,
     strict: bool = False,
     seed: int | None = None,
@@ -384,6 +385,13 @@ def run_jury(
         redaction_count = _n1 + _n2
         if redaction_count:
             log(f"redacted {redaction_count} secret(s) before sending to agents")
+
+    # Static-analysis pre-pass block (#523), joined into the Round 1 prompt AFTER
+    # the context-mode filter above (#715). It is not user context: it is produced
+    # locally by this run's linters, so the "diff-only" mode — the default — must
+    # not discard it. Carrying it inside ``context`` did exactly that, and
+    # `hints = true` reached no reviewer under any default configuration.
+    review_context = "\n\n".join(part for part in (context, hints) if part.strip())
 
     # Prompt-injection heuristic (OWASP LLM01): scan untrusted diff/context for
     # patterns that try to override instructions, then SURFACE them as a synthetic
@@ -454,7 +462,7 @@ def run_jury(
     review_prompt = {
         a.name: tmpl["review"].format(
             name=a.name,
-            context=prompts.neutralize_sentinels(context or "_(none)_"),
+            context=prompts.neutralize_sentinels(review_context or "_(none)_"),
             diff=prompts.neutralize_sentinels(diff),
             policy=policy_section,
             notice=prompts._UNTRUSTED_NOTICE,
@@ -1014,12 +1022,58 @@ def _synthesize(
     return _run_with_retry(chair, prompt, "synthesis", budget, retries, log)
 
 
+def _first_sent_model(parts: list[AgentResult]) -> str:
+    """The first model id *parts* recorded sending (issue #722).
+
+    Every chunk of one diff is one seat invoked repeatedly through one adapter,
+    so the parts normally all carry the same stamped id (#709) and "the first
+    non-empty one" is simply "the one". Where they disagree — which only an
+    adapter that consults a live model listing between invocations can produce
+    — there is no id that is true of the whole merge, and inventing one
+    ("mixed") would be a string no invocation sent. The first is a model this
+    run really did send, and it is the one whose output opens the merged body,
+    so the ballot's id and the text a reader checks it against come from the
+    same invocation.
+
+    **Callers pass the parts whose output is in the merged body**, because that
+    is what the id has to be true of. A failed part is not excluded by carrying
+    ``""``: :func:`_run_with_retry` stamps ``result.model`` from
+    ``adapter.resolved_model()`` after ``adapter.run`` returns, whether the run
+    succeeded or not, so a chunk that failed *does* normally record an id — and
+    it can be a different one from its siblings', since the fallback an adapter
+    performs against a live listing is exactly the kind of failure that changes
+    it. Scanning all the parts would then let a chunk that contributed no text
+    name the model for text it did not produce.
+
+    A part carries ``""`` only when nothing stamped it: a hand-assembled
+    outcome, a pre-#709 record, or a failure raised before the adapter returned.
+    A merge in which no scanned part recorded an id stays empty, which
+    :func:`ai_jury.ballots.describe_model` labels ``recomputed`` rather than
+    ``requested``. That fallback is unchanged.
+    """
+    for p in parts:
+        model = (getattr(p, "model", "") or "").strip()
+        if model:
+            return model
+    return ""
+
+
 def _merge_results_by_agent(phase_lists: list[list[AgentResult]]) -> list[AgentResult]:
     """Merge per-chunk results for the same agent into one result (issue #31).
 
     Outputs are concatenated under per-chunk headers, durations summed, ``ok`` is
     true if the agent succeeded on any chunk, and ``attempts`` keeps the max so a
     retried chunk is still visible. Agent order follows first appearance.
+
+    The model id the invocation sent (:attr:`AgentResult.model`, #709) rides
+    along too — see :func:`_first_sent_model`. Dropping it here made a chunked
+    review's provenance strictly weaker than a single-chunk one's (#722). It is
+    read from the same parts the body is built from: the id has to be one that
+    produced the text under it, and a chunk can fail *after* recording a
+    different id than its siblings (an adapter that fell back against a live
+    listing). Only when no part contributed body text at all — a seat that
+    failed on every chunk — is the whole set scanned, so a failed seat still
+    reports what it sent.
     """
     order: list[str] = []
     by_agent: dict[str, list[AgentResult]] = {}
@@ -1038,6 +1092,7 @@ def _merge_results_by_agent(phase_lists: list[list[AgentResult]]) -> list[AgentR
         # into a single-pass O(N) explicit loop to bypass multiple generator instantiations
         ok = False
         body_parts = []
+        body_sources: list[AgentResult] = []
         first_err = None
         total_duration = 0.0
         max_attempts = 0
@@ -1047,6 +1102,7 @@ def _merge_results_by_agent(phase_lists: list[list[AgentResult]]) -> list[AgentR
                 ok = True
                 if p.output:
                     body_parts.append(f"#### chunk {i}\n{p.output}")
+                    body_sources.append(p)
             elif first_err is None:
                 first_err = p
 
@@ -1066,13 +1122,19 @@ def _merge_results_by_agent(phase_lists: list[list[AgentResult]]) -> list[AgentR
                 error=None if ok else (first_err.error if first_err else None),
                 error_code=None if ok else (first_err.error_code if first_err else None),
                 attempts=max_attempts,
+                model=_first_sent_model(body_sources or parts),
             )
         )
     return merged
 
 
 def _combine_chair_results(results: list[AgentResult], chair: str) -> AgentResult | None:
-    """Combine per-chunk chair results (verify/synthesis) into one labelled result."""
+    """Combine per-chunk chair results (verify/synthesis) into one labelled result.
+
+    The combined record keeps the model id the chair's invocation sent (#722),
+    taken from the same population as ``vendor`` — the parts whose output is in
+    the body — by :func:`_first_sent_model`.
+    """
     ok_parts = [r for r in results if r.ok and r.output]
     if not ok_parts:
         return results[0] if results else None
@@ -1086,7 +1148,9 @@ def _combine_chair_results(results: list[AgentResult], chair: str) -> AgentResul
         total_duration += r.duration_s
 
     body = "\n\n".join(body_parts)
-    return AgentResult(chair, vendor, True, body, round(total_duration, 3))
+    return AgentResult(
+        chair, vendor, True, body, round(total_duration, 3), model=_first_sent_model(ok_parts)
+    )
 
 
 def _merge_chunk_outcomes(outcomes: list[JuryOutcome], config: JuryConfig) -> JuryOutcome:
@@ -1182,6 +1246,7 @@ def review_diff(
     diff: str,
     *,
     context: str = "",
+    hints: str = "",
     mock: bool = False,
     strict: bool = False,
     seed: int | None = None,
@@ -1257,6 +1322,7 @@ def review_diff(
             config,
             chunk,
             context=context,
+            hints=hints,
             mock=mock,
             strict=strict,
             seed=seed,

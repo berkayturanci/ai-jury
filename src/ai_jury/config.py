@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from .ci import fail_on_error
 from .redaction import ENV_VAR_NAME_RULE, redact, safe_env_var_name
 
 # Hosts that are safe to reach over plaintext http and never an SSRF target.
@@ -428,6 +429,11 @@ KNOWN_JURY_KEYS = (
     "theater_style",
     # Large-diff handling (issue #31).
     "diff",
+    # Risk-aware tiered model routing (issue #524) and the static-analysis
+    # pre-pass (issue #523). Both are read by `_from_dict` and documented in
+    # docs/configuration.md, so `--strict-config` must not reject them (#715).
+    "routing",
+    "hints",
 )
 KNOWN_AGENT_KEYS = (
     "name",
@@ -459,6 +465,50 @@ KNOWN_EFFORTS = ("low", "medium", "high")
 
 class ConfigError(Exception):
     """Raised when a jury configuration is invalid."""
+
+
+# The `[[agent]] headers` messages live here, not inline, because TWO paths
+# reject the same shapes and must say the same thing (issue #716, review r1):
+# `validate_config` collects them into its error list, and `_from_dict` raises
+# one directly for a config that reached materialisation unvalidated —
+# `load_config` defaults to `validate=False` and `jury run-agent` deliberately
+# keeps it that way so one seat's mistake cannot stop a single-seat run.
+#
+# Every message names the AGENT and, where it helps, the header NAME, and none
+# of them quotes the offending VALUE back: a header is exactly where an
+# `Authorization: Bearer …` credential lives, and these are printed to terminals
+# and pasted into issues. The type says what is wrong without reproducing what
+# is secret — the precedent `api_key_env` set for a rejected value.
+def _headers_not_a_table_message(label: str, value) -> str:
+    """`headers` is not a table at all — it cannot become headers (hard)."""
+    return f"agent '{label}' headers must be a table of string keys (got {type(value).__name__})."
+
+
+def _headers_bad_key_message(label: str, key) -> str:
+    """A key that is not a string cannot be a header name (hard).
+
+    tomllib cannot produce one — every TOML key, bare or quoted, parses to
+    `str` — so this guards a config dict built in Python (a test, an embedder
+    calling `validate_config`/`_from_dict` directly) rather than a written file.
+    """
+    return (
+        f"agent '{label}' headers has a non-string header name "
+        f"({type(key).__name__}); header names must be strings."
+    )
+
+
+def _headers_coerced_value_warning(label: str, header: str, value) -> str:
+    """A non-string value still becomes a header — so this is soft.
+
+    `X-Retries = 3` is a working fallback: it is sent as `X-Retries: 3`. Under
+    this module's split (unusable ⇒ hard error, working fallback ⇒ warning, as
+    for a malformed `api_key_env` name) that is a warning, and `--strict-config`
+    is where an operator asks for it to be fatal.
+    """
+    return (
+        f"agent '{label}' headers value for '{header}' is not a string "
+        f"({type(value).__name__}); it was coerced to a string before being sent."
+    )
 
 
 def validate_config(data: dict, strict: bool = False) -> list:
@@ -545,6 +595,24 @@ def validate_config(data: dict, strict: bool = False) -> list:
             val = diff_cfg.get(key)
             if val is not None and (not isinstance(val, int) or isinstance(val, bool) or val <= 0):
                 errors.append(f"jury.diff.{key} must be a positive integer when set (got {val!r}).")
+
+    # CI gate severities (issue #718): hard, like `effort`, and for the same
+    # reason. `fail_on = ["majr"]` matches no group, so the one setting that
+    # decides whether CI fails would report a green PASS quoting the typo, on
+    # every run, forever — a silently disabled gate is worse than no gate.
+    ci_cfg = jury.get("ci", {})
+    if not isinstance(ci_cfg, dict):
+        errors.append("[jury.ci] must be a table.")
+    else:
+        fail_on = ci_cfg.get("fail_on")
+        if fail_on is not None:
+            # A scalar is accepted here because `_ci_from_dict` wraps one in a
+            # list; validating the raw value would refuse a config that loads.
+            message = fail_on_error(
+                fail_on if isinstance(fail_on, list) else [fail_on], "jury.ci.fail_on"
+            )
+            if message:
+                errors.append(message)
 
     agents_data = data.get("agent", [])
     if not isinstance(agents_data, list):
@@ -685,6 +753,33 @@ def validate_config(data: dict, strict: bool = False) -> list:
                 f"agent '{label}' api_key_env is not a valid environment variable "
                 f"name (expected {ENV_VAR_NAME_RULE}); the vendor default will be used."
             )
+
+        # `headers` carries the extra HTTP headers a hosted adapter sends
+        # (issue #716). It was never checked at all: `_from_dict` turned every
+        # non-table into `{}`, so `headers = "Authorization = Bearer y"` passed
+        # `--config-validate` AND `--strict-config` and the seat ran with no
+        # extra headers — failing at the remote API, or, for a routing header
+        # the provider honours a default for, reviewing quietly against a
+        # backend nobody chose.
+        #
+        # The severity follows this module's split, not the fact that the key is
+        # newly checked: a shape that CANNOT become headers is hard (like an
+        # unknown `effort`), a shape that becomes working headers by a documented
+        # coercion is a warning (like a malformed `api_key_env` name that falls
+        # back to the vendor default). Hard: not a table, and a non-string key —
+        # neither can be a header name or map. Soft: a non-string VALUE, which
+        # `_from_dict` sends as `str(value)`.
+        raw_headers = agent.get("headers")
+        if raw_headers is not None and not isinstance(raw_headers, dict):
+            errors.append(_headers_not_a_table_message(label, raw_headers))
+        elif isinstance(raw_headers, dict):
+            for header_name, header_value in raw_headers.items():
+                if not isinstance(header_name, str):
+                    errors.append(_headers_bad_key_message(label, header_name))
+                elif not isinstance(header_value, str):
+                    warnings.append(
+                        _headers_coerced_value_warning(label, header_name, header_value)
+                    )
 
         # Reasoning effort (hard when present and not a known level, issue
         # #662): a typo like `effort = "max"` would otherwise be silently
@@ -1039,12 +1134,31 @@ def _from_dict(data: dict) -> JuryConfig:
     default_timeout = int(jury.get("timeout", 600))
     agents: list[AgentSpec] = []
     for raw in data.get("agent", []):
+        # `headers` no longer coerces a non-table to `{}` (issue #716). That
+        # coercion is what made the mistake invisible: the seat materialised
+        # cleanly carrying no headers, and only the remote API — or nobody —
+        # ever noticed.
+        #
+        # It raises `ConfigError` rather than falling through to an
+        # `AttributeError` from `.items()`, because materialisation is reached
+        # WITHOUT validation on real paths (review r1): `load_config` defaults
+        # to `validate=False`, and `jury run-agent` keeps it that way on purpose
+        # so one seat's mistake cannot stop a single-seat run. Those callers
+        # already handle `ConfigError` — `run-agent` prints it and exits 2 —
+        # and an uncaught traceback would be a regression for them, not a fix.
+        # The messages are the shared builders, so the two paths say the same
+        # thing and neither echoes the value.
+        #
+        # A non-string VALUE is coerced, as before, and warned about in
+        # `validate_config`: `X-Retries = 3` is a header that works.
+        headers_label = raw.get("name") or f"agent[{len(agents)}]"
         raw_headers = raw.get("headers", {})
-        headers_dict = (
-            {str(k): str(v) for k, v in raw_headers.items()}
-            if isinstance(raw_headers, dict)
-            else {}
-        )
+        if not isinstance(raw_headers, dict):
+            raise ConfigError(_headers_not_a_table_message(headers_label, raw_headers))
+        for key in raw_headers:
+            if not isinstance(key, str):
+                raise ConfigError(_headers_bad_key_message(headers_label, key))
+        headers_dict = {k: str(v) for k, v in raw_headers.items()}
         api_key_env_val = str(raw["api_key_env"]) if raw.get("api_key_env") else None
         prompt_mode_val = str(raw["prompt_mode"]) if raw.get("prompt_mode") else None
         raw_effort = raw.get("effort")
@@ -1136,6 +1250,14 @@ def config_hash(config: JuryConfig) -> str:
         "anonymize_debate": config.anonymize_debate,
         "prefer_non_reviewer_chair": config.prefer_non_reviewer_chair,
         "demote_local_only": config.demote_local_only,
+        # The static-analysis pre-pass changes what Round 1 is shown, and the
+        # routing mode changes which models the panel is built from, so two runs
+        # that disagree about either are not the same run and must not share a
+        # cache entry (#715). Like `min_vendors` before them, adding these keys
+        # invalidates every existing review cache entry ONCE on upgrade — noted
+        # in the CHANGELOG, since a user's first run after the bump is a full one.
+        "hints": config.hints,
+        "routing": config.routing,
         "ci": {
             "fail_on": list(config.ci.fail_on),
             "ignore_unverified": config.ci.ignore_unverified,
@@ -1180,6 +1302,24 @@ def config_hash(config: JuryConfig) -> str:
                 # entry — stays byte-identical. The conditional is the point,
                 # not an optimisation: this change invalidates no one's cache.
                 **({"adapter": a.adapter_key} if a.adapter_key != a.vendor else {}),
+                # Where the request goes and under whose key (issue #716). A
+                # provider-routing header — `X-Route: premium`, an OpenRouter
+                # `HTTP-Referer`, an Azure deployment selector — can put a
+                # byte-identical seat in front of a different model, and
+                # `api_key_env` can put it in front of a different account. Both
+                # are therefore orchestration-affecting under the same rule as
+                # `min_vendors` above, and two configs that disagree about
+                # either are not the same run.
+                #
+                # Unconditional, unlike `adapter`: there is no spelling of these
+                # keys that means "what it meant before", so this DOES invalidate
+                # every existing review cache entry once on upgrade. That is the
+                # honest price of a key that was wrong, and it is noted in the
+                # CHANGELOG — the user's first run after the bump is a full one.
+                # Sorted so the digest depends on the mapping, not on the order
+                # the table happened to be written in.
+                "api_key_env": a.api_key_env,
+                "headers": sorted(a.headers.items()),
             }
             for a in config.agents
         ],
