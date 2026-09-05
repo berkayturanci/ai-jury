@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 import tempfile  # noqa: E402
 
-from ai_jury.config import (  # noqa: E402
+from ai_jury.config import (
     DEFAULT_CONFIG,
     KNOWN_AGENT_KEYS,
     KNOWN_CI_KEYS,
@@ -23,6 +23,7 @@ from ai_jury.config import (  # noqa: E402
     KNOWN_EFFORTS,
     KNOWN_JURY_KEYS,
     KNOWN_NESTED_JURY_KEYS,
+    AgentSpec,
     ConfigError,
     _ci_from_dict,
     _context_from_dict,
@@ -244,6 +245,56 @@ class EffortValidation(unittest.TestCase):
             {"jury": {"rounds": 1, "chair": "a"}, "agent": [{"name": "a", "command": "x"}]}
         )
         self.assertIsNone(cfg.agents[0].effort)
+
+
+class TierValidation(unittest.TestCase):
+    """`[[agent]] tier` is `frontier` or `economical`, and nothing else (#714).
+
+    Hard, like `effort`, and for the same reason: an unknown spelling read as
+    the default would treat the seat as frontier — the opposite of what an
+    operator who wrote `tier = "cheap"` meant.
+    """
+
+    @staticmethod
+    def _with_tier(value):
+        agent = {"name": "a", "vendor": "anthropic", "command": "claude"}
+        if value is not None:
+            agent["tier"] = value
+        return {"jury": {"rounds": 1, "chair": "a"}, "agent": [agent]}
+
+    def test_the_two_kinds_are_accepted_case_insensitively(self):
+        for value, expected in (("frontier", "frontier"), ("Economical", "economical")):
+            with self.subTest(value=value):
+                data = self._with_tier(value)
+                self.assertEqual(validate_config(data), [])
+                self.assertEqual(_from_dict(data).agents[0].tier, expected)
+
+    def test_unset_means_frontier(self):
+        data = self._with_tier(None)
+        self.assertEqual(validate_config(data), [])
+        self.assertEqual(_from_dict(data).agents[0].tier, "frontier")
+
+    def test_an_unknown_kind_is_a_hard_error_naming_the_agent(self):
+        for value in ("cheap", 3, ""):
+            with self.subTest(value=value):
+                with self.assertRaises(ConfigError) as ctx:
+                    validate_config(self._with_tier(value))
+                self.assertIn(
+                    "agent 'a' tier must be one of frontier, economical", str(ctx.exception)
+                )
+
+    def test_the_spec_never_carries_an_unknown_spelling(self):
+        # The reader normalises on construction, so no rule downstream can be
+        # handed a tier the vocabulary does not have.
+        self.assertEqual(AgentSpec("a", "anthropic", tier=" ECONOMICAL ").tier, "economical")
+        self.assertEqual(AgentSpec("a", "anthropic", tier="cheap").tier, "frontier")
+
+    def test_economical_splits_the_cache_key_and_the_default_does_not(self):
+        base = _from_dict(self._with_tier(None))
+        explicit_default = _from_dict(self._with_tier("frontier"))
+        economical = _from_dict(self._with_tier("economical"))
+        self.assertEqual(config_hash(base), config_hash(explicit_default))
+        self.assertNotEqual(config_hash(base), config_hash(economical))
 
 
 class FailOnVocabulary(unittest.TestCase):

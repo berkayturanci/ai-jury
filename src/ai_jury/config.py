@@ -458,6 +458,9 @@ KNOWN_AGENT_KEYS = (
     "headers",
     # Reasoning effort (issue #662): mapped per vendor in adapters.effort_args.
     "effort",
+    # Cost tier (issue #714): what tiered routing reads to decide which seats
+    # sit on a routine diff and which one anchors it.
+    "tier",
 )
 
 #: Accepted values for ``[[agent]] effort`` / ``--effort`` (issue #662).
@@ -465,6 +468,13 @@ KNOWN_AGENT_KEYS = (
 #: validation stays free of any adapter import (``adapters`` imports ``config``).
 #: ``tests/test_adapters.py`` pins the two lists together.
 KNOWN_EFFORTS = ("low", "medium", "high")
+
+#: Accepted values for ``[[agent]] tier`` (issue #714). ``frontier`` is the
+#: default and the anchor-capable kind; ``economical`` is a seat tiered routing
+#: may put on a routine diff in place of the frontier seats it benches. The
+#: operator says which is which — no model-name heuristics.
+KNOWN_TIERS = ("frontier", "economical")
+DEFAULT_TIER = "frontier"
 
 
 class ConfigError(Exception):
@@ -851,6 +861,18 @@ def validate_config(data: dict, strict: bool = False) -> list:
                 f"{', '.join(KNOWN_EFFORTS)} (got {effort!r})."
             )
 
+        # Cost tier (hard when present and not a known kind, issue #714), for
+        # the reason `effort` is hard: `tier = "cheap"` would otherwise be read
+        # as the default and the seat silently treated as frontier — the exact
+        # opposite of what the operator wrote.
+        tier = agent.get("tier")
+        if tier is not None and (
+            not isinstance(tier, str) or tier.strip().lower() not in KNOWN_TIERS
+        ):
+            errors.append(
+                f"agent '{label}' tier must be one of {', '.join(KNOWN_TIERS)} (got {tier!r})."
+            )
+
         # Known vendor (soft). The warning names the CONSEQUENCE, not just the
         # fact: the fallback seat still runs, but it answers to `cli` at the
         # cross-vendor gate, so two of them are one vendor (issue #701).
@@ -932,12 +954,20 @@ class AgentSpec:
     # Read it through :attr:`adapter_key`, never directly: the fallback to the
     # vendor belongs in one place.
     adapter: str | None = None
+    # Cost tier (issue #714): "frontier" (default; may anchor a routed panel) or
+    # "economical" (seated on routine diffs in place of benched frontier seats).
+    # Normalised on construction like `vendor`; an unknown value is refused by
+    # `validate_config` and falls back to the default here so the reader never
+    # carries a spelling no rule knows.
+    tier: str = DEFAULT_TIER
 
     def __post_init__(self) -> None:
         # The single normalisation point. Every construction site — `_from_dict`,
         # `runagent`'s built-in templates, `cli`'s ad-hoc local seat, a test —
         # goes through it, so no reader downstream can be handed the raw form.
         self.vendor = normalise_vendor(self.vendor)
+        tier = str(self.tier).strip().lower() if isinstance(self.tier, str) else ""
+        self.tier = tier if tier in KNOWN_TIERS else DEFAULT_TIER
         # Same treatment for the adapter, and for the same reason (#701 r3):
         # `adapter = "CLI"` and `adapter = "cli"` name one protocol, so they must
         # be one string before any lookup sees them. A key that is *present* but
@@ -1271,6 +1301,8 @@ def _from_dict(data: dict) -> JuryConfig:
         prompt_mode_val = str(raw["prompt_mode"]) if raw.get("prompt_mode") else None
         raw_effort = raw.get("effort")
         effort_val = str(raw_effort).strip().lower() if isinstance(raw_effort, str) else None
+        raw_tier = raw.get("tier")
+        tier_val = str(raw_tier).strip().lower() if isinstance(raw_tier, str) else ""
         agents.append(
             AgentSpec(
                 name=raw["name"],
@@ -1289,6 +1321,7 @@ def _from_dict(data: dict) -> JuryConfig:
                 prompt_mode=prompt_mode_val,
                 headers=headers_dict,
                 effort=effort_val or None,
+                tier=tier_val or DEFAULT_TIER,
                 # Raw, like `vendor`: `AgentSpec.__post_init__` normalises both,
                 # and a second normalisation here would be a second place to keep
                 # in step (issue #701 r3, extended by #705).
@@ -1410,6 +1443,12 @@ def config_hash(config: JuryConfig) -> str:
                 # entry — stays byte-identical. The conditional is the point,
                 # not an optimisation: this change invalidates no one's cache.
                 **({"adapter": a.adapter_key} if a.adapter_key != a.vendor else {}),
+                # The tier decides which seats a routed panel keeps, so two
+                # benches that differ in it are not the same run (issue #714).
+                # Conditional for the reason `adapter` is: a seat with no `tier`
+                # means exactly what it meant before the key existed, so every
+                # existing cache entry stays byte-identical.
+                **({"tier": a.tier} if a.tier != DEFAULT_TIER else {}),
                 # Where the request goes and under whose key (issue #716). A
                 # provider-routing header — `X-Route: premium`, an OpenRouter
                 # `HTTP-Referer`, an Azure deployment selector — can put a
