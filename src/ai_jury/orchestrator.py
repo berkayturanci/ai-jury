@@ -90,6 +90,12 @@ def _run_with_retry(
     nonzero exit) is returned immediately. The returned result's ``attempts``
     records how many tries were made. Retrying stops early when the run budget is
     exhausted so a retry never overruns the total timeout.
+
+    The result is also stamped with the model id the adapter sent (issue #709).
+    This is one of exactly two places a seat is invoked — the other is ``jury
+    run-agent`` — so stamping here covers every phase of every run, and the
+    ballot quotes :attr:`AgentResult.model` instead of deriving a second answer
+    from the spec.
     """
     max_attempts = max(1, retries + 1)
     result = adapter.run(prompt, phase=phase, timeout=budget.call_timeout())
@@ -104,6 +110,7 @@ def _run_with_retry(
         result = adapter.run(prompt, phase=phase, timeout=budget.call_timeout())
         attempts += 1
     result.attempts = attempts
+    result.model = adapter.resolved_model()
     return result
 
 
@@ -150,6 +157,12 @@ class JuryOutcome:
     # Set when this outcome was served from the local result cache (issue #33),
     # so the report/metadata can mark it as cached rather than freshly computed.
     from_cache: bool = False
+    # The paths and symbols in the change the panel was shown (issue #710), so a
+    # ballot's ``Checked:`` line can be resolved against something instead of
+    # being accepted on shape alone. ``None`` means "this outcome was not built
+    # from a diff" — a hand-assembled outcome, a caller that never had one — and
+    # the scope rule then falls back to the structural test it applied before.
+    changed: largediff.ChangeIndex | None = None
 
 
 def _run_phase(
@@ -377,6 +390,10 @@ def run_jury(
     # finding/warning. We never act on them; the CI gate is derived from
     # structured consensus (see ci.evaluate_ci), so an injected "APPROVE"
     # cannot flip the verdict.
+    # Index the change AFTER redaction, so the index describes the same bytes the
+    # panel is shown and never carries a secret the diff no longer has (#710).
+    changed = largediff.change_index(diff)
+
     injection_hits = injection.scan_inputs(diff, context)
     injection_findings: list[Finding] = []
     if injection_hits:
@@ -678,6 +695,7 @@ def run_jury(
         budget_exhausted=budget_exhausted,
         rounds_executed=rounds_executed,
         stop_reason=stop_reason,
+        changed=changed,
     )
 
 
@@ -1153,6 +1171,9 @@ def _merge_chunk_outcomes(outcomes: list[JuryOutcome], config: JuryConfig) -> Ju
         budget_exhausted=budget_exhausted,
         rounds_executed=rounds_executed,
         stop_reason=f"chunked review across {len(outcomes)} part(s)",
+        # The whole change, not one chunk of it (#710): a reviewer that named a
+        # file from another chunk named a file in this change.
+        changed=largediff.merge_change_indexes([o.changed for o in outcomes]),
     )
 
 

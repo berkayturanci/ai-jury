@@ -33,6 +33,7 @@ from .config import JuryConfig, config_hash
 from .consensus import FindingGroup
 from .findings import Finding, Verdict
 from .injection import InjectionHit
+from .largediff import ChangeIndex
 from .orchestrator import JuryOutcome
 
 CACHE_SCHEMA = 1
@@ -145,6 +146,10 @@ def _agent_result(d: dict | None) -> AgentResult | None:
         warnings=list(d.get("warnings", [])),
         error_code=d.get("error_code"),
         attempts=d.get("attempts", 1),
+        # The id the invocation sent (#709). Restored so a cached ballot quotes
+        # the same string a fresh one does — the cache key already pins the
+        # config, so the id cannot have been anything else.
+        model=d.get("model", ""),
     )
 
 
@@ -166,6 +171,16 @@ def _hit(d: dict) -> InjectionHit:
         source=d.get("source", ""),
         line=d.get("line"),
         snippet=d.get("snippet", ""),
+    )
+
+
+def _change_index(d: dict | None) -> ChangeIndex | None:
+    """Rebuild a :class:`ai_jury.largediff.ChangeIndex`, or None for a legacy entry."""
+    if not isinstance(d, dict):
+        return None
+    return ChangeIndex(
+        paths=tuple(d.get("paths") or ()),
+        symbols=tuple(d.get("symbols") or ()),
     )
 
 
@@ -195,6 +210,10 @@ def outcome_from_dict(data: dict) -> JuryOutcome:
         rounds_executed=data.get("rounds_executed", 1),
         stop_reason=data.get("stop_reason", ""),
         from_cache=data.get("from_cache", False),
+        # What the change contained (#710). The cache key already pins the diff
+        # by digest, so a restored index describes the same bytes as the run
+        # that wrote it; a legacy entry has none and the scope rule falls back.
+        changed=_change_index(data.get("changed")),
     )
 
 

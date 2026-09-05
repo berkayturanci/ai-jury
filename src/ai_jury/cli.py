@@ -1566,6 +1566,9 @@ def _run_run_agent(rest: list[str], spawn=None, sleep=None, clock=None) -> int:
                 result = adapter.run(prompt, phase=policy.role, role_policy=policy)
         else:
             result = adapter.run(prompt, phase=policy.role, role_policy=policy)
+        # The second (and last) place a seat is invoked, so it records the id it
+        # sent exactly as the orchestrator's does (#709).
+        result.model = adapter.resolved_model()
         document = runagent.result_dict(spec, policy.role, result)
     except BaseException as exc:
         # A detached child that dies without writing leaves its run at
