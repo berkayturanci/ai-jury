@@ -942,6 +942,25 @@ class APathShapedTokenIsNeverReadAsASymbol(unittest.TestCase):
                 resolved, unresolved = resolve_stated_scope(token, changed)
                 self.assertEqual((resolved, unresolved), (["module.env()"], []), token)
 
+    def test_a_current_directory_segment_is_spelling_not_a_place(self):
+        """Round 10: `./ballots.py` and `src/./ai_jury/ballots.py` name the same
+        changed file as `ballots.py`, and were refused as not in the change."""
+        for token in ("./ballots.py", "src/./ai_jury/ballots.py", "./src/ai_jury/ballots.py"):
+            with self.subTest(token=token):
+                resolved, unresolved = resolve_stated_scope(token, _CHANGED)
+                self.assertEqual((len(resolved), unresolved), (1, []), token)
+
+    def test_a_long_extension_is_still_a_claim_that_failed(self):
+        """Round 10: `_path_shaped` calls every dotted name a path claim while the
+        name-shaped predicate accepted only a one-to-five-character suffix, so
+        `foo.kotlin` was refused as a path and then dropped as prose."""
+        changed = change_index(self._CALL_HUNK)
+        for token in ("foo.kotlin", "foo.gradle", "app.config", "foo.readme"):
+            with self.subTest(token=token):
+                self.assertEqual(resolve_stated_scope(token, changed), ([], [token]))
+                ballot = _reviewers_for(self._CALL_HUNK, f"Checked: {token}")[0]
+                self.assertEqual(ballot["abstention_cause"], "not_in_change", token)
+
     def test_a_wrapped_call_keeps_its_marker(self):
         """Round 8: the marker was looked for at the raw end, so wrapping
         parentheses hid it and then were stripped along with it."""

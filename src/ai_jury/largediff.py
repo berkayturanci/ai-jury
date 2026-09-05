@@ -464,7 +464,12 @@ class ChangeIndex:
         abstaining over it would discard real reviews. ``lots.py`` matches
         nothing: the boundary is what keeps a suffix from being a substring.
         """
-        candidate = (path or "").strip().strip("/")
+        # ``./ballots.py`` and ``src/./ai_jury/ballots.py`` name the same file as
+        # ``ballots.py``: a current-directory segment is spelling, not a place
+        # (#711 round 10), so it is dropped before the boundary match.
+        candidate = "/".join(
+            segment for segment in (path or "").strip().split("/") if segment not in ("", ".")
+        )
         if not candidate:
             return False
         for known in self.paths:

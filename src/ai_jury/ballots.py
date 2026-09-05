@@ -287,7 +287,12 @@ _PATH_LINE_RE = re.compile(r"^(?P<path>.+?):(?P<line>\d+(?:-\d+)?)$")
 #: prose and the ballot said the line named nothing, for a path the reviewer
 #: named exactly. Prose is untouched by it: a full stop that ends a sentence
 #: sits at the end of the piece before it, never at the start of the next.
-_NAME_SHAPED_RE = re.compile(r"[/\\]|\A\.[A-Za-z0-9]|\.[A-Za-z0-9]{1,5}$|\(\)$|_|[a-z0-9][A-Z]")
+# The dotted alternative accepts any suffix, not one of one to five characters:
+# :func:`_path_shaped` treats every dotted name without ``()`` as a path claim,
+# and the two predicates disagreeing put ``foo.kotlin`` in the wrong bucket —
+# refused as a path, then dropped as prose instead of reported as a claim that
+# failed (#711 round 10).
+_NAME_SHAPED_RE = re.compile(r"[/\\]|\A\.[A-Za-z0-9]|\.[A-Za-z0-9]+$|\(\)$|_|[a-z0-9][A-Z]")
 
 #: Anchor-forming characters, removed before an unresolved token is quoted in an
 #: abstention. See :func:`_deanchor`.
