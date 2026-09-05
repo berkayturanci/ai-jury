@@ -17,6 +17,7 @@ from ai_jury.largediff import (  # noqa: E402
     MODE_CHUNKED,
     MODE_FULL,
     MODE_TOO_LARGE,
+    _is_binary,
     plan_diff,
     split_diff,
 )
@@ -167,6 +168,104 @@ class FilterTest(unittest.TestCase):
         plan = plan_diff(diff, max_bytes=1_000_000, chunk=False, include=["src/*"])
         self.assertEqual(plan.kept_paths, ["src/a.py"])
         self.assertIn(("test/b.py", "not-in-include-filter"), plan.excluded)
+
+
+class BinaryMarkerAnchorTest(unittest.TestCase):
+    """The binary marker counts only at the true start of a line (issue #739).
+
+    Git writes ``Binary files … differ`` and ``GIT binary patch`` at column 0.
+    Every line inside a hunk carries a one-character prefix — ``+``, ``-``, or a
+    space for an unchanged context line — so a file's own *content* can never
+    reach column 0. The pattern used to allow leading whitespace, which ate a
+    context line's prefix and dropped the whole (text) file from the review.
+    """
+
+    # A hunk mentioning the marker, once per line prefix.
+    def _hunk(self, prefix: str, marker: str) -> str:
+        return (
+            "diff --git a/src/detect.py b/src/detect.py\n"
+            "--- a/src/detect.py\n+++ b/src/detect.py\n"
+            "@@ -1,2 +1,2 @@\n"
+            " unchanged\n"
+            f"{prefix}{marker}\n"
+        )
+
+    def test_files_differ_as_context_line_is_not_binary(self):
+        # The reported reproducer: a context line (single-space prefix).
+        diff = self._hunk(" ", "Binary files a/x b/x differ")
+        self.assertFalse(_is_binary(diff))
+        plan = plan_diff(diff, max_bytes=1_000_000, chunk=False)
+        self.assertEqual(plan.kept_paths, ["src/detect.py"])
+        self.assertEqual(plan.excluded, [])
+
+    def test_files_differ_as_added_line_is_not_binary(self):
+        # An added line is content too: the change that wrote it is exactly what
+        # the panel should be reviewing, not a reason to skip the file.
+        diff = self._hunk("+", "Binary files a/x b/x differ")
+        self.assertFalse(_is_binary(diff))
+        plan = plan_diff(diff, max_bytes=1_000_000, chunk=False)
+        self.assertEqual(plan.kept_paths, ["src/detect.py"])
+        self.assertEqual(plan.excluded, [])
+
+    def test_files_differ_as_removed_line_is_not_binary(self):
+        diff = self._hunk("-", "Binary files a/x b/x differ")
+        self.assertFalse(_is_binary(diff))
+
+    def test_files_differ_as_indented_context_line_is_not_binary(self):
+        # Indented source (a docstring line, a quoted sample) under a context
+        # prefix: still content, and the pattern must not skip that run of
+        # whitespace either.
+        diff = self._hunk(" ", "        Binary files a/x and b/x differ")
+        self.assertFalse(_is_binary(diff))
+        plan = plan_diff(diff, max_bytes=1_000_000, chunk=False)
+        self.assertEqual(plan.kept_paths, ["src/detect.py"])
+
+    def test_files_differ_at_line_start_is_binary(self):
+        # Verbatim ``git diff`` output for a real binary file.
+        diff = (
+            "diff --git a/img.png b/img.png\n"
+            "index b43761b..924b591 100644\n"
+            "Binary files a/img.png and b/img.png differ\n"
+        )
+        self.assertTrue(_is_binary(diff))
+        plan = plan_diff(diff, max_bytes=1_000_000, chunk=False)
+        self.assertEqual(plan.kept_paths, [])
+        self.assertEqual(plan.excluded, [("img.png", "binary")])
+
+    def test_git_binary_patch_as_context_line_is_not_binary(self):
+        diff = self._hunk(" ", "GIT binary patch")
+        self.assertFalse(_is_binary(diff))
+        plan = plan_diff(diff, max_bytes=1_000_000, chunk=False)
+        self.assertEqual(plan.kept_paths, ["src/detect.py"])
+        self.assertEqual(plan.excluded, [])
+
+    def test_git_binary_patch_as_added_line_is_not_binary(self):
+        diff = self._hunk("+", "GIT binary patch")
+        self.assertFalse(_is_binary(diff))
+
+    def test_git_binary_patch_at_line_start_is_binary(self):
+        # Verbatim ``git diff --binary`` output for a real binary file.
+        diff = (
+            "diff --git a/img.png b/img.png\n"
+            "index b43761b27df02a0c..924b591c4a57b481 100644\n"
+            "GIT binary patch\n"
+            "literal 12\n"
+            "TcmZQzWODX!^mBK0`Tq|94xj_;\n"
+        )
+        self.assertTrue(_is_binary(diff))
+        plan = plan_diff(diff, max_bytes=1_000_000, chunk=False)
+        self.assertEqual(plan.kept_paths, [])
+        self.assertEqual(plan.excluded, [("img.png", "binary")])
+
+    def test_marker_at_offset_zero_is_binary(self):
+        # ``^`` must anchor at the start of the string, not only after a newline:
+        # ``split_diff`` hands the detector a segment, not the whole diff.
+        self.assertTrue(_is_binary("Binary files a/x.png and b/x.png differ\n"))
+        self.assertTrue(_is_binary("GIT binary patch\nliteral 0\n"))
+
+    def test_marker_with_trailing_carriage_return_is_binary(self):
+        # A CRLF-normalised patch still ends the marker line at ``\r\n``.
+        self.assertTrue(_is_binary("diff --git a/x.png b/x.png\r\nBinary files a and b differ\r\n"))
 
 
 class ModeTest(unittest.TestCase):
