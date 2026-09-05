@@ -797,7 +797,7 @@ class AgentSpec:
             key = normalise_vendor(self.adapter)
             if not key:
                 raise ConfigError(
-                    unknown_adapter_error(self.adapter, f"agent {self.name!r}")
+                    unknown_adapter_error(self.adapter, self.name)
                     or f"agent {self.name!r}: adapter {self.adapter!r} names no protocol"
                 )
             self.adapter = key

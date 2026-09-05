@@ -631,9 +631,8 @@ class TheDoctorsReadinessEqualsTheRunsAcceptance(unittest.TestCase):
         "unset", so `run-agent` built the vendor's adapter and ran while a full run
         and `--doctor` refused the same file. The refusal is now at construction."""
         for raw in (7, "   ", ""):
-            with self.subTest(adapter=repr(raw)):
-                with self.assertRaises(ConfigError):
-                    AgentSpec(name="gpt", vendor="openai", command="ls", adapter=raw)
+            with self.subTest(adapter=repr(raw)), self.assertRaises(ConfigError):
+                AgentSpec(name="gpt", vendor="openai", command="ls", adapter=raw)
         with tempfile.TemporaryDirectory() as tmp:
             for raw in ("7", '"   "'):
                 config = Path(tmp) / "jury.toml"
@@ -691,12 +690,21 @@ class TheVocabularyIsOneVocabulary(unittest.TestCase):
         self.assertEqual(spec.adapter, "cli")
         self.assertEqual(spec.adapter_key, "cli")
 
-    def test_an_empty_adapter_falls_back_to_the_vendor(self):
-        for value in ("", "   ", None, 3):
+    def test_only_an_absent_adapter_falls_back_to_the_vendor(self):
+        """This used to assert that `""`, `"   "` and `3` fall back too. That was
+        the defect a reviewer found on #708: `validate_config` called those an
+        unknown adapter while the spec read them as unset, so `run-agent` — which
+        builds seats without validating — ran what a full run refused. Only the
+        key's absence means "the vendor's adapter" now."""
+        spec = AgentSpec(name="s", vendor="openai", adapter=None, command="codex")
+        self.assertIsNone(spec.adapter)
+        self.assertEqual(spec.adapter_key, "openai")
+        for value in ("", "   ", 3):
             with self.subTest(value=value):
-                spec = AgentSpec(name="s", vendor="openai", adapter=value, command="codex")
-                self.assertIsNone(spec.adapter)
-                self.assertEqual(spec.adapter_key, "openai")
+                with self.assertRaises(ConfigError) as caught:
+                    AgentSpec(name="s", vendor="openai", adapter=value, command="codex")
+                self.assertIn("agent 's'", str(caught.exception))
+                self.assertNotIn("agent 'agent", str(caught.exception))
 
     def test_the_helpers_agree_about_the_fallback(self):
         spec = AgentSpec(name="s", vendor="openai", adapter="cli", command="cursor-agent")
