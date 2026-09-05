@@ -263,11 +263,14 @@ tier = "economical"           # sits on routine diffs in place of the benched se
     frontier seats join the debate as cross-examiners (they receive every round-1
     review) and the chair for verification and synthesis is drawn from the
     frontier seats — the configured chair when it is one, else the first. Without
-    escalation the benched seats never run. A run with **one round** — which is
-    what `--auto` sets on the routine band that benched them, and what
-    `rounds = 1` sets outright — has no debate to join: escalation then moves
-    the chair and nothing else, and `escalation_reason` says so rather than
-    promising a debate that will not happen. What an escalated seat contributes is
+    escalation the benched seats never run. Some runs have **no debate to join**:
+    one round (which is what `--auto` sets on the `low` band that benched them),
+    or an adaptive run that converges after round 1 (`--auto` sets that on
+    `medium`). Escalation then moves the chair and nothing else.
+    `escalation_reason` is written **after** the debate section from what
+    actually happened — `gpt joined the debate`, or `no debate round ran, so
+    only the chair was escalated` — so the record can never claim a round the
+    run did not have. What an escalated seat contributes is
     a **debate** voice — `AGREE` / `DISPUTE` / `MISSED` on the reviews it is
     shown — which reaches the chair's verdict but is not parsed into structured
     findings; that is how the debate round has always worked, for every seat.

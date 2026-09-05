@@ -75,7 +75,7 @@ what decided who sat in round 1. Under `routing = "standard"` it is
 | `anchor` | The frontier seat kept on a routed panel, or `null` when the full panel ran. |
 | `reason` | One sentence naming the band, the count of economical seats, the anchor, the bench, and any floor (`min_vendors`, `min_reviews`) that pulled a seat back. |
 | `escalated` | Whether a `critical`/`major` finding after round 1 brought the benched seats into the debate and a frontier chair. |
-| `escalation_reason` | Why, or why not, in one sentence. |
+| `escalation_reason` | Why round 1 escalated, and what escalation then did — written after the debate section from what actually ran, so it names the seats that joined the debate or says only the chair was escalated. |
 
 The `reviewers` array below lists the seats that **ran**; a benched seat that
 never escalated is absent from it and present in `benched`, so the two together

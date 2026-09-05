@@ -155,19 +155,22 @@ def plan_panel(
     )
 
 
-def escalation_effect(names: list[str], debate_possible: bool) -> str:
-    """What escalation will actually do, in the run it is happening in.
+def escalation_effect(joined: list[str]) -> str:
+    """What escalation actually did, read off the run rather than predicted.
 
-    A run with one round has no debate to join: ``--auto`` sets exactly that on
-    a ``low``-risk diff, which is the band that benched the seats in the first
-    place, and an operator may write ``rounds = 1`` outright. Escalation still
-    moves the chair — verification and synthesis are a frontier seat reading the
-    diff and the findings — but the bench does not review, and saying it does
-    would be a record that lies about the run (#714, review round 1).
+    Called **after** the debate section, with the benched seats that produced a
+    debate result. Predicting this is what two review rounds caught: a
+    single-round run has no debate to join (``--auto`` sets exactly one round on
+    the ``low`` band that benched the seats), and an adaptive run can converge
+    after round 1 and skip the debate it was going to have (``--auto`` sets
+    ``early_stop`` on ``medium``). Escalation still moves the chair in both
+    cases — verification and synthesis are a frontier seat reading the diff and
+    the findings — but the bench did not review, and a record that says it did
+    is a record that lies about the run (#714, review rounds 1 and 2).
     """
-    if not debate_possible:
-        return "no debate round in this run, so only the chair is escalated"
-    return f"{', '.join(names)} join the debate"
+    if not joined:
+        return "no debate round ran, so only the chair was escalated"
+    return f"{', '.join(joined)} joined the debate"
 
 
 def should_escalate(groups) -> tuple[bool, str]:

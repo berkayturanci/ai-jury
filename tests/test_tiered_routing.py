@@ -304,7 +304,7 @@ class TieredRoutingRunsThePanelItPlans(unittest.TestCase):
         # promising a debate that never happens.
         outcome = orchestrator.run_jury(_tiered_config(rounds=1), ROUTINE_DIFF, mock=True)
         self.assertTrue(outcome.routing["escalated"])
-        self.assertIn("only the chair is escalated", outcome.routing["escalation_reason"])
+        self.assertIn("only the chair was escalated", outcome.routing["escalation_reason"])
         self.assertEqual(outcome.debate, [])
         self.assertEqual([r.agent for r in outcome.reviews], ["claude", "cheap"])
         self.assertEqual(outcome.chair, "claude")
@@ -322,24 +322,52 @@ class TieredRoutingRunsThePanelItPlans(unittest.TestCase):
         outcome = orchestrator.run_jury(config, ROUTINE_DIFF, mock=True, log=lines.append)
         self.assertEqual(outcome.debate, [])
         self.assertNotIn("gpt", {r.agent for r in outcome.reviews})
-        self.assertIn("only the chair is escalated", outcome.routing["escalation_reason"])
-        self.assertFalse(any("join the debate" in line for line in lines), lines)
+        self.assertIn("only the chair was escalated", outcome.routing["escalation_reason"])
+        self.assertFalse(any("joined the debate" in line for line in lines), lines)
         # The chair is still a frontier seat, so a frontier model reads the
         # findings in synthesis even though no debate ran.
         self.assertEqual(outcome.chair, "claude")
 
     def test_a_two_round_run_does_claim_and_run_the_debate(self):
         outcome = orchestrator.run_jury(_tiered_config(rounds=2), ROUTINE_DIFF, mock=True)
-        self.assertIn("gpt join the debate", outcome.routing["escalation_reason"])
+        self.assertIn("gpt joined the debate", outcome.routing["escalation_reason"])
         self.assertEqual([r.agent for r in outcome.debate], ["claude", "cheap", "gpt"])
 
-    def test_a_panel_too_small_to_debate_says_so_too(self):
-        # One seated seat cannot debate whatever the round count says.
-        config = _tiered_config(rounds=2, chair="cheap")
-        config.agents = [a for a in config.agents if a.name != "claude"]
-        config.agents[0].tier = "economical"
-        outcome = orchestrator.run_jury(config, ROUTINE_DIFF, mock=True)
-        self.assertEqual(outcome.routing["benched"], [])
+    def test_one_seated_review_still_gets_a_debate_because_the_bench_joins_it(self):
+        # A seated seat failing leaves one successful review, which alone
+        # cannot debate. The escalated frontier seat is the second voice: it
+        # cross-examines what the one review said, and the record says so.
+        real = orchestrator._run_phase
+
+        def one_seat_fails(adapters, prompt_for, phase, parallel, **kwargs):
+            results = real(adapters, prompt_for, phase, parallel, **kwargs)
+            if phase == "review":
+                for r in results:
+                    if r.agent == "cheap":
+                        r.ok = False
+                        r.output = ""
+            return results
+
+        with patch("ai_jury.orchestrator._run_phase", side_effect=one_seat_fails):
+            outcome = orchestrator.run_jury(_tiered_config(rounds=2), ROUTINE_DIFF, mock=True)
+        self.assertEqual(outcome.routing["benched"], ["gpt"])
+        self.assertTrue(outcome.routing["escalated"])
+        self.assertIn("gpt joined the debate", outcome.routing["escalation_reason"])
+        self.assertEqual([r.agent for r in outcome.debate], ["claude", "gpt"])
+
+    def test_an_adaptive_run_that_converges_says_the_bench_did_not_run(self):
+        # The other prediction that was wrong (review round 2): `--auto` sets
+        # early_stop on the `medium` band, and a unanimous panel converges after
+        # round 1 — so the debate the record was going to claim never runs.
+        config = _tiered_config(rounds=2)
+        config.early_stop = True
+        config.max_rounds = 3
+        with patch("ai_jury.convergence.review_convergence", return_value=(True, "unanimous")):
+            outcome = orchestrator.run_jury(config, ROUTINE_DIFF, mock=True)
+        self.assertEqual(outcome.debate, [])
+        self.assertTrue(outcome.routing["escalated"])
+        self.assertIn("only the chair was escalated", outcome.routing["escalation_reason"])
+        self.assertNotIn("gpt", {r.agent for r in outcome.reviews})
 
     def test_an_economical_chair_is_replaced_by_a_frontier_one_on_escalation(self):
         outcome = orchestrator.run_jury(_tiered_config(chair="cheap"), ROUTINE_DIFF, mock=True)

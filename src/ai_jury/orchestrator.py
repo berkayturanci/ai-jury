@@ -552,20 +552,14 @@ def run_jury(
     # the seats, so the record names the chair-only case rather than promising
     # a debate that will not happen (review round 1).
     round1_debaters = [a for a in round1 if any(r.agent == a.name and r.ok for r in reviews)]
-    debate_possible = len(round1_debaters) >= 2 and (
-        config.effective_max_rounds >= 2 if config.early_stop else config.rounds >= 2
-    )
     if benched:
         plan.escalated, plan.escalation_reason = routing.should_escalate(groups)
         if plan.escalated:
-            effect = routing.escalation_effect([a.name for a in benched], debate_possible)
-            plan.escalation_reason = f"{plan.escalation_reason}; {effect}"
             log(f"tiered routing: escalating — {plan.escalation_reason}")
     chair_pool = [a.name for a in round1]
     if plan.escalated:
         chair_pool = routing.frontier_names(specs, usable_names) or chair_pool
-        if debate_possible:
-            agent_order = agent_order + [a.name for a in benched]
+        agent_order = agent_order + [a.name for a in benched]
     chair_name = resolve_chair(config, chair_pool, reviewer_names, run_rng)
 
     # Round 2+: debate. Only agents whose round-1 review succeeded participate.
@@ -580,7 +574,7 @@ def run_jury(
     stop_reason = ""
     budget_exhausted = False
     debaters = round1_debaters
-    if plan.escalated and debate_possible:
+    if plan.escalated:
         # Benched frontier seats cross-examine: they receive every round-1
         # review as "the others" and answer in the debate format.
         debaters = debaters + benched
@@ -739,6 +733,18 @@ def run_jury(
         )
         if synthesis is not None:
             emit("synthesis", synthesis)
+
+    if plan.escalated:
+        # What escalation DID, read off the run (#714, review rounds 1 and 2).
+        # Predicting it was wrong twice: a single-round run has no debate to
+        # join — `--auto` sets exactly one round on the `low` band that benched
+        # the seats — and an adaptive run can converge after round 1 and skip
+        # the debate it was going to have. The benched seats that actually
+        # produced a debate result are the answer, whatever the reason.
+        bench_names = {a.name for a in benched}
+        joined = [r.agent for r in debate if r.agent in bench_names]
+        plan.escalation_reason = f"{plan.escalation_reason}; {routing.escalation_effect(joined)}"
+        log(f"tiered routing: {plan.escalation_reason}")
 
     return JuryOutcome(
         reviews=reviews,
