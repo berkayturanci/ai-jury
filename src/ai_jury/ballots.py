@@ -487,9 +487,22 @@ def _is_name_shaped(token: str, value: str) -> bool:
     token is the reviewer saying it is a name, and a claim that failed has to be
     reported as one rather than dropped as connective prose.
     """
+    if _is_abbreviation(token.rstrip(_TRAIL_EDGE)):
+        return False
     if _NAME_SHAPED_RE.search(token):
         return True
     return any(f"{o}{token}{c}" in (value or "") for o, c in (("`", "`"), ('"', '"'), ("“", "”")))
+
+
+def _is_abbreviation(base: str) -> bool:
+    """``e.g``, ``i.e``, ``a.k.a`` — a dotted token whose every segment is one
+    character (pure). The trail strip leaves a dot inside it, and it is neither
+    a file nor a symbol: no file is named that way, and reading it as a path
+    claim reported a reviewer's aside as a file not in the change (#711 round
+    11). One predicate, consulted by both :func:`_path_shaped` and
+    :func:`_is_name_shaped`, so the two cannot disagree about it."""
+    segments = base.split(".")
+    return len(segments) > 1 and all(len(segment) == 1 for segment in segments)
 
 
 def _path_shaped(base: str) -> bool:
@@ -501,7 +514,11 @@ def _path_shaped(base: str) -> bool:
     so the rule is now the reviewer's own punctuation: ``module.function()``
     names code, ``module.function`` and ``foo.proto`` name a file.
     """
-    return "/" in base or base.startswith(".") or ("." in base and not base.endswith("()"))
+    if "/" in base or base.startswith("."):
+        return True
+    if "." not in base or base.endswith("()"):
+        return False
+    return not _is_abbreviation(base)
 
 
 def _token_resolves(token: str, changed: Any) -> bool:

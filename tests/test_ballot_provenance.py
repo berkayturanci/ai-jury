@@ -961,6 +961,23 @@ class APathShapedTokenIsNeverReadAsASymbol(unittest.TestCase):
                 ballot = _reviewers_for(self._CALL_HUNK, f"Checked: {token}")[0]
                 self.assertEqual(ballot["abstention_cause"], "not_in_change", token)
 
+    def test_a_latin_abbreviation_is_prose_not_an_absent_path(self):
+        """Round 11: `e.g.` loses its trailing dot to the trail strip and `e.g`
+        then read as a dotted path claim, so a reviewer's aside was reported as
+        a file that is not in the change."""
+        changed = change_index(self._CALL_HUNK)
+        for line in (
+            "Checked: e.g. the tests",
+            "Checked: i.e. nothing",
+            "Checked: a.k.a. everything",
+        ):
+            with self.subTest(line=line):
+                ballot = _reviewers_for(self._CALL_HUNK, line)[0]
+                self.assertEqual(ballot["abstention_cause"], "named_nothing", line)
+        self.assertEqual(resolve_stated_scope("e.g", changed), ([], []))
+        # A real dotted file with one-character segments and an extension is still a path claim.
+        self.assertEqual(resolve_stated_scope("a.b.py", changed), ([], ["a.b.py"]))
+
     def test_a_wrapped_call_keeps_its_marker(self):
         """Round 8: the marker was looked for at the raw end, so wrapping
         parentheses hid it and then were stripped along with it."""
