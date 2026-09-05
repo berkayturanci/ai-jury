@@ -341,11 +341,11 @@ A structured report with these top-level keys:
 
 | Key | Description |
 | --- | --- |
-| `schema_version` | Version of this JSON schema (currently `1.1`). |
+| `schema_version` | Version of this JSON schema (currently `1.2`). |
 | `metadata` | Run metadata (agents, rounds, context mode, redaction stats, wall-clock proxy). |
 | `findings` | All raw findings; each carries `severity`, `file`, `line`, `claim`, `evidence`, `suggested_fix`, `confidence`, `reviewer`. |
 | `consensus` | Per consensus group: `representative` finding, `agreement` count, `reviewers`, `bucket`, `verification_status`. |
-| `reviewers` | Per-panelist ballots — who said what, with vendor/model provenance — plus the chair. See [the report-format contract](docs/report-format.md#per-reviewer-ballots-reviewers). |
+| `reviewers` | Per-panelist ballots — who said what, what they read (`scope`), what they ran (`testing`), with vendor/model provenance — plus the chair. See [the report-format contract](docs/report-format.md#per-reviewer-ballots-reviewers). |
 | `verdicts` | Verification verdicts (`file`, `line`, `claim`, `status`, `reasoning`). |
 | `verdict` | The chair synthesis text, if any. |
 
@@ -371,16 +371,23 @@ chaired and whether its ballot is in the bundle, so a chair that reviewed is not
 indistinguishable from one that only synthesised. `--min-reviews N` requires a
 review count and names a shortfall before the panel runs.
 
+Every record **names what it read**: `scope` carries the reviewer's own `Checked:`
+line, the files it attached to its findings, or the claims it raised, and
+`testing` carries what it ran or says plainly that nothing was. A reviewer whose
+reply names nothing checkable is recorded as an `ABSTAIN` whose scope says why,
+never as an `APPROVE` with a placeholder — an agent that named nothing did not
+review.
+
 ```json
 [
   {
     "reviewer": "claude",
     "verdict": "REQUEST_CHANGES",
-    "scope": "Named 1 file(s): src/example.py.",
+    "scope": "Checked, as stated by the reviewer: `src/example.py`. Named 1 file(s): `src/example.py`.",
     "findings": [
       {"severity": "major", "path": "src/example.py", "line": 42, "message": "..."}
     ],
-    "testing": "not stated",
+    "testing": "Tested, as stated by the reviewer: python -m pytest tests/test_example.py — 12 passed",
     "vendor": "anthropic",
     "model": "claude-sonnet-4-5"
   }

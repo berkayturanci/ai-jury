@@ -20,6 +20,26 @@ claims, vendor/model provenance and durations. Never raw diff text, prompt text
 or secrets. Free-text lifted out of an agent's reply (``scope``, ``testing``) is
 attacker-influenced, so it is flattened to a single line and length-capped before
 it leaves this module.
+
+**A ballot has to name something** (issue #700). Every ballot of a real run read
+``scope: "Reviewed the supplied diff; named no specific file."``, ``testing:
+"not stated"``, ``model: ""`` — and on a tier whose review *is* the panel, those
+ballots were the whole review. The consumer refuses a hand-posted verdict shaped
+like that (:data:`_SCOPE_ANCHORS` mirrors the rule: a path, a ``path:line``, a
+backticked symbol, a called identifier, or a "checked …" clause), precisely
+because a verdict naming nothing cannot be told apart from one never performed.
+So the placeholder is gone in three directions:
+
+* the review prompt asks the reviewer for its own ``Checked:`` / ``Tested:``
+  lines, rather than this module inferring coverage from whatever prose landed;
+* a scope that still names nothing is not written — the ballot is reported as an
+  :data:`ABSTAIN` whose scope states *why*, because an agent that returned
+  nothing useful must not be counted as one that reviewed;
+* ``model`` is never blank: it is the model id actually requested of the agent
+  that answered, or a statement that the CLI's default was used and the CLI does
+  not report which model that was. A ballot naming its vendor but not its model
+  cannot answer whether the same model sat twice, which is the whole product of
+  a cross-vendor panel.
 """
 
 from __future__ import annotations
@@ -43,8 +63,25 @@ ABSTAIN = "ABSTAIN"
 #: ``reviewer`` / ``name`` used for the chair's entry.
 CHAIR_NAME = "chair"
 
-#: Placeholder for a panelist that stated no verification.
-NOT_STATED = "not stated"
+#: What ``testing`` says when the reviewer named no verification at all. It says
+#: it plainly rather than shrugging: "not stated" reads like a field nobody
+#: filled in, and a reader cannot tell that apart from a reviewer that ran
+#: nothing and said so (#700). Both are "no verification was run"; only one of
+#: them used to be legible.
+NOT_STATED = "Nothing run: this reviewer named no command, test run or reproduction."
+
+#: ``model`` for an agent whose CLI was invoked with no model id pinned. Filled
+#: in from the agent's command so the field states the situation instead of
+#: being blank — "which model answered" has an honest answer here, and it is
+#: "the CLI's default, which the CLI does not report".
+_CLI_DEFAULT_MODEL = "{command} default (the CLI does not report which model answered)"
+
+#: Where a ballot's ``model`` came from, as one machine token, so a consumer can
+#: tell a real model id from a statement about one without parsing prose.
+MODEL_REQUESTED = "requested"  # an id was pinned (or mapped from `effort`) and sent
+MODEL_CLI_DEFAULT = "cli_default"  # nothing pinned; the CLI chose, and does not say
+MODEL_UNKNOWN = "unknown"  # the answering slot has no spec in this config
+MODEL_NONE = "none"  # there is no agent in this slot at all (an unchaired run)
 
 #: Caps on free text lifted out of agent output. A reviewer's reply is
 #: attacker-influenced, so a forged 100 kB "scope" must not become the bulk of a
@@ -70,6 +107,31 @@ _TESTING_RE = re.compile(
     r"verified|verification|tested)\b",
     re.IGNORECASE,
 )
+
+#: The two lines :mod:`ai_jury.prompts` asks every reviewer to open with. Matched
+#: after the line has been flattened and stripped of list/heading/emphasis
+#: markers, so ``- **Checked:** src/a.py`` and ``Checked: src/a.py`` both land.
+_STATED_SCOPE_RE = re.compile(r"^checked\s*\**\s*:\s*\**\s*(.+)$", re.IGNORECASE)
+_STATED_TESTING_RE = re.compile(r"^tested\s*\**\s*:\s*\**\s*(.+)$", re.IGNORECASE)
+
+#: A concrete thing a review points at, as the downstream consumer defines it —
+#: a path, a ``path:line``, a backticked symbol, or a called identifier. This is
+#: a test for *structure*, never a judgement about whether the review was any
+#: good; it distinguishes a review from a receipt. Kept deliberately identical
+#: to the consumer's own rule (keel's ``review-verdict-insubstantial``): a scope
+#: this tool is happy with but the consumer rejects is the defect in #700, and
+#: the only way the two cannot drift is for the same shapes to be listed here.
+_SCOPE_ANCHORS = (
+    re.compile(r"[\w./-]+\.[A-Za-z0-9]{1,5}:\d+"),  # path/to/file.py:42
+    re.compile(r"[\w-]+/[\w./-]+\.[A-Za-z0-9]{1,5}\b"),  # src/ai_jury/thing.py
+    re.compile(r"`[^`\n]{2,}`"),  # `a_symbol`, `--a-flag`
+    re.compile(r"\b\w+\.\w+\(\)"),  # module.function()
+)
+
+#: The escape hatch the consumer's rule keeps, and this one keeps with it: a
+#: genuinely clean review ("checked X, Y and Z; found nothing") is a real
+#: outcome and must not be forced to invent a file reference.
+_CHECKED_CLAUSE_RE = re.compile(r"\bchecked\b[^.\n]{8,}", re.IGNORECASE)
 
 
 def normalize_verdict(verdict: str) -> str:
@@ -146,46 +208,226 @@ def _files_named(findings: list) -> list[str]:
     return seen
 
 
-def describe_scope(result: Any, findings: list) -> str:
-    """One-paragraph summary of what a panelist covered (pure, deterministic).
+def scope_is_substantive(scope: str) -> bool:
+    """Does this scope name something a reader could go and check? (pure)
 
-    Built from the files the panelist actually named in its structured findings
-    plus any "checked / examined / reviewed" clauses in its prose. Both halves
-    are optional: a clean review names no file and may still say what it looked
-    at, and a terse reviewer may name files and say nothing. With neither, the
-    scope states the reviewer's actual position (the whole diff, nothing named)
-    rather than fabricating coverage it never claimed.
+    The gate between a ballot and an abstention. Note what it does *not* do: it
+    never asks whether the review was correct, thorough or agreeable — it cannot,
+    and trying would make this a critic. It asks only whether the text points at
+    anything, which is the single question separating "this agent reviewed the
+    diff" from "this agent returned a string".
     """
-    files = _files_named(findings)
+    text = (scope or "").strip()
+    if not text:
+        return False
+    return bool(_CHECKED_CLAUSE_RE.search(text)) or any(p.search(text) for p in _SCOPE_ANCHORS)
+
+
+def _tick(text: str) -> str:
+    """One concrete token, backticked for a scope line.
+
+    Two jobs, and the second is why this is not an f-string at the call site.
+    Backticks make the token an anchor under :data:`_SCOPE_ANCHORS`, so a scope
+    built from a bare filename (``notes.md`` — no directory, so it matches none
+    of the path shapes) still names something checkable. And the token is
+    attacker-influenced, so its own backticks are stripped first: otherwise a
+    crafted path could close the quoting and forge structure around it.
+    """
+    return "`" + flatten_inline(text).replace("`", "").strip() + "`"
+
+
+def _stated_line(result: Any, pattern: re.Pattern[str]) -> str:
+    """The value of the first ``Checked:``/``Tested:`` line in the reply (pure).
+
+    The reviewer's own statement of its coverage, which beats anything this
+    module can infer from prose — inference is exactly how a ballot that named
+    nothing still shipped a scope sentence (#700). Fenced blocks are skipped as
+    everywhere else here, and the value is flattened and capped before use.
+    """
+    for raw in _prose_lines(getattr(result, "output", "")):
+        line = flatten_inline(raw).strip().lstrip("-*#> ").strip()
+        match = pattern.match(line)
+        if match:
+            value = match.group(1).strip().strip("*").strip()
+            if value:
+                return value[:_CLAUSE_MAX]
+    return ""
+
+
+def _free_clauses(result: Any) -> list[str]:
+    """Candidate prose clauses with the reviewer's own stated lines removed.
+
+    ``Checked: …`` matches the coverage pattern, so without this the stated line
+    is folded in twice — once quoted as the reviewer's statement and once again
+    as an inferred clause — and the second copy is unquoted, which is how a
+    crafted path gets into the scope without :func:`_tick` seeing it.
+    """
+    return [
+        clause
+        for clause in _clauses(getattr(result, "output", ""))
+        if not _STATED_SCOPE_RE.match(clause) and not _STATED_TESTING_RE.match(clause)
+    ]
+
+
+def _claims_named(findings: list) -> list[str]:
+    """Distinct claims a reviewer raised, for a review that attached no file.
+
+    Not decoration: under ``--issue`` every finding carries ``file: ""`` by
+    construction, so the file list is empty for a reviewer that did real work.
+    Its claims are what it named, and naming them keeps an issue-mode ballot out
+    of the abstention branch it does not belong in.
+    """
+    seen: list[str] = []
+    for f in findings:
+        claim = flatten_inline(getattr(f, "claim", "") or "").strip()
+        if claim and claim not in seen:
+            seen.append(claim[:_CLAUSE_MAX])
+    return seen
+
+
+def describe_scope(result: Any, findings: list) -> str:
+    """What this panelist named that it read — or ``""`` when it named nothing.
+
+    Pure and deterministic. Four sources, most authoritative first:
+
+    1. the reviewer's own ``Checked:`` line, which the review prompt asks for;
+    2. the distinct files it attached to its structured findings;
+    3. up to three "checked / examined / reviewed" clauses from its prose;
+    4. failing a file, the claims it raised (an issue-mode review names no file).
+
+    An empty return is the meaningful case and the reason this no longer emits a
+    sentence unconditionally: with nothing from any of the four, the honest
+    output is *nothing*, and the caller turns that into an abstention. The old
+    fallback — "Reviewed the supplied diff; named no specific file." — asserted
+    coverage from the absence of evidence for it, and read identically whether
+    the agent had reviewed all 17 files or returned an empty string.
+    """
     parts: list[str] = []
+    stated = _stated_line(result, _STATED_SCOPE_RE)
+    if stated:
+        parts.append(f"Checked, as stated by the reviewer: {_tick(stated)}.")
+    files = _files_named(findings)
     if files:
-        listed = ", ".join(files[:_FILES_LISTED])
+        listed = ", ".join(_tick(f) for f in files[:_FILES_LISTED])
         more = len(files) - _FILES_LISTED
         suffix = f" (+{more} more)" if more > 0 else ""
         parts.append(f"Named {len(files)} file(s): {listed}{suffix}.")
-    else:
-        parts.append("Reviewed the supplied diff; named no specific file.")
-    parts.extend(_matching(_clauses(getattr(result, "output", "")), _COVERAGE_RE, _SCOPE_CLAUSES))
-    return " ".join(parts)
+    parts.extend(_matching(_free_clauses(result), _COVERAGE_RE, _SCOPE_CLAUSES))
+    if not files:
+        claims = _claims_named(findings)
+        if claims:
+            listed = ", ".join(_tick(c) for c in claims[:_FILES_LISTED])
+            more = len(claims) - _FILES_LISTED
+            suffix = f" (+{more} more)" if more > 0 else ""
+            parts.append(f"Raised {len(claims)} finding(s) against no file: {listed}{suffix}.")
+    scope = " ".join(parts)
+    return scope if scope_is_substantive(scope) else ""
+
+
+def _no_scope_reason(result: Any) -> str:
+    """Why nothing checkable could be lifted from this slot (pure).
+
+    Every caller passes a slot from :func:`participating`, so there is no
+    "no result" case to describe: a slot that returned nothing at all is not a
+    ballot and never reaches here.
+    """
+    if not getattr(result, "ok", False):
+        return "its adapter reported failure and what came back named nothing"
+    if is_abstention(getattr(result, "output", "")):
+        return "it returned an empty reply or a refusal rather than a review"
+    return "its reply named no file, symbol, coverage clause or finding"
+
+
+def abstention_scope(result: Any) -> str:
+    """The scope of a ballot that could not state one: the reason, in the field.
+
+    Deliberately anchorless — no path, no backticked symbol, no "checked …"
+    clause — so a consumer applying the same substance rule reaches the same
+    conclusion this module did instead of being talked past it. The record is
+    here to say *nothing was reviewed*; dressing it up to survive the gate would
+    reinstate the defect with better prose.
+    """
+    name = flatten_inline(getattr(result, "agent", "") or "").strip() or "this reviewer"
+    return (
+        f"Abstention: no scope can be stated for '{name}' because "
+        f"{_no_scope_reason(result)}. Recorded as an abstention rather than an "
+        f"approval — an agent that named nothing did not review, and counting it "
+        f"as one that did is the difference between a panel and a receipt."
+    )
 
 
 def describe_testing(result: Any) -> str:
-    """The panelist's stated verification, or :data:`NOT_STATED`.
+    """What this panelist ran to verify its claims, or :data:`NOT_STATED`.
 
-    Lifted verbatim (flattened and capped) from the reviewer's own prose rather
-    than summarized: a testing claim carried downstream as evidence must be the
-    reviewer's words, not this module's paraphrase of them.
+    The reviewer's ``Tested:`` line first, then any verification clause in its
+    prose. Both are lifted verbatim (flattened and capped) rather than
+    summarized: a testing claim carried downstream as evidence must be the
+    reviewer's words, not this module's paraphrase of them. With neither, the
+    field says plainly that nothing was run — which is a statement about the
+    review, where "not stated" was a statement about the field.
     """
-    clause = _first_matching(_clauses(getattr(result, "output", "")), _TESTING_RE)
+    stated = _stated_line(result, _STATED_TESTING_RE)
+    if stated:
+        return f"Tested, as stated by the reviewer: {stated}"
+    clause = _first_matching(_free_clauses(result), _TESTING_RE)
     return clause or NOT_STATED
 
 
-def _model_for(config: Any, agent_name: str) -> str:
-    """Effective model for an agent slot ("" when the CLI's default is used)."""
+def _spec_for(config: Any, agent_name: str) -> Any:
     for spec in getattr(config, "agents", []) or []:
         if spec.name == agent_name:
-            return spec.model or ""
-    return ""
+            return spec
+    return None
+
+
+def requested_model(spec: Any) -> str:
+    """The model id this agent's CLI was actually asked for (``""`` for none).
+
+    ``spec.model`` is what the operator wrote down, but it is not always what
+    was sent: for a vendor that encodes reasoning effort *in the model id*, the
+    ``effort`` knob rewrites it, and a ballot reporting the unmapped id would
+    name a model the run never asked for. :func:`ai_jury.adapters.effort_args` is
+    pure and is the one place that mapping lives, so it is called rather than
+    re-derived. An effort level it rejects degrades to the configured id — a bad
+    config value is ``validate_config``'s to refuse, never a ballot's to crash on.
+    """
+    from .adapters import effort_args
+
+    configured = (getattr(spec, "model", "") or "").strip()
+    try:
+        plan = effort_args(
+            getattr(spec, "vendor", "") or "", getattr(spec, "effort", None), configured
+        )
+    except ValueError:
+        return configured
+    return (getattr(plan, "model", "") or configured or "").strip()
+
+
+def describe_model(config: Any, agent_name: str) -> tuple[str, str]:
+    """``(model, source)`` for the agent that answered in this slot.
+
+    Never the empty string for a slot that has an agent. An empty ``model`` was
+    the provenance half of #700: a ballot naming ``vendor: "openai"`` and
+    ``model: ""`` cannot answer "was that the same model as the other seat", and
+    provenance is the entire product of a cross-vendor panel. Where the CLI was
+    invoked with no id pinned there *is* an honest answer — the CLI's own
+    default, which the CLI does not report back — so the field says that instead
+    of going blank and letting a reader guess which of the two it meant.
+
+    ``source`` is the same fact as one machine token, so a consumer can tell an
+    id from a statement about one without parsing English.
+    """
+    name = (agent_name or "").strip()
+    if not name:
+        return "", MODEL_NONE
+    spec = _spec_for(config, name)
+    if spec is None:
+        return f"unknown (no agent named '{name}' in this run's config)", MODEL_UNKNOWN
+    model = requested_model(spec)
+    if model:
+        return model, MODEL_REQUESTED
+    command = (getattr(spec, "command", "") or getattr(spec, "vendor", "") or name).strip()
+    return _CLI_DEFAULT_MODEL.format(command=command), MODEL_CLI_DEFAULT
 
 
 def _vendor_for(config: Any, agent_name: str) -> str:
@@ -223,10 +465,22 @@ def _stance_by_reviewer(outcome: Any, names: list[str], mode: str) -> dict[str, 
     return {b.reviewer: normalize_verdict(b.vote) for b in result.ballots}
 
 
-def _verdict_for(result: Any, stances: dict[str, str]) -> str:
+def _verdict_for(result: Any, stances: dict[str, str], *, scoped: bool) -> str:
+    """This panelist's stance, or :data:`ABSTAIN` (pure).
+
+    ``scoped`` is the third way to abstain and the one #700 added: a slot that
+    exited 0, said something, and named nothing checkable. The other two — a
+    failed adapter, an empty reply or a refusal — were already here, and this is
+    the same principle applied one step further out. A reviewer whose scope is
+    empty raised no findings either, so the tally would have handed it the clear
+    stance (``APPROVE``/``READY``): an approval inferred from silence, which is
+    precisely what :mod:`ai_jury.voting` refuses to do (#251).
+    """
     if not getattr(result, "ok", False):
         return ABSTAIN
     if is_abstention(getattr(result, "output", "")):
+        return ABSTAIN
+    if not scoped:
         return ABSTAIN
     return stances.get(getattr(result, "agent", ""), ABSTAIN)
 
@@ -266,10 +520,10 @@ def reviewer_ballots(
     """The JSON report's ``reviewers`` array: one ballot per panelist, then the chair.
 
     Panelist entries carry ``name``, ``role: "panelist"``, ``chaired``,
-    ``vendor``, ``model``, ``verdict``, ``findings`` (indexes into the report's
-    top-level ``findings`` array), ``round1_ok``, ``verified_count`` and
-    ``duration_s``. The chair's entry is the one carrying ``role: "chair"`` and is
-    always last.
+    ``vendor``, ``model``, ``model_source``, ``verdict``, ``scope``, ``testing``,
+    ``findings`` (indexes into the report's top-level ``findings`` array),
+    ``round1_ok``, ``verified_count`` and ``duration_s``. The chair's entry is the
+    one carrying ``role: "chair"`` and is always last.
 
     ``role`` is what a consumer splits on: the ``chair`` entry is the panel's
     consensus record and every ``panelist`` entry is a ballot, and only the
@@ -278,6 +532,11 @@ def reviewer_ballots(
     without them a reader cannot tell that the ``claude`` ballot and the
     ``chair`` record are the same agent, nor whether that agent contributed a
     ballot at all — and a reader who guesses drops a review the panel cast.
+
+    ``scope`` and ``testing`` live here rather than only in the bundle (#700) so
+    that the two renderings are the same text by construction: the JSON report
+    said who voted and the bundle said what they read, and a reader comparing
+    them had no guarantee the second described the first.
     """
     slots = participating(outcome)
     names = [getattr(r, "agent", "") for r in slots]
@@ -288,21 +547,42 @@ def reviewer_ballots(
     entries: list[dict] = []
     for r in slots:
         name = getattr(r, "agent", "")
+        chaired = bool(chair_name) and name == chair_name
+        indexes = [i for i, f in enumerate(all_findings) if f.reviewer == name]
+        scope = describe_scope(r, [all_findings[i] for i in indexes])
+        scoped = bool(scope)
+        if not scoped:
+            scope = abstention_scope(r)
+        elif chaired:
+            # Said on the ballot as well as on the chair record, because the two
+            # are read in different places: a consumer that posts one verdict per
+            # review shows this text on its own, with no chair record beside it.
+            scope += (
+                " This reviewer also chaired the run (verification and synthesis);"
+                " this ballot is one of the panel's reviews, and the chair record"
+                " is the panel's consensus rather than a further review."
+            )
+        model, model_source = describe_model(config, name)
         entries.append(
             {
                 "name": name,
                 "role": "panelist",
-                "chaired": bool(chair_name) and name == chair_name,
+                "chaired": chaired,
                 "vendor": getattr(r, "vendor", "") or "",
-                "model": _model_for(config, name),
-                "verdict": _verdict_for(r, stances),
-                "findings": [i for i, f in enumerate(all_findings) if f.reviewer == name],
+                "model": model,
+                "model_source": model_source,
+                "verdict": _verdict_for(r, stances, scoped=scoped),
+                "scope": scope,
+                "testing": describe_testing(r),
+                "findings": indexes,
                 "round1_ok": bool(getattr(r, "ok", False)),
                 "verified_count": _verified_count(outcome, name),
                 "duration_s": round(float(getattr(r, "duration_s", 0.0) or 0.0), 3),
             }
         )
 
+    chair_model, chair_model_source = describe_model(config, chair_name)
+    verify = getattr(outcome, "verify", None)
     entries.append(
         {
             "name": CHAIR_NAME,
@@ -315,8 +595,11 @@ def reviewer_ballots(
             "ballot_counted": any(e["chaired"] for e in entries),
             "reviews_supplied": len(entries),
             "vendor": _vendor_for(config, chair_name),
-            "model": _model_for(config, chair_name),
+            "model": chair_model,
+            "model_source": chair_model_source,
             "verdict": chair_verdict(outcome, vote),
+            "scope": _chair_scope(outcome, entries),
+            "testing": describe_testing(verify) if verify is not None else NOT_STATED,
         }
     )
     return entries
@@ -367,9 +650,16 @@ def _chair_role_sentence(chair_agent: str, chaired_ballot: dict | None) -> str:
 
 
 def _chair_scope(outcome: Any, panelists: list[dict]) -> str:
+    """What the chair's synthesis covered (pure).
+
+    Backticked file names, like every other scope here (#700): the chair record
+    is a verdict too, and a consumer applying one substance rule applies it to
+    this record as well. The chairing agent's name is already backticked by
+    :func:`_chair_role_sentence`, so a chaired run anchors either way.
+    """
     groups = getattr(outcome, "groups", []) or []
     files = _files_named([g.representative for g in groups])
-    listed = ", ".join(files[:_FILES_LISTED]) if files else "no specific file"
+    listed = ", ".join(_tick(f) for f in files[:_FILES_LISTED]) if files else "no specific file"
     more = len(files) - _FILES_LISTED
     suffix = f" (+{more} more)" if more > 0 else ""
     chair_agent = getattr(outcome, "chair", "") or ""
@@ -390,50 +680,29 @@ def keel_reviews(outcome: Any, config: Any, *, vote: Any = None, mode: str = "co
     where ``findings`` are ``{severity, path, line, message}`` objects — the shape
     a consumer of head-pinned per-reviewer verdicts accepts. Pure: the caller
     serializes it.
+
+    A projection of :func:`reviewer_ballots`, not a second derivation of the same
+    facts (#700). Every field but ``findings`` is renamed or copied straight
+    across, so the verdict the JSON report shows for a panelist and the verdict
+    the consumer is handed for it cannot disagree — and neither can the scope
+    that is supposed to justify it.
     """
     ballots = reviewer_ballots(outcome, config, vote=vote, mode=mode)
-    by_name = {getattr(r, "agent", ""): r for r in participating(outcome)}
     all_findings = list(getattr(outcome, "findings", []) or [])
 
     records: list[dict] = []
-    panelists = [b for b in ballots if b.get("role") != "chair"]
-    for b in panelists:
-        result = by_name.get(b["name"])
-        own = [all_findings[i] for i in b["findings"]]
-        scope = describe_scope(result, own)
-        if b.get("chaired"):
-            # Said on the ballot as well as on the chair record, because the two
-            # are read in different places: a consumer that posts one verdict per
-            # review shows this text on its own, with no chair record beside it.
-            scope += (
-                " This reviewer also chaired the run (verification and synthesis);"
-                " this ballot is one of the panel's reviews, and the chair record"
-                " below is the panel's consensus rather than a further review."
-            )
+    for b in ballots:
+        chair = b.get("role") == "chair"
+        own = _chair_findings(outcome) if chair else [all_findings[i] for i in b["findings"]]
         records.append(
             {
                 "reviewer": b["name"],
                 "verdict": b["verdict"],
-                "scope": scope,
+                "scope": b["scope"],
                 "findings": [_keel_finding(f) for f in own],
-                "testing": describe_testing(result),
+                "testing": b["testing"],
                 "vendor": b["vendor"],
                 "model": b["model"],
             }
         )
-
-    chair = ballots[-1]
-    verify = getattr(outcome, "verify", None)
-    chair_testing = describe_testing(verify) if verify is not None else NOT_STATED
-    records.append(
-        {
-            "reviewer": chair["name"],
-            "verdict": chair["verdict"],
-            "scope": _chair_scope(outcome, panelists),
-            "findings": [_keel_finding(f) for f in _chair_findings(outcome)],
-            "testing": chair_testing,
-            "vendor": chair["vendor"],
-            "model": chair["model"],
-        }
-    )
     return records

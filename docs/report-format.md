@@ -75,6 +75,15 @@ reads an identical document; `tests/test_formats.py::BackwardCompatibility` pins
 that field for field. `schema_version` moved `1.0` → `1.1` to signal the addition.
 Markdown and SARIF output are unchanged.
 
+v1.2 ([#700]) adds `scope`, `testing` and `model_source` to each entry, and is a
+version bump rather than a silent addition because it also **changes what `model`
+means**: it was the configured model id or `""` when the CLI's own default was in
+force, and it is now never empty for a slot that has an agent. A consumer testing
+`model == ""` to detect the default case reads `model_source == "cli_default"`
+instead. Every top-level key, and every other `reviewers` key, is unchanged.
+
+[#700]: https://github.com/berkayturanci/ai-jury/issues/700
+
 One entry per panelist that **returned output**, in the stable panel order, then
 the chair:
 
@@ -82,17 +91,20 @@ the chair:
 | --- | --- |
 | `name` | The agent slot's name, as configured. |
 | `vendor` | The adapter's vendor (`anthropic`, `openai`, …). |
-| `model` | The effective model id, or `""` when the CLI's own default is in force. |
+| `model` | The model id actually requested of that agent's CLI — the configured id, remapped when the vendor encodes reasoning effort in the id — or, where no id was pinned, a statement that the CLI's own default answered and that the CLI does not report which model that was. Never empty for a slot that has an agent. |
+| `model_source` | The same fact as one machine token, so a consumer need not parse English: `requested` (an id was pinned and sent), `cli_default` (nothing pinned; the CLI chose and does not say), `unknown` (the answering slot has no spec in this run's config), `none` (no agent in the slot at all — an unchaired run). |
 | `verdict` | That panelist's own round-1 stance (see below). |
+| `scope` | What that panelist named that it read, or — when it named nothing checkable — an abstention stating why. Derived as in the `keel-reviews` table below; the two renderings are the same text by construction. |
+| `testing` | What that panelist said it ran, or a statement that nothing was run. |
 | `findings` | Indexes into the report's top-level `findings` array. |
 | `round1_ok` | Did the adapter report success? Adapters fail soft, so a slot can carry a review *and* a nonzero exit. |
 | `verified_count` | Consensus groups this reviewer contributed to that the verifier upheld. |
 | `duration_s` | Wall-clock seconds for that slot's round-1 review. |
 
 The chair's entry is the one carrying `role: "chair"`, is always **last**, and
-carries only `name` (`"chair"`), `role`, `vendor`, `model` and `verdict` — the
-run's final verdict, which is the panel vote under `--decision vote` and
-otherwise the label the chair opened its synthesis with.
+carries `name` (`"chair"`), `role`, `vendor`, `model`, `model_source`, `scope`,
+`testing` and `verdict` — the run's final verdict, which is the panel vote under
+`--decision vote` and otherwise the label the chair opened its synthesis with.
 
 ### How a ballot's verdict is derived
 
@@ -107,10 +119,19 @@ Verdicts are emitted as a single machine token: the markdown report's
 `REQUEST CHANGES` is `REQUEST_CHANGES` here, `NEEDS-INFO` is `NEEDS_INFO`.
 
 There is a fourth value, `ABSTAIN`, for a slot that returned output but did not
-review — an empty reply, a refusal, or an adapter that failed. **A non-answer is
-not an approval** (issue #251): the vote tally drops such a reviewer from the
-tally entirely, and a ballot list that has to name every slot names the
-abstention rather than inventing a stance for it.
+review — an empty reply, a refusal, an adapter that failed, or (since [#700]) a
+reply that exited 0 and **named nothing checkable**. **A non-answer is not an
+approval** (issue #251): the vote tally drops such a reviewer from the tally
+entirely, and a ballot list that has to name every slot names the abstention
+rather than inventing a stance for it.
+
+The fourth cause is the same principle one step further out. A reviewer whose
+reply names no file, symbol, coverage clause or finding raised no findings
+either, so the tally would hand it the clear stance (`APPROVE`/`READY`) — an
+approval inferred from silence, which is exactly what #251 refuses. Its `scope`
+carries the reason, and is deliberately **anchorless** — no path, no backticked
+symbol, no "checked …" clause — so a consumer applying the same substance rule to
+the record reaches the same conclusion rather than being talked past it by prose.
 
 ## The `keel-reviews` bundle
 
@@ -122,11 +143,19 @@ per panelist that returned output, plus the chair as `reviewer: "chair"`:
 | --- | --- |
 | `reviewer` | The panelist's name, or `"chair"`. |
 | `verdict` | The ballot verdict above (a single token). |
-| `scope` | One paragraph: the distinct files that panelist named in its structured findings (capped at 8, with a `(+N more)` tail), followed by up to three "checked / examined / inspected / reviewed" clauses lifted from its prose. The chair's record additionally names the agent that chaired, says whether that agent's own ballot is in the bundle, states how many reviews the bundle carries and that this record is not one of them; the ballot cast by the chairing agent says so on its own scope too. |
+| `scope` | One paragraph naming what that panelist read, from four sources, most authoritative first: its own `Checked:` line (which the review prompt asks every reviewer to open with); the distinct files it attached to its structured findings (capped at 8, with a `(+N more)` tail); up to three "checked / examined / inspected / reviewed" clauses from its prose; and, failing a file, the claims it raised — under `--issue` every finding carries an empty `file`, so a reviewer that did real work names claims rather than paths. A reply that yields **none** of the four has no scope: the record becomes an `ABSTAIN` whose scope states why. The chair's record additionally names the agent that chaired, says whether that agent's own ballot is in the bundle, states how many reviews the bundle carries and that this record is not one of them; the ballot cast by the chairing agent says so on its own scope too. |
 | `findings` | That panelist's own findings as `{severity, path, line, message}` — ai-jury's `file` → `path`, `claim` → `message`. The chair carries the consensus-group representatives the verifier did **not** reject. |
-| `testing` | The panelist's stated verification, lifted verbatim from its prose, or `"not stated"`. The chair's comes from the verification round. |
+| `testing` | The panelist's own `Tested:` line, else the first verification clause in its prose — both lifted verbatim (flattened and capped), because a testing claim carried downstream as evidence must be the reviewer's words and not a paraphrase. With neither, it says plainly that nothing was run. The chair's comes from the verification round. |
 | `vendor` | The adapter's vendor. |
-| `model` | The effective model id (`""` when the CLI default is in force). |
+| `model` | As in the `reviewers` table above: the id actually requested, or a statement that the CLI's default answered and the CLI does not report which. |
+
+**Where the scope comes from: both — asked for, and derived.** The review prompt
+asks every reviewer to open with a `Checked:` / `Tested:` pair and says that a
+ballot naming nothing checkable is recorded as an abstention, so the reviewer's
+own statement of its coverage is the first source and beats anything inferred.
+Derivation stays as the floor, because a prompt is a request and not a guarantee:
+a reviewer that ignores the instruction but attaches files to its findings still
+produces a scope. Only a reply that satisfies neither abstains. ([#700])
 
 `scope` and `testing` are the only fields lifted from free text, and reviewer
 output is attacker-influenced. Both are therefore flattened to a single line,

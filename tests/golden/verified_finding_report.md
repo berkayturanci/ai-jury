@@ -85,6 +85,8 @@ REQUEST CHANGES — one confirmed major issue.
 
 ### `claude` (anthropic) — 0s
 
+Checked: src/example.py
+Tested: nothing run (offline mock reviewer)
 - **[major]** `src/example.py:42` — claude: unchecked return value may swallow an error.
 - **[minor]** `src/example.py:7` — claude: missing docstring.
 
@@ -97,6 +99,8 @@ REQUEST CHANGES — one confirmed major issue.
 
 ### `codex` (openai) — 0s
 
+Checked: src/example.py
+Tested: nothing run (offline mock reviewer)
 - **[major]** `src/example.py:42` — codex: unchecked return value may swallow an error.
 - **[minor]** `src/example.py:7` — codex: missing docstring.
 
@@ -109,6 +113,8 @@ REQUEST CHANGES — one confirmed major issue.
 
 ### `agy` (google) — 0s
 
+Checked: src/example.py
+Tested: nothing run (offline mock reviewer)
 - **[major]** `src/example.py:42` — agy: unchecked return value may swallow an error.
 - **[minor]** `src/example.py:7` — agy: missing docstring.
 
@@ -166,7 +172,7 @@ REQUEST CHANGES — one confirmed major issue.
 
 ### 💰 Run Economics (estimated)
 
-- total tokens (est): ~7,279 · cost (est): ~$0.0177 USD
+- total tokens (est): ~7,330 · cost (est): ~$0.0179 USD
 
 _Wall-clock seconds and token counts are approximate cost proxies (no direct billing telemetry is extracted from CLIs), not guaranteed dollar costs._
 

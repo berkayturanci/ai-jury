@@ -27,7 +27,17 @@ from .metadata import build_run_metadata
 #: 1.1 (issue #663) ADDED the top-level ``reviewers`` array. Nothing was removed,
 #: renamed or reshaped, so every existing consumer of ``findings``/``consensus``/
 #: ``verdicts``/``verdict``/``metadata`` reads an identical document.
-JSON_SCHEMA_VERSION = "1.1"
+#:
+#: 1.2 (issue #700) adds ``scope``, ``testing`` and ``model_source`` to each
+#: ``reviewers`` entry — and, the reason this is a version bump rather than a
+#: silent addition, CHANGES what ``reviewers[].model`` means. It was "the
+#: configured model id, or ``""`` when the CLI's default is in force"; it is now
+#: never empty for a slot that has an agent, carrying either the id actually
+#: requested or a statement that the CLI chose and does not report which. A
+#: consumer testing ``model == ""`` to detect the default case must read
+#: ``model_source == "cli_default"`` instead. Every top-level key, and every
+#: other ``reviewers`` key, is unchanged.
+JSON_SCHEMA_VERSION = "1.2"
 
 #: Canonical SARIF schema URI and version emitted by :func:`to_sarif`.
 SARIF_SCHEMA = "https://json.schemastore.org/sarif-2.1.0.json"

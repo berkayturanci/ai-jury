@@ -1897,6 +1897,12 @@ class MockAdapter(Adapter):
         n = self.name
         if phase == "review":
             body = (
+                # The two lines the review prompt asks every reviewer to open
+                # with (#700). The mock speaks the shape a real reviewer is asked
+                # for, so `--mock` exercises the scope/testing lift rather than
+                # only the inference fallback behind it.
+                "Checked: src/example.py\n"
+                "Tested: nothing run (offline mock reviewer)\n"
                 f"- **[major]** `src/example.py:42` — {n}: unchecked return value "
                 f"may swallow an error.\n"
                 f"- **[minor]** `src/example.py:7` — {n}: missing docstring.\n\n"
