@@ -31,6 +31,10 @@ errors (exit `2`).
 - **Warnings** (fail only under `--strict-config`): unknown vendor, `chair` not
   matching an enabled agent, unknown top-level/section/agent keys, a non-string
   `headers` value (it is coerced to a string and sent).
+  - Unknown keys are reported at *every* level, including inside the nested
+    `[jury.ci]`, `[jury.context]` and `[jury.diff]` tables, with the dotted path
+    that locates them: `unknown key 'jury.ci.min_vendor'`. A key nobody reads is
+    a setting that is silently not applied, so `--strict-config` refuses it.
 
 ### The vendor vocabulary
 

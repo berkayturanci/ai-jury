@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sys
 import tomllib
 import unittest
@@ -16,8 +17,16 @@ import tempfile  # noqa: E402
 from ai_jury.config import (  # noqa: E402
     DEFAULT_CONFIG,
     KNOWN_AGENT_KEYS,
+    KNOWN_CI_KEYS,
+    KNOWN_CONTEXT_KEYS,
+    KNOWN_DIFF_KEYS,
     KNOWN_EFFORTS,
+    KNOWN_JURY_KEYS,
+    KNOWN_NESTED_JURY_KEYS,
     ConfigError,
+    _ci_from_dict,
+    _context_from_dict,
+    _diff_from_dict,
     _from_dict,
     config_hash,
     load_config,
@@ -613,6 +622,185 @@ class EndpointValidation(unittest.TestCase):
             w = validate_config(self._local("http://gpu-box.internal:8000/v1"))
         self.assertTrue(any("not loopback" in x for x in w), w)
         self.assertTrue(any("cleartext" in x or "plaintext" in x for x in w), w)
+
+
+class _RecordingTable(dict):
+    """A config table that records every key a ``*_from_dict`` reader asks for.
+
+    This is how the ``KNOWN_*_KEYS`` tuples are pinned to reality: they are
+    derived from the dataclass fields, but what an operator may legitimately
+    write is whatever the READER reads. Should a reader ever grow an alias (an
+    old key name kept working, say) the tuple would still list only the fields
+    and the alias would start warning as if it were a typo. Recording the reads
+    catches that divergence at the one place it can be seen.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.read: set = set()
+
+    def get(self, key, default=None):
+        self.read.add(key)
+        return super().get(key, default)
+
+    def __getitem__(self, key):
+        self.read.add(key)
+        return super().__getitem__(key)
+
+
+class NestedJuryTableUnknownKeys(unittest.TestCase):
+    """Issue #719: a typo inside `[jury.ci]`/`[jury.context]`/`[jury.diff]` warns.
+
+    The unknown-key check used to stop at the top level: `[jury] roundz` warned,
+    but `[jury.ci] min_vendor = 3` — the cross-vendor gate, one `s` short — was
+    read by nobody, dropped by `_ci_from_dict`, and passed `--config-validate
+    --strict-config` clean while the panel ran on the default of 2.
+    """
+
+    @staticmethod
+    def _with_nested(table, body):
+        return {
+            "jury": {"rounds": 1, "chair": "a", table: body},
+            "agent": [{"name": "a", "vendor": "anthropic", "command": "claude"}],
+        }
+
+    def test_ci_typo_warns_with_the_dotted_path(self):
+        # The reported reproduction: `min_vendors` minus its `s`.
+        w = validate_config(self._with_nested("ci", {"min_vendor": 3}))
+        self.assertEqual(len(w), 1, w)
+        self.assertIn("unknown key 'jury.ci.min_vendor'", w[0])
+        self.assertIn("min_vendors", w[0])
+
+    def test_context_typo_warns_with_the_dotted_path(self):
+        w = validate_config(self._with_nested("context", {"redact_secretz": False}))
+        self.assertEqual(len(w), 1, w)
+        self.assertIn("unknown key 'jury.context.redact_secretz'", w[0])
+        self.assertIn("redact_secrets", w[0])
+
+    def test_diff_typo_warns_with_the_dotted_path(self):
+        w = validate_config(self._with_nested("diff", {"max_bytez": 10}))
+        self.assertEqual(len(w), 1, w)
+        self.assertIn("unknown key 'jury.diff.max_bytez'", w[0])
+        self.assertIn("max_bytes", w[0])
+
+    def test_the_issue_reproduction_now_warns_once_per_typo(self):
+        data = {
+            "jury": {
+                "rounds": 1,
+                "chair": "a",
+                "ci": {"min_vendor": 3, "fail_onn": ["critical"]},
+                "context": {"redact_secretz": False},
+                "diff": {"max_bytez": 10},
+            },
+            "agent": [{"name": "a", "vendor": "anthropic", "command": "claude"}],
+        }
+        self.assertEqual(len(validate_config(data)), 4)
+
+    def test_strict_promotes_a_nested_typo_to_an_error(self):
+        for table, body in (
+            ("ci", {"min_vendor": 3}),
+            ("context", {"redact_secretz": False}),
+            ("diff", {"max_bytez": 10}),
+        ):
+            with self.subTest(table=table):
+                with self.assertRaises(ConfigError) as ctx:
+                    validate_config(self._with_nested(table, body), strict=True)
+                self.assertIn(f"jury.{table}.", str(ctx.exception))
+
+    def test_every_known_nested_key_is_accepted(self):
+        for table, keys in KNOWN_NESTED_JURY_KEYS.items():
+            with self.subTest(table=table):
+                # Values that pass the per-key shape rules; only the NAMES matter.
+                body = {key: [] if key in ("fail_on", "exclude", "include") else 1 for key in keys}
+                self.assertEqual(validate_config(self._with_nested(table, body)), [])
+
+    def test_an_empty_nested_table_is_accepted(self):
+        for table in KNOWN_NESTED_JURY_KEYS:
+            with self.subTest(table=table):
+                self.assertEqual(validate_config(self._with_nested(table, {})), [])
+
+    def test_a_non_table_is_left_to_the_shape_check(self):
+        # `[jury.ci] = "critical"` is already a hard error; the unknown-key loop
+        # must not iterate the string and emit one warning per character.
+        with self.assertRaises(ConfigError) as ctx:
+            validate_config(self._with_nested("ci", "critical"))
+        message = str(ctx.exception)
+        self.assertIn("[jury.ci] must be a table", message)
+        self.assertNotIn("unknown key", message)
+
+    def test_a_non_table_context_warns_about_nothing(self):
+        # `[jury.context]` has no shape check of its own (that is a separate
+        # concern); the point here is that the loop skips it silently rather
+        # than reporting each character as an unknown key.
+        self.assertEqual(validate_config(self._with_nested("context", "expanded")), [])
+
+    def test_the_known_key_tuples_match_what_the_readers_read(self):
+        for reader, known in (
+            (_ci_from_dict, KNOWN_CI_KEYS),
+            (_context_from_dict, KNOWN_CONTEXT_KEYS),
+            (_diff_from_dict, KNOWN_DIFF_KEYS),
+        ):
+            with self.subTest(reader=reader.__name__):
+                table = _RecordingTable()
+                reader(table)
+                self.assertEqual(table.read, set(known))
+
+    def test_the_tables_are_exactly_the_nested_ones_jury_reads(self):
+        # Every other `KNOWN_JURY_KEYS` member is a scalar, so this dict is the
+        # complete set of sub-tables a typo could disappear into.
+        defaults = _from_dict({"jury": {}, "agent": []})
+        nested = {
+            name
+            for name in KNOWN_JURY_KEYS
+            if hasattr(getattr(defaults, name, None), "__dataclass_fields__")
+        }
+        self.assertEqual(nested, set(KNOWN_NESTED_JURY_KEYS))
+
+
+#: `jury.toml` examples live in these two docs; both are copy-pasted by readers.
+_DOCS_WITH_JURY_TOML = ("configuration.md", "parameters.md")
+_TOML_FENCE_RE = re.compile(r"```toml\n(.*?)```", re.DOTALL)
+#: A documented `[jury…]` fragment rarely declares its own panel; supply one so
+#: the block is judged on its own keys, not on "no agents configured".
+_STAND_IN_AGENT = {"name": "claude", "vendor": "anthropic", "command": "claude"}
+
+
+def _documented_jury_blocks() -> list:
+    """Every fenced ```toml block in the docs that configures a `[jury…]` table."""
+    docs = Path(__file__).resolve().parent.parent / "docs"
+    blocks = []
+    for name in _DOCS_WITH_JURY_TOML:
+        text = (docs / name).read_text(encoding="utf-8")
+        for index, match in enumerate(_TOML_FENCE_RE.finditer(text)):
+            body = match.group(1)
+            if "[jury" in body:
+                blocks.append((f"{name} toml block #{index}", body))
+    return blocks
+
+
+class DocumentedExamplesAreStrictClean(unittest.TestCase):
+    """Every documented `[jury…]` example survives `--strict-config` (#719).
+
+    Nested-table validation is only safe to add if the documentation is not
+    itself teaching keys the validator will now reject, and the check is worth
+    keeping afterwards: a doc that drifts from the schema hands the reader a
+    config that fails the very gate the doc told them to run.
+    """
+
+    def test_the_docs_contain_jury_examples_to_check(self):
+        # Guard the regex itself: silently matching nothing would make the
+        # assertion below vacuous.
+        blocks = _documented_jury_blocks()
+        self.assertTrue(blocks)
+        for name in _DOCS_WITH_JURY_TOML:
+            self.assertTrue(any(label.startswith(name) for label, _ in blocks), name)
+
+    def test_every_documented_jury_block_validates_under_strict(self):
+        for label, body in _documented_jury_blocks():
+            with self.subTest(block=label):
+                data = tomllib.loads(body)
+                data.setdefault("agent", [dict(_STAND_IN_AGENT)])
+                self.assertEqual(validate_config(data, strict=True), [])
 
 
 if __name__ == "__main__":
