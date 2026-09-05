@@ -449,8 +449,13 @@ verbatim when that is what you need.
 `agent`, `vendor`, `model`, `role`, `transport` (`cli`/`api`/`local`), `text`,
 `exit_code`, `duration_s`, `timed_out`, `error_code`, `error`, and
 `attribution` (`vendor`, `model`, and a `label` of `agent:<vendor>` plus a
-versionless `model:<base>`). Exit codes: `0` ran and produced output, `1` ran
-and failed, `2` the request was refused.
+versionless `model:<base>`). `model` — and the `model` inside `attribution`,
+which is the same string — is the id the invocation **sent**, which is not
+always the configured one: an `effort` level encoded as a model-id suffix, or
+an adapter that fell back after checking the vendor's live listing, changes it.
+The configured id is reported only when the run recorded no id at all. Exit
+codes: `0` ran and produced output, `1` ran and failed, `2` the request was
+refused.
 
 ### Other subcommands
 
