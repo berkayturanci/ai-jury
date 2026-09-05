@@ -23,6 +23,7 @@ from ai_jury.config import (  # noqa: E402
     config_hash,
     validate_config,
 )
+from ai_jury.diffprofile import profile_diff  # noqa: E402
 
 SAMPLE_DIFF = "diff --git a/a.py b/a.py\n@@ -0,0 +1 @@\n+x = 1\n"
 HINT_MARKER = "SENTINEL-HINT-715"
@@ -314,6 +315,52 @@ class TieredRoutingRunsThePanelItPlans(unittest.TestCase):
         orchestrator.run_jury(_tiered_config(), ROUTINE_DIFF, mock=True, log=lines.append)
         self.assertTrue(any(line.startswith("tiered routing: risk=low") for line in lines), lines)
         self.assertTrue(any("escalating" in line for line in lines), lines)
+
+
+class ChunkingDoesNotDowngradeTheBand(unittest.TestCase):
+    """A chunk of a big change is not a routine change (#714).
+
+    `review_diff` reviews an over-size diff chunk by chunk, and each chunk on
+    its own can look small enough to bench the frontier seats — on exactly the
+    change they were kept for. The band is computed once, on the whole filtered
+    diff, and threaded through every chunk.
+    """
+
+    @staticmethod
+    def _big_diff(files=6, lines=90):
+        parts = []
+        for i in range(files):
+            body = "".join(f"+line {n}\n" for n in range(lines))
+            parts.append(f"diff --git a/f{i}.py b/f{i}.py\n@@ -0,0 +1,{lines} @@\n{body}")
+        return "".join(parts)
+
+    def _config(self):
+        config = _tiered_config()
+        config.diff.chunk = True
+        config.diff.max_bytes = 400
+        config.diff.chunk_max_bytes = 400
+        return config
+
+    def test_a_chunked_high_risk_diff_still_seats_the_full_panel(self):
+        diff = self._big_diff()
+        self.assertEqual(profile_diff(diff).risk, "high")
+        # Any single chunk, on its own, is not high risk.
+        one_file = diff.split("diff --git")[1]
+        self.assertNotEqual(profile_diff("diff --git" + one_file).risk, "high")
+        outcome, plan = orchestrator.review_diff(self._config(), diff, mock=True)
+        self.assertEqual(plan.mode, "chunked")
+        self.assertEqual(outcome.routing["risk"], "high")
+        self.assertEqual(outcome.routing["benched"], [])
+        self.assertEqual(sorted(r.agent for r in outcome.reviews), ["cheap", "claude", "gpt"])
+
+    def test_the_merged_record_reports_escalation_from_any_chunk(self):
+        # The mock reviewer reports a major finding on every chunk, so the
+        # merged record says the run escalated and why.
+        config = self._config()
+        config.diff.max_bytes = 100_000  # one chunk, routine band
+        outcome, _plan = orchestrator.review_diff(config, ROUTINE_DIFF, mock=True)
+        self.assertEqual(outcome.routing["risk"], "low")
+        self.assertTrue(outcome.routing["escalated"])
 
 
 class TieredRoutingReachesTheReports(unittest.TestCase):

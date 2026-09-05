@@ -330,6 +330,7 @@ def run_jury(
     budget: RunBudget | None = None,
     on_event=None,
     mode: str = "code",
+    risk: str | None = None,
 ) -> JuryOutcome:
     # Jury mode (issue #221): "code" (default) reviews a diff with the code-review
     # rubric; "issue" reviews a GitHub issue's prose for completeness/clarity.
@@ -452,7 +453,13 @@ def run_jury(
         plan = routing.plan_panel(
             specs,
             usable_names,
-            profile_diff(diff).risk,
+            # The band of the WHOLE change when the caller has one. A chunked
+            # review calls this once per chunk (#31), and a chunk of a large or
+            # security-touching diff can look routine on its own — routing the
+            # panel off it would bench the frontier seats on exactly the change
+            # they were kept for. `review_diff` profiles the filtered diff once
+            # and threads the answer through every chunk.
+            risk if risk is not None else profile_diff(diff).risk,
             chair=config.chair,
             min_vendors=int(getattr(config.ci, "min_vendors", 0) or 0),
             min_reviews=int(getattr(config.ci, "min_reviews", 0) or 0),
@@ -1279,6 +1286,21 @@ def _merge_chunk_outcomes(outcomes: list[JuryOutcome], config: JuryConfig) -> Ju
         # The whole change, not one chunk of it (#710): a reviewer that named a
         # file from another chunk named a file in this change.
         changed=largediff.merge_change_indexes([o.changed for o in outcomes]),
+        # Every chunk routed off the same band and the same bench, so the first
+        # chunk's plan describes the run; escalation is true when ANY chunk
+        # escalated, because the benched seats really did review by then.
+        routing={
+            **base.routing,
+            "escalated": any(o.routing.get("escalated") for o in outcomes),
+            "escalation_reason": next(
+                (
+                    o.routing.get("escalation_reason", "")
+                    for o in outcomes
+                    if o.routing.get("escalated")
+                ),
+                base.routing.get("escalation_reason", ""),
+            ),
+        },
     )
 
 
@@ -1358,6 +1380,10 @@ def review_diff(
     if redact_on and ctx_mode != "diff-only" and context:
         context, context_redactions = redact(context)
 
+    # One band for the whole change, computed on the filtered diff the panel
+    # will actually see, so every chunk routes off the same answer (#714).
+    whole_risk = profile_diff(diff).risk if config.routing == routing.MODE_TIERED else None
+
     def _run(chunk: str) -> JuryOutcome:
         return run_jury(
             config,
@@ -1371,6 +1397,7 @@ def review_diff(
             log=log,
             budget=shared_budget,
             on_event=on_event,
+            risk=whole_risk,
         )
 
     def _finalize(outcome: JuryOutcome) -> JuryOutcome:
