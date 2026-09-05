@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import tomllib
 from dataclasses import dataclass, field
+from dataclasses import fields as dataclass_fields
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -404,6 +405,9 @@ KNOWN_JURY_KEYS = (
     "timeout",
     "parallel",
     "verify",
+    # Nested tables. The keys inside them are checked too, against
+    # `KNOWN_NESTED_JURY_KEYS` — defined below, beside the dataclasses it
+    # derives them from (issue #719).
     "ci",
     "context",
     "seed",
@@ -427,7 +431,7 @@ KNOWN_JURY_KEYS = (
     # Animated theater view defaults (rendering-only; issue #364).
     "theater",
     "theater_style",
-    # Large-diff handling (issue #31).
+    # Large-diff handling (issue #31); a nested table, like `ci`/`context`.
     "diff",
     # Risk-aware tiered model routing (issue #524) and the static-analysis
     # pre-pass (issue #523). Both are read by `_from_dict` and documented in
@@ -545,6 +549,30 @@ def validate_config(data: dict, strict: bool = False) -> list:
             warnings.append(
                 f"unknown key 'jury.{key}' (expected one of {', '.join(KNOWN_JURY_KEYS)})."
             )
+
+    # Unknown keys INSIDE the nested `[jury.*]` tables (soft, issue #719).
+    #
+    # The loop above stops at the table names: it sees `jury.ci` and is happy.
+    # `_ci_from_dict`/`_context_from_dict`/`_diff_from_dict` then take the keys
+    # they know and drop the rest, so `[jury.ci] min_vendor = 3` (the
+    # cross-vendor gate, one `s` short) passed `--config-validate
+    # --strict-config` clean and the panel ran on the default of 2. Same soft
+    # severity as the top level — the config still loads, it just does not mean
+    # what it says — with the dotted path in the message so the operator is
+    # told which table to look in.
+    #
+    # A non-table is skipped here and left to the shape checks below, which
+    # already say `[jury.ci] must be a table`; iterating a string would produce
+    # one warning per character.
+    for table, known_nested in KNOWN_NESTED_JURY_KEYS.items():
+        nested = jury.get(table)
+        if not isinstance(nested, dict):
+            continue
+        for key in nested:
+            if key not in known_nested:
+                warnings.append(
+                    f"unknown key 'jury.{table}.{key}' (expected one of {', '.join(known_nested)})."
+                )
 
     # rounds >= 1 (hard).
     rounds = jury.get("rounds", 1)
@@ -958,6 +986,34 @@ class DiffConfig:
     exclude_generated: bool = True
     exclude: list[str] = field(default_factory=list)
     include: list[str] = field(default_factory=list)
+
+
+#: Known keys inside each nested ``[jury.*]`` table (issue #719).
+#:
+#: Every one is DERIVED from the dataclass the matching ``*_from_dict`` reader
+#: builds, rather than written out a second time, so a new field cannot be added
+#: to ``CiConfig``/``ContextConfig``/``DiffConfig`` and leave this list behind —
+#: which is how the top-level ``KNOWN_JURY_KEYS`` list has drifted before (#715).
+#: The readers happen to accept exactly their dataclass's field names and no
+#: aliases; ``tests/test_config_validation.py`` pins each tuple to the keys its
+#: reader actually reads, so an alias added later must be added here too.
+#:
+#: These live here, below the dataclasses, rather than beside ``KNOWN_JURY_KEYS``
+#: because deriving them needs the classes to exist. ``validate_config`` reads
+#: them at call time, so the ordering in the module is not a problem.
+KNOWN_CI_KEYS = tuple(f.name for f in dataclass_fields(CiConfig))
+KNOWN_CONTEXT_KEYS = tuple(f.name for f in dataclass_fields(ContextConfig))
+KNOWN_DIFF_KEYS = tuple(f.name for f in dataclass_fields(DiffConfig))
+
+#: The nested ``[jury.*]`` tables ``_from_dict`` reads, and the keys each one
+#: knows. ``ci``/``context``/``diff`` are the complete set: every other member of
+#: ``KNOWN_JURY_KEYS`` is a scalar (``theater`` is a bool, ``routing`` a string),
+#: so there is no other sub-table for a typo to disappear into.
+KNOWN_NESTED_JURY_KEYS: dict[str, tuple[str, ...]] = {
+    "ci": KNOWN_CI_KEYS,
+    "context": KNOWN_CONTEXT_KEYS,
+    "diff": KNOWN_DIFF_KEYS,
+}
 
 
 @dataclass
