@@ -119,6 +119,7 @@ DOCUMENTED_FLAGS = [
     "--strict-config",
     "--tiered",
     "--hints",
+    "--no-hints",
     "--version",
     "--help",
 ]
