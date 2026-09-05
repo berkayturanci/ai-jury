@@ -84,13 +84,34 @@ _TIER_THREE = 3
 #: the consumer refuses the verdict built from it.
 _PROSE_ONLY = "Looks good to me, no concerns."
 
+#: The reply that names what it read and then declines to review it. The pair the
+#: prose could not describe (#700, round 3): ``scope_substantive`` is **true** —
+#: the ``Checked:`` line is exactly the anchor the consumer looks for — while the
+#: verdict is ``ABSTAIN``, because a refusal is not a review (#251).
+_SCOPED_REFUSAL = "Checked: src/a.py\n\nI cannot assist with reviewing this change."
 
-def _prose_run(prose_only: frozenset[str], silent: frozenset[str]):
+#: The same pair reached the other way: the adapter reports failure, and what it
+#: managed to emit before dying still names a file.
+_SCOPED_FAILURE = "Checked: src/a.py\n\nThe CLI exited before writing a review."
+
+
+def _prose_run(
+    prose_only: frozenset[str],
+    silent: frozenset[str],
+    refusing: frozenset[str],
+    broken: frozenset[str],
+):
     """A ``MockAdapter.run`` where some agents answer without reviewing.
 
     The other way a seat produces no review, and the one no earlier fixture had:
     ``_silent_run``'s agents return nothing, which every layer already treated as
     an abstention. These return a cheerful sentence.
+
+    ``refusing`` and ``broken`` are round 3's addition, and the two of them are
+    the only ways a ballot can carry a substantive scope and still abstain: they
+    name a file and then refuse, or name a file and then fail. Every earlier
+    fixture abstained by naming nothing, which is why nothing caught a scope
+    sentence keyed on "did a scope come back" rather than on the count.
     """
     real = MockAdapter.run
 
@@ -107,6 +128,17 @@ def _prose_run(prose_only: frozenset[str], silent: frozenset[str]):
             )
         if phase == "review" and self.name in prose_only:
             return AgentResult(self.name, self.spec.vendor, True, _PROSE_ONLY, 0.0)
+        if phase == "review" and self.name in refusing:
+            return AgentResult(self.name, self.spec.vendor, True, _SCOPED_REFUSAL, 0.0)
+        if phase == "review" and self.name in broken:
+            return AgentResult(
+                self.name,
+                self.spec.vendor,
+                False,
+                _SCOPED_FAILURE,
+                0.0,
+                "the agent CLI exited nonzero",
+            )
         return real(self, prompt, phase=phase, timeout=timeout, role_policy=role_policy)
 
     return _run
@@ -117,6 +149,8 @@ def _jury(
     *,
     silent: frozenset[str] = frozenset(),
     prose_only: frozenset[str] = frozenset(),
+    refusing: frozenset[str] = frozenset(),
+    broken: frozenset[str] = frozenset(),
     toml: str = _THREE_CLI_TOML,
 ):
     """Run ``jury --mock`` and return ``(exit code, stdout, stderr)``."""
@@ -127,7 +161,7 @@ def _jury(
         diff.write_text(_DIFF, encoding="utf-8")
         out, err = io.StringIO(), io.StringIO()
         with (
-            mock.patch.object(MockAdapter, "run", _prose_run(prose_only, silent)),
+            mock.patch.object(MockAdapter, "run", _prose_run(prose_only, silent, refusing, broken)),
             contextlib.redirect_stdout(out),
             contextlib.redirect_stderr(err),
         ):
@@ -340,6 +374,103 @@ class TheChairsRoleIsStatedPlainly(unittest.TestCase):
         self.assertIn("carries 2 review(s) plus this record, 4 records in all", scope)
         for record in records[1:-1]:
             self.assertNotIn("chaired the run", record["scope"])
+
+
+#: The claim a chaired ballot's scope makes about itself, verbatim. Read from the
+#: document rather than paraphrased: this is the sentence a human is handed, and
+#: the invariant under test is that it and ``counts_as_review`` are one statement.
+_CLAIMS_TO_BE_A_REVIEW = "this ballot is one of the panel's reviews"
+
+
+class TheChairedBallotsProseMatchesTheCount(unittest.TestCase):
+    """The chaired seat's scope says what ``counts_as_review`` says (#700, round 3).
+
+    The reported failure: a chaired seat answered ``Checked: src/a.py`` and then
+    refused. Round 2 appended the chair sentence on the strength of the scope
+    being non-empty — before the verdict was derived and before the count was
+    taken — so the record shipped ``verdict: ABSTAIN``, ``counts_as_review:
+    false``, and a scope telling the human reading it that this ballot was one of
+    the panel's reviews. Every machine field was right and the only prose a
+    reviewer actually reads was wrong, which is the same defect #699 and #700
+    were: two definitions of "a review", and nothing keeping them equal.
+
+    ``ai_jury.panel.is_review`` is the definition. The sentence is now a
+    *rendering* of the answer it gave, and these tests read the answer and the
+    sentence out of the same record so the two cannot be green while disagreeing.
+    """
+
+    def test_a_chaired_ballot_that_refused_does_not_claim_to_be_a_review(self):
+        # Fails on 66aab48: the scope claimed to be one of the panel's reviews
+        # while the record beside it said ABSTAIN / counts_as_review false.
+        ballot = _reviewers(refusing=frozenset({"claude"}))[0]
+        self.assertEqual(ballot["name"], "claude")
+        self.assertTrue(ballot["scope_substantive"])
+        self.assertEqual(ballot["verdict"], "ABSTAIN")
+        self.assertFalse(ballot["counts_as_review"])
+        self.assertNotIn(_CLAIMS_TO_BE_A_REVIEW, ballot["scope"])
+        self.assertIn("also chaired the run", ballot["scope"])
+        self.assertIn("NOT one of the panel's reviews", ballot["scope"])
+        self.assertIn("returned a refusal rather than a review", ballot["scope"])
+
+    def test_a_chaired_ballot_whose_adapter_failed_names_that_cause_instead(self):
+        # The other way a substantive scope can accompany an abstention. The two
+        # are kept apart because they ask for different fixes: one is a CLI to go
+        # and look at, the other is an agent that declined.
+        ballot = _reviewers(broken=frozenset({"claude"}))[0]
+        self.assertTrue(ballot["scope_substantive"])
+        self.assertFalse(ballot["counts_as_review"])
+        self.assertNotIn(_CLAIMS_TO_BE_A_REVIEW, ballot["scope"])
+        self.assertIn("its adapter reported failure", ballot["scope"])
+
+    def test_a_chaired_ballot_that_reviewed_still_says_it_is_counted(self):
+        ballot = _reviewers()[0]
+        self.assertTrue(ballot["counts_as_review"])
+        self.assertIn(_CLAIMS_TO_BE_A_REVIEW, ballot["scope"])
+
+    def test_no_ballots_prose_and_count_disagree_in_any_run(self):
+        # The invariant, over every shape of run this module can produce. An
+        # expected string per case would let the two drift apart again while the
+        # test stayed green; this compares the document against itself.
+        for kwargs in (
+            {},
+            {"refusing": frozenset({"claude"})},
+            {"broken": frozenset({"claude"})},
+            {"silent": frozenset({"claude"})},
+            {"prose_only": frozenset({"claude"})},
+            {"refusing": frozenset({"claude", "codex"})},
+        ):
+            with self.subTest(**{k: sorted(v) for k, v in kwargs.items()}):
+                entries = _reviewers(**kwargs)
+                # No record claims a status the count denies. One direction, not
+                # equality: a panelist that did not chair says nothing about the
+                # panel's arithmetic at all, which is the correct silence.
+                for entry in entries:
+                    if _CLAIMS_TO_BE_A_REVIEW in entry["scope"]:
+                        self.assertTrue(entry["counts_as_review"], entry["name"])
+                # And the chaired ballot — the only one that speaks — says
+                # exactly what the count says, either way round.
+                chaired = next(e for e in entries if e.get("chaired"))
+                self.assertEqual(
+                    _CLAIMS_TO_BE_A_REVIEW in chaired["scope"],
+                    chaired["counts_as_review"],
+                )
+
+    def test_the_chair_record_stops_asserting_why_its_own_ballot_abstained(self):
+        # It said "because it named nothing a reader could check" — one of the
+        # three ways to abstain, asserted as though it were the only one, and
+        # false of a chair that named a file and then refused. The status stays
+        # (it is derived); the cause moves to the ballot that knows it.
+        scope = _reviewers(refusing=frozenset({"claude"}))[-1]["scope"]
+        self.assertIn("also sat on the panel but abstained", scope)
+        self.assertIn("NOT counted as a review", scope)
+        self.assertNotIn("named nothing a reader could check", scope)
+        # And the chair's ballot is not double-counted as a "further" abstention.
+        self.assertNotIn("further ballot(s)", scope)
+
+    def test_further_abstentions_are_counted_apart_from_the_chairs_own(self):
+        scope = _reviewers(refusing=frozenset({"claude", "codex"}))[-1]["scope"]
+        self.assertIn("1 further ballot(s) abstained", scope)
+        self.assertIn("carries 1 review(s) plus this record, 4 records in all", scope)
 
 
 class TheJsonReportMarksTheRoles(unittest.TestCase):

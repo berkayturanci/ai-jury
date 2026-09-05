@@ -580,6 +580,47 @@ def chair_verdict(outcome: Any, vote: Any = None) -> str:
     return normalize_verdict(label) or ABSTAIN
 
 
+def _abstained_because(result: Any) -> str:
+    """Why a seat that *did* name something checkable still abstained (pure).
+
+    The companion to :func:`_no_scope_reason`, and deliberately not that
+    function: this ballot's scope is substantive, so every reason phrased around
+    "it named nothing" would be false of it. Only two of :func:`_verdict_for`'s
+    three gates can fire while the scope stands — a failed adapter and a refusal
+    — and the third (an empty scope) never reaches here, because a seat with no
+    scope gets :func:`abstention_scope` instead.
+    """
+    if not getattr(result, "ok", False):
+        return "its adapter reported failure"
+    return "it returned a refusal rather than a review"
+
+
+def _chaired_ballot_sentence(result: Any, ballot: dict) -> str:
+    """What the chairing agent's own ballot is, read off the record (#700, round 3).
+
+    Said on the ballot as well as on the chair record, because the two are read
+    in different places: a consumer that posts one verdict per review shows this
+    text on its own, with no chair record beside it.
+
+    The sentence is a function of ``counts_as_review`` — the answer
+    :func:`ai_jury.panel.is_review` already gave for this record — and never of
+    "did a scope come back". Round 2 keyed it on the scope alone and appended it
+    before the verdict was in, so a chaired seat that named a file and then
+    refused shipped ``verdict: ABSTAIN``, ``counts_as_review: false`` and a scope
+    telling the human reading it that this ballot was one of the panel's reviews.
+    The count and the prose beside it are one statement, or the prose is a second
+    definition of a review that nothing keeps honest.
+    """
+    lead = " This reviewer also chaired the run (verification and synthesis);"
+    tail = " the chair record is the panel's consensus rather than a further review."
+    if ballot.get("counts_as_review"):
+        return f"{lead} this ballot is one of the panel's reviews, and{tail}"
+    return (
+        f"{lead} this ballot abstained — {_abstained_because(result)} — so it is"
+        f" NOT one of the panel's reviews, and{tail}"
+    )
+
+
 def _verified_count(outcome: Any, name: str) -> int:
     """Consensus groups this reviewer contributed to that the verifier upheld."""
     return sum(
@@ -637,15 +678,6 @@ def reviewer_ballots(
         scoped = bool(scope)
         if not scoped:
             scope = abstention_scope(r, own_findings)
-        elif chaired:
-            # Said on the ballot as well as on the chair record, because the two
-            # are read in different places: a consumer that posts one verdict per
-            # review shows this text on its own, with no chair record beside it.
-            scope += (
-                " This reviewer also chaired the run (verification and synthesis);"
-                " this ballot is one of the panel's reviews, and the chair record"
-                " is the panel's consensus rather than a further review."
-            )
         model, model_source = describe_model(config, name)
         entry = {
             "name": name,
@@ -669,6 +701,10 @@ def reviewer_ballots(
         # Derived, never asserted: the answer this record carries is the one the
         # gate and the announcements use, computed by the same function.
         entry["counts_as_review"] = is_review(entry)
+        # After the answer, never before it: the chair's sentence *reports* that
+        # answer, so it cannot be written while the answer is still unknown.
+        if scoped and chaired:
+            entry["scope"] += _chaired_ballot_sentence(r, entry)
         entries.append(entry)
 
     chair_model, chair_model_source = describe_model(config, chair_name)
@@ -740,13 +776,16 @@ def _chair_role_sentence(chair_agent: str, chaired_ballot: dict | None) -> str:
             f"consensus, not a ballot."
         )
     if chaired_ballot is not None:
-        # It balloted and the ballot is not a review: the seat ran and named
-        # nothing checkable. Saying "no ballot from it" would be false and saying
-        # "its ballot counts" would be the defect, so the record says both facts.
+        # It balloted and the ballot is not a review. Saying "no ballot from it"
+        # would be false and saying "its ballot counts" would be the defect, so
+        # the record says both facts. It does *not* say why: "named nothing
+        # checkable" was one of the three ways to abstain asserted as if it were
+        # the only one, and it is plainly false of a seat that named a file and
+        # then refused. The ballot's own scope carries the cause (#700, round 3).
         return (
             f"The chair is {who}, which also sat on the panel but abstained: its "
             f"'{chaired_ballot['name']}' ballot is in this bundle and is NOT counted "
-            f"as a review, because it named nothing a reader could check. This "
+            f"as a review — that ballot's own scope says why. This "
             f"synthesis record is not counted either — it is the panel's consensus, "
             f"not a ballot."
         )
@@ -778,10 +817,14 @@ def _chair_scope(outcome: Any, panelists: list[dict]) -> str:
     chair_agent = getattr(outcome, "chair", "") or ""
     chaired = next((p for p in panelists if p.get("chaired")), None)
     reviews = review_count(panelists)
-    abstained = len(panelists) - reviews
+    # "Further" than the chair's own ballot, which the sentence before this one
+    # has already accounted for — and no cause is named, because these seats
+    # abstained for whichever of the three reasons applied to each and their own
+    # scopes say which (#700, round 3).
+    abstained = sum(1 for p in panelists if not p.get("chaired") and not is_review(p))
     abstained_clause = (
-        f" {abstained} further ballot(s) named nothing checkable and abstained;"
-        f" they are recorded here but are not reviews."
+        f" {abstained} further ballot(s) abstained; they are recorded here but"
+        f" are not reviews, and each one's scope says why."
         if abstained
         else ""
     )
