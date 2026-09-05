@@ -237,6 +237,19 @@ _WHITESPACE_SPLIT = re.compile(r"\s+")
 #: would open a span at ``'s`` and swallow the rest of the line.
 _QUOTED_SPAN_RE = re.compile(r"`([^`\n]+)`|\"([^\"\n]+)\"|“([^”\n]+)”")
 
+#: The same span shapes, anchored: a run that is *entirely* one mark, marks
+#: included. See :func:`_unmarked` — the marks a reviewer nested inside its own
+#: span come off too, so a path that is quoted *and* backticked resolves the way
+#: either alone does.
+_NESTED_MARK_RE = re.compile(r"\A`([^`\n]+)`\Z|\A\"([^\"\n]+)\"\Z|\A“([^”\n]+)”\Z")
+
+#: How many nested layers of marks are peeled off a span. Two, because two is as
+#: deep as nesting goes: there are three mark shapes and none can sit inside
+#: itself (``[^`\n]+`` cannot hold a backtick), so once :func:`_marked_spans` has
+#: taken the pair the span opened with, at most two remain. Anything a deeper
+#: line left on can only fail to resolve, which is reported.
+_MAX_NESTED_MARKS = 2
+
 #: How many whitespace-separated pieces may be joined while looking for a path.
 #: A cap rather than the whole line: the search is quadratic in the window, the
 #: line is attacker-influenced, and a filename with five spaces in it is already
@@ -249,7 +262,17 @@ _MAX_JOINED_PIECES = 6
 #: token. A trailing ``:`` goes too, but a ``:42`` does not — that is a line.
 #: ``_`` is deliberately **not** here: it is part of the identifier, and
 #: stripping it turned ``_stated_line`` into a symbol the change does not have.
+#: ``.`` *is* here — a trailing full stop ends a sentence far more often than it
+#: opens a filename — but it is put back when the change says it belongs to the
+#: name. See :func:`_edge_stripped`.
 _TOKEN_EDGE = "`'\"“”‘’()[]{}<>*.,;:!?"
+
+#: How many stripped edge characters may be **put back** while a strip is
+#: retried against the change. The full strip is always tried first and is the
+#: token when the index confirms nothing, and every retry only ever restores, so
+#: the cap can cost a resolution but never invent one — and a name wrapped in
+#: four layers of punctuation is past the point of being a name.
+_MAX_EDGE_RESTORE = 3
 
 #: ``path:line`` / ``path:line-line`` — the line part is dropped before the path
 #: is looked up, because a diff index knows files, not line numbers.
@@ -309,10 +332,79 @@ def _marked_spans(value: str) -> list[tuple[str, bool]]:
     return runs
 
 
+def _unmarked(text: str) -> str:
+    """One marked span's content, with nested marks peeled off (pure).
+
+    :func:`_marked_spans` removes the pair the span *opened* with, and a
+    reviewer that both quoted and backticked a path leaves the inner pair on:
+    ``resolve_stated_scope("“`docs/my file.py`”", changed)`` looked up the
+    backticked string, matched nothing, and reported the reviewer's own
+    ``docs/my file.py`` as a claim that failed (#710, round 3). Quoting a
+    backticked path is the same claim about the same file as either mark alone,
+    so the marks come off before the lookup — as many layers as
+    :data:`_MAX_NESTED_MARKS` allows, whichever mark each layer used.
+    """
+    inner = text.strip()
+    for _ in range(_MAX_NESTED_MARKS):
+        match = _NESTED_MARK_RE.match(inner)
+        if match is None:
+            break
+        inner = (match.group(1) or match.group(2) or match.group(3)).strip()
+    return inner
+
+
 def _path_base(token: str) -> str:
     """*token* with a trailing ``:line`` / ``:line-line`` dropped (pure)."""
     match = _PATH_LINE_RE.match(token)
     return match.group("path") if match else token
+
+
+def _edge_trims(piece: str) -> list[str]:
+    """*piece* with its edge punctuation removed, most-stripped first (pure).
+
+    The first entry is the full strip — what the token is when the change
+    confirms none of them. The rest put the stripped characters back one at a
+    time, from either end, so a caller can ask the index which trim was the
+    reviewer's intent. See :func:`_edge_stripped` for why that question matters.
+    """
+    trims = [piece.strip(_TOKEN_EDGE)]
+    head = min(len(piece) - len(piece.lstrip(_TOKEN_EDGE)), _MAX_EDGE_RESTORE)
+    tail = min(len(piece) - len(piece.rstrip(_TOKEN_EDGE)), _MAX_EDGE_RESTORE)
+    for left in range(head, -1, -1):
+        for right in range(tail, -1, -1):
+            end = len(piece) - right
+            candidate = piece[left:end] if end >= left else ""
+            if candidate not in trims:
+                trims.append(candidate)
+    return trims
+
+
+def _edge_stripped(piece: str, changed: Any) -> str:
+    """*piece* stripped of edge punctuation, but never past a path (pure).
+
+    Stripping both ends is what makes ``(src/a.py),`` and ``src/a.py`` one
+    token, and :data:`_TOKEN_EDGE` contains ``.`` because a trailing full stop
+    is sentence punctuation far more often than it is part of a name. On a
+    *leading* dot that is exactly backwards: with ``.gitignore`` in the change,
+    ``Checked: .gitignore`` stripped down to ``gitignore``, which
+    :meth:`~ai_jury.largediff.ChangeIndex.has_path` does not match (it needs a
+    path-component boundary, and ``.gitignore`` has none before the ``g``). The
+    remnant is not name-shaped either, so it was dropped as connective prose and
+    the ballot came back ``named_nothing`` — a scope claiming the line named no
+    path at all, for a file the reviewer named exactly. Same for ``.env``,
+    ``.editorconfig``, and every other dotfile (#710, round 3).
+
+    So the rule is that **edge-stripping never removes a character that makes
+    the token a path in the change**: the trims of :func:`_edge_trims` are
+    offered to the index most-stripped first, and the first one it confirms is
+    the token. Nothing confirmed leaves the full strip, exactly as before — a
+    retry can only ever rescue a name, never invent one.
+    """
+    trims = _edge_trims(piece)
+    for candidate in trims:
+        if candidate and changed.has_path(_path_base(candidate)):
+            return candidate
+    return trims[0]
 
 
 def _joined_against_change(pieces: list[str], changed: Any) -> list[str]:
@@ -338,11 +430,11 @@ def _joined_against_change(pieces: list[str], changed: Any) -> list[str]:
         joined = ""
         width = 1
         for size in range(min(_MAX_JOINED_PIECES, len(pieces) - index), 1, -1):
-            candidate = " ".join(pieces[index : index + size]).strip(_TOKEN_EDGE)
+            candidate = _edge_stripped(" ".join(pieces[index : index + size]), changed)
             if changed.has_path(_path_base(candidate)):
                 joined, width = candidate, size
                 break
-        tokens.append(joined or pieces[index].strip(_TOKEN_EDGE))
+        tokens.append(joined or _edge_stripped(pieces[index], changed))
         index += width
     return tokens
 
@@ -358,10 +450,12 @@ def _scope_tokens(value: str, changed: Any) -> list[str]:
     seen: list[str] = []
     for text, quoted in _marked_spans(flatten_inline(value or "")):
         if quoted:
-            # Only whitespace is trimmed: inside the reviewer's own marks there
-            # is no stray punctuation to strip, and stripping it would cost the
-            # leading dot of a `.gitignore` the reviewer took care to quote.
-            candidates = [text.strip()]
+            # No edge punctuation is stripped: inside the reviewer's own marks
+            # there is none to strip, and stripping it would cost the leading
+            # dot of a `.gitignore` the reviewer took care to quote. Only marks
+            # the reviewer nested inside its own span come off — see
+            # :func:`_unmarked`.
+            candidates = [_unmarked(text)]
         else:
             candidates = [
                 token

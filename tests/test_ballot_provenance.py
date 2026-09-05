@@ -506,6 +506,13 @@ diff --git a/docs/release-notes.v2.md b/docs/release-notes.v2.md
 
 _SPACED = change_index(_SPACED_DIFF)
 
+#: A change to a dotfile: the name whose first character is the one `_TOKEN_EDGE`
+#: strips, and whose lookup has no component boundary to fall back on.
+_DOTFILE = change_index(
+    "diff --git a/.gitignore b/.gitignore\n"
+    "--- a/.gitignore\n+++ b/.gitignore\n@@ -1 +1 @@\n-old\n+new\n"
+)
+
 
 class AStatedScopeIsTokenisedAgainstTheChange(unittest.TestCase):
     """#710, round 2: the change index cuts the tokens, not the whitespace.
@@ -520,6 +527,13 @@ class AStatedScopeIsTokenisedAgainstTheChange(unittest.TestCase):
 
     The whole point of #710 is that the tool holds the diff at that moment, so
     the diff — not the whitespace — is what says where a token ends.
+
+    Round 3 carries the same principle into the two steps either side of the
+    split, which were still deciding on their own say-so. Edge-stripping ran
+    `.gitignore` down to `gitignore` and the ballot said the line named no path
+    at all; a span that was quoted *and* backticked was looked up with its inner
+    marks still on. Both are now answered by the change: a strip is retried
+    against the index, and nested marks come off before the lookup.
     """
 
     def _ballot(self, checked: str) -> dict:
@@ -603,11 +617,65 @@ class AStatedScopeIsTokenisedAgainstTheChange(unittest.TestCase):
     def test_a_quoted_leading_dot_file_keeps_its_dot(self):
         """Inside the reviewer's own marks there is no stray punctuation to
         strip, and stripping it would cost `.gitignore` its first character."""
+        self.assertEqual(resolve_stated_scope("`.gitignore`", _DOTFILE)[0], [".gitignore"])
+
+    def test_an_unquoted_leading_dot_file_keeps_its_dot_too(self):
+        """#710, round 3. Fails on d3d0ef7 with `named_nothing`.
+
+        `_TOKEN_EDGE` contains `.`, so the unquoted token stripped down to
+        `gitignore`, which `has_path` does not match — it wants a path-component
+        boundary, and `.gitignore` has none before the `g`. The remnant is not
+        name-shaped either, so it was dropped as prose and the scope claimed the
+        line named no path at all, for a file the reviewer named exactly.
+        """
+        self.assertEqual(resolve_stated_scope(".gitignore", _DOTFILE)[0], [".gitignore"])
+
+    def test_the_dot_survives_trailing_punctuation_around_it(self):
+        """The strip still has to do its job at the other end: `.gitignore,` and
+        `(.gitignore)` are the same claim as `.gitignore`."""
+        for stated in (".gitignore, and nothing else", "(.gitignore).", ".gitignore;"):
+            with self.subTest(stated=stated):
+                self.assertEqual(resolve_stated_scope(stated, _DOTFILE)[0], [".gitignore"])
+
+    def test_a_dotfile_inside_a_directory_resolves_from_either_root(self):
+        """The component boundary is the only thing the leading dot was ever in
+        the way of: `.env` names `docs/.env`, and so does the full path."""
         changed = change_index(
-            "diff --git a/.gitignore b/.gitignore\n"
-            "--- a/.gitignore\n+++ b/.gitignore\n@@ -1 +1 @@\n-old\n+new\n"
+            "diff --git a/docs/.env b/docs/.env\n"
+            "--- a/docs/.env\n+++ b/docs/.env\n@@ -1 +1 @@\n-old\n+new\n"
         )
-        self.assertEqual(resolve_stated_scope("`.gitignore`", changed)[0], [".gitignore"])
+        self.assertEqual(resolve_stated_scope(".env", changed)[0], [".env"])
+        self.assertEqual(resolve_stated_scope("docs/.env", changed)[0], ["docs/.env"])
+
+    def test_stripping_still_never_puts_back_what_is_not_a_path(self):
+        """The retry is answered by the change, not by the punctuation: nothing
+        the index confirms leaves the full strip exactly as it was."""
+        ballot = self._ballot("nothing at all.")
+        self.assertFalse(ballot["counts_as_review"])
+        self.assertEqual(ballot["abstention_cause"], panel.NAMED_NOTHING)
+
+    def test_a_path_both_quoted_and_backticked_resolves_like_either_alone(self):
+        """#710, round 3. Fails on d3d0ef7: the span kept its inner backticks,
+        the lookup was of ``“`docs/my file.py`”``'s literal text, and the
+        reviewer's own path came back as a claim that failed."""
+        for stated in (
+            "“`docs/my file.py`”",
+            '"`docs/my file.py`"',
+            '`"docs/my file.py"`',
+            # All three marks at once — the deepest nesting there is, since no
+            # mark can sit inside itself.
+            '“"`docs/my file.py`"”',
+        ):
+            with self.subTest(stated=stated):
+                self.assertEqual(resolve_stated_scope(stated, _SPACED), (["docs/my file.py"], []))
+
+    def test_a_nested_span_that_is_absent_is_still_reported_as_a_claim(self):
+        """Peeling the marks off changes what is looked up, not whether the
+        reviewer marked it: an absent nested token is still a name that failed."""
+        self.assertEqual(
+            resolve_stated_scope("“`the whole repo`”", _SPACED),
+            ([], ["the whole repo"]),
+        )
 
 
 class ARecomputedModelIdIsNotLabelledAsSent(unittest.TestCase):

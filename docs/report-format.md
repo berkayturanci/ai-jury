@@ -217,6 +217,10 @@ changes `docs/my file.py`, so a real review of a real file was refused under
   curly — is one token whatever is inside it. A reviewer that quoted a name has
   said where it begins and ends. (Single quotes are not marks here: `'` and `’`
   are also apostrophes, and *the reviewer's own file* would open a span at `'s`.)
+  Marks *nested* inside the span come off with the outer pair, so a path that is
+  quoted **and** backticked — `“`docs/my file.py`”` — resolves the way either
+  mark alone does; before that it was looked up with its inner backticks still
+  attached and reported as the reviewer's claim that failed.
 - **list punctuation** — a comma or a semicolon — is a hard boundary. The
   reviewer wrote it down.
 - **whitespace** is a boundary only where joining across it does not name a
@@ -224,6 +228,22 @@ changes `docs/my file.py`, so a real review of a real file was refused under
   window first, and a join the index confirms is the token. A join is never
   accepted on its own say-so, so this can turn a non-token into a token but not
   the reverse — the failure direction stays *unresolved*, which is reported.
+
+Wrapping and trailing punctuation is then stripped from each end, so `(src/a.py),`
+and `src/a.py` are one token — but **the strip never removes a character that
+makes the token a path in the change**. A full stop ends a sentence more often
+than it opens a filename, so `.` is stripped like any other edge character; on a
+dotfile that was exactly backwards. `Checked: .gitignore` stripped down to
+`gitignore`, which names nothing in a diff that changes `.gitignore` (the match
+wants a path-component boundary, and there is none before the `g`), and the
+remnant is not name-shaped either, so it was dropped as connective prose and the
+ballot came back `named_nothing` — a scope claiming the line named no path at
+all, for a file the reviewer named exactly. The same went for `.env`,
+`.editorconfig`, and every other dotfile. So the strip is now put to the change:
+the fully stripped token is offered first, then the trims that put the stripped
+characters back one at a time, and the first the index confirms is the token.
+Confirming none of them leaves the full strip, so a retry can rescue a name the
+punctuation hid but never invent one.
 
 **A mixed line is carried by the tokens that resolve.** `Checked:
 src/ai_jury/ballots.py, src/made/up.py` is a review of `src/ai_jury/ballots.py`,
