@@ -1,0 +1,7 @@
+# Evidence-gate pin for .github/workflows/keel-ship.yml (#760).
+# Dependabot's pip entry at this directory opens a PR when keel-workflow
+# releases. The pin is for reproducibility of the gate, not avoidance of
+# new rules — those PRs are expected to land. Must match both
+# `pip install "keel-workflow==…"` lines in keel-ship.yml
+# (tests/test_keel_evidence_workflow.py).
+keel-workflow==1.21.0
