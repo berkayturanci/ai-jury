@@ -111,7 +111,6 @@ def _pre_738_key(config, diff, *, seed=None, mock=False, policy=None, mode="code
     frozen copy of the old payload can witness that.
     """
     import hashlib
-    import json
 
     from ai_jury import __version__, prompts
     from ai_jury.cache import CACHE_SCHEMA, _policy_fingerprint
