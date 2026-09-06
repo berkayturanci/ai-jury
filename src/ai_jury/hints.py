@@ -50,9 +50,19 @@ def _run_linter(cmd: list[str], root: Path, title: str) -> str | None:
 def _inside(root: Path, files: Sequence[str] | None) -> list[str]:
     """The subset of *files* that are files inside *root* (pure apart from stat).
 
-    A leading ``-`` would be read as a flag rather than a path, so it is dropped
-    as before; the rest are resolved against ``root`` and kept only if they stay
-    under it and exist. ``resolve()`` follows symlinks, so a link inside the
+    Two kinds of name never reach a linter whatever they resolve to, because the
+    linters read them as something other than a path:
+
+    * a leading ``-`` is a flag;
+    * a leading ``@`` is a **response file**. Ruff's argument parser expands
+      ``@name`` into the paths that file lists, and it does so after ``--`` as
+      well — so a checkout containing a file literally called ``@pwn.py``, whose
+      body is the absolute path of something outside the tree, would have every
+      containment check below pass and the linter read the outside file anyway
+      (review round 2). The names it lists never pass through here at all.
+
+    The rest are resolved against ``root`` and kept only if they stay under it
+    and are files. ``resolve()`` follows symlinks, so a link inside the
     repository that points outside it is dropped too, which is the point: what
     reaches the linter has to be a file this checkout actually contains.
     """
@@ -62,7 +72,7 @@ def _inside(root: Path, files: Sequence[str] | None) -> list[str]:
     except OSError:  # pragma: no cover - an unresolvable cwd is not a review
         return kept
     for name in files or ():
-        if not name or name.startswith("-"):
+        if not name or name[0] in "-@":
             continue
         try:
             target = (base / name).resolve()

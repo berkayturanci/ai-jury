@@ -307,6 +307,15 @@ class OnlyFilesInsideTheCheckoutAreLinted(_CheckoutCase):
         (self.root / "link.py").symlink_to(outside)
         self.assertEqual(self._argv(["link.py"]), [])
 
+    def test_a_response_file_name_never_reaches_the_linter(self):
+        # Ruff's parser expands `@name` into the paths that file lists, after
+        # `--` as well, so a file literally called `@pwn.py` whose body is a
+        # path outside the tree would defeat every containment check below it
+        # (review round 2). The name is refused before any of them run.
+        (self.root / "@pwn.py").write_text("/etc/passwd\n", encoding="utf-8")
+        self.assertEqual(self._argv(["@pwn.py"]), [])
+        self.assertEqual(collect_static_hints(["@pwn.py"], root_dir=self.root), "")
+
     def test_a_path_that_is_not_checked_out_yields_nothing(self):
         # Every deletion names one, and a --pr review of an unchecked-out branch
         # names only such paths. Ruff answers a missing file with E902 on stdout
