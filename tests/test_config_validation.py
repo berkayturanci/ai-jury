@@ -892,8 +892,10 @@ class RecordingTableIsNotComparable(unittest.TestCase):
             left.__ne__(right)
 
     def test_unhashable(self):
-        with self.assertRaises(TypeError):
-            hash(_RecordingTable())
+        # ``hash(instance)`` is itself a CodeQL finding (unhashable object
+        # hashed). The decision is the class attribute: ``__eq__`` without a
+        # value-hash, paired with ``__hash__ = None``.
+        self.assertIsNone(_RecordingTable.__hash__)
 
 
 class NestedJuryTableUnknownKeys(unittest.TestCase):
