@@ -108,7 +108,7 @@ def _args_str(extra_args: list[str]) -> str:
 _RESTRICTING_SANDBOX_VALUES: tuple[str, ...] = ("read-only",)
 
 
-def _is_sandboxed(extra_args: list[str], vendor: str = "", name: str = "") -> bool:
+def _is_sandboxed(extra_args: list[str], vendor: str = "") -> bool:
     """True when a non-claude agent runs under a *restricting* sandbox.
 
     Vendor-aware (issue #292) so a bare ``--sandbox`` token cannot give false
@@ -120,7 +120,6 @@ def _is_sandboxed(extra_args: list[str], vendor: str = "", name: str = "") -> bo
     is active, an otherwise-broad flag no longer grants real powers (issue #100).
     """
     vendor = normalise_vendor(vendor)
-    name = (name or "").lower()
     is_agy = vendor == "google"
     args = list(extra_args)
     for i, a in enumerate(args):
@@ -146,15 +145,18 @@ def _is_sandboxed(extra_args: list[str], vendor: str = "", name: str = "") -> bo
     return False
 
 
-def _is_codex(vendor: str, name: str) -> bool:
-    """The identity rule ``enforce_read_only`` already uses for the codex branch.
+def _is_codex(vendor: str) -> bool:
+    """The identity rule :func:`enforce_read_only` uses for the codex branch.
 
     Kept in one place so the audit cannot key off a different half of the seat
-    than enforcement did: enforcement recognises codex by ``vendor == "openai"``
-    *or* a name containing ``codex``, so a seat named ``codex`` with an unknown
-    vendor is enforced as codex and must be audited as codex too (#750).
+    than enforcement did (#750). The rule is the **adapter key** and nothing
+    else (#758): reading the seat's name here made agy's ``--yolo`` — which only
+    skips approval prompts — get codex's meaning, where it is the alias of
+    ``--dangerously-bypass-approvals-and-sandbox``, so a correctly sandboxed
+    google seat that happened to be named ``codex-vs-gemini`` failed ``--strict``
+    on the identical argv a seat named ``agy`` passed with.
     """
-    return normalise_vendor(vendor) == "openai" or "codex" in (name or "").lower()
+    return normalise_vendor(vendor) == "openai"
 
 
 def _present(flag: str, args: list[str]) -> str | None:
@@ -170,9 +172,7 @@ def _present(flag: str, args: list[str]) -> str | None:
     return None
 
 
-def _competing_sandboxes(
-    extra_args: list[str], vendor: str = "", name: str = ""
-) -> list[tuple[str, bool]]:
+def _competing_sandboxes(extra_args: list[str], vendor: str = "") -> list[tuple[str, bool]]:
     """Sandbox statements in the argv besides the enforced read-only one.
 
     Each entry is ``(token, disables)`` — ``disables`` marks a flag that removes
@@ -191,7 +191,7 @@ def _competing_sandboxes(
     """
     args = list(extra_args)
     found: list[tuple[str, bool]] = []
-    if _is_codex(vendor, name):
+    if _is_codex(vendor):
         for flag in _CODEX_SANDBOX_SELECTORS:
             token = _present(flag, args)
             if token:
@@ -548,13 +548,13 @@ def audit_agent(spec) -> list[str]:
 
     # Non-claude agents must run under a restricting sandbox (issue #100) — one
     # the config named, or one enforcement injected above.
-    if _is_sandboxed(extra_args, vendor=vendor, name=name):
+    if _is_sandboxed(extra_args, vendor=vendor):
         # …unless a sandbox-SELECTING flag is sitting in the same argv, in which
         # case two sandboxes are specified and the CLI, not this module, decides
         # which one wins (issue #750). Said plainly rather than through the
         # generic message below, which would recommend the `-s read-only` that
         # is already there.
-        competing = _competing_sandboxes(extra_args, vendor=vendor, name=name)
+        competing = _competing_sandboxes(extra_args, vendor=vendor)
         if competing:
             named = ", ".join(f"`{token}`" for token, _ in competing)
             one = len(competing) == 1

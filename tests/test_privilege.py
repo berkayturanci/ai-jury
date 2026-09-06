@@ -519,6 +519,24 @@ class ASandboxIsNotSettledByTheFirstOneNamed(unittest.TestCase):
         self.assertEqual(adapters._read_only_extra_args(codex_named_claude), ["-s", "read-only"])
         self.assertEqual(privilege.audit_agent(codex_named_claude), [])
 
+    def test_a_google_seat_is_not_read_with_codex_s_dictionary(self):
+        """Same argv, same verdict, whatever the seat is called.
+
+        `--yolo` only skips approval prompts on agy and its sandbox still holds;
+        on codex it is the alias of `--dangerously-bypass-approvals-and-sandbox`.
+        While `_is_codex` consulted the name, a google seat named
+        `codex-vs-gemini` failed `--strict` on the identical argv a seat named
+        `agy` passed with.
+        """
+        argvs, verdicts = set(), set()
+        for name in ("codex-vs-gemini", "agy"):
+            spec = AgentSpec(name=name, vendor="google", command="agy", extra_args=["--yolo"])
+            argvs.add(tuple(adapters._read_only_extra_args(spec)))
+            verdicts.add(tuple(privilege.audit_agent(spec)))
+
+        self.assertEqual(len(argvs), 1)
+        self.assertEqual(verdicts, {()})
+
     def test_a_seat_carrying_both_kinds_is_described_by_the_worse_one(self):
         """`all(...)` picked the milder sentence when a seat had a selector too."""
         warning = privilege.audit_agent(self._codex(["--full-auto", "--yolo"]))[0]
