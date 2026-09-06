@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Two CodeQL alerts in the test suite** (#752). `tests/test_adapter_key.py` imported `ai_jury.config` locally after already importing names from it (`py/import-and-import-from`); the local import is gone and the test uses the module-level alias the vendor-vocabulary tests already use. `_RecordingTable` in `tests/test_config_validation.py` added `read` on top of `dict` and inherited `dict.__eq__` (`py/missing-equals`), so two recorders with the same items compared equal no matter what they recorded. The only caller compares `.read` to a set, never two tables, so equality now raises: the wrong usage fails instead of passing for the wrong reason.
+
 ## [1.17.0] - 2026-09-06
 
 ### Added
