@@ -61,7 +61,15 @@ _WRITE_TOOLS: tuple[str, ...] = ("Edit", "Write", "NotebookEdit", "Bash")
 # CLI's own argument-precedence rule, not something this module can assert. The
 # other two entries (`workspace-write`, `danger-full-access`) are sandbox VALUES,
 # which enforcement leaves exactly as written and the audit already reaches.
-_SANDBOX_SELECTING_FLAGS: tuple[str, ...] = ("--full-auto",)
+#: Flags that pick a sandbox of their own, keyed by the vendor whose CLI reads them
+#: that way. A name is not a meaning: codex documents ``--yolo`` as the alias of
+#: ``--dangerously-bypass-approvals-and-sandbox``, which leaves **no** sandbox, while
+#: agy's ``--yolo`` only skips approval prompts and stays inside its sandbox. Auditing
+#: one CLI's spelling with another's dictionary is how the most dangerous flag on the
+#: codex path went unmentioned while a milder one was reported (#750).
+_SANDBOX_SELECTING_FLAGS: dict[str, tuple[str, ...]] = {
+    "openai": ("--full-auto", "--yolo", "--dangerously-bypass-approvals-and-sandbox"),
+}
 
 
 def _disallowed_tools_at(args: list[str], i: int) -> tuple[str, int] | None:
@@ -133,6 +141,38 @@ def _is_sandboxed(extra_args: list[str], vendor: str = "", name: str = "") -> bo
             if a == "--sandbox" and is_agy and (nxt == "" or nxt.startswith("-")):
                 return True
     return False
+
+
+def _competing_sandboxes(extra_args: list[str], vendor: str = "") -> list[str]:
+    """Every token in the argv that selects a sandbox the enforced read-only one is not.
+
+    :func:`_is_sandboxed` asks "is a restricting sandbox named here?" and stops at the
+    first one it finds. That is the right question for enforcement and the wrong one
+    for an audit. Codex takes the sandbox as a *value*, so a second ``-s
+    workspace-write`` sits happily beside the enforced ``-s read-only`` — enforcement
+    adds nothing, because a sandbox token already exists — and which of the two the CLI
+    honours is its own argument precedence, not something this module can read. The
+    alias flags are the same problem spelled differently (#750).
+
+    A ``-s``/``--sandbox`` whose next token is another flag, or absent, is agy's
+    boolean sandbox and selects nothing.
+    """
+    vendor = normalise_vendor(vendor)
+    args = list(extra_args)
+    found = [flag for flag in _SANDBOX_SELECTING_FLAGS.get(vendor, ()) if flag in args]
+    for i, a in enumerate(args):
+        if a.startswith(("-s=", "--sandbox=")):
+            value, shown = a.split("=", 1)[1], a
+        elif a in ("-s", "--sandbox"):
+            value = args[i + 1] if i + 1 < len(args) else ""
+            shown = f"{a} {value}"
+        else:
+            continue
+        if not value or value.startswith("-"):
+            continue
+        if value not in _RESTRICTING_SANDBOX_VALUES:
+            found.append(shown)
+    return found
 
 
 def _ensure_claude_disallowed(extra_args: list[str]) -> list[str]:
@@ -455,13 +495,17 @@ def audit_agent(spec) -> list[str]:
         # which one wins (issue #750). Said plainly rather than through the
         # generic message below, which would recommend the `-s read-only` that
         # is already there.
-        selector = next((f for f in _SANDBOX_SELECTING_FLAGS if f in extra_args), None)
-        if selector is not None:
+        competing = _competing_sandboxes(extra_args, vendor=vendor)
+        if competing:
+            named = ", ".join(f"`{s}`" for s in competing)
+            one = len(competing) == 1
             warnings.append(
-                f"agent '{label}' is configured with `{selector}`, which selects a "
-                f"write-capable sandbox of its own; it is passed alongside the "
-                f"enforced read-only sandbox, so which of the two applies is up to "
-                f"the CLI. Drop `{selector}` — a reviewer only reads its prompt."
+                f"agent '{label}' is configured with {named}, which "
+                f"{'selects a sandbox of its own' if one else 'each select a sandbox of their own'}; "
+                f"{'it is' if one else 'they are'} passed alongside the enforced read-only "
+                f"sandbox, so which {'of the two applies' if one else 'applies'} is up to "
+                f"the CLI. "
+                f"Drop {'it' if one else 'them'} — a reviewer only reads its prompt."
             )
         return warnings
     # Not sandboxed. A broad-powers flag gets a specific message…

@@ -429,6 +429,65 @@ class EnforceReadOnlyTest(unittest.TestCase):
         self.assertEqual(privilege.enforce_read_only("cli", "cursor", ["--print"]), ["--print"])
 
 
+class ASandboxIsNotSettledByTheFirstOneNamed(unittest.TestCase):
+    """Issue #750, second round: every sandbox selector in the argv, not the first.
+
+    Enforcement injects `-s read-only` only when no sandbox token exists, and
+    `_is_sandboxed` returns on the first restricting value it sees. Both are right
+    for what they do and wrong for an audit: a second selector rides along in the
+    same argv, and codex's own argument precedence — not this module — decides
+    which one the CLI honours.
+    """
+
+    def _codex(self, extra):
+        return AgentSpec(name="codex", vendor="openai", command="codex", extra_args=list(extra))
+
+    def test_a_second_sandbox_value_beside_the_enforced_one_is_named(self):
+        spec = self._codex(["-s", "read-only", "-s", "workspace-write"])
+
+        # Enforcement leaves this argv alone: a sandbox token is already present.
+        self.assertEqual(
+            adapters._read_only_extra_args(spec), ["-s", "read-only", "-s", "workspace-write"]
+        )
+        warnings = privilege.audit_agent(spec)
+
+        self.assertTrue(warnings)
+        self.assertIn("-s workspace-write", warnings[0])
+
+    def test_codex_yolo_is_a_sandbox_bypass_not_an_approval_skip(self):
+        """`--yolo` means different things to different CLIs.
+
+        codex documents it as the alias of
+        `--dangerously-bypass-approvals-and-sandbox`, which leaves no sandbox at
+        all. Read with agy's dictionary it looks like a prompt-skipping flag the
+        sandbox still confines, and the audit said nothing about the most
+        dangerous flag on the codex path.
+        """
+        for flag in ("--yolo", "--dangerously-bypass-approvals-and-sandbox"):
+            with self.subTest(flag=flag):
+                warnings = privilege.audit_agent(self._codex([flag]))
+
+                self.assertTrue(warnings, f"{flag} audited clean")
+                self.assertIn(flag, warnings[0])
+
+    def test_the_same_flag_on_agy_stays_clean(self):
+        """agy's `--yolo` only skips approvals; its sandbox still holds."""
+        spec = AgentSpec(name="agy", vendor="google", command="agy", extra_args=["--yolo"])
+
+        self.assertEqual(privilege.audit_agent(spec), [])
+
+    def test_agys_boolean_sandbox_selects_nothing(self):
+        """A bare `--sandbox`, or one followed by another flag, names no value."""
+        for extra in (["--sandbox"], ["--sandbox", "--yolo"]):
+            with self.subTest(extra=extra):
+                spec = AgentSpec(name="agy", vendor="google", command="agy", extra_args=extra)
+
+                self.assertEqual(privilege.audit_agent(spec), [])
+
+    def test_a_seat_with_only_the_enforced_sandbox_is_still_clean(self):
+        self.assertEqual(privilege.audit_agent(self._codex([])), [])
+
+
 class TheAuditReadsTheArgvTheSeatIsSpawnedWith(unittest.TestCase):
     """Issue #750: the audit's subject is the effective argv, not the config.
 
