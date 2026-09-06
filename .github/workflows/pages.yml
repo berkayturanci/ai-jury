@@ -29,12 +29,32 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: "3.13"
+      # The bootstrap, hash-locked: `uv` and nothing else. Everything below it
+      # comes from `uv.lock`, whose sha256 hashes uv checks on the way in. The
+      # `release lockfiles resolve` job in ci.yml dry-runs this file on every
+      # pull request, so a wheel PyPI stops serving fails there and not here
+      # (#751).
+      - name: Install uv (hash-locked)
+        run: |
+          timeout 300 python -m pip install --timeout 30 \
+            --require-hashes --only-binary=:all: \
+            -r .github/requirements/ci-tools.txt
+      # Was `pip install -e ".[dev]"` inside the step below, resolving
+      # `coverage>=7.5` fresh on every deploy: the published badge is a number
+      # produced by whichever coverage the index served that morning. It is the
+      # locked one now. Split out of the step it fed so `.venv/bin` can reach
+      # $GITHUB_PATH, which only takes effect for *later* steps — that is what
+      # leaves every `python -m coverage` line below spelled as it was.
+      # `--locked` fails on a stale lock; see ci.yml's `lint` job for `--python`.
+      - name: Install the dev tooling from uv.lock
+        run: |
+          timeout 300 uv sync --locked --extra dev \
+            --python "$pythonLocation/bin/python"
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
       # Build a browsable HTML coverage report + a self-hosted shields-endpoint
       # badge, both published as part of the site (no external service).
       - name: Generate coverage report + badge
         run: |
-          timeout 120 python -m pip install --upgrade pip
-          timeout 300 python -m pip install -e ".[dev]"
           python -m coverage run -m unittest discover -s tests
           python -m coverage html -d website/coverage
           python -m coverage json -o coverage.json

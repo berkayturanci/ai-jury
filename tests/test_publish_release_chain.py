@@ -69,6 +69,13 @@ NETWORK_TOOLS: dict[str, tuple[str, ...]] = {
     # one bound that is both real and countable.
     "pip": (),
     "pip3": (),
+    # `uv` is a network client for the same reason `pip` is: `uv sync` resolves
+    # and downloads from an index. It is here because #751 moved three jobs off
+    # `pip install` and onto it, and a tool this table does not know is a tool
+    # this scan reports as bounded by never seeing it at all — the exact hole
+    # `keel-ship.yml`'s herestring opened. An empty tuple demands the `timeout`
+    # wrapper: uv has no request-timeout flag of its own that bounds the call.
+    "uv": (),
     "gh": (),
     "twine": (),
     "npm": (),
@@ -1447,6 +1454,11 @@ class EveryWorkflowBoundsItsNetworkCalls(unittest.TestCase):
         self.assertGreaterEqual(tools["pip"], 12, f"too few `pip` calls found: {tools}")
         self.assertGreaterEqual(tools["gh"], 11, f"too few `gh` calls found: {tools}")
         self.assertGreaterEqual(tools["git"], 1, f"the `git fetch` was not found: {tools}")
+        # #751: the three `uv sync --locked` calls that replaced `pip install`
+        # in `lint`, `coverage` and the Pages deploy. Anchored for the reason
+        # every count here is anchored — a tool added to `NETWORK_TOOLS` and
+        # then not found reports a clean sweep of nothing.
+        self.assertGreaterEqual(tools["uv"], 3, f"too few `uv` calls found: {tools}")
 
     def test_no_command_in_any_workflow_reaches_the_network_unbounded(self):
         """Every network call takes a bound, or appears in `KNOWN_UNBOUNDED`.
@@ -1592,13 +1604,21 @@ class EveryWorkflowBoundsItsNetworkCalls(unittest.TestCase):
         every window holds the resolve open for as long as it likes. The rule is
         `NETWORK_TOOLS["pip"] == ()` — only a wrapper counts — and it has to
         hold in the workflows this change widened to, not just in `publish.yml`.
+
+        The subject is the hash-locked bootstrap `lint` installs `uv` with,
+        which already carries `--timeout 30`: take the wrapper away and what is
+        left is exactly the call this rule refuses to call bounded. `count=1`
+        because three steps in this file spell that install and the mutation is
+        meant to leave one unbounded call, not three.
         """
         source = (WORKFLOW_DIR / "ci.yml").read_text(encoding="utf-8")
-        broken = source.replace(
-            'timeout 300 python -m pip install -e ".[dev]"',
-            'python -m pip install --timeout 30 -e ".[dev]"',
+        broken, swapped = re.subn(
+            r"timeout 300 python -m pip install --timeout 30",
+            "python -m pip install --timeout 30",
+            source,
+            count=1,
         )
-        self.assertNotEqual(broken, source, "the mutation matched nothing; rewrite it")
+        self.assertEqual(swapped, 1, "the mutation matched nothing; rewrite it")
         caught = [call for call in scan(broken) if not call.bounded and not is_waived(call)]
         self.assertEqual([call.tool for call in caught], ["pip"], [c.why() for c in caught])
         self.assertIn("`timeout` wrapper", caught[0].why())

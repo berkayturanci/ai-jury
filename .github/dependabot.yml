@@ -15,8 +15,20 @@ updates:
         patterns:
           - "*"
 
-  # Track Python tooling/build dependencies declared in pyproject.toml.
-  - package-ecosystem: "pip"
+  # Track the Python tooling declared in pyproject.toml *and* the `uv.lock` CI
+  # installs from (#751).
+  #
+  # `uv`, not `pip`, and the distinction is the whole point: the pip updater
+  # rewrites pyproject.toml and leaves the lock where it was, so its own pull
+  # request would arrive with a lock that no longer matches its manifest and
+  # `uv sync --locked` would fail it. Every bump would then be a manual
+  # `uv lock` before it could go green — the chore this repository does not
+  # want. The uv updater rewrites the manifest and the lock in one commit.
+  #
+  # If this ecosystem is ever unavailable, Dependabot reports a configuration
+  # error on the repository's Dependabot page rather than silently updating
+  # nothing — check there the first time it is due to run.
+  - package-ecosystem: "uv"
     directory: "/"
     schedule:
       interval: "weekly"
@@ -29,10 +41,11 @@ updates:
         patterns:
           - "*"
 
-  # Keep the hash-locked release tooling moving (#712). Dependabot rewrites the
-  # hashes with the version. The file has no dependency graph of its own, so a
-  # bump the resolver cannot satisfy is caught by the `release lockfiles
-  # resolve` CI job, not here.
+  # Keep the hash-locked tooling moving (#712, #751): publish-tools.txt for the
+  # release path, ci-tools.txt for the `uv` that reads the lock. Dependabot
+  # rewrites the hashes with the version. Neither file has a dependency graph of
+  # its own, so a bump the resolver cannot satisfy is caught by the `release
+  # lockfiles resolve` CI job, not here.
   - package-ecosystem: "pip"
     directory: "/.github/requirements"
     schedule:

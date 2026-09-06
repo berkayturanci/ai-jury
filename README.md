@@ -61,6 +61,14 @@ For development, install the dev extras (linting, build, and coverage tooling):
 pip install -e ".[dev]"   # or: make install
 ```
 
+That resolves `ruff`, `build` and `coverage` fresh. To get the exact versions CI
+uses — the ones pinned in the tracked `uv.lock`, with hashes — install from the
+lock instead. It is also the ruff the `ruff-format` pre-commit hook runs:
+
+```bash
+uv sync --locked --extra dev
+```
+
 ## Coverage
 
 Test coverage is measured with [`coverage.py`](https://coverage.readthedocs.io/)
