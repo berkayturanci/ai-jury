@@ -74,6 +74,7 @@ FIXTURE_FILES = {
     "website/app.js": 'config: "repo: x\\n    rev: v{v}\\n"\n',
     "README.md": "    rev: v{v}\n\nActive (v{v}).\n",
     "docs/cookbook.md": "    rev: v{v}\n\n" + UNLISTED_MARKER + "\n",
+    "docs/configuration.md": '  "tool_version": "{v}",\n',
 }
 
 #: Where that marker sits, and the entry that would register it.
