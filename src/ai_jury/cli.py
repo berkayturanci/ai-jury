@@ -2317,14 +2317,25 @@ def main(argv: list[str] | None = None) -> int:
     # context mode: ``run_jury`` clears ``context`` when the mode is "diff-only",
     # so the linters ran, this line was logged, and the panel saw nothing. The
     # orchestrator joins the block into the Round 1 prompt after that filter.
+    #
+    # The linters see the CHANGED files and nothing else (#737). The paths come
+    # from the same plan ``review_diff`` builds below — ``plan_for`` is pure, so
+    # the ``kept`` list here is the one the panel is shown — which means a file
+    # dropped by ``[jury.diff] include/exclude`` never contributes a hint about a
+    # diff the reviewers cannot read. ``--issue`` reviews prose and has no
+    # changed paths at all, so it gets no block. When the change touches nothing
+    # Ruff or ESLint handles, ``collect_static_hints`` returns "" rather than
+    # falling back to the working tree.
     hints_block = ""
     if config.hints:
         from .hints import collect_static_hints
+        from .orchestrator import plan_for
 
-        sh = collect_static_hints()
+        changed_paths = [] if args.issue else [p for p in plan_for(config, diff).kept_paths if p]
+        sh = collect_static_hints(changed_paths)
         if sh:
             hints_block = sh
-            log("injected static analysis hints into review context")
+            log(f"injected static analysis hints for {len(changed_paths)} changed file(s)")
 
     # Optional local result cache (issue #33): a hit skips the run entirely; a
     # miss runs the jury and stores the outcome. The key covers the diff,

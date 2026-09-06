@@ -1347,6 +1347,27 @@ def _merged_routing(outcomes: list[JuryOutcome], base: JuryOutcome, debate: list
     return merged
 
 
+def plan_for(config: JuryConfig, diff: str) -> largediff.DiffPlan:
+    """The diff plan *config* selects for *diff* (pure).
+
+    The one place that maps ``[jury.diff]`` onto :func:`largediff.plan_diff`, so
+    every caller that needs to know which files the panel will actually be shown
+    — :func:`review_diff` below, and the CLI's static-hints pre-pass (#737) —
+    reads the same ``kept`` list off the same filters. ``plan_diff`` is pure, so
+    planning the same diff twice returns the same answer.
+    """
+    dc = config.diff
+    return largediff.plan_diff(
+        diff,
+        max_bytes=dc.max_bytes,
+        chunk=dc.chunk,
+        chunk_max_bytes=dc.chunk_max_bytes,
+        exclude_generated=dc.exclude_generated,
+        exclude=dc.exclude,
+        include=dc.include,
+    )
+
+
 def review_diff(
     config: JuryConfig,
     diff: str,
@@ -1372,16 +1393,7 @@ def review_diff(
     Returns ``(outcome, plan)`` so the caller can surface the plan. Existing
     callers of :func:`run_jury` are unaffected.
     """
-    dc = config.diff
-    plan = largediff.plan_diff(
-        diff,
-        max_bytes=dc.max_bytes,
-        chunk=dc.chunk,
-        chunk_max_bytes=dc.chunk_max_bytes,
-        exclude_generated=dc.exclude_generated,
-        exclude=dc.exclude,
-        include=dc.include,
-    )
+    plan = plan_for(config, diff)
     log(
         f"diff size: {plan.total_bytes} B total, {plan.kept_bytes} B after filters "
         f"({len(plan.kept)} file(s) kept, {len(plan.excluded)} excluded); "
