@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import inspect
 import io
 import os
 import sys
@@ -189,8 +190,15 @@ class ChangedFilesOnlyTests(_CheckoutCase):
     """
 
     def test_the_changed_files_are_required(self):
-        with self.assertRaises(TypeError):
-            collect_static_hints()
+        # Asserted on the signature rather than by calling with no arguments:
+        # the claim is that `files` has no default, which is what makes a
+        # caller that forgets it a TypeError instead of a silently whole-tree
+        # run (#737). Reading the parameter says exactly that, and does not
+        # leave a deliberately wrong call in the file for every static analyser
+        # to rediscover.
+        files_param = inspect.signature(collect_static_hints).parameters["files"]
+        self.assertIs(files_param.default, inspect.Parameter.empty)
+        self.assertIsNone(inspect.signature(collect_static_hints).parameters["root_dir"].default)
 
     def test_no_changed_files_runs_no_linter(self):
         # `None` used to mean "the whole working tree". It now means "nothing".
