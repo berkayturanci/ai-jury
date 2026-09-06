@@ -10,7 +10,9 @@ name: keel-ship
 # an unrelated package at 0.1 — installing that would give this job someone
 # else's code, or no `keel` command at all. The version is bumped deliberately
 # rather than floated, so a keel release cannot change this repo's merge
-# contract without a reviewed diff here.
+# contract without a reviewed diff here. The pin is for reproducibility of
+# the gate, not avoidance of new rules: `.github/requirements/keel-tools.txt`
+# holds the same pin so Dependabot proposes the next bump.
 
 on:
   pull_request:
@@ -106,8 +108,10 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: "3.12"
+      # Same pin as .github/requirements/keel-tools.txt — reproducibility of
+      # the gate, not avoidance of new rules.
       - name: Install keel (pinned)
-        run: timeout 120 python -m pip install --upgrade pip && timeout 300 pip install "keel-workflow==1.19.0"
+        run: timeout 120 python -m pip install --upgrade pip && timeout 300 pip install "keel-workflow==1.21.0"
       - name: Make base branch available locally
         env:
           BASE: ${{ github.base_ref || 'main' }}
@@ -177,8 +181,10 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: "3.12"
+      # Same pin as .github/requirements/keel-tools.txt — reproducibility of
+      # the gate, not avoidance of new rules.
       - name: Install keel (pinned)
-        run: timeout 120 python -m pip install --upgrade pip && timeout 300 pip install "keel-workflow==1.19.0"
+        run: timeout 120 python -m pip install --upgrade pip && timeout 300 pip install "keel-workflow==1.21.0"
       - name: Verify posted ship evidence
         env:
           GH_TOKEN: ${{ github.token }}

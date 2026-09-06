@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The evidence gate was pinned to keel 1.19.0, one release before the rules a current install runs** (#760). `.github/workflows/keel-ship.yml` installed `keel-workflow==1.19.0` in both jobs; `review-verdict-insubstantial` landed in 1.19.1, so CI enforced a weaker rule set than a local `keel` 1.20+ (observed on #753: CI green, local FAIL). Both pins move to **1.21.0**, the current PyPI release. The pin is for reproducibility of the gate, not avoidance of new rules — `.github/requirements/keel-tools.txt` carries the same pin so Dependabot's existing `pip` entry at `/.github/requirements` opens a PR on each keel-workflow release instead of the pin quietly aging. berkayturanci/keel#1106 (open as [keel#1113](https://github.com/berkayturanci/keel/pull/1113)) widens the insubstantial-verdict anchors; until that lands in a keel cut, this bump may still refuse some detailed verdicts that #1106 would accept.
+
 ## [1.17.0] - 2026-09-06
 
 ### Added
