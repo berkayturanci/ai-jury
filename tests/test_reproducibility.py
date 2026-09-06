@@ -141,6 +141,19 @@ class ConfigHashMetadataTest(unittest.TestCase):
         changed.rounds = base.rounds + 1
         self.assertNotEqual(config_hash(base), config_hash(changed))
 
+    def test_prompt_mode_changes_config_hash(self) -> None:
+        stdin = _config()
+        stdin.agents[0].prompt_mode = "stdin"
+        arg = _config()
+        arg.agents[0].prompt_mode = "arg"
+        self.assertNotEqual(config_hash(stdin), config_hash(arg))
+
+    def test_unset_prompt_mode_preserves_config_hash(self) -> None:
+        base = _config()
+        explicit_unset = _config()
+        explicit_unset.agents[0].prompt_mode = None
+        self.assertEqual(config_hash(base), config_hash(explicit_unset))
+
     def test_seed_does_not_affect_config_hash(self) -> None:
         # The config hash describes settings independent of the chosen run seed.
         a = _config()

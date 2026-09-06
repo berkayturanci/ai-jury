@@ -1527,6 +1527,11 @@ def config_hash(config: JuryConfig) -> str:
                 # entry — stays byte-identical. The conditional is the point,
                 # not an optimisation: this change invalidates no one's cache.
                 **({"adapter": a.adapter_key} if a.adapter_key != a.vendor else {}),
+                # Prompt transport changes the CLI protocol, so seats that differ
+                # only in it must not share a cached outcome (issue #746). Keep
+                # the key conditional so configurations that never named the
+                # field retain their existing cache identity.
+                **({"prompt_mode": a.prompt_mode} if a.prompt_mode is not None else {}),
                 # The tier decides which seats a routed panel keeps, so two
                 # benches that differ in it are not the same run (issue #714).
                 # Conditional for the reason `adapter` is: a seat with no `tier`
