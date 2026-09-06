@@ -61,15 +61,18 @@ _WRITE_TOOLS: tuple[str, ...] = ("Edit", "Write", "NotebookEdit", "Bash")
 # CLI's own argument-precedence rule, not something this module can assert. The
 # other two entries (`workspace-write`, `danger-full-access`) are sandbox VALUES,
 # which enforcement leaves exactly as written and the audit already reaches.
-#: Flags that pick a sandbox of their own, keyed by the vendor whose CLI reads them
-#: that way. A name is not a meaning: codex documents ``--yolo`` as the alias of
-#: ``--dangerously-bypass-approvals-and-sandbox``, which leaves **no** sandbox, while
-#: agy's ``--yolo`` only skips approval prompts and stays inside its sandbox. Auditing
-#: one CLI's spelling with another's dictionary is how the most dangerous flag on the
-#: codex path went unmentioned while a milder one was reported (#750).
-_SANDBOX_SELECTING_FLAGS: dict[str, tuple[str, ...]] = {
-    "openai": ("--full-auto", "--yolo", "--dangerously-bypass-approvals-and-sandbox"),
-}
+#: codex flags that pick a *different* sandbox, and ones that remove the sandbox
+#: altogether. Two lists because the operator has to be told which: `--full-auto`
+#: selects workspace-write and leaves a sandbox, while `--yolo` is the documented
+#: alias of `--dangerously-bypass-approvals-and-sandbox` and leaves none at all.
+#: A name is not a meaning — agy's `--yolo` only skips approval prompts and stays
+#: inside its sandbox, so reading one CLI's spelling with another's dictionary is
+#: how the most dangerous flag on the codex path went unmentioned (#750).
+_CODEX_SANDBOX_SELECTORS: tuple[str, ...] = ("--full-auto",)
+_CODEX_SANDBOX_DISABLERS: tuple[str, ...] = (
+    "--yolo",
+    "--dangerously-bypass-approvals-and-sandbox",
+)
 
 
 def _disallowed_tools_at(args: list[str], i: int) -> tuple[str, int] | None:
@@ -143,23 +146,60 @@ def _is_sandboxed(extra_args: list[str], vendor: str = "", name: str = "") -> bo
     return False
 
 
-def _competing_sandboxes(extra_args: list[str], vendor: str = "") -> list[str]:
-    """Every token in the argv that selects a sandbox the enforced read-only one is not.
+def _is_codex(vendor: str, name: str) -> bool:
+    """The identity rule ``enforce_read_only`` already uses for the codex branch.
 
-    :func:`_is_sandboxed` asks "is a restricting sandbox named here?" and stops at the
-    first one it finds. That is the right question for enforcement and the wrong one
-    for an audit. Codex takes the sandbox as a *value*, so a second ``-s
-    workspace-write`` sits happily beside the enforced ``-s read-only`` — enforcement
-    adds nothing, because a sandbox token already exists — and which of the two the CLI
-    honours is its own argument precedence, not something this module can read. The
-    alias flags are the same problem spelled differently (#750).
+    Kept in one place so the audit cannot key off a different half of the seat
+    than enforcement did: enforcement recognises codex by ``vendor == "openai"``
+    *or* a name containing ``codex``, so a seat named ``codex`` with an unknown
+    vendor is enforced as codex and must be audited as codex too (#750).
+    """
+    return normalise_vendor(vendor) == "openai" or "codex" in (name or "").lower()
+
+
+def _present(flag: str, args: list[str]) -> str | None:
+    """The token in *args* that spells *flag*, bare or with an ``=`` value.
+
+    This module treats the ``=`` spelling as first-class for ``-s`` (#316) and
+    ``--disallowed-tools`` (#717); a selector list matching only the bare token
+    let ``--full-auto=true`` through while ``--full-auto`` warned.
+    """
+    for a in args:
+        if a == flag or a.startswith(flag + "="):
+            return a
+    return None
+
+
+def _competing_sandboxes(
+    extra_args: list[str], vendor: str = "", name: str = ""
+) -> list[tuple[str, bool]]:
+    """Sandbox statements in the argv besides the enforced read-only one.
+
+    Each entry is ``(token, disables)`` — ``disables`` marks a flag that removes
+    the sandbox rather than picking a different one, because the operator needs
+    to be told which.
+
+    :func:`_is_sandboxed` asks "is a restricting sandbox named here?" and stops at
+    the first one. That is the right question for enforcement and the wrong one for
+    an audit: codex takes the sandbox as a *value*, so a second ``-s
+    workspace-write`` sits beside the enforced ``-s read-only`` — enforcement adds
+    nothing, a sandbox token already exists — and which one the CLI honours is its
+    own argument precedence, not something this module can read.
 
     A ``-s``/``--sandbox`` whose next token is another flag, or absent, is agy's
-    boolean sandbox and selects nothing.
+    boolean sandbox and states nothing.
     """
-    vendor = normalise_vendor(vendor)
     args = list(extra_args)
-    found = [flag for flag in _SANDBOX_SELECTING_FLAGS.get(vendor, ()) if flag in args]
+    found: list[tuple[str, bool]] = []
+    if _is_codex(vendor, name):
+        for flag in _CODEX_SANDBOX_SELECTORS:
+            token = _present(flag, args)
+            if token:
+                found.append((token, False))
+        for flag in _CODEX_SANDBOX_DISABLERS:
+            token = _present(flag, args)
+            if token:
+                found.append((token, True))
     for i, a in enumerate(args):
         if a.startswith(("-s=", "--sandbox=")):
             value, shown = a.split("=", 1)[1], a
@@ -171,7 +211,7 @@ def _competing_sandboxes(extra_args: list[str], vendor: str = "") -> list[str]:
         if not value or value.startswith("-"):
             continue
         if value not in _RESTRICTING_SANDBOX_VALUES:
-            found.append(shown)
+            found.append((shown, False))
     return found
 
 
@@ -495,18 +535,33 @@ def audit_agent(spec) -> list[str]:
         # which one wins (issue #750). Said plainly rather than through the
         # generic message below, which would recommend the `-s read-only` that
         # is already there.
-        competing = _competing_sandboxes(extra_args, vendor=vendor)
+        competing = _competing_sandboxes(extra_args, vendor=vendor, name=name)
         if competing:
-            named = ", ".join(f"`{s}`" for s in competing)
+            named = ", ".join(f"`{token}`" for token, _ in competing)
             one = len(competing) == 1
-            warnings.append(
-                f"agent '{label}' is configured with {named}, which "
-                f"{'selects a sandbox of its own' if one else 'each select a sandbox of their own'}; "
-                f"{'it is' if one else 'they are'} passed alongside the enforced read-only "
-                f"sandbox, so which {'of the two applies' if one else 'applies'} is up to "
-                f"the CLI. "
-                f"Drop {'it' if one else 'them'} — a reviewer only reads its prompt."
-            )
+            # Say which failure mode it is. `--full-auto` picks a write-capable
+            # sandbox; `--yolo` removes the sandbox altogether. Telling an operator
+            # that a bypass merely "selects a sandbox of its own" describes the
+            # milder of the two and understates what they configured.
+            if all(disables for _, disables in competing):
+                effect = (
+                    "disables the sandbox entirely" if one else "each disable the sandbox entirely"
+                )
+                tail = (
+                    f"the enforced read-only sandbox may not apply at all. "
+                    f"Drop {'it' if one else 'them'} — a reviewer only reads its prompt."
+                )
+            else:
+                effect = (
+                    "selects a sandbox of its own" if one else "each state a sandbox of their own"
+                )
+                tail = (
+                    f"{'it is' if one else 'they are'} passed alongside the enforced "
+                    f"read-only sandbox, so which {'of the two applies' if one else 'applies'} "
+                    f"is up to the CLI. Drop {'it' if one else 'them'} — a reviewer only "
+                    f"reads its prompt."
+                )
+            warnings.append(f"agent '{label}' is configured with {named}, which {effect}; {tail}")
         return warnings
     # Not sandboxed. A broad-powers flag gets a specific message…
     for flag in _DANGEROUS_FLAGS:

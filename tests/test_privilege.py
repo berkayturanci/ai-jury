@@ -484,6 +484,38 @@ class ASandboxIsNotSettledByTheFirstOneNamed(unittest.TestCase):
 
                 self.assertEqual(privilege.audit_agent(spec), [])
 
+    def test_the_equals_spelling_of_a_selector_is_matched_too(self):
+        """`-s=` (#316) and `--disallowed-tools=` (#717) are already first-class here."""
+        for flag in ("--full-auto", "--yolo", "--dangerously-bypass-approvals-and-sandbox"):
+            with self.subTest(flag=flag):
+                warnings = privilege.audit_agent(self._codex([f"{flag}=true"]))
+
+                self.assertTrue(warnings, f"{flag}=true audited clean")
+                self.assertIn(f"{flag}=true", warnings[0])
+
+    def test_the_audit_reads_the_same_half_of_the_seat_enforcement_did(self):
+        """Enforcement recognises codex by vendor OR name; so must the audit.
+
+        `enforce_read_only` injects `-s read-only` for a seat merely *named*
+        codex, so a seat named codex with an unknown vendor is spawned as codex.
+        Keying the selector list off the vendor alone left that seat enforced as
+        codex and audited as nothing.
+        """
+        spec = AgentSpec(name="codex", vendor="acme", command="x", extra_args=["--full-auto"])
+
+        self.assertIn("-s", adapters._read_only_extra_args(spec))
+        self.assertTrue(privilege.audit_agent(spec))
+
+    def test_a_bypass_is_not_described_as_a_second_sandbox(self):
+        """`--full-auto` picks a sandbox; `--yolo` removes one. Say which."""
+        selects = privilege.audit_agent(self._codex(["--full-auto"]))[0]
+        disables = privilege.audit_agent(self._codex(["--yolo"]))[0]
+
+        self.assertIn("selects a sandbox of its own", selects)
+        self.assertIn("which of the two applies", selects)
+        self.assertIn("disables the sandbox entirely", disables)
+        self.assertIn("may not apply at all", disables)
+
     def test_a_seat_with_only_the_enforced_sandbox_is_still_clean(self):
         self.assertEqual(privilege.audit_agent(self._codex([])), [])
 
