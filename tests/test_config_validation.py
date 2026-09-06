@@ -26,6 +26,7 @@ from ai_jury.config import (
     KNOWN_NESTED_JURY_KEYS,
     AgentSpec,
     ConfigError,
+    JuryConfig,
     _ci_from_dict,
     _context_from_dict,
     _diff_from_dict,
@@ -343,6 +344,115 @@ class TierValidation(unittest.TestCase):
         economical = _from_dict(self._with_tier("economical"))
         self.assertEqual(config_hash(base), config_hash(explicit_default))
         self.assertNotEqual(config_hash(base), config_hash(economical))
+
+
+class RoutingValidation(unittest.TestCase):
+    """`[jury] routing` is `standard` or `tiered`, and nothing else (#747).
+
+    Hard, like `[[agent]] tier`, its companion key, and for the same reason: the
+    routed panel is selected by comparing against the literal `"tiered"`, so an
+    unknown spelling takes the `standard` path — an operator who wrote
+    `routing = "teired"` pays for the uniform panel while believing they asked
+    for the cheap one, and nothing anywhere says so.
+    """
+
+    @staticmethod
+    def _with_routing(value):
+        jury = {"rounds": 1, "chair": "a"}
+        if value is not None:
+            jury["routing"] = value
+        return {"jury": jury, "agent": [{"name": "a", "vendor": "anthropic", "command": "claude"}]}
+
+    def test_the_two_kinds_are_accepted_case_insensitively(self):
+        for value, expected in (("standard", "standard"), ("Tiered", "tiered")):
+            with self.subTest(value=value):
+                data = self._with_routing(value)
+                self.assertEqual(validate_config(data), [])
+                self.assertEqual(_from_dict(data).routing, expected)
+
+    def test_unset_means_standard(self):
+        data = self._with_routing(None)
+        self.assertEqual(validate_config(data), [])
+        self.assertEqual(_from_dict(data).routing, "standard")
+
+    def test_an_unknown_kind_is_a_hard_error_naming_the_value(self):
+        # The issue's typo included: it read as `standard` and said nothing.
+        for value in ("teired", 3, ""):
+            with self.subTest(value=value):
+                with self.assertRaises(ConfigError) as ctx:
+                    validate_config(self._with_routing(value))
+                self.assertIn("jury.routing must be one of standard, tiered", str(ctx.exception))
+                self.assertIn(repr(value), str(ctx.exception))
+
+    def test_the_config_never_carries_an_unknown_spelling(self):
+        # The reader normalises on construction, so no rule downstream can be
+        # handed a routing kind the vocabulary does not have — including the
+        # readers that load without validating (`--doctor`, `jury run-agent`).
+        self.assertEqual(JuryConfig(routing=" TIERED ").routing, "tiered")
+        self.assertEqual(JuryConfig(routing="teired").routing, "standard")
+        self.assertEqual(JuryConfig(routing=None).routing, "standard")
+
+    def test_the_documented_tiered_example_stays_strict_clean(self):
+        # `docs/configuration.md` teaches `routing = "tiered"`; a vocabulary that
+        # rejected the documented spelling would fail the very gate the doc tells
+        # the reader to run. `DocumentedExamplesAreStrictClean` scans the doc
+        # itself; this pins the value that scan must keep accepting.
+        self.assertEqual(validate_config(self._with_routing("tiered"), strict=True), [])
+
+
+class PromptModeIsPartOfTheRunIdentity(unittest.TestCase):
+    """`config_hash` covers `[[agent]] prompt_mode` (#746).
+
+    Same class as `headers`/`api_key_env` (#716) and `adapter` (#705): a field
+    that decides how a seat is *invoked* has to be part of the run's identity,
+    or `--cache` serves the outcome of one invocation protocol for a run
+    configured with the other. `stdin` pipes the prompt; `arg` appends it to
+    argv. Every sibling of `AgentSpec` that steers invocation was already here.
+    """
+
+    @staticmethod
+    def _with_prompt_mode(value):
+        agent = {"name": "a", "vendor": "cli", "command": "my-agent"}
+        if value is not None:
+            agent["prompt_mode"] = value
+        return {"jury": {"rounds": 1, "chair": "a"}, "agent": [agent]}
+
+    def test_the_two_delivery_protocols_hash_differently(self):
+        stdin = _from_dict(self._with_prompt_mode("stdin"))
+        arg = _from_dict(self._with_prompt_mode("arg"))
+        self.assertNotEqual(config_hash(stdin), config_hash(arg))
+
+    def test_the_cache_key_of_a_config_that_names_no_prompt_mode_is_untouched(self):
+        # No one's review cache is invalidated by a key they did not set: the
+        # field reaches the payload only when it was written, so the canonical
+        # payload of every configuration written before #746 — and of one that
+        # spells the unset state out as an empty string, which `_from_dict`
+        # folds to `None` and the adapter reads as `stdin` — is byte-identical
+        # to what it hashed to before.
+        base = _from_dict(self._with_prompt_mode(None))
+        empty = _from_dict(self._with_prompt_mode(""))
+        self.assertIsNone(base.agents[0].prompt_mode)
+        self.assertIsNone(empty.agents[0].prompt_mode)
+        self.assertEqual(config_hash(base), config_hash(empty))
+        self.assertNotEqual(
+            config_hash(base), config_hash(_from_dict(self._with_prompt_mode("arg")))
+        )
+
+    def test_the_two_protocols_build_the_argv_the_hash_claims_they_do(self):
+        # The hash is only worth splitting if the seats really are invoked
+        # differently: `arg` appends the prompt and sends no stdin, `stdin` pipes
+        # it and leaves argv alone. Asserted rather than assumed.
+        from ai_jury.adapters import make_adapter
+
+        built = {}
+        for value in ("stdin", "arg"):
+            spec = _from_dict(self._with_prompt_mode(value)).agents[0]
+            adapter = make_adapter(spec)
+            built[value] = (adapter.build_argv("PROMPT"), adapter._stdin_for("PROMPT"))
+        self.assertNotEqual(built["stdin"], built["arg"])
+        self.assertEqual(built["stdin"][1], "PROMPT")
+        self.assertIsNone(built["arg"][1])
+        self.assertEqual(built["arg"][0][-1], "PROMPT")
 
 
 class FailOnVocabulary(unittest.TestCase):

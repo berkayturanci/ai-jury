@@ -476,6 +476,14 @@ KNOWN_EFFORTS = ("low", "medium", "high")
 KNOWN_TIERS = ("frontier", "economical")
 DEFAULT_TIER = "frontier"
 
+#: Accepted values for ``[jury] routing`` (issue #524). ``standard`` is the
+#: default uniform panel; ``tiered`` is the risk-aware panel that reads each
+#: seat's :data:`KNOWN_TIERS` value. The closed vocabulary is the companion of
+#: ``tier``'s (#747): the two keys are one feature, and a misspelling of either
+#: silently produces the panel the operator did not ask for.
+KNOWN_ROUTINGS = ("standard", "tiered")
+DEFAULT_ROUTING = "standard"
+
 
 class ConfigError(Exception):
     """Raised when a jury configuration is invalid."""
@@ -698,6 +706,16 @@ def validate_config(data: dict, strict: bool = False) -> list:
     style = jury.get("theater_style")
     if style is not None and str(style).strip().lower() not in ("flat", "pixel"):
         errors.append(f"jury.theater_style must be 'flat' or 'pixel' (got {style!r}).")
+
+    # Panel routing (hard when present and not a known kind, issue #747), for the
+    # reason `[[agent]] tier` is hard: nothing equals "tiered" but "tiered", so
+    # `routing = "teired"` would otherwise be read as the default and the run
+    # would quietly buy the uniform panel the operator asked it not to.
+    routing = jury.get("routing")
+    if routing is not None and (
+        not isinstance(routing, str) or routing.strip().lower() not in KNOWN_ROUTINGS
+    ):
+        errors.append(f"jury.routing must be one of {', '.join(KNOWN_ROUTINGS)} (got {routing!r}).")
 
     # Adaptive rounds (issue #40): max_rounds >= 1 (hard); early_stop is a bool.
     max_rounds_error = bound_error("max_rounds", jury.get("max_rounds"))
@@ -1201,10 +1219,25 @@ class JuryConfig:
     # terminal (and ``pixel`` falls back to ``flat`` without truecolor/unicode).
     theater: bool = False
     theater_style: str = "flat"
-    # Risk-aware tiered model routing (issue #524): "standard" (uniform panel) | "tiered" (cost-optimized with frontier anchor)
-    routing: str = "standard"
+    # Risk-aware tiered model routing (issue #524): "standard" (uniform panel) |
+    # "tiered" (cost-optimized with frontier anchor). Normalised on construction
+    # like `AgentSpec.tier`, its companion key; an unknown value is refused by
+    # `validate_config` and falls back to the default here so no reader carries a
+    # spelling the vocabulary lacks (#747).
+    routing: str = DEFAULT_ROUTING
     # Pre-pass static analysis hints (issue #523): inject linter hints into prompt context
     hints: bool = False
+
+    def __post_init__(self) -> None:
+        # The single normalisation point for `routing`, for the reason
+        # `AgentSpec.__post_init__` is one for `tier`: `_from_dict` is not the
+        # only way a config is built — `--doctor` and `jury run-agent` load
+        # without validating, and tests and programmatic callers construct
+        # `JuryConfig` directly — and every one of those readers compares against
+        # the literal "tiered". A value that survives to a reader unnormalised
+        # takes the `standard` path while claiming to be something else.
+        routing = str(self.routing).strip().lower() if isinstance(self.routing, str) else ""
+        self.routing = routing if routing in KNOWN_ROUTINGS else DEFAULT_ROUTING
 
     @property
     def effective_max_rounds(self) -> int:
@@ -1399,7 +1432,11 @@ def _from_dict(data: dict) -> JuryConfig:
         decision=(str(jury.get("decision", "chair")).strip().lower() or "chair"),
         theater=bool(jury.get("theater", False)),
         theater_style=(str(jury.get("theater_style", "flat")).strip().lower() or "flat"),
-        routing=(str(jury.get("routing", "standard")).strip().lower() or "standard"),
+        # Passed through raw on purpose, like `AgentSpec`'s `vendor`:
+        # `JuryConfig.__post_init__` is the one place that normalises a routing
+        # kind, so normalising here as well would create a second place to keep
+        # in step (#747).
+        routing=jury.get("routing", DEFAULT_ROUTING),
         hints=bool(jury.get("hints", False)),
     )
 
@@ -1496,6 +1533,27 @@ def config_hash(config: JuryConfig) -> str:
                 # means exactly what it meant before the key existed, so every
                 # existing cache entry stays byte-identical.
                 **({"tier": a.tier} if a.tier != DEFAULT_TIER else {}),
+                # How the prompt reaches the seat: piped to stdin, or appended to
+                # argv as the last argument (issue #746). That is the invocation
+                # protocol, so a cached outcome produced under one must not be
+                # served for a run configured with the other — the rule that put
+                # `adapter` here, one field along. Conditional for the reason
+                # `adapter` is: `None` and `""` both mean the `stdin` fallback in
+                # `GenericCLIAdapter._prompt_mode`, which is what a config that never
+                # named the key has always meant, so its canonical payload — and
+                # therefore every existing cache entry — stays byte-identical.
+                #
+                # The test is "was it written", not "does it resolve to something
+                # other than the default", which is where this parts company with
+                # `adapter` and `tier`: an explicit `prompt_mode = "stdin"`, or an
+                # `"ARG"` beside an `"arg"`, splits the key even though the seat is
+                # invoked identically. Deliberate. Unlike those two, this field is
+                # neither validated nor normalised on construction, so folding
+                # spellings together here would put a second, more precise reader
+                # of the vocabulary next to the adapter's own — the duplication
+                # #701 r3 removed. The cost is one extra run for a config that
+                # writes the default out longhand; the alternative is a stale hit.
+                **({"prompt_mode": a.prompt_mode} if a.prompt_mode else {}),
                 # Where the request goes and under whose key (issue #716). A
                 # provider-routing header — `X-Route: premium`, an OpenRouter
                 # `HTTP-Referer`, an Azure deployment selector — can put a

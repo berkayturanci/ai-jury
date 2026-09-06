@@ -343,7 +343,11 @@ The cache key covers the diff, effective config, prompt version, package
 version, context policy, and seed — change any and the next run is a miss. Under
 `--context-mode expanded` it also covers the context **text** the panel is shown,
 so editing a PR title/body is a miss (#738); under the default `diff-only` the
-context reaches no reviewer and is not part of the key.
+context reaches no reviewer and is not part of the key. Under `--hints` it also
+covers the **static-analysis block** the linters produced, under every context
+mode, so fixing a lint error in the working tree is a miss even when the diff and
+the config have not moved (#745); a run that produced no block — every run under
+the default `hints = false` included — keys exactly as it did before.
 
 **Example:** `jury --pr 123 --cache` reuses a stored verdict for an unchanged
 diff+config; `jury --clear-cache` (or `jury cache clear`) wipes all entries.
@@ -532,8 +536,8 @@ fails loudly.
 | `decision` | `"chair"` \| `"vote"` | `"chair"` | Final-verdict source: chair synthesis or a panel vote (CLI `--decision`). Rendering-only — not part of the config hash or cache key. |
 | `theater` | bool | `false` | Enable live interactive terminal animation. |
 | `theater_style` | `"flat"` \| `"pixel"` | `"flat"` | Visual aesthetic for terminal animation. |
-| `routing` | `"standard"` \| `"tiered"` | `"standard"` | Risk-aware tiered routing with a frontier anchor (CLI `--tiered`): the round-1 panel follows the diff's risk band and each seat's `tier`; see [tiered routing](configuration.md#tiered-routing-routing--tiered--static-hints-hints--true). Part of the config hash and cache key. |
-| `hints` | bool | `false` | Run a fast static linter pre-pass over the *changed* files to inject hints into Round 1, under every context mode (CLI `--hints` / `--no-hints`). Part of the config hash and cache key. |
+| `routing` | `"standard"` \| `"tiered"` | `"standard"` | Risk-aware tiered routing with a frontier anchor (CLI `--tiered`): the round-1 panel follows the diff's risk band and each seat's `tier`; see [tiered routing](configuration.md#tiered-routing-routing--tiered--static-hints-hints--true). An unknown value is a hard config error, like `[[agent]] tier`: nothing but `"tiered"` selects the routed panel, so a typo would quietly buy the standard one. Part of the config hash and cache key. |
+| `hints` | bool | `false` | Run a fast static linter pre-pass over the *changed* files to inject hints into Round 1, under every context mode (CLI `--hints` / `--no-hints`). The flag is part of the config hash, and the **block the linters produced** is part of the cache key whenever there is one — it is a function of the working tree, so it can change while the diff and the config stand still. A run with no block keys as it did before the key existed. |
 | `demote_local_only` | bool | `false` | Demote uncorroborated single-local-model findings to minor advisory status. |
 
 **Example:**
@@ -586,7 +590,7 @@ transcript = true   # default the markdown report to the full play-by-play
 | `model` | string | unset | Model identifier. Required for API providers and local models. |
 | `endpoint` | string | `http://localhost:11434/v1` (local) | Base URL for OpenAI-compatible HTTP providers (Ollama, OpenRouter, DeepSeek, Groq, Mistral, LiteLLM). |
 | `api_key_env` | string | unset (`OPENAI_API_KEY` default) | Environment variable **name** holding the API key for `openai-compatible` vendors (e.g. `DEEPSEEK_API_KEY`, `OPENROUTER_API_KEY`). Must match `[A-Za-z_][A-Za-z0-9_]*` (max 128 chars); anything else warns and falls back to the vendor default, because this name is echoed into `jury --doctor` and its JSON export. The warning names the agent and the rule but never quotes the rejected value back. The key's **value** is read from the environment and never displayed. |
-| `prompt_mode` | string | `stdin` | Prompt delivery for `vendor = "cli"` (`stdin` \| `arg`). |
+| `prompt_mode` | string | `stdin` | Prompt delivery for `vendor = "cli"` (`stdin` \| `arg`). Part of the config hash when written, so two seats differing only in it do not share a cache entry — the prompt reaching a seat down a pipe or on argv is two invocation protocols, not one. A config that never names the key hashes exactly as it did before, so no existing cache entry is invalidated. |
 | `headers` | table of strings | `{}` | Custom HTTP headers map for `openai-compatible` API calls. A `headers` that is not a table (a bare string, an array) is a **hard** config error naming the agent, because it cannot become headers at all — as is a non-string header name. A non-string **value** (`X-Retries = 3`) **warns** and is coerced to a string before being sent, like a malformed `api_key_env` that falls back; `--strict-config` makes that fatal. Part of the config hash, so two seats differing only in a routing header do not share a cache entry. No message quotes the offending value back — a header is where a bearer token lives. |
 | `effort` | string | unset | `low` \| `medium` \| `high`. Reasoning effort, mapped per vendor (see [effort](configuration.md#reasoning-effort-agent-effort----effort)). An unknown value is a hard config error; a vendor with no effort control warns once and ignores it. Overridden by `--effort`. |
 | `tier` | string | `frontier` | `frontier` \| `economical`. The seat's cost tier, read by `routing = "tiered"` (see [tiered routing](configuration.md#tiered-routing-routing--tiered--static-hints-hints--true)): economical seats sit on routine diffs, frontier seats anchor them and are benched otherwise. The operator says which is which — there are no model-name heuristics. An unknown value is a hard config error. Part of the config hash only when set to `economical`, so an existing config's cache entries are unchanged. |

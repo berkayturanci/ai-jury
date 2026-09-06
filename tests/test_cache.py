@@ -243,6 +243,164 @@ class TheContextTextIsPartOfTheKey(unittest.TestCase):
             self.assertEqual(self._cli_cache_state(tmp, self.CTX_B), (True, False))
 
 
+def _pre_745_key(config, diff, *, context="", seed=None, mock=False, policy=None, mode="code"):
+    """The key exactly as ``cache_key`` computed it after #738 and before #745.
+
+    A frozen copy for the reason :func:`_pre_738_key` is one, and it earns its
+    own because #738 left a payload ``_pre_738_key`` can no longer produce: an
+    ``expanded`` run that *does* send context. The claim under test is that such
+    a run — an ordinary ``--pr`` review — hashes the same *payload bytes* it did
+    before ``hints`` reached this key, and only a copy of the old payload can
+    witness that.
+    """
+    import hashlib
+
+    from ai_jury import __version__, prompts
+    from ai_jury.cache import CACHE_SCHEMA, _policy_fingerprint
+    from ai_jury.config import config_hash
+
+    panel_context = "" if config.context.mode == "diff-only" else context
+    payload = {
+        "cache_schema": CACHE_SCHEMA,
+        "package_version": __version__,
+        "prompt_version": prompts.PROMPT_VERSION,
+        "config_hash": config_hash(config),
+        "diff_sha256": hashlib.sha256(diff.encode("utf-8")).hexdigest(),
+        "context_mode": config.context.mode,
+        "redact_secrets": config.context.redact_secrets,
+        "verify": config.verify,
+        "seed": seed if seed is not None else config.seed,
+        "mock": bool(mock),
+        "policy": _policy_fingerprint(policy),
+        "mode": mode,
+    }
+    if panel_context:
+        payload["context_sha256"] = hashlib.sha256(panel_context.encode("utf-8")).hexdigest()
+    blob = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+class TheHintsBlockIsPartOfTheKey(unittest.TestCase):
+    """Issue #745: the key folded in the ``hints`` *flag* but not the block.
+
+    ``--hints`` runs Ruff/ESLint over the changed paths and joins the result into
+    every Round 1 prompt. That block is a function of the **working tree**, not
+    of the diff or the config, so it is the one prompt input that changes while
+    every other input to this key stands still: fix a lint error anywhere the
+    linters can see, and the panel would have been shown something different
+    under a key that had not moved.
+    """
+
+    HINTS_A = "### Static analysis\n- src/example.py:1: E501 line too long\n"
+    HINTS_B = "### Static analysis\n- src/example.py:1: F401 unused import\n"
+
+    def test_two_hint_blocks_differing_only_in_text_key_differently(self):
+        self.assertNotEqual(
+            cache_key(_config(), SAMPLE_DIFF, hints=self.HINTS_A),
+            cache_key(_config(), SAMPLE_DIFF, hints=self.HINTS_B),
+        )
+
+    def test_the_same_hints_block_keys_the_same(self):
+        self.assertEqual(
+            cache_key(_config(), SAMPLE_DIFF, hints=self.HINTS_A),
+            cache_key(_config(), SAMPLE_DIFF, hints=self.HINTS_A),
+        )
+
+    def test_adding_a_hints_block_changes_the_key(self):
+        self.assertNotEqual(
+            cache_key(_config(), SAMPLE_DIFF),
+            cache_key(_config(), SAMPLE_DIFF, hints=self.HINTS_A),
+        )
+
+    def test_a_run_with_hints_off_keeps_its_key(self):
+        # The point of the conditional: `hints = false` is the default, so the
+        # payload of a run that produced no block must be byte-identical to the
+        # one it hashed before this key existed — with or without a block on the
+        # call. Under the default context mode that payload is also the pre-#738
+        # one, which is the strongest witness available.
+        cfg = _config()
+        self.assertFalse(cfg.hints)
+        old = _pre_738_key(cfg, SAMPLE_DIFF)
+        self.assertEqual(cache_key(cfg, SAMPLE_DIFF), old)
+        self.assertEqual(cache_key(cfg, SAMPLE_DIFF, hints=""), old)
+
+    def test_an_expanded_run_with_context_and_no_hints_keeps_its_key_too(self):
+        # The other shape a real `--pr` review has: context admitted by the mode,
+        # no block from the linters. Its entries are not invalidated either.
+        cfg = _expanded()
+        ctx = "## Summary\nAdds a parser.\n"
+        self.assertEqual(
+            cache_key(cfg, SAMPLE_DIFF, context=ctx),
+            _pre_745_key(cfg, SAMPLE_DIFF, context=ctx),
+        )
+
+    def test_the_block_is_keyed_under_every_context_mode(self):
+        # Unlike `context`, the block takes no mode filter: `run_jury` joins it
+        # into Round 1 *after* the "diff-only" filter (#715), precisely so the
+        # default mode cannot discard it. A key that filtered it would replay a
+        # stale review for every run that never asked for context.
+        for cfg in (_config(), _expanded()):
+            with self.subTest(mode=cfg.context.mode):
+                self.assertNotEqual(
+                    cache_key(cfg, SAMPLE_DIFF, hints=self.HINTS_A),
+                    cache_key(cfg, SAMPLE_DIFF, hints=self.HINTS_B),
+                )
+
+    def _cli_cache_state(self, cache_dir, block):
+        """Run the mock CLI with ``--hints --cache`` and report hit/miss.
+
+        The block reaches the key from the CALL SITE — ``cli`` resolves it from
+        ``collect_static_hints`` and hands the same string to ``cache_key`` and
+        to ``run_jury`` — so the linters are the seam patched here, and the
+        threading through the CLI is what is under test.
+        """
+        import contextlib
+        import io
+
+        from ai_jury import cli, hints
+
+        argv = ["--mock", "--diff-file", "-", "--hints", "--cache", "--cache-dir", str(cache_dir)]
+        err = io.StringIO()  # the progress log, where the hit/miss line lands
+        with (
+            unittest.mock.patch.object(cli, "_read_diff", return_value=(SAMPLE_DIFF, "")),
+            unittest.mock.patch.object(hints, "collect_static_hints", return_value=block),
+            contextlib.redirect_stdout(io.StringIO()),
+            contextlib.redirect_stderr(err),
+        ):
+            code = cli.main(argv)
+        self.assertEqual(code, 0)
+        text = err.getvalue()
+        self.assertTrue("cache hit" in text or "cache miss" in text, text)
+        return "cache hit" in text, "cache miss" in text
+
+    def test_a_changed_tree_is_a_cache_miss_end_to_end(self):
+        # The issue, reproduced through the CLI: the diff and the config are
+        # fixed and only the linters' answer moves, which is exactly the run the
+        # old key could not tell apart from the one before it.
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(self._cli_cache_state(tmp, self.HINTS_A), (False, True))
+            self.assertEqual(self._cli_cache_state(tmp, self.HINTS_A), (True, False))
+            self.assertEqual(self._cli_cache_state(tmp, self.HINTS_B), (False, True))
+
+    def test_a_tree_the_linters_are_quiet_about_is_a_hit(self):
+        # `collect_static_hints` returns "" when the change touches nothing Ruff
+        # or ESLint handles, and a run with no block is the run that must keep
+        # its key — the `--hints` counterpart of `hints = false`.
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(self._cli_cache_state(tmp, ""), (False, True))
+            self.assertEqual(self._cli_cache_state(tmp, ""), (True, False))
+
+    def test_the_hints_block_and_the_context_are_not_interchangeable(self):
+        # Two separate digests, not one concatenation: the same text arriving as
+        # a linter block and as a PR body is not the same run, and must not be
+        # able to collide by moving between the two parameters.
+        cfg = _expanded()
+        self.assertNotEqual(
+            cache_key(cfg, SAMPLE_DIFF, context=self.HINTS_A),
+            cache_key(cfg, SAMPLE_DIFF, hints=self.HINTS_A),
+        )
+
+
 class RoundTripTest(unittest.TestCase):
     def test_outcome_survives_serialization(self):
         outcome = run_jury(_config(), SAMPLE_DIFF, mock=True)
