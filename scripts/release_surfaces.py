@@ -116,6 +116,10 @@ RELEASE_SURFACES: tuple[Surface, ...] = (
     Surface("README.md", "site", rf"rev: v{SEMVER}"),
     Surface("README.md", "site", rf"Active \(v{SEMVER}\)"),
     Surface("docs/cookbook.md", "site", rf"rev: v{SEMVER}"),
+    # The `--doctor --json` example. `doctor.py` fills `tool_version` from
+    # `__version__`, so a published example naming another version is a
+    # promise the tool breaks the moment a reader copies it (#764 review).
+    Surface("docs/configuration.md", "site", rf'"tool_version": "{SEMVER}"'),
 )
 
 
