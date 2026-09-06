@@ -75,12 +75,15 @@ def _spawn(argv: list[str], stdin: str | None, timeout: int) -> subprocess.Compl
 
 
 def _read_only_extra_args(spec: AgentSpec) -> list[str]:
-    """The agent's ``extra_args`` with its mandatory read-only sandbox guaranteed.
+    """The agent's ``extra_args`` with the read-only sandbox added when none is named.
 
-    Enforced at the adapter layer (issue #288) so a missing/misconfigured
-    ``extra_args`` cannot strip the sandbox: a reviewer of an attacker-controlled
-    diff is never write/tool-capable. Config may widen a codex sandbox knowingly,
-    but never remove the restriction.
+    Enforced at the adapter layer (issue #288) so an **empty** ``extra_args`` cannot
+    produce a write-capable reviewer of an attacker-controlled diff. It injects; it
+    does not override. A config that names its own sandbox keeps it — ``-s
+    workspace-write`` is passed through as written — codex's bypass flags are passed
+    through too, and the ``cli``/``xai`` adapters have no enforcement at all. Those
+    are the cases :func:`ai_jury.privilege.audit_agent` reports and ``--strict``
+    fails on (#750); this function is not the guarantee on its own.
     """
     # Keyed on the ADAPTER, not the vendor (issue #705): the sandbox flag is a
     # property of the CLI being spawned, not of whose model answers. A seat with
