@@ -95,13 +95,42 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: "3.13"
-      # Pinned, and pinned to the SAME version as the `ruff-format` hook in
-      # .pre-commit-config.yaml — `tests/test_ruff_pin.py` asserts they match.
-      # The dev extra is `ruff>=0.6`, and a format gate on a floating formatter
-      # goes red on ruff's release schedule rather than on anything in this
-      # repository. That is the failure that teaches people to ignore a check.
-      - name: Install ruff (pinned to the pre-commit hook)
-        run: timeout 120 python -m pip install --upgrade pip && timeout 300 pip install "ruff==0.16.3"
+      # The bootstrap, and the only install on this path that does not come out
+      # of a lock: `uv` itself, hash-locked the way publish.yml's build tooling
+      # has been since #712. `release lockfiles resolve` below dry-runs this file
+      # on every pull request, so a wheel PyPI stops serving fails there.
+      - name: Install uv (hash-locked)
+        run: |
+          timeout 300 python -m pip install --timeout 30 \
+            --require-hashes --only-binary=:all: \
+            -r .github/requirements/ci-tools.txt
+      # Ruff's version lives in `uv.lock` now, and `tests/test_ruff_pin.py`
+      # asserts the lock and the `ruff-format` hook in .pre-commit-config.yaml
+      # name the same one. Until #751 this step pinned a ruff by hand while the
+      # `coverage` job installed `ruff>=0.6` through the dev extra, so one CI run
+      # could hold two formatters — and the lock that would have settled it was
+      # tracked, maintained as a release surface, and read by nothing.
+      #
+      # `--locked` rather than `--frozen`: a lock that no longer matches
+      # pyproject.toml has to fail here. `--frozen` would install a stale lock
+      # quietly, which is the failure this change exists to end.
+      #
+      # `--no-install-project` because ruff imports nothing from the package —
+      # and because building the project would fetch a build backend this lock
+      # does not cover, which is a resolve worth not making at all.
+      #
+      # `--python` is not optional. uv prefers its own managed interpreters, so
+      # without it this job can sync against a Python `setup-python` never
+      # installed. `$pythonLocation` is the env var `setup-python` exports, read
+      # by bash rather than pasted in as an Actions expression (#683).
+      #
+      # `.venv/bin` on $GITHUB_PATH is what leaves the two steps below spelled
+      # exactly as they were.
+      - name: Install ruff from uv.lock
+        run: |
+          timeout 300 uv sync --locked --no-install-project --extra dev \
+            --python "$pythonLocation/bin/python"
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
       - name: Lint
         run: ruff check .
       # Without this the tree drifts back: `ruff-format` is a *rewriting* hook,
@@ -205,10 +234,28 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: "3.13"
-      - name: Install package with dev tools
+      - name: Install uv (hash-locked)
         run: |
-          timeout 120 python -m pip install --upgrade pip
-          timeout 300 python -m pip install -e ".[dev]"
+          timeout 300 python -m pip install --timeout 30 \
+            --require-hashes --only-binary=:all: \
+            -r .github/requirements/ci-tools.txt
+      # Was `pip install -e ".[dev]"`, which resolved `ruff>=0.6`, `build>=1.2`
+      # and `coverage>=7.5` fresh on every run: a coverage gate whose measuring
+      # instrument arrives from somebody else's release schedule, and three open
+      # upper bounds behind a required check (#751). They come from `uv.lock`
+      # now, hash by hash, and `--locked` fails the job on a lock that no longer
+      # matches pyproject.toml — so the lock is exercised rather than merely
+      # maintained. See the `lint` job above for why `--python` is spelled out.
+      #
+      # The project is still installed, unlike in `lint`: coverage measures
+      # `ai_jury` by import name. That build resolves `setuptools>=68` in an
+      # isolated build environment, which is the one fetch on this path `uv.lock`
+      # does not cover — it locks dependencies, not build backends.
+      - name: Install package with dev tools (from uv.lock)
+        run: |
+          timeout 300 uv sync --locked --extra dev \
+            --python "$pythonLocation/bin/python"
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
       - name: Run tests under coverage
         run: python -m coverage run -m unittest discover -s tests
       - name: Enforce minimum coverage
@@ -274,6 +321,13 @@ jobs:
     # during a release rather than in CI. Nothing offline can tell a good pin
     # from a bad one — only the real resolver can — so this runs the real thing:
     # same OS, same Python, same flags as publish.yml, minus the install (#712).
+    #
+    # Since #751 it dry-runs the CI bootstrap on the same terms. That file is
+    # not release tooling and the job's name says "release", which is a mismatch
+    # the name has to keep: `Release lockfiles resolve` is a required context in
+    # main's branch protection, and a required context that is never reported
+    # blocks every merge permanently. The name is load-bearing; the coverage is
+    # every hash-locked file under .github/requirements.
     name: Release lockfiles resolve
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -289,3 +343,14 @@ jobs:
           timeout 300 python -m pip install --timeout 30 --dry-run \
             --require-hashes --only-binary=:all: \
             --target "$(mktemp -d)" -r .github/requirements/publish-tools.txt
+      # The same question about the other file: `lint`, `coverage` and the Pages
+      # deploy install `uv` from it before they read `uv.lock`, so a wheel that
+      # stops resolving takes out three jobs at once. Resolved here rather than
+      # discovered there, and separately from the file above because the two
+      # describe different runtimes and a shared resolve would not say which one
+      # broke.
+      - name: Resolve the hash-locked CI tooling
+        run: |
+          timeout 300 python -m pip install --timeout 30 --dry-run \
+            --require-hashes --only-binary=:all: \
+            --target "$(mktemp -d)" -r .github/requirements/ci-tools.txt
