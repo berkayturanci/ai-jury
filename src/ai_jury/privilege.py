@@ -397,9 +397,10 @@ def enforce_read_only(vendor: str, name: str, extra_args: list[str]) -> list[str
     (issue #705). The flags belong to the CLI being spawned, not to whose model
     answers, so a GPT seat driven through ``cursor-agent`` is handled as ``cli``.
 
-    The sandbox is enforced here (issue #288) rather than left to config, so an
-    **empty** ``extra_args`` cannot produce a write-capable reviewer of an
-    attacker-controlled diff: the sandbox is injected when the config names none.
+    The sandbox is enforced here (issue #288) rather than left to config, so on the
+    adapters that have enforcement an **empty** ``extra_args`` cannot produce a
+    write-capable reviewer of an attacker-controlled diff: the sandbox is injected
+    when the config names none.
     It is injection, not override, and the difference is what the audit exists to
     cover (issue #750). Config that names a sandbox keeps it — ``-s
     workspace-write`` is passed through as written — and codex's bypass flags

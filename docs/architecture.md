@@ -140,10 +140,12 @@ shipped defaults run them sandboxed — Claude with `--disallowed-tools
 Edit,Write,NotebookEdit,Bash`, Codex with `-s read-only`, Antigravity with
 `--sandbox`. `privilege.py` both *enforces* this at the adapter layer and *audits*
 the argv that enforcement produces. Enforcement is narrower than it sounds, and the
-audit is what covers the rest: it **injects** a sandbox when the config names none,
-so an empty `extra_args` cannot produce a write-capable reviewer — but it does not
-override a sandbox the operator did name, so `-s workspace-write` is passed through
-as written, and the `cli`/`xai` adapters have no enforcement of their own at all.
+audit is what covers the rest: it **injects** a sandbox when the config
+names none, so on the adapters that have enforcement an empty `extra_args` cannot
+produce a write-capable reviewer. It does not override a sandbox the operator did
+name, so `-s workspace-write` is passed through as written; it does not stop codex's
+bypass flags; and the `cli`/`xai` adapters have no enforcement at all, so there an
+empty `extra_args` is spawned empty.
 Those are the cases the audit reports (or fails under `--strict`): a seat with no
 recognised sandbox, one whose argv names a second, write-capable sandbox beside the
 enforced one, and one carrying a flag that disables the sandbox outright. `local` and hosted-API agents
