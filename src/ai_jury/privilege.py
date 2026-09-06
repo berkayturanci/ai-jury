@@ -5,21 +5,32 @@ PR title/body). If an agent CLI is invoked with write/tool/network powers, a
 successful prompt injection could escalate from "bad review text" to real
 side effects. The jury mitigates this by running agents read-only.
 
-This module inspects each configured agent's ``extra_args`` and WARNS when an
-agent could perform write or tool actions during review. It is advisory by
-default (a warning, surfaced via ``run_jury``); ``--strict`` promotes the
-warnings to a hard failure.
+This module both ENFORCES that restriction (:func:`enforce_read_only`, which
+every adapter that spawns a CLI routes its args through) and AUDITS it
+(:func:`audit_agent`), and it audits the argv a seat is actually spawned with
+rather than the ``extra_args`` written in the config (issue #750). The audit is
+advisory by default (a warning, surfaced via ``run_jury``); ``--strict`` promotes
+the warnings to a hard failure.
 
 Required read-only invocation per adapter (documented here and in docs/security.md):
 
-- ``claude``  : pass ``--disallowed-tools Edit,Write,NotebookEdit,Bash`` so the
-                reviewer cannot edit files or run shell commands.
-- ``codex``   : ``-s read-only`` (the shipped default, issue #100). A wider
-                sandbox (``workspace-write``/``danger-full-access``) is flagged
-                here so operators opt in knowingly.
-- ``agy``/gemini : run under ``--sandbox`` (the shipped default). A bare
-                ``--dangerously-skip-permissions`` / ``--yolo`` without a sandbox
-                is flagged.
+- ``claude``  : ``--disallowed-tools Edit,Write,NotebookEdit,Bash`` so the
+                reviewer cannot edit files or run shell commands. Injected, and
+                merged into a narrower deny list, unconditionally — config can
+                add denials, never remove them.
+- ``codex``   : ``-s read-only`` (the shipped default, issue #100), injected when
+                the config names no sandbox at all. A wider sandbox the operator
+                DID name (``workspace-write``/``danger-full-access``) is kept as
+                written and flagged here, so the opt-in is a knowing one.
+- ``agy``/gemini : ``--sandbox`` (the shipped default), injected when absent.
+                ``--dangerously-skip-permissions`` / ``--yolo`` only skip an
+                approval prompt, so the sandbox beside them — whether the
+                operator wrote it or this module injected it — is what settles
+                the question.
+- ``cli``/``xai`` : the operator's own binary, for which this tool knows no
+                sandbox flag to add. Nothing is enforced, so for these the
+                declared ``extra_args`` really are the whole story and an
+                unsandboxed seat still warns.
 """
 
 from __future__ import annotations
@@ -37,6 +48,20 @@ _DANGEROUS_FLAGS: tuple[str, ...] = (
 
 # Tool names that allow filesystem writes or shell execution.
 _WRITE_TOOLS: tuple[str, ...] = ("Edit", "Write", "NotebookEdit", "Bash")
+
+# The subset of _DANGEROUS_FLAGS a sandbox does NOT settle, because they SELECT a
+# sandbox themselves rather than merely skipping an approval prompt (issue #750).
+#
+# `--dangerously-skip-permissions` and `--yolo` suppress a confirmation; the
+# sandbox beside them still confines the agent, which is why the shipped agy
+# default pairs the two (issue #100). codex's `--full-auto` is shorthand for a
+# *workspace-write* sandbox, and `_ensure_value_sandbox` looks only for an
+# `-s`/`--sandbox` token — so `enforce_read_only` passes `-s read-only` alongside
+# `--full-auto` without removing it, and which of the two the CLI honours is that
+# CLI's own argument-precedence rule, not something this module can assert. The
+# other two entries (`workspace-write`, `danger-full-access`) are sandbox VALUES,
+# which enforcement leaves exactly as written and the audit already reaches.
+_SANDBOX_SELECTING_FLAGS: tuple[str, ...] = ("--full-auto",)
 
 
 def _disallowed_tools_at(args: list[str], i: int) -> tuple[str, int] | None:
@@ -352,7 +377,35 @@ def _claude_is_locked_down(extra_args: list[str]) -> bool:
 
 
 def audit_agent(spec) -> list[str]:
-    """Return least-privilege warnings for a single agent spec."""
+    """Return least-privilege warnings for a single agent spec.
+
+    The subject is the **effective** argv — what ``adapters._read_only_extra_args``
+    will spawn this seat with — not the ``extra_args`` written in the config
+    (issue #750). Every panel invocation is routed through
+    :func:`enforce_read_only`, so the declared list is only half the command
+    line: a bare ``claude`` seat with no ``extra_args`` at all — the documented,
+    recommended configuration — is spawned with the full write-tool denylist and
+    was nevertheless reported as write-capable, failing ``--strict`` on the one
+    configuration the docs tell operators to write. An audit that cries wolf on
+    the recommended setup is one operators learn to pass ``--no-strict`` around.
+
+    Auditing the enforced argv is also what keeps the check honest where
+    enforcement cannot help, with no special case for it: :func:`enforce_read_only`
+    is a **no-op** for the bring-your-own-CLI vendors (``cli``/``xai``), so for
+    those the effective argv *is* the declared one and every warning that fired
+    before still fires. The same holds for a sandbox the operator widened on
+    purpose, which enforcement keeps as written rather than narrowing.
+
+    What this can and cannot promise: the enforcement is only as good as the
+    adapter that applies it. Every adapter here that spawns a subprocess builds
+    its argv through ``adapters._read_only_extra_args`` — claude, codex, agy, and
+    the generic CLI adapter an unknown vendor falls through to — so for those the
+    audited argv is the real one. A custom adapter registered through
+    ``adapters.register_adapter`` is operator-supplied code that may build its
+    argv however it likes; for one of those this reports what enforcement *would*
+    produce, which is also why a bare ``--sandbox`` is still not trusted from a
+    vendor whose CLI is unknown (issue #292).
+    """
     warnings: list[str] = []
     name = (getattr(spec, "name", "") or "").lower()
     # The ADAPTER, not the vendor (issue #705). Every question this function
@@ -362,8 +415,6 @@ def audit_agent(spec) -> list[str]:
     # which this tool knows no sandbox flag; auditing it as codex would demand a
     # `-s read-only` that `cursor-agent` does not have.
     vendor = spec_adapter(spec)
-    extra_args = list(getattr(spec, "extra_args", []) or [])
-    args_text = _args_str(extra_args)
     label = getattr(spec, "name", "agent")
 
     # Local/HTTP agents (issue #43) and hosted-API agents (issue #430) run no
@@ -374,6 +425,13 @@ def audit_agent(spec) -> list[str]:
     has_endpoint = bool(getattr(spec, "endpoint", None))
     if vendor in _NO_SUBPROCESS_VENDORS or vendor.endswith("-api") or has_endpoint:
         return warnings
+
+    # The argv this seat is spawned with, byte for byte what
+    # `adapters._read_only_extra_args(spec)` returns: same adapter key, same
+    # name, same declared args, same function. (`enforce_read_only` lower-cases
+    # the name itself, so passing the already-lowered one changes nothing.)
+    extra_args = enforce_read_only(vendor, name, list(getattr(spec, "extra_args", []) or []))
+    args_text = _args_str(extra_args)
 
     is_claude = "claude" in name or vendor == "anthropic"
 
@@ -389,8 +447,22 @@ def audit_agent(spec) -> list[str]:
         # tools are disallowed, so we don't warn separately when locked down.
         return warnings
 
-    # Non-claude agents must run under a restricting sandbox (issue #100).
+    # Non-claude agents must run under a restricting sandbox (issue #100) — one
+    # the config named, or one enforcement injected above.
     if _is_sandboxed(extra_args, vendor=vendor, name=name):
+        # …unless a sandbox-SELECTING flag is sitting in the same argv, in which
+        # case two sandboxes are specified and the CLI, not this module, decides
+        # which one wins (issue #750). Said plainly rather than through the
+        # generic message below, which would recommend the `-s read-only` that
+        # is already there.
+        selector = next((f for f in _SANDBOX_SELECTING_FLAGS if f in extra_args), None)
+        if selector is not None:
+            warnings.append(
+                f"agent '{label}' is configured with `{selector}`, which selects a "
+                f"write-capable sandbox of its own; it is passed alongside the "
+                f"enforced read-only sandbox, so which of the two applies is up to "
+                f"the CLI. Drop `{selector}` — a reviewer only reads its prompt."
+            )
         return warnings
     # Not sandboxed. A broad-powers flag gets a specific message…
     for flag in _DANGEROUS_FLAGS:

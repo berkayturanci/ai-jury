@@ -95,11 +95,13 @@ content; the least-privilege audit (`--strict` to fail the run) will flag it.
 - **`claude`** runs with `--disallowed-tools Edit,Write,NotebookEdit,Bash` so the
   reviewer cannot edit files or run commands (`--dangerously-skip-permissions`
   only suppresses the non-interactive permission prompt; the denylist is what
-  makes it safe).
+  makes it safe). You do not have to write the flag: it is injected, and merged
+  into a narrower list you did write, at spawn time.
 - **`agy`** runs with `--sandbox` so its tools are restricted while it reads
   untrusted content; `--dangerously-skip-permissions` only avoids a prompt hang.
-  A bare `--dangerously-skip-permissions` *without* `--sandbox` is flagged by the
-  least-privilege audit.
+  A config that omits `--sandbox` has it injected at spawn time too, so a bare
+  `--dangerously-skip-permissions` is **not** flagged by the least-privilege
+  audit — the sandbox beside it in the real command line settles the question.
 - **`anthropic-api` / `openai-api` / `google-api`** (hosted-API reviewers) are out of
   scope for the sandbox audit entirely, and there is no `--strict` finding to fix here:
   unlike every CLI-backed adapter, a hosted-API call makes a single HTTP request with
@@ -182,9 +184,10 @@ make the reviewers approve a bad change or suppress findings. This is a classic
 
 4. **Least privilege.** Reviewers must run **read-only**, so that even a
    successful injection cannot escalate to file edits, shell execution, or
-   network side effects. `privilege.audit_privilege` inspects each agent's
-   configured `extra_args` and warns (or, under `--strict`, fails) when an agent
-   could perform write/tool actions:
+   network side effects. `privilege.enforce_read_only` guarantees the restriction
+   at the adapter layer — every seat's `extra_args` pass through it on the way to
+   the process — and `privilege.audit_privilege` warns (or, under `--strict`,
+   fails) when an agent could still perform write/tool actions:
 
    | Agent | Read-only invocation (shipped default) |
    | --- | --- |
@@ -192,11 +195,19 @@ make the reviewers approve a bad change or suppress findings. This is a classic
    | `codex` | `-s read-only` (the diff is fetched by the jury via `gh`, not by the agent, so it needs no write/network) |
    | `agy` / gemini | `--sandbox` (with `--dangerously-skip-permissions` only to avoid a non-interactive prompt hang) |
 
+   The audit reads the **argv the seat is actually spawned with**, not the
+   `extra_args` as written in `jury.toml` (#750). The two differ whenever the
+   config leaves a gap the adapter closes, and the config that leaves the biggest
+   gap is the recommended one — a `claude` seat with no `extra_args` at all is
+   spawned with the full denylist, and used to be reported as write-capable.
+
    The audit is **advisory by default** (warnings surfaced in `run_jury`);
    `--strict` promotes these warnings to a hard failure. The shipped defaults are
-   **secure** and raise **no** warnings; the audit only fires when an
-   agent is widened (e.g. codex `-s danger-full-access`, or a bare
-   `--dangerously-skip-permissions` without `--sandbox`).
+   **secure** and raise **no** warnings; the audit fires for what enforcement
+   cannot fix — a sandbox you widened on purpose (codex `-s danger-full-access`,
+   `-s workspace-write`), a second sandbox selected beside the enforced one
+   (`--full-auto`), or a bring-your-own-CLI seat (`vendor = "cli"` / `"xai"`,
+   or `adapter = "cli"`) with no sandbox flag this tool knows how to add.
 
 5. **Secret redaction.** `redaction.redact` masks common secret formats in the
    diff/context before they are sent to external agents, limiting exfiltration

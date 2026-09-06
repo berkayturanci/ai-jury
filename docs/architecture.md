@@ -138,10 +138,12 @@ invocation still *works* against an installed CLI, and is a release step.
 **Read-only by default (secure):** reviewers read attacker-controlled diffs, so the
 shipped defaults run them sandboxed — Claude with `--disallowed-tools
 Edit,Write,NotebookEdit,Bash`, Codex with `-s read-only`, Antigravity with
-`--sandbox`. `privilege.py` audits this and warns (or fails under `--strict`) when an
-agent is given broad powers without a sandbox. `local` and hosted-API agents are out of
-scope for that audit entirely — they run no subprocess and have no filesystem/tool
-access to disallow in the first place, so there is nothing to sandbox.
+`--sandbox`. `privilege.py` both *enforces* this at the adapter layer, so an empty
+or misconfigured `extra_args` cannot produce a write-capable reviewer, and *audits*
+the argv that enforcement produces — warning (or failing under `--strict`) when an
+agent is still given broad powers without a sandbox. `local` and hosted-API agents
+are out of scope for that audit entirely — they run no subprocess and have no
+filesystem/tool access to disallow in the first place, so there is nothing to sandbox.
 
 A `local` agent is a normal `[[agent]]` with `vendor = "local"`, an `endpoint`
 (default `http://localhost:11434/v1`), and a `model`; it adds vendor diversity at

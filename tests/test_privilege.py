@@ -2,6 +2,11 @@
 
 Locks the behaviour that dangerous agent invocations are surfaced as warnings
 while a read-only / locked-down config is not. Stdlib + offline.
+
+Since #750 the subject of every audit assertion is the argv the seat is
+*spawned* with — `enforce_read_only` applied to the declared `extra_args` — so a
+config whose gap the adapter closes is not warned about, and one whose gap it
+cannot close still is.
 """
 
 import sys
@@ -10,16 +15,21 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from ai_jury import privilege
-from ai_jury.config import AgentSpec
+from ai_jury import adapters, privilege
+from ai_jury.config import AgentSpec, spec_adapter
 
 
 class AuditAgentTest(unittest.TestCase):
-    def test_claude_without_disallowed_tools_warns(self):
+    def test_claude_without_disallowed_tools_is_spawned_locked_down(self):
+        # Issue #750: the recommended configuration — a `claude` seat with no
+        # `extra_args` at all — is spawned with the whole write-tool denylist,
+        # so it cannot write and must not be reported as though it could.
         spec = AgentSpec(name="claude", vendor="anthropic", command="claude", extra_args=[])
-        warnings = privilege.audit_agent(spec)
-        self.assertTrue(warnings)
-        self.assertIn("read-only", warnings[0])
+        self.assertEqual(
+            privilege.enforce_read_only("anthropic", "claude", []),
+            ["--disallowed-tools", "Edit,Write,NotebookEdit,Bash"],
+        )
+        self.assertEqual(privilege.audit_agent(spec), [])
 
     def test_claude_locked_down_has_no_warning(self):
         spec = AgentSpec(
@@ -46,34 +56,52 @@ class AuditAgentTest(unittest.TestCase):
             list(spec.extra_args),
         )
 
-    def test_claude_partial_disallowed_equals_form_still_warns(self):
+    def test_claude_partial_disallowed_equals_form_is_merged_before_spawn(self):
+        # Config may ADD denials, never REMOVE the mandatory ones (#288), in
+        # either spelling (#717) — so the missing two are merged in and there is
+        # nothing left to warn about (#750).
         spec = AgentSpec(
             name="claude",
             vendor="anthropic",
             command="claude",
             extra_args=["--disallowed-tools=Edit,Write"],
         )
-        self.assertTrue(privilege.audit_agent(spec))
+        self.assertEqual(
+            privilege.enforce_read_only("anthropic", "claude", list(spec.extra_args)),
+            ["--disallowed-tools=Edit,Write,NotebookEdit,Bash"],
+        )
+        self.assertEqual(privilege.audit_agent(spec), [])
 
-    def test_claude_valueless_disallowed_flag_still_warns(self):
-        # A trailing `--disallowed-tools` with no value after it denies nothing.
+    def test_claude_valueless_disallowed_flag_is_backed_by_the_injected_denylist(self):
+        # A trailing `--disallowed-tools` with no value after it denies nothing,
+        # so enforcement reads the seat as having no deny list and injects the
+        # full one ahead of it (#750).
         spec = AgentSpec(
             name="claude",
             vendor="anthropic",
             command="claude",
             extra_args=["--disallowed-tools"],
         )
-        self.assertTrue(privilege.audit_agent(spec))
+        self.assertEqual(
+            privilege.enforce_read_only("anthropic", "claude", list(spec.extra_args)),
+            ["--disallowed-tools", "Edit,Write,NotebookEdit,Bash", "--disallowed-tools"],
+        )
+        self.assertEqual(privilege.audit_agent(spec), [])
 
-    def test_claude_partial_disallowed_still_warns(self):
+    def test_claude_partial_disallowed_is_merged_before_spawn(self):
+        # The space form of the case above: Bash/NotebookEdit are missing from
+        # the config and present in the argv, which is what the audit reads.
         spec = AgentSpec(
             name="claude",
             vendor="anthropic",
             command="claude",
             extra_args=["--disallowed-tools", "Edit,Write"],
         )
-        # Bash/NotebookEdit still permitted → not fully locked down.
-        self.assertTrue(privilege.audit_agent(spec))
+        self.assertEqual(
+            privilege.enforce_read_only("anthropic", "claude", list(spec.extra_args)),
+            ["--disallowed-tools", "Edit,Write,NotebookEdit,Bash"],
+        )
+        self.assertEqual(privilege.audit_agent(spec), [])
 
     def test_codex_danger_full_access_warns(self):
         spec = AgentSpec(
@@ -86,24 +114,45 @@ class AuditAgentTest(unittest.TestCase):
         self.assertTrue(warnings)
         self.assertIn("danger-full-access", warnings[0])
 
-    def test_agy_dangerously_skip_permissions_warns(self):
+    def test_agy_dangerously_skip_permissions_is_spawned_sandboxed(self):
+        # The flag only skips an approval prompt; `--sandbox` is what confines
+        # the agent (#100), and enforcement injects it when the config forgot
+        # (#288), so there is no write capability left to warn about (#750).
         spec = AgentSpec(
             name="agy",
             vendor="google",
             command="agy",
             extra_args=["--dangerously-skip-permissions"],
         )
-        warnings = privilege.audit_agent(spec)
-        self.assertTrue(warnings)
-        self.assertIn("--dangerously-skip-permissions", warnings[0])
+        self.assertEqual(
+            privilege.enforce_read_only("google", "agy", list(spec.extra_args)),
+            ["--sandbox", "--dangerously-skip-permissions"],
+        )
+        self.assertEqual(privilege.audit_agent(spec), [])
 
-    def test_yolo_flag_warns(self):
+    def test_yolo_flag_is_spawned_sandboxed(self):
         spec = AgentSpec(name="gemini", vendor="google", command="gemini", extra_args=["--yolo"])
-        self.assertTrue(privilege.audit_agent(spec))
+        self.assertEqual(
+            privilege.enforce_read_only("google", "gemini", list(spec.extra_args)),
+            ["--sandbox", "--yolo"],
+        )
+        self.assertEqual(privilege.audit_agent(spec), [])
 
     def test_full_auto_flag_warns(self):
+        # Still warns after #750, and deliberately: unlike `--yolo`, codex's
+        # `--full-auto` SELECTS a workspace-write sandbox rather than skipping a
+        # prompt, and `_ensure_value_sandbox` looks only for an `-s`/`--sandbox`
+        # token — so the enforced `-s read-only` is passed *beside* it and codex,
+        # not this module, decides which one wins.
         spec = AgentSpec(name="codex", vendor="openai", command="codex", extra_args=["--full-auto"])
-        self.assertTrue(privilege.audit_agent(spec))
+        warnings = privilege.audit_agent(spec)
+        self.assertEqual(
+            privilege.enforce_read_only("openai", "codex", list(spec.extra_args)),
+            ["-s", "read-only", "--full-auto"],
+        )
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("--full-auto", warnings[0])
+        self.assertIn("which of the two applies is up to the CLI", warnings[0])
 
     def test_read_only_codex_has_no_warning(self):
         spec = AgentSpec(
@@ -130,25 +179,28 @@ class AuditAgentTest(unittest.TestCase):
         self.assertTrue(warnings)
         self.assertIn("sandbox", warnings[0].lower())
 
-    def test_codex_no_sandbox_no_dangerous_flag_warns(self):
-        # Not being sandboxed is itself the warning condition. `_DANGEROUS_FLAGS`
-        # only selects which message is emitted — it is not a second gate an
-        # agent can slip past by using a flag that is not on the list.
+    def test_codex_no_sandbox_no_dangerous_flag_is_spawned_read_only(self):
+        # A codex seat that names no sandbox is spawned with `-s read-only`
+        # injected (#288), so after #750 there is nothing to warn about.
         #
-        # This test existed and was green throughout the #600 review, in the
-        # file under review, while four passes asserted the opposite (see #608).
-        # `assertTrue` was too quiet to be read as the refutation it was, so the
-        # catch-all is now named.
+        # The catch-all this used to exercise is not gone, and the lesson it
+        # carried is not either: `_DANGEROUS_FLAGS` was never the only path to a
+        # warning (#608), and `test_an_unlisted_wide_sandbox_still_warns` below
+        # still proves it — with a sandbox the operator wrote, which is the shape
+        # enforcement leaves alone and the audit therefore still reaches.
         spec = AgentSpec(name="codex", vendor="openai", command="codex", extra_args=[])
-        warnings = privilege.audit_agent(spec)
-        self.assertEqual(len(warnings), 1)
-        self.assertIn("not running under a recognized read-only sandbox", warnings[0])
+        self.assertEqual(privilege.enforce_read_only("openai", "codex", []), ["-s", "read-only"])
+        self.assertEqual(privilege.audit_agent(spec), [])
 
     def test_an_unlisted_wide_sandbox_still_warns(self):
         """The generalisation: no `_DANGEROUS_FLAGS` entry is needed to warn.
 
         A value sandbox that restricts nothing and appears on no list is the
         exact shape #600 believed was a bypass. One warning, via the catch-all.
+
+        Enforcement cannot rescue this one and does not try (#750): a sandbox the
+        operator named is respected as written, so the argv codex is spawned with
+        is the argv the config asked for, restricting nothing.
         """
         spec = AgentSpec(
             name="codex",
@@ -157,6 +209,10 @@ class AuditAgentTest(unittest.TestCase):
             extra_args=["-s", "some-future-mode-nobody-listed"],
         )
         warnings = privilege.audit_agent(spec)
+        self.assertEqual(
+            privilege.enforce_read_only("openai", "codex", list(spec.extra_args)),
+            list(spec.extra_args),
+        )
         self.assertEqual(len(warnings), 1)
         self.assertIn("not running under a recognized read-only sandbox", warnings[0])
 
@@ -175,13 +231,37 @@ class AuditAgentTest(unittest.TestCase):
 class AuditPrivilegeTest(unittest.TestCase):
     def test_dangerous_config_produces_warnings(self):
         specs = [
-            AgentSpec(name="claude", vendor="anthropic", command="claude", extra_args=[]),
+            # A sandbox the operator widened on purpose: kept as written.
             AgentSpec(
                 name="codex",
                 vendor="openai",
                 command="codex",
                 extra_args=["-s", "danger-full-access"],
             ),
+            # A second sandbox selected beside the enforced one.
+            AgentSpec(
+                name="codex-auto",
+                vendor="openai",
+                command="codex",
+                extra_args=["--full-auto"],
+            ),
+            # A bring-your-own CLI, for which nothing is enforced at all.
+            AgentSpec(name="cursor", vendor="cli", command="cursor-agent", extra_args=["-p"]),
+        ]
+        warnings = privilege.audit_privilege(specs)
+        # One warning per dangerous agent.
+        self.assertEqual(len(warnings), 3)
+
+    def test_a_config_whose_gaps_the_adapter_closes_produces_no_warnings(self):
+        """Issue #750, at the surface `run_jury` and `--strict` actually call.
+
+        Every seat here declares a gap and every gap is closed at spawn time, so
+        the three warnings this used to raise were three false alarms on configs
+        that cannot write. `--strict` failed all three.
+        """
+        specs = [
+            AgentSpec(name="claude", vendor="anthropic", command="claude", extra_args=[]),
+            AgentSpec(name="codex", vendor="openai", command="codex", extra_args=[]),
             AgentSpec(
                 name="agy",
                 vendor="google",
@@ -189,9 +269,7 @@ class AuditPrivilegeTest(unittest.TestCase):
                 extra_args=["--dangerously-skip-permissions"],
             ),
         ]
-        warnings = privilege.audit_privilege(specs)
-        # One warning per dangerous agent.
-        self.assertEqual(len(warnings), 3)
+        self.assertEqual(privilege.audit_privilege(specs), [])
 
     def test_codex_workspace_write_produces_dangerous_flag_warning(self):
         spec = AgentSpec(
@@ -349,6 +427,111 @@ class EnforceReadOnlyTest(unittest.TestCase):
 
     def test_cli_vendor_is_left_untouched(self):
         self.assertEqual(privilege.enforce_read_only("cli", "cursor", ["--print"]), ["--print"])
+
+
+class TheAuditReadsTheArgvTheSeatIsSpawnedWith(unittest.TestCase):
+    """Issue #750: the audit's subject is the effective argv, not the config.
+
+    Every seat on the panel path is spawned through
+    `adapters._read_only_extra_args`, so the declared `extra_args` are half the
+    command line. Reading only that half made the audit answer a question nobody
+    asked — "what did the operator type" — instead of the one it claims to
+    answer: can this reviewer write.
+    """
+
+    def test_the_audited_argv_is_the_one_the_adapter_spawns(self):
+        """The anti-drift assertion, in the shape #717 asked for.
+
+        Two functions in two modules must agree about one command line, so they
+        are compared directly rather than each being described in prose. A
+        change to either that the other does not follow fails here.
+        """
+        specs = [
+            AgentSpec(name="claude", vendor="anthropic", command="claude", extra_args=[]),
+            AgentSpec(
+                name="claude",
+                vendor="anthropic",
+                command="claude",
+                extra_args=["--disallowed-tools=Edit"],
+            ),
+            AgentSpec(name="codex", vendor="openai", command="codex", extra_args=[]),
+            AgentSpec(
+                name="codex",
+                vendor="openai",
+                command="codex",
+                extra_args=["-s", "workspace-write"],
+            ),
+            AgentSpec(name="agy", vendor="google", command="agy", extra_args=["--yolo"]),
+            AgentSpec(name="grok", vendor="xai", command="cursor-agent", extra_args=["-p"]),
+            AgentSpec(name="gpt", vendor="openai", adapter="cli", command="x", extra_args=["-p"]),
+            AgentSpec(name="x", vendor="acme", command="x", extra_args=[]),
+        ]
+        for spec in specs:
+            with self.subTest(agent=spec.name, vendor=spec.vendor, adapter=spec.adapter):
+                self.assertEqual(
+                    privilege.enforce_read_only(
+                        spec_adapter(spec), spec.name, list(spec.extra_args)
+                    ),
+                    adapters._read_only_extra_args(spec),
+                )
+
+    def test_an_adapter_with_no_enforcement_to_fall_back_on_still_warns(self):
+        # `cli` and `xai` spawn the operator's own binary, for which this tool
+        # knows no sandbox flag to add — `enforce_read_only` is a no-op — so for
+        # these the declared list really is the whole story, and an unsandboxed
+        # seat warns exactly as it did before #750.
+        for vendor in ("cli", "xai"):
+            with self.subTest(vendor=vendor):
+                spec = AgentSpec(
+                    name="cursor", vendor=vendor, command="cursor-agent", extra_args=["-p"]
+                )
+                warnings = privilege.audit_agent(spec)
+                self.assertEqual(privilege.enforce_read_only(vendor, "cursor", ["-p"]), ["-p"])
+                self.assertEqual(len(warnings), 1)
+                self.assertIn("not running under a recognized read-only sandbox", warnings[0])
+
+    def test_the_same_seat_is_clean_or_warned_according_to_its_adapter(self):
+        """The pair that isolates what changed: one config, two adapters.
+
+        Identical name and identical (empty) `extra_args`; the only difference is
+        whether the protocol has an enforcement to fall back on. It is the
+        adapter that decides, which is the whole claim of this change.
+        """
+        native = AgentSpec(name="claude", vendor="anthropic", command="claude", extra_args=[])
+        fronted = AgentSpec(
+            name="claude", vendor="anthropic", adapter="cli", command="some-cli", extra_args=[]
+        )
+        self.assertEqual(privilege.audit_agent(native), [])
+        warnings = privilege.audit_agent(fronted)
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("is not restricted to read-only", warnings[0])
+
+    def test_extra_args_that_re_enable_writing_are_still_caught(self):
+        # The audit must not go blind on the configs it exists for. A sandbox the
+        # operator widened is an explicit, documented opt-in that
+        # `_ensure_value_sandbox` preserves rather than narrows — so it survives
+        # into the spawned argv, and the audit still names it.
+        for value in ("workspace-write", "danger-full-access"):
+            with self.subTest(sandbox=value):
+                spec = AgentSpec(
+                    name="codex", vendor="openai", command="codex", extra_args=["-s", value]
+                )
+                warnings = privilege.audit_agent(spec)
+                self.assertEqual(adapters._read_only_extra_args(spec), ["-s", value])
+                self.assertEqual(len(warnings), 1)
+                self.assertIn(value, warnings[0])
+                self.assertIn("granting write/tool/network powers", warnings[0])
+
+    def test_an_injected_sandbox_is_not_trusted_from_an_unknown_cli(self):
+        # `enforce_read_only` injects agy's `--sandbox` for an unknown vendor so
+        # the seat fails closed (#310), but a bare `--sandbox` is only known to
+        # be a sandbox on agy/gemini (#292) — an unknown binary may ignore it.
+        # So the injection does not buy this seat a clean audit.
+        spec = AgentSpec(name="x", vendor="acme", command="x", extra_args=[])
+        warnings = privilege.audit_agent(spec)
+        self.assertEqual(adapters._read_only_extra_args(spec), ["--sandbox"])
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("not running under a recognized read-only sandbox", warnings[0])
 
 
 if __name__ == "__main__":
