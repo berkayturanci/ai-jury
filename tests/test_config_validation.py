@@ -842,6 +842,12 @@ class _RecordingTable(dict):
     old key name kept working, say) the tuple would still list only the fields
     and the alias would start warning as if it were a typo. Recording the reads
     catches that divergence at the one place it can be seen.
+
+    Equality is undefined on purpose (issue #752). The only caller compares
+    ``table.read`` to a known-key set, never two tables. ``dict.__eq__`` would
+    ignore ``read`` — the attribute this class exists for — so two empty
+    recorders would compare equal no matter what they recorded. Raising makes
+    that usage fail instead of passing for the wrong reason.
     """
 
     def __init__(self):
@@ -855,6 +861,39 @@ class _RecordingTable(dict):
     def __getitem__(self, key):
         self.read.add(key)
         return super().__getitem__(key)
+
+    def __eq__(self, other):
+        raise TypeError(
+            "_RecordingTable is not comparable; compare .read "
+            "(the keys a reader asked for), not the table"
+        )
+
+    def __ne__(self, other):
+        raise TypeError(
+            "_RecordingTable is not comparable; compare .read "
+            "(the keys a reader asked for), not the table"
+        )
+
+    __hash__ = None
+
+
+class RecordingTableIsNotComparable(unittest.TestCase):
+    """#752: comparing two tables would have ignored the recordings."""
+
+    def test_equality_raises_instead_of_ignoring_read(self):
+        left, right = _RecordingTable(), _RecordingTable()
+        left.read.add("alias")
+        # Same dict items (both empty); different recordings. dict.__eq__
+        # would have called these equal.
+        with self.assertRaises(TypeError) as ctx:
+            left.__eq__(right)
+        self.assertIn(".read", str(ctx.exception))
+        with self.assertRaises(TypeError):
+            left.__ne__(right)
+
+    def test_unhashable(self):
+        with self.assertRaises(TypeError):
+            hash(_RecordingTable())
 
 
 class NestedJuryTableUnknownKeys(unittest.TestCase):
