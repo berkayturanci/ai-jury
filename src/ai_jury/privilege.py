@@ -410,9 +410,15 @@ def enforce_read_only(vendor: str, name: str, extra_args: list[str]) -> list[str
     subprocess and is returned unchanged; neither does a hosted-API agent
     (issue #430) — it makes one HTTP call with no tool/file/shell access at
     all, so there is no ``extra_args``/sandbox concept to enforce. An
-    **unknown vendor** routes to the generic ``AgyAdapter``, so it is treated
-    like agy and gets ``--sandbox`` injected (issue #310, completes #300) —
-    fail-closed, never fail-open.
+    **unknown vendor** is treated like agy here and gets ``--sandbox`` injected
+    (issue #310, completes #300) — fail-closed in the sense that matters, that
+    the flag is added rather than omitted. What *runs* is usually
+    ``GenericCLIAdapter``, not ``AgyAdapter``: ``make_adapter`` returns the
+    generic adapter whenever the seat sets a ``command``, and ``AgyAdapter`` is
+    only the no-command fallback. So ``--sandbox`` reaches an unknown binary as a
+    passthrough token, which that binary may honour, ignore, or reject — it is not
+    agy's confinement. That uncertainty is why :func:`audit_agent` still warns for
+    an unknown vendor instead of accepting the injected flag as proof (#292).
     """
     # `normalise_vendor`, not `.lower()`: lowercasing alone left `" XAI "`
     # outside `GENERIC_CLI_VENDORS`, so the xai seat fell through to the agy
