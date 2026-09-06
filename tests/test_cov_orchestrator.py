@@ -170,12 +170,26 @@ class RunJuryBranches(unittest.TestCase):
         )
 
     def test_strict_privilege_warning_raises(self):
-        # A claude agent without --disallowed-tools produces a privilege warning;
-        # under --strict that warning is promoted to a hard failure (364).
+        # An agent that will be SPAWNED write-capable produces a privilege
+        # warning; under --strict it is promoted to a hard failure (364).
+        #
+        # The seat is fronted by a bring-your-own CLI (`adapter = "cli"`) because
+        # that is where a missing `--disallowed-tools` is still a real gap: on
+        # the native claude adapter the flag is injected at spawn time, so since
+        # #750 the audit — correctly — no longer warns about a seat that cannot
+        # write. This branch needs a config that is genuinely unsafe, not one
+        # that only looks unsafe in `jury.toml`.
         cfg = _from_dict(
             {
                 "jury": {"chair": "claude"},
-                "agent": [{"name": "claude", "vendor": "anthropic", "command": "claude"}],
+                "agent": [
+                    {
+                        "name": "claude",
+                        "vendor": "anthropic",
+                        "adapter": "cli",
+                        "command": "claude-ish",
+                    }
+                ],
             }
         )
         with self.assertRaises(RuntimeError) as ctx:
