@@ -1,0 +1,19 @@
+# Hash-locked CI tooling for .github/workflows/ci.yml and pages.yml (#751).
+# One package, and deliberately one: `uv` is the installer that reads `uv.lock`,
+# and everything those jobs go on to install comes from that lock with the
+# sha256 uv checks on the way in. This file is the bootstrap; the lock is the
+# surface. A second flat pin file listing ruff/build/coverage would be a second
+# thing to keep in step with the lock, which is the mistake #751 is about.
+#
+# Target runtime: ubuntu-latest, Python 3.13, binary wheels only — the runtime
+# the `lint`, `coverage` and Pages jobs set up, and the one the `release
+# lockfiles resolve` CI job dry-runs. The wheel below is the manylinux x86_64
+# one those runners resolve; if `ubuntu-latest` ever moves off x86_64 the
+# dry-run fails on a pull request rather than the install failing on `main`.
+#
+# Every install here is --require-hashes --only-binary=:all:, so a line without
+# a hash, or a wheel PyPI no longer serves, fails a pull request rather than a
+# run. Dependabot keeps it moving: `.github/requirements` is already one of its
+# `pip` directories, and it rewrites the hash with the version.
+uv==0.12.10 \
+    --hash=sha256:f7d6248ad9f2d282fea795f248da8fa666ab382df50d8385bd98e01049440a0c

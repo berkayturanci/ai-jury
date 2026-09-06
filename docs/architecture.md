@@ -138,10 +138,19 @@ invocation still *works* against an installed CLI, and is a release step.
 **Read-only by default (secure):** reviewers read attacker-controlled diffs, so the
 shipped defaults run them sandboxed — Claude with `--disallowed-tools
 Edit,Write,NotebookEdit,Bash`, Codex with `-s read-only`, Antigravity with
-`--sandbox`. `privilege.py` audits this and warns (or fails under `--strict`) when an
-agent is given broad powers without a sandbox. `local` and hosted-API agents are out of
-scope for that audit entirely — they run no subprocess and have no filesystem/tool
-access to disallow in the first place, so there is nothing to sandbox.
+`--sandbox`. `privilege.py` both *enforces* this at the adapter layer and *audits*
+the argv that enforcement produces. Enforcement is narrower than it sounds, and the
+audit is what covers the rest: it **injects** a sandbox when the config
+names none, so on the adapters that have enforcement an empty `extra_args` cannot
+produce a write-capable reviewer. It does not override a sandbox the operator did
+name, so `-s workspace-write` is passed through as written; it does not stop codex's
+bypass flags; and the `cli`/`xai` adapters have no enforcement at all, so there an
+empty `extra_args` is spawned empty.
+Those are the cases the audit reports (or fails under `--strict`): a seat with no
+recognised sandbox, one whose argv names a second, write-capable sandbox beside the
+enforced one, and one carrying a flag that disables the sandbox outright. `local` and hosted-API agents
+are out of scope for that audit entirely — they run no subprocess and have no
+filesystem/tool access to disallow in the first place, so there is nothing to sandbox.
 
 A `local` agent is a normal `[[agent]]` with `vendor = "local"`, an `endpoint`
 (default `http://localhost:11434/v1`), and a `model`; it adds vendor diversity at

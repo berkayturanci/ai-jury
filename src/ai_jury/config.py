@@ -476,6 +476,14 @@ KNOWN_EFFORTS = ("low", "medium", "high")
 KNOWN_TIERS = ("frontier", "economical")
 DEFAULT_TIER = "frontier"
 
+#: Accepted values for ``[jury] routing`` (issue #524). ``standard`` is the
+#: default uniform panel; ``tiered`` is the risk-aware panel that reads each
+#: seat's :data:`KNOWN_TIERS` value. The closed vocabulary is the companion of
+#: ``tier``'s (#747): the two keys are one feature, and a misspelling of either
+#: silently produces the panel the operator did not ask for.
+KNOWN_ROUTINGS = ("standard", "tiered")
+DEFAULT_ROUTING = "standard"
+
 
 class ConfigError(Exception):
     """Raised when a jury configuration is invalid."""
@@ -553,6 +561,57 @@ def _nested_table_message(table: str) -> str:
     return f"[jury.{table}] must be a table."
 
 
+#: The numeric bounds on the `[jury]` scalars, keyed by the setting's dotted
+#: path under `[jury]`. Each entry is `(minimum, phrase, optional)`: *phrase* is
+#: the rule as the message has always stated it — `timeout` says "a positive
+#: integer" and `rounds` "an integer >= 1", which mean the same thing and are
+#: both kept because they are what operators have read for releases — and
+#: *optional* marks a setting whose absence is legal, which the message says as
+#: "when set".
+#:
+#: The table exists because these bounds have TWO surfaces (issue #748). Every
+#: one of them is also a CLI flag, and the flags were assigned onto the config
+#: *after* `validate_config` had already run, so nothing range-checked them:
+#: `--rounds 0` was accepted, ran a full Round 1 and exited 0 while `rounds = 0`
+#: in `jury.toml` was a hard error — one value, one field, two answers, on a
+#: flag `docs/parameters.md` documents as `≥ 1`. `bound_error` is the single
+#: reader, so a bound cannot be stated twice and drift apart.
+_NUMERIC_BOUNDS: dict[str, tuple[int, str, bool]] = {
+    "rounds": (1, "an integer >= 1", False),
+    "timeout": (1, "a positive integer", False),
+    "retries": (0, "an integer >= 0", False),
+    # Execution controls (issue #30).
+    "total_timeout": (1, "a positive integer", True),
+    "phase_timeout": (1, "a positive integer", True),
+    # Adaptive rounds (issue #40).
+    "max_rounds": (1, "an integer >= 1", True),
+    # Large-diff handling (issue #31).
+    "diff.max_bytes": (1, "a positive integer", True),
+    "diff.chunk_max_bytes": (1, "a positive integer", True),
+}
+
+
+def bound_error(setting: str, value, where: str | None = None) -> str | None:
+    """The message for *value* breaking the bound on ``setting``, else ``None``.
+
+    *setting* is a key of :data:`_NUMERIC_BOUNDS`. *where* names the surface the
+    value was written on and defaults to the ``jury.<setting>`` config path; the
+    CLI passes the flag (``--rounds``), so an operator who has no ``jury.toml``
+    at all is not pointed at a key they never wrote. The rule, the bound and the
+    quoted value are identical either way — that is the point of one reader.
+
+    ``None`` means "not set" and passes for an optional setting. A bool is not
+    an integer here: ``rounds = true`` is a mistake, not ``rounds = 1``.
+    """
+    minimum, phrase, optional = _NUMERIC_BOUNDS[setting]
+    if value is None and optional:
+        return None
+    if isinstance(value, int) and not isinstance(value, bool) and value >= minimum:
+        return None
+    suffix = " when set" if optional else ""
+    return f"{where or f'jury.{setting}'} must be {phrase}{suffix} (got {value!r})."
+
+
 def validate_config(data: dict, strict: bool = False) -> list:
     """Validate a raw config dict.
 
@@ -617,25 +676,23 @@ def validate_config(data: dict, strict: bool = False) -> list:
                     f"unknown key 'jury.{table}.{key}' (expected one of {', '.join(known_nested)})."
                 )
 
-    # rounds >= 1 (hard).
-    rounds = jury.get("rounds", 1)
-    if not isinstance(rounds, int) or isinstance(rounds, bool) or rounds < 1:
-        errors.append(f"jury.rounds must be an integer >= 1 (got {rounds!r}).")
-
-    # timeout > 0 (hard).
-    timeout = jury.get("timeout", 600)
-    if not isinstance(timeout, int) or isinstance(timeout, bool) or timeout <= 0:
-        errors.append(f"jury.timeout must be a positive integer (got {timeout!r}).")
-
-    # Execution controls (issue #30): optional positive budgets, non-negative
-    # retries (hard when present and invalid).
-    for key in ("total_timeout", "phase_timeout"):
-        val = jury.get(key)
-        if val is not None and (not isinstance(val, int) or isinstance(val, bool) or val <= 0):
-            errors.append(f"jury.{key} must be a positive integer when set (got {val!r}).")
-    retries = jury.get("retries", 0)
-    if not isinstance(retries, int) or isinstance(retries, bool) or retries < 0:
-        errors.append(f"jury.retries must be an integer >= 0 (got {retries!r}).")
+    # The bounded `[jury]` scalars (hard): rounds >= 1, timeout > 0, the
+    # optional execution budgets (issue #30) > 0 and retries >= 0. Every rule
+    # and every message comes from `_NUMERIC_BOUNDS` through `bound_error`,
+    # which is also what the CLI flags writing these same settings are checked
+    # against, so the two surfaces cannot answer differently (issue #748). A
+    # required key that is absent is validated at its default; an absent
+    # optional one is None and passes.
+    for setting, value in (
+        ("rounds", jury.get("rounds", 1)),
+        ("timeout", jury.get("timeout", 600)),
+        ("total_timeout", jury.get("total_timeout")),
+        ("phase_timeout", jury.get("phase_timeout")),
+        ("retries", jury.get("retries", 0)),
+    ):
+        message = bound_error(setting, value)
+        if message:
+            errors.append(message)
 
     # Final-verdict mode (issue #220): "chair" or "vote".
     decision = jury.get("decision")
@@ -650,20 +707,28 @@ def validate_config(data: dict, strict: bool = False) -> list:
     if style is not None and str(style).strip().lower() not in ("flat", "pixel"):
         errors.append(f"jury.theater_style must be 'flat' or 'pixel' (got {style!r}).")
 
-    # Adaptive rounds (issue #40): max_rounds >= 1 (hard); early_stop is a bool.
-    max_rounds = jury.get("max_rounds")
-    if max_rounds is not None and (
-        not isinstance(max_rounds, int) or isinstance(max_rounds, bool) or max_rounds < 1
+    # Panel routing (hard when present and not a known kind, issue #747), for the
+    # reason `[[agent]] tier` is hard: nothing equals "tiered" but "tiered", so
+    # `routing = "teired"` would otherwise be read as the default and the run
+    # would quietly buy the uniform panel the operator asked it not to.
+    routing = jury.get("routing")
+    if routing is not None and (
+        not isinstance(routing, str) or routing.strip().lower() not in KNOWN_ROUTINGS
     ):
-        errors.append(f"jury.max_rounds must be an integer >= 1 when set (got {max_rounds!r}).")
+        errors.append(f"jury.routing must be one of {', '.join(KNOWN_ROUTINGS)} (got {routing!r}).")
+
+    # Adaptive rounds (issue #40): max_rounds >= 1 (hard); early_stop is a bool.
+    max_rounds_error = bound_error("max_rounds", jury.get("max_rounds"))
+    if max_rounds_error:
+        errors.append(max_rounds_error)
 
     # Large-diff handling (issue #31): [jury.diff] sizes are positive ints.
     diff_cfg = jury.get("diff", {})
     if isinstance(diff_cfg, dict):
         for key in ("max_bytes", "chunk_max_bytes"):
-            val = diff_cfg.get(key)
-            if val is not None and (not isinstance(val, int) or isinstance(val, bool) or val <= 0):
-                errors.append(f"jury.diff.{key} must be a positive integer when set (got {val!r}).")
+            message = bound_error(f"diff.{key}", diff_cfg.get(key))
+            if message:
+                errors.append(message)
 
     # CI gate severities (issue #718): hard, like `effort`, and for the same
     # reason. `fail_on = ["majr"]` matches no group, so the one setting that
@@ -1154,10 +1219,25 @@ class JuryConfig:
     # terminal (and ``pixel`` falls back to ``flat`` without truecolor/unicode).
     theater: bool = False
     theater_style: str = "flat"
-    # Risk-aware tiered model routing (issue #524): "standard" (uniform panel) | "tiered" (cost-optimized with frontier anchor)
-    routing: str = "standard"
+    # Risk-aware tiered model routing (issue #524): "standard" (uniform panel) |
+    # "tiered" (cost-optimized with frontier anchor). Normalised on construction
+    # like `AgentSpec.tier`, its companion key; an unknown value is refused by
+    # `validate_config` and falls back to the default here so no reader carries a
+    # spelling the vocabulary lacks (#747).
+    routing: str = DEFAULT_ROUTING
     # Pre-pass static analysis hints (issue #523): inject linter hints into prompt context
     hints: bool = False
+
+    def __post_init__(self) -> None:
+        # The single normalisation point for `routing`, for the reason
+        # `AgentSpec.__post_init__` is one for `tier`: `_from_dict` is not the
+        # only way a config is built — `--doctor` and `jury run-agent` load
+        # without validating, and tests and programmatic callers construct
+        # `JuryConfig` directly — and every one of those readers compares against
+        # the literal "tiered". A value that survives to a reader unnormalised
+        # takes the `standard` path while claiming to be something else.
+        routing = str(self.routing).strip().lower() if isinstance(self.routing, str) else ""
+        self.routing = routing if routing in KNOWN_ROUTINGS else DEFAULT_ROUTING
 
     @property
     def effective_max_rounds(self) -> int:
@@ -1352,7 +1432,11 @@ def _from_dict(data: dict) -> JuryConfig:
         decision=(str(jury.get("decision", "chair")).strip().lower() or "chair"),
         theater=bool(jury.get("theater", False)),
         theater_style=(str(jury.get("theater_style", "flat")).strip().lower() or "flat"),
-        routing=(str(jury.get("routing", "standard")).strip().lower() or "standard"),
+        # Passed through raw on purpose, like `AgentSpec`'s `vendor`:
+        # `JuryConfig.__post_init__` is the one place that normalises a routing
+        # kind, so normalising here as well would create a second place to keep
+        # in step (#747).
+        routing=jury.get("routing", DEFAULT_ROUTING),
         hints=bool(jury.get("hints", False)),
     )
 
@@ -1449,6 +1533,27 @@ def config_hash(config: JuryConfig) -> str:
                 # means exactly what it meant before the key existed, so every
                 # existing cache entry stays byte-identical.
                 **({"tier": a.tier} if a.tier != DEFAULT_TIER else {}),
+                # How the prompt reaches the seat: piped to stdin, or appended to
+                # argv as the last argument (issue #746). That is the invocation
+                # protocol, so a cached outcome produced under one must not be
+                # served for a run configured with the other — the rule that put
+                # `adapter` here, one field along. Conditional for the reason
+                # `adapter` is: `None` and `""` both mean the `stdin` fallback in
+                # `GenericCLIAdapter._prompt_mode`, which is what a config that never
+                # named the key has always meant, so its canonical payload — and
+                # therefore every existing cache entry — stays byte-identical.
+                #
+                # The test is "was it written", not "does it resolve to something
+                # other than the default", which is where this parts company with
+                # `adapter` and `tier`: an explicit `prompt_mode = "stdin"`, or an
+                # `"ARG"` beside an `"arg"`, splits the key even though the seat is
+                # invoked identically. Deliberate. Unlike those two, this field is
+                # neither validated nor normalised on construction, so folding
+                # spellings together here would put a second, more precise reader
+                # of the vocabulary next to the adapter's own — the duplication
+                # #701 r3 removed. The cost is one extra run for a config that
+                # writes the default out longhand; the alternative is a stale hit.
+                **({"prompt_mode": a.prompt_mode} if a.prompt_mode else {}),
                 # Where the request goes and under whose key (issue #716). A
                 # provider-routing header — `X-Route: premium`, an OpenRouter
                 # `HTTP-Referer`, an Azure deployment selector — can put a

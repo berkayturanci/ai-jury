@@ -17,6 +17,18 @@ picking up — but a format gate on a floating formatter goes red the day ruff
 changes its style, for reasons that have nothing to do with the change under
 review. That is the failure mode that teaches people to re-run rather than
 read.
+
+Since #751 the pin CI installs lives in `uv.lock`, not in a hand-written
+`ruff==` beside the install step. That is one version rather than two: the
+`lint` job used to pin a ruff by hand while the `coverage` job installed
+`ruff>=0.6` through the dev extra, so a single CI run could hold two formatters
+and only one of them was the one the gate ran. Both jobs now sync from the lock.
+
+So the comparison below reads the lock *and* any `ruff==` still written into the
+workflow, and requires every version it finds to be the hook's. Both halves
+matter: dropping the workflow half would let a reintroduced hand-pin drift
+unwatched, and dropping the lock half would let the version CI actually installs
+drift instead.
 """
 
 from __future__ import annotations
@@ -28,6 +40,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PRE_COMMIT = REPO_ROOT / ".pre-commit-config.yaml"
 CI = REPO_ROOT / ".github" / "workflows" / "ci.yml"
+LOCK = REPO_ROOT / "uv.lock"
 
 
 def hook_version() -> str | None:
@@ -44,8 +57,17 @@ def hook_version() -> str | None:
     return None
 
 
+def lock_versions() -> list[str]:
+    """The `ruff` version `uv.lock` pins — the one CI's `uv sync` installs."""
+    return re.findall(
+        r'^name = "ruff"\nversion = "([0-9]+(?:\.[0-9]+)*)"',
+        LOCK.read_text(encoding="utf-8"),
+        flags=re.MULTILINE,
+    )
+
+
 def ci_versions() -> list[str]:
-    """Every explicitly pinned `ruff==X` in the CI workflow."""
+    """Every explicitly pinned `ruff==X` still written into the CI workflow."""
     return re.findall(r"ruff==([0-9]+(?:\.[0-9]+)*)", CI.read_text(encoding="utf-8"))
 
 
@@ -57,18 +79,31 @@ class TheRuffVersionIsOneVersion(unittest.TestCase):
             "no ruff-pre-commit `rev:` found — the comparison below would be empty",
         )
 
-    def test_ci_pins_ruff_explicitly(self):
+    def test_the_lock_pins_ruff_exactly_once(self):
         """A floating formatter behind a format gate breaks on ruff's schedule."""
-        self.assertTrue(
-            ci_versions(),
-            "CI installs no pinned ruff, so `ruff format --check` runs against "
-            "whatever the dev extra resolves to that day",
+        self.assertEqual(
+            len(lock_versions()),
+            1,
+            "uv.lock does not pin exactly one ruff, so `ruff format --check` runs "
+            "against whatever the dev extra resolves to that day",
         )
 
-    def test_ci_and_the_hook_agree(self):
+    def test_ci_installs_ruff_from_the_lock(self):
+        """The pin is only the installed one if the workflow syncs from it."""
+        body = CI.read_text(encoding="utf-8")
+        self.assertIn(
+            "uv sync --locked",
+            body,
+            "CI does not install from uv.lock, so the version pinned there is not "
+            "the version the format gate runs",
+        )
+
+    def test_every_pin_ci_can_reach_is_the_hook_s(self):
         hook = hook_version()
-        for version in ci_versions():
-            with self.subTest(ci=version):
+        found = lock_versions() + ci_versions()
+        self.assertTrue(found, "nothing pins ruff; the comparison would be empty")
+        for version in found:
+            with self.subTest(pinned=version):
                 self.assertEqual(
                     version,
                     hook,

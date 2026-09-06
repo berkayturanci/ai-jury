@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 import tempfile  # noqa: E402
 
 from ai_jury.config import (
+    _NUMERIC_BOUNDS,
     DEFAULT_CONFIG,
     KNOWN_AGENT_KEYS,
     KNOWN_CI_KEYS,
@@ -25,10 +26,12 @@ from ai_jury.config import (
     KNOWN_NESTED_JURY_KEYS,
     AgentSpec,
     ConfigError,
+    JuryConfig,
     _ci_from_dict,
     _context_from_dict,
     _diff_from_dict,
     _from_dict,
+    bound_error,
     config_hash,
     load_config,
     load_raw_config,
@@ -143,6 +146,52 @@ class HardErrors(unittest.TestCase):
     def test_no_agents(self):
         with self.assertRaises(ConfigError):
             validate_config({"jury": {"rounds": 1}, "agent": []})
+
+
+class NumericBounds(unittest.TestCase):
+    """`bound_error` is the one reader of the `[jury]` numeric rules (#748).
+
+    Both surfaces call it: `validate_config` for the TOML key and the CLI for
+    the flag that writes the same setting, so a bound cannot be stated twice and
+    drift apart.
+    """
+
+    def test_a_value_at_the_minimum_passes(self):
+        for setting, (minimum, _phrase, _optional) in _NUMERIC_BOUNDS.items():
+            with self.subTest(setting=setting):
+                self.assertIsNone(bound_error(setting, minimum))
+
+    def test_a_value_below_the_minimum_is_refused_and_quoted_back(self):
+        for setting, (minimum, _phrase, _optional) in _NUMERIC_BOUNDS.items():
+            with self.subTest(setting=setting):
+                message = bound_error(setting, minimum - 1)
+                self.assertIsNotNone(message)
+                self.assertTrue(message.startswith(f"jury.{setting} must be "))
+                self.assertIn(f"(got {minimum - 1}).", message)
+
+    def test_an_absent_optional_setting_passes_and_a_required_one_does_not(self):
+        self.assertIsNone(bound_error("max_rounds", None))
+        self.assertIsNotNone(bound_error("rounds", None))
+
+    def test_a_bool_is_not_an_integer(self):
+        # `rounds = true` is a mistake, not `rounds = 1`.
+        self.assertIsNotNone(bound_error("rounds", True))
+
+    def test_a_non_integer_is_refused(self):
+        self.assertIsNotNone(bound_error("rounds", "2"))
+        self.assertIsNotNone(bound_error("timeout", 1.5))
+
+    def test_only_an_optional_setting_says_when_set(self):
+        self.assertIn(" when set ", bound_error("max_rounds", 0))
+        self.assertNotIn(" when set ", bound_error("rounds", 0))
+
+    def test_where_replaces_the_config_path_and_nothing_else(self):
+        # What the CLI passes so an operator with no jury.toml is not pointed at
+        # a key they never wrote; the rule either side of it is identical.
+        self.assertEqual(
+            bound_error("rounds", 0, where="--rounds"),
+            bound_error("rounds", 0).replace("jury.rounds", "--rounds", 1),
+        )
 
 
 class ApiKeyEnvNameValidation(unittest.TestCase):
@@ -295,6 +344,115 @@ class TierValidation(unittest.TestCase):
         economical = _from_dict(self._with_tier("economical"))
         self.assertEqual(config_hash(base), config_hash(explicit_default))
         self.assertNotEqual(config_hash(base), config_hash(economical))
+
+
+class RoutingValidation(unittest.TestCase):
+    """`[jury] routing` is `standard` or `tiered`, and nothing else (#747).
+
+    Hard, like `[[agent]] tier`, its companion key, and for the same reason: the
+    routed panel is selected by comparing against the literal `"tiered"`, so an
+    unknown spelling takes the `standard` path — an operator who wrote
+    `routing = "teired"` pays for the uniform panel while believing they asked
+    for the cheap one, and nothing anywhere says so.
+    """
+
+    @staticmethod
+    def _with_routing(value):
+        jury = {"rounds": 1, "chair": "a"}
+        if value is not None:
+            jury["routing"] = value
+        return {"jury": jury, "agent": [{"name": "a", "vendor": "anthropic", "command": "claude"}]}
+
+    def test_the_two_kinds_are_accepted_case_insensitively(self):
+        for value, expected in (("standard", "standard"), ("Tiered", "tiered")):
+            with self.subTest(value=value):
+                data = self._with_routing(value)
+                self.assertEqual(validate_config(data), [])
+                self.assertEqual(_from_dict(data).routing, expected)
+
+    def test_unset_means_standard(self):
+        data = self._with_routing(None)
+        self.assertEqual(validate_config(data), [])
+        self.assertEqual(_from_dict(data).routing, "standard")
+
+    def test_an_unknown_kind_is_a_hard_error_naming_the_value(self):
+        # The issue's typo included: it read as `standard` and said nothing.
+        for value in ("teired", 3, ""):
+            with self.subTest(value=value):
+                with self.assertRaises(ConfigError) as ctx:
+                    validate_config(self._with_routing(value))
+                self.assertIn("jury.routing must be one of standard, tiered", str(ctx.exception))
+                self.assertIn(repr(value), str(ctx.exception))
+
+    def test_the_config_never_carries_an_unknown_spelling(self):
+        # The reader normalises on construction, so no rule downstream can be
+        # handed a routing kind the vocabulary does not have — including the
+        # readers that load without validating (`--doctor`, `jury run-agent`).
+        self.assertEqual(JuryConfig(routing=" TIERED ").routing, "tiered")
+        self.assertEqual(JuryConfig(routing="teired").routing, "standard")
+        self.assertEqual(JuryConfig(routing=None).routing, "standard")
+
+    def test_the_documented_tiered_example_stays_strict_clean(self):
+        # `docs/configuration.md` teaches `routing = "tiered"`; a vocabulary that
+        # rejected the documented spelling would fail the very gate the doc tells
+        # the reader to run. `DocumentedExamplesAreStrictClean` scans the doc
+        # itself; this pins the value that scan must keep accepting.
+        self.assertEqual(validate_config(self._with_routing("tiered"), strict=True), [])
+
+
+class PromptModeIsPartOfTheRunIdentity(unittest.TestCase):
+    """`config_hash` covers `[[agent]] prompt_mode` (#746).
+
+    Same class as `headers`/`api_key_env` (#716) and `adapter` (#705): a field
+    that decides how a seat is *invoked* has to be part of the run's identity,
+    or `--cache` serves the outcome of one invocation protocol for a run
+    configured with the other. `stdin` pipes the prompt; `arg` appends it to
+    argv. Every sibling of `AgentSpec` that steers invocation was already here.
+    """
+
+    @staticmethod
+    def _with_prompt_mode(value):
+        agent = {"name": "a", "vendor": "cli", "command": "my-agent"}
+        if value is not None:
+            agent["prompt_mode"] = value
+        return {"jury": {"rounds": 1, "chair": "a"}, "agent": [agent]}
+
+    def test_the_two_delivery_protocols_hash_differently(self):
+        stdin = _from_dict(self._with_prompt_mode("stdin"))
+        arg = _from_dict(self._with_prompt_mode("arg"))
+        self.assertNotEqual(config_hash(stdin), config_hash(arg))
+
+    def test_the_cache_key_of_a_config_that_names_no_prompt_mode_is_untouched(self):
+        # No one's review cache is invalidated by a key they did not set: the
+        # field reaches the payload only when it was written, so the canonical
+        # payload of every configuration written before #746 — and of one that
+        # spells the unset state out as an empty string, which `_from_dict`
+        # folds to `None` and the adapter reads as `stdin` — is byte-identical
+        # to what it hashed to before.
+        base = _from_dict(self._with_prompt_mode(None))
+        empty = _from_dict(self._with_prompt_mode(""))
+        self.assertIsNone(base.agents[0].prompt_mode)
+        self.assertIsNone(empty.agents[0].prompt_mode)
+        self.assertEqual(config_hash(base), config_hash(empty))
+        self.assertNotEqual(
+            config_hash(base), config_hash(_from_dict(self._with_prompt_mode("arg")))
+        )
+
+    def test_the_two_protocols_build_the_argv_the_hash_claims_they_do(self):
+        # The hash is only worth splitting if the seats really are invoked
+        # differently: `arg` appends the prompt and sends no stdin, `stdin` pipes
+        # it and leaves argv alone. Asserted rather than assumed.
+        from ai_jury.adapters import make_adapter
+
+        built = {}
+        for value in ("stdin", "arg"):
+            spec = _from_dict(self._with_prompt_mode(value)).agents[0]
+            adapter = make_adapter(spec)
+            built[value] = (adapter.build_argv("PROMPT"), adapter._stdin_for("PROMPT"))
+        self.assertNotEqual(built["stdin"], built["arg"])
+        self.assertEqual(built["stdin"][1], "PROMPT")
+        self.assertIsNone(built["arg"][1])
+        self.assertEqual(built["arg"][0][-1], "PROMPT")
 
 
 class FailOnVocabulary(unittest.TestCase):

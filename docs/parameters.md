@@ -7,6 +7,20 @@ A complete reference of every `jury` parameter — CLI flags, subcommand flags, 
 left unset falls through to the config; a config key left unset falls through to
 the default shown below.
 
+**Bounds hold on both surfaces.** A value out of range is refused before the
+diff is read and before any agent runs — exit **2**, naming what you wrote and
+the rule it breaks — whether you wrote it as a flag or as a config key. The two
+messages state the same rule and differ only in the name they blame:
+
+```
+$ jury --pr 123 --rounds 0
+error: --rounds must be an integer >= 1 (got 0).
+
+$ jury --config-validate          # with rounds = 0 in jury.toml
+Config invalid (jury.toml): invalid configuration:
+  - jury.rounds must be an integer >= 1 (got 0).
+```
+
 ---
 
 ## Common recipes
@@ -166,8 +180,8 @@ Gemini `thinkingConfig`); a vendor with no effort control warns once on stderr
 
 | Flag | Value | Default | Description |
 | --- | --- | --- | --- |
-| `--total-timeout` | seconds | unset | Overall wall-clock budget for the whole run. |
-| `--phase-timeout` | seconds | unset | Per-phase wall-clock budget. |
+| `--total-timeout` | seconds ≥ 1 | unset | Overall wall-clock budget for the whole run. |
+| `--phase-timeout` | seconds ≥ 1 | unset | Per-phase wall-clock budget. |
 | `--retries` | integer ≥ 0 | `0` | Extra attempts for *transient* failures (timeout / rate-limit / spawn). |
 | `--strict` | flag | off | Fail the run if any configured agent CLI is missing. |
 | `--min-vendors` | integer ≥ 0 | from config (`2`) | Fail (**exit 3**) unless at least N **distinct vendors contributed a review**. `0` disables. |
@@ -212,7 +226,7 @@ message names both.
 
 | Flag | Value | Default | Description |
 | --- | --- | --- | --- |
-| `--max-diff-bytes` | integer | `200000` | Size budget for the filtered diff before chunk/too-large. |
+| `--max-diff-bytes` | integer ≥ 1 | `200000` | Size budget for the filtered diff before chunk/too-large. |
 | `--chunk` / `--no-chunk` | flag | from config (`false`) | Chunk an over-budget diff by file instead of failing. |
 | `--exclude` | path glob (repeatable) | from config (`[]`) | Exclude files matching this glob. |
 | `--include` | path glob (repeatable) | from config (`[]`) | Only review files matching this glob. |
@@ -246,9 +260,23 @@ sends the PR description/context alongside the diff and applies a repo policy.
 | `--transcript` / `--no-transcript` | flag | from config | Render the full play-by-play transcript (each agent's review, the debate, and the chair's reasoning) instead of the consensus-first summary. `--no-transcript` forces the summary even if `[jury] transcript` is set. Markdown only; rendering-only (does not change the run or its cache key). |
 | `--verbose` | flag | off | Summary report **and** the full transcript, in one document. Implies a transcript even with `--no-transcript`. |
 | `--live` | flag | off | Stream each step (each review, each debate turn, verification, the decision) to stdout **as it happens**. Add **`--post`** (with `--pr` or `--issue`) to also post each step as its own comment on the PR/issue (posting is opt-in — a bare target only selects the source). The live stream replaces the consolidated **markdown** stdout dump (`-o` still writes the full report to a file; `--format json`/`sarif` still print the document to stdout). In chunked large-diff mode the stream repeats once per chunk. |
-| `-o`, `--output` | path | stdout | Write the report to a file. |
+| `-o`, `--output` | path | stdout | Write the report to a file. If the path cannot be written the report is printed to **stdout** instead and `jury` exits **2** — see below. |
 | `--metadata-json` | path | — | Write machine-readable run metadata (durations, status, rounds) as JSON. |
 | `-q`, `--quiet` | flag | off | Suppress progress logs on stderr. |
+
+**An unwritable `--output` never costs you the run.** The report is written at
+the very end, when the panel has already been invoked and paid for, so a missing
+parent directory, a permission failure or a full disk must not be the end of it.
+`jury` names the path and the reason on stderr, prints the report to stdout —
+where it would have gone had `-o` not been passed — and exits **2**:
+
+```
+$ jury --pr 123 -o /nonexistent/report.md > report.md
+error: could not write the report to '/nonexistent/report.md': [Errno 2] No such file or directory: '/nonexistent/report.md'
+error: the review is complete and is printed on stdout instead; redirect it to keep the report.
+```
+
+Nothing is written to any path you did not name.
 
 `--transcript` / `--verbose` shape the **stdout / `--output` / single-comment**
 report. Phased posting (`--post-mode phased`) always posts the per-round
@@ -315,7 +343,11 @@ The cache key covers the diff, effective config, prompt version, package
 version, context policy, and seed — change any and the next run is a miss. Under
 `--context-mode expanded` it also covers the context **text** the panel is shown,
 so editing a PR title/body is a miss (#738); under the default `diff-only` the
-context reaches no reviewer and is not part of the key.
+context reaches no reviewer and is not part of the key. Under `--hints` it also
+covers the **static-analysis block** the linters produced, under every context
+mode, so fixing a lint error in the working tree is a miss even when the diff and
+the config have not moved (#745); a run that produced no block — every run under
+the default `hints = false` included — keys exactly as it did before.
 
 **Example:** `jury --pr 123 --cache` reuses a stored verdict for an unchanged
 diff+config; `jury --clear-cache` (or `jury cache clear`) wipes all entries.
@@ -494,18 +526,18 @@ fails loudly.
 | `seed` | int | unset | Reproducible orchestration. |
 | `anonymize_debate` | bool | `true` | Strip agent identity in round 2 (relabel Reviewer A/B/…) to curb bias. |
 | `prefer_non_reviewer_chair` | bool | `false` | Prefer a chair that wasn't a round-1 reviewer (no effect when `chair = "rotate"`). |
-| `total_timeout` | int | unset | Overall wall-clock budget (seconds). |
-| `phase_timeout` | int | unset | Per-phase wall-clock budget (seconds). |
-| `retries` | int | `0` | Extra attempts for transient failures. |
-| `max_rounds` | int | = `rounds` | Round ceiling when `early_stop` is on. |
+| `total_timeout` | int | unset | Positive seconds when set; overall wall-clock budget. |
+| `phase_timeout` | int | unset | Positive seconds when set; per-phase wall-clock budget. |
+| `retries` | int | `0` | ≥ 0. Extra attempts for transient failures. |
+| `max_rounds` | int | = `rounds` | ≥ 1 when set. Round ceiling when `early_stop` is on. |
 | `early_stop` | bool | `false` | Adaptive rounds. |
 | `auto_depth` | bool | `false` | Risk-aware auto-depth (CLI `--auto`). |
 | `transcript` | bool | `false` | Default the markdown report to the full play-by-play transcript (CLI `--transcript` / `--no-transcript`). Rendering-only — not part of the config hash or cache key. |
 | `decision` | `"chair"` \| `"vote"` | `"chair"` | Final-verdict source: chair synthesis or a panel vote (CLI `--decision`). Rendering-only — not part of the config hash or cache key. |
 | `theater` | bool | `false` | Enable live interactive terminal animation. |
 | `theater_style` | `"flat"` \| `"pixel"` | `"flat"` | Visual aesthetic for terminal animation. |
-| `routing` | `"standard"` \| `"tiered"` | `"standard"` | Risk-aware tiered routing with a frontier anchor (CLI `--tiered`): the round-1 panel follows the diff's risk band and each seat's `tier`; see [tiered routing](configuration.md#tiered-routing-routing--tiered--static-hints-hints--true). Part of the config hash and cache key. |
-| `hints` | bool | `false` | Run a fast static linter pre-pass over the *changed* files to inject hints into Round 1, under every context mode (CLI `--hints` / `--no-hints`). Part of the config hash and cache key. |
+| `routing` | `"standard"` \| `"tiered"` | `"standard"` | Risk-aware tiered routing with a frontier anchor (CLI `--tiered`): the round-1 panel follows the diff's risk band and each seat's `tier`; see [tiered routing](configuration.md#tiered-routing-routing--tiered--static-hints-hints--true). An unknown value is a hard config error, like `[[agent]] tier`: nothing but `"tiered"` selects the routed panel, so a typo would quietly buy the standard one. Part of the config hash and cache key. |
+| `hints` | bool | `false` | Run a fast static linter pre-pass over the *changed* files to inject hints into Round 1, under every context mode (CLI `--hints` / `--no-hints`). The flag is part of the config hash, and the **block the linters produced** is part of the cache key whenever there is one — it is a function of the working tree, so it can change while the diff and the config stand still. A run with no block keys as it did before the key existed. |
 | `demote_local_only` | bool | `false` | Demote uncorroborated single-local-model findings to minor advisory status. |
 
 **Example:**
@@ -540,9 +572,9 @@ transcript = true   # default the markdown report to the full play-by-play
 
 | Key | Type | Default | Allowed / notes |
 | --- | --- | --- | --- |
-| `max_bytes` | int | `200000` | Byte budget (after filtering) before chunk/too-large. |
+| `max_bytes` | int | `200000` | Positive when set. Byte budget (after filtering) before chunk/too-large. |
 | `chunk` | bool | `false` | Chunk an over-budget diff by file instead of failing. |
-| `chunk_max_bytes` | int | = `max_bytes` | Per-chunk byte budget when chunking. |
+| `chunk_max_bytes` | int | = `max_bytes` | Positive when set. Per-chunk byte budget when chunking. |
 | `exclude_generated` | bool | `true` | Drop binary + common generated/vendored files. |
 | `exclude` | list[str] | `[]` | Path-glob deny list (e.g. `["docs/**", "*.lock"]`). |
 | `include` | list[str] | `[]` | Path-glob allow list; when set, only matching files are reviewed. |
@@ -558,7 +590,7 @@ transcript = true   # default the markdown report to the full play-by-play
 | `model` | string | unset | Model identifier. Required for API providers and local models. |
 | `endpoint` | string | `http://localhost:11434/v1` (local) | Base URL for OpenAI-compatible HTTP providers (Ollama, OpenRouter, DeepSeek, Groq, Mistral, LiteLLM). |
 | `api_key_env` | string | unset (`OPENAI_API_KEY` default) | Environment variable **name** holding the API key for `openai-compatible` vendors (e.g. `DEEPSEEK_API_KEY`, `OPENROUTER_API_KEY`). Must match `[A-Za-z_][A-Za-z0-9_]*` (max 128 chars); anything else warns and falls back to the vendor default, because this name is echoed into `jury --doctor` and its JSON export. The warning names the agent and the rule but never quotes the rejected value back. The key's **value** is read from the environment and never displayed. |
-| `prompt_mode` | string | `stdin` | Prompt delivery for `vendor = "cli"` (`stdin` \| `arg`). |
+| `prompt_mode` | string | `stdin` | Prompt delivery for `vendor = "cli"` (`stdin` \| `arg`). Part of the config hash when written, so two seats differing only in it do not share a cache entry — the prompt reaching a seat down a pipe or on argv is two invocation protocols, not one. A config that never names the key hashes exactly as it did before, so no existing cache entry is invalidated. |
 | `headers` | table of strings | `{}` | Custom HTTP headers map for `openai-compatible` API calls. A `headers` that is not a table (a bare string, an array) is a **hard** config error naming the agent, because it cannot become headers at all — as is a non-string header name. A non-string **value** (`X-Retries = 3`) **warns** and is coerced to a string before being sent, like a malformed `api_key_env` that falls back; `--strict-config` makes that fatal. Part of the config hash, so two seats differing only in a routing header do not share a cache entry. No message quotes the offending value back — a header is where a bearer token lives. |
 | `effort` | string | unset | `low` \| `medium` \| `high`. Reasoning effort, mapped per vendor (see [effort](configuration.md#reasoning-effort-agent-effort----effort)). An unknown value is a hard config error; a vendor with no effort control warns once and ignores it. Overridden by `--effort`. |
 | `tier` | string | `frontier` | `frontier` \| `economical`. The seat's cost tier, read by `routing = "tiered"` (see [tiered routing](configuration.md#tiered-routing-routing--tiered--static-hints-hints--true)): economical seats sit on routine diffs, frontier seats anchor them and are benched otherwise. The operator says which is which — there are no model-name heuristics. An unknown value is a hard config error. Part of the config hash only when set to `economical`, so an existing config's cache entries are unchanged. |
