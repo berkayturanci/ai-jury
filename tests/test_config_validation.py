@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 import tempfile  # noqa: E402
 
 from ai_jury.config import (
+    _NUMERIC_BOUNDS,
     DEFAULT_CONFIG,
     KNOWN_AGENT_KEYS,
     KNOWN_CI_KEYS,
@@ -30,6 +31,7 @@ from ai_jury.config import (
     _context_from_dict,
     _diff_from_dict,
     _from_dict,
+    bound_error,
     config_hash,
     load_config,
     load_raw_config,
@@ -144,6 +146,52 @@ class HardErrors(unittest.TestCase):
     def test_no_agents(self):
         with self.assertRaises(ConfigError):
             validate_config({"jury": {"rounds": 1}, "agent": []})
+
+
+class NumericBounds(unittest.TestCase):
+    """`bound_error` is the one reader of the `[jury]` numeric rules (#748).
+
+    Both surfaces call it: `validate_config` for the TOML key and the CLI for
+    the flag that writes the same setting, so a bound cannot be stated twice and
+    drift apart.
+    """
+
+    def test_a_value_at_the_minimum_passes(self):
+        for setting, (minimum, _phrase, _optional) in _NUMERIC_BOUNDS.items():
+            with self.subTest(setting=setting):
+                self.assertIsNone(bound_error(setting, minimum))
+
+    def test_a_value_below_the_minimum_is_refused_and_quoted_back(self):
+        for setting, (minimum, _phrase, _optional) in _NUMERIC_BOUNDS.items():
+            with self.subTest(setting=setting):
+                message = bound_error(setting, minimum - 1)
+                self.assertIsNotNone(message)
+                self.assertTrue(message.startswith(f"jury.{setting} must be "))
+                self.assertIn(f"(got {minimum - 1}).", message)
+
+    def test_an_absent_optional_setting_passes_and_a_required_one_does_not(self):
+        self.assertIsNone(bound_error("max_rounds", None))
+        self.assertIsNotNone(bound_error("rounds", None))
+
+    def test_a_bool_is_not_an_integer(self):
+        # `rounds = true` is a mistake, not `rounds = 1`.
+        self.assertIsNotNone(bound_error("rounds", True))
+
+    def test_a_non_integer_is_refused(self):
+        self.assertIsNotNone(bound_error("rounds", "2"))
+        self.assertIsNotNone(bound_error("timeout", 1.5))
+
+    def test_only_an_optional_setting_says_when_set(self):
+        self.assertIn(" when set ", bound_error("max_rounds", 0))
+        self.assertNotIn(" when set ", bound_error("rounds", 0))
+
+    def test_where_replaces_the_config_path_and_nothing_else(self):
+        # What the CLI passes so an operator with no jury.toml is not pointed at
+        # a key they never wrote; the rule either side of it is identical.
+        self.assertEqual(
+            bound_error("rounds", 0, where="--rounds"),
+            bound_error("rounds", 0).replace("jury.rounds", "--rounds", 1),
+        )
 
 
 class ApiKeyEnvNameValidation(unittest.TestCase):

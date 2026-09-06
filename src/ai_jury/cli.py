@@ -28,6 +28,7 @@ from .classification import classify, label_strings
 from .config import (
     DEFAULT_MIN_VENDORS,
     ConfigError,
+    bound_error,
     load_config,
     load_raw_config,
     validate_config,
@@ -1874,6 +1875,48 @@ def _is_progress_milestone(msg: str) -> bool:
     return msg.startswith(_PROGRESS_PREFIXES)
 
 
+#: Every CLI flag that writes a `[jury]` setting `validate_config` puts a bound
+#: on, as `(flag, argparse dest, setting)` (issue #748). The settings are keys
+#: of `config._NUMERIC_BOUNDS`, so the rule and the message are the config
+#: path's own; only the `where` differs, naming the flag the operator typed
+#: rather than a key they may never have written.
+#:
+#: The flags NOT here were checked against the same table and belong nowhere
+#: else: `--seed` has no bound to break (a malformed `[jury] seed` is read as
+#: "no seed" on purpose, not as an error); `--min-vendors` / `--min-reviews`
+#: are clamped to >= 0 on both surfaces by `_non_negative_int`, which is
+#: deliberately fail-safe rather than fatal; `--chunk`, `--early-stop`,
+#: `--verify`, `--redact`, `--auto` and `--hints` are booleans; `--effort`,
+#: `--decision`, `--context-mode` and `--format` are argparse `choices`, which
+#: already refuse a value outside the vocabulary; and `--fail-on` has shared its
+#: rule with the validator since #718.
+_BOUNDED_FLAGS = (
+    ("--rounds", "rounds", "rounds"),
+    ("--max-rounds", "max_rounds", "max_rounds"),
+    ("--total-timeout", "total_timeout", "total_timeout"),
+    ("--phase-timeout", "phase_timeout", "phase_timeout"),
+    ("--retries", "retries", "retries"),
+    ("--max-diff-bytes", "max_diff_bytes", "diff.max_bytes"),
+)
+
+
+def _override_bound_error(args) -> str | None:
+    """The first CLI override breaking a bound ``validate_config`` enforces.
+
+    ``None`` is "the flag was not passed" and leaves the config value — which
+    the validator has already checked — standing; it is never a value to range
+    check, so an unset flag can never be mistaken for a zero.
+    """
+    for flag, dest, setting in _BOUNDED_FLAGS:
+        value = getattr(args, dest, None)
+        if value is None:
+            continue
+        message = bound_error(setting, value, where=flag)
+        if message:
+            return message
+    return None
+
+
 def _maybe_add_local_fallback(config, args, log) -> None:
     """Append a local agent when nothing else can run, offline (issue: zero-config).
 
@@ -2146,6 +2189,21 @@ def main(argv: list[str] | None = None) -> int:
     except ConfigError as exc:
         print(f"Config invalid: {redact(str(exc))[0]}", file=sys.stderr)
         return 2
+    # One value, one field, one answer, whichever surface it was written on
+    # (issue #748). The overrides below are assigned straight onto the config
+    # AFTER `validate_config` has run, so until now nothing range-checked them:
+    # `--rounds 0` was accepted, ran a full Round 1 and exited 0 while `rounds =
+    # 0` in `jury.toml` was a hard error, on a flag `docs/parameters.md`
+    # documents as `≥ 1`. An operator who wrote `--rounds 0` meaning "no
+    # debate" got a complete review round, a report, and nothing anywhere
+    # saying the number they passed had been ignored.
+    #
+    # Refused here — before the diff is read and long before an agent is paid
+    # for — with exit 2, like every other bad-input exit on this path.
+    override_error = _override_bound_error(args)
+    if override_error:
+        print(f"error: {override_error}", file=sys.stderr)
+        return 2
     if args.rounds is not None:
         config.rounds = args.rounds
         # A fixed --rounds is a hard override: it disables adaptive early-stop so
@@ -2161,7 +2219,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.phase_timeout is not None:
         config.phase_timeout = args.phase_timeout
     if args.retries is not None:
-        config.retries = max(0, args.retries)
+        # Assigned as written: the `max(0, …)` clamp that used to stand here was
+        # the second rule for one value (#748). It silently turned `--retries
+        # -1` into 0 while `retries = -1` in `jury.toml` was a hard error, and
+        # is unreachable now that the same bound refuses the flag above.
+        config.retries = args.retries
     if args.seed is not None:
         config.seed = args.seed
     if args.chair:
@@ -2580,7 +2642,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.metadata_json:
         with Path(args.metadata_json).open("w", encoding="utf-8") as fh:
             fh.write(json.dumps(metadata, indent=2) + "\n")
-        log(f"metadata written to {args.metadata_json}")
+        log(f"metadata written to {redact(args.metadata_json)[0]}")
 
     ci_exit = 0
     # A run whose panel collapsed is a different thing wearing the same output
@@ -2649,7 +2711,7 @@ def main(argv: list[str] | None = None) -> int:
             log("no verified findings with a suggested fix — no patches emitted")
         elif args.patches_out:
             Path(args.patches_out).write_text(patches_section, encoding="utf-8")
-            log(f"suggested patches written to {args.patches_out}")
+            log(f"suggested patches written to {redact(args.patches_out)[0]}")
         elif args.format == "markdown":
             report += "\n\n" + patches_section.rstrip()
         else:
@@ -2661,9 +2723,39 @@ def main(argv: list[str] | None = None) -> int:
         log(f"progress comment finalized on PR #{args.pr}")
 
     if args.output:
-        with Path(args.output).open("w", encoding="utf-8") as fh:
-            fh.write(report + "\n")
-        log(f"report written to {args.output}")
+        # By the time this write runs the panel has been invoked, the debate is
+        # over and the verdict is rendered: the run is paid for. An unwritable
+        # path used to come out of `open()` as a raw `FileNotFoundError`
+        # traceback (issue #749) — an implementation detail where a sentence
+        # naming the path belongs, and one that took the report with it, because
+        # `-o` is exactly what suppresses the stdout copy below.
+        #
+        # So it is reported the way the `--doctor --write` failure a few hundred
+        # lines up is (named path, redacted reason, exit 2), and the report falls
+        # back to STDOUT rather than to another file. A fallback file would put
+        # the run somewhere the operator never named — a second surprise on top
+        # of the first, able to clobber, and no more likely to succeed when the
+        # cause is a full or read-only filesystem — while stdout is where this
+        # exact document would have gone had `-o` not been passed at all. It is
+        # redirectable and greppable, so the run survives; exit 2 keeps a caller
+        # from reading the delivery as a success.
+        try:
+            with Path(args.output).open("w", encoding="utf-8") as fh:
+                fh.write(report + "\n")
+        except OSError as exc:
+            print(
+                f"error: could not write the report to "
+                f"'{redact(args.output)[0]}': {redact(str(exc))[0]}",
+                file=sys.stderr,
+            )
+            print(
+                "error: the review is complete and is printed on stdout instead; "
+                "redirect it to keep the report.",
+                file=sys.stderr,
+            )
+            print(report)
+            return 2
+        log(f"report written to {redact(args.output)[0]}")
     elif not (live_streamed and args.format == "markdown"):
         # In --live markdown mode the step stream WAS the stdout output; don't also
         # dump the consolidated report (it would duplicate everything just shown).
