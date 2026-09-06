@@ -493,18 +493,31 @@ class ASandboxIsNotSettledByTheFirstOneNamed(unittest.TestCase):
                 self.assertTrue(warnings, f"{flag}=true audited clean")
                 self.assertIn(f"{flag}=true", warnings[0])
 
-    def test_the_audit_reads_the_same_half_of_the_seat_enforcement_did(self):
-        """Enforcement recognises codex by vendor OR name; so must the audit.
+    def test_a_name_does_not_decide_which_cli_is_being_spawned(self):
+        """The adapter key decides, which is what `enforce_read_only` documents.
 
-        `enforce_read_only` injects `-s read-only` for a seat merely *named*
-        codex, so a seat named codex with an unknown vendor is spawned as codex.
-        Keying the selector list off the vendor alone left that seat enforced as
-        codex and audited as nothing.
+        `name` is free text an operator picks to tell two seats apart in a
+        report; `adapter`/`vendor` is the declared fact about what will run.
+        While the name could override it, three configurations were spawned with
+        another CLI's flags and audited clean: a seat named `claude` with an
+        unknown vendor got Claude's denylist and no sandbox, one named `codex`
+        got codex's `-s read-only` passed to an unknown binary, and a real codex
+        seat named `claude-4` got the denylist instead of a sandbox.
         """
-        spec = AgentSpec(name="codex", vendor="acme", command="x", extra_args=["--full-auto"])
+        unknown_claude = AgentSpec(name="claude", vendor="acme", command="x")
+        unknown_codex = AgentSpec(
+            name="codex", vendor="acme", command="x", extra_args=["--full-auto"]
+        )
+        codex_named_claude = AgentSpec(name="claude-4", vendor="openai", command="codex")
 
-        self.assertIn("-s", adapters._read_only_extra_args(spec))
-        self.assertTrue(privilege.audit_agent(spec))
+        # An unknown vendor gets agy's boolean sandbox injected, fail-closed, and
+        # the audit does not accept that as proof (#292) whatever the name says.
+        self.assertEqual(adapters._read_only_extra_args(unknown_claude), ["--sandbox"])
+        self.assertTrue(privilege.audit_agent(unknown_claude))
+        self.assertTrue(privilege.audit_agent(unknown_codex))
+        # And a codex seat is a codex seat however it is named.
+        self.assertEqual(adapters._read_only_extra_args(codex_named_claude), ["-s", "read-only"])
+        self.assertEqual(privilege.audit_agent(codex_named_claude), [])
 
     def test_a_seat_carrying_both_kinds_is_described_by_the_worse_one(self):
         """`all(...)` picked the milder sentence when a seat had a selector too."""
@@ -595,14 +608,16 @@ class TheAuditReadsTheArgvTheSeatIsSpawnedWith(unittest.TestCase):
         whether the protocol has an enforcement to fall back on. It is the
         adapter that decides, which is the whole claim of this change.
         """
-        native = AgentSpec(name="claude", vendor="anthropic", command="claude", extra_args=[])
+        native = AgentSpec(name="seat", vendor="anthropic", command="claude", extra_args=[])
         fronted = AgentSpec(
-            name="claude", vendor="anthropic", adapter="cli", command="some-cli", extra_args=[]
+            name="seat", vendor="anthropic", adapter="cli", command="some-cli", extra_args=[]
         )
         self.assertEqual(privilege.audit_agent(native), [])
         warnings = privilege.audit_agent(fronted)
         self.assertEqual(len(warnings), 1)
-        self.assertIn("is not restricted to read-only", warnings[0])
+        # The generic sandbox message, not Claude's: the `cli` adapter speaks no
+        # `--disallowed-tools`, and it is the adapter that decides what is spoken.
+        self.assertIn("not running under a recognized read-only sandbox", warnings[0])
 
     def test_extra_args_that_re_enable_writing_are_still_caught(self):
         # The audit must not go blind on the configs it exists for. A sandbox the

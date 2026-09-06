@@ -121,7 +121,7 @@ def _is_sandboxed(extra_args: list[str], vendor: str = "", name: str = "") -> bo
     """
     vendor = normalise_vendor(vendor)
     name = (name or "").lower()
-    is_agy = vendor == "google" or "agy" in name or "gemini" in name
+    is_agy = vendor == "google"
     args = list(extra_args)
     for i, a in enumerate(args):
         # Equals form (issue #316/L-6): `-s=read-only` / `--sandbox=read-only`,
@@ -382,9 +382,9 @@ def enable_write(vendor: str, name: str, extra_args: list[str]) -> list[str]:
     # local agent named "local-claude" must not be read as claude.
     if vendor in _NO_SANDBOX_VENDORS or vendor.endswith("-api"):
         return args
-    if "claude" in name or vendor == "anthropic":
+    if vendor == "anthropic":
         return _drop_claude_disallowed(args)
-    if vendor == "openai" or "codex" in name:
+    if vendor == "openai":
         return _set_value_sandbox(args, "-s", "workspace-write")
     return _drop_bare_sandbox(args)
 
@@ -434,9 +434,9 @@ def enforce_read_only(vendor: str, name: str, extra_args: list[str]) -> list[str
     # otherwise mis-handle e.g. a local agent named "local-claude" / "my-codex".
     if vendor in _NO_SANDBOX_VENDORS or vendor.endswith("-api"):
         return extra_args
-    if "claude" in name or vendor == "anthropic":
+    if vendor == "anthropic":
         return _ensure_claude_disallowed(extra_args)
-    if vendor == "openai" or "codex" in name:
+    if vendor == "openai":
         return _ensure_value_sandbox(extra_args, ["-s", "read-only"])
     # google / agy / gemini AND any unknown vendor (issue #310, completes #300):
     # an unknown vendor routes to the generic AgyAdapter (--print/--sandbox), so
@@ -525,10 +525,17 @@ def audit_agent(spec) -> list[str]:
     extra_args = enforce_read_only(vendor, name, list(getattr(spec, "extra_args", []) or []))
     args_text = _args_str(extra_args)
 
-    is_claude = "claude" in name or vendor == "anthropic"
+    is_claude = vendor == "anthropic"
 
     if is_claude:
-        if not _claude_is_locked_down(extra_args):
+        # A tripwire, not a live check: `_ensure_claude_disallowed` merges the write
+        # tools into the argv this function just enforced, so a locked-down result is
+        # guaranteed and the body below cannot run. It is kept because the guarantee
+        # lives in another function — if enforcement ever stops injecting, this is
+        # what says so instead of the audit silently passing a writable seat. Before
+        # #758 removed the name-based identity it was reachable, via a `cli`-adapter
+        # seat whose *name* contained "claude".
+        if not _claude_is_locked_down(extra_args):  # pragma: no cover - see above
             warnings.append(
                 f"agent '{label}' (claude) is not restricted to read-only: add "
                 f"`--disallowed-tools {','.join(_WRITE_TOOLS)}` so a prompt "
