@@ -339,13 +339,21 @@ class UnwritableOutputPath(unittest.TestCase):
         self.assertEqual(err.count("[REDACTED:github_token]"), 2)
 
     def test_a_secret_in_a_written_path_is_redacted_too(self):
-        """The success lines print the same operator text and got the same fix."""
+        """The success line prints the same operator text and got the same fix.
+
+        Without `-q` on purpose: `--quiet` silences `log`, so the assertion this
+        test exists for would hold against an empty stderr and pass whatever the
+        code did. It asserts the redacted marker is *present*, not merely that
+        the token is absent, for the same reason.
+        """
         token = "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij"
         target = self.d / f"{token}.md"
 
-        code, _, err = self._run(target)
+        code, _, err = run(["--mock", "--diff-file", str(self.diff), "-o", str(target)])
 
         self.assertEqual(code, 0)
+        self.assertIn("report written to", err)
+        self.assertIn("[REDACTED:github_token]", err)
         self.assertNotIn(token, err)
         self.assertTrue(target.exists())
 
