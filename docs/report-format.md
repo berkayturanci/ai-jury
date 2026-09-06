@@ -60,6 +60,27 @@ the env var) asserts the output matches the committed fixtures:
 PYTHONPATH=src python3 -m unittest discover -s tests
 ```
 
+## The routing record (`metadata.routing`)
+
+Every report carries `metadata.routing` (metadata schema 7, JSON report `1.4`):
+what decided who sat in round 1. Under `routing = "standard"` it is
+`{"mode": "standard", "panel": [...]}` plus empty fields; under `"tiered"` (#714):
+
+| Field | Meaning |
+| --- | --- |
+| `mode` | `standard` or `tiered`. |
+| `risk` | The band `diffprofile` gives the **filtered** diff — the change the panel is actually shown, excluded files left out; empty under `standard`. |
+| `panel` | The seats that reviewed in round 1, in config order. |
+| `benched` | The frontier seats held back, in config order; empty when nobody was. |
+| `anchor` | The frontier seat kept on a routed panel, or `null` when the full panel ran. |
+| `reason` | One sentence naming the band, the count of economical seats, the anchor, the bench, and any floor (`min_vendors`, `min_reviews`) that pulled a seat back. |
+| `escalated` | Whether a `critical`/`major` finding after round 1 brought the benched seats into the debate and a frontier chair. |
+| `escalation_reason` | Why round 1 escalated, and what escalation then did — written after the debate section from what actually ran, so it names the seats that joined the debate or says only the chair was escalated. |
+
+The `reviewers` array below lists the seats that **ran**; a benched seat that
+never escalated is absent from it and present in `benched`, so the two together
+account for every enabled seat.
+
 ## Per-reviewer ballots (`reviewers`)
 
 The consolidated `findings` and `consensus` views say *what the panel found*.

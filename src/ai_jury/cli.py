@@ -2301,6 +2301,11 @@ def main(argv: list[str] | None = None) -> int:
 
     if getattr(args, "tiered", False):
         config.routing = "tiered"
+    if config.routing == "tiered" and getattr(args, "min_vendors", None) is not None:
+        # The routed panel keeps at least the vendor floor the gate will apply
+        # (#714); a `--min-vendors` override has to reach the plan, not only the
+        # gate that runs after the panel has been paid for.
+        config.ci.min_vendors = max(0, int(args.min_vendors))
     # ``--hints`` / ``--no-hints`` override ``[jury] hints`` in BOTH directions;
     # the sentinel (None) means "not passed", so the config value stands (#715).
     hints_override = getattr(args, "hints", None)

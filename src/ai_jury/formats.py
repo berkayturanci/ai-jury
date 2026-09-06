@@ -69,7 +69,7 @@ from .metadata import build_run_metadata
 #:   bucketed. A consumer switching on the four known values must accept a fifth.
 #:
 #: Every top-level key, and every ``reviewers`` key, keeps its name and shape.
-JSON_SCHEMA_VERSION = "1.3"
+JSON_SCHEMA_VERSION = "1.4"
 
 #: Canonical SARIF schema URI and version emitted by :func:`to_sarif`.
 SARIF_SCHEMA = "https://json.schemastore.org/sarif-2.1.0.json"

@@ -42,7 +42,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 # nothing checkable": naming `src/made/up.py` is a different failure from naming
 # nothing, and the two ask for different fixes. Additive, and the buckets still
 # sum to ``ballots`` — the seats moved between buckets, none was added or lost.
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 
 #: What a reviewer slot actually contributed (issue #501). ``clean`` and
@@ -406,6 +406,10 @@ def build_run_metadata(
         "rounds_executed": _rounds_executed(outcome),
         "from_cache": bool(getattr(outcome, "from_cache", False)),
         "stop_reason": getattr(outcome, "stop_reason", "") or "",
+        # What routing decided (#714): mode, risk band, who sat, who was benched,
+        # the anchor, and whether round 1 escalated. The standard mode records
+        # {mode: "standard", panel: [...]} so the key is always present.
+        "routing": dict(getattr(outcome, "routing", None) or {"mode": "standard"}),
         "skipped": skipped,
         "retried": retried,
         "budget_exhausted": bool(getattr(outcome, "budget_exhausted", False)),

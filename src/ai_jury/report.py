@@ -99,6 +99,13 @@ def _metadata_block(metadata: dict) -> list[str]:
         # name/reason can never break the table or forge structure if a future
         # source carries agent/diff text.
         lines.append(f"- rounds decision: {flatten_inline(stop_reason)}")
+    routing_meta = metadata.get("routing") or {}
+    if routing_meta.get("mode") == "tiered":
+        # Tiered routing (#714): the cost decision is part of the run record.
+        line = f"- routing: tiered — {flatten_inline(routing_meta.get('reason', ''))}"
+        if routing_meta.get("escalated"):
+            line += f"; escalated: {flatten_inline(routing_meta.get('escalation_reason', ''))}"
+        lines.append(line)
     lines.append(f"- verify: {'on' if metadata['verify_enabled'] else 'off'}")
     lines.append(f"- context mode: {metadata['context_mode']}")
     # Partial-result signals (issue #30): only rendered when relevant so a

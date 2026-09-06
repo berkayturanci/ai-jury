@@ -13,10 +13,11 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 
-from . import convergence, injection, largediff, panel, prompts
+from . import convergence, injection, largediff, panel, prompts, routing
 from .adapters import RETRYABLE_ERROR_CODES, Adapter, AgentResult, make_adapter
 from .config import JuryConfig
 from .consensus import FindingGroup, demote_local_only_groups, group_findings
+from .diffprofile import profile_diff
 from .findings import (
     Finding,
     Verdict,
@@ -163,6 +164,8 @@ class JuryOutcome:
     # from a diff" — a hand-assembled outcome, a caller that never had one — and
     # the scope rule then falls back to the structural test it applied before.
     changed: largediff.ChangeIndex | None = None
+    # What tiered routing decided (#714): the plan's dict, or the standard record.
+    routing: dict = field(default_factory=lambda: routing.standard_plan([]).as_dict())
 
 
 def _run_phase(
@@ -327,6 +330,7 @@ def run_jury(
     budget: RunBudget | None = None,
     on_event=None,
     mode: str = "code",
+    risk: str | None = None,
 ) -> JuryOutcome:
     # Jury mode (issue #221): "code" (default) reviews a diff with the code-review
     # rubric; "issue" reviews a GitHub issue's prose for completeness/clarity.
@@ -441,6 +445,31 @@ def run_jury(
         raise RuntimeError("no usable agents — install at least one agent CLI or use --mock")
 
     usable_names = [a.name for a in usable]
+    # Tiered routing (#714): a pure plan over the enabled bench, the usable
+    # names and the diff's risk band decides who sits in round 1, who anchors
+    # and who is benched; the standard mode records a plan too so the report
+    # always says what happened. Benched seats stay available for escalation.
+    if config.routing == routing.MODE_TIERED:
+        plan = routing.plan_panel(
+            specs,
+            usable_names,
+            # The band of the WHOLE change when the caller has one. A chunked
+            # review calls this once per chunk (#31), and a chunk of a large or
+            # security-touching diff can look routine on its own — routing the
+            # panel off it would bench the frontier seats on exactly the change
+            # they were kept for. `review_diff` profiles the filtered diff once
+            # and threads the answer through every chunk.
+            risk if risk is not None else profile_diff(diff).risk,
+            chair=config.chair,
+            min_vendors=int(getattr(config.ci, "min_vendors", 0) or 0),
+            min_reviews=int(getattr(config.ci, "min_reviews", 0) or 0),
+        )
+    else:
+        plan = routing.standard_plan(usable_names)
+    log(routing.describe(plan))
+    seated = set(plan.panel)
+    round1 = [a for a in usable if a.name in seated]
+    benched = [a for a in usable if a.name in set(plan.benched)]
 
     # State the number a downstream consumer will actually receive, BEFORE the
     # panel is paid for (#699). "3 agents reviewing" is not that number: it is one
@@ -452,13 +481,13 @@ def run_jury(
     # the bench cannot reach even the ceiling, this is a shortfall the run should
     # name here rather than at the consumer, an hour and three CLI invocations
     # later.
-    log(panel.describe(len(usable), available=len(usable)))
-    too_small = panel.shortfall(len(usable), config.ci.min_reviews, stage="before the panel runs")
+    log(panel.describe(len(round1), available=len(usable)))
+    too_small = panel.shortfall(len(round1), config.ci.min_reviews, stage="before the panel runs")
     if too_small:
         raise RuntimeError(too_small)
 
     # Round 1: independent reviews.
-    log(f"round 1: {len(usable)} agents reviewing")
+    log(f"round 1: {len(round1)} agents reviewing")
     review_prompt = {
         a.name: tmpl["review"].format(
             name=a.name,
@@ -467,10 +496,10 @@ def run_jury(
             policy=policy_section,
             notice=prompts._UNTRUSTED_NOTICE,
         )
-        for a in usable
+        for a in round1
     }
     reviews = _run_phase(
-        usable,
+        round1,
         review_prompt,
         "review",
         config.parallel,
@@ -481,7 +510,7 @@ def run_jury(
     # Stable ordering: the thread pool can return results in any completion
     # order. Reorder to the enabled-agent order so the report (and every
     # downstream consumer) is independent of which thread finished first.
-    agent_order = [a.name for a in usable]
+    agent_order = [a.name for a in round1]
     reviews = _order_by_agents(reviews, agent_order)
 
     # Parse structured findings from each successful review and aggregate them.
@@ -515,7 +544,23 @@ def run_jury(
     # SAME chair. ``chair = "rotate"`` and prefer-non-reviewer both consume the
     # shared run RNG / reviewer info, so resolving once (rather than recomputing
     # per phase) is what keeps a rotating chair stable within a run (#38).
-    chair_name = resolve_chair(config, usable_names, reviewer_names, run_rng)
+    # Escalation (#714): a critical or major finding after round 1 brings the
+    # benched frontier seats into the debate and draws the chair from the
+    # frontier seats. Decided once, here, and recorded on the plan — including
+    # what it can actually do in THIS run: a single-round run has no debate to
+    # join, and ``--auto`` sets exactly that on the routine band that benched
+    # the seats, so the record names the chair-only case rather than promising
+    # a debate that will not happen (review round 1).
+    round1_debaters = [a for a in round1 if any(r.agent == a.name and r.ok for r in reviews)]
+    if benched:
+        plan.escalated, plan.escalation_reason = routing.should_escalate(groups)
+        if plan.escalated:
+            log(f"tiered routing: escalating — {plan.escalation_reason}")
+    chair_pool = [a.name for a in round1]
+    if plan.escalated:
+        chair_pool = routing.frontier_names(specs, usable_names) or chair_pool
+        agent_order = agent_order + [a.name for a in benched]
+    chair_name = resolve_chair(config, chair_pool, reviewer_names, run_rng)
 
     # Round 2+: debate. Only agents whose round-1 review succeeded participate.
     # Two modes (issue #40):
@@ -528,7 +573,11 @@ def run_jury(
     rounds_executed = 1
     stop_reason = ""
     budget_exhausted = False
-    debaters = [a for a in usable if any(r.agent == a.name and r.ok for r in reviews)]
+    debaters = round1_debaters
+    if plan.escalated:
+        # Benched frontier seats cross-examine: they receive every round-1
+        # review as "the others" and answer in the debate format.
+        debaters = debaters + benched
     can_debate = len(debaters) >= 2
 
     if config.early_stop:
@@ -685,6 +734,22 @@ def run_jury(
         if synthesis is not None:
             emit("synthesis", synthesis)
 
+    if plan.escalated:
+        # What escalation DID, read off the run (#714, review rounds 1 and 2).
+        # Predicting it was wrong twice: a single-round run has no debate to
+        # join — `--auto` sets exactly one round on the `low` band that benched
+        # the seats — and an adaptive run can converge after round 1 and skip
+        # the debate it was going to have. The benched seats that actually
+        # produced a debate result are the answer, whatever the reason.
+        bench_names = {a.name for a in benched}
+        # `ok` matters: a benched seat whose debate call failed produced a row
+        # but no cross-examination, and counting it would put the frontier seat
+        # in the record for work it did not do (review round 3).
+        joined = [r.agent for r in debate if r.agent in bench_names and r.ok]
+        effect = routing.escalation_effect(joined, debate_ran=bool(debate))
+        plan.escalation_reason = f"{plan.escalation_reason}; {effect}"
+        log(f"tiered routing: {plan.escalation_reason}")
+
     return JuryOutcome(
         reviews=reviews,
         debate=debate,
@@ -704,6 +769,7 @@ def run_jury(
         rounds_executed=rounds_executed,
         stop_reason=stop_reason,
         changed=changed,
+        routing=plan.as_dict(),
     )
 
 
@@ -1200,8 +1266,17 @@ def _merge_chunk_outcomes(outcomes: list[JuryOutcome], config: JuryConfig) -> Ju
 
     warnings = [w for o in outcomes for w in o.warnings]
 
-    synthesis = _combine_chair_results([o.synthesis for o in outcomes if o.synthesis], base.chair)
-    verify = _combine_chair_results([o.verify for o in outcomes if o.verify], base.chair)
+    # ONE chair name for the whole merged record (#714, r5). A chunked tiered
+    # run escalates per chunk, so the chunks can have different chairs; the run
+    # publishes the chair of the first chunk that escalated, and the combined
+    # synthesis and verify must carry that same name — labelling them with the
+    # quiet first chunk's seat while the outcome names another is a report that
+    # says one seat synthesised a body another seat's chunk opens.
+    merged_chair = next(
+        (o.chair for o in outcomes if (o.routing or {}).get("escalated")), base.chair
+    )
+    synthesis = _combine_chair_results([o.synthesis for o in outcomes if o.synthesis], merged_chair)
+    verify = _combine_chair_results([o.verify for o in outcomes if o.verify], merged_chair)
 
     # bolt: Consolidate collection aggregations (sum, extend, max, any) into a single-pass O(N) explicit loop
     redaction_count = 0
@@ -1221,7 +1296,11 @@ def _merge_chunk_outcomes(outcomes: list[JuryOutcome], config: JuryConfig) -> Ju
         reviews=reviews,
         debate=debate,
         synthesis=synthesis,
-        chair=base.chair,
+        # A chunked run escalates per chunk, so a quiet first chunk must not
+        # publish its economical chair for a run that escalated later: the
+        # chair of the first chunk that escalated is the run's (#714, r4), and
+        # the combined synthesis and verify above carry the same name (r5).
+        chair=merged_chair,
         findings=findings,
         warnings=warnings,
         groups=groups,
@@ -1238,9 +1317,34 @@ def _merge_chunk_outcomes(outcomes: list[JuryOutcome], config: JuryConfig) -> Ju
         # The whole change, not one chunk of it (#710): a reviewer that named a
         # file from another chunk named a file in this change.
         changed=largediff.merge_change_indexes([o.changed for o in outcomes]),
+        # Every chunk routed off the same band and the same bench, so the first
+        # chunk's plan describes the run; escalation is true when ANY chunk
+        # escalated, because the benched seats really did review by then.
+        routing=_merged_routing(outcomes, base, debate),
     )
 
 
+def _merged_routing(outcomes: list[JuryOutcome], base: JuryOutcome, debate: list) -> dict:
+    """The routing record of a chunked run, read off the merged run (#714, r3).
+
+    Every chunk routed off the same band and the same bench, so the first
+    chunk's plan describes the panel. Escalation is per chunk — round 1 of one
+    chunk can carry a major finding while another is quiet — so the record says
+    on how many it escalated, and what escalation then did is recomputed from
+    the **merged** debate rather than copied from whichever chunk escalated
+    first. Copying it was wrong the way predicting was wrong: the sentence
+    described one chunk and was published as the run's.
+    """
+    escalated = [o for o in outcomes if (o.routing or {}).get("escalated")]
+    merged = {**base.routing, "escalated": bool(escalated)}
+    if escalated:
+        bench = set(base.routing.get("benched") or [])
+        joined = [r.agent for r in debate if r.agent in bench and r.ok]
+        merged["escalation_reason"] = (
+            f"escalated on {len(escalated)} of {len(outcomes)} chunk(s); "
+            f"{routing.escalation_effect(joined, debate_ran=bool(debate))}"
+        )
+    return merged
 def plan_for(config: JuryConfig, diff: str) -> largediff.DiffPlan:
     """The diff plan *config* selects for *diff* (pure).
 
@@ -1329,6 +1433,14 @@ def review_diff(
     if redact_on and ctx_mode != "diff-only" and context:
         context, context_redactions = redact(context)
 
+    # One band for the whole change, computed on the FILTERED diff the panel
+    # will actually see — the excluded files are not part of the change under
+    # review, and profiling the raw argument would route off files the panel is
+    # never shown (#714, r4). Every chunk then routes off the same answer.
+    whole_risk = (
+        profile_diff("".join(plan.chunks)).risk if config.routing == routing.MODE_TIERED else None
+    )
+
     def _run(chunk: str) -> JuryOutcome:
         return run_jury(
             config,
@@ -1342,6 +1454,7 @@ def review_diff(
             log=log,
             budget=shared_budget,
             on_event=on_event,
+            risk=whole_risk,
         )
 
     def _finalize(outcome: JuryOutcome) -> JuryOutcome:
