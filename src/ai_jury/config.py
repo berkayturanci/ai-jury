@@ -553,6 +553,57 @@ def _nested_table_message(table: str) -> str:
     return f"[jury.{table}] must be a table."
 
 
+#: The numeric bounds on the `[jury]` scalars, keyed by the setting's dotted
+#: path under `[jury]`. Each entry is `(minimum, phrase, optional)`: *phrase* is
+#: the rule as the message has always stated it — `timeout` says "a positive
+#: integer" and `rounds` "an integer >= 1", which mean the same thing and are
+#: both kept because they are what operators have read for releases — and
+#: *optional* marks a setting whose absence is legal, which the message says as
+#: "when set".
+#:
+#: The table exists because these bounds have TWO surfaces (issue #748). Every
+#: one of them is also a CLI flag, and the flags were assigned onto the config
+#: *after* `validate_config` had already run, so nothing range-checked them:
+#: `--rounds 0` was accepted, ran a full Round 1 and exited 0 while `rounds = 0`
+#: in `jury.toml` was a hard error — one value, one field, two answers, on a
+#: flag `docs/parameters.md` documents as `≥ 1`. `bound_error` is the single
+#: reader, so a bound cannot be stated twice and drift apart.
+_NUMERIC_BOUNDS: dict[str, tuple[int, str, bool]] = {
+    "rounds": (1, "an integer >= 1", False),
+    "timeout": (1, "a positive integer", False),
+    "retries": (0, "an integer >= 0", False),
+    # Execution controls (issue #30).
+    "total_timeout": (1, "a positive integer", True),
+    "phase_timeout": (1, "a positive integer", True),
+    # Adaptive rounds (issue #40).
+    "max_rounds": (1, "an integer >= 1", True),
+    # Large-diff handling (issue #31).
+    "diff.max_bytes": (1, "a positive integer", True),
+    "diff.chunk_max_bytes": (1, "a positive integer", True),
+}
+
+
+def bound_error(setting: str, value, where: str | None = None) -> str | None:
+    """The message for *value* breaking the bound on ``setting``, else ``None``.
+
+    *setting* is a key of :data:`_NUMERIC_BOUNDS`. *where* names the surface the
+    value was written on and defaults to the ``jury.<setting>`` config path; the
+    CLI passes the flag (``--rounds``), so an operator who has no ``jury.toml``
+    at all is not pointed at a key they never wrote. The rule, the bound and the
+    quoted value are identical either way — that is the point of one reader.
+
+    ``None`` means "not set" and passes for an optional setting. A bool is not
+    an integer here: ``rounds = true`` is a mistake, not ``rounds = 1``.
+    """
+    minimum, phrase, optional = _NUMERIC_BOUNDS[setting]
+    if value is None and optional:
+        return None
+    if isinstance(value, int) and not isinstance(value, bool) and value >= minimum:
+        return None
+    suffix = " when set" if optional else ""
+    return f"{where or f'jury.{setting}'} must be {phrase}{suffix} (got {value!r})."
+
+
 def validate_config(data: dict, strict: bool = False) -> list:
     """Validate a raw config dict.
 
@@ -617,25 +668,23 @@ def validate_config(data: dict, strict: bool = False) -> list:
                     f"unknown key 'jury.{table}.{key}' (expected one of {', '.join(known_nested)})."
                 )
 
-    # rounds >= 1 (hard).
-    rounds = jury.get("rounds", 1)
-    if not isinstance(rounds, int) or isinstance(rounds, bool) or rounds < 1:
-        errors.append(f"jury.rounds must be an integer >= 1 (got {rounds!r}).")
-
-    # timeout > 0 (hard).
-    timeout = jury.get("timeout", 600)
-    if not isinstance(timeout, int) or isinstance(timeout, bool) or timeout <= 0:
-        errors.append(f"jury.timeout must be a positive integer (got {timeout!r}).")
-
-    # Execution controls (issue #30): optional positive budgets, non-negative
-    # retries (hard when present and invalid).
-    for key in ("total_timeout", "phase_timeout"):
-        val = jury.get(key)
-        if val is not None and (not isinstance(val, int) or isinstance(val, bool) or val <= 0):
-            errors.append(f"jury.{key} must be a positive integer when set (got {val!r}).")
-    retries = jury.get("retries", 0)
-    if not isinstance(retries, int) or isinstance(retries, bool) or retries < 0:
-        errors.append(f"jury.retries must be an integer >= 0 (got {retries!r}).")
+    # The bounded `[jury]` scalars (hard): rounds >= 1, timeout > 0, the
+    # optional execution budgets (issue #30) > 0 and retries >= 0. Every rule
+    # and every message comes from `_NUMERIC_BOUNDS` through `bound_error`,
+    # which is also what the CLI flags writing these same settings are checked
+    # against, so the two surfaces cannot answer differently (issue #748). A
+    # required key that is absent is validated at its default; an absent
+    # optional one is None and passes.
+    for setting, value in (
+        ("rounds", jury.get("rounds", 1)),
+        ("timeout", jury.get("timeout", 600)),
+        ("total_timeout", jury.get("total_timeout")),
+        ("phase_timeout", jury.get("phase_timeout")),
+        ("retries", jury.get("retries", 0)),
+    ):
+        message = bound_error(setting, value)
+        if message:
+            errors.append(message)
 
     # Final-verdict mode (issue #220): "chair" or "vote".
     decision = jury.get("decision")
@@ -651,19 +700,17 @@ def validate_config(data: dict, strict: bool = False) -> list:
         errors.append(f"jury.theater_style must be 'flat' or 'pixel' (got {style!r}).")
 
     # Adaptive rounds (issue #40): max_rounds >= 1 (hard); early_stop is a bool.
-    max_rounds = jury.get("max_rounds")
-    if max_rounds is not None and (
-        not isinstance(max_rounds, int) or isinstance(max_rounds, bool) or max_rounds < 1
-    ):
-        errors.append(f"jury.max_rounds must be an integer >= 1 when set (got {max_rounds!r}).")
+    max_rounds_error = bound_error("max_rounds", jury.get("max_rounds"))
+    if max_rounds_error:
+        errors.append(max_rounds_error)
 
     # Large-diff handling (issue #31): [jury.diff] sizes are positive ints.
     diff_cfg = jury.get("diff", {})
     if isinstance(diff_cfg, dict):
         for key in ("max_bytes", "chunk_max_bytes"):
-            val = diff_cfg.get(key)
-            if val is not None and (not isinstance(val, int) or isinstance(val, bool) or val <= 0):
-                errors.append(f"jury.diff.{key} must be a positive integer when set (got {val!r}).")
+            message = bound_error(f"diff.{key}", diff_cfg.get(key))
+            if message:
+                errors.append(message)
 
     # CI gate severities (issue #718): hard, like `effort`, and for the same
     # reason. `fail_on = ["majr"]` matches no group, so the one setting that

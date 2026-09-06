@@ -7,6 +7,20 @@ A complete reference of every `jury` parameter — CLI flags, subcommand flags, 
 left unset falls through to the config; a config key left unset falls through to
 the default shown below.
 
+**Bounds hold on both surfaces.** A value out of range is refused before the
+diff is read and before any agent runs — exit **2**, naming what you wrote and
+the rule it breaks — whether you wrote it as a flag or as a config key. The two
+messages state the same rule and differ only in the name they blame:
+
+```
+$ jury --pr 123 --rounds 0
+error: --rounds must be an integer >= 1 (got 0).
+
+$ jury --config-validate          # with rounds = 0 in jury.toml
+Config invalid (jury.toml): invalid configuration:
+  - jury.rounds must be an integer >= 1 (got 0).
+```
+
 ---
 
 ## Common recipes
@@ -166,8 +180,8 @@ Gemini `thinkingConfig`); a vendor with no effort control warns once on stderr
 
 | Flag | Value | Default | Description |
 | --- | --- | --- | --- |
-| `--total-timeout` | seconds | unset | Overall wall-clock budget for the whole run. |
-| `--phase-timeout` | seconds | unset | Per-phase wall-clock budget. |
+| `--total-timeout` | seconds ≥ 1 | unset | Overall wall-clock budget for the whole run. |
+| `--phase-timeout` | seconds ≥ 1 | unset | Per-phase wall-clock budget. |
 | `--retries` | integer ≥ 0 | `0` | Extra attempts for *transient* failures (timeout / rate-limit / spawn). |
 | `--strict` | flag | off | Fail the run if any configured agent CLI is missing. |
 | `--min-vendors` | integer ≥ 0 | from config (`2`) | Fail (**exit 3**) unless at least N **distinct vendors contributed a review**. `0` disables. |
@@ -212,7 +226,7 @@ message names both.
 
 | Flag | Value | Default | Description |
 | --- | --- | --- | --- |
-| `--max-diff-bytes` | integer | `200000` | Size budget for the filtered diff before chunk/too-large. |
+| `--max-diff-bytes` | integer ≥ 1 | `200000` | Size budget for the filtered diff before chunk/too-large. |
 | `--chunk` / `--no-chunk` | flag | from config (`false`) | Chunk an over-budget diff by file instead of failing. |
 | `--exclude` | path glob (repeatable) | from config (`[]`) | Exclude files matching this glob. |
 | `--include` | path glob (repeatable) | from config (`[]`) | Only review files matching this glob. |
@@ -246,9 +260,23 @@ sends the PR description/context alongside the diff and applies a repo policy.
 | `--transcript` / `--no-transcript` | flag | from config | Render the full play-by-play transcript (each agent's review, the debate, and the chair's reasoning) instead of the consensus-first summary. `--no-transcript` forces the summary even if `[jury] transcript` is set. Markdown only; rendering-only (does not change the run or its cache key). |
 | `--verbose` | flag | off | Summary report **and** the full transcript, in one document. Implies a transcript even with `--no-transcript`. |
 | `--live` | flag | off | Stream each step (each review, each debate turn, verification, the decision) to stdout **as it happens**. Add **`--post`** (with `--pr` or `--issue`) to also post each step as its own comment on the PR/issue (posting is opt-in — a bare target only selects the source). The live stream replaces the consolidated **markdown** stdout dump (`-o` still writes the full report to a file; `--format json`/`sarif` still print the document to stdout). In chunked large-diff mode the stream repeats once per chunk. |
-| `-o`, `--output` | path | stdout | Write the report to a file. |
+| `-o`, `--output` | path | stdout | Write the report to a file. If the path cannot be written the report is printed to **stdout** instead and `jury` exits **2** — see below. |
 | `--metadata-json` | path | — | Write machine-readable run metadata (durations, status, rounds) as JSON. |
 | `-q`, `--quiet` | flag | off | Suppress progress logs on stderr. |
+
+**An unwritable `--output` never costs you the run.** The report is written at
+the very end, when the panel has already been invoked and paid for, so a missing
+parent directory, a permission failure or a full disk must not be the end of it.
+`jury` names the path and the reason on stderr, prints the report to stdout —
+where it would have gone had `-o` not been passed — and exits **2**:
+
+```
+$ jury --pr 123 -o /nonexistent/report.md > report.md
+error: could not write the report to '/nonexistent/report.md': [Errno 2] No such file or directory: '/nonexistent/report.md'
+error: the review is complete and is printed on stdout instead; redirect it to keep the report.
+```
+
+Nothing is written to any path you did not name.
 
 `--transcript` / `--verbose` shape the **stdout / `--output` / single-comment**
 report. Phased posting (`--post-mode phased`) always posts the per-round
@@ -494,10 +522,10 @@ fails loudly.
 | `seed` | int | unset | Reproducible orchestration. |
 | `anonymize_debate` | bool | `true` | Strip agent identity in round 2 (relabel Reviewer A/B/…) to curb bias. |
 | `prefer_non_reviewer_chair` | bool | `false` | Prefer a chair that wasn't a round-1 reviewer (no effect when `chair = "rotate"`). |
-| `total_timeout` | int | unset | Overall wall-clock budget (seconds). |
-| `phase_timeout` | int | unset | Per-phase wall-clock budget (seconds). |
-| `retries` | int | `0` | Extra attempts for transient failures. |
-| `max_rounds` | int | = `rounds` | Round ceiling when `early_stop` is on. |
+| `total_timeout` | int | unset | Positive seconds when set; overall wall-clock budget. |
+| `phase_timeout` | int | unset | Positive seconds when set; per-phase wall-clock budget. |
+| `retries` | int | `0` | ≥ 0. Extra attempts for transient failures. |
+| `max_rounds` | int | = `rounds` | ≥ 1 when set. Round ceiling when `early_stop` is on. |
 | `early_stop` | bool | `false` | Adaptive rounds. |
 | `auto_depth` | bool | `false` | Risk-aware auto-depth (CLI `--auto`). |
 | `transcript` | bool | `false` | Default the markdown report to the full play-by-play transcript (CLI `--transcript` / `--no-transcript`). Rendering-only — not part of the config hash or cache key. |
@@ -540,9 +568,9 @@ transcript = true   # default the markdown report to the full play-by-play
 
 | Key | Type | Default | Allowed / notes |
 | --- | --- | --- | --- |
-| `max_bytes` | int | `200000` | Byte budget (after filtering) before chunk/too-large. |
+| `max_bytes` | int | `200000` | Positive when set. Byte budget (after filtering) before chunk/too-large. |
 | `chunk` | bool | `false` | Chunk an over-budget diff by file instead of failing. |
-| `chunk_max_bytes` | int | = `max_bytes` | Per-chunk byte budget when chunking. |
+| `chunk_max_bytes` | int | = `max_bytes` | Positive when set. Per-chunk byte budget when chunking. |
 | `exclude_generated` | bool | `true` | Drop binary + common generated/vendored files. |
 | `exclude` | list[str] | `[]` | Path-glob deny list (e.g. `["docs/**", "*.lock"]`). |
 | `include` | list[str] | `[]` | Path-glob allow list; when set, only matching files are reviewed. |
