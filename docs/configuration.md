@@ -285,8 +285,6 @@ tier = "economical"           # sits on routine diffs in place of the benched se
     `escalation_reason`), one `routing:` line in the Markdown run metadata, and
     a `tiered routing:` log line. `routing` and every seat's `tier` are part of
     the config hash, so a `--cache` entry is never shared across two plans.
-- **`hints = true`** (`--hints` / `--no-hints`): Runs fast local static linters (Ruff for Python, ESLint for JS/TS) on modified files and injects compact hints into Round 1 prompt context so reviewers focus strictly on deep logic bugs and security flaws.
-- **`routing = "tiered"`** (`--tiered`): Uses the diff risk classifier to route non-critical files to economical models while keeping frontier models as anchor reviewers for security-critical paths (`auth/`, `crypto/`).
 - **`hints = true`** (`--hints` / `--no-hints`): Runs fast local static linters (Ruff for Python, ESLint for JS/TS) on the files changed by the diff under review and injects compact hints into Round 1 prompt context so reviewers focus strictly on deep logic bugs and security flaws.
 
 The linters are pointed at the **changed files and nothing else**: exactly the

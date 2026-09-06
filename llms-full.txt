@@ -108,9 +108,6 @@ Input (choose exactly one): `--pr <num/url>`, `--issue <num/url>` (both take an 
   frontier seats; a `high`-risk diff seats everybody; a `critical`/`major` finding escalates
   the benched seats into the debate and a frontier chair. `[jury.ci] min_vendors` /
   `min_reviews` are floors the plan keeps. Recorded as `metadata.routing`.
-- `--hints` / `--no-hints` — local static-analysis pre-pass (Ruff/ESLint) whose findings are
-  injected into the Round 1 prompt as their own block, under every context mode (#523, #715).
-- `--tiered` — opt-in risk-aware tiered model routing with a frontier anchor (#524).
 - `--hints` / `--no-hints` — local static-analysis pre-pass (Ruff/ESLint) over the files the
   diff changes (never the whole tree), whose findings are injected into the Round 1 prompt as
   their own block, under every context mode (#523, #715, #737).

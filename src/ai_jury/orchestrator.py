@@ -1345,6 +1345,8 @@ def _merged_routing(outcomes: list[JuryOutcome], base: JuryOutcome, debate: list
             f"{routing.escalation_effect(joined, debate_ran=bool(debate))}"
         )
     return merged
+
+
 def plan_for(config: JuryConfig, diff: str) -> largediff.DiffPlan:
     """The diff plan *config* selects for *diff* (pure).
 
