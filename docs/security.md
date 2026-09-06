@@ -184,10 +184,14 @@ make the reviewers approve a bad change or suppress findings. This is a classic
 
 4. **Least privilege.** Reviewers must run **read-only**, so that even a
    successful injection cannot escalate to file edits, shell execution, or
-   network side effects. `privilege.enforce_read_only` guarantees the restriction
-   at the adapter layer — every seat's `extra_args` pass through it on the way to
-   the process — and `privilege.audit_privilege` warns (or, under `--strict`,
-   fails) when an agent could still perform write/tool actions:
+   network side effects. Every seat's `extra_args` pass through
+   `privilege.enforce_read_only` on the way to the process, which **injects** the
+   sandbox when the config names none. Injection is not override: a config that
+   names its own sandbox keeps it (`-s workspace-write` is passed through as
+   written), codex's bypass flags are passed through too, and the `cli`/`xai`
+   adapters have no enforcement of their own. Those are the cases
+   `privilege.audit_privilege` reports — warning, or failing under `--strict` —
+   so the two together are the guarantee, not either one alone:
 
    | Agent | Read-only invocation (shipped default) |
    | --- | --- |
