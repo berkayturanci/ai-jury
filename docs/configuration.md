@@ -302,7 +302,18 @@ are added to the Round 1 prompt as their own block **after** the
 `[jury.context] mode` filter — `hints = true` reaches the panel under
 `diff-only` (the default) as well as `expanded`. Both keys are
 orchestration-affecting: they are part of the config hash and the cache key, so
-a `--cache` entry is never shared across two different settings.
+a `--cache` entry is never shared across two different settings. `routing` is a
+closed vocabulary for the reason `[[agent]] tier` is — nothing but `"tiered"`
+selects the routed panel, so `routing = "teired"` would quietly buy the standard
+one — and an unknown value is a hard config error naming it.
+
+The cache key covers more than the `hints` **flag**: it covers the **block** the
+linters produced, whenever there is one (#745). The block is a function of your
+working tree rather than of the diff, so it is the one prompt input that can
+change while the diff and the config stand still — fix a lint error anywhere the
+linters can see and the panel would have been shown something different. A run
+whose linters said nothing, and every run under the default `hints = false`, keys
+exactly as it did before, so no existing entry is invalidated.
 
 ## Reasoning effort (`[[agent]] effort` / `--effort`)
 
@@ -611,6 +622,13 @@ editing a PR description is a miss (#738). Under the default `diff-only` the
 context never reaches the panel and is not part of the key, so entries written
 by default-mode runs keep their keys.
 
+And it covers the **static-analysis block** on the same terms, wherever there is
+one (#745). Unlike the context that is *every* context mode, because the block is
+joined into Round 1 after the mode filter: with `hints = true` / `--hints`, a
+working tree whose linters now say something different is a miss even though the
+diff and the config are unchanged. A run whose linters produced nothing — every
+run under the default `hints = false` included — keeps its key.
+
 **Privacy.** A cache entry stores the full structured outcome, including agent
 review/debate/synthesis text derived from the diff. Treat the cache directory as
 sensitive — the same trust level as the diff. It defaults to `$JURY_CACHE_DIR` or
@@ -746,6 +764,12 @@ vendor = "cli"
 command = "aider --message"
 prompt_mode = "arg" # "arg" (appends prompt as last argument) or "stdin" (pipes prompt to stdin)
 ```
+
+`prompt_mode` is part of the config hash when it is written (#746), like
+`adapter`: the two modes are two invocation protocols, so a `--cache` entry made
+under one is never served for a run configured with the other. A seat that never
+names the key hashes exactly as it did before, so no existing entry is
+invalidated by this.
 
 #### Custom Pluggable Python Adapter
 
