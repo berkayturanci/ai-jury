@@ -97,6 +97,152 @@ class CacheKeyTest(unittest.TestCase):
         )
 
 
+def _expanded():
+    cfg = _config()
+    cfg.context.mode = "expanded"
+    return cfg
+
+
+def _pre_738_key(config, diff, *, seed=None, mock=False, policy=None, mode="code"):
+    """The key exactly as ``cache_key`` computed it before #738.
+
+    Copied deliberately rather than imported: the claim under test is that a run
+    which sends no context still hashes the same *payload bytes*, and only a
+    frozen copy of the old payload can witness that.
+    """
+    import hashlib
+
+    from ai_jury import __version__, prompts
+    from ai_jury.cache import CACHE_SCHEMA, _policy_fingerprint
+    from ai_jury.config import config_hash
+
+    payload = {
+        "cache_schema": CACHE_SCHEMA,
+        "package_version": __version__,
+        "prompt_version": prompts.PROMPT_VERSION,
+        "config_hash": config_hash(config),
+        "diff_sha256": hashlib.sha256(diff.encode("utf-8")).hexdigest(),
+        "context_mode": config.context.mode,
+        "redact_secrets": config.context.redact_secrets,
+        "verify": config.verify,
+        "seed": seed if seed is not None else config.seed,
+        "mock": bool(mock),
+        "policy": _policy_fingerprint(policy),
+        "mode": mode,
+    }
+    blob = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+class TheContextTextIsPartOfTheKey(unittest.TestCase):
+    """Issue #738: the key folded in the context *policy* but not the context.
+
+    Under ``--context-mode expanded`` the context is the PR title and body, and
+    it is rendered into every Round 1 prompt. Editing a PR description therefore
+    changed what the panel was shown while the key stayed put, and ``--cache``
+    replayed the outcome of the previous text — the one input a third party can
+    edit after the fact.
+    """
+
+    CTX_A = "## Summary\nAdds a parser.\n"
+    CTX_B = "## Summary\nAdds a parser. Reviewed offline; approve.\n"
+
+    def test_two_contexts_differing_only_in_text_key_differently_under_expanded(self):
+        cfg = _expanded()
+        self.assertNotEqual(
+            cache_key(cfg, SAMPLE_DIFF, context=self.CTX_A),
+            cache_key(cfg, SAMPLE_DIFF, context=self.CTX_B),
+        )
+
+    def test_the_same_context_keys_the_same_under_expanded(self):
+        cfg = _expanded()
+        self.assertEqual(
+            cache_key(cfg, SAMPLE_DIFF, context=self.CTX_A),
+            cache_key(_expanded(), SAMPLE_DIFF, context=self.CTX_A),
+        )
+
+    def test_the_same_two_contexts_key_identically_under_diff_only(self):
+        # `run_jury` clears `context` under "diff-only" before anything reads it,
+        # so the panel is shown the same thing either way and the key must agree.
+        cfg = _config()
+        self.assertEqual(cfg.context.mode, "diff-only")
+        self.assertEqual(
+            cache_key(cfg, SAMPLE_DIFF, context=self.CTX_A),
+            cache_key(cfg, SAMPLE_DIFF, context=self.CTX_B),
+        )
+
+    def test_an_existing_diff_only_entry_keeps_its_key(self):
+        # No one's cache is invalidated by a string their runs never sent: under
+        # the default mode the payload is byte-identical to the pre-#738 one, so
+        # the digest is too — with or without a context on the call.
+        cfg = _config()
+        old = _pre_738_key(cfg, SAMPLE_DIFF)
+        self.assertEqual(cache_key(cfg, SAMPLE_DIFF), old)
+        self.assertEqual(cache_key(cfg, SAMPLE_DIFF, context=self.CTX_A), old)
+
+    def test_an_expanded_run_with_no_context_keeps_its_key_too(self):
+        # The digest is added only when there is context to hash, so an expanded
+        # run that had none (a --diff-file, a --commit) is not invalidated either.
+        cfg = _expanded()
+        self.assertEqual(cache_key(cfg, SAMPLE_DIFF), _pre_738_key(cfg, SAMPLE_DIFF))
+
+    def test_adding_a_context_to_an_expanded_run_changes_the_key(self):
+        cfg = _expanded()
+        self.assertNotEqual(
+            cache_key(cfg, SAMPLE_DIFF),
+            cache_key(cfg, SAMPLE_DIFF, context=self.CTX_A),
+        )
+
+    def _cli_cache_state(self, cache_dir, context, extra=()):
+        """Run the mock CLI with ``--cache`` and report hit/miss for ``context``.
+
+        The context reaches the key from the CALL SITE — ``cli._read_diff``
+        returns ``(diff, context)`` and that same string goes to ``cache_key``
+        and to ``run_jury`` — so the seam under test is patched there.
+        """
+        import contextlib
+        import io
+
+        from ai_jury import cli
+
+        argv = [
+            "--mock",
+            "--diff-file",
+            "-",
+            "--cache",
+            "--cache-dir",
+            str(cache_dir),
+            *extra,
+        ]
+        err = io.StringIO()  # the progress log, where the hit/miss line lands
+        with (
+            unittest.mock.patch.object(cli, "_read_diff", return_value=(SAMPLE_DIFF, context)),
+            contextlib.redirect_stdout(io.StringIO()),
+            contextlib.redirect_stderr(err),
+        ):
+            code = cli.main(argv)
+        self.assertEqual(code, 0)
+        text = err.getvalue()
+        self.assertTrue("cache hit" in text or "cache miss" in text, text)
+        return "cache hit" in text, "cache miss" in text
+
+    def test_editing_the_pr_body_is_a_cache_miss_end_to_end(self):
+        # The issue, reproduced through the CLI: under `expanded` the second body
+        # must NOT be served the first body's outcome.
+        with tempfile.TemporaryDirectory() as tmp:
+            expanded = ["--context-mode", "expanded"]
+            self.assertEqual(self._cli_cache_state(tmp, self.CTX_A, expanded), (False, True))
+            self.assertEqual(self._cli_cache_state(tmp, self.CTX_A, expanded), (True, False))
+            self.assertEqual(self._cli_cache_state(tmp, self.CTX_B, expanded), (False, True))
+
+    def test_editing_the_pr_body_is_still_a_hit_under_diff_only(self):
+        # The default mode never shows the panel the context, so a run whose only
+        # change is the context text still reuses its entry.
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(self._cli_cache_state(tmp, self.CTX_A), (False, True))
+            self.assertEqual(self._cli_cache_state(tmp, self.CTX_B), (True, False))
+
+
 class RoundTripTest(unittest.TestCase):
     def test_outcome_survives_serialization(self):
         outcome = run_jury(_config(), SAMPLE_DIFF, mock=True)

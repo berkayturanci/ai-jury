@@ -312,7 +312,10 @@ confirmed critical or major finding remains — the canonical CI gate.
 | `--clear-cache` | flag | — | Delete all cache entries and exit (alias: `jury cache clear`). |
 
 The cache key covers the diff, effective config, prompt version, package
-version, context policy, and seed — change any and the next run is a miss.
+version, context policy, and seed — change any and the next run is a miss. Under
+`--context-mode expanded` it also covers the context **text** the panel is shown,
+so editing a PR title/body is a miss (#738); under the default `diff-only` the
+context reaches no reviewer and is not part of the key.
 
 **Example:** `jury --pr 123 --cache` reuses a stored verdict for an unchanged
 diff+config; `jury --clear-cache` (or `jury cache clear`) wipes all entries.

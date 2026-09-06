@@ -4,7 +4,7 @@ Re-running the jury against an unchanged diff with an unchanged config
 re-spends time and tokens for an identical result. This module adds an opt-in,
 on-disk cache keyed by everything that can change the outcome: the diff, the
 effective config hash, the prompt-template version, the package version, the
-context policy, and the run seed.
+context policy *and the context text it admits*, and the run seed.
 
 Privacy note: a cache entry stores the full structured outcome — including agent
 review/debate/synthesis text, which is derived from the diff. Treat the cache
@@ -90,6 +90,7 @@ def cache_key(
     config: JuryConfig,
     diff: str,
     *,
+    context: str = "",
     seed: int | None = None,
     mock: bool = False,
     policy=None,
@@ -104,7 +105,33 @@ def cache_key(
     review for the same diff+config, and vice versa. ``policy`` (the repository
     review policy) is fingerprinted in too, since it is injected into the prompts
     and changes the result (issue #122).
+
+    ``context`` is the PR context block (issue #738). The *policy* — the mode and
+    ``redact_secrets`` — was already in the payload, but the text it admits was
+    not, so under ``--context-mode expanded`` the PR title and body were rendered
+    into every Round 1 prompt (and read by the injection scanner) while the key
+    stayed put: editing a PR description, or a third party editing it, changed
+    what the panel was shown and ``--cache`` replayed the previous outcome.
+
+    It is hashed **pre-redaction**, exactly as ``diff`` is: ``run_jury`` redacts
+    both itself, after this key is computed, so the pre-redaction string is what
+    every caller has. Two contexts differing only in a secret therefore key
+    differently even though the panel would see the same redacted text — a
+    conservative split (one extra run, never a stale hit) and not a leak: what is
+    stored is a digest, not the text, it never leaves the machine, and a secret
+    appearing in a PR body is a change to the input this key exists to notice.
+    ``redact_secrets`` is separately in the payload, so the redaction *policy*
+    cannot change under a fixed key either.
+
+    The digest is present only when the panel will actually be shown context —
+    ``run_jury`` clears ``context`` under ``diff-only``, the default mode, before
+    anything reads it. Omitting the field there (rather than hashing ``""``)
+    keeps the payload byte-identical for every run that sends no context, so no
+    existing entry is invalidated for a string the panel never saw. Same
+    precedent as ``[[agent]] adapter`` in ``config_hash`` (#705).
     """
+    # What ``run_jury`` will hand the panel: nothing under "diff-only".
+    panel_context = "" if config.context.mode == "diff-only" else context
     payload = {
         "cache_schema": CACHE_SCHEMA,
         "package_version": __version__,
@@ -121,6 +148,8 @@ def cache_key(
         # rubrics, so the same text must never be served across modes.
         "mode": mode,
     }
+    if panel_context:
+        payload["context_sha256"] = hashlib.sha256(panel_context.encode("utf-8")).hexdigest()
     blob = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
