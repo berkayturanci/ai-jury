@@ -2640,7 +2640,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.metadata_json:
         with Path(args.metadata_json).open("w", encoding="utf-8") as fh:
             fh.write(json.dumps(metadata, indent=2) + "\n")
-        log(f"metadata written to {args.metadata_json}")
+        log(f"metadata written to {redact(args.metadata_json)[0]}")
 
     ci_exit = 0
     # A run whose panel collapsed is a different thing wearing the same output
@@ -2709,7 +2709,7 @@ def main(argv: list[str] | None = None) -> int:
             log("no verified findings with a suggested fix — no patches emitted")
         elif args.patches_out:
             Path(args.patches_out).write_text(patches_section, encoding="utf-8")
-            log(f"suggested patches written to {args.patches_out}")
+            log(f"suggested patches written to {redact(args.patches_out)[0]}")
         elif args.format == "markdown":
             report += "\n\n" + patches_section.rstrip()
         else:
@@ -2742,7 +2742,8 @@ def main(argv: list[str] | None = None) -> int:
                 fh.write(report + "\n")
         except OSError as exc:
             print(
-                f"error: could not write the report to '{args.output}': {redact(str(exc))[0]}",
+                f"error: could not write the report to "
+                f"'{redact(args.output)[0]}': {redact(str(exc))[0]}",
                 file=sys.stderr,
             )
             print(
@@ -2752,7 +2753,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(report)
             return 2
-        log(f"report written to {args.output}")
+        log(f"report written to {redact(args.output)[0]}")
     elif not (live_streamed and args.format == "markdown"):
         # In --live markdown mode the step stream WAS the stdout output; don't also
         # dump the consolidated report (it would duplicate everything just shown).

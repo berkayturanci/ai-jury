@@ -322,6 +322,33 @@ class UnwritableOutputPath(unittest.TestCase):
         self.assertIn("could not write the report to", err)
         self.assertIn("AI Jury", out)
 
+    def test_a_secret_in_the_path_is_redacted_on_both_halves_of_the_message(self):
+        """The path is printed twice — interpolated, and inside the OSError text.
+
+        `redact` was applied to the exception only, so one line carried the same
+        path masked and in the clear. A path is operator-supplied text like any
+        other, and CI logs keep it.
+        """
+        token = "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij"
+        target = self.d / token / "report.md"
+
+        code, _, err = self._run(target)
+
+        self.assertEqual(code, 2)
+        self.assertNotIn(token, err)
+        self.assertEqual(err.count("[REDACTED:github_token]"), 2)
+
+    def test_a_secret_in_a_written_path_is_redacted_too(self):
+        """The success lines print the same operator text and got the same fix."""
+        token = "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij"
+        target = self.d / f"{token}.md"
+
+        code, _, err = self._run(target)
+
+        self.assertEqual(code, 0)
+        self.assertNotIn(token, err)
+        self.assertTrue(target.exists())
+
     def test_a_writable_path_still_gets_the_report(self):
         target = self.d / "report.md"
         code, out, _ = self._run(target)
