@@ -506,6 +506,13 @@ class ASandboxIsNotSettledByTheFirstOneNamed(unittest.TestCase):
         self.assertIn("-s", adapters._read_only_extra_args(spec))
         self.assertTrue(privilege.audit_agent(spec))
 
+    def test_a_seat_carrying_both_kinds_is_described_by_the_worse_one(self):
+        """`all(...)` picked the milder sentence when a seat had a selector too."""
+        warning = privilege.audit_agent(self._codex(["--full-auto", "--yolo"]))[0]
+
+        self.assertIn("disables the sandbox entirely", warning)
+        self.assertNotIn("state a sandbox of their own", warning)
+
     def test_a_bypass_is_not_described_as_a_second_sandbox(self):
         """`--full-auto` picks a sandbox; `--yolo` removes one. Say which."""
         selects = privilege.audit_agent(self._codex(["--full-auto"]))[0]

@@ -398,10 +398,15 @@ def enforce_read_only(vendor: str, name: str, extra_args: list[str]) -> list[str
     answers, so a GPT seat driven through ``cursor-agent`` is handled as ``cli``.
 
     The sandbox is enforced here (issue #288) rather than left to config, so an
-    empty or misconfigured ``extra_args`` cannot produce a write-capable reviewer
-    of an attacker-controlled diff. Config may still WIDEN a codex sandbox
-    (``-s workspace-write``) — an explicit opt-in the audit warns about — but it
-    can never REMOVE the restriction. A ``local`` (network) agent runs no
+    **empty** ``extra_args`` cannot produce a write-capable reviewer of an
+    attacker-controlled diff: the sandbox is injected when the config names none.
+    It is injection, not override, and the difference is what the audit exists to
+    cover (issue #750). Config that names a sandbox keeps it — ``-s
+    workspace-write`` is passed through as written — and codex's bypass flags
+    (``--yolo``, ``--dangerously-bypass-approvals-and-sandbox``) are passed through
+    too, so enforcement alone does not guarantee a restriction survives. The
+    ``cli`` and ``xai`` adapters have no enforcement at all. Each of those is a case
+    :func:`audit_agent` reports, and ``--strict`` turns into a failure. A ``local`` (network) agent runs no
     subprocess and is returned unchanged; neither does a hosted-API agent
     (issue #430) — it makes one HTTP call with no tool/file/shell access at
     all, so there is no ``extra_args``/sandbox concept to enforce. An
@@ -543,9 +548,13 @@ def audit_agent(spec) -> list[str]:
             # sandbox; `--yolo` removes the sandbox altogether. Telling an operator
             # that a bypass merely "selects a sandbox of its own" describes the
             # milder of the two and understates what they configured.
-            if all(disables for _, disables in competing):
+            # `any`, not `all`: a seat carrying `--full-auto` *and* `--yolo` must be
+            # described by the worse of the two, not the milder.
+            if any(disables for _, disables in competing):
                 effect = (
-                    "disables the sandbox entirely" if one else "each disable the sandbox entirely"
+                    "disables the sandbox entirely"
+                    if one
+                    else "include a flag that disables the sandbox entirely"
                 )
                 tail = (
                     f"the enforced read-only sandbox may not apply at all. "
