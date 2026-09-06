@@ -91,6 +91,7 @@ def cache_key(
     diff: str,
     *,
     context: str = "",
+    hints: str = "",
     seed: int | None = None,
     mock: bool = False,
     policy=None,
@@ -129,6 +130,21 @@ def cache_key(
     keeps the payload byte-identical for every run that sends no context, so no
     existing entry is invalidated for a string the panel never saw. Same
     precedent as ``[[agent]] adapter`` in ``config_hash`` (#705).
+
+    ``hints`` is the static-analysis pre-pass block (issue #745), and it is here
+    for the reason ``context`` is: it is joined into every Round 1 prompt. The
+    ``hints`` *flag* was already in ``config_hash`` (#715), but the flag says
+    only that the linters ran — the block itself is a function of the **working
+    tree**, not of the diff or the config, so fixing a lint error anywhere in the
+    tree changed what the panel was shown while every other input to this key
+    stood still.
+
+    Unlike ``context`` it takes no mode filter: ``run_jury`` joins the block into
+    the Round 1 prompt *after* the ``diff-only`` filter, precisely so the default
+    context mode cannot discard it (#715), and it is not redacted either. So the
+    string the caller passes is the string the panel is shown, and hashing it
+    when it is non-empty — absent otherwise, by the rule above — leaves a run
+    with ``hints = false``, the default, keyed exactly as it was.
     """
     # What ``run_jury`` will hand the panel: nothing under "diff-only".
     panel_context = "" if config.context.mode == "diff-only" else context
@@ -150,6 +166,8 @@ def cache_key(
     }
     if panel_context:
         payload["context_sha256"] = hashlib.sha256(panel_context.encode("utf-8")).hexdigest()
+    if hints:
+        payload["hints_sha256"] = hashlib.sha256(hints.encode("utf-8")).hexdigest()
     blob = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
