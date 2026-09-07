@@ -16,15 +16,44 @@ inert looks exactly like a gate that works.
 from __future__ import annotations
 
 import re
+import sys
 import unittest
+import unittest.mock
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "keel-ship.yml"
+KEEL_TOOLS = REPO_ROOT / ".github" / "requirements" / "keel-tools.txt"
 
-#: The keel release this repo's merge contract is pinned to. Bumping it is a
-#: reviewed diff, which is the point of pinning.
-PINNED_KEEL = 'pip install "keel-workflow==1.19.0"'
+
+#: What `_keel_tools_pin` returns when the file is gone. A deleted pin file is a
+#: real failure, but it has to be *reported* by the test that names it: `PINNED_KEEL`
+#: below is computed at import, so reading the file there unguarded raised
+#: `FileNotFoundError` during collection and the `assertTrue(KEEL_TOOLS.exists())`
+#: written for exactly that case could never run. A maintainer then reads a
+#: traceback about a missing path instead of "keel-tools.txt must exist (#760)".
+MISSING_PIN = "<no keel-tools.txt>"
+
+
+def _keel_tools_pin() -> str:
+    """The single non-comment line of the Dependabot-watched pin file."""
+    if not KEEL_TOOLS.exists():
+        return MISSING_PIN
+    pins = [
+        line.strip()
+        for line in KEEL_TOOLS.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    if len(pins) != 1:
+        raise AssertionError(f"expected one pin in {KEEL_TOOLS.name}, saw {pins}")
+    return pins[0]
+
+
+#: The keel release this repo's merge contract is pinned to. Read from
+#: `.github/requirements/keel-tools.txt` so a Dependabot bump that forgets
+#: the two workflow install lines fails here rather than silently splitting
+#: the gate. Bumping it is a reviewed diff, which is the point of pinning.
+PINNED_KEEL = f'pip install "{_keel_tools_pin()}"'
 
 
 def code_lines() -> list[str]:
@@ -171,9 +200,37 @@ class TheEvidenceWorkflowIsPresent(unittest.TestCase):
 class KeelIsPinnedAndIsTheRightPackage(unittest.TestCase):
     def setUp(self):
         self.body = WORKFLOW.read_text(encoding="utf-8")
+        self.pin = _keel_tools_pin()
+
+    def test_the_dependabot_manifest_is_an_exact_keel_workflow_pin(self):
+        """Dependabot watches `.github/requirements`; a float there is the same
+        defect as a float in the workflow — a keel release would change the
+        merge contract without a reviewed diff.
+        """
+        self.assertTrue(KEEL_TOOLS.exists(), f"{KEEL_TOOLS.name} must exist (#760)")
+        self.assertRegex(self.pin, r"^keel-workflow==\d+\.\d+\.\d+$")
+
+    def test_a_missing_pin_file_is_reported_and_not_raised_at_import(self):
+        """The branch that makes the assertion above reachable, exercised.
+
+        The file is present in every checkout, so this is the only way to run
+        that path: point the module's constant at a name that does not exist.
+        Without it the branch is a claim nothing checks — and the claim is that
+        a maintainer reads "must exist (#760)" rather than a FileNotFoundError
+        from collection.
+        """
+        this_module = sys.modules[__name__]
+        with unittest.mock.patch.object(
+            this_module, "KEEL_TOOLS", KEEL_TOOLS.with_name("absent.txt")
+        ):
+            self.assertEqual(_keel_tools_pin(), MISSING_PIN)
 
     def test_keel_is_installed_pinned(self):
-        """A floated install lets a keel release change this repo's merge contract."""
+        """A floated install lets a keel release change this repo's merge contract.
+
+        `PINNED_KEEL` is derived from keel-tools.txt, so this also fails when
+        Dependabot bumps the manifest and the workflow pin is left behind.
+        """
         self.assertIn(PINNED_KEEL, self.body)
 
     def test_every_install_of_keel_is_the_pinned_one(self):
