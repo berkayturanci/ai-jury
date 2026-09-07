@@ -16,7 +16,9 @@ inert looks exactly like a gate that works.
 from __future__ import annotations
 
 import re
+import sys
 import unittest
+import unittest.mock
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -206,8 +208,22 @@ class KeelIsPinnedAndIsTheRightPackage(unittest.TestCase):
         merge contract without a reviewed diff.
         """
         self.assertTrue(KEEL_TOOLS.exists(), f"{KEEL_TOOLS.name} must exist (#760)")
-        self.assertNotEqual(self.pin, MISSING_PIN)
         self.assertRegex(self.pin, r"^keel-workflow==\d+\.\d+\.\d+$")
+
+    def test_a_missing_pin_file_is_reported_and_not_raised_at_import(self):
+        """The branch that makes the assertion above reachable, exercised.
+
+        The file is present in every checkout, so this is the only way to run
+        that path: point the module's constant at a name that does not exist.
+        Without it the branch is a claim nothing checks — and the claim is that
+        a maintainer reads "must exist (#760)" rather than a FileNotFoundError
+        from collection.
+        """
+        this_module = sys.modules[__name__]
+        with unittest.mock.patch.object(
+            this_module, "KEEL_TOOLS", KEEL_TOOLS.with_name("absent.txt")
+        ):
+            self.assertEqual(_keel_tools_pin(), MISSING_PIN)
 
     def test_keel_is_installed_pinned(self):
         """A floated install lets a keel release change this repo's merge contract.
