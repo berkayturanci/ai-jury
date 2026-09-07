@@ -364,8 +364,10 @@ jobs:
     #     (30s) and the sleep after it (10s) — 340s apiece. The second one
     #     returns on the first attempt in practice, but nothing enforces that,
     #     so it is counted at full price;
-    #   - the pip upgrade, wrapped at 60s, and the resolve loop:
-    #     6 × (`timeout 90` + `sleep 10`) = 660s in all. pip's own
+    #   - the pip upgrade, wrapped at 60s; the resolve retry, wrapped whole
+    #     at 900s (#770 replaced a hardcoded 6 × (`timeout 90` + `sleep 10`)
+    #     with a script taking the shared PYPI_ATTEMPTS/PYPI_INTERVAL_SECONDS
+    #     budget); and the `pip show` after it, wrapped at 60s. pip's own
     #     `--timeout` is a socket timeout — a bound on one quiet read, not
     #     on the call — so a peer that drips a byte inside it holds the
     #     loop open for as long as it likes. Only the wrapper bounds it,
@@ -435,20 +437,23 @@ jobs:
           python -m venv /tmp/verify-venv
           timeout 60 /tmp/verify-venv/bin/python -m pip install --timeout 30 --upgrade pip
           # The JSON API can know a version before the installer index serves it.
-          installed=""
-          for attempt in 1 2 3 4 5 6; do
-            if timeout 90 /tmp/verify-venv/bin/python -m pip install --timeout 30 "ai-jury==${version}"; then
-              installed=1
-              break
-            fi
-            echo "pip cannot resolve ${version} yet (attempt ${attempt}/6); retrying in 10s"
-            sleep 10
-          done
-          if [ -z "$installed" ]; then
-            echo "::error::pip could not install ai-jury==${version} from PyPI"
-            exit 1
-          fi
-          /tmp/verify-venv/bin/python -m pip show ai-jury
+          # The loop that used to live here could not act on that: it ran six
+          # attempts ten seconds apart with pip's HTTP cache on, and PyPI serves
+          # the simple index `max-age=600`, so attempts 2-6 read attempt 1's
+          # answer back off local disk. `pip-install-with-retry.sh` passes
+          # `--no-cache-dir` so each attempt asks, and takes its budget from the
+          # same PYPI_ATTEMPTS/PYPI_INTERVAL_SECONDS the index wait above reads,
+          # so the two waits cannot drift apart (#770).
+          #
+          # Wrapped in `timeout` rather than bounding each attempt inside the
+          # script: it runs `"$installer"` as a single word, and `timeout(1)` is
+          # GNU coreutils that `macos-latest` does not ship, so a bound inside
+          # would have to be skipped on the runners its own test uses. 900s is
+          # the 300s budget with room for the attempts themselves.
+          timeout 900 env \
+            INSTALLER=/tmp/verify-venv/bin/pip REQUIREMENT="ai-jury==${version}" \
+            .github/scripts/pip-install-with-retry.sh
+          timeout 60 /tmp/verify-venv/bin/python -m pip show ai-jury
 
       - name: The installed CLI reports the tag it was published under
         run: |
