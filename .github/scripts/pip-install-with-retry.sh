@@ -52,6 +52,21 @@
 #   REQUIREMENT            what to install, e.g. `pkg==1.2.3` (required)
 #   PYPI_ATTEMPTS          install attempts                   (default: 30)
 #   PYPI_INTERVAL_SECONDS  seconds between attempts           (default: 10)
+#   PYPI_ATTEMPT_TIMEOUT   seconds for ONE attempt, 0 = none  (default: 90)
+#
+# `PYPI_ATTEMPT_TIMEOUT` is what makes the retry a retry. The loop this replaced
+# wrapped each attempt in `timeout 90`, and dropping that would have been a
+# regression rather than a simplification: with only an outer bound on the whole
+# loop, one pip that connects and then hangs spends the entire budget and the
+# other twenty-nine attempts never happen. pip's own `--timeout` cannot stand in
+# for it — that bounds one quiet read, not the call.
+#
+# It needs `timeout(1)`, which is GNU coreutils that macOS does not ship. Rather
+# than skipping the bound where the tool is missing — a bound that quietly is not
+# there is the defect this file is about — a non-zero value with no `timeout` on
+# PATH is refused as a configuration error, and `0` asks explicitly for no
+# per-attempt bound. `publish.yml` runs on ubuntu and takes the default; the
+# tests set it to `0`, or supply a stub, and say which they are doing.
 #
 # `INSTALLER` and not `PIP_…`: pip reads every `PIP_<OPTION>` variable in the
 # environment as one of its own command-line options, so a name in that space
@@ -62,6 +77,7 @@ installer="${INSTALLER:-}"
 requirement="${REQUIREMENT:-}"
 attempts="${PYPI_ATTEMPTS:-30}"
 interval="${PYPI_INTERVAL_SECONDS:-10}"
+attempt_timeout="${PYPI_ATTEMPT_TIMEOUT:-90}"
 
 # Exit 2, distinct from the exhausted-budget 1: a mistake in the call is not a
 # slow index and must not be reported as one. A budget spent waiting for
@@ -94,10 +110,18 @@ require_whole_number() {
 
 require_whole_number PYPI_ATTEMPTS "$attempts"
 require_whole_number PYPI_INTERVAL_SECONDS "$interval"
+require_whole_number PYPI_ATTEMPT_TIMEOUT "$attempt_timeout"
 
 # Base ten explicitly: `08` is a valid attempt count and an invalid octal literal.
 attempts="$((10#$attempts))"
 interval="$((10#$interval))"
+attempt_timeout="$((10#$attempt_timeout))"
+
+# A bound that is asked for and silently absent is worse than one nobody asked
+# for, so this is refused rather than skipped.
+if [ "$attempt_timeout" -gt 0 ] && ! command -v timeout >/dev/null 2>&1; then
+  fail_config "PYPI_ATTEMPT_TIMEOUT=${attempt_timeout} needs timeout(1), which is not on PATH; set it to 0 to run each attempt unbounded"
+fi
 
 # Zero attempts would fall straight past the loop into the failure below, so it
 # is already loud — but it would fail every release with a message naming PyPI
@@ -107,8 +131,18 @@ interval="$((10#$interval))"
 
 started="$(date +%s)"
 
+# One place the attempt is spelled, bounded or not, so the two forms cannot drift.
+run_installer() {
+  if [ "$attempt_timeout" -gt 0 ]; then
+    timeout "$attempt_timeout" "$installer" install \
+      --no-cache-dir --disable-pip-version-check "$requirement"
+  else
+    "$installer" install --no-cache-dir --disable-pip-version-check "$requirement"
+  fi
+}
+
 for attempt in $(seq 1 "$attempts"); do
-  if "$installer" install --no-cache-dir --disable-pip-version-check "$requirement"; then
+  if run_installer; then
     echo "installed ${requirement} on attempt ${attempt}/${attempts}"
     exit 0
   fi

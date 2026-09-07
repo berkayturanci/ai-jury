@@ -393,6 +393,14 @@ jobs:
       issues: write   # open/update `release-broken: <tag>` when this job fails
     env:
       GH_REPO: ${{ github.repository }}
+      # Declared here, once, and read by BOTH waits: `wait-for-pypi-dists.sh`
+      # polls the JSON API with them and `pip-install-with-retry.sh` retries the
+      # install with them. Sharing the variable *names* was not enough — with
+      # neither set, each script expanded its own `:-30` / `:-10` default and the
+      # claim that they could not drift was about two copies that merely happened
+      # to agree. One declaration is what makes it true (#770).
+      PYPI_ATTEMPTS: "30"
+      PYPI_INTERVAL_SECONDS: "10"
     steps:
       # Only `.github/scripts`, and deliberately not the package source: this
       # job's whole point is to install what the index serves rather than what
@@ -445,11 +453,12 @@ jobs:
           # same PYPI_ATTEMPTS/PYPI_INTERVAL_SECONDS the index wait above reads,
           # so the two waits cannot drift apart (#770).
           #
-          # Wrapped in `timeout` rather than bounding each attempt inside the
-          # script: it runs `"$installer"` as a single word, and `timeout(1)` is
-          # GNU coreutils that `macos-latest` does not ship, so a bound inside
-          # would have to be skipped on the runners its own test uses. 900s is
-          # the 300s budget with room for the attempts themselves.
+          # Two bounds, because they answer different questions. The script
+          # bounds each attempt (`PYPI_ATTEMPT_TIMEOUT`, 90s) so a pip that
+          # connects and then hangs cannot eat the budget the other attempts
+          # need — the loop this replaced did that with `timeout 90` and losing
+          # it would have been a regression. `timeout 900` here bounds the loop
+          # as a whole, and is the number the ceiling sum counts.
           timeout 900 env \
             INSTALLER=/tmp/verify-venv/bin/pip REQUIREMENT="ai-jury==${version}" \
             .github/scripts/pip-install-with-retry.sh

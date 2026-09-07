@@ -91,6 +91,18 @@ printf '%s\\n' "$1" >> "$SLEEPS"
 exit 0
 """
 
+#: `timeout(1)` is GNU coreutils and macOS ships neither it nor `gtimeout`, so
+#: the per-attempt bound cannot be exercised with the real tool on every runner.
+#: This records the duration it was given and then runs the command, which is
+#: what the assertions are actually about: that the attempt goes *through* a
+#: bound, and with which number.
+STUB_TIMEOUT = """#!/usr/bin/env bash
+set -u
+printf '%s\\n' "$1" >> "$TIMEOUTS"
+shift
+exec "$@"
+"""
+
 
 def _lines(path: Path) -> list[str]:
     return path.read_text(encoding="utf-8").splitlines() if path.exists() else []
@@ -99,11 +111,19 @@ def _lines(path: Path) -> list[str]:
 class Run:
     """One invocation of the script, with what the stubs saw."""
 
-    def __init__(self, completed, calls: int, argv: list[str], sleeps: list[str]):
+    def __init__(
+        self,
+        completed,
+        calls: int,
+        argv: list[str],
+        sleeps: list[str],
+        timeouts: list[str] | None = None,
+    ):
         self.completed = completed
         self.calls = calls
         self.argv = argv
         self.sleeps = sleeps
+        self.timeouts = timeouts or []
 
     @property
     def code(self) -> int:
@@ -126,6 +146,8 @@ class AgainstAStubInstaller(unittest.TestCase):
         seconds: str = "10",
         installer: str | None = None,
         requirement: str | None = REQUIREMENT,
+        attempt_timeout: str = "0",
+        stub_timeout: bool = False,
     ) -> Run:
         workdir = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, workdir, True)
@@ -133,6 +155,7 @@ class AgainstAStubInstaller(unittest.TestCase):
         binaries.mkdir()
 
         counter, argv, sleeps = workdir / "calls", workdir / "argv", workdir / "sleeps"
+        timeouts = workdir / "timeouts"
         stub = binaries / "stub-pip"
         stub.write_text(STUB_INSTALLER, encoding="utf-8")
         stub.chmod(0o755)
@@ -141,6 +164,10 @@ class AgainstAStubInstaller(unittest.TestCase):
         nap = binaries / "sleep"
         nap.write_text(STUB_SLEEP, encoding="utf-8")
         nap.chmod(0o755)
+        if stub_timeout:
+            bound = binaries / "timeout"
+            bound.write_text(STUB_TIMEOUT, encoding="utf-8")
+            bound.chmod(0o755)
 
         env = {
             **os.environ,
@@ -148,7 +175,12 @@ class AgainstAStubInstaller(unittest.TestCase):
             "COUNTER": str(counter),
             "ARGV": str(argv),
             "SLEEPS": str(sleeps),
+            "TIMEOUTS": str(timeouts),
             "FAILURES": str(failures),
+            # `0` by default: these run on macOS too, which ships no `timeout`,
+            # and the script refuses a bound it cannot apply rather than
+            # skipping it. The class below asks for one explicitly.
+            "PYPI_ATTEMPT_TIMEOUT": attempt_timeout,
             "PYPI_INTERVAL_SECONDS": seconds,
             "INSTALLER": str(stub) if installer is None else installer,
         }
@@ -173,6 +205,7 @@ class AgainstAStubInstaller(unittest.TestCase):
             int(counter.read_text(encoding="utf-8").strip()) if counter.exists() else 0,
             _lines(argv),
             _lines(sleeps),
+            _lines(timeouts),
         )
 
 
@@ -196,6 +229,44 @@ class EveryAttemptBypassesPipsHttpCache(AgainstAStubInstaller):
         run = self.run_install()
 
         self.assertTrue(run.argv[0].endswith(REQUIREMENT), run.argv)
+
+
+class EachAttemptIsBoundedAndNotOnlyTheLoop(AgainstAStubInstaller):
+    """The loop this replaced wrapped every attempt in `timeout 90`.
+
+    Keeping only an outer bound on the whole loop would have been a regression
+    dressed as a simplification: one pip that connects and then stops writing
+    spends the entire budget, and the other twenty-nine attempts never happen.
+    pip's own `--timeout` cannot stand in for it — that bounds one quiet read,
+    not the call.
+    """
+
+    def test_every_attempt_goes_through_the_bound(self):
+        run = self.run_install(failures=2, attempts="4", attempt_timeout="90", stub_timeout=True)
+
+        self.assertEqual(run.code, 0)
+        self.assertEqual(run.timeouts, ["90", "90", "90"])
+
+    def test_zero_asks_for_no_bound_and_gets_none(self):
+        run = self.run_install(attempt_timeout="0", stub_timeout=True)
+
+        self.assertEqual(run.code, 0)
+        self.assertEqual(run.timeouts, [], "0 must not reach `timeout` at all")
+
+    def test_a_bound_that_cannot_be_applied_is_refused_not_skipped(self):
+        """A bound quietly absent is worse than one nobody asked for."""
+        run = self.run_install(attempt_timeout="90", stub_timeout=False)
+
+        self.assertEqual(run.code, 2)
+        self.assertEqual(run.calls, 0)
+        self.assertIn("PYPI_ATTEMPT_TIMEOUT", run.output)
+        self.assertIn("timeout(1)", run.output)
+
+    def test_a_bound_that_is_not_a_number_names_the_knob(self):
+        run = self.run_install(attempt_timeout="ninety")
+
+        self.assertEqual(run.code, 2)
+        self.assertIn("PYPI_ATTEMPT_TIMEOUT", run.output)
 
 
 class AnIndexThatIsReadyIsInstalledFromOnce(AgainstAStubInstaller):
@@ -320,6 +391,17 @@ class TheScriptIsReadableWithoutAShell(unittest.TestCase):
     def test_the_defaults_match_the_index_waits(self):
         self.assertIn('attempts="${PYPI_ATTEMPTS:-30}"', self.source)
         self.assertIn('interval="${PYPI_INTERVAL_SECONDS:-10}"', self.source)
+
+    def test_the_workflow_declares_the_shared_budget_once(self):
+        """Sharing the *names* was not enough, which is what the gate found.
+
+        With neither variable set anywhere, each script expanded its own default
+        and "the two waits cannot drift" described two copies that happened to
+        agree. The verify job declares them, so both scripts read one value.
+        """
+        workflow = (REPO_ROOT / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
+        self.assertIn('PYPI_ATTEMPTS: "30"', workflow)
+        self.assertIn('PYPI_INTERVAL_SECONDS: "10"', workflow)
 
     def test_no_input_arrives_through_an_actions_expression(self):
         """`${{ }}` is substituted into the source before bash parses it."""
