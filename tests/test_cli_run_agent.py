@@ -281,42 +281,40 @@ class EnableWriteTests(unittest.TestCase):
 
     def test_claude_equals_form_is_dropped(self):
         self.assertEqual(
-            privilege.enable_write("anthropic", "claude", ["--disallowed-tools=Bash", "-p"]),
+            privilege.enable_write("anthropic", ["--disallowed-tools=Bash", "-p"]),
             ["-p"],
         )
 
     def test_claude_trailing_flag_without_a_value_is_dropped(self):
-        self.assertEqual(privilege.enable_write("anthropic", "claude", ["--disallowed-tools"]), [])
+        self.assertEqual(privilege.enable_write("anthropic", ["--disallowed-tools"]), [])
 
     def test_codex_replaces_both_sandbox_spellings(self):
         self.assertEqual(
-            privilege.enable_write("openai", "codex", ["--sandbox=read-only"]),
+            privilege.enable_write("openai", ["--sandbox=read-only"]),
             ["-s", "workspace-write"],
         )
         self.assertEqual(
-            privilege.enable_write("openai", "codex", ["-s", "read-only", "--json"]),
+            privilege.enable_write("openai", ["-s", "read-only", "--json"]),
             ["-s", "workspace-write", "--json"],
         )
 
     def test_codex_sandbox_without_a_value_is_still_replaced(self):
         self.assertEqual(
-            privilege.enable_write("openai", "codex", ["-s", "--json"]),
+            privilege.enable_write("openai", ["-s", "--json"]),
             ["-s", "workspace-write", "--json"],
         )
 
     def test_agy_and_unknown_vendors_drop_the_boolean_sandbox(self):
-        self.assertEqual(
-            privilege.enable_write("google", "agy", ["--sandbox", "--yolo"]), ["--yolo"]
-        )
-        self.assertEqual(privilege.enable_write("martian", "x", ["--sandbox=", "-v"]), ["-v"])
+        self.assertEqual(privilege.enable_write("google", ["--sandbox", "--yolo"]), ["--yolo"])
+        self.assertEqual(privilege.enable_write("martian", ["--sandbox=", "-v"]), ["-v"])
 
     def test_network_vendors_are_untouched(self):
         for vendor in ("local", "anthropic-api", "openai-compatible", "cli", "custom-api"):
-            self.assertEqual(privilege.enable_write(vendor, "claude-ish", ["--x"]), ["--x"])
+            self.assertEqual(privilege.enable_write(vendor, ["--x"]), ["--x"])
 
     def test_read_only_enforcement_is_unchanged_by_the_refactor(self):
-        self.assertEqual(privilege.enforce_read_only("openai", "codex", []), ["-s", "read-only"])
-        self.assertEqual(privilege.enforce_read_only("local", "qwen", ["--x"]), ["--x"])
+        self.assertEqual(privilege.enforce_read_only("openai", []), ["-s", "read-only"])
+        self.assertEqual(privilege.enforce_read_only("local", ["--x"]), ["--x"])
 
 
 class AgentResolutionTests(unittest.TestCase):

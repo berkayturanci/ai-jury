@@ -644,9 +644,9 @@ class PrivilegeAuditTest(unittest.TestCase):
         self.assertEqual(audit_agent(spec3), [])
 
     def test_enforce_read_only_is_a_no_op_for_hosted_api(self):
-        self.assertEqual(enforce_read_only("anthropic-api", "claude-api", []), [])
-        self.assertEqual(enforce_read_only("openai-api", "codex-api", ["whatever"]), ["whatever"])
-        self.assertEqual(enforce_read_only("google-api", "gemini-api", []), [])
+        self.assertEqual(enforce_read_only("anthropic-api", []), [])
+        self.assertEqual(enforce_read_only("openai-api", ["whatever"]), ["whatever"])
+        self.assertEqual(enforce_read_only("google-api", []), [])
 
 
 class ScaffoldTemplateTest(unittest.TestCase):
