@@ -46,6 +46,9 @@ VERIFY_JOB = "verify"
 TEMPLATE = "packaging/homebrew/ai-jury.rb.template"
 #: The one wait both jobs run, extracted so there is no second copy (#694).
 WAIT_SCRIPT = ".github/scripts/wait-for-pypi-dists.sh"
+#: The install that retries while the *simple index* catches up — a different
+#: surface from the JSON API `WAIT_SCRIPT` polls, with its own lag (#770).
+INSTALL_SCRIPT = ".github/scripts/pip-install-with-retry.sh"
 
 #: Every command that opens a network connection, mapped to the flags that bound
 #: one in time. An empty tuple means the tool has no timeout of its own — `gh`
@@ -76,6 +79,19 @@ NETWORK_TOOLS: dict[str, tuple[str, ...]] = {
     # `keel-ship.yml`'s herestring opened. An empty tuple demands the `timeout`
     # wrapper: uv has no request-timeout flag of its own that bounds the call.
     "uv": (),
+    # The install retry (#770). It is a pip install wearing a filename. It does
+    # bound each *attempt* (`PYPI_ATTEMPT_TIMEOUT`, 90s, refused rather than
+    # skipped where `timeout(1)` is missing) — but nothing inside it bounds the
+    # *loop*, whose length is `PYPI_ATTEMPTS` x `PYPI_INTERVAL_SECONDS` plus the
+    # attempts themselves. The wrapper is the only bound on the whole call,
+    # which is exactly what an empty tuple demands. It is named here rather than
+    # left out because this table's own rule is that a tool it does not know is
+    # a tool the scan reports as bounded by never seeing it.
+    #
+    # `wait-for-pypi-dists.sh` is deliberately *not* here: every request it makes
+    # carries `--connect-timeout` and `--max-time` clamped to its own budget, so
+    # it bounds itself and a wrapper would add nothing.
+    "pip-install-with-retry.sh": (),
     "gh": (),
     "twine": (),
     "npm": (),
@@ -141,7 +157,18 @@ _JOB_NAME = re.compile(r"^  ([A-Za-z_][\w-]*):[ \t]*$")
 #: the step that defines it, :func:`undefined_wrapper_calls` refuses a call to it
 #: from a step that does not — that would read as bounded here and as `command
 #: not found` on the runner, which is a worse hole than the one it closes.
-_WRAPPERS = frozenset({"timeout", "bounded", "env", "nice", "command", "exec", "stdbuf"})
+#: Two kinds live here, and only one of them bounds anything.
+#:
+#: `timeout` and `bounded` impose a limit; `env`, `nice`, `command`, `exec` and
+#: `stdbuf` only pass a command through. Both have to be seen through to find
+#: the command — `timeout 900 env FOO=1 gh …` runs `gh` — but treating them
+#: alike made "went through a wrapper" mean "is bounded", so `env FOO=1 gh …`
+#: with no `timeout` read as bounded. That is the hole this whole class exists
+#: to close, one indirection further out: found by the gate review of #770,
+#: which put a script behind `env`.
+_BOUNDING_WRAPPERS = frozenset({"timeout", "bounded"})
+_PASSTHROUGH_WRAPPERS = frozenset({"env", "nice", "command", "exec", "stdbuf"})
+_WRAPPERS = _BOUNDING_WRAPPERS | _PASSTHROUGH_WRAPPERS
 
 #: `60`, `1m`, `30s` — a wrapper's duration, which is not its command.
 _DURATION = re.compile(r"^\d+(\.\d+)?[smhd]?$")
@@ -484,7 +511,13 @@ def _command_positions(tokens: list[str]) -> list[int]:
         name = token.rsplit("/", 1)[-1]
         if after_wrapper:
             # `timeout -k 5 60 gh …`: its own options and its duration first.
-            if token.startswith("-") or _DURATION.match(token):
+            # And `timeout 900 env FOO=1 BAR=2 gh …`: assignments stand between
+            # `env` and the command too. Without that clause the assignment was
+            # taken *as* the command, so the tool behind it was never seen — and
+            # a tool this scan does not see is one it reports as bounded, which
+            # is the hole `NETWORK_TOOLS` above is written against. Found when
+            # #770 put a script behind `env`.
+            if token.startswith("-") or _DURATION.match(token) or _ASSIGNMENT.match(token):
                 continue
             after_wrapper = False
         elif name in _LEADING_KEYWORDS or _ASSIGNMENT.match(token):
@@ -530,7 +563,9 @@ def network_calls(code: str, job: str) -> list[NetworkCall]:
                     continue
             elif name not in NETWORK_TOOLS:
                 continue
-            wrapped = any(token.rsplit("/", 1)[-1] in _WRAPPERS for token in tokens[:index])
+            wrapped = any(
+                token.rsplit("/", 1)[-1] in _BOUNDING_WRAPPERS for token in tokens[:index]
+            )
             wanted = NETWORK_TOOLS.get(name, ())
             bounded = wrapped or (bool(wanted) and all(flag in tokens for flag in wanted))
             shown = " ".join(token for token in tokens if token != _OPENS)
@@ -1035,7 +1070,11 @@ class ThePublishedReleaseIsInstalledAndRun(WorkflowScan):
     def test_it_installs_from_the_index_into_a_clean_virtualenv(self):
         """Not the built wheel, and not the checkout: what a user would get."""
         self.assertIn("python -m venv", self.verify_code)
-        self.assertIn('pip install --timeout 30 "ai-jury==${version}"', self.verify_code)
+        # Through the retry script since #770, which is where the requirement is
+        # now spelled. The bound on its budget is asserted in
+        # `tests/test_pypi_install_retry.py`, against the real shell.
+        self.assertIn(INSTALL_SCRIPT, self.verify_code)
+        self.assertIn('REQUIREMENT="ai-jury==${version}"', self.verify_code)
 
     def test_it_waits_for_the_index_but_not_forever(self):
         """Publishing is synchronous; indexing is not.
@@ -1169,7 +1208,47 @@ class EveryNetworkCommandIsBoundedInTime(unittest.TestCase):
         by_tool = Counter(call.tool for call in self.calls)
         self.assertGreaterEqual(by_tool["curl"], 2, "the two sdist downloads were not found")
         self.assertGreaterEqual(by_tool["gh"], 6, f"too few `gh` calls found: {by_tool}")
-        self.assertGreaterEqual(by_tool["pip"], 4, f"too few `pip` calls found: {by_tool}")
+        # Three, not the four this said before #770: the resolve loop that was
+        # the fourth is now `pip-install-with-retry.sh`, asserted on its own line
+        # below so the call is still counted rather than quietly dropped.
+        self.assertGreaterEqual(by_tool["pip"], 3, f"too few `pip` calls found: {by_tool}")
+        self.assertGreaterEqual(
+            by_tool["pip-install-with-retry.sh"], 1, f"the install retry was not found: {by_tool}"
+        )
+
+    def test_a_passthrough_wrapper_is_not_a_bound(self):
+        """`env` runs a command; it does not limit one.
+
+        Counting it as a bound made every call behind `env` look bounded — so
+        deleting `timeout 900` from the install step would have left this suite
+        green, which is the one thing it must never do.
+        """
+        unbounded = network_calls("env FOO=1 gh issue create", "j")
+        self.assertEqual([call.bounded for call in unbounded], [False])
+
+        bounded = network_calls("timeout 60 env FOO=1 gh issue create", "j")
+        self.assertEqual([call.bounded for call in bounded], [True])
+
+    def test_removing_the_wrapper_from_the_install_retry_is_caught(self):
+        """The mutation the finding named, run rather than argued about."""
+        broken = self.source.replace("timeout 900 env ", "env ")
+        self.assertNotEqual(broken, self.source, "the mutation matched nothing; rewrite it")
+
+        caught = [call for call in scan(broken) if not call.bounded]
+
+        self.assertEqual([call.tool for call in caught], ["pip-install-with-retry.sh"])
+
+    def test_an_assignment_after_a_wrapper_does_not_hide_the_command(self):
+        """`timeout 900 env FOO=1 gh …` runs `gh`, not `FOO=1`.
+
+        The assignment used to be taken as the command, so the tool behind it
+        was never scanned — and an unseen tool is one this suite calls bounded
+        without reading it.
+        """
+        calls = network_calls("timeout 900 env FOO=1 BAR=2 gh issue create", "j")
+
+        self.assertEqual([call.tool for call in calls], ["gh"])
+        self.assertTrue(calls[0].bounded)
 
     def test_no_command_in_either_job_reaches_the_network_unbounded(self):
         unbounded = [call.why() for call in self.calls if not call.bounded]
@@ -1212,8 +1291,12 @@ class EveryNetworkCommandIsBoundedInTime(unittest.TestCase):
         scan called those calls bounded while `wait_seconds` counted them as
         zero; this is the mutation that would have shown the disagreement.
         """
+        # Retargeted by #770, which removed the six-attempt loop this used to
+        # mutate. The `pip` upgrade above it is the same shape and still here:
+        # a wrapped pip whose only other bound is the socket timeout.
         broken = self.source.replace(
-            "timeout 90 /tmp/verify-venv/bin/python -m pip", "/tmp/verify-venv/bin/python -m pip"
+            "timeout 60 /tmp/verify-venv/bin/python -m pip install --timeout 30 --upgrade pip",
+            "/tmp/verify-venv/bin/python -m pip install --timeout 30 --upgrade pip",
         )
         self.assertNotEqual(broken, self.source, "the mutation matched nothing; rewrite it")
         caught = [call for call in scan(broken) if not call.bounded]
