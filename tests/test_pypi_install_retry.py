@@ -56,7 +56,11 @@ SCRIPT = REPO_ROOT / ".github" / "scripts" / "pip-install-with-retry.sh"
 #: fail rather than quietly reach the real index.
 REQUIREMENT = "ai-jury==9.9.9"
 
-POSIX_SHELL = sys.platform != "win32" and shutil.which("bash") is not None
+#: Resolved once, and used as an absolute path: `isolate_path` empties PATH of
+#: everything but the stubs, so looking `bash` up from inside the harness would
+#: fail for a reason that has nothing to do with the script.
+BASH = shutil.which("bash")
+POSIX_SHELL = sys.platform != "win32" and BASH is not None
 
 #: pip's own words when an index has not caught up. Kept verbatim so the
 #: assertion that the installer's output survives into the log is about the text
@@ -148,6 +152,7 @@ class AgainstAStubInstaller(unittest.TestCase):
         requirement: str | None = REQUIREMENT,
         attempt_timeout: str = "0",
         stub_timeout: bool = False,
+        isolate_path: bool = False,
     ) -> Run:
         workdir = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, workdir, True)
@@ -169,9 +174,27 @@ class AgainstAStubInstaller(unittest.TestCase):
             bound.write_text(STUB_TIMEOUT, encoding="utf-8")
             bound.chmod(0o755)
 
+        if isolate_path:
+            # PATH is *only* the stub directory, so `timeout` is genuinely absent
+            # whatever the runner ships. Without this the "refused, not skipped"
+            # case passed on macOS for the wrong reason — because macOS has no
+            # coreutils — and would have failed on the ubuntu runner that
+            # actually runs this workflow. The two externals the script needs are
+            # linked in; everything else it uses is a bash builtin. `bash` is
+            # among them because the stubs' `#!/usr/bin/env bash` shebang looks
+            # it up on this PATH — without it every stub exits 127, which reads
+            # as the script failing rather than the harness.
+            for tool in ("date", "seq", "bash"):
+                found = shutil.which(tool)
+                assert found, f"{tool} is needed to run the script under test"
+                (binaries / tool).symlink_to(found)
+            path = str(binaries)
+        else:
+            path = f"{binaries}{os.pathsep}{os.environ.get('PATH', '')}"
+
         env = {
             **os.environ,
-            "PATH": f"{binaries}{os.pathsep}{os.environ.get('PATH', '')}",
+            "PATH": path,
             "COUNTER": str(counter),
             "ARGV": str(argv),
             "SLEEPS": str(sleeps),
@@ -193,7 +216,7 @@ class AgainstAStubInstaller(unittest.TestCase):
             env["PYPI_ATTEMPTS"] = attempts
 
         completed = subprocess.run(
-            ["bash", str(SCRIPT)],
+            [BASH, str(SCRIPT)],
             cwd=workdir,
             env=env,
             capture_output=True,
@@ -254,13 +277,26 @@ class EachAttemptIsBoundedAndNotOnlyTheLoop(AgainstAStubInstaller):
         self.assertEqual(run.timeouts, [], "0 must not reach `timeout` at all")
 
     def test_a_bound_that_cannot_be_applied_is_refused_not_skipped(self):
-        """A bound quietly absent is worse than one nobody asked for."""
-        run = self.run_install(attempt_timeout="90", stub_timeout=False)
+        """A bound quietly absent is worse than one nobody asked for.
+
+        `isolate_path`, so this asks the question on every runner. Without it the
+        case passed on macOS because macOS ships no `timeout`, and would have
+        failed on the ubuntu runner this workflow actually uses — a test that
+        holds only where the tool is missing proves nothing about the branch.
+        """
+        run = self.run_install(attempt_timeout="90", stub_timeout=False, isolate_path=True)
 
         self.assertEqual(run.code, 2)
         self.assertEqual(run.calls, 0)
         self.assertIn("PYPI_ATTEMPT_TIMEOUT", run.output)
         self.assertIn("timeout(1)", run.output)
+
+    def test_the_bound_is_applied_when_timeout_exists(self):
+        """The other half of the same branch, so neither is asserted alone."""
+        run = self.run_install(attempt_timeout="45", stub_timeout=True, isolate_path=True)
+
+        self.assertEqual(run.code, 0)
+        self.assertEqual(run.timeouts, ["45"])
 
     def test_a_bound_that_is_not_a_number_names_the_knob(self):
         run = self.run_install(attempt_timeout="ninety")
@@ -316,6 +352,20 @@ class ASpentBudgetStillFailsTheJob(AgainstAStubInstaller):
         self.assertIn("::error::", run.output)
         self.assertIn(REQUIREMENT, run.output)
         self.assertIn("4 attempts", run.output)
+
+    def test_it_does_not_claim_the_upload_succeeded(self):
+        """It never reads the JSON API, and it retries a broken wheel too.
+
+        The first wording asserted "the JSON API listed both distributions, so
+        the upload itself succeeded" on every exhausted budget — which is the
+        wrong thing to tell a maintainer in the one case that matters, a wheel
+        that is genuinely broken. It now names both readings and the evidence
+        that separates them.
+        """
+        run = self.run_install(failures=99, attempts="1")
+
+        self.assertNotIn("the upload itself succeeded", run.output)
+        self.assertIn("If pip's output above names a broken", run.output)
 
 
 class AMistakeInTheCallIsDiagnosedAndNotPolled(AgainstAStubInstaller):

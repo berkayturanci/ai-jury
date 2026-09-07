@@ -158,5 +158,10 @@ done
 # because "did PyPI ever serve this" is the question that decides whether the
 # recovery is a re-run or a new version.
 elapsed="$(($(date +%s) - started))"
-echo "::error::PyPI never served an installable ${requirement}: pip could not resolve it in ${attempts} attempts over ${elapsed}s. The JSON API listed both distributions, so the upload itself succeeded; re-run this job once the simple index catches up, and treat it as a broken release only if it does not."
+# It names what it saw and hands over the discriminator; it does not assert the
+# other surface. This script never reads the JSON API, and it retries every
+# non-zero exit — a wheel that is genuinely broken exhausts the same budget and
+# arrives here too. Claiming "the upload succeeded, this is index lag" would be
+# telling a maintainer the wrong thing in exactly the case that matters.
+echo "::error::pip could not resolve ${requirement} in ${attempts} attempts over ${elapsed}s. If the wait step above found this version on PyPI's JSON API, the upload succeeded and this is the simple index lagging behind it: re-run this job. If pip's output above names a broken or missing artifact instead, it is not lag, and a re-run will not help."
 exit 1
