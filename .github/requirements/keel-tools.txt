@@ -4,4 +4,4 @@
 # new rules — those PRs are expected to land. Must match both
 # `pip install "keel-workflow==…"` lines in keel-ship.yml
 # (tests/test_keel_evidence_workflow.py).
-keel-workflow==1.21.0
+keel-workflow==1.21.1
