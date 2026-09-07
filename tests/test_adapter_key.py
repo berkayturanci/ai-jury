@@ -53,6 +53,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from ai_jury import adapters, cli, doctor  # noqa: E402
 from ai_jury.adapters import _VENDOR_ADAPTERS, make_adapter  # noqa: E402
 from ai_jury.config import (  # noqa: E402
+    _REGISTERED_VENDORS,
     KNOWN_VENDORS,
     AgentSpec,
     ConfigError,
@@ -681,9 +682,7 @@ class TheVocabularyIsOneVocabulary(unittest.TestCase):
                 self.assertIsInstance(make_adapter(spec), ShimAdapter)
         finally:
             _VENDOR_ADAPTERS.pop(registered, None)
-            import ai_jury.config as config_module
-
-            config_module._REGISTERED_VENDORS.discard(registered)
+            _REGISTERED_VENDORS.discard(registered)
 
     def test_the_key_is_normalised_like_the_vendor(self):
         spec = AgentSpec(name="s", vendor="openai", adapter="  CLI  ", command="cursor-agent")

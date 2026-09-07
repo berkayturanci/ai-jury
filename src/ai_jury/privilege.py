@@ -354,13 +354,17 @@ def _drop_bare_sandbox(extra_args: list[str]) -> list[str]:
     return [a for a in extra_args if a != "--sandbox" and not a.startswith("--sandbox=")]
 
 
-def enable_write(vendor: str, name: str, extra_args: list[str]) -> list[str]:
+def enable_write(vendor: str, extra_args: list[str]) -> list[str]:
     """Return ``extra_args`` with the vendor's write/tool mode enabled (issue #661).
 
     *vendor* is the seat's ADAPTER key — the protocol whose flags this function
     speaks — which is the vendor itself unless the seat named an ``adapter``
     (issue #705). The flags belong to the CLI being spawned, not to whose model
     answers, so a GPT seat driven through ``cursor-agent`` is handled as ``cli``.
+    The seat's *name* is deliberately not an argument here and must not become
+    one (#758, #768): it is free text an operator picks to tell two seats apart
+    in a report, and letting a substring of it override the declared adapter key
+    spawned three configurations with another CLI's flags.
 
     The deliberate mirror image of :func:`enforce_read_only`, and the ONLY place
     the read-only guarantee is lifted. It exists for ``jury run-agent --role
@@ -376,10 +380,12 @@ def enable_write(vendor: str, name: str, extra_args: list[str]) -> list[str]:
     Network vendors have no such surface and are returned unchanged.
     """
     vendor = normalise_vendor(vendor)
-    name = (name or "").lower()
     args = list(extra_args or [])
-    # Network vendors first, for the same reason as in enforce_read_only: a
-    # local agent named "local-claude" must not be read as claude.
+    # The no-sandbox vendors first, for the same reason as in enforce_read_only:
+    # there is no write mode of theirs to enable — a network vendor spawns no
+    # process at all, and a bring-your-own-CLI seat runs a binary whose flags
+    # this tool does not speak — so falling through would have the agy branch
+    # below strip a `--sandbox` that belongs to somebody else's command line.
     if vendor in _NO_SANDBOX_VENDORS or vendor.endswith("-api"):
         return args
     if vendor == "anthropic":
@@ -389,13 +395,17 @@ def enable_write(vendor: str, name: str, extra_args: list[str]) -> list[str]:
     return _drop_bare_sandbox(args)
 
 
-def enforce_read_only(vendor: str, name: str, extra_args: list[str]) -> list[str]:
+def enforce_read_only(vendor: str, extra_args: list[str]) -> list[str]:
     """Return ``extra_args`` with the mandatory read-only restriction guaranteed.
 
     *vendor* is the seat's ADAPTER key — the protocol whose flags this function
     speaks — which is the vendor itself unless the seat named an ``adapter``
     (issue #705). The flags belong to the CLI being spawned, not to whose model
     answers, so a GPT seat driven through ``cursor-agent`` is handled as ``cli``.
+    The seat's *name* is deliberately not an argument here and must not become
+    one (#758, #768): it is free text an operator picks to tell two seats apart
+    in a report, and letting a substring of it override the declared adapter key
+    spawned three configurations with another CLI's flags.
 
     The sandbox is enforced here (issue #288) rather than left to config, so on the
     adapters that have enforcement an **empty** ``extra_args`` cannot produce a
@@ -427,11 +437,13 @@ def enforce_read_only(vendor: str, name: str, extra_args: list[str]) -> list[str
     # the xai profile exists to keep off that CLI (issue #701, review round 3).
     # A spelling validation accepts must be the spelling the guard enforces.
     vendor = normalise_vendor(vendor)
-    name = (name or "").lower()
     extra_args = list(extra_args or [])
-    # `local`/hosted-API vendors are checked FIRST (review of #310): a network
-    # agent runs no subprocess, and the name-substring checks below would
-    # otherwise mis-handle e.g. a local agent named "local-claude" / "my-codex".
+    # The no-sandbox vendors are checked FIRST (review of #310): a network agent
+    # runs no subprocess to confine, and a bring-your-own-CLI seat runs the
+    # operator's own binary, for which this tool knows no sandbox flag. Without
+    # this branch both would reach the unknown-vendor fallback at the end and
+    # have agy's `--sandbox` injected into a command line that never asked for
+    # it — the exact flag the xai profile exists to keep off `cursor-agent`.
     if vendor in _NO_SANDBOX_VENDORS or vendor.endswith("-api"):
         return extra_args
     if vendor == "anthropic":
@@ -499,7 +511,6 @@ def audit_agent(spec) -> list[str]:
     vendor whose CLI is unknown (issue #292).
     """
     warnings: list[str] = []
-    name = (getattr(spec, "name", "") or "").lower()
     # The ADAPTER, not the vendor (issue #705). Every question this function
     # asks — is there a subprocess, which sandbox flag would confine it, is one
     # present — is about the CLI that gets spawned. A seat with
@@ -520,9 +531,10 @@ def audit_agent(spec) -> list[str]:
 
     # The argv this seat is spawned with, byte for byte what
     # `adapters._read_only_extra_args(spec)` returns: same adapter key, same
-    # name, same declared args, same function. (`enforce_read_only` lower-cases
-    # the name itself, so passing the already-lowered one changes nothing.)
-    extra_args = enforce_read_only(vendor, name, list(getattr(spec, "extra_args", []) or []))
+    # declared args, same function. The seat's name is an input to neither
+    # (#758, #768) — which is what stops the auditor and the spawner disagreeing
+    # about a seat whose name says one CLI and whose adapter key says another.
+    extra_args = enforce_read_only(vendor, list(getattr(spec, "extra_args", []) or []))
     args_text = _args_str(extra_args)
 
     is_claude = vendor == "anthropic"
