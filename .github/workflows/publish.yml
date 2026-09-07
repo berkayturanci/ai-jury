@@ -364,8 +364,10 @@ jobs:
     #     (30s) and the sleep after it (10s) — 340s apiece. The second one
     #     returns on the first attempt in practice, but nothing enforces that,
     #     so it is counted at full price;
-    #   - the pip upgrade, wrapped at 60s, and the resolve loop:
-    #     6 × (`timeout 90` + `sleep 10`) = 660s in all. pip's own
+    #   - the pip upgrade, wrapped at 60s; the resolve retry, wrapped whole
+    #     at 900s (#770 replaced a hardcoded 6 × (`timeout 90` + `sleep 10`)
+    #     with a script taking the shared PYPI_ATTEMPTS/PYPI_INTERVAL_SECONDS
+    #     budget); and the `pip show` after it, wrapped at 60s. pip's own
     #     `--timeout` is a socket timeout — a bound on one quiet read, not
     #     on the call — so a peer that drips a byte inside it holds the
     #     loop open for as long as it likes. Only the wrapper bounds it,
@@ -375,7 +377,7 @@ jobs:
     #   - the tap poll: 10 × `timeout 30` + 10 × `sleep 15` = 450s;
     #   - the `if: failure()` report: three `timeout 60` `gh` calls = 180s.
     #
-    # That is ~2220s, and the twenty minutes this used to say was *below* it: a
+    # That is ~2580s, and the twenty minutes this used to say was *below* it: a
     # job that spent its own bounds honestly would be cancelled at 1200s rather
     # than fail. Which matters more here than anywhere, because a job stopped by
     # `timeout-minutes` is *cancelled* — the `if: failure()` step below does not
@@ -391,6 +393,14 @@ jobs:
       issues: write   # open/update `release-broken: <tag>` when this job fails
     env:
       GH_REPO: ${{ github.repository }}
+      # Declared here, once, and read by BOTH waits: `wait-for-pypi-dists.sh`
+      # polls the JSON API with them and `pip-install-with-retry.sh` retries the
+      # install with them. Sharing the variable *names* was not enough — with
+      # neither set, each script expanded its own `:-30` / `:-10` default and the
+      # claim that they could not drift was about two copies that merely happened
+      # to agree. One declaration is what makes it true (#770).
+      PYPI_ATTEMPTS: "30"
+      PYPI_INTERVAL_SECONDS: "10"
     steps:
       # Only `.github/scripts`, and deliberately not the package source: this
       # job's whole point is to install what the index serves rather than what
@@ -435,20 +445,24 @@ jobs:
           python -m venv /tmp/verify-venv
           timeout 60 /tmp/verify-venv/bin/python -m pip install --timeout 30 --upgrade pip
           # The JSON API can know a version before the installer index serves it.
-          installed=""
-          for attempt in 1 2 3 4 5 6; do
-            if timeout 90 /tmp/verify-venv/bin/python -m pip install --timeout 30 "ai-jury==${version}"; then
-              installed=1
-              break
-            fi
-            echo "pip cannot resolve ${version} yet (attempt ${attempt}/6); retrying in 10s"
-            sleep 10
-          done
-          if [ -z "$installed" ]; then
-            echo "::error::pip could not install ai-jury==${version} from PyPI"
-            exit 1
-          fi
-          /tmp/verify-venv/bin/python -m pip show ai-jury
+          # The loop that used to live here could not act on that: it ran six
+          # attempts ten seconds apart with pip's HTTP cache on, and PyPI serves
+          # the simple index `max-age=600`, so attempts 2-6 read attempt 1's
+          # answer back off local disk. `pip-install-with-retry.sh` passes
+          # `--no-cache-dir` so each attempt asks, and takes its budget from the
+          # same PYPI_ATTEMPTS/PYPI_INTERVAL_SECONDS the index wait above reads,
+          # so the two waits cannot drift apart (#770).
+          #
+          # Two bounds, because they answer different questions. The script
+          # bounds each attempt (`PYPI_ATTEMPT_TIMEOUT`, 90s) so a pip that
+          # connects and then hangs cannot eat the budget the other attempts
+          # need — the loop this replaced did that with `timeout 90` and losing
+          # it would have been a regression. `timeout 900` here bounds the loop
+          # as a whole, and is the number the ceiling sum counts.
+          timeout 900 env \
+            INSTALLER=/tmp/verify-venv/bin/pip REQUIREMENT="ai-jury==${version}" \
+            .github/scripts/pip-install-with-retry.sh
+          timeout 60 /tmp/verify-venv/bin/python -m pip show ai-jury
 
       - name: The installed CLI reports the tag it was published under
         run: |

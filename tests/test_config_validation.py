@@ -842,6 +842,15 @@ class _RecordingTable(dict):
     old key name kept working, say) the tuple would still list only the fields
     and the alias would start warning as if it were a typo. Recording the reads
     catches that divergence at the one place it can be seen.
+
+    **Two of these are never comparable, and saying so is the point** (#752).
+    ``dict.__eq__`` compares items, and the items here are always ``{}`` — the
+    recording is the entire content of the object, and it is exactly what
+    inherited equality cannot see. An ``assertEqual(table_a, table_b)`` written
+    expecting the recordings to be compared would therefore pass without
+    comparing them: a green assertion that asserts nothing, inside the one class
+    whose whole job is to catch a divergence. So ``==`` and ``!=`` both raise
+    rather than answering wrongly — compare ``.read``, the fact being recorded.
     """
 
     def __init__(self):
@@ -855,6 +864,25 @@ class _RecordingTable(dict):
     def __getitem__(self, key):
         self.read.add(key)
         return super().__getitem__(key)
+
+    def __eq__(self, other):
+        raise TypeError(
+            "_RecordingTable is a recorder, not a value, and cannot be compared "
+            f"with {type(other).__name__}: inherited dict equality compares the "
+            "(always empty) items and ignores what each table recorded. "
+            "Compare `.read` instead."
+        )
+
+    # `dict` answers `!=` itself — its `tp_richcompare` handles both directions
+    # — so `__ne__` does NOT fall back to the `__eq__` above, and an
+    # `assertNotEqual(table_a, table_b)` would still be answered on the (always
+    # empty) items. Refused explicitly, or only half the trap is closed.
+    __ne__ = __eq__
+
+    # Written out rather than left to the implicit `__hash__ = None` that
+    # defining `__eq__` produces: `dict` is already unhashable, so comparison was
+    # the only accident available here, and the pair belongs in one view.
+    __hash__ = None
 
 
 class NestedJuryTableUnknownKeys(unittest.TestCase):
@@ -954,6 +982,32 @@ class NestedJuryTableUnknownKeys(unittest.TestCase):
                 table = _RecordingTable()
                 reader(table)
                 self.assertEqual(table.read, set(known))
+
+    def test_a_recording_table_refuses_to_be_compared(self):
+        """The assertion the class invites, and cannot honour, fails loudly (#752).
+
+        Every `_RecordingTable` holds the same items — none — so inherited
+        `dict` equality calls any two of them equal however differently they
+        were read, and calls each one equal to `{}`. Someone reaching for
+        `assertEqual(table_a, table_b)` to compare the recordings would get a
+        green assertion that compared nothing, in the one class whose whole job
+        is to catch a divergence. `.read` is the comparable half.
+        """
+        ci, diff = _RecordingTable(), _RecordingTable()
+        _ci_from_dict(ci)
+        _diff_from_dict(diff)
+        # Different recordings, identical (empty) items: the trap in one line.
+        self.assertNotEqual(ci.read, diff.read)
+        self.assertEqual(dict(ci), dict(diff))
+        for other in (diff, {}, object()):
+            with self.subTest(other=type(other).__name__):
+                with self.assertRaises(TypeError) as caught:
+                    _ = ci == other
+                self.assertIn("recorder, not a value", str(caught.exception))
+                # `dict` answers `!=` without consulting `__eq__`, so the
+                # mirror accident is refused by its own binding, not for free.
+                with self.assertRaises(TypeError):
+                    _ = ci != other
 
     def test_the_tables_are_exactly_the_nested_ones_jury_reads(self):
         # Every other `KNOWN_JURY_KEYS` member is a scalar, so this dict is the

@@ -119,8 +119,8 @@ class TheGrokSeatFromTheIssue(unittest.TestCase):
         still audits the seat and warns when nothing sandboxes it.
         """
         args = list(_GROK_SEAT["extra_args"])
-        self.assertEqual(enforce_read_only("xai", "cursor", args), args)
-        self.assertEqual(enable_write("xai", "cursor", args), args)
+        self.assertEqual(enforce_read_only("xai", args), args)
+        self.assertEqual(enable_write("xai", args), args)
 
 
 class TheVocabulary(unittest.TestCase):
@@ -352,7 +352,7 @@ class TheXaiHostedApiAdapter(unittest.TestCase):
         self.assertEqual(warnings, [])
 
     def test_it_has_no_sandbox_surface(self):
-        self.assertEqual(enforce_read_only("xai-api", "grok", []), [])
+        self.assertEqual(enforce_read_only("xai-api", []), [])
 
     def test_doctor_calls_it_an_api_and_the_cli_spelling_a_cli(self):
         self.assertEqual(_transport("xai-api", "", None), "api")
@@ -829,11 +829,11 @@ class OneSpellingIsOneAnswerEverywhere(unittest.TestCase):
                 # 5. The privilege guard treats it exactly as the canonical
                 #    spelling: no flag belonging to another vendor's CLI.
                 self.assertEqual(
-                    enforce_read_only(case["spelling"], "cursor", list(case["extra_args"])),
-                    enforce_read_only(canonical, "cursor", list(case["extra_args"])),
+                    enforce_read_only(case["spelling"], list(case["extra_args"])),
+                    enforce_read_only(canonical, list(case["extra_args"])),
                 )
                 self.assertEqual(
-                    enforce_read_only(case["spelling"], "cursor", list(case["extra_args"])),
+                    enforce_read_only(case["spelling"], list(case["extra_args"])),
                     case["guarded_args"],
                 )
 
@@ -865,8 +865,8 @@ class OneSpellingIsOneAnswerEverywhere(unittest.TestCase):
         for case in self._SEATS:
             with self.subTest(spelling=case["spelling"]):
                 self.assertEqual(
-                    enable_write(case["spelling"], "cursor", ["-p"]),
-                    enable_write(case["canonical"], "cursor", ["-p"]),
+                    enable_write(case["spelling"], ["-p"]),
+                    enable_write(case["canonical"], ["-p"]),
                 )
 
     def test_no_reader_can_be_handed_the_raw_spelling(self):

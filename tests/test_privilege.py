@@ -9,6 +9,7 @@ config whose gap the adapter closes is not warned about, and one whose gap it
 cannot close still is.
 """
 
+import inspect
 import sys
 import unittest
 from pathlib import Path
@@ -26,7 +27,7 @@ class AuditAgentTest(unittest.TestCase):
         # so it cannot write and must not be reported as though it could.
         spec = AgentSpec(name="claude", vendor="anthropic", command="claude", extra_args=[])
         self.assertEqual(
-            privilege.enforce_read_only("anthropic", "claude", []),
+            privilege.enforce_read_only("anthropic", []),
             ["--disallowed-tools", "Edit,Write,NotebookEdit,Bash"],
         )
         self.assertEqual(privilege.audit_agent(spec), [])
@@ -52,7 +53,7 @@ class AuditAgentTest(unittest.TestCase):
         )
         self.assertEqual(privilege.audit_agent(spec), [])
         self.assertEqual(
-            privilege.enforce_read_only("anthropic", "claude", list(spec.extra_args)),
+            privilege.enforce_read_only("anthropic", list(spec.extra_args)),
             list(spec.extra_args),
         )
 
@@ -67,7 +68,7 @@ class AuditAgentTest(unittest.TestCase):
             extra_args=["--disallowed-tools=Edit,Write"],
         )
         self.assertEqual(
-            privilege.enforce_read_only("anthropic", "claude", list(spec.extra_args)),
+            privilege.enforce_read_only("anthropic", list(spec.extra_args)),
             ["--disallowed-tools=Edit,Write,NotebookEdit,Bash"],
         )
         self.assertEqual(privilege.audit_agent(spec), [])
@@ -83,7 +84,7 @@ class AuditAgentTest(unittest.TestCase):
             extra_args=["--disallowed-tools"],
         )
         self.assertEqual(
-            privilege.enforce_read_only("anthropic", "claude", list(spec.extra_args)),
+            privilege.enforce_read_only("anthropic", list(spec.extra_args)),
             ["--disallowed-tools", "Edit,Write,NotebookEdit,Bash", "--disallowed-tools"],
         )
         self.assertEqual(privilege.audit_agent(spec), [])
@@ -98,7 +99,7 @@ class AuditAgentTest(unittest.TestCase):
             extra_args=["--disallowed-tools", "Edit,Write"],
         )
         self.assertEqual(
-            privilege.enforce_read_only("anthropic", "claude", list(spec.extra_args)),
+            privilege.enforce_read_only("anthropic", list(spec.extra_args)),
             ["--disallowed-tools", "Edit,Write,NotebookEdit,Bash"],
         )
         self.assertEqual(privilege.audit_agent(spec), [])
@@ -125,7 +126,7 @@ class AuditAgentTest(unittest.TestCase):
             extra_args=["--dangerously-skip-permissions"],
         )
         self.assertEqual(
-            privilege.enforce_read_only("google", "agy", list(spec.extra_args)),
+            privilege.enforce_read_only("google", list(spec.extra_args)),
             ["--sandbox", "--dangerously-skip-permissions"],
         )
         self.assertEqual(privilege.audit_agent(spec), [])
@@ -133,7 +134,7 @@ class AuditAgentTest(unittest.TestCase):
     def test_yolo_flag_is_spawned_sandboxed(self):
         spec = AgentSpec(name="gemini", vendor="google", command="gemini", extra_args=["--yolo"])
         self.assertEqual(
-            privilege.enforce_read_only("google", "gemini", list(spec.extra_args)),
+            privilege.enforce_read_only("google", list(spec.extra_args)),
             ["--sandbox", "--yolo"],
         )
         self.assertEqual(privilege.audit_agent(spec), [])
@@ -147,7 +148,7 @@ class AuditAgentTest(unittest.TestCase):
         spec = AgentSpec(name="codex", vendor="openai", command="codex", extra_args=["--full-auto"])
         warnings = privilege.audit_agent(spec)
         self.assertEqual(
-            privilege.enforce_read_only("openai", "codex", list(spec.extra_args)),
+            privilege.enforce_read_only("openai", list(spec.extra_args)),
             ["-s", "read-only", "--full-auto"],
         )
         self.assertEqual(len(warnings), 1)
@@ -189,7 +190,7 @@ class AuditAgentTest(unittest.TestCase):
         # still proves it — with a sandbox the operator wrote, which is the shape
         # enforcement leaves alone and the audit therefore still reaches.
         spec = AgentSpec(name="codex", vendor="openai", command="codex", extra_args=[])
-        self.assertEqual(privilege.enforce_read_only("openai", "codex", []), ["-s", "read-only"])
+        self.assertEqual(privilege.enforce_read_only("openai", []), ["-s", "read-only"])
         self.assertEqual(privilege.audit_agent(spec), [])
 
     def test_an_unlisted_wide_sandbox_still_warns(self):
@@ -210,7 +211,7 @@ class AuditAgentTest(unittest.TestCase):
         )
         warnings = privilege.audit_agent(spec)
         self.assertEqual(
-            privilege.enforce_read_only("openai", "codex", list(spec.extra_args)),
+            privilege.enforce_read_only("openai", list(spec.extra_args)),
             list(spec.extra_args),
         )
         self.assertEqual(len(warnings), 1)
@@ -364,13 +365,11 @@ class EnforceReadOnlyTest(unittest.TestCase):
     """Issue #288: the sandbox is guaranteed at the adapter layer, not config."""
 
     def test_claude_injects_disallowed_tools_when_absent(self):
-        out = privilege.enforce_read_only("anthropic", "claude", [])
+        out = privilege.enforce_read_only("anthropic", [])
         self.assertEqual(out, ["--disallowed-tools", "Edit,Write,NotebookEdit,Bash"])
 
     def test_claude_merges_missing_write_tools_into_existing(self):
-        out = privilege.enforce_read_only(
-            "anthropic", "claude", ["--disallowed-tools", "Edit,Write"]
-        )
+        out = privilege.enforce_read_only("anthropic", ["--disallowed-tools", "Edit,Write"])
         self.assertEqual(out, ["--disallowed-tools", "Edit,Write,NotebookEdit,Bash"])
 
     def test_claude_shipped_default_is_unchanged(self):
@@ -381,52 +380,63 @@ class EnforceReadOnlyTest(unittest.TestCase):
             "Edit,Write,NotebookEdit,Bash",
             "--dangerously-skip-permissions",
         ]
-        self.assertEqual(privilege.enforce_read_only("anthropic", "claude", shipped), shipped)
+        self.assertEqual(privilege.enforce_read_only("anthropic", shipped), shipped)
 
     def test_claude_equals_form_disallowed_is_merged(self):
         # Review of #288: the =-form must be merged too, not left to sit after the
         # injected safe set where a last-wins CLI could narrow the deny set.
-        out = privilege.enforce_read_only("anthropic", "claude", ["--disallowed-tools=Edit"])
+        out = privilege.enforce_read_only("anthropic", ["--disallowed-tools=Edit"])
         self.assertEqual(out, ["--disallowed-tools=Edit,Write,NotebookEdit,Bash"])
 
     def test_codex_injects_read_only_when_no_sandbox(self):
-        out = privilege.enforce_read_only("openai", "codex", [])
+        out = privilege.enforce_read_only("openai", [])
         self.assertEqual(out, ["-s", "read-only"])
 
     def test_codex_equals_form_sandbox_is_respected_not_doubled(self):
-        out = privilege.enforce_read_only("openai", "codex", ["--sandbox=read-only"])
+        out = privilege.enforce_read_only("openai", ["--sandbox=read-only"])
         self.assertEqual(out, ["--sandbox=read-only"])
 
     def test_codex_respects_operator_widened_sandbox(self):
         # An explicit (audited) opt-in is preserved, never overridden.
-        out = privilege.enforce_read_only("openai", "codex", ["-s", "workspace-write"])
+        out = privilege.enforce_read_only("openai", ["-s", "workspace-write"])
         self.assertEqual(out, ["-s", "workspace-write"])
 
     def test_agy_injects_sandbox_when_absent(self):
-        out = privilege.enforce_read_only("google", "agy", ["--dangerously-skip-permissions"])
+        out = privilege.enforce_read_only("google", ["--dangerously-skip-permissions"])
         self.assertEqual(out, ["--sandbox", "--dangerously-skip-permissions"])
 
     def test_unknown_vendor_gets_sandbox(self):
         # Issue #310 (completes #300): an unknown vendor routes to the generic
         # AgyAdapter, so --sandbox is injected — fail-closed, never fail-open.
-        out = privilege.enforce_read_only("weirdvendor", "x", ["--foo"])
+        out = privilege.enforce_read_only("weirdvendor", ["--foo"])
         self.assertEqual(out, ["--sandbox", "--foo"])
 
     def test_unknown_vendor_existing_sandbox_not_doubled(self):
-        out = privilege.enforce_read_only("weirdvendor", "x", ["--sandbox"])
+        out = privilege.enforce_read_only("weirdvendor", ["--sandbox"])
         self.assertEqual(out, ["--sandbox"])
 
-    def test_local_vendor_name_substring_not_mishandled(self):
-        # Review of #310: a local agent whose NAME contains "claude"/"codex" must
-        # still be left unchanged (the vendor=="local" fast-path wins).
-        self.assertEqual(privilege.enforce_read_only("local", "local-claude", []), [])
-        self.assertEqual(privilege.enforce_read_only("local", "my-codex", []), [])
+    def test_the_seat_name_is_not_an_argument_at_all(self):
+        """What #758 made true, #768 makes structural.
+
+        The review of #310 asked what an agent NAMED `local-claude` or
+        `my-codex` gets spawned with, and the answer used to depend on branch
+        order inside `enforce_read_only`: name-substring tests sat below the
+        no-sandbox fast path and would otherwise have read `claude` out of
+        `local-claude`. #758 deleted those tests and left the `name` parameter
+        standing with nothing reading its value — a dead argument still in the
+        shape of the old rule, and an invitation to reach for it again. It is
+        gone from both signatures now, so a name has nowhere to enter: the
+        adapter key and the args are the whole input.
+        """
+        for fn in (privilege.enforce_read_only, privilege.enable_write):
+            with self.subTest(fn=fn.__name__):
+                self.assertEqual(list(inspect.signature(fn).parameters), ["vendor", "extra_args"])
 
     def test_local_vendor_is_left_untouched(self):
-        self.assertEqual(privilege.enforce_read_only("local", "qwen", []), [])
+        self.assertEqual(privilege.enforce_read_only("local", []), [])
 
     def test_cli_vendor_is_left_untouched(self):
-        self.assertEqual(privilege.enforce_read_only("cli", "cursor", ["--print"]), ["--print"])
+        self.assertEqual(privilege.enforce_read_only("cli", ["--print"]), ["--print"])
 
 
 class ASandboxIsNotSettledByTheFirstOneNamed(unittest.TestCase):
@@ -598,9 +608,7 @@ class TheAuditReadsTheArgvTheSeatIsSpawnedWith(unittest.TestCase):
         for spec in specs:
             with self.subTest(agent=spec.name, vendor=spec.vendor, adapter=spec.adapter):
                 self.assertEqual(
-                    privilege.enforce_read_only(
-                        spec_adapter(spec), spec.name, list(spec.extra_args)
-                    ),
+                    privilege.enforce_read_only(spec_adapter(spec), list(spec.extra_args)),
                     adapters._read_only_extra_args(spec),
                 )
 
@@ -615,7 +623,7 @@ class TheAuditReadsTheArgvTheSeatIsSpawnedWith(unittest.TestCase):
                     name="cursor", vendor=vendor, command="cursor-agent", extra_args=["-p"]
                 )
                 warnings = privilege.audit_agent(spec)
-                self.assertEqual(privilege.enforce_read_only(vendor, "cursor", ["-p"]), ["-p"])
+                self.assertEqual(privilege.enforce_read_only(vendor, ["-p"]), ["-p"])
                 self.assertEqual(len(warnings), 1)
                 self.assertIn("not running under a recognized read-only sandbox", warnings[0])
 

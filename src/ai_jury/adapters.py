@@ -89,7 +89,7 @@ def _read_only_extra_args(spec: AgentSpec) -> list[str]:
     # property of the CLI being spawned, not of whose model answers. A seat with
     # `vendor = "openai", adapter = "cli", command = "cursor-agent"` must not have
     # codex's `-s read-only` spliced into an unrelated binary.
-    return privilege.enforce_read_only(config_module.spec_adapter(spec), spec.name, spec.extra_args)
+    return privilege.enforce_read_only(config_module.spec_adapter(spec), spec.extra_args)
 
 
 def _write_extra_args(spec: AgentSpec) -> list[str]:
@@ -98,7 +98,7 @@ def _write_extra_args(spec: AgentSpec) -> list[str]:
     Reached ONLY from ``jury run-agent --role implement|fix --allow-write``, via
     :meth:`Adapter.build_write_argv`. Nothing on the panel path calls it.
     """
-    return privilege.enable_write(config_module.spec_adapter(spec), spec.name, spec.extra_args)
+    return privilege.enable_write(config_module.spec_adapter(spec), spec.extra_args)
 
 
 # Short timeout for capability/version probes. Detection is best-effort and must
