@@ -24,8 +24,19 @@ WORKFLOW = REPO_ROOT / ".github" / "workflows" / "keel-ship.yml"
 KEEL_TOOLS = REPO_ROOT / ".github" / "requirements" / "keel-tools.txt"
 
 
+#: What `_keel_tools_pin` returns when the file is gone. A deleted pin file is a
+#: real failure, but it has to be *reported* by the test that names it: `PINNED_KEEL`
+#: below is computed at import, so reading the file there unguarded raised
+#: `FileNotFoundError` during collection and the `assertTrue(KEEL_TOOLS.exists())`
+#: written for exactly that case could never run. A maintainer then reads a
+#: traceback about a missing path instead of "keel-tools.txt must exist (#760)".
+MISSING_PIN = "<no keel-tools.txt>"
+
+
 def _keel_tools_pin() -> str:
     """The single non-comment line of the Dependabot-watched pin file."""
+    if not KEEL_TOOLS.exists():
+        return MISSING_PIN
     pins = [
         line.strip()
         for line in KEEL_TOOLS.read_text(encoding="utf-8").splitlines()
@@ -195,6 +206,7 @@ class KeelIsPinnedAndIsTheRightPackage(unittest.TestCase):
         merge contract without a reviewed diff.
         """
         self.assertTrue(KEEL_TOOLS.exists(), f"{KEEL_TOOLS.name} must exist (#760)")
+        self.assertNotEqual(self.pin, MISSING_PIN)
         self.assertRegex(self.pin, r"^keel-workflow==\d+\.\d+\.\d+$")
 
     def test_keel_is_installed_pinned(self):
