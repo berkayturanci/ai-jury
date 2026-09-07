@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.17.1] - 2026-09-07
+
 ### Fixed
 - **The install retry in `verify` asks PyPI instead of re-reading its own answer** (#770). The step already carried the right diagnosis — *"The JSON API can know a version before the installer index serves it"* — above a six-attempt loop that could not act on it. PyPI serves the simple index `cache-control: max-age=600, public`, and pip's HTTP cache honours a fresh response without revalidating, so attempt 1 during the lag records the version list that is **missing** the release and attempts 2 to 6 read it back off local disk without opening a connection. Fifty seconds of retrying an answer that stays fresh for six hundred — worse than no retry, because it made the job look protected. `v1.17.0` published cleanly, which says the index happened to be ready, not that the guard worked.
   - **`--no-cache-dir` is the line that makes the rest mean anything**, and it also makes each attempt a real download, which is what a job called *verify the published release* should be doing. The loop now lives in `.github/scripts/pip-install-with-retry.sh` beside `wait-for-pypi-dists.sh`, and reads **the same** `PYPI_ATTEMPTS` / `PYPI_INTERVAL_SECONDS` that script reads, with the same 30 × 10s defaults: the old fifty seconds were hardcoded separately from the index wait's three hundred, which is exactly the drift naming them once prevents. A spent budget still exits non-zero with an `::error::` naming the requirement, the attempts and the elapsed seconds; a mistake in the call exits 2 before any waiting, the rule the index wait already follows for its own knobs.
