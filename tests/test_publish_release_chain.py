@@ -79,15 +79,14 @@ NETWORK_TOOLS: dict[str, tuple[str, ...]] = {
     # `keel-ship.yml`'s herestring opened. An empty tuple demands the `timeout`
     # wrapper: uv has no request-timeout flag of its own that bounds the call.
     "uv": (),
-    # The install retry (#770). It is a pip install wearing a filename, and it
-    # deliberately carries no bound of its own: it runs `"$installer"` as a
-    # single word, and `timeout(1)` is GNU coreutils that `macos-latest` does
-    # not ship, so a bound inside would be skipped on the runners
-    # `tests/test_pypi_install_retry.py` runs the real script on. That makes the
-    # wrapper the only bound it has, which is exactly what an empty tuple
-    # demands. It is named here rather than left out because this table's own
-    # rule is that a tool it does not know is a tool the scan reports as bounded
-    # by never seeing it.
+    # The install retry (#770). It is a pip install wearing a filename. It does
+    # bound each *attempt* (`PYPI_ATTEMPT_TIMEOUT`, 90s, refused rather than
+    # skipped where `timeout(1)` is missing) — but nothing inside it bounds the
+    # *loop*, whose length is `PYPI_ATTEMPTS` x `PYPI_INTERVAL_SECONDS` plus the
+    # attempts themselves. The wrapper is the only bound on the whole call,
+    # which is exactly what an empty tuple demands. It is named here rather than
+    # left out because this table's own rule is that a tool it does not know is
+    # a tool the scan reports as bounded by never seeing it.
     #
     # `wait-for-pypi-dists.sh` is deliberately *not* here: every request it makes
     # carries `--connect-timeout` and `--max-time` clamped to its own budget, so

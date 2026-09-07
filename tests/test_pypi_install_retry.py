@@ -241,12 +241,32 @@ class EveryAttemptBypassesPipsHttpCache(AgainstAStubInstaller):
     """
 
     def test_every_attempt_carries_no_cache_dir(self):
-        run = self.run_install(failures=3, attempts="5")
+        """Asserted on **both** branches, because production takes the bounded one.
 
-        self.assertEqual(run.code, 0)
-        self.assertEqual(len(run.argv), 4, run.argv)
-        for call in run.argv:
-            self.assertIn("--no-cache-dir", call)
+        `run_installer` spells the attempt twice — once under `timeout` and once
+        bare — and the verify job sets no `PYPI_ATTEMPT_TIMEOUT`, so ubuntu takes
+        the script's default of 90 and runs the wrapped form. Checking only the
+        unbounded branch would have left the load-bearing flag unasserted on the
+        one path that ships.
+        """
+        for label, kwargs in (
+            ("bounded (what publish.yml runs)", {"attempt_timeout": "90", "stub_timeout": True}),
+            ("unbounded", {"attempt_timeout": "0"}),
+        ):
+            with self.subTest(branch=label):
+                run = self.run_install(failures=3, attempts="5", **kwargs)
+
+                self.assertEqual(run.code, 0)
+                self.assertEqual(len(run.argv), 4, run.argv)
+                for call in run.argv:
+                    self.assertIn("--no-cache-dir", call)
+
+    def test_the_two_branches_pass_the_installer_the_same_arguments(self):
+        """One attempt spelled twice is two attempts that can disagree."""
+        bounded = self.run_install(attempt_timeout="90", stub_timeout=True)
+        bare = self.run_install(attempt_timeout="0")
+
+        self.assertEqual(bounded.argv, bare.argv)
 
     def test_the_requirement_is_passed_through_unchanged(self):
         run = self.run_install()
