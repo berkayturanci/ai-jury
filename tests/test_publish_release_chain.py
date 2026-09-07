@@ -158,7 +158,18 @@ _JOB_NAME = re.compile(r"^  ([A-Za-z_][\w-]*):[ \t]*$")
 #: the step that defines it, :func:`undefined_wrapper_calls` refuses a call to it
 #: from a step that does not — that would read as bounded here and as `command
 #: not found` on the runner, which is a worse hole than the one it closes.
-_WRAPPERS = frozenset({"timeout", "bounded", "env", "nice", "command", "exec", "stdbuf"})
+#: Two kinds live here, and only one of them bounds anything.
+#:
+#: `timeout` and `bounded` impose a limit; `env`, `nice`, `command`, `exec` and
+#: `stdbuf` only pass a command through. Both have to be seen through to find
+#: the command — `timeout 900 env FOO=1 gh …` runs `gh` — but treating them
+#: alike made "went through a wrapper" mean "is bounded", so `env FOO=1 gh …`
+#: with no `timeout` read as bounded. That is the hole this whole class exists
+#: to close, one indirection further out: found by the gate review of #770,
+#: which put a script behind `env`.
+_BOUNDING_WRAPPERS = frozenset({"timeout", "bounded"})
+_PASSTHROUGH_WRAPPERS = frozenset({"env", "nice", "command", "exec", "stdbuf"})
+_WRAPPERS = _BOUNDING_WRAPPERS | _PASSTHROUGH_WRAPPERS
 
 #: `60`, `1m`, `30s` — a wrapper's duration, which is not its command.
 _DURATION = re.compile(r"^\d+(\.\d+)?[smhd]?$")
@@ -553,7 +564,9 @@ def network_calls(code: str, job: str) -> list[NetworkCall]:
                     continue
             elif name not in NETWORK_TOOLS:
                 continue
-            wrapped = any(token.rsplit("/", 1)[-1] in _WRAPPERS for token in tokens[:index])
+            wrapped = any(
+                token.rsplit("/", 1)[-1] in _BOUNDING_WRAPPERS for token in tokens[:index]
+            )
             wanted = NETWORK_TOOLS.get(name, ())
             bounded = wrapped or (bool(wanted) and all(flag in tokens for flag in wanted))
             shown = " ".join(token for token in tokens if token != _OPENS)
@@ -1203,6 +1216,28 @@ class EveryNetworkCommandIsBoundedInTime(unittest.TestCase):
         self.assertGreaterEqual(
             by_tool["pip-install-with-retry.sh"], 1, f"the install retry was not found: {by_tool}"
         )
+
+    def test_a_passthrough_wrapper_is_not_a_bound(self):
+        """`env` runs a command; it does not limit one.
+
+        Counting it as a bound made every call behind `env` look bounded — so
+        deleting `timeout 900` from the install step would have left this suite
+        green, which is the one thing it must never do.
+        """
+        unbounded = network_calls("env FOO=1 gh issue create", "j")
+        self.assertEqual([call.bounded for call in unbounded], [False])
+
+        bounded = network_calls("timeout 60 env FOO=1 gh issue create", "j")
+        self.assertEqual([call.bounded for call in bounded], [True])
+
+    def test_removing_the_wrapper_from_the_install_retry_is_caught(self):
+        """The mutation the finding named, run rather than argued about."""
+        broken = self.source.replace("timeout 900 env ", "env ")
+        self.assertNotEqual(broken, self.source, "the mutation matched nothing; rewrite it")
+
+        caught = [call for call in scan(broken) if not call.bounded]
+
+        self.assertEqual([call.tool for call in caught], ["pip-install-with-retry.sh"])
 
     def test_an_assignment_after_a_wrapper_does_not_hide_the_command(self):
         """`timeout 900 env FOO=1 gh …` runs `gh`, not `FOO=1`.

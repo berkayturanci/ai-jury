@@ -377,7 +377,7 @@ jobs:
     #   - the tap poll: 10 × `timeout 30` + 10 × `sleep 15` = 450s;
     #   - the `if: failure()` report: three `timeout 60` `gh` calls = 180s.
     #
-    # That is ~2220s, and the twenty minutes this used to say was *below* it: a
+    # That is ~2580s, and the twenty minutes this used to say was *below* it: a
     # job that spent its own bounds honestly would be cancelled at 1200s rather
     # than fail. Which matters more here than anywhere, because a job stopped by
     # `timeout-minutes` is *cancelled* — the `if: failure()` step below does not
