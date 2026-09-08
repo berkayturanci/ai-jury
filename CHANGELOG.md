@@ -1,3 +1,10 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
 ## [Unreleased]
 
 ### Added
@@ -5,6 +12,7 @@
   - **Measured first, and the premise was half wrong.** A `cursor-agent` session asked for every skill and plugin available to it lists `ai-jury` in *both*. So the functionality is already there — what is missing is presentation. `.cursor-plugin/plugin.json` mirrors the Claude manifest plus `displayName`; `docs/platforms.md` says plainly that this changes how the plugin presents, not what works, and that the listing has not been confirmed from a CLI. A probe plugin loaded with `cursor-agent --plugin-dir` did not surface, which is inconclusive rather than negative — the GUI marketplace is not something a CLI session can show.
   - **The version-sync guard is the part that had to come first.** `EveryPluginManifestIsARegisteredSurface` discovers every `*/plugin.json` in the tree and fails if it is not in `RELEASE_SURFACES`, and fails the other way for a registered file that no longer exists. Without it the third manifest keeps the version it was born with while everything else moves, invisibly for one release and permanently after. Verified by mutation in both directions.
   - **`.agy/`, `.kimi-plugin/`, `.grok-plugin/`, `.omp-plugin/`, `.devin-plugin/`, `.opencode/` and `.pi/` are deliberately absent.** None can be exercised here, and a manifest nobody has watched load is a claim rather than a fix. `.agy/` is redundant besides: #775 makes Antigravity find the root `skills/` directory by convention, measured end to end.
+  - **The changelog's own header is now checked.** Merging two `### Added` headings under `[Unreleased]` was done by a script that reassembled the document from that block onward and dropped the six lines above it — the title and the sentences naming Keep a Changelog and Semantic Versioning. Nothing failed: every existing guard parses `## […]` and `###` headings only, so the file quietly stopped declaring the format it follows and would have shipped that way. Caught by a gate reviewer reading the diff against `main`, which was the only place it showed. `TheDocumentKeepsItsOwnHeader` fails on it now.
   - The platform table now records Antigravity as **supported (skill)** rather than manual, which #775 earned and nothing had updated.
 - **`AGENTS.md` and `GEMINI.md`, so an agent working here has project context** (#776). The root shipped `CLAUDE.md` and nothing else, so every agent that reads the cross-vendor `AGENTS.md` convention — Codex, Cursor, opencode, Zed, and the standard itself — got no context in this checkout and worked from whatever it could infer from the tree. For a project whose premise is that different vendors review the same diff, that is the wrong file to be missing: an agent editing this repository without context is more likely to break a vendor adapter than in a single-vendor project, and Antigravity is one of the seats this jury convenes.
   - **One rule set, not three.** `CLAUDE.md` was *renamed* to `AGENTS.md` — the text is unchanged and was never Claude-specific — and `CLAUDE.md` and `GEMINI.md` are now short entry points that link it. Three copies of one rule set is a slower version of the same failure: two go stale and nothing says which is authoritative.
