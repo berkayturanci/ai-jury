@@ -144,4 +144,3 @@ class TheDocumentKeepsItsOwnHeader(unittest.TestCase):
     def test_the_preamble_comes_before_any_release_block(self):
         """A title moved *below* the first release reads as part of that release."""
         self.assertLess(self.text.index("# Changelog"), self.text.index("## ["))
-
