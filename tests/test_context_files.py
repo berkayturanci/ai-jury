@@ -73,6 +73,31 @@ class TheContextFilesExist(unittest.TestCase):
             with self.subTest(file=name):
                 self.assertEqual([], copied, f"{name} repeats {CANONICAL} sections: {copied}")
 
+    def test_no_pointer_claims_a_host_loads_something_it_does_not(self):
+        """A context file that tells an agent a skill is already loaded, when the host
+        does not auto-load it, is worse than one that says nothing: the agent skips
+        opening the file and proceeds on a false belief.
+
+        `docs/platforms.md` is the single place that says what each host supports, so a
+        pointer may reference that table but may not restate a support claim itself.
+        Found by the gate review of #776, on a sentence in `GEMINI.md` claiming
+        Antigravity discovered the skill by convention — which was not true of this
+        checkout, and named a documentation page as the artifact besides.
+        """
+        claims = re.compile(r"\b(discovers?|auto-?loads?|already loaded|loads it)\b", re.I)
+        offenders = []
+        for name in POINTERS:
+            text = (REPO_ROOT / name).read_text(encoding="utf-8")
+            for number, line in enumerate(text.splitlines(), 1):
+                if claims.search(line) and "platforms.md" not in line:
+                    offenders.append(f"{name}:{number}  {line.strip()[:80]}")
+        self.assertEqual(
+            [],
+            offenders,
+            "these state a host's loading behaviour; point at docs/platforms.md instead:\n"
+            + "\n".join(offenders),
+        )
+
     def test_every_link_a_pointer_makes_resolves(self):
         """An entry point whose links are broken is worse than no entry point: it sends
         a reader somewhere and the reader stops there."""
