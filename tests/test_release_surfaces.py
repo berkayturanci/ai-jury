@@ -35,6 +35,7 @@ instead of at the real tree.
 from __future__ import annotations
 
 import importlib
+import json
 import subprocess
 import sys
 import tempfile
@@ -70,6 +71,7 @@ FIXTURE_FILES = {
     "uv.lock": '[[package]]\nname = "ai-jury"\nversion = "{v}"\n',
     ".claude-plugin/plugin.json": '{{"name": "ai-jury", "version": "{v}"}}\n',
     ".codex-plugin/plugin.json": '{{"name": "ai-jury", "version": "{v}"}}\n',
+    ".cursor-plugin/plugin.json": '{{"name": "ai-jury", "version": "{v}"}}\n',
     "website/index.html": '<a class="ver" id="site-version" href="/latest">v{v}</a>\n',
     "website/app.js": 'config: "repo: x\\n    rev: v{v}\\n"\n',
     "README.md": "    rev: v{v}\n\nActive (v{v}).\n",
@@ -384,6 +386,242 @@ class TheChecklistPointsAtTheTable(unittest.TestCase):
     def test_releasing_mentions_the_table(self):
         releasing = (REPO_ROOT / "docs" / "releasing.md").read_text(encoding="utf-8")
         self.assertIn("scripts/release_surfaces.py", releasing)
+
+
+class EveryPluginManifestIsARegisteredSurface(unittest.TestCase):
+    """A manifest that names a version and is not in the table goes stale silently (#777).
+
+    ai-jury ships one manifest per agent that has a format for one, and the ecosystem
+    repositories it is measured against ship eight to twelve — `.cursor-plugin/`, `.agy/`,
+    `.kimi-plugin/`, `.grok-plugin/`, … — each a single small JSON file. That is exactly
+    the shape of thing that gets added without being wired into the release.
+
+    The failure would be invisible for one release and permanent after: the new manifest
+    keeps the version it was born with while everything else moves, and the marketplace
+    reports an ai-jury that has not existed for months. Nothing else reads these files.
+
+    So the rule is discovery-based rather than a second list: whatever manifest exists in
+    the tree must be in `RELEASE_SURFACES`, and whatever is registered must exist.
+    """
+
+    #: A per-agent plugin manifest, by the convention every one of these ecosystems uses:
+    #: a dot-directory at the repository root holding `plugin.json`.
+    _MANIFEST_GLOB = ".*/plugin.json"
+
+    def _manifests(self) -> list[str]:
+        found = sorted(
+            path.relative_to(REPO_ROOT).as_posix()
+            for path in REPO_ROOT.glob(self._MANIFEST_GLOB)
+            if ".git/" not in path.as_posix()
+        )
+        self.assertTrue(found, "no plugin manifests found — the glob no longer matches")
+        return found
+
+    def test_the_known_manifests_are_still_found(self):
+        """Vacuity: a glob that stopped matching would make the check below pass.
+
+        A *subset* assertion on purpose — adding a manifest should fail exactly one test,
+        the registration one, with a message that says what to do.
+        """
+        self.assertLessEqual(
+            {".claude-plugin/plugin.json", ".codex-plugin/plugin.json"}, set(self._manifests())
+        )
+
+    def test_every_manifest_in_the_tree_is_registered(self):
+        registered = {surface.path for surface in release_surfaces.RELEASE_SURFACES}
+        unregistered = [path for path in self._manifests() if path not in registered]
+
+        self.assertEqual(
+            [],
+            unregistered,
+            "these plugin manifests name a version and are not in RELEASE_SURFACES, so the "
+            "release bump will not touch them and they will report a stale ai-jury:\n"
+            + "\n".join(unregistered),
+        )
+
+    def test_and_every_registered_manifest_still_exists(self):
+        """The mirror: a table entry for a deleted file is a surface nothing can check."""
+        registered = [
+            surface.path
+            for surface in release_surfaces.RELEASE_SURFACES
+            if surface.path.endswith("plugin.json")
+        ]
+        missing = [path for path in registered if not (REPO_ROOT / path).is_file()]
+
+        self.assertEqual([], missing, f"registered but absent: {missing}")
+
+
+class TheCursorManifestMatchesTheSchemaItTargets(unittest.TestCase):
+    """A listing manifest is only listing metadata if it uses the host's fields (#777).
+
+    The first cut carried `displayName` and no `logo`, and the changelog, the platform
+    table and the pull request all said that `displayName` was what stopped the plugin
+    rendering as a bare repository slug.
+
+    It is not a Cursor field. Cursor's plugin reference documents the optional set as
+    `description`, `version`, `author`, `homepage`, `repository`, `license`, `keywords`,
+    `logo`, `rules`, `agents`, `skills`, `commands`, `hooks`, `mcpServers`, `variables` —
+    and `logo` is the listing asset: *"Relative path to a logo file in the repo … Relative
+    paths resolve to raw.githubusercontent.com URLs."* A gate reviewer checked the page and
+    found the claim was not in the file, and the file was not in the schema.
+
+    The GUI listing still cannot be watched from here. What *can* be asserted is that the
+    keys shipped are keys the host documents, and that the file really mirrors the Claude
+    manifest it says it mirrors.
+    """
+
+    MANIFEST = REPO_ROOT / ".cursor-plugin" / "plugin.json"
+    #: https://cursor.com/docs/reference/plugins — "Required fields" / "Optional fields".
+    REQUIRED = {"name"}
+    OPTIONAL = {
+        "description",
+        "version",
+        "author",
+        "homepage",
+        "repository",
+        "license",
+        "keywords",
+        "logo",
+        "rules",
+        "agents",
+        "skills",
+        "commands",
+        "hooks",
+        "mcpServers",
+        "variables",
+    }
+
+    def setUp(self):
+        self.manifest = json.loads(self.MANIFEST.read_text(encoding="utf-8"))
+
+    def test_every_key_is_one_the_host_documents(self):
+        unknown = sorted(set(self.manifest) - self.REQUIRED - self.OPTIONAL)
+
+        self.assertEqual(
+            [],
+            unknown,
+            f"not Cursor plugin manifest fields, so the host ignores them: {unknown}",
+        )
+
+    def test_the_listing_asset_is_the_one_the_host_reads(self):
+        """`logo`, and a repo-relative path — the form the reference calls preferred."""
+        logo = self.manifest.get("logo")
+
+        self.assertIsInstance(logo, str, "no logo, so the listing has no image to show")
+        self.assertFalse(logo.startswith(("http://", "https://", "/")), logo)
+        self.assertTrue((REPO_ROOT / logo).is_file(), f"{logo} is not in this repository")
+
+    def test_it_mirrors_the_claude_manifest_it_claims_to(self):
+        """Said in the changelog and in `docs/platforms.md`; asserted here so the two
+        cannot drift, and so `skills` cannot go missing from one of them."""
+        claude = json.loads((REPO_ROOT / ".claude-plugin" / "plugin.json").read_text("utf-8"))
+        missing = sorted(set(claude) - set(self.manifest))
+
+        self.assertEqual(
+            [], missing, f"the Claude manifest declares these and this does not: {missing}"
+        )
+
+    def test_and_names_the_same_skills_directory(self):
+        """Keeps this manifest inside the #775 conjunction: one root `skills/` for all."""
+        claude = json.loads((REPO_ROOT / ".claude-plugin" / "plugin.json").read_text("utf-8"))
+
+        self.assertEqual(self.manifest["skills"], claude["skills"])
+
+
+class ThePublishGuardDiscoversManifestsToo(unittest.TestCase):
+    """The tag-time guard must not carry its own list of manifests (#777).
+
+    `RELEASE_SURFACES` and `EveryPluginManifestIsARegisteredSurface` run on the pull-request
+    path. `publish.yml`'s first step is a separate hard guard that runs on a `v*` tag and
+    imports neither — and it named `.claude-plugin/plugin.json` and `.codex-plugin/
+    plugin.json` literally. So a third manifest, added *and registered correctly*, would
+    still have sailed past the one check that runs at publish time, and shipped a stale
+    version to the marketplace. A named pair is the same defect the registration test
+    exists to prevent, one level up.
+
+    Found by a gate reviewer, who checked whether the new file appeared in that workflow at
+    all. It did not.
+    """
+
+    WORKFLOW = REPO_ROOT / ".github" / "workflows" / "publish.yml"
+
+    def _guard(self) -> str:
+        """The guard step's lines, read as text.
+
+        **Stdlib only.** This project declares no runtime dependencies and its dev extra is
+        `ruff`/`build`/`coverage`; PyYAML is not installed on any CI leg. The first cut
+        imported it, which passed locally — Homebrew has it — and would have errored on
+        every matrix leg of the required Tests check. `tests/test_bot_push_guard.py` and
+        `tests/test_publish_release_chain.py` already say a test is not a reason to make
+        PyYAML the exception. Found by the gate review, which ran the class with the import
+        blocked.
+
+        Reading the text is enough: what is asserted below is what the step's shell script
+        says, not the workflow's structure.
+        """
+        lines = self.WORKFLOW.read_text(encoding="utf-8").splitlines()
+        start = next(
+            (
+                i
+                for i, line in enumerate(lines)
+                if line.strip().startswith("- name:") and "plugin manifest" in line
+            ),
+            None,
+        )
+        self.assertIsNotNone(start, "no version-drift guard step found in publish.yml")
+        end = next(
+            (
+                i
+                for i in range(start + 1, len(lines))
+                if lines[i].strip().startswith("- name:") or lines[i].strip().startswith("- uses:")
+            ),
+            len(lines),
+        )
+        return "\n".join(lines[start:end])
+
+    def test_the_guard_discovers_rather_than_lists(self):
+        """A glob, not a name. The names may appear in prose; the *reading* must not."""
+        guard = self._guard()
+
+        self.assertIn("glob", guard, "the publish guard no longer discovers manifests")
+
+    def test_no_manifest_is_opened_by_name(self):
+        run = self._guard()
+        named = [
+            surface.path
+            for surface in release_surfaces.RELEASE_SURFACES
+            if surface.path.endswith("plugin.json") and f'open("{surface.path}"' in run
+        ]
+
+        self.assertEqual(
+            [],
+            named,
+            "the publish guard opens these manifests by name, so a manifest added later "
+            f"is not checked at tag time: {named}",
+        )
+
+    def test_it_refuses_a_tree_with_no_manifests(self):
+        """Discovery that finds nothing must fail rather than pass vacuously — the whole
+        guard would otherwise become a no-op the day the glob stops matching."""
+        self.assertIn("No plugin manifests found", self._guard())
+
+    def test_this_module_needs_nothing_that_is_not_installed(self):
+        """The dev extra is the whole of what CI has. A test that imports outside it is
+        green locally and red on every matrix leg — which is how the first cut of the
+        check above shipped."""
+        # Built rather than spelled: a literal needle would appear in this line and the
+        # check would flag itself. And the failure message names the line, not the file —
+        # a 500-line source in an assertion message is unreadable.
+        needle = "import " + "yaml"
+        offenders = [
+            f"line {number}: {line.strip()}"
+            for number, line in enumerate(
+                Path(__file__).read_text(encoding="utf-8").splitlines(), 1
+            )
+            if line.strip().startswith(needle)
+        ]
+
+        self.assertEqual([], offenders, "\n".join(offenders))
 
 
 if __name__ == "__main__":

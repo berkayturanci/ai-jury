@@ -45,23 +45,45 @@ jobs:
 
       # Hard guard against version drift across the release-version sources
       # of truth (issue #284): the tag we're publishing under (`v1.2.3` →
-      # `1.2.3`), pyproject.toml [project] version, and both plugin
-      # manifests' versions must all be identical. A mismatch used to ship a
+      # `1.2.3`), pyproject.toml [project] version, and every plugin
+      # manifest's version must all be identical. A mismatch used to ship a
       # stale plugin manifest (see #283 — manifest sat at 0.1.0 across
-      # v1.0.0 → v1.2.0); the Codex manifest added in #437 is checked here
-      # too so it can't drift the same way. Fail loudly here instead.
-      - name: Verify tag matches pyproject + plugin manifests
+      # v1.0.0 → v1.2.0); the Codex manifest added in #437 was checked here
+      # too so it couldn't drift the same way.
+      #
+      # The manifests are **discovered**, not listed (#777). A named pair is
+      # the same defect one level up: `RELEASE_SURFACES` and its registration
+      # test run on the PR path, and this workflow runs on a `v*` tag and
+      # imports neither — so a third manifest added and registered correctly
+      # would still have sailed past the one guard that runs at publish time.
+      # Found by a gate reviewer, who checked whether the new file appeared
+      # in this file at all.
+      - name: Verify tag matches pyproject + every plugin manifest
         run: |
           set -euo pipefail
           tag_version="${GITHUB_REF_NAME#v}"
-          pyproject_version="$(python -c 'import tomllib;print(tomllib.load(open("pyproject.toml","rb"))["project"]["version"])')"
-          plugin_version="$(python -c 'import json;print(json.load(open(".claude-plugin/plugin.json"))["version"])')"
-          codex_plugin_version="$(python -c 'import json;print(json.load(open(".codex-plugin/plugin.json"))["version"])')"
-          echo "tag=$tag_version  pyproject=$pyproject_version  plugin=$plugin_version  codex_plugin=$codex_plugin_version"
-          if [ "$tag_version" != "$pyproject_version" ] || [ "$tag_version" != "$plugin_version" ] || [ "$tag_version" != "$codex_plugin_version" ]; then
-            echo "::error::Version drift — tag ($tag_version) must match pyproject ($pyproject_version), plugin.json ($plugin_version), and codex-plugin/plugin.json ($codex_plugin_version)."
-            exit 1
-          fi
+          python - "$tag_version" <<'PY'
+          import glob
+          import json
+          import sys
+          import tomllib
+
+          tag = sys.argv[1]
+          versions = {
+              "pyproject.toml": tomllib.load(open("pyproject.toml", "rb"))["project"]["version"]
+          }
+          manifests = sorted(glob.glob(".*/plugin.json"))
+          if not manifests:
+              sys.exit("::error::No plugin manifests found — the discovery glob is wrong.")
+          for path in manifests:
+              versions[path] = json.load(open(path))["version"]
+
+          print(f"tag={tag}  " + "  ".join(f"{k}={v}" for k, v in versions.items()))
+          drifted = {k: v for k, v in versions.items() if v != tag}
+          if drifted:
+              detail = ", ".join(f"{k} ({v})" for k, v in drifted.items())
+              sys.exit(f"::error::Version drift — tag ({tag}) must match {detail}.")
+          PY
 
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0

@@ -107,3 +107,40 @@ class EachSectionAppearsOnce(unittest.TestCase):
             [],
             f"released versions carry no sections, so their notes are blank: {empty}",
         )
+
+
+class TheDocumentKeepsItsOwnHeader(unittest.TestCase):
+    """The title and the format declaration are part of the file (#777).
+
+    A script that rewrote the `[Unreleased]` block to merge two `### Added` headings
+    reassembled the document from that block onward and dropped the six lines above it —
+    the `# Changelog` title and the sentences naming Keep a Changelog and Semantic
+    Versioning. Nothing failed: every guard here parses `## […]` and `###` headings, and
+    `release_surfaces._changelog_top_section` reads the first `## [x.y.z]`. The file simply
+    stopped declaring the format it follows, and would have shipped that way to PyPI and to
+    the GitHub Release notes.
+
+    Found by a gate reviewer reading the diff against `main`, which is the only place it
+    was visible.
+    """
+
+    def setUp(self):
+        self.text = CHANGELOG.read_text(encoding="utf-8")
+
+    def test_the_document_has_its_title(self):
+        self.assertTrue(
+            self.text.lstrip().startswith("# Changelog"),
+            "CHANGELOG.md no longer opens with its `# Changelog` title",
+        )
+
+    def test_the_preamble_still_names_the_formats_it_follows(self):
+        """Both are promises to a reader about how to read the rest of the file."""
+        preamble = self.text.split("## [", 1)[0]
+
+        for promise in ("Keep a Changelog", "Semantic Versioning"):
+            with self.subTest(promise=promise):
+                self.assertIn(promise, preamble)
+
+    def test_the_preamble_comes_before_any_release_block(self):
+        """A title moved *below* the first release reads as part of that release."""
+        self.assertLess(self.text.index("# Changelog"), self.text.index("## ["))

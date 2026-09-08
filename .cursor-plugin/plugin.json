@@ -1,0 +1,22 @@
+{
+  "name": "ai-jury",
+  "description": "Convene a cross-vendor multi-agent review jury (Claude Code + Codex + Antigravity + an optional free local model) on a diff, PR, or issue: independent review, cross-examination, verification, and one verdict \u2014 a chair's synthesis or a panel vote.",
+  "version": "1.17.1",
+  "author": {
+    "name": "Berkay Turanc\u0131",
+    "url": "https://github.com/berkayturanci"
+  },
+  "homepage": "https://github.com/berkayturanci/ai-jury",
+  "repository": "https://github.com/berkayturanci/ai-jury",
+  "license": "MIT",
+  "keywords": [
+    "code-review",
+    "multi-agent",
+    "claude-code",
+    "codex",
+    "antigravity",
+    "orchestration"
+  ],
+  "logo": "website/favicon.svg",
+  "skills": "./skills"
+}
