@@ -34,8 +34,13 @@ skill composes with an existing review workflow.
 
 Nothing else is required for the skill to work — it carries no code of its own; it drives
 the `jury` CLI. The repository's [`.claude-plugin/plugin.json`](../.claude-plugin/plugin.json)
-points its `skills` field at this same `skill/` directory, so the plugin install path and
+points its `skills` field at this same `skills/` directory, so the plugin install path and
 the manual copy path serve the identical artifact (no duplication).
+
+The directory is at the repository root and named `skills/` for a second reason:
+Antigravity discovers plugin components **only** by root-directory convention and reads no
+path from the manifest, so a differently-named directory imports as nothing at all —
+silently, with the install still reporting success (#775).
 
 ## Install into a skill folder
 
