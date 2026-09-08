@@ -387,7 +387,6 @@ class TheChecklistPointsAtTheTable(unittest.TestCase):
         self.assertIn("scripts/release_surfaces.py", releasing)
 
 
-
 class EveryPluginManifestIsARegisteredSurface(unittest.TestCase):
     """A manifest that names a version and is not in the table goes stale silently (#777).
 
