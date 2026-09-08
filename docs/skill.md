@@ -18,10 +18,10 @@ runs across platforms (and the support status of each), see the
 
 ## Skill directory layout
 
-The skill is a self-contained directory under [`skill/`](../skill):
+The skill is a self-contained directory under [`skills/`](../skills):
 
 ```text
-skill/
+skills/
 └── ai-jury/
     └── SKILL.md      # YAML front matter (name, description) + instructions
 ```
@@ -34,8 +34,13 @@ skill composes with an existing review workflow.
 
 Nothing else is required for the skill to work — it carries no code of its own; it drives
 the `jury` CLI. The repository's [`.claude-plugin/plugin.json`](../.claude-plugin/plugin.json)
-points its `skills` field at this same `skill/` directory, so the plugin install path and
+points its `skills` field at this same `skills/` directory, so the plugin install path and
 the manual copy path serve the identical artifact (no duplication).
+
+The directory is at the repository root and named `skills/` for a second reason:
+Antigravity discovers plugin components **only** by root-directory convention and reads no
+path from the manifest, so a differently-named directory imports as nothing at all —
+silently, with the install still reporting success (#775).
 
 ## Install into a skill folder
 
@@ -60,13 +65,13 @@ The manifests that make this work are in [`.claude-plugin/`](../.claude-plugin/)
 Copy the directory into the host project's skill folder:
 
 ```bash
-cp -R skill/ai-jury <your-project>/.claude/skills/ai-jury
+cp -R skills/ai-jury <your-project>/.claude/skills/ai-jury
 ```
 
 ### Codex / other Claude-compatible skill folders
 
 Codex does not yet expose a stable plugin manifest equivalent. Until it does, install the
-skill the same way — copy `skill/ai-jury/` into the host's skill directory — or
+skill the same way — copy `skills/ai-jury/` into the host's skill directory — or
 reference the `jury` command from an `AGENTS.md`. The
 [Codex template in the platform matrix](platforms.md#codex-cli-template--manual) shows the
 minimal `AGENTS.md` snippet; the underlying capability (running `jury`) is identical
