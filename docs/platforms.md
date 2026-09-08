@@ -47,8 +47,10 @@ This repository doubles as a single-plugin Claude Code marketplace. The manifest
 in [`.claude-plugin/`](../.claude-plugin/):
 
 - `marketplace.json` — declares the `ai-jury` marketplace with one plugin.
-- `plugin.json` — declares the `ai-jury` plugin and points at the existing
-  [`skills/`](../skills) directory (no skill is duplicated or moved).
+- `plugin.json` — declares the `ai-jury` plugin and points at the
+  [`skills/`](../skills) directory, which is also where Antigravity finds it by
+  root-directory convention (#775). One directory serves every agent; nothing is
+  duplicated per platform.
 
 Install:
 

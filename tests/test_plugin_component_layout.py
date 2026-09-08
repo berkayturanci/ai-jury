@@ -74,14 +74,19 @@ EXEMPT = (
 )
 
 #: Where a path actually appears, as opposed to where the word does. A markdown link
-#: target and an inline code span are paths; prose is not — `skill/workflow consumers` and
-#: `skill/plugin mechanism` are alternations, and a scan that flagged them would be edited
-#: until it caught nothing. The first cut matched the bare substring `<dir>/ai-jury`, which
-#: was narrow in the other direction: it could not see ``points its `skills` field at this
-#: same `skill/` directory`` in `docs/skill.md`, which is exactly the sentence two gate
-#: reviewers found. Both shapes are checked now.
+#: target, an inline code span and a fenced/indented shell line are paths; running prose is
+#: not — `skill/workflow consumers` and `skill/plugin mechanism` are alternations, and a
+#: scan that flagged them would be edited until it caught nothing.
+#:
+#: Each of these three was added because the previous cut was blind to something a
+#: reviewer found. The first matched the bare substring `<dir>/ai-jury` and missed
+#: ``points its `skills` field at this same `skill/` directory``; the second read links and
+#: code spans but required a trailing slash, so `](../skill)` — a link to the directory
+#: itself — and the `cp -R <dir>/ai-jury …` install line both slipped through.
 _LINK_TARGET = re.compile(r"\]\(([^)]+)\)")
 _CODE_SPAN = re.compile(r"`([^`]+)`")
+#: A word in a command line: `cp -R skill/ai-jury dest`, fenced or indented.
+_SHELL_WORD = re.compile(r"[^\s`\"']+")
 
 #: Every file kind that can carry a path a reader follows.
 DOC_GLOBS = ("*.md", "*.txt", "*.json", "*.toml", "*.yml", "*.yaml", "*.py")
@@ -131,8 +136,29 @@ class TheSkillsDirectoryIsWhereEveryAgentLooks(unittest.TestCase):
 
     @staticmethod
     def _names_the_old_directory(text: str) -> bool:
-        """Is this a *path* into the legacy directory, rather than the word in prose?"""
-        return re.match(rf"(?:[^\s]*/)?{re.escape(LEGACY_SKILLS_DIR)}/", text.strip()) is not None
+        """Is this a *path* into or at the legacy directory, rather than the word in prose?
+
+        The trailing slash is optional: ``](../skill)`` is a link to the directory itself,
+        and requiring ``skill/`` missed it — a later edit could fix the visible text and
+        leave the href pointing at a directory that no longer exists. Found by the gate
+        review, which also noted the first cut's own positive case passed on its code span
+        rather than on its link target.
+        """
+        candidate = text.strip().rstrip("/")
+        return (
+            re.fullmatch(rf"(?:[^\s]*/)?{re.escape(LEGACY_SKILLS_DIR)}", candidate) is not None
+            or re.match(rf"(?:[^\s]*/)?{re.escape(LEGACY_SKILLS_DIR)}/", text.strip()) is not None
+        )
+
+    @staticmethod
+    def _paths(line: str) -> list[str]:
+        """Every token on this line that could be a path a reader follows."""
+        hits = _LINK_TARGET.findall(line) + _CODE_SPAN.findall(line)
+        # A command line is the third place a path hides, and `docs/skill.md`'s install
+        # step is exactly that: `cp -R <dir>/ai-jury <your-project>/…`.
+        if re.match(r"\s*(?:\$ )?(?:cp|mv|ln|rsync|cd|git)\b", line):
+            hits += _SHELL_WORD.findall(line)
+        return hits
 
     def test_no_document_still_sends_a_reader_to_the_old_path(self):
         """The rename is only done when the instructions agree with it.
@@ -148,8 +174,7 @@ class TheSkillsDirectoryIsWhereEveryAgentLooks(unittest.TestCase):
                     continue
                 text = path.read_text(encoding="utf-8", errors="replace")
                 for number, line in enumerate(text.splitlines(), 1):
-                    hits = _LINK_TARGET.findall(line) + _CODE_SPAN.findall(line)
-                    if any(self._names_the_old_directory(hit) for hit in hits):
+                    if any(self._names_the_old_directory(hit) for hit in self._paths(line)):
                         stale.append(f"{path.relative_to(REPO_ROOT)}:{number}  {line.strip()[:80]}")
         self.assertEqual(
             [], stale, "these still point at the pre-#775 path:\n" + "\n".join(sorted(set(stale)))
@@ -164,10 +189,15 @@ class TheSkillsDirectoryIsWhereEveryAgentLooks(unittest.TestCase):
             f"points its `skills` field at this same `{old}/` directory",
             f"drop `{old}/ai-jury/` into a project",
             f"[`{old}/`](../{old})",
+            # The three shapes the gate review found the earlier cuts blind to.
+            f"[see the skill](../{old})",
+            f"cp -R {old}/ai-jury <your-project>/.claude/skills/ai-jury",
+            f"  cd {old}/ai-jury",
         ):
             with self.subTest(line=line):
-                hits = _LINK_TARGET.findall(line) + _CODE_SPAN.findall(line)
-                self.assertTrue(any(self._names_the_old_directory(h) for h in hits), line)
+                self.assertTrue(
+                    any(self._names_the_old_directory(h) for h in self._paths(line)), line
+                )
 
     def test_and_does_not_flag_the_word_in_prose(self):
         """`skill/workflow consumers` and `skill/plugin mechanism` are alternations. A
@@ -176,10 +206,12 @@ class TheSkillsDirectoryIsWhereEveryAgentLooks(unittest.TestCase):
             "downstream skill/workflow consumers, so it changes only deliberately.",
             "once the platform exposes a stable skill/plugin mechanism.",
             "see [the skill](../skills/ai-jury/SKILL.md)",
+            "cp -R skills/ai-jury <your-project>/.claude/skills/ai-jury",
         ):
             with self.subTest(line=line):
-                hits = _LINK_TARGET.findall(line) + _CODE_SPAN.findall(line)
-                self.assertFalse(any(self._names_the_old_directory(h) for h in hits), line)
+                self.assertFalse(
+                    any(self._names_the_old_directory(h) for h in self._paths(line)), line
+                )
 
     def test_the_exempt_files_are_real_files(self):
         """An exemption for a file that no longer exists silently widens the blind spot
