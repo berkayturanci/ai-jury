@@ -450,5 +450,59 @@ class EveryPluginManifestIsARegisteredSurface(unittest.TestCase):
         self.assertEqual([], missing, f"registered but absent: {missing}")
 
 
+class ThePublishGuardDiscoversManifestsToo(unittest.TestCase):
+    """The tag-time guard must not carry its own list of manifests (#777).
+
+    `RELEASE_SURFACES` and `EveryPluginManifestIsARegisteredSurface` run on the pull-request
+    path. `publish.yml`'s first step is a separate hard guard that runs on a `v*` tag and
+    imports neither — and it named `.claude-plugin/plugin.json` and `.codex-plugin/
+    plugin.json` literally. So a third manifest, added *and registered correctly*, would
+    still have sailed past the one check that runs at publish time, and shipped a stale
+    version to the marketplace. A named pair is the same defect the registration test
+    exists to prevent, one level up.
+
+    Found by a gate reviewer, who checked whether the new file appeared in that workflow at
+    all. It did not.
+    """
+
+    WORKFLOW = REPO_ROOT / ".github" / "workflows" / "publish.yml"
+
+    def _guard(self) -> str:
+        import yaml
+
+        document = yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
+        for job in document["jobs"].values():
+            for step in job.get("steps", []):
+                if isinstance(step, dict) and "plugin manifest" in str(step.get("name", "")):
+                    return step["run"]
+        raise AssertionError("no version-drift guard step found in publish.yml")
+
+    def test_the_guard_discovers_rather_than_lists(self):
+        """A glob, not a name. The names may appear in prose; the *reading* must not."""
+        guard = self._guard()
+
+        self.assertIn("glob", guard, "the publish guard no longer discovers manifests")
+
+    def test_no_manifest_is_opened_by_name(self):
+        run = self._guard()
+        named = [
+            surface.path
+            for surface in release_surfaces.RELEASE_SURFACES
+            if surface.path.endswith("plugin.json") and f'open("{surface.path}"' in run
+        ]
+
+        self.assertEqual(
+            [],
+            named,
+            "the publish guard opens these manifests by name, so a manifest added later "
+            f"is not checked at tag time: {named}",
+        )
+
+    def test_it_refuses_a_tree_with_no_manifests(self):
+        """Discovery that finds nothing must fail rather than pass vacuously — the whole
+        guard would otherwise become a no-op the day the glob stops matching."""
+        self.assertIn("No plugin manifests found", self._guard())
+
+
 if __name__ == "__main__":
     unittest.main()
