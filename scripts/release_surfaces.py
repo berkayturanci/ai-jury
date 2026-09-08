@@ -111,6 +111,7 @@ RELEASE_SURFACES: tuple[Surface, ...] = (
     Surface("uv.lock", "lock", rf'name\s*=\s*"ai-jury"\s*\nversion\s*=\s*"{SEMVER}"'),
     Surface(".claude-plugin/plugin.json", "manifest", _json_version),
     Surface(".codex-plugin/plugin.json", "manifest", _json_version),
+    Surface(".cursor-plugin/plugin.json", "manifest", _json_version),
     Surface("website/index.html", "site", rf'id="site-version"[^>]*>v{SEMVER}</a>'),
     Surface("website/app.js", "site", rf"rev: v{SEMVER}"),
     Surface("README.md", "site", rf"rev: v{SEMVER}"),

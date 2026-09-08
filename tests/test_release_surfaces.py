@@ -70,6 +70,7 @@ FIXTURE_FILES = {
     "uv.lock": '[[package]]\nname = "ai-jury"\nversion = "{v}"\n',
     ".claude-plugin/plugin.json": '{{"name": "ai-jury", "version": "{v}"}}\n',
     ".codex-plugin/plugin.json": '{{"name": "ai-jury", "version": "{v}"}}\n',
+    ".cursor-plugin/plugin.json": '{{"name": "ai-jury", "version": "{v}"}}\n',
     "website/index.html": '<a class="ver" id="site-version" href="/latest">v{v}</a>\n',
     "website/app.js": 'config: "repo: x\\n    rev: v{v}\\n"\n',
     "README.md": "    rev: v{v}\n\nActive (v{v}).\n",
@@ -384,6 +385,70 @@ class TheChecklistPointsAtTheTable(unittest.TestCase):
     def test_releasing_mentions_the_table(self):
         releasing = (REPO_ROOT / "docs" / "releasing.md").read_text(encoding="utf-8")
         self.assertIn("scripts/release_surfaces.py", releasing)
+
+
+
+class EveryPluginManifestIsARegisteredSurface(unittest.TestCase):
+    """A manifest that names a version and is not in the table goes stale silently (#777).
+
+    ai-jury ships one manifest per agent that has a format for one, and the ecosystem
+    repositories it is measured against ship eight to twelve — `.cursor-plugin/`, `.agy/`,
+    `.kimi-plugin/`, `.grok-plugin/`, … — each a single small JSON file. That is exactly
+    the shape of thing that gets added without being wired into the release.
+
+    The failure would be invisible for one release and permanent after: the new manifest
+    keeps the version it was born with while everything else moves, and the marketplace
+    reports an ai-jury that has not existed for months. Nothing else reads these files.
+
+    So the rule is discovery-based rather than a second list: whatever manifest exists in
+    the tree must be in `RELEASE_SURFACES`, and whatever is registered must exist.
+    """
+
+    #: A per-agent plugin manifest, by the convention every one of these ecosystems uses:
+    #: a dot-directory at the repository root holding `plugin.json`.
+    _MANIFEST_GLOB = ".*/plugin.json"
+
+    def _manifests(self) -> list[str]:
+        found = sorted(
+            path.relative_to(REPO_ROOT).as_posix()
+            for path in REPO_ROOT.glob(self._MANIFEST_GLOB)
+            if ".git/" not in path.as_posix()
+        )
+        self.assertTrue(found, "no plugin manifests found — the glob no longer matches")
+        return found
+
+    def test_the_known_manifests_are_still_found(self):
+        """Vacuity: a glob that stopped matching would make the check below pass.
+
+        A *subset* assertion on purpose — adding a manifest should fail exactly one test,
+        the registration one, with a message that says what to do.
+        """
+        self.assertLessEqual(
+            {".claude-plugin/plugin.json", ".codex-plugin/plugin.json"}, set(self._manifests())
+        )
+
+    def test_every_manifest_in_the_tree_is_registered(self):
+        registered = {surface.path for surface in release_surfaces.RELEASE_SURFACES}
+        unregistered = [path for path in self._manifests() if path not in registered]
+
+        self.assertEqual(
+            [],
+            unregistered,
+            "these plugin manifests name a version and are not in RELEASE_SURFACES, so the "
+            "release bump will not touch them and they will report a stale ai-jury:\n"
+            + "\n".join(unregistered),
+        )
+
+    def test_and_every_registered_manifest_still_exists(self):
+        """The mirror: a table entry for a deleted file is a surface nothing can check."""
+        registered = [
+            surface.path
+            for surface in release_surfaces.RELEASE_SURFACES
+            if surface.path.endswith("plugin.json")
+        ]
+        missing = [path for path in registered if not (REPO_ROOT / path).is_file()]
+
+        self.assertEqual([], missing, f"registered but absent: {missing}")
 
 
 if __name__ == "__main__":
