@@ -2,7 +2,7 @@
 
 The markdown report produced by `ai_jury.report.render` is the
 tool's primary **user-facing output**. Downstream skill and workflow consumers
-(for example the Claude Code skill in `skill/ai-jury/`, and anything that
+(for example the Claude Code skill in `skills/ai-jury/`, and anything that
 posts the report to GitHub) depend on its structure, so the format is treated as
 a contract: it should only change deliberately.
 

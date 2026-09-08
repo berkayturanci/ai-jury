@@ -106,7 +106,7 @@ what that audit found stale is fixed in the same change.
 - [x] README: install, usage, configuration, data-flow/privacy all current.
 - [x] `docs/architecture.md`, `docs/comparison.md`, `docs/feasibility.md` accurate.
 - [x] `llms.txt` / `llms-full.txt` present and listing the current docs set.
-- [x] Skill install instructions verified — `skill/ai-jury/SKILL.md`, linked from
+- [x] Skill install instructions verified — `skills/ai-jury/SKILL.md`, linked from
       the README and from `docs/platforms.md`.
 - [x] `SECURITY.md` data-flow/redaction reference matches the code — its
       "Jury data flow & redaction" section names `redaction.py` and its detectors.

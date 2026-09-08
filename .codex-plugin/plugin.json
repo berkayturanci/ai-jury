@@ -17,7 +17,7 @@
     "antigravity",
     "orchestration"
   ],
-  "skills": "./skill",
+  "skills": "./skills",
   "interface": {
     "displayName": "AI Jury",
     "shortDescription": "Cross-vendor multi-agent code review jury.",

@@ -681,7 +681,7 @@ jury --doctor --json | jq '.agents[] | select(.available) | .name'
 
 ## Use it from another project (skill)
 
-A Claude Code skill ships in [`skill/ai-jury/`](skill/ai-jury/SKILL.md).
+A Claude Code skill ships in [`skills/ai-jury/`](skills/ai-jury/SKILL.md).
 Install it as a **plugin** from this repo (it doubles as a single-plugin marketplace):
 
 ```text
@@ -689,7 +689,7 @@ Install it as a **plugin** from this repo (it doubles as a single-plugin marketp
 /plugin install ai-jury@ai-jury
 ```
 
-Or drop [`skill/ai-jury/`](skill/ai-jury/SKILL.md) into a project's
+Or drop [`skills/ai-jury/`](skills/ai-jury/SKILL.md) into a project's
 `.claude/skills/` manually. Either way the agent can convene the jury on demand, and
 it composes with existing review workflows: run the jury for a cross-vendor pass,
 then act on the consensus findings. For other platforms (Codex, Antigravity, CI) and

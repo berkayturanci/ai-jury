@@ -197,7 +197,7 @@ marketplace):
 /plugin install ai-jury@ai-jury
 ```
 
-Or drop [`skill/ai-jury/`](../skill/ai-jury/SKILL.md) into a
+Or drop [`skills/ai-jury/`](../skills/ai-jury/SKILL.md) into a
 project's `.claude/skills/` directory manually.
 
 Then ask the assistant for a review, e.g.:

@@ -20,7 +20,7 @@ orchestration.
 | Platform | Status | How you install / invoke | Prerequisites |
 |:--|:--|:--|:--|
 | **Claude Code** (plugin) | supported | `/plugin marketplace add berkayturanci/ai-jury` → `/plugin install ai-jury@ai-jury` | `jury`, ≥1 agent CLI, `gh` |
-| **Claude Code** (manual skill) | supported | Copy [`skill/ai-jury/`](../skill/ai-jury/SKILL.md) into a project's `.claude/skills/` | `jury`, ≥1 agent CLI, `gh` |
+| **Claude Code** (manual skill) | supported | Copy [`skills/ai-jury/`](../skills/ai-jury/SKILL.md) into a project's `.claude/skills/` | `jury`, ≥1 agent CLI, `gh` |
 | **Any shell / CI** | supported | Run the CLI: `jury --pr <n>` or `jury --ci --fail-on critical,major` | `jury`, ≥1 agent CLI, `gh` (for `--pr`) |
 | **OpenAI Codex CLI** | manual / planned | Invoke `jury` from a Codex session or `AGENTS.md`; native skill manifest planned when Codex stabilizes one (see template below) | `jury`, `codex`, `gh` |
 | **Google Antigravity / Gemini CLI** | manual | Invoke `jury` from the agent session | `jury`, `agy`, `gh` |
@@ -48,7 +48,7 @@ in [`.claude-plugin/`](../.claude-plugin/):
 
 - `marketplace.json` — declares the `ai-jury` marketplace with one plugin.
 - `plugin.json` — declares the `ai-jury` plugin and points at the existing
-  [`skill/`](../skill) directory (no skill is duplicated or moved).
+  [`skills/`](../skills) directory (no skill is duplicated or moved).
 
 Install:
 

@@ -236,7 +236,7 @@ Antigravity `--sandbox`; `privilege.py` audits this. Invocations:
 
 ## Skill / distribution
 
-A Claude Code skill ships in [skill/ai-jury/](skill/ai-jury/SKILL.md);
+A Claude Code skill ships in [skills/ai-jury/](skills/ai-jury/SKILL.md);
 drop it into a project's `.claude/skills/` to convene the jury on demand. The repo is
 also installable as a single-plugin marketplace via `.claude-plugin/` manifests, and a
 platform support matrix lives in [docs/platforms.md](docs/platforms.md).

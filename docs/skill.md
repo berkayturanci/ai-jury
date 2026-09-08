@@ -18,10 +18,10 @@ runs across platforms (and the support status of each), see the
 
 ## Skill directory layout
 
-The skill is a self-contained directory under [`skill/`](../skill):
+The skill is a self-contained directory under [`skills/`](../skills):
 
 ```text
-skill/
+skills/
 └── ai-jury/
     └── SKILL.md      # YAML front matter (name, description) + instructions
 ```
@@ -60,13 +60,13 @@ The manifests that make this work are in [`.claude-plugin/`](../.claude-plugin/)
 Copy the directory into the host project's skill folder:
 
 ```bash
-cp -R skill/ai-jury <your-project>/.claude/skills/ai-jury
+cp -R skills/ai-jury <your-project>/.claude/skills/ai-jury
 ```
 
 ### Codex / other Claude-compatible skill folders
 
 Codex does not yet expose a stable plugin manifest equivalent. Until it does, install the
-skill the same way — copy `skill/ai-jury/` into the host's skill directory — or
+skill the same way — copy `skills/ai-jury/` into the host's skill directory — or
 reference the `jury` command from an `AGENTS.md`. The
 [Codex template in the platform matrix](platforms.md#codex-cli-template--manual) shows the
 minimal `AGENTS.md` snippet; the underlying capability (running `jury`) is identical
