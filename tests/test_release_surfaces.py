@@ -35,6 +35,7 @@ instead of at the real tree.
 from __future__ import annotations
 
 import importlib
+import json
 import subprocess
 import sys
 import tempfile
@@ -450,6 +451,83 @@ class EveryPluginManifestIsARegisteredSurface(unittest.TestCase):
         self.assertEqual([], missing, f"registered but absent: {missing}")
 
 
+class TheCursorManifestMatchesTheSchemaItTargets(unittest.TestCase):
+    """A listing manifest is only listing metadata if it uses the host's fields (#777).
+
+    The first cut carried `displayName` and no `logo`, and the changelog, the platform
+    table and the pull request all said that `displayName` was what stopped the plugin
+    rendering as a bare repository slug.
+
+    It is not a Cursor field. Cursor's plugin reference documents the optional set as
+    `description`, `version`, `author`, `homepage`, `repository`, `license`, `keywords`,
+    `logo`, `rules`, `agents`, `skills`, `commands`, `hooks`, `mcpServers`, `variables` —
+    and `logo` is the listing asset: *"Relative path to a logo file in the repo … Relative
+    paths resolve to raw.githubusercontent.com URLs."* A gate reviewer checked the page and
+    found the claim was not in the file, and the file was not in the schema.
+
+    The GUI listing still cannot be watched from here. What *can* be asserted is that the
+    keys shipped are keys the host documents, and that the file really mirrors the Claude
+    manifest it says it mirrors.
+    """
+
+    MANIFEST = REPO_ROOT / ".cursor-plugin" / "plugin.json"
+    #: https://cursor.com/docs/reference/plugins — "Required fields" / "Optional fields".
+    REQUIRED = {"name"}
+    OPTIONAL = {
+        "description",
+        "version",
+        "author",
+        "homepage",
+        "repository",
+        "license",
+        "keywords",
+        "logo",
+        "rules",
+        "agents",
+        "skills",
+        "commands",
+        "hooks",
+        "mcpServers",
+        "variables",
+    }
+
+    def setUp(self):
+        self.manifest = json.loads(self.MANIFEST.read_text(encoding="utf-8"))
+
+    def test_every_key_is_one_the_host_documents(self):
+        unknown = sorted(set(self.manifest) - self.REQUIRED - self.OPTIONAL)
+
+        self.assertEqual(
+            [],
+            unknown,
+            f"not Cursor plugin manifest fields, so the host ignores them: {unknown}",
+        )
+
+    def test_the_listing_asset_is_the_one_the_host_reads(self):
+        """`logo`, and a repo-relative path — the form the reference calls preferred."""
+        logo = self.manifest.get("logo")
+
+        self.assertIsInstance(logo, str, "no logo, so the listing has no image to show")
+        self.assertFalse(logo.startswith(("http://", "https://", "/")), logo)
+        self.assertTrue((REPO_ROOT / logo).is_file(), f"{logo} is not in this repository")
+
+    def test_it_mirrors_the_claude_manifest_it_claims_to(self):
+        """Said in the changelog and in `docs/platforms.md`; asserted here so the two
+        cannot drift, and so `skills` cannot go missing from one of them."""
+        claude = json.loads((REPO_ROOT / ".claude-plugin" / "plugin.json").read_text("utf-8"))
+        missing = sorted(set(claude) - set(self.manifest))
+
+        self.assertEqual(
+            [], missing, f"the Claude manifest declares these and this does not: {missing}"
+        )
+
+    def test_and_names_the_same_skills_directory(self):
+        """Keeps this manifest inside the #775 conjunction: one root `skills/` for all."""
+        claude = json.loads((REPO_ROOT / ".claude-plugin" / "plugin.json").read_text("utf-8"))
+
+        self.assertEqual(self.manifest["skills"], claude["skills"])
+
+
 class ThePublishGuardDiscoversManifestsToo(unittest.TestCase):
     """The tag-time guard must not carry its own list of manifests (#777).
 
@@ -468,14 +546,38 @@ class ThePublishGuardDiscoversManifestsToo(unittest.TestCase):
     WORKFLOW = REPO_ROOT / ".github" / "workflows" / "publish.yml"
 
     def _guard(self) -> str:
-        import yaml
+        """The guard step's lines, read as text.
 
-        document = yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
-        for job in document["jobs"].values():
-            for step in job.get("steps", []):
-                if isinstance(step, dict) and "plugin manifest" in str(step.get("name", "")):
-                    return step["run"]
-        raise AssertionError("no version-drift guard step found in publish.yml")
+        **Stdlib only.** This project declares no runtime dependencies and its dev extra is
+        `ruff`/`build`/`coverage`; PyYAML is not installed on any CI leg. The first cut
+        imported it, which passed locally — Homebrew has it — and would have errored on
+        every matrix leg of the required Tests check. `tests/test_bot_push_guard.py` and
+        `tests/test_publish_release_chain.py` already say a test is not a reason to make
+        PyYAML the exception. Found by the gate review, which ran the class with the import
+        blocked.
+
+        Reading the text is enough: what is asserted below is what the step's shell script
+        says, not the workflow's structure.
+        """
+        lines = self.WORKFLOW.read_text(encoding="utf-8").splitlines()
+        start = next(
+            (
+                i
+                for i, line in enumerate(lines)
+                if line.strip().startswith("- name:") and "plugin manifest" in line
+            ),
+            None,
+        )
+        self.assertIsNotNone(start, "no version-drift guard step found in publish.yml")
+        end = next(
+            (
+                i
+                for i in range(start + 1, len(lines))
+                if lines[i].strip().startswith("- name:") or lines[i].strip().startswith("- uses:")
+            ),
+            len(lines),
+        )
+        return "\n".join(lines[start:end])
 
     def test_the_guard_discovers_rather_than_lists(self):
         """A glob, not a name. The names may appear in prose; the *reading* must not."""
@@ -502,6 +604,24 @@ class ThePublishGuardDiscoversManifestsToo(unittest.TestCase):
         """Discovery that finds nothing must fail rather than pass vacuously — the whole
         guard would otherwise become a no-op the day the glob stops matching."""
         self.assertIn("No plugin manifests found", self._guard())
+
+    def test_this_module_needs_nothing_that_is_not_installed(self):
+        """The dev extra is the whole of what CI has. A test that imports outside it is
+        green locally and red on every matrix leg — which is how the first cut of the
+        check above shipped."""
+        # Built rather than spelled: a literal needle would appear in this line and the
+        # check would flag itself. And the failure message names the line, not the file —
+        # a 500-line source in an assertion message is unreadable.
+        needle = "import " + "yaml"
+        offenders = [
+            f"line {number}: {line.strip()}"
+            for number, line in enumerate(
+                Path(__file__).read_text(encoding="utf-8").splitlines(), 1
+            )
+            if line.strip().startswith(needle)
+        ]
+
+        self.assertEqual([], offenders, "\n".join(offenders))
 
 
 if __name__ == "__main__":
