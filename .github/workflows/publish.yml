@@ -15,6 +15,21 @@ on:
       # it means nothing. An alias is not a release; there is nothing to publish
       # for one. A later negative pattern excludes a ref an earlier one matched,
       # so this subtracts bare `v<digits>` and leaves every `vX.Y.Z` alone.
+      #
+      # It protects the ref it is *on*, not the ref that is pushed. GitHub reads a
+      # push event's workflow definition from the pushed ref, so what governs is
+      # the copy of this file in the commit the alias points at. Creating `v1`
+      # against `v1.17.1` — a release cut before this line existed — therefore ran
+      # the `v*` trigger as it stood there and failed the version guard with
+      # `tag (1) must match pyproject (1.17.1)`. That was the bootstrap, once:
+      # nothing was built or published, it fails on the first real step, `verify`
+      # is skipped, and no `release-broken` issue is filed.
+      #
+      # It does not recur, including for `v2`. The automated move writes the ref
+      # with `GITHUB_TOKEN` and starts no run at all, and a hand-push of `v2` aims
+      # at `v2.0.0`, whose tree carries this line. The only way back to a red run
+      # is aiming an alias at a commit older than this file — which is what
+      # bootstrapping `v1` had to do and nothing else does.
       - "!v[0-9]+"
 
 # Least-privilege default for the whole workflow; the jobs below elevate only the

@@ -162,7 +162,22 @@ Every release is automatically published across three primary distribution chann
      downgrade — and a prerelease tag (`v2.0.0rc1`) does not move it at all.
      The ref is written with `GITHUB_TOKEN` on purpose: a ref written with that
      token starts no workflow run, and `v1` would otherwise match this workflow's
-     own `v*` trigger.
+     own `v*` trigger. A **hand**-created or hand-moved alias does start one, so
+     the trigger also subtracts bare `v<digits>` with a negative pattern.
+   - **The pattern protects the ref it is on, not the ref that is pushed.** GitHub
+     reads a push event's workflow definition from the pushed ref, so what governs
+     is the copy of `publish.yml` in the commit the alias points at. Bootstrapping
+     `v1` against `v1.17.1` — a release cut before the pattern existed — therefore
+     ran the `v*` trigger as it stood *there* and failed the version guard with
+     `tag (1) must match pyproject (1.17.1)`. Nothing was built or published: it
+     fails on the first real step, `verify` is skipped, and no `release-broken`
+     issue is filed.
+     **This does not recur, `v2` included.** The automated move writes the ref
+     with `GITHUB_TOKEN` and starts no run at all, and a hand-push of `v2` aims at
+     `v2.0.0`, whose tree carries the pattern. A red `publish.yml` run on an alias
+     is therefore a real failure to read, not an expected artifact — the only way
+     to reproduce the bootstrap is to aim an alias at a commit older than the
+     pattern itself.
    - Until #781 this line was false. Three documents told consumers to write
      `@v1` and no `refs/tags/v1` existed, so the documented way in was the one
      that did not resolve. `tests/test_publish_release_chain.py` now reads every
