@@ -49,12 +49,16 @@ command. Two install routes exist; pick by host.
 
 ### Claude Code (plugin — recommended)
 
-This repo doubles as a single-plugin marketplace. Install the bundled skill as a plugin:
+This repo doubles as a single-plugin marketplace, and in a session the short form
+is `/plugin marketplace add berkayturanci/ai-jury` then
+`/plugin install ai-jury@ai-jury`.
 
-```text
-/plugin marketplace add berkayturanci/ai-jury
-/plugin install ai-jury@ai-jury
-```
+**The CLI commands, and the update path, are in [install.md](install.md#claude-code)**
+— along with the same for Codex, Antigravity and Cursor. They are deliberately not
+repeated here: `plugin install` is a no-op on an installed plugin, so an
+install-only recipe leaves a reader on a version they cannot move off, and a second
+copy of the recipes is how this page came to describe one agent while the matrix
+described four.
 
 The manifests that make this work are in [`.claude-plugin/`](../.claude-plugin/)
 (`marketplace.json` + `plugin.json`); they are documented in the

@@ -142,7 +142,9 @@ git clone --depth 1 https://github.com/berkayturanci/ai-jury \
   ~/.cursor/plugins/local/ai-jury
 ```
 
-Restart Cursor. It appears in **Settings → Plugins** as `ai-jury (Local)`.
+Then restart Cursor. It is *reported* to list as `ai-jury (Local)` under
+**Settings → Plugins**. That is a GUI claim and has not been confirmed from a CLI
+session — everything else on this page was run.
 
 **Update — local checkout**
 

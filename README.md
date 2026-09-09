@@ -149,7 +149,8 @@ Cursor has **no CLI install command** — `cursor-agent plugin` exposes only
 git clone --depth 1 https://github.com/berkayturanci/ai-jury   ~/.cursor/plugins/local/ai-jury
 ```
 
-Restart Cursor; it appears in **Settings → Plugins** as `ai-jury (Local)`.
+Then restart Cursor. It is *reported* to list as `ai-jury (Local)` under
+**Settings → Plugins** — a GUI claim, not confirmed from a CLI session.
 
 **Update**
 

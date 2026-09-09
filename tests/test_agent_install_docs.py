@@ -172,7 +172,17 @@ class EveryBoxSaysHowToUpdate(unittest.TestCase):
 INSTRUCTION_PAGES = ("docs/platforms.md", "docs/skill.md", "docs/install.md", "README.md")
 
 #: A markdown link into another document's anchor, as `](target.md#anchor)`.
-DOC_ANCHOR_LINK = re.compile(r"\]\((?:\./)?([a-z0-9./-]+\.md)#([a-z0-9-]+)\)")
+#: A markdown link into another document's anchor, as `](../target.md#anchor)`.
+#:
+#: The relative prefix is **inside** the capture. Left outside it, `../README.md`
+#: was captured as `README.md` and resolved against the linking page's own
+#: directory — `docs/README.md`, which does not exist — and the check then skipped
+#: it silently. Two of the three links this test was written for were invisible to
+#: it, and a deliberately broken anchor passed.
+#:
+#: Case-insensitive on the filename for the same reason: `README.md` is not
+#: lowercase.
+DOC_ANCHOR_LINK = re.compile(r"\]\(((?:\.\.?/)*[A-Za-z0-9./_-]+\.md)#([a-z0-9-]+)\)")
 
 
 class NoPageStillTellsAReaderTheOldStory(unittest.TestCase):
@@ -223,6 +233,40 @@ class NoPageStillTellsAReaderTheOldStory(unittest.TestCase):
             with self.subTest(row=row[:60]):
                 self.assertIn("install.md", row)
 
+    def test_every_instruction_page_sends_the_reader_to_the_install_page(self):
+        """A page that gives its own recipe has to point at the one that owns them.
+
+        `docs/skill.md` gave a Claude-only install and no link; that is how an
+        install-only recipe survives beside a page whose whole point is that
+        `plugin install` is not an upgrade path.
+        """
+        for name, text in self.pages().items():
+            if name == "docs/install.md":
+                continue
+            with self.subTest(document=name):
+                self.assertIn("install.md", text, f"{name} never points at the install page")
+
+    def test_the_anchor_pattern_sees_the_links_that_are_there(self):
+        """Vacuity: a pattern matching nothing passes the check below.
+
+        It matched nothing on the one page that matters — `docs/install.md`'s two
+        links are into `README.md`, and the first cut of the pattern accepted only
+        lowercase filenames.
+        """
+        found = DOC_ANCHOR_LINK.findall((REPO_ROOT / "docs" / "install.md").read_text())
+        self.assertTrue(any(target.endswith("README.md") for target, _ in found), found)
+
+    def test_the_site_registers_every_page_it_links_between(self):
+        """A link out of a site-rendered page has to stay in the docs app.
+
+        `website/docs.html` routes in-site only for files it registers, so a page
+        the guides list does not know about drops the reader out of the app — and
+        `docs/platforms.md` links into `install.md` from three rows.
+        """
+        site = (REPO_ROOT / "website" / "docs.html").read_text(encoding="utf-8")
+        self.assertIn('file: "install.md"', site)
+        self.assertIn('file: "platforms.md"', site)
+
     def test_every_cross_document_anchor_resolves(self):
         """The renamed heading left `platforms.md#codex-cli-template--manual` dangling.
 
@@ -233,9 +277,10 @@ class NoPageStillTellsAReaderTheOldStory(unittest.TestCase):
             base = (REPO_ROOT / name).parent
             for target, anchor in DOC_ANCHOR_LINK.findall(text):
                 path = (base / target).resolve()
-                if not path.is_file():
-                    continue
                 with self.subTest(document=name, link=f"{target}#{anchor}"):
+                    # A missing file is a finding, not a reason to skip. Skipping is
+                    # how a mis-resolved path turned this whole check into a no-op.
+                    self.assertTrue(path.is_file(), f"{name} links to {target}, which is not there")
                     body = path.read_text(encoding="utf-8")
                     headings = {
                         re.sub(r"[^a-z0-9 -]", "", line.lstrip("#").strip().lower()).replace(
