@@ -29,9 +29,11 @@ README = REPO_ROOT / "README.md"
 INSTALL_DOC = REPO_ROOT / "docs" / "install.md"
 PLATFORMS = REPO_ROOT / "docs" / "platforms.md"
 
-#: The anchor each agent's box and section carries. The README puts it in the
-#: `<summary>` so the badge above links into the collapsed box; `install.md` puts
-#: it under the heading. One spelling, so a badge cannot point at nothing.
+#: An explicit anchor. The README needs them — a `<details>` box has no heading to
+#: take a slug from — and each sits *before* its box, because navigating to an id
+#: inside `<summary>` scrolls to it without expanding it. `install.md` has headings
+#: and uses those; writing both would give the rendered page two elements with one
+#: id.
 ANCHOR = re.compile(r'<a id="([a-z0-9-]+)"></a>')
 
 #: `[![Name](badge-url)](#anchor)` — the badge row that doubles as the index.
@@ -241,6 +243,11 @@ INSTALL_COMMANDS = (
 #: Records of what shipped, not instructions to follow.
 INSTRUCTION_EXEMPT = ("CHANGELOG.md", "docs/live-review-report.md")
 
+#: `llms-full.txt` is the machine-readable summary of this repository, and it had
+#: its own one-agent distribution paragraph. It is not markdown, so the walk above
+#: does not reach it; it is named here because there is exactly one of it.
+MACHINE_SUMMARY = "llms-full.txt"
+
 #: Directories with no documents of ours in them. `tests` included: this file
 #: quotes the commands it looks for, and a walk that read it would report itself.
 SKIPPED_DIRS = {".git", ".venv", "node_modules", "htmlcov", "__pycache__", "tests", "benchmark"}
@@ -335,6 +342,20 @@ class NoPageStillTellsAReaderTheOldStory(unittest.TestCase):
         for row in named:
             with self.subTest(row=row[:60]):
                 self.assertIn("install.md", row)
+
+    def test_the_machine_summary_covers_the_same_four_agents(self):
+        """`llms-full.txt` is what a model reads about this repository.
+
+        Its distribution paragraph described a Claude Code skill, a `.claude/skills/`
+        copy and a `.claude-plugin/` marketplace, and named none of the other three
+        agents or the page that documents them — the same one-agent story, on the
+        surface written specifically to be summarised.
+        """
+        summary = (REPO_ROOT / MACHINE_SUMMARY).read_text(encoding="utf-8")
+        self.assertIn("docs/install.md", summary)
+        for agent in ("Codex", "Antigravity", "Cursor"):
+            with self.subTest(agent=agent):
+                self.assertIn(agent, summary)
 
     def test_every_instruction_page_sends_the_reader_to_the_install_page(self):
         """A page that gives its own recipe has to point at the one that owns them.

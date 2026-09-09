@@ -358,9 +358,17 @@
 
     function route() {
       var raw = (location.hash || "").replace(/^#/, "").trim();
+      // Split at the first `--` **only when the prefix is a document we know**.
+      // A GitHub heading slug can contain `--` of its own — the cross-vendor
+      // guard's anchor is `the-cross-vendor-guard---min-vendors` — so splitting
+      // unconditionally handed `route()` a slug that is not a document and an
+      // anchor that is half a heading.
+      var slug = raw, anchor = "";
       var split = raw.indexOf("--");
-      var slug = split >= 0 ? raw.slice(0, split) : raw;
-      var anchor = split >= 0 ? raw.slice(split + 2) : "";
+      if (split >= 0 && BY_SLUG[raw.slice(0, split)]) {
+        slug = raw.slice(0, split);
+        anchor = raw.slice(split + 2);
+      }
       // A bare `#heading` is a link *within* the page already on screen — every
       // document's own table of contents is written that way. Routing it as a
       // document slug found no such document and sent the reader to the home
