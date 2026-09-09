@@ -37,6 +37,9 @@ ANCHOR = re.compile(r'<a id="([a-z0-9-]+)"></a>')
 #: `[![Name](badge-url)](#anchor)` — the badge row that doubles as the index.
 BADGE = re.compile(r"\[!\[[^\]]+\]\([^)]+\)\]\(#([a-z0-9-]+)\)")
 
+#: A `- [Claude Code](#claude-code)` line in a page's own Contents list.
+CONTENTS_ENTRY = re.compile(r"^- \[[^\]]+\]\(#([a-z0-9-]+)\)", re.M)
+
 #: The agents both documents must cover. Named here on purpose: this is the one
 #: fact the two pages cannot derive from each other, and adding a fifth agent
 #: should be a deliberate edit to this line rather than something a page silently
@@ -96,42 +99,42 @@ class EveryAgentIsInBothDocuments(unittest.TestCase):
     def test_the_install_page_covers_every_agent(self):
         self.assertLessEqual(set(AGENTS), set(anchors(self.install)))
 
+    def declared(self, text: str) -> set[str]:
+        """The agents a document *declares* — its badge targets, or its contents list.
+
+        Both are explicit lists an author edits when adding an agent, which is what
+        makes them comparable. Two earlier versions of this test compared anchor
+        sets and then filtered them back down to `AGENTS`, which is the tautology
+        it is named after wearing a different filter: a fifth host added to one
+        page only was invisible both times. Nothing is filtered here.
+        """
+        badges = set(BADGE.findall(text))
+        if badges:
+            return badges
+        return {m.group(1) for m in CONTENTS_ENTRY.finditer(text)}
+
+    def test_each_document_declares_the_agents_it_covers(self):
+        """Vacuity: two empty declarations are equal, and would prove nothing."""
+        self.assertGreaterEqual(len(self.declared(self.readme)), len(AGENTS))
+        self.assertGreaterEqual(len(self.declared(self.install)), len(AGENTS))
+
     def test_the_two_documents_cover_the_same_agents(self):
         """The drift this file exists for: one page gains an agent, the other does not.
 
-        The **whole** anchor set on each side, not the intersection with `AGENTS`.
-        Intersecting was a tautology: the two tests above already assert
-        `AGENTS <= anchors`, so `anchors & AGENTS` is `AGENTS` on both sides and
-        the comparison reduced to `AGENTS == AGENTS`. A fifth agent added to one
-        page and not the other — exactly the drift named in the docstring — passed.
+        Whole sets, unfiltered. `anchors() & AGENTS` on both sides reduced to
+        `AGENTS == AGENTS`; keeping "ids in AGENTS or starting with zed" was the
+        same filter with a hole cut for one test's fixture. Both seats said so, in
+        both repositories.
         """
-        # Both documents must offer every agent id, and neither may offer an agent
-        # id the other does not. Compared over the agent-shaped ids rather than
-        # every id, because the install page also has ordinary headings.
-        readme, install = set(anchors(self.readme)), set(anchors(self.install))
-        self.assertLessEqual(set(AGENTS), readme)
-        self.assertLessEqual(set(AGENTS), install)
-        agentish = {a for a in readme | install if a in AGENTS or a.startswith("zed")}
-        self.assertEqual(agentish & readme, agentish & install)
+        self.assertEqual(self.declared(self.readme), self.declared(self.install))
 
     def test_a_fifth_agent_on_one_page_only_is_caught(self):
-        """The mutation the intersecting version survived."""
-        readme = self.readme + '\n<a id="zed"></a>\n'
-        self.assertNotEqual(set(anchors(readme)), set(anchors(self.install)))
-
-    def test_the_badge_anchor_is_outside_the_collapsed_box(self):
-        """Navigating to an id inside `<summary>` does not open the `<details>`.
-
-        The badge row's whole promise is that clicking your agent takes you to its
-        commands, and an anchor buried in the summary lands the reader on a
-        collapsed box with no indication that it opens. The anchor sits before the
-        `<details>` instead, so the browser scrolls to the box and the summary is
-        the thing under the cursor.
-        """
-        for agent in AGENTS:
-            with self.subTest(agent=agent):
-                self.assertIn(f'<a id="{agent}"></a>\n<details>', self.readme)
-                self.assertNotIn(f'<summary><a id="{agent}"></a>', self.readme)
+        """The mutation both filtered versions survived, through the real assertion."""
+        readme = self.readme.replace(
+            "](#cursor)",
+            "](#cursor)\n[![Zed](https://img.shields.io/badge/Zed-install-000?style=flat-square)](#zed)",
+        )
+        self.assertNotEqual(self.declared(readme), self.declared(self.install))
 
     def test_every_badge_points_at_an_anchor_that_exists(self):
         """context-mode's badges are `href="#"` and go nowhere; these must not.
@@ -179,17 +182,14 @@ class EveryBoxSaysHowToUpdate(unittest.TestCase):
         marks.sort(key=lambda pair: pair[1])
         found = {}
         for index, (name, start) in enumerate(marks):
-            if index + 1 < len(marks):
-                end = marks[index + 1][1]
-            else:
-                tail = text[start:]
-                for closer in ("</details>", "\n---\n", "\n## "):
-                    at = tail.find(closer)
-                    if at != -1:
-                        end = start + at
-                        break
-                else:
-                    end = len(text)
+            end = marks[index + 1][1] if index + 1 < len(marks) else len(text)
+            # A box ends at its own `</details>`, whatever the next mark is. With
+            # headings among the marks, "the next mark" put the Cursor box's end
+            # hundreds of lines away — so a missing `**Update**` was satisfied by
+            # unrelated prose, which is the hole this bound exists to close.
+            closer = text.find("</details>", start)
+            if closer != -1 and closer < end:
+                end = closer
             found[name] = text[start:end]
         return found
 
@@ -373,7 +373,10 @@ class NoPageStillTellsAReaderTheOldStory(unittest.TestCase):
         # contradicts its own name, and its `desc` is written with `textContent`,
         # so a URL there would render as literal text anyway.
         landing = (REPO_ROOT / "website" / "index.html").read_text(encoding="utf-8")
-        self.assertIn("docs/install.md", landing)
+        # In-site, like every other doc link on the page: the docs app renders the
+        # markdown, and sending a reader to the GitHub blob leaves the site to
+        # read a page the site can show.
+        self.assertIn('href="docs.html#install"', landing)
         for agent in ("Codex", "Antigravity", "Cursor"):
             with self.subTest(agent=agent):
                 self.assertIn(agent, landing)
