@@ -338,6 +338,26 @@ class NoPageStillTellsAReaderTheOldStory(unittest.TestCase):
         self.assertIn('indexOf("--")', site)
         self.assertIn("renderDoc(slug, anchor)", site)
 
+    def test_the_site_treats_a_bare_hash_as_a_place_on_the_page(self):
+        """Every document's own table of contents is written as `#heading`.
+
+        `rewrite()` leaves those alone by design, and `route()` then looked the
+        anchor up as a *document slug*, found nothing, and rendered the home page.
+        Adding a Contents list to `install.md` is what made a pre-existing bug
+        reachable: four links that each took the reader somewhere they did not ask
+        to go.
+        """
+        site = (REPO_ROOT / "website" / "docs.html").read_text(encoding="utf-8")
+        self.assertIn("else if (BY_SLUG[slug]) { renderDoc(slug, anchor); }", site)
+        self.assertIn("else if (scrollToAnchor(slug)) { return; }", site)
+
+    def test_the_site_scrolls_with_the_offset_the_sticky_nav_needs(self):
+        """One scroll helper, so a jump cannot land under the header on one path."""
+        site = (REPO_ROOT / "website" / "docs.html").read_text(encoding="utf-8")
+        self.assertEqual(site.count("function scrollToAnchor"), 1)
+        after = site[site.index("function scrollToAnchor") :]
+        self.assertIn("- 76", after[:400])
+
     def test_every_cross_document_anchor_resolves(self):
         """The renamed heading left `platforms.md#codex-cli-template--manual` dangling.
 

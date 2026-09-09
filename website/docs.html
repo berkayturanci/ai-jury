@@ -294,6 +294,17 @@
     }
 
     /* ---- doc view ---- */
+    // One scroll, with the sticky nav's own offset — the same 76px `buildTOC` uses.
+    // Without it a jump lands with the heading under the header, which is the
+    // difference between "took me there" and "took me nearly there".
+    function scrollToAnchor(id) {
+      if (!id) { return false; }
+      var el = document.querySelector('[id="' + id + '"], [name="' + id + '"]');
+      if (!el) { return false; }
+      window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 76, behavior: "smooth" });
+      return true;
+    }
+
     function renderDoc(slug, anchor) {
       var item = BY_SLUG[slug];
       if (!item) { renderHome(); return; }
@@ -328,10 +339,7 @@
           // Jump to the in-page anchor the link carried, once the markdown is in
           // the DOM. `#install--cursor` means "the install page, at its cursor
           // box"; without this the hash resolved to the page and stopped there.
-          if (anchor) {
-            var target = wrap.querySelector('[id="' + anchor + '"], [name="' + anchor + '"]');
-            if (target && target.scrollIntoView) { target.scrollIntoView(); }
-          }
+          if (anchor) { scrollToAnchor(anchor); }
         })
         .catch(function (err) {
           contentEl.innerHTML = '<div class="doc-error"><p><strong>Couldn\u2019t load this doc.</strong></p><p class="mono">' + (err && err.message ? err.message : "fetch failed") + '</p><p><a href="' + BLOB_ROOT + "docs/" + item.file + '" target="_blank" rel="noopener">Read it on GitHub →</a></p></div>';
@@ -343,8 +351,14 @@
       var split = raw.indexOf("--");
       var slug = split >= 0 ? raw.slice(0, split) : raw;
       var anchor = split >= 0 ? raw.slice(split + 2) : "";
+      // A bare `#heading` is a link *within* the page already on screen — every
+      // document's own table of contents is written that way. Routing it as a
+      // document slug found no such document and sent the reader to the home
+      // page, silently, from any in-page link they clicked.
       if (!slug) { renderHome(); }
-      else { renderDoc(slug, anchor); }
+      else if (BY_SLUG[slug]) { renderDoc(slug, anchor); }
+      else if (scrollToAnchor(slug)) { return; }
+      else { renderHome(); }
       // collapse mobile menu after navigation
       if (window.innerWidth <= 860) {
         sideEl.classList.add("collapsed");
