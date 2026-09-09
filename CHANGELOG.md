@@ -45,6 +45,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   documented `uses: berkayturanci/ai-jury@<ref>` out of the tree and fails on any
   ref the release flow does not maintain — the check that was missing, rather
   than the one ref that was missing.
+- **The website's Action card passed three inputs the Action does not declare** (#781).
+  `website/app.js` shipped `pr:`, `post-summary:` and `fail-on:` under
+  `uses: berkayturanci/ai-jury@v1`. Those are `jury` CLI flags, not `action.yml`
+  inputs, and they belong inside `args`. GitHub drops an undeclared `with:` key
+  silently, so a consumer copying the integration gallery's card — the copy most
+  people see — got a run with no severity gate at all: the CI merge gating the
+  card promises, not happening, with nothing to say so. A resolvable ref that
+  ignores everything passed to it is the same defect as an unresolvable one.
+  Found by a gate reviewer, who pointed the new ref walk at the file type it did
+  not open. The walk now reads `.js`/`.html`/`.json`/`.toml`/`.txt`/`.py` as well
+  — the set the stale-path scan already reads, plus the two the website is
+  written in — and a second guard checks every `with:` key in every snippet
+  against the inputs `action.yml` declares. `CHANGELOG.md` and
+  `docs/live-review-report.md` are exempt as historical records, the same
+  exemption and the same reason as the stale-path scan's: rewriting `@v1` under
+  `## [1.14.0]` on a `2.0.0` bump would falsify what that release documented.
 
 ## [1.17.1] - 2026-09-07
 

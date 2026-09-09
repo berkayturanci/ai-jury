@@ -2085,8 +2085,77 @@ ACTION_REF = re.compile(r"uses:\s*berkayturanci/ai-jury@([A-Za-z0-9][A-Za-z0-9._
 #: that shipped, never to one that has not.
 CHANGELOG_VERSION = re.compile(r"^## \[(\d+\.\d+\.\d+)\]", re.M)
 
-#: Directories with no documents of ours in them.
-SKIPPED_DIRS = {".git", ".venv", "node_modules", "htmlcov", ".mypy_cache", "__pycache__"}
+#: Directories with no documents of ours in them. `tests` is here because the
+#: suite is not documentation and a self-checking test must not be its own
+#: needle: the restaged website card below is a fixture, not an instruction, and
+#: a walk that read it would fail on the very defect it exists to demonstrate.
+SKIPPED_DIRS = {
+    ".git",
+    ".venv",
+    "node_modules",
+    "htmlcov",
+    ".mypy_cache",
+    "__pycache__",
+    "tests",
+}
+
+#: Every suffix a consumer snippet has been found in. `.md`/`.yml`/`.yaml` was the
+#: first cut and it missed the live one: `website/app.js` ships the integration
+#: gallery's card as a JavaScript string, which is the copy most people see. A
+#: guard against "a snippet the release flow does not maintain" that cannot read
+#: the website is the finding it is named after, one file type over. Matches the
+#: set the stale-path scan in `tests/test_plugin_component_layout.py` reads, plus
+#: the two the website is written in.
+DOCUMENT_SUFFIXES = {".md", ".yml", ".yaml", ".txt", ".json", ".toml", ".py", ".js", ".html"}
+
+#: Documents that record what shipped rather than tell anyone what to write.
+#: `CHANGELOG.md` names `@v1` under `## [1.14.0]` because that is what v1.14.0
+#: documented; rewriting it on a `2.0.0` bump would falsify the record. The same
+#: exemption, for the same reason, as the stale-path scan's.
+HISTORICAL_DOCUMENTS = {"CHANGELOG.md", "docs/live-review-report.md"}
+
+#: One `with:` key passed to an action, at any indentation.
+WITH_KEY = re.compile(r"^(\s*)([a-z][a-z0-9-]*):")
+
+
+#: A JavaScript/JSON string literal that holds one of these snippets. Matched as
+#: a literal — quotes and all — so the expansion below can replace exactly it.
+JS_SNIPPET = re.compile(r'"((?:[^"\\]|\\.)*uses:\s*berkayturanci/ai-jury@(?:[^"\\]|\\.)*)"')
+
+
+def _readable(path: Path) -> str:
+    """One file's text, with any snippet held in a string literal spelled out.
+
+    `website/app.js` holds its YAML as `"- uses: …\\n  with:\\n    pr: …"`. Read
+    literally that is one line, so the `with:` block under a `uses:` is invisible
+    and the scan sees a ref with no inputs at all.
+
+    Unescaping the whole file is not enough either: the snippet would then run on
+    into the object property after it, and `command: "gh workflow run jury.yml"`
+    — a sibling field of the same integration card, indented further than the
+    snippet's own keys — was read as an input passed to the Action. So the
+    literal is replaced by its contents *on their own lines*. What a reader
+    copies off the page becomes exactly one block, bounded where the quote was.
+    """
+    text = path.read_text(encoding="utf-8")
+    if path.suffix not in {".js", ".json"}:
+        return text
+    return JS_SNIPPET.sub(lambda m: "\n" + m.group(1).replace("\\n", "\n") + "\n", text)
+
+
+def documents(root: Path) -> list[tuple[str, str]]:
+    """Every file the guards below read, as `(repo-relative path, text)`."""
+    found = []
+    for path in sorted(root.rglob("*")):
+        if path.suffix not in DOCUMENT_SUFFIXES or not path.is_file():
+            continue
+        relative = path.relative_to(root)
+        if SKIPPED_DIRS & set(relative.parts):
+            continue
+        if str(relative) in HISTORICAL_DOCUMENTS:
+            continue
+        found.append((str(relative), _readable(path)))
+    return found
 
 
 def documented_action_refs(root: Path) -> dict[str, set[str]]:
@@ -2094,17 +2163,67 @@ def documented_action_refs(root: Path) -> dict[str, set[str]]:
 
     Walked rather than listed for the reason `job_names` is: the finding this
     guards was three documents that agreed with each other, and a fourth
-    document is exactly how it comes back.
+    document is exactly how it comes back. It came back as a fifth one during
+    review — the website card, in a file type the first cut did not open.
     """
     found: dict[str, set[str]] = {}
-    for path in sorted(root.rglob("*")):
-        if path.suffix not in {".md", ".yml", ".yaml"} or not path.is_file():
-            continue
-        if SKIPPED_DIRS & set(path.relative_to(root).parts):
-            continue
-        for ref in ACTION_REF.findall(path.read_text(encoding="utf-8")):
-            found.setdefault(ref.rstrip("."), set()).add(str(path.relative_to(root)))
+    for where, text in documents(root):
+        for ref in ACTION_REF.findall(text):
+            found.setdefault(ref.rstrip("."), set()).add(where)
     return found
+
+
+def snippet_inputs(text: str) -> set[str]:
+    """The `with:` keys every `uses: …/ai-jury@…` block in this text passes.
+
+    Read by indentation rather than with a YAML parser, for the reason given at
+    the top of this module: ai-jury declares `dependencies = []`, and a test is
+    not a good enough reason to make PyYAML the exception.
+
+    The block is found by *following* the `uses:` rather than by lining up with
+    it. Requiring `with:` at the same column reads every hand-written workflow
+    correctly and none of the website's, where the first line of the snippet
+    carries a JavaScript string opener (`config: "- uses: …`) and every line
+    after it starts back at column 0. That rule scanned the one file the ref
+    walk had just been widened to reach and found nothing in it.
+    """
+    keys: set[str] = set()
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        if not ACTION_REF.search(line):
+            continue
+        # The window is this step: everything up to the next `uses:`, whichever
+        # action that one names. Without the bound, a step passing no inputs of
+        # its own would borrow the `with:` of the step after it.
+        rest = lines[index + 1 :]
+        limit = next(
+            (offset for offset, following in enumerate(rest) if "uses:" in following),
+            len(rest),
+        )
+        window = rest[:limit]
+        with_at = next(
+            (offset for offset, following in enumerate(window) if following.strip() == "with:"),
+            None,
+        )
+        if with_at is None:
+            continue
+        opener = window[with_at]
+        depth = len(opener) - len(opener.lstrip())
+        for following in window[with_at + 1 :]:
+            if not following.strip():
+                continue
+            match = WITH_KEY.match(following)
+            if match is None or len(match.group(1)) <= depth:
+                break
+            keys.add(match.group(2))
+    return keys
+
+
+def declared_action_inputs(root: Path) -> set[str]:
+    """Every input `action.yml` declares."""
+    text = (root / "action.yml").read_text(encoding="utf-8")
+    body = text.split("inputs:", 1)[1].split("\nruns:", 1)[0]
+    return set(re.findall(r"^  ([a-z][a-z0-9-]*):", body, re.M))
 
 
 def released_versions(changelog: str) -> set[str]:
@@ -2170,13 +2289,31 @@ class EveryDocumentedActionRefIsMaintained(unittest.TestCase):
         cls.major = f"v{cls.version.split('.')[0]}"
 
     def test_the_scan_found_the_documents_that_are_actually_there(self):
-        """Vacuity: a walk that reads nothing satisfies every assertion below."""
+        """Vacuity: a walk that reads nothing satisfies every assertion below.
+
+        `website/app.js` is named explicitly. It is the copy most people see, it
+        is the one the first cut of this walk could not open, and it is the file
+        whose absence made a snippet passing three inputs the Action does not
+        declare look guarded.
+        """
         cited = {doc for docs in self.refs.values() for doc in docs}
         self.assertLessEqual(
-            {"README.md", "docs/cookbook.md", "docs/releasing.md"},
+            {"README.md", "docs/cookbook.md", "docs/releasing.md", "website/app.js"},
             cited,
             f"the walk did not reach the documents that carry the ref: {sorted(cited)}",
         )
+
+    def test_a_historical_record_is_not_read_as_an_instruction(self):
+        """`CHANGELOG.md` says what v1.14.0 documented, not what to write today.
+
+        It carries `uses: berkayturanci/ai-jury@v1` under `## [1.14.0]`. Read as
+        a live snippet, the first `2.0.0` bump would fail on a heading nobody may
+        correctly edit — the record would have to be falsified to make the guard
+        pass. Exempted the same way, and for the same reason, as the stale-path
+        scan in `tests/test_plugin_component_layout.py` exempts it.
+        """
+        self.assertIn("uses: berkayturanci/ai-jury@v1", (REPO_ROOT / "CHANGELOG.md").read_text())
+        self.assertNotIn("CHANGELOG.md", {doc for docs in self.refs.values() for doc in docs})
 
     def test_the_changelog_scan_found_the_releases(self):
         """The other half of the vacuity check: an empty set pins nothing."""
@@ -2245,8 +2382,123 @@ class EveryDocumentedActionRefIsMaintained(unittest.TestCase):
         self.assertEqual(set(documented_action_refs(root)), {"v1"})
 
     def test_a_document_pinning_an_unreleased_version_is_caught(self):
+        """The pinned-version arm, actually taken.
+
+        Its first cut asserted `"99.0.0" not in self.released` and that
+        `v99.0.0` matches a regex — two facts about the test's own literals. It
+        never wrote a document, never called `documented_action_refs`, and never
+        reached the `assertIn(ref, released)` branch it is named after: deleting
+        that branch left it green. The tree's only ref is `v1`, so CI never took
+        the arm either.
+        """
+        root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        (root / "doc.md").write_text("      - uses: berkayturanci/ai-jury@v99.0.0\n")
+        refs = documented_action_refs(root)
+        self.assertEqual(set(refs), {"v99.0.0"})
         self.assertNotIn("99.0.0", self.released)
-        self.assertTrue(re.fullmatch(r"v\d+\.\d+\.\d+", "v99.0.0"))
+        with self.assertRaises(self.failureException):
+            self.assertIn("99.0.0", self.released)
+
+    def test_the_released_pin_it_would_accept_is_a_real_one(self):
+        """The other side of the same arm: a version that shipped is allowed."""
+        root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        (root / "doc.md").write_text(f"      - uses: berkayturanci/ai-jury@v{self.version}\n")
+        self.assertEqual(set(documented_action_refs(root)), {f"v{self.version}"})
+        self.assertIn(self.version, self.released)
+
+
+class EverySnippetPassesInputsTheActionDeclares(unittest.TestCase):
+    """#781's class, one field in: a snippet nothing checks against `action.yml`.
+
+    Found by a gate reviewer, who pointed the ref walk at the file type it did
+    not open. `website/app.js` shipped
+
+        - uses: berkayturanci/ai-jury@v1
+          with:
+            pr: ${{ github.event.pull_request.number }}
+            post-summary: 'true'
+            fail-on: 'critical,major'
+
+    and `action.yml` declares none of `pr`, `post-summary` or `fail-on`. They are
+    `jury` CLI flags, which belong inside `args`. GitHub drops an undeclared
+    `with:` key silently, so a consumer copying that card got a run with no
+    severity gate at all — the merge gating the card promises, not happening,
+    with nothing to say so. A resolvable ref that ignores everything passed to it
+    is the same defect as an unresolvable one.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.declared = declared_action_inputs(REPO_ROOT)
+        cls.documents = documents(REPO_ROOT)
+
+    def test_the_declared_inputs_were_read(self):
+        """Vacuity: an empty set of declared inputs would fail every snippet."""
+        self.assertIn("args", self.declared)
+        self.assertIn("min-vendors", self.declared)
+        self.assertGreaterEqual(len(self.declared), 7)
+
+    def test_the_scan_reads_the_with_block_under_a_uses(self):
+        """Vacuity again: a scan that finds no keys accepts every snippet."""
+        found = {key for _, text in self.documents for key in snippet_inputs(text)}
+        self.assertIn("openai-api-key", found)
+
+    def test_every_documented_input_is_one_the_action_declares(self):
+        for where, text in self.documents:
+            for key in sorted(snippet_inputs(text)):
+                with self.subTest(document=where, input=key):
+                    self.assertIn(
+                        key,
+                        self.declared,
+                        f"{where} passes `{key}:` to the Action, which does not declare it; "
+                        "GitHub drops it silently",
+                    )
+
+    def test_it_would_have_caught_the_website_card_as_it_shipped(self):
+        """The finding, restaged from the exact string that was in the tree."""
+        shipped = (
+            "- uses: berkayturanci/ai-jury@v1\n"
+            "  with:\n"
+            "    pr: ${{ github.event.pull_request.number }}\n"
+            "    post-summary: 'true'\n"
+            "    fail-on: 'critical,major'"
+        )
+        self.assertEqual(snippet_inputs(shipped), {"pr", "post-summary", "fail-on"})
+        self.assertEqual(snippet_inputs(shipped) & self.declared, set())
+
+    def test_the_escaped_website_spelling_is_expanded_and_bounded(self):
+        """Read as-is the block is invisible; unescaped whole, it overruns.
+
+        Both halves are findings. The first is why the ref walk was widened to
+        `.js` at all. The second is what the widening then produced: with the
+        file unescaped end to end, the sibling `command:` field of the same card
+        sat under the snippet's keys and was reported as an input.
+        """
+        root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        card = root / "app.js"
+        card.write_text(
+            '        config: "- uses: berkayturanci/ai-jury@v1\\n  with:\\n'
+            '    args: x",\n        command: "gh workflow run jury.yml"\n'
+        )
+        raw = card.read_text()
+        self.assertEqual(snippet_inputs(raw), set())
+        self.assertEqual(snippet_inputs(raw.replace("\\n", "\n")), {"args", "command"})
+        self.assertEqual(snippet_inputs(_readable(card)), {"args"})
+
+    def test_a_snippet_with_no_with_block_contributes_nothing(self):
+        self.assertEqual(snippet_inputs("      - uses: berkayturanci/ai-jury@v1\n"), set())
+
+    def test_the_block_ends_where_the_indentation_does(self):
+        """A sibling step's keys are not this step's inputs."""
+        text = (
+            "      - uses: berkayturanci/ai-jury@v1\n"
+            "        with:\n"
+            "          args: x\n"
+            "      - uses: actions/checkout@v4\n"
+            "        with:\n"
+            "          fetch-depth: 0\n"
+        )
+        self.assertEqual(snippet_inputs(text), {"args"})
 
 
 class TheAliasOnlyMovesForAReleaseThatWorks(WorkflowScan):
