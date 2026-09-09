@@ -61,6 +61,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `docs/live-review-report.md` are exempt as historical records, the same
   exemption and the same reason as the stale-path scan's: rewriting `@v1` under
   `## [1.14.0]` on a `2.0.0` bump would falsify what that release documented.
+- **The rule the tree is checked with is now a function the tests can reach** (#781).
+  The pinned-version arm of the ref check lived inline in the test that walks the
+  tree, so it could only run if some document in this repository happened to pin
+  a version — and none does. It never executed: `sys.settrace` said so during
+  review, and deleting the arm left the suite green, twice, including once after
+  a fix claimed to have closed exactly that. `unmaintained_reason` is what both
+  the tree walk and the fixture tests call now, so every arm runs on every run.
+  It also refuses `@1.17.1` and `@vv1.17.1`: `ref.lstrip("v")` accepted both —
+  `lstrip` removes a *set* of characters, not a prefix — while GitHub Actions
+  resolves neither.
 
 ## [1.17.1] - 2026-09-07
 

@@ -2219,6 +2219,38 @@ def snippet_inputs(text: str) -> set[str]:
     return keys
 
 
+#: The moving alias, and a pinned release. `v1` and `v1.17.1`; not `1.17.1`,
+#: whose missing prefix names no tag this repository has ever pushed and which
+#: GitHub Actions cannot resolve — `ref.lstrip("v")` accepted it, and accepted
+#: `vv1.17.1` too, because `lstrip` strips a *set* of characters and not a prefix.
+MAJOR_ALIAS = re.compile(r"v\d+")
+PINNED_RELEASE = re.compile(r"v\d+\.\d+\.\d+")
+
+
+def unmaintained_reason(
+    ref: str, *, major: str, version: str, released: set[str], lines: list[str]
+) -> str | None:
+    """Why the release flow does not maintain `ref`, or `None` when it does.
+
+    A function rather than assertions inlined in the test that walks the tree.
+    Inlined, the pinned-version arm could only run when a document in this
+    repository happened to pin a version — and none does, so it never ran at all:
+    deleting it left the suite green, which `sys.settrace` confirmed during
+    review. A rule the tests cannot reach on a fixture is a rule nothing checks.
+    """
+    if MAJOR_ALIAS.fullmatch(ref):
+        if ref != major:
+            return f"names {ref}, but this repository is at {version}"
+        if not maintains_a_major_alias(lines):
+            return f"names {ref} and nothing in publish.yml moves it"
+        return None
+    if not PINNED_RELEASE.fullmatch(ref):
+        return f"names {ref}, which is neither the moving alias nor a vMAJOR.MINOR.PATCH tag"
+    if ref[1:] not in released:
+        return f"pins {ref}, which this repository has never released"
+    return None
+
+
 def declared_action_inputs(root: Path) -> set[str]:
     """Every input `action.yml` declares."""
     text = (root / "action.yml").read_text(encoding="utf-8")
@@ -2320,26 +2352,21 @@ class EveryDocumentedActionRefIsMaintained(unittest.TestCase):
         self.assertIn(self.version, self.released)
         self.assertGreater(len(self.released), 10)
 
+    def reason(self, ref: str) -> str | None:
+        """`unmaintained_reason` bound to this repository's facts."""
+        return unmaintained_reason(
+            ref,
+            major=self.major,
+            version=self.version,
+            released=self.released,
+            lines=self.lines,
+        )
+
     def test_every_documented_ref_is_one_the_release_flow_maintains(self):
         for ref, docs in sorted(self.refs.items()):
             with self.subTest(ref=ref, docs=sorted(docs)):
-                where = ", ".join(sorted(docs))
-                if re.fullmatch(r"v\d+", ref):
-                    self.assertEqual(
-                        ref,
-                        self.major,
-                        f"{where} names {ref}, but this repository is at {self.version}",
-                    )
-                    self.assertTrue(
-                        maintains_a_major_alias(self.lines),
-                        f"{where} names {ref} and nothing in publish.yml moves it",
-                    )
-                else:
-                    self.assertIn(
-                        ref.lstrip("v"),
-                        self.released,
-                        f"{where} pins {ref}, which this repository has never released",
-                    )
+                reason = self.reason(ref)
+                self.assertIsNone(reason, f"{', '.join(sorted(docs))} {reason}")
 
     def test_it_would_have_caught_the_ref_that_resolved_to_nothing(self):
         """The defect, restaged: the documents as they were, and no job.
@@ -2381,30 +2408,60 @@ class EveryDocumentedActionRefIsMaintained(unittest.TestCase):
         (root / "doc.md").write_text("Write uses: berkayturanci/ai-jury@v1.\n")
         self.assertEqual(set(documented_action_refs(root)), {"v1"})
 
+    def ref_of(self, snippet: str) -> str:
+        """The one ref a fixture document written with `snippet` yields."""
+        root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        (root / "doc.md").write_text(f"      - uses: berkayturanci/ai-jury@{snippet}\n")
+        refs = documented_action_refs(root)
+        self.assertEqual(len(refs), 1, refs)
+        return next(iter(refs))
+
     def test_a_document_pinning_an_unreleased_version_is_caught(self):
         """The pinned-version arm, actually taken.
 
-        Its first cut asserted `"99.0.0" not in self.released` and that
-        `v99.0.0` matches a regex — two facts about the test's own literals. It
-        never wrote a document, never called `documented_action_refs`, and never
-        reached the `assertIn(ref, released)` branch it is named after: deleting
-        that branch left it green. The tree's only ref is `v1`, so CI never took
-        the arm either.
+        Its first cut asserted two facts about its own literals and never called
+        the rule; its second wrote a document but still asserted inline, so the
+        arm stayed unexecuted — `sys.settrace` said so during review, and
+        deleting the arm left the suite green both times. It goes through
+        `unmaintained_reason` now, which is the rule the tree is checked with.
         """
-        root = Path(self.enterContext(tempfile.TemporaryDirectory()))
-        (root / "doc.md").write_text("      - uses: berkayturanci/ai-jury@v99.0.0\n")
-        refs = documented_action_refs(root)
-        self.assertEqual(set(refs), {"v99.0.0"})
+        ref = self.ref_of("v99.0.0")
+        self.assertEqual(ref, "v99.0.0")
         self.assertNotIn("99.0.0", self.released)
-        with self.assertRaises(self.failureException):
-            self.assertIn("99.0.0", self.released)
+        self.assertIn("never released", self.reason(ref) or "")
 
     def test_the_released_pin_it_would_accept_is_a_real_one(self):
         """The other side of the same arm: a version that shipped is allowed."""
-        root = Path(self.enterContext(tempfile.TemporaryDirectory()))
-        (root / "doc.md").write_text(f"      - uses: berkayturanci/ai-jury@v{self.version}\n")
-        self.assertEqual(set(documented_action_refs(root)), {f"v{self.version}"})
-        self.assertIn(self.version, self.released)
+        self.assertIsNone(self.reason(self.ref_of(f"v{self.version}")))
+
+    def test_a_pin_without_the_tag_prefix_is_refused(self):
+        """`@1.17.1` names no tag this repository has pushed.
+
+        `ref.lstrip("v")` accepted it — and `@vv1.17.1` with it, because `lstrip`
+        removes a *set* of characters rather than a prefix — while GitHub Actions
+        resolves neither.
+        """
+        for spelling in (self.version, f"vv{self.version}", "main", "HEAD"):
+            with self.subTest(ref=spelling):
+                reason = self.reason(self.ref_of(spelling))
+                self.assertIsNotNone(reason)
+                self.assertIn("neither the moving alias", reason)
+
+    def test_an_alias_for_a_major_this_repository_is_not_on_is_refused(self):
+        self.assertIn("this repository is at", self.reason("v0") or "")
+        self.assertIsNone(self.reason(self.major))
+
+    def test_an_alias_nothing_moves_is_refused(self):
+        """The rule reads the workflow, so removing the job reaches this arm."""
+        without = [line for line in self.lines if line.strip() != f"{ALIAS_JOB}:"]
+        reason = unmaintained_reason(
+            self.major,
+            major=self.major,
+            version=self.version,
+            released=self.released,
+            lines=without,
+        )
+        self.assertIn("nothing in publish.yml moves it", reason or "")
 
 
 class EverySnippetPassesInputsTheActionDeclares(unittest.TestCase):
