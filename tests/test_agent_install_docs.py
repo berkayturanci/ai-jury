@@ -131,26 +131,89 @@ class EveryBoxSaysHowToUpdate(unittest.TestCase):
                     self.assertIn("**update", body, f"{where}: {agent} has no Update")
 
 
-class ThePlatformMatrixAgreesWithTheInstallPage(unittest.TestCase):
+#: Every document that gives somebody an install instruction. The finding this
+#: set exists for: the stale "Codex has no plugin manifest" claim was fixed in the
+#: matrix and left standing in `docs/skill.md`, which is a third page nobody
+#: thought to check — the same shape as ai-jury#781 one document further out.
+INSTRUCTION_PAGES = ("docs/platforms.md", "docs/skill.md", "docs/install.md", "README.md")
+
+#: A markdown link into another document's anchor, as `](target.md#anchor)`.
+DOC_ANCHOR_LINK = re.compile(r"\]\((?:\./)?([a-z0-9./-]+\.md)#([a-z0-9-]+)\)")
+
+
+class NoPageStillTellsAReaderTheOldStory(unittest.TestCase):
     """The matrix said Codex had no plugin format long after it had one.
 
     `docs/platforms.md` is the page a reader checks for *whether* a surface is
-    supported; `docs/install.md` is the page that tells them how. A matrix row
-    reading `manual / planned` beside an install page giving two working commands
-    is the same disagreement one document over.
+    supported; `docs/install.md` tells them how; `docs/skill.md` was giving its own
+    install recipe and still carried the sentence the matrix had just lost. A page
+    that gives an install instruction has to agree with the page that owns them.
     """
 
-    def test_the_matrix_points_at_the_install_page(self):
-        matrix = PLATFORMS.read_text(encoding="utf-8")
-        self.assertIn("install.md", matrix)
+    def pages(self):
+        return {name: (REPO_ROOT / name).read_text(encoding="utf-8") for name in INSTRUCTION_PAGES}
 
-    def test_no_surface_with_an_install_box_is_still_called_planned(self):
-        matrix = PLATFORMS.read_text(encoding="utf-8")
+    def test_the_pages_were_read(self):
+        for name, text in self.pages().items():
+            with self.subTest(document=name):
+                self.assertGreater(len(text.splitlines()), 20)
+
+    def test_no_page_still_says_an_agent_has_no_plugin_format(self):
+        """The exact claim, in the two spellings this repository used."""
+        stale = ("does not yet expose a stable plugin manifest", "does not yet have a stable")
+        for name, text in self.pages().items():
+            for phrase in stale:
+                with self.subTest(document=name, phrase=phrase):
+                    self.assertNotIn(phrase, text)
+
+    def test_no_matrix_row_is_still_called_planned(self):
+        matrix = (REPO_ROOT / "docs" / "platforms.md").read_text(encoding="utf-8")
         for row in matrix.splitlines():
-            if not row.startswith("| **"):
-                continue
+            if row.startswith("| **"):
+                with self.subTest(row=row[:60]):
+                    self.assertNotIn("planned", row.lower())
+
+    def test_every_agent_row_sends_the_reader_to_the_install_page(self):
+        """A matrix cell is read as a cheat-sheet, so a partial recipe is a wrong one.
+
+        The Antigravity row gave `agy plugin install` and stopped, while the install
+        page says `install` alone leaves the plugin **disabled**. A reader using the
+        matrix never runs `enable`.
+        """
+        matrix = (REPO_ROOT / "docs" / "platforms.md").read_text(encoding="utf-8")
+        rows = [row for row in matrix.splitlines() if row.startswith("| **")]
+        self.assertGreater(len(rows), 4)
+        named = [row for row in rows if "plugin " in row.lower() and "out of scope" not in row]
+        self.assertGreater(len(named), 2, named)
+        for row in named:
             with self.subTest(row=row[:60]):
-                self.assertNotIn("planned", row.lower())
+                self.assertIn("install.md", row)
+
+    def test_every_cross_document_anchor_resolves(self):
+        """The renamed heading left `platforms.md#codex-cli-template--manual` dangling.
+
+        A link into a heading breaks silently when the heading is reworded, which is
+        exactly what happened while fixing the sentence above.
+        """
+        for name, text in self.pages().items():
+            base = (REPO_ROOT / name).parent
+            for target, anchor in DOC_ANCHOR_LINK.findall(text):
+                path = (base / target).resolve()
+                if not path.is_file():
+                    continue
+                with self.subTest(document=name, link=f"{target}#{anchor}"):
+                    body = path.read_text(encoding="utf-8")
+                    headings = {
+                        re.sub(r"[^a-z0-9 -]", "", line.lstrip("#").strip().lower()).replace(
+                            " ", "-"
+                        )
+                        for line in body.splitlines()
+                        if line.startswith("#")
+                    }
+                    self.assertTrue(
+                        f'<a id="{anchor}"></a>' in body or anchor in headings,
+                        f"{name} links to {target}#{anchor}, which is not there",
+                    )
 
 
 if __name__ == "__main__":  # pragma: no cover

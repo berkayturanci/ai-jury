@@ -70,12 +70,15 @@ cp -R skills/ai-jury <your-project>/.claude/skills/ai-jury
 
 ### Codex / other Claude-compatible skill folders
 
-Codex does not yet expose a stable plugin manifest equivalent. Until it does, install the
-skill the same way — copy `skills/ai-jury/` into the host's skill directory — or
-reference the `jury` command from an `AGENTS.md`. The
-[Codex template in the platform matrix](platforms.md#codex-cli-template--manual) shows the
-minimal `AGENTS.md` snippet; the underlying capability (running `jury`) is identical
-across hosts, only the packaging differs.
+Codex has a plugin marketplace, and `.codex-plugin/plugin.json` is this repository's
+manifest for it: `codex plugin marketplace add` then `codex plugin add ai-jury@ai-jury`,
+with the update path in [install.md](install.md#codex). That is the route to prefer.
+
+The copy-the-folder route below still works on any Claude-compatible skill directory, and
+so does referencing the `jury` command from an `AGENTS.md` — see the
+[snippet in the platform matrix](platforms.md#codex-cli). Neither needs a plugin at all,
+which is what makes them useful in a container or a CI job. The underlying capability
+(running `jury`) is identical across hosts; only the packaging differs.
 
 ## Required external tools
 

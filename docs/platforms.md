@@ -19,11 +19,11 @@ orchestration.
 
 | Platform | Status | How you install / invoke | Prerequisites |
 |:--|:--|:--|:--|
-| **Claude Code** (plugin) | supported | `/plugin marketplace add berkayturanci/ai-jury` → `/plugin install ai-jury@ai-jury` | `jury`, ≥1 agent CLI, `gh` |
+| **Claude Code** (plugin) | supported | `/plugin marketplace add berkayturanci/ai-jury` → `/plugin install ai-jury@ai-jury`, or the CLI equivalents. Updating is **not** a re-install; see [install.md](install.md#claude-code) | `jury`, ≥1 agent CLI, `gh` |
 | **Claude Code** (manual skill) | supported | Copy [`skills/ai-jury/`](../skills/ai-jury/SKILL.md) into a project's `.claude/skills/` | `jury`, ≥1 agent CLI, `gh` |
 | **Any shell / CI** | supported | Run the CLI: `jury --pr <n>` or `jury --ci --fail-on critical,major` | `jury`, ≥1 agent CLI, `gh` (for `--pr`) |
 | **OpenAI Codex CLI** | supported (plugin) | `codex plugin marketplace add https://github.com/berkayturanci/ai-jury` → `codex plugin add ai-jury@ai-jury`. See [install.md](install.md#codex) | `jury`, `codex`, `gh` |
-| **Google Antigravity / Gemini CLI** | supported (skill) | `agy plugin install https://github.com/berkayturanci/ai-jury` — agy finds the root `skills/` directory by convention (#775); it reads no manifest path | `jury`, `agy`, `gh` |
+| **Google Antigravity / Gemini CLI** | supported (plugin) | `agy plugin install https://github.com/berkayturanci/ai-jury` **then** `agy plugin enable ai-jury` — `install` alone leaves it disabled. agy finds the root `skills/` directory by convention (#775); it reads no manifest path. See [install.md](install.md#antigravity) | `jury`, `agy`, `gh` |
 | **Cursor** | supported (local plugin) | `git clone --depth 1 <repo> ~/.cursor/plugins/local/ai-jury`, restart Cursor. There is **no** `cursor-agent plugin install`; the marketplace route registers more than the local one. See [install.md](install.md#cursor). `.cursor-plugin/plugin.json` carries the fields Cursor's plugin reference documents — `logo`, its listing asset, included — and names the same root `skills/` directory as the other manifests; it changes how the plugin *presents*, not what works, and the GUI listing has not been confirmed from here | `jury`, ≥1 agent CLI |
 | **Other IDE/agent CLIs** | manual | Run the `jury` CLI from the integrated terminal | `jury`, ≥1 agent CLI |
 | **Hosted SaaS install** | out of scope | — (this is a local-first tool, not a hosted product) | — |

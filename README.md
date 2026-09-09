@@ -959,6 +959,7 @@ flag-presence checks run on all supported versions (3.11–3.13).
 - [Architecture](docs/architecture.md) — components, round structure, adapters, supported platforms.
 - [Ecosystem comparison](docs/comparison.md) — capability matrix vs hosted / API-level / native-CLI tools.
 - [Feasibility & prior art](docs/feasibility.md) — research grounding and verified CLI invocations.
+- [Installing into an agent](docs/install.md) — per-agent plugin install **and update**, for Claude Code, Codex, Antigravity and Cursor.
 - [Platform support matrix](docs/platforms.md) — where you can install/run the jury and how.
 - [Skill packaging & install](docs/skill.md) — install/version the review jury as a reusable skill artifact.
 - [Release readiness checklist](docs/release-checklist.md) — the bar before a public release.
