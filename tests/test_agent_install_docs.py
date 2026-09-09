@@ -477,8 +477,19 @@ class NoPageStillTellsAReaderTheOldStory(unittest.TestCase):
         """One scroll helper, so a jump cannot land under the header on one path."""
         site = (REPO_ROOT / "website" / "docs.html").read_text(encoding="utf-8")
         self.assertEqual(site.count("function scrollToAnchor"), 1)
-        after = site[site.index("function scrollToAnchor") :]
-        self.assertIn("- 76", after[:400])
+        # The id comes from `location.hash`. Built into a CSS selector, a crafted
+        # `#a"]` throws out of `querySelector`; `getElementById` parses nothing.
+        self.assertNotIn("querySelector('[id=\"' + id", site)
+        self.assertIn("document.getElementById(id)", site)
+        # GitHub keeps `---` in a heading slug where this page's `slugify` collapses
+        # it, so a markdown link can carry an id the document never assigned.
+        self.assertIn("document.getElementById(slugify(id))", site)
+        # The helper grew two fallbacks and a comment explaining each; bound the
+        # window by the function's own end rather than by a character count that
+        # fails the next time it earns a paragraph.
+        body = site[site.index("function scrollToAnchor") :]
+        body = body[: body.index("\n    }")]
+        self.assertIn("- 76", body)
         # One implementation, actually: the table of contents inlined its own copy
         # of the same scroll, so "both jumps go through one helper" was not true of
         # the file that sentence described.

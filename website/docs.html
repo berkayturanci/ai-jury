@@ -305,7 +305,15 @@
     // difference between "took me there" and "took me nearly there".
     function scrollToAnchor(id) {
       if (!id) { return false; }
-      var el = document.querySelector('[id="' + id + '"], [name="' + id + '"]');
+      // `getElementById`, not a built selector: the id comes from `location.hash`,
+      // and interpolating that into a CSS selector lets a crafted `#a"]` throw out
+      // of `querySelector` — a lookup has no business parsing anything.
+      var el = document.getElementById(id);
+      // GitHub keeps a run of dashes in a heading slug (`… — …` becomes `---`);
+      // this page's own `slugify` collapses it to one. A markdown link therefore
+      // carries an id this document never assigned, and the jump silently did
+      // nothing. Try the spelling this page uses before giving up.
+      if (!el) { el = document.getElementById(slugify(id)); }
       if (!el) { return false; }
       window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 76, behavior: "smooth" });
       return true;
