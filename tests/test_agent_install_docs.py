@@ -1,0 +1,157 @@
+"""The README's install boxes and `docs/install.md` name the same agents.
+
+`docs/install.md` exists because the README churns and a release note cannot link
+into it stably. Two documents covering one subject is how #781's `@v1` came about:
+three pages agreed with each other and none of them agreed with the repository. So
+the pair is checked against each other *and* against the surfaces they describe —
+an agent added to one page and not the other is the drift this file refuses, and a
+box with no update instructions is the half of #783 that is not guessable by
+analogy.
+
+Read as text, with no YAML or Markdown parser, for the reason given in
+`tests/test_github_action.py`: ai-jury declares ``dependencies = []`` and three dev
+tools, and a test is not a good enough reason to make one of them the exception.
+"""
+
+from __future__ import annotations
+
+import re
+import unittest
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+README = REPO_ROOT / "README.md"
+INSTALL_DOC = REPO_ROOT / "docs" / "install.md"
+PLATFORMS = REPO_ROOT / "docs" / "platforms.md"
+
+#: The anchor each agent's box and section carries. The README puts it in the
+#: `<summary>` so the badge above links into the collapsed box; `install.md` puts
+#: it under the heading. One spelling, so a badge cannot point at nothing.
+ANCHOR = re.compile(r'<a id="([a-z0-9-]+)"></a>')
+
+#: `[![Name](badge-url)](#anchor)` — the badge row that doubles as the index.
+BADGE = re.compile(r"\[!\[[^\]]+\]\([^)]+\)\]\(#([a-z0-9-]+)\)")
+
+#: The agents both documents must cover. Named here on purpose: this is the one
+#: fact the two pages cannot derive from each other, and adding a fifth agent
+#: should be a deliberate edit to this line rather than something a page silently
+#: drops.
+AGENTS = ("claude-code", "codex", "antigravity", "cursor")
+
+
+def anchors(text: str) -> list[str]:
+    return ANCHOR.findall(text)
+
+
+class TheDocumentsWereRead(unittest.TestCase):
+    """Vacuity: an empty read satisfies every set comparison below."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.readme = README.read_text(encoding="utf-8")
+        cls.install = INSTALL_DOC.read_text(encoding="utf-8")
+
+    def test_both_files_exist_and_are_not_empty(self):
+        self.assertGreater(len(self.readme.splitlines()), 100)
+        self.assertGreater(len(self.install.splitlines()), 50)
+
+    def test_the_anchor_pattern_matches_what_the_files_write(self):
+        self.assertGreaterEqual(len(anchors(self.readme)), len(AGENTS))
+        self.assertGreaterEqual(len(anchors(self.install)), len(AGENTS))
+
+
+class EveryAgentIsInBothDocuments(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.readme = README.read_text(encoding="utf-8")
+        cls.install = INSTALL_DOC.read_text(encoding="utf-8")
+
+    def test_the_readme_boxes_cover_every_agent(self):
+        self.assertLessEqual(set(AGENTS), set(anchors(self.readme)))
+
+    def test_the_install_page_covers_every_agent(self):
+        self.assertLessEqual(set(AGENTS), set(anchors(self.install)))
+
+    def test_the_two_documents_cover_the_same_agents(self):
+        """The drift this file exists for: one page gains an agent, the other does not."""
+        self.assertEqual(
+            set(anchors(self.readme)) & set(AGENTS),
+            set(anchors(self.install)) & set(AGENTS),
+        )
+
+    def test_every_badge_points_at_an_anchor_that_exists(self):
+        """context-mode's badges are `href="#"` and go nowhere; these must not.
+
+        A badge row is only an index if clicking a badge lands on that agent's box.
+        """
+        targets = BADGE.findall(self.readme)
+        self.assertEqual(set(targets), set(AGENTS), targets)
+        for target in targets:
+            with self.subTest(badge=target):
+                self.assertIn(f'<a id="{target}"></a>', self.readme)
+
+
+class EveryBoxSaysHowToUpdate(unittest.TestCase):
+    """Install is guessable by analogy; update is not, and it differs on all four.
+
+    This is the half of #783 a reader cannot work out for themselves: `claude
+    plugin install` is a no-op on an installed plugin, Cursor has no install
+    command at all, and `agy install` overwrites in place. A box with only an
+    install command sends somebody to a version they cannot move off.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.readme = README.read_text(encoding="utf-8")
+        cls.install = INSTALL_DOC.read_text(encoding="utf-8")
+
+    def sections(self, text: str) -> dict[str, str]:
+        """Each agent's prose: from its anchor to the next one, or to the end."""
+        found = {}
+        positions = [(m.group(1), m.start()) for m in ANCHOR.finditer(text)]
+        for index, (name, start) in enumerate(positions):
+            end = positions[index + 1][1] if index + 1 < len(positions) else len(text)
+            found[name] = text[start:end]
+        return found
+
+    def test_the_split_returns_a_body_per_agent(self):
+        for text, where in ((self.readme, "README.md"), (self.install, "docs/install.md")):
+            with self.subTest(document=where):
+                bodies = self.sections(text)
+                for agent in AGENTS:
+                    self.assertGreater(len(bodies[agent]), 120, f"{where}: {agent}")
+
+    def test_every_agent_box_has_an_install_and_an_update(self):
+        for text, where in ((self.readme, "README.md"), (self.install, "docs/install.md")):
+            bodies = self.sections(text)
+            for agent in AGENTS:
+                with self.subTest(document=where, agent=agent):
+                    body = bodies[agent].lower()
+                    self.assertIn("**install", body, f"{where}: {agent} has no Install")
+                    self.assertIn("**update", body, f"{where}: {agent} has no Update")
+
+
+class ThePlatformMatrixAgreesWithTheInstallPage(unittest.TestCase):
+    """The matrix said Codex had no plugin format long after it had one.
+
+    `docs/platforms.md` is the page a reader checks for *whether* a surface is
+    supported; `docs/install.md` is the page that tells them how. A matrix row
+    reading `manual / planned` beside an install page giving two working commands
+    is the same disagreement one document over.
+    """
+
+    def test_the_matrix_points_at_the_install_page(self):
+        matrix = PLATFORMS.read_text(encoding="utf-8")
+        self.assertIn("install.md", matrix)
+
+    def test_no_surface_with_an_install_box_is_still_called_planned(self):
+        matrix = PLATFORMS.read_text(encoding="utf-8")
+        for row in matrix.splitlines():
+            if not row.startswith("| **"):
+                continue
+            with self.subTest(row=row[:60]):
+                self.assertNotIn("planned", row.lower())
+
+
+if __name__ == "__main__":  # pragma: no cover
+    unittest.main()
