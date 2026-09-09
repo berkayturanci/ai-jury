@@ -71,6 +71,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   It also refuses `@1.17.1` and `@vv1.17.1`: `ref.lstrip("v")` accepted both —
   `lstrip` removes a *set* of characters, not a prefix — while GitHub Actions
   resolves neither.
+- **The release runbook names every job the release runs** (#781). `major-tag`
+  went into `publish.yml` and into `docs/releasing.md` and not into
+  `docs/release-checklist.md`, whose numbered step 7 is what a releaser has open
+  while cutting a release — so the step that closes this issue was invisible in
+  the one document they follow. Found by a gate reviewer. The checklist now
+  describes it, and a test reads the workflow's own job list and requires each
+  name to appear there, so the next job is covered the day it is added.
 
 ## [1.17.1] - 2026-09-07
 

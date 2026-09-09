@@ -2011,6 +2011,26 @@ class EveryJobHasACeiling(WorkflowScan):
                     f"{ceiling}s ceiling; a job cancelled that way files no report",
                 )
 
+    def test_the_runbook_names_every_job_the_release_runs(self):
+        """A job the releaser's numbered steps never mention is a job nobody reads.
+
+        `docs/release-checklist.md` is what somebody follows while cutting a
+        release: step 7 lists what the tag push sets off. `major-tag` was added
+        to the workflow and to `docs/releasing.md` and not to this file, so the
+        step that closes #781 was invisible to the one document a releaser has
+        open — found by a gate reviewer. Read from the workflow's own job list,
+        so the next job is covered the day it is added rather than the day
+        somebody remembers.
+        """
+        runbook = (REPO_ROOT / "docs" / "release-checklist.md").read_text(encoding="utf-8")
+        for name in self.jobs:
+            with self.subTest(job=name):
+                self.assertIn(
+                    name,
+                    runbook,
+                    f"docs/release-checklist.md never mentions the `{name}` job",
+                )
+
     def test_the_prose_a_maintainer_reads_states_the_ceiling_the_file_sets(self):
         """The drift this class exists to prevent, one document further out.
 
