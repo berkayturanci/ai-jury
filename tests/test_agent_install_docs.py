@@ -73,11 +73,20 @@ class EveryAgentIsInBothDocuments(unittest.TestCase):
         self.assertLessEqual(set(AGENTS), set(anchors(self.install)))
 
     def test_the_two_documents_cover_the_same_agents(self):
-        """The drift this file exists for: one page gains an agent, the other does not."""
-        self.assertEqual(
-            set(anchors(self.readme)) & set(AGENTS),
-            set(anchors(self.install)) & set(AGENTS),
-        )
+        """The drift this file exists for: one page gains an agent, the other does not.
+
+        The **whole** anchor set on each side, not the intersection with `AGENTS`.
+        Intersecting was a tautology: the two tests above already assert
+        `AGENTS <= anchors`, so `anchors & AGENTS` is `AGENTS` on both sides and
+        the comparison reduced to `AGENTS == AGENTS`. A fifth agent added to one
+        page and not the other — exactly the drift named in the docstring — passed.
+        """
+        self.assertEqual(set(anchors(self.readme)), set(anchors(self.install)))
+
+    def test_a_fifth_agent_on_one_page_only_is_caught(self):
+        """The mutation the intersecting version survived."""
+        readme = self.readme + '\n<a id="zed"></a>\n'
+        self.assertNotEqual(set(anchors(readme)), set(anchors(self.install)))
 
     def test_every_badge_points_at_an_anchor_that_exists(self):
         """context-mode's badges are `href="#"` and go nowhere; these must not.
@@ -106,13 +115,38 @@ class EveryBoxSaysHowToUpdate(unittest.TestCase):
         cls.install = INSTALL_DOC.read_text(encoding="utf-8")
 
     def sections(self, text: str) -> dict[str, str]:
-        """Each agent's prose: from its anchor to the next one, or to the end."""
+        """Each agent's prose: from its anchor to the next one, or to its own end.
+
+        "Or to the end of the file" was wrong for the **last** agent. `cursor` is
+        last in the README, so its section ran to the end of the document and any
+        later `**update` — in eight hundred lines of unrelated prose — would have
+        satisfied the check for a box that had none. The last section stops at the
+        `</details>` that closes its box, or at the next horizontal rule on a page
+        that does not use them.
+        """
         found = {}
         positions = [(m.group(1), m.start()) for m in ANCHOR.finditer(text)]
         for index, (name, start) in enumerate(positions):
-            end = positions[index + 1][1] if index + 1 < len(positions) else len(text)
+            if index + 1 < len(positions):
+                end = positions[index + 1][1]
+            else:
+                tail = text[start:]
+                for closer in ("</details>", "\n---\n", "\n## "):
+                    at = tail.find(closer)
+                    if at != -1:
+                        end = start + at
+                        break
+                else:
+                    end = len(text)
             found[name] = text[start:end]
         return found
+
+    def test_the_last_section_stops_at_its_own_box(self):
+        """Vacuity, on the one section that had none: it used to run to the file end."""
+        for text, where in ((self.readme, "README.md"), (self.install, "docs/install.md")):
+            with self.subTest(document=where):
+                last = self.sections(text)[AGENTS[-1]]
+                self.assertLess(len(last), 2000, f"{where}: the last section runs on")
 
     def test_the_split_returns_a_body_per_agent(self):
         for text, where in ((self.readme, "README.md"), (self.install, "docs/install.md")):
