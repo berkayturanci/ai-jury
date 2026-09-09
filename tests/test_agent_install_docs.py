@@ -2,11 +2,16 @@
 
 `docs/install.md` exists because the README churns and a release note cannot link
 into it stably. Two documents covering one subject is how #781's `@v1` came about:
-three pages agreed with each other and none of them agreed with the repository. So
-the pair is checked against each other *and* against the surfaces they describe —
-an agent added to one page and not the other is the drift this file refuses, and a
-box with no update instructions is the half of #783 that is not guessable by
-analogy.
+three pages agreed with each other and none of them agreed with the repository.
+
+**What these tests check is structure, not content.** Which agents appear on each
+page, that every badge resolves to an anchor that exists, that every box carries
+an Update as well as an Install, that every page printing an install command
+points at the page that owns them, and that every cross-document anchor is real.
+They do **not** verify a command against the tool it names — both pages can agree
+on a wrong marketplace name and stay green. That check would have to run the
+CLIs, and the commands here were measured by hand instead, with the date and the
+version written into the pages themselves.
 
 Read as text, with no YAML or Markdown parser, for the reason given in
 `tests/test_github_action.py`: ai-jury declares ``dependencies = []`` and three dev
@@ -165,11 +170,45 @@ class EveryBoxSaysHowToUpdate(unittest.TestCase):
                     self.assertIn("**update", body, f"{where}: {agent} has no Update")
 
 
-#: Every document that gives somebody an install instruction. The finding this
-#: set exists for: the stale "Codex has no plugin manifest" claim was fixed in the
-#: matrix and left standing in `docs/skill.md`, which is a third page nobody
-#: thought to check — the same shape as ai-jury#781 one document further out.
-INSTRUCTION_PAGES = ("docs/platforms.md", "docs/skill.md", "docs/install.md", "README.md")
+#: The commands that make a page an install instruction, whatever it calls itself.
+INSTALL_COMMANDS = (
+    "/plugin install",
+    "/plugin marketplace add",
+    "plugin marketplace add",
+    "agy plugin install",
+    "codex plugin add",
+    "cursor-agent plugin marketplace add",
+)
+
+#: Records of what shipped, not instructions to follow.
+INSTRUCTION_EXEMPT = ("CHANGELOG.md", "docs/live-review-report.md")
+
+#: Directories with no documents of ours in them. `tests` included: this file
+#: quotes the commands it looks for, and a walk that read it would report itself.
+SKIPPED_DIRS = {".git", ".venv", "node_modules", "htmlcov", "__pycache__", "tests", "benchmark"}
+
+
+def instruction_pages() -> dict[str, str]:
+    """Every tracked document that tells somebody how to install this plugin.
+
+    **Discovered, not listed.** A hardcoded four-name tuple was the same defect
+    this module exists to refuse, one level in: `docs/cookbook.md` and a later
+    section of the README both print an install-only recipe, and neither was in
+    the tuple, so `test_every_instruction_page_sends_the_reader_to_the_install_page`
+    passed while two pages sent readers to a version they could not move off.
+    A page that prints one of these commands is an install page whatever its
+    title says.
+    """
+    found = {}
+    for path in sorted(REPO_ROOT.rglob("*.md")):
+        relative = path.relative_to(REPO_ROOT).as_posix()
+        if SKIPPED_DIRS & set(Path(relative).parts) or relative in INSTRUCTION_EXEMPT:
+            continue
+        text = path.read_text(encoding="utf-8")
+        if any(command in text for command in INSTALL_COMMANDS):
+            found[relative] = text
+    return found
+
 
 #: A markdown link into another document's anchor, as `](target.md#anchor)`.
 #: A markdown link into another document's anchor, as `](../target.md#anchor)`.
@@ -195,10 +234,16 @@ class NoPageStillTellsAReaderTheOldStory(unittest.TestCase):
     """
 
     def pages(self):
-        return {name: (REPO_ROOT / name).read_text(encoding="utf-8") for name in INSTRUCTION_PAGES}
+        return instruction_pages()
 
     def test_the_pages_were_read(self):
-        for name, text in self.pages().items():
+        pages = self.pages()
+        self.assertLessEqual(
+            {"README.md", "docs/install.md", "docs/skill.md", "docs/cookbook.md"},
+            set(pages),
+            f"the walk did not reach the pages that carry a recipe: {sorted(pages)}",
+        )
+        for name, text in pages.items():
             with self.subTest(document=name):
                 self.assertGreater(len(text.splitlines()), 20)
 
@@ -266,6 +311,20 @@ class NoPageStillTellsAReaderTheOldStory(unittest.TestCase):
         site = (REPO_ROOT / "website" / "docs.html").read_text(encoding="utf-8")
         self.assertIn('file: "install.md"', site)
         self.assertIn('file: "platforms.md"', site)
+
+    def test_the_site_keeps_the_fragment_a_link_carried(self):
+        """Registering the page is half of it; landing on the right box is the rest.
+
+        `rewrite()` used to read `(frag && frag !== "#" ? "" : "")` — both arms
+        empty — so `install.md#cursor` became `#install` and every cross-page
+        anchor in the docs quietly lost its destination. A location hash cannot
+        hold two `#`, so the sub-anchor rides after `--` and the router splits it.
+        """
+        site = (REPO_ROOT / "website" / "docs.html").read_text(encoding="utf-8")
+        self.assertNotIn('(frag && frag !== "#" ? "" : "")', site)
+        self.assertIn('"--" + frag.slice(1)', site)
+        self.assertIn('indexOf("--")', site)
+        self.assertIn("renderDoc(slug, anchor)", site)
 
     def test_every_cross_document_anchor_resolves(self):
         """The renamed heading left `platforms.md#codex-cli-template--manual` dangling.

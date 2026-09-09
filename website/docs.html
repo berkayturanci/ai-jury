@@ -217,7 +217,13 @@
         if (hashIdx >= 0) { frag = href.slice(hashIdx); href = href.slice(0, hashIdx); }
         if (!href) { return; } // pure fragment handled above
         var path = resolveRel(href);
-        if (FILE_TO_SLUG[path]) { a.setAttribute("href", "#" + FILE_TO_SLUG[path] + (frag && frag !== "#" ? "" : "")); a.removeAttribute("target"); return; }
+        // Keep the fragment. Both arms of the ternary here used to be empty, so
+        // `install.md#cursor` became `#install` and the reader landed on the page
+        // preamble instead of the box the link was written to reach — every
+        // cross-page anchor in the docs silently lost its destination. A location
+        // hash cannot hold two `#`, so the sub-anchor rides along after `--` and
+        // `route()` splits it back off.
+        if (FILE_TO_SLUG[path]) { a.setAttribute("href", "#" + FILE_TO_SLUG[path] + (frag && frag !== "#" ? "--" + frag.slice(1) : "")); a.removeAttribute("target"); return; }
         // other repo file → blob (or raw for assets handled by img)
         a.setAttribute("href", BLOB_ROOT + path + frag);
         a.target = "_blank"; a.rel = "noopener";
@@ -288,7 +294,7 @@
     }
 
     /* ---- doc view ---- */
-    function renderDoc(slug) {
+    function renderDoc(slug, anchor) {
       var item = BY_SLUG[slug];
       if (!item) { renderHome(); return; }
       buildSidebar(slug);
@@ -319,7 +325,13 @@
           contentEl.appendChild(wrap);
           buildTOC(wrap);
           document.title = item.title + " — ai-jury";
-          // jump to in-page anchor if present (slug#anchor not used; we keep simple)
+          // Jump to the in-page anchor the link carried, once the markdown is in
+          // the DOM. `#install--cursor` means "the install page, at its cursor
+          // box"; without this the hash resolved to the page and stopped there.
+          if (anchor) {
+            var target = wrap.querySelector('[id="' + anchor + '"], [name="' + anchor + '"]');
+            if (target && target.scrollIntoView) { target.scrollIntoView(); }
+          }
         })
         .catch(function (err) {
           contentEl.innerHTML = '<div class="doc-error"><p><strong>Couldn\u2019t load this doc.</strong></p><p class="mono">' + (err && err.message ? err.message : "fetch failed") + '</p><p><a href="' + BLOB_ROOT + "docs/" + item.file + '" target="_blank" rel="noopener">Read it on GitHub →</a></p></div>';
@@ -327,9 +339,12 @@
     }
 
     function route() {
-      var slug = (location.hash || "").replace(/^#/, "").trim();
+      var raw = (location.hash || "").replace(/^#/, "").trim();
+      var split = raw.indexOf("--");
+      var slug = split >= 0 ? raw.slice(0, split) : raw;
+      var anchor = split >= 0 ? raw.slice(split + 2) : "";
       if (!slug) { renderHome(); }
-      else { renderDoc(slug); }
+      else { renderDoc(slug, anchor); }
       // collapse mobile menu after navigation
       if (window.innerWidth <= 860) {
         sideEl.classList.add("collapsed");

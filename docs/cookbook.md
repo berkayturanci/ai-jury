@@ -197,6 +197,10 @@ marketplace):
 /plugin install ai-jury@ai-jury
 ```
 
+That is Claude Code's short form. The CLI commands, the other three agents, and —
+the part `/plugin install` cannot do, because it is a no-op on an installed
+plugin — **updating**, are in [install.md](install.md).
+
 Or drop [`skills/ai-jury/`](../skills/ai-jury/SKILL.md) into a
 project's `.claude/skills/` directory manually.
 

@@ -802,11 +802,15 @@ Install it as a **plugin** from this repo (it doubles as a single-plugin marketp
 /plugin install ai-jury@ai-jury
 ```
 
+That is Claude Code's short form; **[`docs/install.md`](docs/install.md) has the
+CLI commands, the other three agents, and the update path** — which is not a
+re-install, since `plugin install` is a no-op on an installed plugin.
+
 Or drop [`skills/ai-jury/`](skills/ai-jury/SKILL.md) into a project's
 `.claude/skills/` manually. Either way the agent can convene the jury on demand, and
 it composes with existing review workflows: run the jury for a cross-vendor pass,
-then act on the consensus findings. For other platforms (Codex, Antigravity, CI) and
-their support status, see the [platform support matrix](docs/platforms.md).
+then act on the consensus findings. For support status per platform, see the
+[platform support matrix](docs/platforms.md).
 
 For a concrete consumer: [**keel**](https://github.com/berkayturanci/keel)'s review
 gate (step `s7`, auto-enabled on its tier-3 risk class) runs ai-jury as its
