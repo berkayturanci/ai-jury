@@ -86,7 +86,9 @@ class TheStatedCoverageGateIsTheEnforcedOne(unittest.TestCase):
 
     def test_the_readme_states_the_gate_exactly_once(self):
         """Two statements of one number is the drift this test exists to stop."""
-        matches = re.findall(r"minimum total coverage is \*\*(\d+)%\*\*", README.read_text("utf-8"))
+        matches = re.findall(
+            r"minimum total coverage is \*\*(\d+)%\*\*", README.read_text(encoding="utf-8")
+        )
         self.assertEqual(
             len(matches),
             1,

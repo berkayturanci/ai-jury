@@ -486,7 +486,7 @@ class CacheHitMissTest(unittest.TestCase):
             cache = Cache(tmp)
             key = "deadbeef"
             cache.dir.mkdir(parents=True, exist_ok=True)
-            (cache.dir / f"{key}.json").write_text("{}" + " " * (9 * 1024 * 1024))
+            (cache.dir / f"{key}.json").write_text("{}" + " " * (9 * 1024 * 1024), encoding="utf-8")
             self.assertIsNone(cache.load(key))
 
     def test_corrupt_entry_is_a_miss(self):

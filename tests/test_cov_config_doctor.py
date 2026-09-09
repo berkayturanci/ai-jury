@@ -190,7 +190,7 @@ class DoctorWarningBranches(unittest.TestCase):
         # loads WITH validation (#708), so it reports the refusal a run gives
         # instead of describing a bench that cannot exist.
         cfg = self.d / "jury.toml"
-        cfg.write_text('[jury]\nrounds = 1\nchair = "a"\n')
+        cfg.write_text('[jury]\nrounds = 1\nchair = "a"\n', encoding="utf-8")
         diag = doctor.build_diagnostics(str(cfg))
         self.assertIsNone(diag["config"])
         self.assertTrue(
@@ -212,7 +212,8 @@ class DoctorWarningBranches(unittest.TestCase):
         cfg.write_text(
             '[jury]\nrounds = 1\nchair = "q"\n\n'
             '[[agent]]\nname = "q"\nvendor = "local"\nmodel = "m"\n'
-            'endpoint = "http://localhost:11434/v1"\n'
+            'endpoint = "http://localhost:11434/v1"\n',
+            encoding="utf-8",
         )
         with mock.patch("ai_jury.doctor._is_available", return_value=False):
             diag = doctor.build_diagnostics(str(cfg))
@@ -225,7 +226,8 @@ class DoctorWarningBranches(unittest.TestCase):
         cfg = self.d / "jury.toml"
         cfg.write_text(
             '[jury]\nrounds = 1\nchair = "a"\n\n'
-            '[[agent]]\nname = "a"\nvendor = "anthropic"\ncommand = "ghost-cli"\n'
+            '[[agent]]\nname = "a"\nvendor = "anthropic"\ncommand = "ghost-cli"\n',
+            encoding="utf-8",
         )
         with mock.patch("ai_jury.doctor._is_available", return_value=False):
             diag = doctor.build_diagnostics(str(cfg))
@@ -241,7 +243,9 @@ class DoctorWarningBranches(unittest.TestCase):
         # `build_diagnostics`' promise never to raise, so it is exercised at the
         # seam it guards.
         cfg = self.d / "jury.toml"
-        cfg.write_text('[jury]\nrounds = 1\n\n[[agent]]\nname = "a"\ncommand = "x"\n')
+        cfg.write_text(
+            '[jury]\nrounds = 1\n\n[[agent]]\nname = "a"\ncommand = "x"\n', encoding="utf-8"
+        )
         with mock.patch("ai_jury.doctor.load_config", side_effect=ValueError("boom")):
             diag = doctor.build_diagnostics(str(cfg))
         self.assertIsNone(diag["config"])
@@ -256,7 +260,10 @@ class DoctorWarningBranches(unittest.TestCase):
         # doctor reports the same refusal a run gives (#708) rather than a
         # KeyError out of `_from_dict`.
         cfg = self.d / "jury.toml"
-        cfg.write_text('[jury]\nrounds = 1\n\n[[agent]]\nvendor = "anthropic"\ncommand = "x"\n')
+        cfg.write_text(
+            '[jury]\nrounds = 1\n\n[[agent]]\nvendor = "anthropic"\ncommand = "x"\n',
+            encoding="utf-8",
+        )
         diag = doctor.build_diagnostics(str(cfg))
         self.assertIsNone(diag["config"])
         self.assertTrue(

@@ -612,7 +612,9 @@ class TheRenderStepRunsAgainstAStubIndex(unittest.TestCase):
         self.assertIn("ai_jury-9.9.9.tar.gz", formula)
         self.assertIn('assert_match "jury 9.9.9"', formula)
         self.assertEqual(re.findall(r"@[A-Z0-9_]+@", formula), [])
-        self.assertIn("ai-jury.rb", (workdir / "release" / "SHA256SUMS").read_text())
+        self.assertIn(
+            "ai-jury.rb", (workdir / "release" / "SHA256SUMS").read_text(encoding="utf-8")
+        )
 
     def test_a_stalled_sdist_download_ends_the_step_instead_of_holding_it_open(self):
         """The bug one line past the wait: the *file server* is what never answers.

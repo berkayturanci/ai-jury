@@ -387,7 +387,9 @@ class NoPageStillTellsAReaderTheOldStory(unittest.TestCase):
         links are into `README.md`, and the first cut of the pattern accepted only
         lowercase filenames.
         """
-        found = DOC_ANCHOR_LINK.findall((REPO_ROOT / "docs" / "install.md").read_text())
+        found = DOC_ANCHOR_LINK.findall(
+            (REPO_ROOT / "docs" / "install.md").read_text(encoding="utf-8")
+        )
         self.assertTrue(any(target.endswith("README.md") for target, _ in found), found)
 
     def test_the_public_site_does_not_lead_with_one_agent(self):

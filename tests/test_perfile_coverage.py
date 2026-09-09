@@ -106,7 +106,8 @@ class DoctorDiagnosticsTests(unittest.TestCase):
     def test_all_agents_disabled(self):
         cfg = self.d / "jury.toml"
         cfg.write_text(
-            '[jury]\nrounds = 1\nchair = "a"\n\n[[agent]]\nname = "a"\nvendor = "anthropic"\ncommand = "x"\nenabled = false\n'
+            '[jury]\nrounds = 1\nchair = "a"\n\n[[agent]]\nname = "a"\nvendor = "anthropic"\ncommand = "x"\nenabled = false\n',
+            encoding="utf-8",
         )
         diag = doctor.build_diagnostics(str(cfg))
         report = doctor.render_report(diag)
@@ -114,7 +115,7 @@ class DoctorDiagnosticsTests(unittest.TestCase):
 
     def test_unloadable_config_renders(self):
         bad = self.d / "broken.toml"
-        bad.write_text("this is not = valid = toml [[[")
+        bad.write_text("this is not = valid = toml [[[", encoding="utf-8")
         diag = doctor.build_diagnostics(str(bad))
         report = doctor.render_report(diag)
         self.assertIsInstance(report, str)
@@ -123,7 +124,8 @@ class DoctorDiagnosticsTests(unittest.TestCase):
     def test_valid_config_report(self):
         cfg = self.d / "ok.toml"
         cfg.write_text(
-            '[jury]\nrounds = 1\nchair = "a"\n\n[[agent]]\nname = "a"\nvendor = "anthropic"\ncommand = "definitely-not-on-path-xyz"\n'
+            '[jury]\nrounds = 1\nchair = "a"\n\n[[agent]]\nname = "a"\nvendor = "anthropic"\ncommand = "definitely-not-on-path-xyz"\n',
+            encoding="utf-8",
         )
         diag = doctor.build_diagnostics(str(cfg))
         report = doctor.render_report(diag)
@@ -135,7 +137,8 @@ class CliExtraPathsTests(unittest.TestCase):
         self.d = Path(tempfile.mkdtemp())
         self.diff = self.d / "x.diff"
         self.diff.write_text(
-            "diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n@@ -1 +1 @@\n-a\n+b\n"
+            "diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n@@ -1 +1 @@\n-a\n+b\n",
+            encoding="utf-8",
         )
 
     def _run(self, args):
@@ -163,7 +166,7 @@ class CliExtraPathsTests(unittest.TestCase):
 
     def test_policy_load_error_exits_2(self):
         bad_policy = self.d / "policy.toml"
-        bad_policy.write_text("this is not = valid [[[ toml")
+        bad_policy.write_text("this is not = valid [[[ toml", encoding="utf-8")
         code, _, err = self._run(
             ["--mock", "--diff-file", str(self.diff), "-q", "--policy", str(bad_policy)]
         )

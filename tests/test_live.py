@@ -76,7 +76,8 @@ class OrchestratorEventOrderTests(unittest.TestCase):
         cfg.write_text(
             '[jury]\nrounds = 2\nchair = "claude"\nverify = true\n'
             '\n[[agent]]\nname = "claude"\nvendor = "anthropic"\ncommand = "x"\n'
-            '\n[[agent]]\nname = "codex"\nvendor = "openai"\ncommand = "y"\n'
+            '\n[[agent]]\nname = "codex"\nvendor = "openai"\ncommand = "y"\n',
+            encoding="utf-8",
         )
         return load_config(str(cfg))
 

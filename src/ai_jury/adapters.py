@@ -1312,8 +1312,9 @@ class LocalAdapter(Adapter):
         Probes the OpenAI-compatible ``/v1/models`` (or the endpoint root) with a
         short timeout. Network-only; never raises.
         """
+        # Only `urllib.error` here: the request itself goes through `_open`, whose
+        # `_http_only_opener` imports `urllib.request` for it.
         import urllib.error
-        import urllib.request
 
         url = f"{self.endpoint}/models"
         try:

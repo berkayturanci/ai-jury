@@ -578,7 +578,7 @@ class TheDoctorCountsWhatTheGateCounts(unittest.TestCase):
             mock.patch.object(doctor, "_is_available", lambda _spec: True),
         ):
             path = Path(tmp) / "jury.toml"
-            path.write_text(text)
+            path.write_text(text, encoding="utf-8")
             yield path
 
     def _report(self, path):
