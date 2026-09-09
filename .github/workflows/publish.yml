@@ -4,6 +4,18 @@ on:
   push:
     tags:
       - "v*"
+      # …but not the moving major alias this workflow itself publishes. `v1` is a
+      # `v*`, and the `major-tag` job below writes it — with `GITHUB_TOKEN`, whose
+      # refs start no run, so the automated loop is closed. It is not closed for a
+      # person: creating or moving the alias by hand, which is how `v1` had to be
+      # created in the first place, starts a run of this file with
+      # `GITHUB_REF_NAME=v1`. The version guard would read `1` against a pyproject
+      # saying `1.17.1` and redden a release that had already succeeded — a
+      # failure that means nothing and that somebody has to read before knowing
+      # it means nothing. An alias is not a release; there is nothing to publish
+      # for one. A later negative pattern excludes a ref an earlier one matched,
+      # so this subtracts bare `v<digits>` and leaves every `vX.Y.Z` alone.
+      - "!v[0-9]+"
 
 # Least-privilege default for the whole workflow; the jobs below elevate only the
 # scopes they need (OpenSSF Scorecard TokenPermissions).

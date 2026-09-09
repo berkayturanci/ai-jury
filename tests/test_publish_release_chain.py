@@ -2624,11 +2624,38 @@ class TheAliasOnlyMovesForAReleaseThatWorks(WorkflowScan):
     def setUpClass(cls):
         super().setUpClass()
         cls.alias = job_body(cls.lines, ALIAS_JOB)
+        version = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+        cls.version = version["project"]["version"]
         cls.alias_code = shell(cls.alias)
 
     def test_the_job_is_read_from_the_file(self):
         self.assertIn(ALIAS_JOB, self.jobs)
         self.assertGreater(len(self.alias_code.splitlines()), 20)
+
+    def test_the_alias_does_not_re_enter_this_workflow_as_a_release(self):
+        """`v1` is a `v*`, and this file triggers on `v*`.
+
+        `GITHUB_TOKEN` closes the loop for the job's own write — a ref written
+        with it starts no run — but not for a person. The alias had to be created
+        by hand once, and moving it by hand stays possible; either would start a
+        run with `GITHUB_REF_NAME=v1`, where the version guard reads `1` against a
+        pyproject saying otherwise and reddens a release that already succeeded.
+
+        A later negative pattern excludes a ref an earlier one matched, so the
+        trigger subtracts bare `v<digits>` and leaves every `vX.Y.Z` alone.
+        """
+        head = "\n".join(self.lines[: self.lines.index("jobs:")])
+        self.assertIn('- "v*"', head)
+        self.assertIn('- "!v[0-9]+"', head)
+        self.assertLess(head.index('- "v*"'), head.index('- "!v[0-9]+"'))
+
+    def test_the_excluded_pattern_is_the_alias_and_only_the_alias(self):
+        """The shape of the pattern, checked against what it must and must not hit."""
+        alias = re.compile(r"v[0-9]+")
+        for ref in ("v1", "v2", "v10"):
+            self.assertTrue(alias.fullmatch(ref), ref)
+        for ref in (f"v{self.version}", "v1.17.1", "v2.0.0rc1"):
+            self.assertFalse(alias.fullmatch(ref), ref)
 
     def test_it_moves_only_after_the_release_has_been_installed_and_run(self):
         """Before `verify`, one broken publish is everybody's next run."""
