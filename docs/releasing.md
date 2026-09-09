@@ -164,16 +164,20 @@ Every release is automatically published across three primary distribution chann
      token starts no workflow run, and `v1` would otherwise match this workflow's
      own `v*` trigger. A **hand**-created or hand-moved alias does start one, so
      the trigger also subtracts bare `v<digits>` with a negative pattern.
-   - **Creating a major alias for the first time costs one red run, and always
-     will.** GitHub reads a push event's workflow definition from the ref that was
-     pushed, and a new alias points at an older release's commit — one that
-     predates the negative pattern. Creating `v1` against `v1.17.1` therefore ran
-     the `v*` trigger as it stood there and failed the version guard with
-     `tag (1) must match pyproject (1.17.1)`. Nothing is built or published: it
+   - **The pattern protects the ref it is on, not the ref that is pushed.** GitHub
+     reads a push event's workflow definition from the pushed ref, so what governs
+     is the copy of `publish.yml` in the commit the alias points at. Bootstrapping
+     `v1` against `v1.17.1` — a release cut before the pattern existed — therefore
+     ran the `v*` trigger as it stood *there* and failed the version guard with
+     `tag (1) must match pyproject (1.17.1)`. Nothing was built or published: it
      fails on the first real step, `verify` is skipped, and no `release-broken`
-     issue is filed. From the next release onward the alias points at a commit
-     carrying the pattern and hand-moves are quiet. Expect the same one-off the
-     day `v2` is created.
+     issue is filed.
+     **This does not recur, `v2` included.** The automated move writes the ref
+     with `GITHUB_TOKEN` and starts no run at all, and a hand-push of `v2` aims at
+     `v2.0.0`, whose tree carries the pattern. A red `publish.yml` run on an alias
+     is therefore a real failure to read, not an expected artifact — the only way
+     to reproduce the bootstrap is to aim an alias at a commit older than the
+     pattern itself.
    - Until #781 this line was false. Three documents told consumers to write
      `@v1` and no `refs/tags/v1` existed, so the documented way in was the one
      that did not resolve. `tests/test_publish_release_chain.py` now reads every
