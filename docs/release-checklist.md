@@ -165,7 +165,7 @@ what that audit found stale is fixed in the same change.
 5. Open a release PR (`release/vX.Y.Z`); wait for green CI; merge to `main`.
 6. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
 7. Creating the tag triggers `.github/workflows/publish.yml`, which:
-   - Builds sdist + wheel, generates SBOM and `SHA256SUMS`, and attests build provenance.
+   - Runs `build-n-publish`, which builds sdist + wheel, generates SBOM and `SHA256SUMS`, and attests build provenance.
    - Publishes to PyPI via OIDC Trusted Publishing.
    - Queries PyPI for the immutable sdist URL and SHA-256 digest, renders
      `packaging/homebrew/ai-jury.rb.template`, and re-downloads the artifact to
@@ -176,11 +176,19 @@ what that audit found stale is fixed in the same change.
      virtualenv, requires `jury --version` to equal the tag and `jury --doctor`
      to run, and compares the tap's digest with the published sdist's. On failure
      it opens or updates a `release-broken: vX.Y.Z` issue.
+   - Runs the `major-tag` job **after** `verify`: moves the `v<major>` alias — the
+     `@v1` in `README.md`, `docs/cookbook.md` and the website card — onto this
+     release. It moves forward only, ignores prerelease tags, and does not run at
+     all when `verify` failed, so `@v1` always points at a release that was
+     installed from the index and run. Nothing to do by hand; see
+     [Distribution Channels](releasing.md#distribution-channels).
    - **Commits nothing.** Step 5 above is the only write to `main` a release makes.
 8. Read the `verify` job's log — it has already installed the release and run it —
    then spot-check what it cannot see:
    - Homebrew: `brew update && brew info berkayturanci/ai-jury/ai-jury && brew fetch --formula berkayturanci/ai-jury/ai-jury`
    - Supply-chain: `sha256sum -c SHA256SUMS` and `gh attestation verify <wheel> --repo berkayturanci/ai-jury`
+   - The alias: `gh api repos/berkayturanci/ai-jury/compare/v$(…)...v1 --jq .status`
+     should say `identical`. It answering 404 is what #781 was.
 9. Confirm the PyPI page, README rendering, and badges.
 
 ## Rollback

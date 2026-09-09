@@ -32,10 +32,12 @@ checked against the file's own text before anything is concluded from it.
 from __future__ import annotations
 
 import re
+import tempfile
+import tomllib
 import unittest
 from collections import Counter
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WORKFLOW_DIR = REPO_ROOT / ".github" / "workflows"
@@ -2009,6 +2011,26 @@ class EveryJobHasACeiling(WorkflowScan):
                     f"{ceiling}s ceiling; a job cancelled that way files no report",
                 )
 
+    def test_the_runbook_names_every_job_the_release_runs(self):
+        """A job the releaser's numbered steps never mention is a job nobody reads.
+
+        `docs/release-checklist.md` is what somebody follows while cutting a
+        release: step 7 lists what the tag push sets off. `major-tag` was added
+        to the workflow and to `docs/releasing.md` and not to this file, so the
+        step that closes #781 was invisible to the one document a releaser has
+        open — found by a gate reviewer. Read from the workflow's own job list,
+        so the next job is covered the day it is added rather than the day
+        somebody remembers.
+        """
+        runbook = (REPO_ROOT / "docs" / "release-checklist.md").read_text(encoding="utf-8")
+        for name in self.jobs:
+            with self.subTest(job=name):
+                self.assertIn(
+                    name,
+                    runbook,
+                    f"docs/release-checklist.md never mentions the `{name}` job",
+                )
+
     def test_the_prose_a_maintainer_reads_states_the_ceiling_the_file_sets(self):
         """The drift this class exists to prevent, one document further out.
 
@@ -2064,6 +2086,604 @@ class EveryJobHasACeiling(WorkflowScan):
     def test_a_loop_it_cannot_count_stops_the_sum_instead_of_being_guessed(self):
         with self.assertRaises(AssertionError):
             wait_seconds('while [ -z "$x" ]; do\ntimeout 30 gh api repos/x/y\ndone', 0)
+
+
+#: The job that advances the moving major-version alias after a verified release.
+ALIAS_JOB = "major-tag"
+
+#: `uses: berkayturanci/ai-jury@<ref>` wherever a document tells somebody to write it.
+#:
+#: A git ref is spelled out of a known alphabet, so the pattern names that alphabet
+#: rather than the delimiters it stops at. Written the other way — everything up to
+#: whitespace, a quote or a `#` — it read the closing backtick of an inline code span
+#: as part of the ref and reported `` `uses: berkayturanci/ai-jury@v1` `` in prose as
+#: a pin on a version called ``v1` ``. Both spellings appear in this repository.
+ACTION_REF = re.compile(r"uses:\s*berkayturanci/ai-jury@([A-Za-z0-9][A-Za-z0-9._/-]*)")
+
+#: A released version, read off a Keep-a-Changelog heading. `[Unreleased]` has no
+#: numbers and does not match, which is the point: a document may pin to a version
+#: that shipped, never to one that has not.
+CHANGELOG_VERSION = re.compile(r"^## \[(\d+\.\d+\.\d+)\]", re.M)
+
+#: Directories with no documents of ours in them. `tests` is here because the
+#: suite is not documentation and a self-checking test must not be its own
+#: needle: the restaged website card below is a fixture, not an instruction, and
+#: a walk that read it would fail on the very defect it exists to demonstrate.
+SKIPPED_DIRS = {
+    ".git",
+    ".venv",
+    "node_modules",
+    "htmlcov",
+    ".mypy_cache",
+    "__pycache__",
+    "tests",
+}
+
+#: Every suffix a consumer snippet has been found in. `.md`/`.yml`/`.yaml` was the
+#: first cut and it missed the live one: `website/app.js` ships the integration
+#: gallery's card as a JavaScript string, which is the copy most people see. A
+#: guard against "a snippet the release flow does not maintain" that cannot read
+#: the website is the finding it is named after, one file type over. Matches the
+#: set the stale-path scan in `tests/test_plugin_component_layout.py` reads, plus
+#: the two the website is written in.
+DOCUMENT_SUFFIXES = {".md", ".yml", ".yaml", ".txt", ".json", ".toml", ".py", ".js", ".html"}
+
+#: Documents that record what shipped rather than tell anyone what to write.
+#: `CHANGELOG.md` names `@v1` under `## [1.14.0]` because that is what v1.14.0
+#: documented; rewriting it on a `2.0.0` bump would falsify the record. The same
+#: exemption, for the same reason, as the stale-path scan's.
+HISTORICAL_DOCUMENTS = {"CHANGELOG.md", "docs/live-review-report.md"}
+
+#: One `with:` key passed to an action, at any indentation.
+WITH_KEY = re.compile(r"^(\s*)([a-z][a-z0-9-]*):")
+
+
+#: A JavaScript/JSON string literal that holds one of these snippets. Matched as
+#: a literal — quotes and all — so the expansion below can replace exactly it.
+JS_SNIPPET = re.compile(r'"((?:[^"\\]|\\.)*uses:\s*berkayturanci/ai-jury@(?:[^"\\]|\\.)*)"')
+
+
+def _readable(path: Path) -> str:
+    """One file's text, with any snippet held in a string literal spelled out.
+
+    `website/app.js` holds its YAML as `"- uses: …\\n  with:\\n    pr: …"`. Read
+    literally that is one line, so the `with:` block under a `uses:` is invisible
+    and the scan sees a ref with no inputs at all.
+
+    Unescaping the whole file is not enough either: the snippet would then run on
+    into the object property after it, and `command: "gh workflow run jury.yml"`
+    — a sibling field of the same integration card, indented further than the
+    snippet's own keys — was read as an input passed to the Action. So the
+    literal is replaced by its contents *on their own lines*. What a reader
+    copies off the page becomes exactly one block, bounded where the quote was.
+    """
+    text = path.read_text(encoding="utf-8")
+    if path.suffix not in {".js", ".json"}:
+        return text
+    return JS_SNIPPET.sub(lambda m: "\n" + m.group(1).replace("\\n", "\n") + "\n", text)
+
+
+def documents(root: Path) -> list[tuple[str, str]]:
+    """Every file the guards below read, as `(repo-relative path, text)`."""
+    found = []
+    for path in sorted(root.rglob("*")):
+        if path.suffix not in DOCUMENT_SUFFIXES or not path.is_file():
+            continue
+        relative = path.relative_to(root)
+        if SKIPPED_DIRS & set(relative.parts):
+            continue
+        # `as_posix`, not `str`: on Windows the latter spells this document
+        # `docs\\cookbook.md`, which matches no exemption here and no name any
+        # of these tests states. Every path this returns is a repo-relative
+        # identifier, and those are written one way.
+        name = relative.as_posix()
+        if name in HISTORICAL_DOCUMENTS:
+            continue
+        found.append((name, _readable(path)))
+    return found
+
+
+def documented_action_refs(root: Path) -> dict[str, set[str]]:
+    """Every ref a tracked document tells a consumer to write, keyed by ref.
+
+    Walked rather than listed for the reason `job_names` is: the finding this
+    guards was three documents that agreed with each other, and a fourth
+    document is exactly how it comes back. It came back as a fifth one during
+    review — the website card, in a file type the first cut did not open.
+    """
+    found: dict[str, set[str]] = {}
+    for where, text in documents(root):
+        for ref in ACTION_REF.findall(text):
+            found.setdefault(ref.rstrip("."), set()).add(where)
+    return found
+
+
+def snippet_inputs(text: str) -> set[str]:
+    """The `with:` keys every `uses: …/ai-jury@…` block in this text passes.
+
+    Read by indentation rather than with a YAML parser, for the reason given at
+    the top of this module: ai-jury declares `dependencies = []`, and a test is
+    not a good enough reason to make PyYAML the exception.
+
+    The block is found by *following* the `uses:` rather than by lining up with
+    it. Requiring `with:` at the same column reads every hand-written workflow
+    correctly and none of the website's, where the first line of the snippet
+    carries a JavaScript string opener (`config: "- uses: …`) and every line
+    after it starts back at column 0. That rule scanned the one file the ref
+    walk had just been widened to reach and found nothing in it.
+    """
+    keys: set[str] = set()
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        if not ACTION_REF.search(line):
+            continue
+        # The window is this step: everything up to the next `uses:`, whichever
+        # action that one names. Without the bound, a step passing no inputs of
+        # its own would borrow the `with:` of the step after it.
+        rest = lines[index + 1 :]
+        limit = next(
+            (offset for offset, following in enumerate(rest) if "uses:" in following),
+            len(rest),
+        )
+        window = rest[:limit]
+        with_at = next(
+            (offset for offset, following in enumerate(window) if following.strip() == "with:"),
+            None,
+        )
+        if with_at is None:
+            continue
+        opener = window[with_at]
+        depth = len(opener) - len(opener.lstrip())
+        for following in window[with_at + 1 :]:
+            if not following.strip():
+                continue
+            match = WITH_KEY.match(following)
+            if match is None or len(match.group(1)) <= depth:
+                break
+            keys.add(match.group(2))
+    return keys
+
+
+#: The moving alias, and a pinned release. `v1` and `v1.17.1`; not `1.17.1`,
+#: whose missing prefix names no tag this repository has ever pushed and which
+#: GitHub Actions cannot resolve — `ref.lstrip("v")` accepted it, and accepted
+#: `vv1.17.1` too, because `lstrip` strips a *set* of characters and not a prefix.
+MAJOR_ALIAS = re.compile(r"v\d+")
+PINNED_RELEASE = re.compile(r"v\d+\.\d+\.\d+")
+
+
+def unmaintained_reason(
+    ref: str, *, major: str, version: str, released: set[str], lines: list[str]
+) -> str | None:
+    """Why the release flow does not maintain `ref`, or `None` when it does.
+
+    A function rather than assertions inlined in the test that walks the tree.
+    Inlined, the pinned-version arm could only run when a document in this
+    repository happened to pin a version — and none does, so it never ran at all:
+    deleting it left the suite green, which `sys.settrace` confirmed during
+    review. A rule the tests cannot reach on a fixture is a rule nothing checks.
+    """
+    if MAJOR_ALIAS.fullmatch(ref):
+        if ref != major:
+            return f"names {ref}, but this repository is at {version}"
+        if not maintains_a_major_alias(lines):
+            return f"names {ref} and nothing in publish.yml moves it"
+        return None
+    if not PINNED_RELEASE.fullmatch(ref):
+        return f"names {ref}, which is neither the moving alias nor a vMAJOR.MINOR.PATCH tag"
+    if ref[1:] not in released:
+        return f"pins {ref}, which this repository has never released"
+    return None
+
+
+def declared_action_inputs(root: Path) -> set[str]:
+    """Every input `action.yml` declares."""
+    text = (root / "action.yml").read_text(encoding="utf-8")
+    body = text.split("inputs:", 1)[1].split("\nruns:", 1)[0]
+    return set(re.findall(r"^  ([a-z][a-z0-9-]*):", body, re.M))
+
+
+def released_versions(changelog: str) -> set[str]:
+    """Every version this repository has actually shipped, per `CHANGELOG.md`."""
+    return set(CHANGELOG_VERSION.findall(changelog))
+
+
+#: The `case` arm that decides a `compare` result is a forward move, and the arm
+#: that rejects everything else. Read as arms rather than searched for as a
+#: substring: widening `ahead|identical)` to `ahead|identical|behind|diverged)`
+#: leaves every substring in place and reverses what the guard permits, which is
+#: the one mutation an earlier version of this test did not catch.
+COMPARE_ARM = re.compile(r'case "\$status" in\s*\n\s*([a-z|]+)\) ;;\s*\n\s*\*\)')
+
+
+def forward_statuses(code: str) -> set[str]:
+    """The `compare` statuses the alias job accepts as a move forward."""
+    match = COMPARE_ARM.search(code)
+    assert match, "the forward-only guard is not written as a `case` this test can read"
+    return set(match.group(1).split("|"))
+
+
+def alias_targets(code: str) -> set[str]:
+    """The `refs/tags/<x>` this shell writes, as written — `${major}`, not `v1`."""
+    return set(re.findall(r"refs/tags/([^\"'\s)]+)", code))
+
+
+def maintains_a_major_alias(lines: list[str]) -> bool:
+    """Does this workflow move a major-version alias, computed from the tag?
+
+    Three things together, because any one of them alone is satisfiable by a job
+    that does not do the work: a job by that name, a ref it writes that is
+    derived from `$TAG` rather than spelled `v1`, and the derivation itself.
+    """
+    if ALIAS_JOB not in job_names(lines):
+        return False
+    code = shell(job_body(lines, ALIAS_JOB))
+    return alias_targets(code) == {"${major}"} and 'major="${TAG%%.*}"' in code
+
+
+class EveryDocumentedActionRefIsMaintained(unittest.TestCase):
+    """`@v1` was in three documents and in no repository (#781).
+
+    `README.md`, `docs/cookbook.md` and `docs/releasing.md` each told a consumer
+    to write `uses: berkayturanci/ai-jury@v1`. `git ls-remote` had no
+    `refs/tags/v1` and the API answered 404, so every workflow copied out of them
+    failed to resolve the action — the documented way in was the one that did not
+    work, for as long as the Action has existed.
+
+    Nothing checked it, and nothing could have: the three documents were checked
+    against each other. This test checks them against the release flow instead. A
+    document may name a ref two ways — the moving alias this repository's
+    releases maintain, or a version it has actually shipped — and nothing else.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.refs = documented_action_refs(REPO_ROOT)
+        cls.docs = documents(REPO_ROOT)
+        cls.lines = WORKFLOW.read_text(encoding="utf-8").splitlines()
+        cls.released = released_versions((REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8"))
+        version = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+        cls.version = version["project"]["version"]
+        cls.major = f"v{cls.version.split('.')[0]}"
+
+    def test_the_scan_found_the_documents_that_are_actually_there(self):
+        """Vacuity: a walk that reads nothing satisfies every assertion below.
+
+        `website/app.js` is named explicitly. It is the copy most people see, it
+        is the one the first cut of this walk could not open, and it is the file
+        whose absence made a snippet passing three inputs the Action does not
+        declare look guarded.
+        """
+        cited = {doc for docs in self.refs.values() for doc in docs}
+        self.assertLessEqual(
+            {"README.md", "docs/cookbook.md", "docs/releasing.md", "website/app.js"},
+            cited,
+            f"the walk did not reach the documents that carry the ref: {sorted(cited)}",
+        )
+
+    def test_document_names_are_spelled_one_way_on_every_platform(self):
+        """`docs/cookbook.md`, never `docs\\cookbook.md`.
+
+        A repo-relative path is an identifier here: it keys the exemption list
+        and it is what every failure message names. `str(relative)` spells it
+        with backslashes on Windows, so the exemption stopped matching
+        `CHANGELOG.md`'s siblings and the vacuity check compared two different
+        alphabets — three red jobs on the Windows leg of CI and none anywhere
+        else. This asserts the property, and the source, because a
+        POSIX runner cannot observe the difference by running the code.
+        """
+        for name, _ in self.docs:
+            with self.subTest(document=name):
+                self.assertNotIn("\\", name)
+        # Built from parts: written whole, this line *is* the string it looks
+        # for, so the assertion would pass on its own text after the call it
+        # guards had been changed back.
+        needle = "relative." + "as_posix()"
+        source = Path(__file__).read_text(encoding="utf-8")
+        self.assertIn(needle, source)
+        self.assertEqual(PureWindowsPath("docs\\cookbook.md").as_posix(), "docs/cookbook.md")
+
+    def test_a_historical_record_is_not_read_as_an_instruction(self):
+        """`CHANGELOG.md` says what v1.14.0 documented, not what to write today.
+
+        It carries `uses: berkayturanci/ai-jury@v1` under `## [1.14.0]`. Read as
+        a live snippet, the first `2.0.0` bump would fail on a heading nobody may
+        correctly edit — the record would have to be falsified to make the guard
+        pass. Exempted the same way, and for the same reason, as the stale-path
+        scan in `tests/test_plugin_component_layout.py` exempts it.
+        """
+        changelog = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+        self.assertIn("uses: berkayturanci/ai-jury@v1", changelog)
+        self.assertNotIn("CHANGELOG.md", {doc for docs in self.refs.values() for doc in docs})
+
+    def test_the_changelog_scan_found_the_releases(self):
+        """The other half of the vacuity check: an empty set pins nothing."""
+        self.assertIn(self.version, self.released)
+        self.assertGreater(len(self.released), 10)
+
+    def reason(self, ref: str) -> str | None:
+        """`unmaintained_reason` bound to this repository's facts."""
+        return unmaintained_reason(
+            ref,
+            major=self.major,
+            version=self.version,
+            released=self.released,
+            lines=self.lines,
+        )
+
+    def test_every_documented_ref_is_one_the_release_flow_maintains(self):
+        for ref, docs in sorted(self.refs.items()):
+            with self.subTest(ref=ref, docs=sorted(docs)):
+                reason = self.reason(ref)
+                self.assertIsNone(reason, f"{', '.join(sorted(docs))} {reason}")
+
+    def test_it_would_have_caught_the_ref_that_resolved_to_nothing(self):
+        """The defect, restaged: the documents as they were, and no job.
+
+        `maintains_a_major_alias` is what the workflow must satisfy, so removing
+        the job from the text has to make the documented `@v1` unsupportable.
+        """
+        without = [line for line in self.lines if line.strip() != f"{ALIAS_JOB}:"]
+        self.assertFalse(maintains_a_major_alias(without))
+        self.assertTrue(maintains_a_major_alias(self.lines))
+
+    def test_a_hardcoded_alias_does_not_count_as_maintaining_one(self):
+        """`v1` typed into the job is the same trap one level in.
+
+        It works exactly once — until the day a `v2.0.0` tag moves `v1` onto a
+        major its consumers did not ask for.
+        """
+        frozen = [line.replace("${major}", "v1") for line in self.lines]
+        self.assertFalse(maintains_a_major_alias(frozen))
+
+    def test_the_ref_stops_where_the_markdown_around_it_begins(self):
+        """The bug this parser had: an inline code span ended up inside the ref.
+
+        `docs/releasing.md` and `CHANGELOG.md` both write the snippet inside
+        backticks, and one of them inside parentheses as well. Read as
+        "everything that is not whitespace, a quote or a hash", the ref came out
+        as ``v1` `` and ``v1`)`` — two versions this repository has never
+        released, from two documents that are correct.
+        """
+        prose = "See (`uses: berkayturanci/ai-jury@v1`) and `@v1.17.1`, or v1 alone."
+        self.assertEqual(ACTION_REF.findall(prose), ["v1"])
+        yaml = "      - uses: berkayturanci/ai-jury@v1  # the moving alias\n"
+        self.assertEqual(ACTION_REF.findall(yaml), ["v1"])
+        self.assertEqual(ACTION_REF.findall("uses: berkayturanci/ai-jury@v1.17.1"), ["v1.17.1"])
+
+    def test_a_sentence_period_is_not_part_of_the_ref(self):
+        """`…@v1.` ends a sentence; `…@v1.17.1` does not."""
+        root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        (root / "doc.md").write_text("Write uses: berkayturanci/ai-jury@v1.\n", encoding="utf-8")
+        self.assertEqual(set(documented_action_refs(root)), {"v1"})
+
+    def ref_of(self, snippet: str) -> str:
+        """The one ref a fixture document written with `snippet` yields."""
+        root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        (root / "doc.md").write_text(
+            f"      - uses: berkayturanci/ai-jury@{snippet}\n", encoding="utf-8"
+        )
+        refs = documented_action_refs(root)
+        self.assertEqual(len(refs), 1, refs)
+        return next(iter(refs))
+
+    def test_a_document_pinning_an_unreleased_version_is_caught(self):
+        """The pinned-version arm, actually taken.
+
+        Its first cut asserted two facts about its own literals and never called
+        the rule; its second wrote a document but still asserted inline, so the
+        arm stayed unexecuted — `sys.settrace` said so during review, and
+        deleting the arm left the suite green both times. It goes through
+        `unmaintained_reason` now, which is the rule the tree is checked with.
+        """
+        ref = self.ref_of("v99.0.0")
+        self.assertEqual(ref, "v99.0.0")
+        self.assertNotIn("99.0.0", self.released)
+        self.assertIn("never released", self.reason(ref) or "")
+
+    def test_the_released_pin_it_would_accept_is_a_real_one(self):
+        """The other side of the same arm: a version that shipped is allowed."""
+        self.assertIsNone(self.reason(self.ref_of(f"v{self.version}")))
+
+    def test_a_pin_without_the_tag_prefix_is_refused(self):
+        """`@1.17.1` names no tag this repository has pushed.
+
+        `ref.lstrip("v")` accepted it — and `@vv1.17.1` with it, because `lstrip`
+        removes a *set* of characters rather than a prefix — while GitHub Actions
+        resolves neither.
+        """
+        for spelling in (self.version, f"vv{self.version}", "main", "HEAD"):
+            with self.subTest(ref=spelling):
+                reason = self.reason(self.ref_of(spelling))
+                self.assertIsNotNone(reason)
+                self.assertIn("neither the moving alias", reason)
+
+    def test_an_alias_for_a_major_this_repository_is_not_on_is_refused(self):
+        self.assertIn("this repository is at", self.reason("v0") or "")
+        self.assertIsNone(self.reason(self.major))
+
+    def test_an_alias_nothing_moves_is_refused(self):
+        """The rule reads the workflow, so removing the job reaches this arm."""
+        without = [line for line in self.lines if line.strip() != f"{ALIAS_JOB}:"]
+        reason = unmaintained_reason(
+            self.major,
+            major=self.major,
+            version=self.version,
+            released=self.released,
+            lines=without,
+        )
+        self.assertIn("nothing in publish.yml moves it", reason or "")
+
+
+class EverySnippetPassesInputsTheActionDeclares(unittest.TestCase):
+    """#781's class, one field in: a snippet nothing checks against `action.yml`.
+
+    Found by a gate reviewer, who pointed the ref walk at the file type it did
+    not open. `website/app.js` shipped
+
+        - uses: berkayturanci/ai-jury@v1
+          with:
+            pr: ${{ github.event.pull_request.number }}
+            post-summary: 'true'
+            fail-on: 'critical,major'
+
+    and `action.yml` declares none of `pr`, `post-summary` or `fail-on`. They are
+    `jury` CLI flags, which belong inside `args`. GitHub drops an undeclared
+    `with:` key silently, so a consumer copying that card got a run with no
+    severity gate at all — the merge gating the card promises, not happening,
+    with nothing to say so. A resolvable ref that ignores everything passed to it
+    is the same defect as an unresolvable one.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.declared = declared_action_inputs(REPO_ROOT)
+        cls.documents = documents(REPO_ROOT)
+
+    def test_the_declared_inputs_were_read(self):
+        """Vacuity: an empty set of declared inputs would fail every snippet."""
+        self.assertIn("args", self.declared)
+        self.assertIn("min-vendors", self.declared)
+        self.assertGreaterEqual(len(self.declared), 7)
+
+    def test_the_scan_reads_the_with_block_under_a_uses(self):
+        """Vacuity again: a scan that finds no keys accepts every snippet."""
+        found = {key for _, text in self.documents for key in snippet_inputs(text)}
+        self.assertIn("openai-api-key", found)
+
+    def test_every_documented_input_is_one_the_action_declares(self):
+        for where, text in self.documents:
+            for key in sorted(snippet_inputs(text)):
+                with self.subTest(document=where, input=key):
+                    self.assertIn(
+                        key,
+                        self.declared,
+                        f"{where} passes `{key}:` to the Action, which does not declare it; "
+                        "GitHub drops it silently",
+                    )
+
+    def test_it_would_have_caught_the_website_card_as_it_shipped(self):
+        """The finding, restaged from the exact string that was in the tree."""
+        shipped = (
+            "- uses: berkayturanci/ai-jury@v1\n"
+            "  with:\n"
+            "    pr: ${{ github.event.pull_request.number }}\n"
+            "    post-summary: 'true'\n"
+            "    fail-on: 'critical,major'"
+        )
+        self.assertEqual(snippet_inputs(shipped), {"pr", "post-summary", "fail-on"})
+        self.assertEqual(snippet_inputs(shipped) & self.declared, set())
+
+    def test_the_escaped_website_spelling_is_expanded_and_bounded(self):
+        """Read as-is the block is invisible; unescaped whole, it overruns.
+
+        Both halves are findings. The first is why the ref walk was widened to
+        `.js` at all. The second is what the widening then produced: with the
+        file unescaped end to end, the sibling `command:` field of the same card
+        sat under the snippet's keys and was reported as an input.
+        """
+        root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        card = root / "app.js"
+        card.write_text(
+            '        config: "- uses: berkayturanci/ai-jury@v1\\n  with:\\n'
+            '    args: x",\n        command: "gh workflow run jury.yml"\n',
+            encoding="utf-8",
+        )
+        raw = card.read_text(encoding="utf-8")
+        self.assertEqual(snippet_inputs(raw), set())
+        self.assertEqual(snippet_inputs(raw.replace("\\n", "\n")), {"args", "command"})
+        self.assertEqual(snippet_inputs(_readable(card)), {"args"})
+
+    def test_a_snippet_with_no_with_block_contributes_nothing(self):
+        self.assertEqual(snippet_inputs("      - uses: berkayturanci/ai-jury@v1\n"), set())
+
+    def test_the_block_ends_where_the_indentation_does(self):
+        """A sibling step's keys are not this step's inputs."""
+        text = (
+            "      - uses: berkayturanci/ai-jury@v1\n"
+            "        with:\n"
+            "          args: x\n"
+            "      - uses: actions/checkout@v4\n"
+            "        with:\n"
+            "          fetch-depth: 0\n"
+        )
+        self.assertEqual(snippet_inputs(text), {"args"})
+
+
+class TheAliasOnlyMovesForAReleaseThatWorks(WorkflowScan):
+    """A moving tag is a standing promise, so it is moved under conditions.
+
+    An unmaintained moving tag is the defect this change closes; an unguarded one
+    is the same class wearing the other hat. `@v1` is what a consumer gets
+    without asking for anything, so what it points at has to have been installed
+    and run somewhere first, may only ever go forward, and must not be advanced
+    by a tag that was never a release.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.alias = job_body(cls.lines, ALIAS_JOB)
+        cls.alias_code = shell(cls.alias)
+
+    def test_the_job_is_read_from_the_file(self):
+        self.assertIn(ALIAS_JOB, self.jobs)
+        self.assertGreater(len(self.alias_code.splitlines()), 20)
+
+    def test_it_moves_only_after_the_release_has_been_installed_and_run(self):
+        """Before `verify`, one broken publish is everybody's next run."""
+        needs = [line for line in self.alias if line.strip().startswith("needs:")]
+        self.assertEqual(len(needs), 1, self.alias[:5])
+        self.assertIn(VERIFY_JOB, needs[0])
+        self.assertIn(PUBLISH_JOB, needs[0])
+
+    def test_it_asks_for_the_one_permission_it_needs(self):
+        granted = permissions(self.alias)
+        self.assertTrue(any(p.startswith("contents: write") for p in granted), granted)
+        self.assertEqual([p for p in granted if p.startswith("pull-requests")], [], granted)
+
+    def test_only_a_plain_release_tag_moves_it(self):
+        """`v2.0.0rc1` is a tag somebody opted into by name, not a default."""
+        self.assertIn(r"^v[0-9]+\.[0-9]+\.[0-9]+$", self.alias_code)
+
+    def test_it_refuses_to_move_the_alias_backwards(self):
+        """Re-tagging an older release would downgrade every consumer, silently.
+
+        The accepted statuses are read out of the `case` arm and compared as a
+        set. Asserting that `ahead|identical` appears in the text passes just as
+        happily on `ahead|identical|behind|diverged)`, which permits exactly the
+        move the guard exists to refuse.
+        """
+        self.assertIn("compare/${major}...${TAG}", self.alias_code)
+        self.assertEqual(forward_statuses(self.alias_code), {"ahead", "identical"})
+        self.assertIn("Refusing to move", self.alias_code)
+        self.assertIn("exit 1", self.alias_code)
+
+    def test_a_widened_arm_is_not_a_forward_only_guard(self):
+        """The mutation that survived the first version of the test above."""
+        widened = self.alias_code.replace("ahead|identical)", "ahead|identical|behind)")
+        self.assertNotEqual(self.alias_code, widened)
+        self.assertEqual(forward_statuses(widened), {"ahead", "identical", "behind"})
+
+    def test_the_alias_it_writes_is_computed_from_the_tag(self):
+        self.assertEqual(alias_targets(self.alias_code), {"${major}"})
+
+    def test_it_writes_the_ref_with_a_token_that_starts_no_workflow_run(self):
+        """This file triggers on `v*`, and `v1` matches `v*`.
+
+        A ref written with `GITHUB_TOKEN` starts no run. Written with a PAT, the
+        alias would re-enter this workflow as its own tag, where the version
+        guard reads `1` against a pyproject saying otherwise and reddens a
+        release that had already succeeded.
+        """
+        declared = [line for line in self.alias if "GH_TOKEN:" in line]
+        self.assertEqual(len(declared), 1, self.alias)
+        self.assertIn("secrets.GITHUB_TOKEN", declared[0])
+
+    def test_the_tag_it_creates_is_annotated(self):
+        """`git show v1` should answer which release it is, not just which commit."""
+        self.assertIn("git/tags", self.alias_code)
+        self.assertIn("type=commit", self.alias_code)
 
 
 if __name__ == "__main__":  # pragma: no cover

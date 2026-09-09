@@ -647,3 +647,96 @@ jobs:
             timeout 60 gh issue create --title "$title" --body "$body" \
               --label "area:release" --label "bug" --label "priority:high"
           fi
+
+  # The `@v1` that README.md, docs/cookbook.md and docs/releasing.md all tell a
+  # consumer to write was a ref nothing ever created. `git ls-remote` had no
+  # `refs/tags/v1`, `gh api …/git/ref/tags/v1` answered 404, and every workflow
+  # copied out of those three documents failed to resolve the action. Three
+  # documents agreed with each other and none of them agreed with the
+  # repository — the manifest drift the tag guard above exists to catch, one ref
+  # further out and with nothing checking it.
+  #
+  # A moving major-version tag is the GitHub Actions convention behind that
+  # snippet, so the fix is to maintain the ref rather than to rewrite the three
+  # documents into pinned versions nobody would remember to bump.
+  #
+  # It moves HERE, after `verify`, and not beside the upload: `@v1` is what a
+  # consumer gets without asking for anything, and advancing it before anything
+  # has installed the release is how one broken publish becomes everybody's next
+  # run. A release that fails `verify` leaves the alias where it was, pointing at
+  # the last release that was actually installed and run.
+  major-tag:
+    name: Move the major-version tag to this release
+    needs: [build-n-publish, verify]
+    runs-on: ubuntu-latest
+    # Five `timeout 60` `gh` calls at worst — the existence probe, the compare,
+    # the tag object, the ref write, and room for one more — so 300s of bounds
+    # under a 600s ceiling. Ten minutes, for the reason spelled out on the two
+    # jobs above: the ceiling is a backstop for the HTTP this job does not
+    # spell out, and it has to clear the sum of the bounds that it does.
+    # `tests/test_publish_release_chain.py` recomputes that sum from this file.
+    timeout-minutes: 10
+    permissions:
+      contents: write   # create or force-update refs/tags/v<major>
+    steps:
+      - name: Move the major-version alias to this release
+        env:
+          # `secrets.GITHUB_TOKEN` deliberately, and not a PAT. A ref written
+          # with this token starts no workflow run, and this file triggers on
+          # `v*` — which `v1` matches. With a PAT the alias would re-enter this
+          # workflow as its own tag, where the version guard would read `1`
+          # against a pyproject saying `1.17.1` and fail a run for a release
+          # that had already succeeded. The absence of a run is the mechanism;
+          # the version guard is only the backstop if somebody swaps the token.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          # Only a plain vMAJOR.MINOR.PATCH release moves the alias. A
+          # prerelease tag (`v2.0.0rc1`) is one a consumer opted into by name;
+          # `@v2` must not begin serving it to everyone who did not.
+          major=""
+          if printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            major="${TAG%%.*}"
+          fi
+          if [ -z "$major" ]; then
+            echo "::notice title=No alias moved::${TAG} is not a plain vMAJOR.MINOR.PATCH release, so no major-version tag was updated."
+            exit 0
+          fi
+
+          exists=0
+          if timeout 60 gh api "repos/${GH_REPO}/git/ref/tags/${major}" >/dev/null 2>&1; then
+            exists=1
+            # Forward only. Re-tagging an older release would otherwise hand
+            # every `@v1` consumer a downgrade, silently, on a workflow run
+            # nobody is watching. `compare` dereferences both refs, so an
+            # annotated alias compares as the commit it points at.
+            status="$(timeout 60 gh api "repos/${GH_REPO}/compare/${major}...${TAG}" --jq '.status')"
+            case "$status" in
+              ahead|identical) ;;
+              *)
+                echo "::error title=Refusing to move ${major}::${TAG} is '${status}' relative to ${major}. The alias only ever moves forward; move it by hand if this release really supersedes it."
+                exit 1
+                ;;
+            esac
+          fi
+
+          # Annotated, like every other tag this repository publishes. `git show
+          # v1` then answers the question a consumer pinned to the alias
+          # actually has — which release am I running — instead of resolving to
+          # a bare commit that says nothing about where it came from.
+          object="$(timeout 60 gh api --method POST "repos/${GH_REPO}/git/tags" \
+            -f "tag=${major}" -f "object=${SHA}" -f "type=commit" \
+            -f "message=${major} tracks ${TAG}" --jq '.sha')"
+
+          if [ "$exists" = 1 ]; then
+            timeout 60 gh api --method PATCH "repos/${GH_REPO}/git/refs/tags/${major}" \
+              -f "sha=${object}" -F "force=true" >/dev/null
+          else
+            timeout 60 gh api --method POST "repos/${GH_REPO}/git/refs" \
+              -f "ref=refs/tags/${major}" -f "sha=${object}" >/dev/null
+          fi
+          echo "::notice title=${major} moved::${major} now resolves to ${TAG} (${SHA}); \`uses: ${GH_REPO}@${major}\` serves this release."

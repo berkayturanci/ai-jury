@@ -76,9 +76,9 @@ passed on, because `${SDIST_MAX_TIME:-120}` substitutes only when the variable i
 unset or empty and curl reads `0` as "no limit" — the unbounded download, reached
 through the bound.
 
-Underneath them both jobs set `timeout-minutes` — 30 for the publish job, 45 for
-`verify` — which bounds the actions the workflow `uses:` and anything a future
-step forgets to bound. That ceiling is a backstop and not the mechanism: a job
+Underneath them all three jobs set `timeout-minutes` — 30 for the publish job, 45
+for `verify`, 10 for the alias move — which bounds the actions the workflow
+`uses:` and anything a future step forgets to bound. That ceiling is a backstop and not the mechanism: a job
 stopped by `timeout-minutes` is cancelled, so `verify`'s failure step does not
 run and no `release-broken` issue is opened, whereas a command that fails on its
 own timeout fails the job and files the report. It must therefore sit *above*
@@ -154,6 +154,20 @@ Every release is automatically published across three primary distribution chann
 2. **GitHub Releases & GitHub Action Marketplace**:
    - Automated via `publish.yml` using `softprops/action-gh-release`.
    - GitHub Action is consumable as `uses: berkayturanci/ai-jury@v1` or pinned to release tags.
+   - `v1` is a moving alias, and `publish.yml`'s `major-tag` job is what moves it.
+     It runs **after** `verify`, so the alias only ever advances to a release that
+     has been installed from the index and run; a release that fails verification
+     leaves `v1` on the last one that worked. It moves forward only — a re-tag of
+     an older release is refused rather than handed to every consumer as a silent
+     downgrade — and a prerelease tag (`v2.0.0rc1`) does not move it at all.
+     The ref is written with `GITHUB_TOKEN` on purpose: a ref written with that
+     token starts no workflow run, and `v1` would otherwise match this workflow's
+     own `v*` trigger.
+   - Until #781 this line was false. Three documents told consumers to write
+     `@v1` and no `refs/tags/v1` existed, so the documented way in was the one
+     that did not resolve. `tests/test_publish_release_chain.py` now reads every
+     `uses: berkayturanci/ai-jury@<ref>` out of the tree and refuses any ref the
+     release flow does not maintain.
 3. **Homebrew Tap (`berkayturanci/homebrew-ai-jury`)**:
    - No formula is committed to this repository. `publish.yml` queries PyPI for the uploaded sdist's immutable URL and SHA-256 digest, renders `packaging/homebrew/ai-jury.rb.template`, attaches the result to the GitHub Release, and pushes it to `berkayturanci/homebrew-ai-jury` when `HOMEBREW_TAP_TOKEN` is set.
    - Installable via `brew install berkayturanci/ai-jury/ai-jury` or `brew install ai-jury`.

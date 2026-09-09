@@ -30,6 +30,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **The stale-path scan reaches links and code spans, not one substring.** Its first cut matched `<dir>/ai-jury`, which missed `docs/skill.md` saying the manifest "points its `skills` field at this same `skill/` directory" — the page this change edits, still sending a reader to the directory it renamed. Both gate seats found it independently. The scan now reads markdown link targets and inline code spans across `.md`, `.txt`, `.json`, `.toml`, `.yml`, `.yaml` and `.py`, so `llms-full.txt` is covered too — including a link to the directory itself (`](../skill)`, no trailing slash) and a path inside a shell command (`cp -R skill/ai-jury …`, the install step in `docs/skill.md`), both of which a narrower cut missed. It deliberately does *not* fire on the word in prose — `skill/workflow consumers` and `skill/plugin mechanism` are alternations, and a check that failed on those would be weakened until it caught nothing. Both reaches are asserted directly.
   - **`tests/test_plugin_component_layout.py` pins the conjunction**, because either half alone is what broke: the directory is at the root under the conventional name, *and* every manifest resolves to it, *and* no document still sends a reader to the old path. An install that exits 0 having imported nothing cannot be caught any other way. `CHANGELOG.md` and `docs/live-review-report.md` are exempt from the last check as historical records — the live report is the verbatim output of the v1.1.0 four-vendor run, in which a reviewer flagged this very mismatch as a low-confidence note in June. It was right, and it is left standing.
 
+- **The documented `uses: berkayturanci/ai-jury@v1` now resolves** (#781).
+  `README.md`, `docs/cookbook.md` and `docs/releasing.md` each told a consumer to
+  write `@v1`, and `refs/tags/v1` did not exist — the API answered 404 and
+  `git ls-remote` listed nothing — so every workflow copied out of those
+  snippets failed to resolve the action, for as long as the Action has existed.
+  Three documents agreed with each other and none of them agreed with the
+  repository, which is the manifest drift #777 closed, one ref further out.
+  `publish.yml` gains a `major-tag` job that advances the alias after `verify`,
+  so `@v1` only ever points at a release that was installed from the index and
+  run; it moves forward only, ignores prerelease tags, and writes the ref with
+  `GITHUB_TOKEN`, which starts no workflow run and so cannot re-enter the `v*`
+  trigger as its own tag. `tests/test_publish_release_chain.py` reads every
+  documented `uses: berkayturanci/ai-jury@<ref>` out of the tree and fails on any
+  ref the release flow does not maintain — the check that was missing, rather
+  than the one ref that was missing.
+- **The website's Action card passed three inputs the Action does not declare** (#781).
+  `website/app.js` shipped `pr:`, `post-summary:` and `fail-on:` under
+  `uses: berkayturanci/ai-jury@v1`. Those are `jury` CLI flags, not `action.yml`
+  inputs, and they belong inside `args`. GitHub drops an undeclared `with:` key
+  silently, so a consumer copying the integration gallery's card — the copy most
+  people see — got a run with no severity gate at all: the CI merge gating the
+  card promises, not happening, with nothing to say so. A resolvable ref that
+  ignores everything passed to it is the same defect as an unresolvable one.
+  Found by a gate reviewer, who pointed the new ref walk at the file type it did
+  not open. The walk now reads `.js`/`.html`/`.json`/`.toml`/`.txt`/`.py` as well
+  — the set the stale-path scan already reads, plus the two the website is
+  written in — and a second guard checks every `with:` key in every snippet
+  against the inputs `action.yml` declares. `CHANGELOG.md` and
+  `docs/live-review-report.md` are exempt as historical records, the same
+  exemption and the same reason as the stale-path scan's: rewriting `@v1` under
+  `## [1.14.0]` on a `2.0.0` bump would falsify what that release documented.
+- **The rule the tree is checked with is now a function the tests can reach** (#781).
+  The pinned-version arm of the ref check lived inline in the test that walks the
+  tree, so it could only run if some document in this repository happened to pin
+  a version — and none does. It never executed: `sys.settrace` said so during
+  review, and deleting the arm left the suite green, twice, including once after
+  a fix claimed to have closed exactly that. `unmaintained_reason` is what both
+  the tree walk and the fixture tests call now, so every arm runs on every run.
+  It also refuses `@1.17.1` and `@vv1.17.1`: `ref.lstrip("v")` accepted both —
+  `lstrip` removes a *set* of characters, not a prefix — while GitHub Actions
+  resolves neither.
+- **The release runbook names every job the release runs** (#781). `major-tag`
+  went into `publish.yml` and into `docs/releasing.md` and not into
+  `docs/release-checklist.md`, whose numbered step 7 is what a releaser has open
+  while cutting a release — so the step that closes this issue was invisible in
+  the one document they follow. Found by a gate reviewer. The checklist now
+  describes it, and a test reads the workflow's own job list and requires each
+  name to appear there, so the next job is covered the day it is added.
+
 ## [1.17.1] - 2026-09-07
 
 ### Fixed

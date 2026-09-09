@@ -1471,7 +1471,7 @@
         logo: "logos/githubactions.svg",
         color: "#ffffff",
         desc: "Official composite GitHub Action for automated PR reviews and sticky comments.",
-        config: "- uses: berkayturanci/ai-jury@v1\n  with:\n    pr: ${{ github.event.pull_request.number }}\n    post-summary: 'true'\n    fail-on: 'critical,major'",
+        config: "- uses: berkayturanci/ai-jury@v1\n  with:\n    openai-api-key: ${{ secrets.OPENAI_API_KEY }}\n    args: '--auto --post --ci --fail-on critical,major'",
         command: "gh workflow run jury.yml"
       },
       {
