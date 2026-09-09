@@ -221,7 +221,8 @@ class CliIssueTests(unittest.TestCase):
         cfg = Path(tempfile.mkdtemp()) / "jury.toml"
         cfg.write_text(
             '[jury]\nrounds = 1\nchair = "claude"\ndecision = "vote"\n'
-            '\n[[agent]]\nname = "claude"\nvendor = "anthropic"\ncommand = "x"\n'
+            '\n[[agent]]\nname = "claude"\nvendor = "anthropic"\ncommand = "x"\n',
+            encoding="utf-8",
         )
         with mock.patch.object(cli, "issue_body", return_value=self.ISSUE_TEXT):
             code, out, _ = _run_cli(["--mock", "--issue", "5", "--config", str(cfg), "--seed", "1"])

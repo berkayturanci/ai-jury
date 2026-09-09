@@ -514,7 +514,9 @@ class TheCursorManifestMatchesTheSchemaItTargets(unittest.TestCase):
     def test_it_mirrors_the_claude_manifest_it_claims_to(self):
         """Said in the changelog and in `docs/platforms.md`; asserted here so the two
         cannot drift, and so `skills` cannot go missing from one of them."""
-        claude = json.loads((REPO_ROOT / ".claude-plugin" / "plugin.json").read_text("utf-8"))
+        claude = json.loads(
+            (REPO_ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")
+        )
         missing = sorted(set(claude) - set(self.manifest))
 
         self.assertEqual(
@@ -523,7 +525,9 @@ class TheCursorManifestMatchesTheSchemaItTargets(unittest.TestCase):
 
     def test_and_names_the_same_skills_directory(self):
         """Keeps this manifest inside the #775 conjunction: one root `skills/` for all."""
-        claude = json.loads((REPO_ROOT / ".claude-plugin" / "plugin.json").read_text("utf-8"))
+        claude = json.loads(
+            (REPO_ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")
+        )
 
         self.assertEqual(self.manifest["skills"], claude["skills"])
 

@@ -46,8 +46,13 @@ line-length = 100
 target-version = "py311"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "N", "W", "UP", "B", "A", "C4", "RET", "SIM", "ARG", "PTH"]
+select = ["E", "F", "I", "N", "W", "UP", "B", "A", "C4", "RET", "SIM", "ARG", "PTH", "PLW1514"]
 ignore = ["E501"]
+# `PLW1514` (unspecified-encoding) is still a preview rule, so preview mode is on
+# — but `explicit-preview-rules` keeps it to the one rule named above rather than
+# opting the whole linter into unreleased behaviour on the next ruff bump.
+preview = true
+explicit-preview-rules = true
 exclude = [
     ".git",
     "build",

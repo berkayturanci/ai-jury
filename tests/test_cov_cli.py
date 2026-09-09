@@ -378,7 +378,7 @@ class IncrementalAndGuards(unittest.TestCase):
     def setUp(self):
         self.d = Path(tempfile.mkdtemp())
         self.diff = self.d / "x.diff"
-        self.diff.write_text(DIFF)
+        self.diff.write_text(DIFF, encoding="utf-8")
 
     def test_incremental_requires_pr(self):
         # 784: --incremental without --pr raises SystemExit with the message as code.
@@ -423,7 +423,7 @@ class AutoDepthBranches(unittest.TestCase):
     def setUp(self):
         self.d = Path(tempfile.mkdtemp())
         self.diff = self.d / "x.diff"
-        self.diff.write_text(DIFF)
+        self.diff.write_text(DIFF, encoding="utf-8")
 
     def test_auto_with_explicit_rounds_and_verify(self):
         # --rounds given -> skip the rounds override (813->815 false);
@@ -458,7 +458,7 @@ class CiAndPatchesBranches(unittest.TestCase):
     def setUp(self):
         self.d = Path(tempfile.mkdtemp())
         self.diff = self.d / "x.diff"
-        self.diff.write_text(DIFF)
+        self.diff.write_text(DIFF, encoding="utf-8")
 
     def test_ci_json_skips_gate_section(self):
         # --ci with non-markdown format: the CI gate section is not appended
@@ -571,7 +571,7 @@ class ConfigShowError(unittest.TestCase):
     def test_config_show_invalid_file(self):
         # _run_config load error (564-566).
         cfg = Path(tempfile.mkdtemp()) / "bad.toml"
-        cfg.write_text("[jury]\nrounds = 0\n")
+        cfg.write_text("[jury]\nrounds = 0\n", encoding="utf-8")
         code, _, err = run(["config", "show", "--config", str(cfg)])
         self.assertEqual(code, 2)
         self.assertIn("error:", err)
@@ -581,7 +581,7 @@ class PolicyAndPostGuards(unittest.TestCase):
     def setUp(self):
         self.d = Path(tempfile.mkdtemp())
         self.diff = self.d / "x.diff"
-        self.diff.write_text(DIFF)
+        self.diff.write_text(DIFF, encoding="utf-8")
 
     def test_policy_load_error(self):
         # load_policy raising PolicyError -> exit 2 (748-750).
@@ -631,7 +631,7 @@ class PolicyAndPostGuards(unittest.TestCase):
             )
         self.assertEqual(code, 0)
         self.assertTrue(outp.exists())
-        self.assertIn("Suggested patches", outp.read_text())
+        self.assertIn("Suggested patches", outp.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

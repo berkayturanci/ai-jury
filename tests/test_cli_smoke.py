@@ -48,7 +48,7 @@ class CliMockTests(unittest.TestCase):
     def setUp(self):
         self.d = Path(tempfile.mkdtemp())
         self.diff = self.d / "x.diff"
-        self.diff.write_text(DIFF)
+        self.diff.write_text(DIFF, encoding="utf-8")
 
     def test_markdown_default(self):
         code, out, _ = run(["--mock", "--diff-file", str(self.diff), "-q"])
@@ -66,7 +66,7 @@ class CliMockTests(unittest.TestCase):
             ["--mock", "--diff-file", str(self.diff), "-q", "--format", "json", "-o", str(outp)]
         )
         self.assertEqual(code, 0)
-        data = json.loads(outp.read_text())
+        data = json.loads(outp.read_text(encoding="utf-8"))
         self.assertIn("schema_version", data)
         self.assertIn("findings", data)
 
@@ -82,7 +82,7 @@ class CliMockTests(unittest.TestCase):
             ["--mock", "--diff-file", str(self.diff), "-q", "--metadata-json", str(mp)]
         )
         self.assertEqual(code, 0)
-        meta = json.loads(mp.read_text())
+        meta = json.loads(mp.read_text(encoding="utf-8"))
         self.assertIn("rounds_executed", meta)
 
     def test_ci_mode_returns_gate_code(self):
@@ -120,7 +120,8 @@ class CliMockTests(unittest.TestCase):
     def test_config_validate_valid(self):
         cfg = self.d / "jury.toml"
         cfg.write_text(
-            '[jury]\nrounds = 1\nchair = "a"\n\n[[agent]]\nname = "a"\nvendor = "anthropic"\ncommand = "x"\n'
+            '[jury]\nrounds = 1\nchair = "a"\n\n[[agent]]\nname = "a"\nvendor = "anthropic"\ncommand = "x"\n',
+            encoding="utf-8",
         )
         code, _, _ = run(["--config-validate", "--config", str(cfg)])
         self.assertEqual(code, 0)
@@ -128,7 +129,8 @@ class CliMockTests(unittest.TestCase):
     def test_config_validate_invalid(self):
         cfg = self.d / "bad.toml"
         cfg.write_text(
-            '[jury]\nrounds = 0\n\n[[agent]]\nname = "a"\nvendor = "anthropic"\ncommand = "x"\n'
+            '[jury]\nrounds = 0\n\n[[agent]]\nname = "a"\nvendor = "anthropic"\ncommand = "x"\n',
+            encoding="utf-8",
         )
         code, _, _ = run(["--config-validate", "--config", str(cfg)])
         self.assertEqual(code, 2)

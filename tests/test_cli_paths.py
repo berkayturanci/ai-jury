@@ -63,7 +63,7 @@ def gh_mocked(diff=DIFF, head="abc123def456789", comments=None):
 class FlagOverrideBlock(unittest.TestCase):
     def test_all_overrides_apply(self):
         d = Path(tempfile.mkdtemp()) / "x.diff"
-        d.write_text(DIFF)
+        d.write_text(DIFF, encoding="utf-8")
         code, out, _ = run(
             [
                 "--mock",
@@ -103,7 +103,7 @@ class FlagOverrideBlock(unittest.TestCase):
 
     def test_auto_depth(self):
         d = Path(tempfile.mkdtemp()) / "x.diff"
-        d.write_text(DIFF)
+        d.write_text(DIFF, encoding="utf-8")
         code, out, _ = run(["--mock", "--diff-file", str(d), "--auto", "-q"])
         self.assertEqual(code, 0)
 
@@ -150,7 +150,7 @@ class CachePath(unittest.TestCase):
     def test_cache_miss_then_hit(self):
         cdir = tempfile.mkdtemp()
         d = Path(tempfile.mkdtemp()) / "x.diff"
-        d.write_text(DIFF)
+        d.write_text(DIFF, encoding="utf-8")
         # No -q: the "cache miss/hit" lines are emitted by log() to stderr.
         a = ["--mock", "--diff-file", str(d), "--cache", "--cache-dir", cdir]
         code1, _, err1 = run(a)
@@ -164,7 +164,7 @@ class CachePath(unittest.TestCase):
 class ErrorPaths(unittest.TestCase):
     def test_review_runtime_error(self):
         d = Path(tempfile.mkdtemp()) / "x.diff"
-        d.write_text(DIFF)
+        d.write_text(DIFF, encoding="utf-8")
         with mock.patch("ai_jury.cli.review_diff", side_effect=RuntimeError("no usable agents")):
             code, _, err = run(["--mock", "--diff-file", str(d), "-q"])
         self.assertEqual(code, 2)
@@ -172,24 +172,25 @@ class ErrorPaths(unittest.TestCase):
 
     def test_review_keyboard_interrupt(self):
         d = Path(tempfile.mkdtemp()) / "x.diff"
-        d.write_text(DIFF)
+        d.write_text(DIFF, encoding="utf-8")
         with mock.patch("ai_jury.cli.review_diff", side_effect=KeyboardInterrupt()):
             code, _, err = run(["--mock", "--diff-file", str(d), "-q"])
         self.assertEqual(code, 130)
 
     def test_empty_diff_errors(self):
         d = Path(tempfile.mkdtemp()) / "empty.diff"
-        d.write_text("   \n")
+        d.write_text("   \n", encoding="utf-8")
         code, _, _ = run(["--mock", "--diff-file", str(d), "-q"])
         self.assertNotEqual(code, 0)
 
     def test_config_load_invalid(self):
         cfg = Path(tempfile.mkdtemp()) / "bad.toml"
         cfg.write_text(
-            '[jury]\nrounds = 0\n\n[[agent]]\nname = "a"\nvendor = "anthropic"\ncommand = "x"\n'
+            '[jury]\nrounds = 0\n\n[[agent]]\nname = "a"\nvendor = "anthropic"\ncommand = "x"\n',
+            encoding="utf-8",
         )
         d = Path(tempfile.mkdtemp()) / "x.diff"
-        d.write_text(DIFF)
+        d.write_text(DIFF, encoding="utf-8")
         code, _, err = run(["--mock", "--diff-file", str(d), "--config", str(cfg)])
         self.assertEqual(code, 2)
         self.assertIn("Config invalid", err)
@@ -206,7 +207,7 @@ class CliOverrideBounds(unittest.TestCase):
     def setUp(self):
         self.d = Path(tempfile.mkdtemp())
         self.diff = self.d / "x.diff"
-        self.diff.write_text(DIFF)
+        self.diff.write_text(DIFF, encoding="utf-8")
 
     def _run(self, *flags):
         return run(["--mock", "--diff-file", str(self.diff), "-q", *flags])
@@ -234,7 +235,8 @@ class CliOverrideBounds(unittest.TestCase):
         # surfaces differ only in the name they blame.
         cfg = self.d / "zero.toml"
         cfg.write_text(
-            '[jury]\nrounds = 0\n\n[[agent]]\nname = "a"\nvendor = "anthropic"\ncommand = "x"\n'
+            '[jury]\nrounds = 0\n\n[[agent]]\nname = "a"\nvendor = "anthropic"\ncommand = "x"\n',
+            encoding="utf-8",
         )
         toml_code, _, toml_err = run(["--config-validate", "--config", str(cfg)])
         flag_code, _, flag_err = self._run("--rounds", "0")
@@ -292,7 +294,7 @@ class UnwritableOutputPath(unittest.TestCase):
     def setUp(self):
         self.d = Path(tempfile.mkdtemp())
         self.diff = self.d / "x.diff"
-        self.diff.write_text(DIFF)
+        self.diff.write_text(DIFF, encoding="utf-8")
 
     def _run(self, target):
         return run(["--mock", "--diff-file", str(self.diff), "-q", "-o", str(target)])
@@ -376,7 +378,8 @@ class DoctorAndCommentPaths(unittest.TestCase):
         cfg = Path(tempfile.mkdtemp()) / "warn.toml"
         # unknown vendor → a soft warning (valid, but warned).
         cfg.write_text(
-            '[jury]\nrounds = 1\nchair = "a"\n\n[[agent]]\nname = "a"\nvendor = "acme"\ncommand = "x"\n'
+            '[jury]\nrounds = 1\nchair = "a"\n\n[[agent]]\nname = "a"\nvendor = "acme"\ncommand = "x"\n',
+            encoding="utf-8",
         )
         code, out, _ = run(["--config-validate", "--config", str(cfg)])
         self.assertEqual(code, 0)

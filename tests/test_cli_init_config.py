@@ -104,7 +104,7 @@ class InitTests(unittest.TestCase):
 
     def test_init_refuses_overwrite_without_force(self):
         out = self.d / "exists.toml"
-        out.write_text("[jury]\nrounds = 1\n")
+        out.write_text("[jury]\nrounds = 1\n", encoding="utf-8")
         code, _, err = run(["init", "--agents", "claude", "-o", str(out)])
         self.assertNotEqual(code, 0)
 
@@ -301,7 +301,8 @@ class ConfigShowTests(unittest.TestCase):
     def test_config_show_from_file(self):
         cfg = self.d / "jury.toml"
         cfg.write_text(
-            '[jury]\nrounds = 1\nchair = "a"\n\n[[agent]]\nname = "a"\nvendor = "anthropic"\ncommand = "x"\n'
+            '[jury]\nrounds = 1\nchair = "a"\n\n[[agent]]\nname = "a"\nvendor = "anthropic"\ncommand = "x"\n',
+            encoding="utf-8",
         )
         code, out, _ = run(["config", "show", "--config", str(cfg)])
         self.assertEqual(code, 0)

@@ -165,7 +165,8 @@ class CliDecisionTests(unittest.TestCase):
         cfg = d / "jury.toml"
         cfg.write_text(
             '[jury]\nrounds = 1\nchair = "claude"\ndecision = "vote"\n'
-            '\n[[agent]]\nname = "claude"\nvendor = "anthropic"\ncommand = "x"\n'
+            '\n[[agent]]\nname = "claude"\nvendor = "anthropic"\ncommand = "x"\n',
+            encoding="utf-8",
         )
         code, out, _ = _run(
             ["--mock", "--diff-file", "-", "-q", "--seed", "1", "--config", str(cfg)]
@@ -185,7 +186,8 @@ class CliDecisionTests(unittest.TestCase):
         cfg = d / "jury.toml"
         cfg.write_text(
             '[jury]\nrounds = 1\nchair = "claude"\ndecision = "vote"\n'
-            '\n[[agent]]\nname = "claude"\nvendor = "anthropic"\ncommand = "x"\n'
+            '\n[[agent]]\nname = "claude"\nvendor = "anthropic"\ncommand = "x"\n',
+            encoding="utf-8",
         )
         code, out, _ = _run(
             [
@@ -234,7 +236,8 @@ class DecisionConfigInvariantTests(unittest.TestCase):
         cfg = d / "jury.toml"
         cfg.write_text(
             '[jury]\nrounds = 1\nchair = "a"\ndecision = "vote"\n'
-            '\n[[agent]]\nname = "a"\nvendor = "anthropic"\ncommand = "x"\n'
+            '\n[[agent]]\nname = "a"\nvendor = "anthropic"\ncommand = "x"\n',
+            encoding="utf-8",
         )
         self.assertEqual(load_config(str(cfg)).decision, "vote")
 
