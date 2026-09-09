@@ -394,13 +394,21 @@ class NoPageStillTellsAReaderTheOldStory(unittest.TestCase):
         # contradicts its own name, and its `desc` is written with `textContent`,
         # so a URL there would render as literal text anyway.
         landing = (REPO_ROOT / "website" / "index.html").read_text(encoding="utf-8")
+        # The sentence, not the substrings. Every agent name appears elsewhere on
+        # this page as a *reviewer*, which is the collision this issue is named
+        # after — so finding "Cursor" somewhere in the file proves nothing about
+        # the paragraph that tells a reader where to install.
+        blurb = next(
+            (line for line in landing.splitlines() if "Install as a plugin in" in line), ""
+        )
+        self.assertTrue(blurb, "the drop-in-skill blurb is not there to check")
         # In-site, like every other doc link on the page: the docs app renders the
-        # markdown, and sending a reader to the GitHub blob leaves the site to
-        # read a page the site can show.
-        self.assertIn('href="docs.html#install"', landing)
+        # markdown, and sending a reader to the GitHub blob leaves the site to read
+        # a page the site can show.
+        self.assertIn('href="docs.html#install"', blurb)
         for agent in ("Codex", "Antigravity", "Cursor"):
             with self.subTest(agent=agent):
-                self.assertIn(agent, landing)
+                self.assertIn(agent, blurb)
 
     def test_the_site_registers_every_page_it_links_between(self):
         """A link out of a site-rendered page has to stay in the docs app.

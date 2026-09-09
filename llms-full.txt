@@ -240,8 +240,9 @@ A skill ships in [skills/ai-jury/](skills/ai-jury/SKILL.md); drop it into a proj
 `.claude/skills/` to convene the jury on demand. The repo is also installable as a
 single-plugin **marketplace** in four agents — Claude Code, Codex, Antigravity and
 Cursor — each with its own install command and its own update path, which is not a
-re-install everywhere. `.claude-plugin/`, `.codex-plugin/` and `.cursor-plugin/` carry
-the manifests. Per-agent commands are in [docs/install.md](docs/install.md); the support
+re-install everywhere. Three manifests cover the four: `.claude-plugin/`,
+`.codex-plugin/` and `.cursor-plugin/`. Antigravity needs none — it discovers
+components by root-directory convention and reads no manifest path at all (#775). Per-agent commands are in [docs/install.md](docs/install.md); the support
 matrix is [docs/platforms.md](docs/platforms.md).
 
 ## Status
