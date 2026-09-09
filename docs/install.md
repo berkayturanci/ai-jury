@@ -168,6 +168,14 @@ a `git pull`, and a `git pull` needs nothing established about it.
 
 ## What each route actually registers
 
+**Claude Code, Codex and Antigravity** register what the manifests declare —
+ai-jury's skill — through their own plugin systems. Antigravity additionally
+discovers it by root-directory convention rather than from a manifest path, and
+lands the plugin in `~/.gemini/config/plugins/ai-jury/`.
+
+Cursor is the one where the route changes the answer:
+
+
 A **locally installed** Cursor plugin registers **skills only** — no commands, no
 subagents, no MCP servers. That is Cursor's local-plugin behaviour rather than
 anything about this repository's manifest; a plugin declaring no components at

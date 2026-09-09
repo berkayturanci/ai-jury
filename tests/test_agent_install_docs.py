@@ -353,6 +353,10 @@ class NoPageStillTellsAReaderTheOldStory(unittest.TestCase):
         """
         summary = (REPO_ROOT / MACHINE_SUMMARY).read_text(encoding="utf-8")
         self.assertIn("docs/install.md", summary)
+        # And not the claim the landing page had to drop: Cursor has no CLI
+        # install command, so "each with its own install command" is wrong
+        # wherever it appears — including the file written to be summarised.
+        self.assertNotIn("each with its own install command", summary)
         for agent in ("Codex", "Antigravity", "Cursor"):
             with self.subTest(agent=agent):
                 self.assertIn(agent, summary)
