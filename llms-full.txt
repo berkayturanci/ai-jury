@@ -237,14 +237,20 @@ Antigravity `--sandbox`; `privilege.py` audits this. Invocations:
 ## Skill / distribution
 
 A skill ships in [skills/ai-jury/](skills/ai-jury/SKILL.md); drop it into a project's
-`.claude/skills/` to convene the jury on demand. The repo is also installable as a
-single-plugin **marketplace** in four agents — Claude Code, Codex, Antigravity and
-Cursor — each with its own route and its own update path, which is not a re-install
-everywhere and, for Cursor, is not a CLI command at all: `cursor-agent plugin` has no
-install subcommand, so that route is a git checkout. Three manifests cover the four: `.claude-plugin/`,
-`.codex-plugin/` and `.cursor-plugin/`. Antigravity needs none — it discovers
-components by root-directory convention and reads no manifest path at all (#775). Per-agent commands are in [docs/install.md](docs/install.md); the support
-matrix is [docs/platforms.md](docs/platforms.md).
+`.claude/skills/` to convene the jury on demand.
+
+It also installs as a plugin in four agent hosts, and the four routes are not the same
+shape. Claude Code and Codex add this repository as a single-plugin **marketplace**;
+Antigravity installs it from the git URL and then needs a separate `enable`; Cursor has
+no CLI install command at all, so that route is a git checkout under
+`~/.cursor/plugins/local/`. Updating differs the same way — re-running the install is
+the update for Antigravity, while in Claude Code `plugin install` is a no-op on an
+installed plugin. Three manifests cover the four: `.claude-plugin/`, `.codex-plugin/`
+and `.cursor-plugin/`. Antigravity needs none, because it discovers components by
+root-directory convention and reads no manifest path (#775).
+
+Per-agent commands, and what each route registers: [docs/install.md](docs/install.md).
+The support matrix is [docs/platforms.md](docs/platforms.md).
 
 ## Status
 

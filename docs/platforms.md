@@ -2,7 +2,8 @@
 
 > Install once. Run a cross-vendor review jury anywhere.
 
-`ai-jury` is a single Python CLI (`jury`) plus a Claude Code skill. The
+`ai-jury` is a single Python CLI (`jury`) plus a skill, packaged for four agent hosts —
+Claude Code, Codex, Antigravity and Cursor ([install.md](install.md)). The
 goal of this page is to make that same capability easy to install where you already
 work — **not** to become a generic MCP/hook platform. The scope stays on ai-jury
 orchestration.
@@ -12,7 +13,6 @@ orchestration.
 - **supported** — first-class, documented, exercised.
 - **manual** — works today by invoking the `jury` CLI directly; no platform-native
   packaging yet.
-- **planned** — intended once the platform exposes a stable skill/plugin mechanism.
 - **out of scope** — deliberately not pursued.
 
 ## Matrix

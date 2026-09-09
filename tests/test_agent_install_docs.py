@@ -352,14 +352,20 @@ class NoPageStillTellsAReaderTheOldStory(unittest.TestCase):
         surface written specifically to be summarised.
         """
         summary = (REPO_ROOT / MACHINE_SUMMARY).read_text(encoding="utf-8")
-        self.assertIn("docs/install.md", summary)
-        # And not the claim the landing page had to drop: Cursor has no CLI
-        # install command, so "each with its own install command" is wrong
-        # wherever it appears — including the file written to be summarised.
-        self.assertNotIn("each with its own install command", summary)
+        # The paragraph, not the file. `Codex` appears in this document as a
+        # *reviewer* long before the distribution section — the collision this
+        # issue is named after — so a substring search over the whole file proved
+        # nothing about the paragraph that says how to install.
+        start = summary.index("## Skill / distribution")
+        section = summary[start : summary.index("\n## ", start + 1)]
+        self.assertIn("docs/install.md", section)
+        # Not the claim the landing page had to drop: Cursor has no CLI install
+        # command, so "each with its own install command" is wrong wherever it
+        # appears — including the file written to be summarised.
+        self.assertNotIn("each with its own install command", section)
         for agent in ("Codex", "Antigravity", "Cursor"):
             with self.subTest(agent=agent):
-                self.assertIn(agent, summary)
+                self.assertIn(agent, section)
 
     def test_every_instruction_page_sends_the_reader_to_the_install_page(self):
         """A page that gives its own recipe has to point at the one that owns them.
