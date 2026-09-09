@@ -53,12 +53,16 @@ in [`.claude-plugin/`](../.claude-plugin/):
   root-directory convention (#775). One directory serves every agent; nothing is
   duplicated per platform.
 
-Install:
+Install, in a session:
 
 ```text
 /plugin marketplace add berkayturanci/ai-jury
 /plugin install ai-jury@ai-jury
 ```
+
+**Updating is not a re-install** — `plugin install` is a no-op on an installed
+plugin. That command, and the other three agents, are in
+[install.md](install.md#claude-code).
 
 The plugin only bundles the ai-jury skill; it does not register hooks, MCP
 servers, or unrelated commands.

@@ -203,13 +203,19 @@
       try { return new URL(href, "https://x/docs/").pathname.replace(/^\//, ""); }
       catch (e) { return href; }
     }
-    function rewrite(container) {
+    function rewrite(container, slug) {
       // links
       Array.prototype.forEach.call(container.querySelectorAll("a[href]"), function (a) {
         var href = a.getAttribute("href");
         if (!href) return;
-        if (/^(https?:)?\/\//i.test(href) || /^(mailto:|#)/i.test(href)) {
-          if (/^https?:\/\//i.test(href)) { a.target = "_blank"; a.rel = "noopener"; }
+        if (/^(https?:)?\/\//i.test(href)) { a.target = "_blank"; a.rel = "noopener"; return; }
+        if (/^mailto:/i.test(href)) { return; }
+        // A pure `#heading` — every document's own contents list. Left as-is it
+        // becomes a location hash with no document in it, so the link works while
+        // the page is open and sends the reader to the home page on reload or on a
+        // shared URL. Carrying the slug makes it a real address.
+        if (/^#/.test(href)) {
+          if (slug && href.length > 1) { a.setAttribute("href", "#" + slug + "--" + href.slice(1)); }
           return;
         }
         var frag = "";
@@ -258,8 +264,7 @@
       Array.prototype.forEach.call(toc.querySelectorAll(".ds-sub"), function (link) {
         link.addEventListener("click", function (e) {
           e.preventDefault();
-          var el = document.getElementById(link.getAttribute("data-id"));
-          if (el) { window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 76, behavior: "smooth" }); }
+          scrollToAnchor(link.getAttribute("data-id"));
           if (window.innerWidth <= 860) {
             sideEl.classList.add("collapsed");
             var mb = $("menu-btn"); if (mb) { mb.setAttribute("aria-expanded", "false"); mb.innerHTML = "☰ Menu"; }
@@ -324,7 +329,7 @@
           meta.className = "doc-meta";
           meta.innerHTML = '<span class="doc-source">docs/' + item.file + '</span>'
             + '<a class="doc-edit" href="' + BLOB_ROOT + "docs/" + item.file + '" target="_blank" rel="noopener">View source on GitHub →</a>';
-          rewrite(wrap);
+          rewrite(wrap, slug);
           // syntax highlight code blocks
           if (window.hljs) {
             Array.prototype.forEach.call(wrap.querySelectorAll("pre code"), function (block) {

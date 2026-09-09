@@ -321,14 +321,18 @@ class NoPageStillTellsAReaderTheOldStory(unittest.TestCase):
         platforms in general — the same collision #783 is named after, where an
         agent appears as a *reviewer* everywhere and as a *host* nowhere.
         """
-        for name in ("index.html", "app.js"):
-            with self.subTest(document=f"website/{name}"):
-                site = (REPO_ROOT / "website" / name).read_text(encoding="utf-8")
-                self.assertIn("docs/install.md", site)
+        # The landing page can hold a link; the integration card cannot — its
+        # `desc` is written with `textContent`, so a URL there renders as literal
+        # text. Asking each surface for what it can actually carry: the page for a
+        # link, the card for the agents it covers.
         landing = (REPO_ROOT / "website" / "index.html").read_text(encoding="utf-8")
+        self.assertIn("docs/install.md", landing)
+        card = (REPO_ROOT / "website" / "app.js").read_text(encoding="utf-8")
+        plugin_card = card[card.index('id: "claude-plugin"') :][:900]
         for agent in ("Codex", "Antigravity", "Cursor"):
             with self.subTest(agent=agent):
                 self.assertIn(agent, landing)
+                self.assertIn(agent, plugin_card)
 
     def test_the_site_registers_every_page_it_links_between(self):
         """A link out of a site-rendered page has to stay in the docs app.
@@ -368,12 +372,29 @@ class NoPageStillTellsAReaderTheOldStory(unittest.TestCase):
         self.assertIn("else if (BY_SLUG[slug]) { renderDoc(slug, anchor); }", site)
         self.assertIn("else if (scrollToAnchor(slug)) { return; }", site)
 
+    def test_an_in_page_anchor_carries_the_document_it_is_in(self):
+        """`#cursor` works while the page is open and dies on reload.
+
+        A bare fragment is a location hash with no document in it, so the same
+        link a reader clicks happily is a URL that lands on the home page when
+        shared or reloaded. Rewriting it to `#install--cursor` makes it an
+        address.
+        """
+        site = (REPO_ROOT / "website" / "docs.html").read_text(encoding="utf-8")
+        self.assertIn('"#" + slug + "--" + href.slice(1)', site)
+        self.assertIn("rewrite(wrap, slug)", site)
+
     def test_the_site_scrolls_with_the_offset_the_sticky_nav_needs(self):
         """One scroll helper, so a jump cannot land under the header on one path."""
         site = (REPO_ROOT / "website" / "docs.html").read_text(encoding="utf-8")
         self.assertEqual(site.count("function scrollToAnchor"), 1)
         after = site[site.index("function scrollToAnchor") :]
         self.assertIn("- 76", after[:400])
+        # One implementation, actually: the table of contents inlined its own copy
+        # of the same scroll, so "both jumps go through one helper" was not true of
+        # the file that sentence described.
+        self.assertEqual(site.count('behavior: "smooth"'), 1)
+        self.assertIn('scrollToAnchor(link.getAttribute("data-id"))', site)
 
     def test_every_cross_document_anchor_resolves(self):
         """The renamed heading left `platforms.md#codex-cli-template--manual` dangling.
