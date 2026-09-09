@@ -43,6 +43,9 @@ BADGE = re.compile(r"\[!\[[^\]]+\]\([^)]+\)\]\(#([a-z0-9-]+)\)")
 #: drops.
 AGENTS = ("claude-code", "codex", "antigravity", "cursor")
 
+#: The install page, as the failure messages name it.
+INSTALL_NAME = "docs/install.md"
+
 
 def anchors(text: str) -> list[str]:
     return ANCHOR.findall(text)
@@ -147,11 +150,20 @@ class EveryBoxSaysHowToUpdate(unittest.TestCase):
         return found
 
     def test_the_last_section_stops_at_its_own_box(self):
-        """Vacuity, on the one section that had none: it used to run to the file end."""
-        for text, where in ((self.readme, "README.md"), (self.install, "docs/install.md")):
+        """Vacuity, on the one section that had none: it used to run to the file end.
+
+        The property, not a character budget. A budget failed the day the Cursor
+        box legitimately grew a second update command, which is the wrong thing to
+        refuse; what matters is that the split **cut** something rather than
+        handing back the rest of the document.
+        """
+        for text, where in ((self.readme, "README.md"), (self.install, INSTALL_NAME)):
             with self.subTest(document=where):
-                last = self.sections(text)[AGENTS[-1]]
-                self.assertLess(len(last), 2000, f"{where}: the last section runs on")
+                sections = self.sections(text)
+                last = sections[AGENTS[-1]]
+                tail = text[text.index(f'<a id="{AGENTS[-1]}"></a>') :]
+                self.assertLess(len(last), len(tail), f"{where}: the last section runs on")
+                self.assertNotIn("## See also", last)
 
     def test_the_split_returns_a_body_per_agent(self):
         for text, where in ((self.readme, "README.md"), (self.install, "docs/install.md")):
