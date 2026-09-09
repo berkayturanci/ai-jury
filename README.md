@@ -59,18 +59,22 @@ needed for `--pr` / `--post`.
 
 The above installs the **CLI**. Installing ai-jury as a **plugin** — so its skill
 is available inside an agent session — is a separate step, and the CLI is still
-required either way. Click the agent you use:
+required either way. Jump to the agent you use:
 
 [![Claude Code](https://img.shields.io/badge/Claude_Code-install-D97757?style=flat-square)](#claude-code)
 [![Codex](https://img.shields.io/badge/Codex-install-000000?style=flat-square)](#codex)
 [![Antigravity](https://img.shields.io/badge/Antigravity-install-4285F4?style=flat-square)](#antigravity)
 [![Cursor](https://img.shields.io/badge/Cursor-install-6E56CF?style=flat-square)](#cursor)
 
+Each badge jumps to that agent's box; open it for the commands. (A browser scrolls
+to a collapsed `<details>`; it does not expand one.)
+
 > The agent names elsewhere in this README are **reviewers the jury convenes**.
 > Here the same agents are **hosts you install ai-jury into** — a different role.
 
+<a id="claude-code"></a>
 <details>
-<summary><a id="claude-code"></a><b>Claude Code</b> — marketplace plugin</summary>
+<summary><b>Claude Code</b> — marketplace plugin</summary>
 
 **Install**
 
@@ -92,8 +96,9 @@ bare name exits 1 with `Plugin "ai-jury" not found`.
 
 </details>
 
+<a id="codex"></a>
 <details>
-<summary><a id="codex"></a><b>Codex</b> — marketplace plugin</summary>
+<summary><b>Codex</b> — marketplace plugin</summary>
 
 **Install**
 
@@ -113,8 +118,9 @@ codex plugin add ai-jury@ai-jury
 
 </details>
 
+<a id="antigravity"></a>
 <details>
-<summary><a id="antigravity"></a><b>Antigravity</b> (<code>agy</code>) — git install</summary>
+<summary><b>Antigravity</b> (<code>agy</code>) — git install</summary>
 
 **Install**
 
@@ -137,8 +143,9 @@ path Antigravity's own docs suggest.
 
 </details>
 
+<a id="cursor"></a>
 <details>
-<summary><a id="cursor"></a><b>Cursor</b> — local checkout</summary>
+<summary><b>Cursor</b> — local checkout</summary>
 
 Cursor has **no CLI install command** — `cursor-agent plugin` exposes only
 `marketplace`. The local checkout is the route with a straightforward update.

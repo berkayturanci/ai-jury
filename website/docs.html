@@ -275,6 +275,7 @@
 
     /* ---- home (index) view ---- */
     function renderHome() {
+      currentSlug = null;
       buildSidebar(null);
       var html = '<p class="docs-kicker">Reference</p><h1 class="docs-h1">Documentation</h1>';
       html += '<p class="docs-lede">Everything about ai-jury, rendered live from the repository\u2019s <code>docs/</code>. Pick a topic.</p>';
@@ -310,6 +311,9 @@
       return true;
     }
 
+    //: The document on screen, so the router can tell "go there" from "scroll here".
+    var currentSlug = null;
+
     function renderDoc(slug, anchor) {
       var item = BY_SLUG[slug];
       if (!item) { renderHome(); return; }
@@ -329,6 +333,7 @@
           meta.className = "doc-meta";
           meta.innerHTML = '<span class="doc-source">docs/' + item.file + '</span>'
             + '<a class="doc-edit" href="' + BLOB_ROOT + "docs/" + item.file + '" target="_blank" rel="noopener">View source on GitHub →</a>';
+          currentSlug = slug;
           rewrite(wrap, slug);
           // syntax highlight code blocks
           if (window.hljs) {
@@ -361,6 +366,10 @@
       // document slug found no such document and sent the reader to the home
       // page, silently, from any in-page link they clicked.
       if (!slug) { renderHome(); }
+      // Already on this document: scroll, do not re-render. Re-rendering replaced
+      // the article with a spinner and re-fetched the markdown, so a page's own
+      // contents list reloaded the page it was already showing.
+      else if (slug === currentSlug && scrollToAnchor(anchor)) { return; }
       else if (BY_SLUG[slug]) { renderDoc(slug, anchor); }
       else if (scrollToAnchor(slug)) { return; }
       else { renderHome(); }

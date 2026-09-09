@@ -96,6 +96,20 @@ class EveryAgentIsInBothDocuments(unittest.TestCase):
         readme = self.readme + '\n<a id="zed"></a>\n'
         self.assertNotEqual(set(anchors(readme)), set(anchors(self.install)))
 
+    def test_the_badge_anchor_is_outside_the_collapsed_box(self):
+        """Navigating to an id inside `<summary>` does not open the `<details>`.
+
+        The badge row's whole promise is that clicking your agent takes you to its
+        commands, and an anchor buried in the summary lands the reader on a
+        collapsed box with no indication that it opens. The anchor sits before the
+        `<details>` instead, so the browser scrolls to the box and the summary is
+        the thing under the cursor.
+        """
+        for agent in AGENTS:
+            with self.subTest(agent=agent):
+                self.assertIn(f'<a id="{agent}"></a>\n<details>', self.readme)
+                self.assertNotIn(f'<summary><a id="{agent}"></a>', self.readme)
+
     def test_every_badge_points_at_an_anchor_that_exists(self):
         """context-mode's badges are `href="#"` and go nowhere; these must not.
 
@@ -383,6 +397,19 @@ class NoPageStillTellsAReaderTheOldStory(unittest.TestCase):
         site = (REPO_ROOT / "website" / "docs.html").read_text(encoding="utf-8")
         self.assertIn('"#" + slug + "--" + href.slice(1)', site)
         self.assertIn("rewrite(wrap, slug)", site)
+
+    def test_a_jump_within_the_open_document_does_not_re_render_it(self):
+        """Carrying the slug made every in-page jump a full page load.
+
+        `#install--cursor` matched a known document first, so `renderDoc` replaced
+        the article with a spinner and re-fetched the markdown — to land on a
+        heading already on screen. The router checks the document it is showing
+        before it decides to fetch one.
+        """
+        site = (REPO_ROOT / "website" / "docs.html").read_text(encoding="utf-8")
+        self.assertIn("slug === currentSlug && scrollToAnchor(anchor)", site)
+        self.assertIn("currentSlug = slug;", site)
+        self.assertIn("currentSlug = null;", site)
 
     def test_the_site_scrolls_with_the_offset_the_sticky_nav_needs(self):
         """One scroll helper, so a jump cannot land under the header on one path."""

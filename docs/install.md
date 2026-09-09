@@ -154,15 +154,19 @@ git -C ~/.cursor/plugins/local/ai-jury pull
 
 Restart Cursor.
 
-**Install — marketplace**
+**Install — marketplace** (no verified update path)
 
 ```bash
 cursor-agent plugin marketplace add https://github.com/berkayturanci/ai-jury
 ```
 
-Then install it from Cursor's `/plugins` screen. `cursor-agent plugin
-marketplace update <nameOrUrl>` re-indexes the marketplace from its git
-repository.
+Then install it from Cursor's `/plugins` screen.
+
+`cursor-agent plugin marketplace update <nameOrUrl>` re-indexes the **marketplace**
+— that is Cursor's own description of it — which is not the same thing as moving
+an already-installed plugin to a newer commit, and this session did not establish
+that it does. **That is why the local checkout is the route above.** Its update is
+a `git pull`, and a `git pull` needs nothing established about it.
 
 ---
 
