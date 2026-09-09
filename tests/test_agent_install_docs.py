@@ -313,6 +313,23 @@ class NoPageStillTellsAReaderTheOldStory(unittest.TestCase):
         found = DOC_ANCHOR_LINK.findall((REPO_ROOT / "docs" / "install.md").read_text())
         self.assertTrue(any(target.endswith("README.md") for target, _ in found), found)
 
+    def test_the_public_site_does_not_lead_with_one_agent(self):
+        """The site is the surface most people see, and it told the old story.
+
+        The landing page's drop-in-skill blurb offered "a Claude Code plugin or
+        copy the skill" and left the other three agents to a sentence about
+        platforms in general — the same collision #783 is named after, where an
+        agent appears as a *reviewer* everywhere and as a *host* nowhere.
+        """
+        for name in ("index.html", "app.js"):
+            with self.subTest(document=f"website/{name}"):
+                site = (REPO_ROOT / "website" / name).read_text(encoding="utf-8")
+                self.assertIn("docs/install.md", site)
+        landing = (REPO_ROOT / "website" / "index.html").read_text(encoding="utf-8")
+        for agent in ("Codex", "Antigravity", "Cursor"):
+            with self.subTest(agent=agent):
+                self.assertIn(agent, landing)
+
     def test_the_site_registers_every_page_it_links_between(self):
         """A link out of a site-rendered page has to stay in the docs app.
 

@@ -1498,7 +1498,7 @@
         iconKey: "claude",
         logo: "logos/claude.svg",
         color: "var(--c-claude)",
-        desc: "First-class Claude Code plugin and skill for direct chat reviews.",
+        desc: "First-class Claude Code plugin and skill for direct chat reviews. Codex, Antigravity and Cursor install it too — see docs/install.md.",
         config: "# .claude-plugin/plugin.json\n{\n  \"name\": \"ai-jury\",\n  \"description\": \"Multi-agent review jury\"\n}",
         command: "/jury review"
       },
