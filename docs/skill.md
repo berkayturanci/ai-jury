@@ -49,12 +49,16 @@ command. Two install routes exist; pick by host.
 
 ### Claude Code (plugin — recommended)
 
-This repo doubles as a single-plugin marketplace. Install the bundled skill as a plugin:
+This repo doubles as a single-plugin marketplace, and in a session the short form
+is `/plugin marketplace add berkayturanci/ai-jury` then
+`/plugin install ai-jury@ai-jury`.
 
-```text
-/plugin marketplace add berkayturanci/ai-jury
-/plugin install ai-jury@ai-jury
-```
+**The CLI commands, and the update path, are in [install.md](install.md#claude-code)**
+— along with the same for Codex, Antigravity and Cursor. They are deliberately not
+repeated here: `plugin install` is a no-op on an installed plugin, so an
+install-only recipe leaves a reader on a version they cannot move off, and a second
+copy of the recipes is how this page came to describe one agent while the matrix
+described four.
 
 The manifests that make this work are in [`.claude-plugin/`](../.claude-plugin/)
 (`marketplace.json` + `plugin.json`); they are documented in the
@@ -70,12 +74,15 @@ cp -R skills/ai-jury <your-project>/.claude/skills/ai-jury
 
 ### Codex / other Claude-compatible skill folders
 
-Codex does not yet expose a stable plugin manifest equivalent. Until it does, install the
-skill the same way — copy `skills/ai-jury/` into the host's skill directory — or
-reference the `jury` command from an `AGENTS.md`. The
-[Codex template in the platform matrix](platforms.md#codex-cli-template--manual) shows the
-minimal `AGENTS.md` snippet; the underlying capability (running `jury`) is identical
-across hosts, only the packaging differs.
+Codex has a plugin marketplace, and `.codex-plugin/plugin.json` is this repository's
+manifest for it: `codex plugin marketplace add` then `codex plugin add ai-jury@ai-jury`,
+with the update path in [install.md](install.md#codex). That is the route to prefer.
+
+The copy-the-folder route below still works on any Claude-compatible skill directory, and
+so does referencing the `jury` command from an `AGENTS.md` — see the
+[snippet in the platform matrix](platforms.md#codex-cli). Neither needs a plugin at all,
+which is what makes them useful in a container or a CI job. The underlying capability
+(running `jury`) is identical across hosts; only the packaging differs.
 
 ## Required external tools
 

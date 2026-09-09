@@ -99,6 +99,7 @@
       { title: "Guides", items: [
         { slug: "cookbook", file: "cookbook.md", title: "Cookbook" },
         { slug: "theater-design", file: "theater-design.md", title: "Theater mode (--theater)" },
+        { slug: "install", file: "install.md", title: "Installing into an agent" },
         { slug: "platforms", file: "platforms.md", title: "Platform support" },
         { slug: "skill", file: "skill.md", title: "Skill packaging" },
         { slug: "security", file: "security.md", title: "Security" },
@@ -202,13 +203,19 @@
       try { return new URL(href, "https://x/docs/").pathname.replace(/^\//, ""); }
       catch (e) { return href; }
     }
-    function rewrite(container) {
+    function rewrite(container, slug) {
       // links
       Array.prototype.forEach.call(container.querySelectorAll("a[href]"), function (a) {
         var href = a.getAttribute("href");
         if (!href) return;
-        if (/^(https?:)?\/\//i.test(href) || /^(mailto:|#)/i.test(href)) {
-          if (/^https?:\/\//i.test(href)) { a.target = "_blank"; a.rel = "noopener"; }
+        if (/^(https?:)?\/\//i.test(href)) { a.target = "_blank"; a.rel = "noopener"; return; }
+        if (/^mailto:/i.test(href)) { return; }
+        // A pure `#heading` — every document's own contents list. Left as-is it
+        // becomes a location hash with no document in it, so the link works while
+        // the page is open and sends the reader to the home page on reload or on a
+        // shared URL. Carrying the slug makes it a real address.
+        if (/^#/.test(href)) {
+          if (slug && href.length > 1) { a.setAttribute("href", "#" + slug + "--" + href.slice(1)); }
           return;
         }
         var frag = "";
@@ -216,7 +223,13 @@
         if (hashIdx >= 0) { frag = href.slice(hashIdx); href = href.slice(0, hashIdx); }
         if (!href) { return; } // pure fragment handled above
         var path = resolveRel(href);
-        if (FILE_TO_SLUG[path]) { a.setAttribute("href", "#" + FILE_TO_SLUG[path] + (frag && frag !== "#" ? "" : "")); a.removeAttribute("target"); return; }
+        // Keep the fragment. Both arms of the ternary here used to be empty, so
+        // `install.md#cursor` became `#install` and the reader landed on the page
+        // preamble instead of the box the link was written to reach — every
+        // cross-page anchor in the docs silently lost its destination. A location
+        // hash cannot hold two `#`, so the sub-anchor rides along after `--` and
+        // `route()` splits it back off.
+        if (FILE_TO_SLUG[path]) { a.setAttribute("href", "#" + FILE_TO_SLUG[path] + (frag && frag !== "#" ? "--" + frag.slice(1) : "")); a.removeAttribute("target"); return; }
         // other repo file → blob (or raw for assets handled by img)
         a.setAttribute("href", BLOB_ROOT + path + frag);
         a.target = "_blank"; a.rel = "noopener";
@@ -251,8 +264,7 @@
       Array.prototype.forEach.call(toc.querySelectorAll(".ds-sub"), function (link) {
         link.addEventListener("click", function (e) {
           e.preventDefault();
-          var el = document.getElementById(link.getAttribute("data-id"));
-          if (el) { window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 76, behavior: "smooth" }); }
+          scrollToAnchor(link.getAttribute("data-id"));
           if (window.innerWidth <= 860) {
             sideEl.classList.add("collapsed");
             var mb = $("menu-btn"); if (mb) { mb.setAttribute("aria-expanded", "false"); mb.innerHTML = "☰ Menu"; }
@@ -263,6 +275,7 @@
 
     /* ---- home (index) view ---- */
     function renderHome() {
+      currentSlug = null;
       buildSidebar(null);
       var html = '<p class="docs-kicker">Reference</p><h1 class="docs-h1">Documentation</h1>';
       html += '<p class="docs-lede">Everything about ai-jury, rendered live from the repository\u2019s <code>docs/</code>. Pick a topic.</p>';
@@ -287,7 +300,29 @@
     }
 
     /* ---- doc view ---- */
-    function renderDoc(slug) {
+    // One scroll, with the sticky nav's own offset — the same 76px `buildTOC` uses.
+    // Without it a jump lands with the heading under the header, which is the
+    // difference between "took me there" and "took me nearly there".
+    function scrollToAnchor(id) {
+      if (!id) { return false; }
+      // `getElementById`, not a built selector: the id comes from `location.hash`,
+      // and interpolating that into a CSS selector lets a crafted `#a"]` throw out
+      // of `querySelector` — a lookup has no business parsing anything.
+      var el = document.getElementById(id);
+      // GitHub keeps a run of dashes in a heading slug (`… — …` becomes `---`);
+      // this page's own `slugify` collapses it to one. A markdown link therefore
+      // carries an id this document never assigned, and the jump silently did
+      // nothing. Try the spelling this page uses before giving up.
+      if (!el) { el = document.getElementById(slugify(id)); }
+      if (!el) { return false; }
+      window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 76, behavior: "smooth" });
+      return true;
+    }
+
+    //: The document on screen, so the router can tell "go there" from "scroll here".
+    var currentSlug = null;
+
+    function renderDoc(slug, anchor) {
       var item = BY_SLUG[slug];
       if (!item) { renderHome(); return; }
       buildSidebar(slug);
@@ -306,7 +341,8 @@
           meta.className = "doc-meta";
           meta.innerHTML = '<span class="doc-source">docs/' + item.file + '</span>'
             + '<a class="doc-edit" href="' + BLOB_ROOT + "docs/" + item.file + '" target="_blank" rel="noopener">View source on GitHub →</a>';
-          rewrite(wrap);
+          currentSlug = slug;
+          rewrite(wrap, slug);
           // syntax highlight code blocks
           if (window.hljs) {
             Array.prototype.forEach.call(wrap.querySelectorAll("pre code"), function (block) {
@@ -318,7 +354,10 @@
           contentEl.appendChild(wrap);
           buildTOC(wrap);
           document.title = item.title + " — ai-jury";
-          // jump to in-page anchor if present (slug#anchor not used; we keep simple)
+          // Jump to the in-page anchor the link carried, once the markdown is in
+          // the DOM. `#install--cursor` means "the install page, at its cursor
+          // box"; without this the hash resolved to the page and stopped there.
+          if (anchor) { scrollToAnchor(anchor); }
         })
         .catch(function (err) {
           contentEl.innerHTML = '<div class="doc-error"><p><strong>Couldn\u2019t load this doc.</strong></p><p class="mono">' + (err && err.message ? err.message : "fetch failed") + '</p><p><a href="' + BLOB_ROOT + "docs/" + item.file + '" target="_blank" rel="noopener">Read it on GitHub →</a></p></div>';
@@ -326,9 +365,30 @@
     }
 
     function route() {
-      var slug = (location.hash || "").replace(/^#/, "").trim();
+      var raw = (location.hash || "").replace(/^#/, "").trim();
+      // Split at the first `--` **only when the prefix is a document we know**.
+      // A GitHub heading slug can contain `--` of its own — the cross-vendor
+      // guard's anchor is `the-cross-vendor-guard---min-vendors` — so splitting
+      // unconditionally handed `route()` a slug that is not a document and an
+      // anchor that is half a heading.
+      var slug = raw, anchor = "";
+      var split = raw.indexOf("--");
+      if (split >= 0 && BY_SLUG[raw.slice(0, split)]) {
+        slug = raw.slice(0, split);
+        anchor = raw.slice(split + 2);
+      }
+      // A bare `#heading` is a link *within* the page already on screen — every
+      // document's own table of contents is written that way. Routing it as a
+      // document slug found no such document and sent the reader to the home
+      // page, silently, from any in-page link they clicked.
       if (!slug) { renderHome(); }
-      else { renderDoc(slug); }
+      // Already on this document: scroll, do not re-render. Re-rendering replaced
+      // the article with a spinner and re-fetched the markdown, so a page's own
+      // contents list reloaded the page it was already showing.
+      else if (slug === currentSlug && scrollToAnchor(anchor)) { return; }
+      else if (BY_SLUG[slug]) { renderDoc(slug, anchor); }
+      else if (scrollToAnchor(slug)) { return; }
+      else { renderHome(); }
       // collapse mobile menu after navigation
       if (window.innerWidth <= 860) {
         sideEl.classList.add("collapsed");

@@ -55,6 +55,126 @@ installed agents and local models). You need at least one reviewer: an agent CLI
 useful for CI and containers; missing/unreachable/unkeyed reviewers are skipped. `gh` is
 needed for `--pr` / `--post`.
 
+### Install into an agent
+
+The above installs the **CLI**. Installing ai-jury as a **plugin** — so its skill
+is available inside an agent session — is a separate step, and the CLI is still
+required either way. Jump to the agent you use:
+
+[![Claude Code](https://img.shields.io/badge/Claude_Code-install-D97757?style=flat-square)](#claude-code)
+[![Codex](https://img.shields.io/badge/Codex-install-000000?style=flat-square)](#codex)
+[![Antigravity](https://img.shields.io/badge/Antigravity-install-4285F4?style=flat-square)](#antigravity)
+[![Cursor](https://img.shields.io/badge/Cursor-install-6E56CF?style=flat-square)](#cursor)
+
+Each badge jumps to that agent's box; open it for the commands. (A browser scrolls
+to a collapsed `<details>`; it does not expand one.)
+
+> The agent names elsewhere in this README are **reviewers the jury convenes**.
+> Here the same agents are **hosts you install ai-jury into** — a different role.
+
+<a id="claude-code"></a>
+<details>
+<summary><b>Claude Code</b> — marketplace plugin</summary>
+
+**Install**
+
+```bash
+claude plugin marketplace add https://github.com/berkayturanci/ai-jury
+claude plugin install ai-jury@ai-jury
+```
+
+**Update**
+
+```bash
+claude plugin marketplace update ai-jury
+claude plugin update ai-jury@ai-jury
+```
+
+`claude plugin install` is a **no-op** on an already-installed plugin, so it is
+not an upgrade path. `plugin update` needs the qualified `name@marketplace`: the
+bare name exits 1 with `Plugin "ai-jury" not found`.
+
+</details>
+
+<a id="codex"></a>
+<details>
+<summary><b>Codex</b> — marketplace plugin</summary>
+
+**Install**
+
+```bash
+codex plugin marketplace add https://github.com/berkayturanci/ai-jury
+codex plugin add ai-jury@ai-jury
+```
+
+Adding the marketplace does not install the plugin; both steps are needed.
+
+**Update**
+
+```bash
+codex plugin marketplace upgrade
+codex plugin add ai-jury@ai-jury
+```
+
+</details>
+
+<a id="antigravity"></a>
+<details>
+<summary><b>Antigravity</b> (<code>agy</code>) — git install</summary>
+
+**Install**
+
+```bash
+agy plugin install https://github.com/berkayturanci/ai-jury
+agy plugin enable ai-jury
+```
+
+`install` alone leaves it **disabled**.
+
+**Update**
+
+```bash
+agy plugin install https://github.com/berkayturanci/ai-jury
+```
+
+Overwrites in place and keeps the enabled flag. It lands in
+`~/.gemini/config/plugins/ai-jury/`, not the `~/.gemini/antigravity-cli/plugins/`
+path Antigravity's own docs suggest.
+
+</details>
+
+<a id="cursor"></a>
+<details>
+<summary><b>Cursor</b> — local checkout</summary>
+
+Cursor has **no CLI install command** — `cursor-agent plugin` exposes only
+`marketplace`. The local checkout is the route with a straightforward update.
+
+**Install**
+
+```bash
+git clone --depth 1 https://github.com/berkayturanci/ai-jury   ~/.cursor/plugins/local/ai-jury
+```
+
+Then restart Cursor. It is *reported* to list as `ai-jury (Local)` under
+**Settings → Plugins** — a GUI claim, not confirmed from a CLI session.
+
+**Update**
+
+```bash
+git -C ~/.cursor/plugins/local/ai-jury pull
+```
+
+A locally installed Cursor plugin registers **skills only** — no commands,
+subagents or MCP servers. The marketplace route
+(`cursor-agent plugin marketplace add <url>`, then install from `/plugins`)
+registers more.
+
+</details>
+
+Full detail, including what each route actually registers and where files land:
+[`docs/install.md`](docs/install.md).
+
 For development, install the dev extras (linting, build, and coverage tooling):
 
 ```bash
@@ -689,11 +809,15 @@ Install it as a **plugin** from this repo (it doubles as a single-plugin marketp
 /plugin install ai-jury@ai-jury
 ```
 
+That is Claude Code's short form; **[`docs/install.md`](docs/install.md) has the
+CLI commands, the other three agents, and the update path** — which is not a
+re-install, since `plugin install` is a no-op on an installed plugin.
+
 Or drop [`skills/ai-jury/`](skills/ai-jury/SKILL.md) into a project's
 `.claude/skills/` manually. Either way the agent can convene the jury on demand, and
 it composes with existing review workflows: run the jury for a cross-vendor pass,
-then act on the consensus findings. For other platforms (Codex, Antigravity, CI) and
-their support status, see the [platform support matrix](docs/platforms.md).
+then act on the consensus findings. For support status per platform, see the
+[platform support matrix](docs/platforms.md).
 
 For a concrete consumer: [**keel**](https://github.com/berkayturanci/keel)'s review
 gate (step `s7`, auto-enabled on its tier-3 risk class) runs ai-jury as its
@@ -847,6 +971,7 @@ flag-presence checks run on all supported versions (3.11–3.13).
 - [Architecture](docs/architecture.md) — components, round structure, adapters, supported platforms.
 - [Ecosystem comparison](docs/comparison.md) — capability matrix vs hosted / API-level / native-CLI tools.
 - [Feasibility & prior art](docs/feasibility.md) — research grounding and verified CLI invocations.
+- [Installing into an agent](docs/install.md) — per-agent plugin install **and update**, for Claude Code, Codex, Antigravity and Cursor.
 - [Platform support matrix](docs/platforms.md) — where you can install/run the jury and how.
 - [Skill packaging & install](docs/skill.md) — install/version the review jury as a reusable skill artifact.
 - [Release readiness checklist](docs/release-checklist.md) — the bar before a public release.
