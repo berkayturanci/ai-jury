@@ -162,7 +162,18 @@ Every release is automatically published across three primary distribution chann
      downgrade — and a prerelease tag (`v2.0.0rc1`) does not move it at all.
      The ref is written with `GITHUB_TOKEN` on purpose: a ref written with that
      token starts no workflow run, and `v1` would otherwise match this workflow's
-     own `v*` trigger.
+     own `v*` trigger. A **hand**-created or hand-moved alias does start one, so
+     the trigger also subtracts bare `v<digits>` with a negative pattern.
+   - **Creating a major alias for the first time costs one red run, and always
+     will.** GitHub reads a push event's workflow definition from the ref that was
+     pushed, and a new alias points at an older release's commit — one that
+     predates the negative pattern. Creating `v1` against `v1.17.1` therefore ran
+     the `v*` trigger as it stood there and failed the version guard with
+     `tag (1) must match pyproject (1.17.1)`. Nothing is built or published: it
+     fails on the first real step, `verify` is skipped, and no `release-broken`
+     issue is filed. From the next release onward the alias points at a commit
+     carrying the pattern and hand-moves are quiet. Expect the same one-off the
+     day `v2` is created.
    - Until #781 this line was false. Three documents told consumers to write
      `@v1` and no `refs/tags/v1` existed, so the documented way in was the one
      that did not resolve. `tests/test_publish_release_chain.py` now reads every

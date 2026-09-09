@@ -15,6 +15,17 @@ on:
       # it means nothing. An alias is not a release; there is nothing to publish
       # for one. A later negative pattern excludes a ref an earlier one matched,
       # so this subtracts bare `v<digits>` and leaves every `vX.Y.Z` alone.
+      #
+      # It takes effect one release late, by construction, and that is not a
+      # defect in the pattern. GitHub reads a push event's workflow definition
+      # **from the ref that was pushed**, and an alias points at an older
+      # release's commit — so creating `v1` against `v1.17.1` ran the definition
+      # as it stood at `v1.17.1`, which had only `v*`, and failed the version
+      # guard with `tag (1) must match pyproject (1.17.1)`. Nothing was built or
+      # published: it fails on the first real step, `verify` is skipped, and no
+      # `release-broken` issue is filed. From the next release onward the alias
+      # points at a commit carrying this line, so a hand-move is quiet. Expect
+      # the same one-off when `v2` is first created.
       - "!v[0-9]+"
 
 # Least-privilege default for the whole workflow; the jobs below elevate only the

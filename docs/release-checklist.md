@@ -188,7 +188,10 @@ what that audit found stale is fixed in the same change.
    - Homebrew: `brew update && brew info berkayturanci/ai-jury/ai-jury && brew fetch --formula berkayturanci/ai-jury/ai-jury`
    - Supply-chain: `sha256sum -c SHA256SUMS` and `gh attestation verify <wheel> --repo berkayturanci/ai-jury`
    - The alias: `gh api repos/berkayturanci/ai-jury/compare/v$(…)...v1 --jq .status`
-     should say `identical`. It answering 404 is what #781 was.
+     should say `identical`. It answering 404 is what #781 was. Creating a major
+     alias for the **first** time also leaves one red `publish.yml` run behind —
+     see [Distribution Channels](releasing.md#distribution-channels); nothing is
+     published by it.
 9. Confirm the PyPI page, README rendering, and badges.
 
 ## Rollback
