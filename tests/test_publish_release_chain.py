@@ -37,7 +37,7 @@ import tomllib
 import unittest
 from collections import Counter
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WORKFLOW_DIR = REPO_ROOT / ".github" / "workflows"
@@ -2172,9 +2172,14 @@ def documents(root: Path) -> list[tuple[str, str]]:
         relative = path.relative_to(root)
         if SKIPPED_DIRS & set(relative.parts):
             continue
-        if str(relative) in HISTORICAL_DOCUMENTS:
+        # `as_posix`, not `str`: on Windows the latter spells this document
+        # `docs\\cookbook.md`, which matches no exemption here and no name any
+        # of these tests states. Every path this returns is a repo-relative
+        # identifier, and those are written one way.
+        name = relative.as_posix()
+        if name in HISTORICAL_DOCUMENTS:
             continue
-        found.append((str(relative), _readable(path)))
+        found.append((name, _readable(path)))
     return found
 
 
@@ -2334,6 +2339,7 @@ class EveryDocumentedActionRefIsMaintained(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.refs = documented_action_refs(REPO_ROOT)
+        cls.docs = documents(REPO_ROOT)
         cls.lines = WORKFLOW.read_text(encoding="utf-8").splitlines()
         cls.released = released_versions((REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8"))
         version = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
@@ -2355,6 +2361,28 @@ class EveryDocumentedActionRefIsMaintained(unittest.TestCase):
             f"the walk did not reach the documents that carry the ref: {sorted(cited)}",
         )
 
+    def test_document_names_are_spelled_one_way_on_every_platform(self):
+        """`docs/cookbook.md`, never `docs\\cookbook.md`.
+
+        A repo-relative path is an identifier here: it keys the exemption list
+        and it is what every failure message names. `str(relative)` spells it
+        with backslashes on Windows, so the exemption stopped matching
+        `CHANGELOG.md`'s siblings and the vacuity check compared two different
+        alphabets — three red jobs on the Windows leg of CI and none anywhere
+        else. This asserts the property, and the source, because a
+        POSIX runner cannot observe the difference by running the code.
+        """
+        for name, _ in self.docs:
+            with self.subTest(document=name):
+                self.assertNotIn("\\", name)
+        # Built from parts: written whole, this line *is* the string it looks
+        # for, so the assertion would pass on its own text after the call it
+        # guards had been changed back.
+        needle = "relative." + "as_posix()"
+        source = Path(__file__).read_text(encoding="utf-8")
+        self.assertIn(needle, source)
+        self.assertEqual(PureWindowsPath("docs\\cookbook.md").as_posix(), "docs/cookbook.md")
+
     def test_a_historical_record_is_not_read_as_an_instruction(self):
         """`CHANGELOG.md` says what v1.14.0 documented, not what to write today.
 
@@ -2364,7 +2392,8 @@ class EveryDocumentedActionRefIsMaintained(unittest.TestCase):
         pass. Exempted the same way, and for the same reason, as the stale-path
         scan in `tests/test_plugin_component_layout.py` exempts it.
         """
-        self.assertIn("uses: berkayturanci/ai-jury@v1", (REPO_ROOT / "CHANGELOG.md").read_text())
+        changelog = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+        self.assertIn("uses: berkayturanci/ai-jury@v1", changelog)
         self.assertNotIn("CHANGELOG.md", {doc for docs in self.refs.values() for doc in docs})
 
     def test_the_changelog_scan_found_the_releases(self):
@@ -2425,13 +2454,15 @@ class EveryDocumentedActionRefIsMaintained(unittest.TestCase):
     def test_a_sentence_period_is_not_part_of_the_ref(self):
         """`…@v1.` ends a sentence; `…@v1.17.1` does not."""
         root = Path(self.enterContext(tempfile.TemporaryDirectory()))
-        (root / "doc.md").write_text("Write uses: berkayturanci/ai-jury@v1.\n")
+        (root / "doc.md").write_text("Write uses: berkayturanci/ai-jury@v1.\n", encoding="utf-8")
         self.assertEqual(set(documented_action_refs(root)), {"v1"})
 
     def ref_of(self, snippet: str) -> str:
         """The one ref a fixture document written with `snippet` yields."""
         root = Path(self.enterContext(tempfile.TemporaryDirectory()))
-        (root / "doc.md").write_text(f"      - uses: berkayturanci/ai-jury@{snippet}\n")
+        (root / "doc.md").write_text(
+            f"      - uses: berkayturanci/ai-jury@{snippet}\n", encoding="utf-8"
+        )
         refs = documented_action_refs(root)
         self.assertEqual(len(refs), 1, refs)
         return next(iter(refs))
@@ -2555,9 +2586,10 @@ class EverySnippetPassesInputsTheActionDeclares(unittest.TestCase):
         card = root / "app.js"
         card.write_text(
             '        config: "- uses: berkayturanci/ai-jury@v1\\n  with:\\n'
-            '    args: x",\n        command: "gh workflow run jury.yml"\n'
+            '    args: x",\n        command: "gh workflow run jury.yml"\n',
+            encoding="utf-8",
         )
-        raw = card.read_text()
+        raw = card.read_text(encoding="utf-8")
         self.assertEqual(snippet_inputs(raw), set())
         self.assertEqual(snippet_inputs(raw.replace("\\n", "\n")), {"args", "command"})
         self.assertEqual(snippet_inputs(_readable(card)), {"args"})
