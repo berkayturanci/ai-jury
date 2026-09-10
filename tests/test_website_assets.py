@@ -136,5 +136,101 @@ class EscapeRegressionPins(unittest.TestCase):
             self.assertIn("esc(", body)
 
 
+class SkipToContentLinks(unittest.TestCase):
+    """Every page under ``website/`` must offer the skip-to-content link as its
+    first tab stop (#790). The affordance is four separate parts, and dropping
+    any one of them leaves markup that reads correctly and does nothing:
+
+    * the link itself, first in the tab order — behind any other focusable
+      element it is no longer a *skip*;
+    * a target id that exists on the page, or the fragment resolves to nothing;
+    * ``tabindex="-1"`` on the element carrying that id, or the page scrolls
+      without moving focus and the next Tab resumes from the top — measured in
+      Chrome, where activating the link moves ``document.activeElement`` onto
+      the target only when the attribute is present;
+    * ``styles.css``, the only place the link is told to park off-screen and
+      come back on focus. A page with the markup and without the stylesheet
+      shows a stray link to everybody instead.
+
+    Discovered rather than listed: a page added under ``website/`` tomorrow is
+    held to this bar the day it lands, which is how the article page came to be
+    the only one of six without a skip link.
+    """
+
+    # An opening tag that takes keyboard focus by default, or opts in with
+    # tabindex="0". Anchors need an href — <a> without one is not focusable.
+    FOCUSABLE = re.compile(
+        r"<(?:a\s[^>]*\bhref=|button\b|input\b|select\b|textarea\b"
+        r'|[a-z]+\s[^>]*\btabindex="0")',
+        re.I,
+    )
+    SKIP_LINK = re.compile(r'<a href="#([\w-]+)" class="skip-to-content">')
+
+    def _pages(self):
+        pages = sorted(WEBSITE.glob("*.html"))
+        self.assertGreater(len(pages), 1, "no site pages found to check")
+        return pages
+
+    def _body(self, page):
+        src = page.read_text(encoding="utf-8")
+        opening = re.search(r"<body\b[^>]*>", src, re.I)
+        self.assertIsNotNone(opening, f"{page.name} has no <body>")
+        return src, src[opening.end() :]
+
+    def test_every_page_offers_the_link_first(self):
+        for page in self._pages():
+            with self.subTest(page=page.name):
+                _src, body = self._body(page)
+                link = self.SKIP_LINK.search(body)
+                self.assertIsNotNone(link, f"{page.name} has no skip-to-content link")
+                first = self.FOCUSABLE.search(body)
+                self.assertIsNotNone(first, f"{page.name} has nothing focusable")
+                self.assertEqual(
+                    link.start(),
+                    first.start(),
+                    f"{page.name}: something focusable precedes the skip link",
+                )
+
+    def test_every_target_exists_and_takes_focus(self):
+        for page in self._pages():
+            with self.subTest(page=page.name):
+                _src, body = self._body(page)
+                link = self.SKIP_LINK.search(body)
+                self.assertIsNotNone(link, f"{page.name} has no skip-to-content link")
+                target_id = re.escape(link.group(1))
+                target = re.search(rf'<\w+[^>]*\bid="{target_id}"[^>]*>', body)
+                self.assertIsNotNone(target, f"{page.name}: #{link.group(1)} is not on the page")
+                self.assertIn(
+                    'tabindex="-1"',
+                    target.group(0),
+                    f"{page.name}: #{link.group(1)} would scroll without taking focus",
+                )
+
+    def test_no_page_hoists_anything_ahead_of_the_link(self):
+        # A positive tabindex jumps the queue wherever it sits in the document,
+        # so "first in the markup" would stop meaning "first in the tab order".
+        for page in self._pages():
+            with self.subTest(page=page.name):
+                _src, body = self._body(page)
+                hoisted = [v for v in re.findall(r'tabindex="(-?\d+)"', body) if int(v) > 0]
+                self.assertEqual([], hoisted, f"{page.name} has a positive tabindex")
+
+    def test_every_page_loads_the_stylesheet_that_hides_the_link(self):
+        for page in self._pages():
+            with self.subTest(page=page.name):
+                src, _body = self._body(page)
+                self.assertRegex(src, r'<link[^>]*rel="stylesheet"[^>]*href="styles\.css"')
+
+    def test_the_stylesheet_parks_the_link_and_brings_it_back(self):
+        css = (WEBSITE / "styles.css").read_text(encoding="utf-8")
+        parked = re.search(r"\.skip-to-content\s*\{([^}]*)\}", css)
+        self.assertIsNotNone(parked, "styles.css does not style the skip link")
+        self.assertIn("position: absolute", parked.group(1))
+        self.assertRegex(parked.group(1), r"top:\s*-\d", "the link is not parked off-screen")
+        focused = re.search(r"\.skip-to-content:focus-visible\s*\{([^}]*)\}", css)
+        self.assertIsNotNone(focused, "nothing brings the link back when focused")
+        self.assertRegex(focused.group(1), r"top:\s*0", "focus does not bring the link on-screen")
+
+
 if __name__ == "__main__":
     unittest.main()
