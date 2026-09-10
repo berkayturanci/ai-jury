@@ -388,6 +388,9 @@ a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visibl
   font-weight: 600;
   box-shadow: 0 4px 14px -4px rgba(99, 102, 241, 0.6);
 }
+.int-pill:focus-visible {
+  border-radius: 999px;
+}
 .int-pill .pill-count {
   font-size: 0.72rem;
   background: rgba(0, 0, 0, 0.2);
