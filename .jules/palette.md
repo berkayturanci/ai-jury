@@ -88,3 +88,7 @@
 ## 2026-08-22 - Modal Focus Restoration
 **Learning:** We implemented `Escape` to close the integration modal, but forgot to return focus to the integration card that opened it. When keyboard users closed the modal, they lost their place in the grid.
 **Action:** Always store `document.activeElement` before opening a modal and restore focus to it inside the generic `closeModal()` function so that `Escape`, click-outside, and close button actions all correctly return the user to their previous context.
+
+## 2024-05-18 - Maintain pill shape on keyboard focus
+**Learning:** Using global CSS resets for focus outlines (e.g., `button:focus-visible { border-radius: 4px; }`) inadvertently ruins the visual shape of fully rounded pill buttons (`border-radius: 999px`) during keyboard navigation. Keyboard users rely on visual focus rings that match the element's inherent shape.
+**Action:** When implementing custom pill-shaped buttons or tags, explicitly define their `:focus-visible` state with `border-radius: 999px` to override overly broad global focus resets and preserve their intended visual form factor.
