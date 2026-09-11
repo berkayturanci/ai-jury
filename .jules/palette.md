@@ -88,3 +88,6 @@
 ## 2026-08-22 - Modal Focus Restoration
 **Learning:** We implemented `Escape` to close the integration modal, but forgot to return focus to the integration card that opened it. When keyboard users closed the modal, they lost their place in the grid.
 **Action:** Always store `document.activeElement` before opening a modal and restore focus to it inside the generic `closeModal()` function so that `Escape`, click-outside, and close button actions all correctly return the user to their previous context.
+## 2026-11-07 - Focus rings for uniquely-shaped elements
+**Learning:** When global CSS resets apply a default `border-radius` (like `4px`) to all focused interactive elements (`button:focus-visible`), it visually breaks the focus ring shape of custom elements that have unique radii (like `999px` pill buttons or `50%` circular close buttons).
+**Action:** Explicitly define the `border-radius` on the `:focus-visible` pseudo-class for any interactive element with a non-standard shape to ensure its keyboard focus ring cleanly wraps its actual boundaries.
