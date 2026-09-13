@@ -88,3 +88,7 @@
 ## 2026-08-22 - Modal Focus Restoration
 **Learning:** We implemented `Escape` to close the integration modal, but forgot to return focus to the integration card that opened it. When keyboard users closed the modal, they lost their place in the grid.
 **Action:** Always store `document.activeElement` before opening a modal and restore focus to it inside the generic `closeModal()` function so that `Escape`, click-outside, and close button actions all correctly return the user to their previous context.
+
+## 2026-11-07 - Actionable Empty States for Search
+**Learning:** Users encountering an empty state after a search often have to manually delete their query to see results again, which can be frustrating.
+**Action:** Always provide a helpful, actionable call-to-action (like a 'Clear search' button) within search empty states.

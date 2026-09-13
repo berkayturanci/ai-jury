@@ -1582,8 +1582,20 @@
       if (filtered.length === 0) {
         grid.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; padding: 3rem 1rem; color: var(--muted);">' +
           '<p style="font-size: 1.1rem; margin-bottom: 0.5rem;">No integrations found matching "' + esc(query) + '"</p>' +
-          '<p style="font-size: 0.85rem; color: var(--faint);">Try searching for Claude, Codex, Gemini, Ollama, or GitHub Actions.</p>' +
+          '<p style="font-size: 0.85rem; color: var(--faint); margin-bottom: 1.5rem;">Try searching for Claude, Codex, Gemini, Ollama, or GitHub Actions.</p>' +
+          '<button type="button" class="btn ghost" id="int-clear-search">Clear search</button>' +
           '</div>';
+        var clearBtn = $("int-clear-search");
+        if (clearBtn) {
+          clearBtn.addEventListener("click", function () {
+            if (searchInput) {
+              searchInput.value = "";
+              query = "";
+              renderCards();
+              searchInput.focus();
+            }
+          });
+        }
         return;
       }
 
