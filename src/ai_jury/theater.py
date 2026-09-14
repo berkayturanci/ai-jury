@@ -197,12 +197,10 @@ class Screen:
         return "".join(out).rstrip()
 
     def to_ansi(self) -> str:
-        # bolt: use list comprehension to avoid generator overhead in string join
-        return "\n".join([self._row_ansi(r) for r in self._g])
+        return "\n".join(self._row_ansi(r) for r in self._g)
 
     def to_plain(self) -> str:
-        # bolt: use list comprehension to avoid generator overhead in string join
-        return "\n".join(["".join([ch for ch, _ in r]).rstrip() for r in self._g])
+        return "\n".join("".join(ch for ch, _ in r).rstrip() for r in self._g)
 
 
 # Table geometry (rows on the fixed grid).

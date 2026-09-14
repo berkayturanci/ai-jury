@@ -43,3 +43,7 @@
 ## 2025-06-18 - Silence SIM110 when converting any() to loops
 **Learning:** When explicitly unwinding an `any()` generator into a `for` loop to avoid Python interpreter generator overhead for performance, Ruff will aggressively flag it as `SIM110` (Use any(...) instead of for loop).
 **Action:** Add `# noqa: SIM110` with an explanatory comment to the loop to ensure CI passes while preserving the intended C-level optimization.
+
+## 2026-09-12 - Avoid micro-optimizing string.join with list comprehensions on cold paths
+**Learning:** Replacing generator expressions with list comprehensions in `str.join()` yields microbenchmark gains, but in actual code paths (e.g. `to_ansi` frame loop, `plan_diff` run once per orchestrator) the absolute time saved (microseconds) is unobservable against total wall time or network calls. Such micro-optimizations on cold paths do not justify adding performance rationale comments to the codebase.
+**Action:** Do not apply micro-optimizations like list comprehensions in `join()` unless the call site is definitively a hot loop where the absolute time savings measurably impacts the application's overall performance.

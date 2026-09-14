@@ -367,8 +367,7 @@ def plan_diff(
             continue
         kept.append(f)
 
-    # bolt: Explicit list materialization lets join evaluate iteratively in C bypassing generator overhead
-    filtered_diff = "".join([f.text for f in kept])
+    filtered_diff = "".join(f.text for f in kept)
     kept_bytes = len(filtered_diff.encode("utf-8"))
 
     if kept_bytes <= max_bytes:
