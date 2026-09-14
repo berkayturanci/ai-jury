@@ -15,10 +15,10 @@ next `run:` block that interpolates an expression fails here instead of being
 caught by whoever happens to look.
 
 There is no YAML parser available — the package ships with no runtime
-dependencies — so the scanner below is line-anchored, in the manner of
-`tests/test_keel_evidence_workflow.py`. Being hand-rolled, it is itself a way
-for the invariant to pass while checking nothing: a walk that silently matches
-no file, no job or no `run:` block would report a clean repository forever. So
+dependencies — so the scanner below is line-anchored. Being hand-rolled, it is
+itself a way for the invariant to pass while checking nothing: a walk that
+silently matches no file, no job or no `run:` block would report a clean
+repository forever. So
 :class:`TheScannerFindsWhatIsThere` exercises the scanner against workflow text
 whose answer is known, :class:`TheScannerCannotSilentlyMatchNothing` asserts
 non-zero counts against the real tree, and
@@ -503,7 +503,7 @@ class TheScannerCannotSilentlyMatchNothing(unittest.TestCase):
         # Anchored on files that must exist: a glob typo that matched a
         # different, smaller set would otherwise still pass the count above.
         self.assertIn("ci.yml", names)
-        self.assertIn("keel-ship.yml", names)
+        self.assertIn("publish.yml", names)
 
     def test_jobs_are_found_in_the_workflows_that_have_them(self):
         ci = (WORKFLOWS / "ci.yml").read_text(encoding="utf-8")

@@ -18,22 +18,28 @@ knobs:
     - "src/ai_jury/config.py"
     - ".github/workflows/**"
 
-# The review-evidence chain is NOT configured here, and its absence from this
-# list is not the gap #602 looked for — keel's own `projects/keel.yaml` declares
-# the same two gates. The reviewer contract is derived from `tier3_globs` above
-# and enforced by `.github/workflows/keel-ship.yml`, which runs
-# `keel evidence-verify --phase pre-merge --require-armed` and publishes the
-# result as the `keel evidence (required)` check-run.
+# This file configures keel when *you* run it — `/keel:ship`, `keel review`,
+# `keel merge` from a checkout. Nothing in CI reads it.
 #
-# That check is *required* in branch protection, so it blocks (#620). It was
-# advisory for a day between #602 landing and the operator requiring it, which
-# is the state to watch for: a gate that reports and does not gate looks
-# identical to one that works.
+# There used to be a merge gate: `.github/workflows/keel-ship.yml` ran
+# `keel evidence-verify --phase pre-merge --require-armed` on every pull request
+# and published the verdict as the `keel evidence (required)` check-run, which
+# branch protection required (#602, #620). Both the workflow and that
+# branch-protection entry were removed in #801.
 #
-# `--no-jury` is passed at the call site: tier-3 auto-enables a gating jury
-# verdict, and a paid cross-vendor panel per PR is not this repository's cost
-# posture. It drops only that verdict — tier-3 still requires three distinct
-# reviewer verdicts.
+# Why: the gate demanded three distinct reviewer verdicts posted as PR comments
+# for any diff touching `tier3_globs`. Pull requests here are opened without
+# running `keel ship`, so the gate had no evidence to verify and reported
+# `Evidence verification failed` on every one of them — a required check that is
+# always red is a check that gets ignored, and it blocked merges that had passed
+# every gate anyone was actually reading (tests on five legs, coverage, ruff,
+# CodeQL, PR-description lint).
+#
+# `tier3_globs` above is kept because it still marks the sensitive surface for a
+# keel run you start yourself. It no longer gates anything automatically. If the
+# evidence chain is ever restored, restore `--no-jury` with it: tier-3
+# auto-enables a *gating* jury verdict, and a paid cross-vendor panel per pull
+# request is not this repository's cost posture.
 gates: [build, lint]
 extensions: {}
 extensions_dir: .keel/extensions

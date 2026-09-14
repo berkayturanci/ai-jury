@@ -1467,6 +1467,46 @@ class EveryBlockScalarSpellingIsRead(unittest.TestCase):
         )
 
 
+#: A whole workflow rather than a step, so a case goes through the same `jobs:`
+#: walk the real files do — which is where the list-item spelling was lost:
+#: `scan()` returned *nothing* for this file, and returning nothing is how every
+#: assertion in this module passes over a step it never saw.
+_SCRATCH_WORKFLOW = """name: Scratch
+on: workflow_dispatch
+jobs:
+  scratch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+{step}"""
+
+#: A check-run upsert: read the existing run, then PATCH it or POST a new one.
+#: This is the shape `keel-ship.yml` published the gating check with before the
+#: evidence gate was removed (#801), reduced to what the scan cares about — the
+#: herestring that used to swallow the rest of the script, and the three `gh api`
+#: calls after it that a hang would leave a required check open on.
+_CHECK_RUN_UPSERT_STEP = """      - name: Publish a gating check-run
+        run: |
+          existing=$(timeout 60 gh api --method GET \\
+            "repos/${GITHUB_REPOSITORY}/commits/${SHA}/check-runs" --jq '.check_runs[0].id')
+          read -r existing_id existing_stamp <<<"$existing"
+          if [ -n "$existing_id" ]; then
+            timeout 60 gh api -X PATCH "repos/${GITHUB_REPOSITORY}/check-runs/${existing_id}" \\
+              -f "status=completed" >/dev/null
+          else
+            timeout 60 gh api -X POST "repos/${GITHUB_REPOSITORY}/check-runs" \\
+              -f "name=gate" -f "head_sha=${SHA}" >/dev/null
+          fi
+"""
+
+#: `git fetch` against a remote. No workflow in this repository makes one today
+#: — `keel-ship.yml` did, to diff against the base branch — so this is what keeps
+#: `NETWORK_TOOLS["git"]` exercised until one does again.
+_BASE_BRANCH_FETCH_STEP = """      - name: Make the base branch available locally
+        run: timeout 60 git fetch --no-tags origin "$BASE:$BASE" || true
+"""
+
+
 class EveryWorkflowBoundsItsNetworkCalls(unittest.TestCase):
     """The same scan, over every workflow in the directory rather than one.
 
@@ -1476,12 +1516,14 @@ class EveryWorkflowBoundsItsNetworkCalls(unittest.TestCase):
     calls, four unbounded `gh` calls, an unbounded `git fetch`, and no
     `timeout-minutes` on any of their twelve jobs.
 
-    `keel-ship.yml` is the one that mattered. Its `evidence` job publishes the
-    check-run branch protection gates the merge on, and a hung `gh api` there
-    leaves that check *open* — not failed. A failed check is a thing somebody
-    fixes; an open one is a pull request that cannot merge with nothing to read,
-    which is the state #668, #670, #671, #672 and #674 were each rerun out of by
-    hand.
+    The file that mattered then, `keel-ship.yml`, has since been removed with
+    the evidence gate (#801). Its lesson is why this scan is repository-wide
+    rather than scoped: a job that publishes a check-run branch protection gates
+    the merge on leaves that check *open* when its `gh api` hangs — not failed.
+    A failed check is a thing somebody fixes; an open one is a pull request that
+    cannot merge with nothing to read, which is the state #668, #670, #671, #672
+    and #674 were each rerun out of by hand. The mutation tests below keep that
+    shape covered with fixtures, so the rule outlives the file it was found in.
 
     Discovery is the point, not the seven files. A workflow added tomorrow, or a
     job added to one of these, is inside this test the day it lands rather than
@@ -1507,7 +1549,6 @@ class EveryWorkflowBoundsItsNetworkCalls(unittest.TestCase):
             {
                 "ci.yml",
                 "codeql.yml",
-                "keel-ship.yml",
                 "pages.yml",
                 "pr-lint.yml",
                 "publish.yml",
@@ -1529,16 +1570,20 @@ class EveryWorkflowBoundsItsNetworkCalls(unittest.TestCase):
         collects nothing from one of them is the exact failure #695 shipped.
         """
         by_workflow = Counter(call.job.split(" (")[0].rsplit("/", 1)[-1] for call in self.calls)
-        for workflow in ("ci.yml", "keel-ship.yml", "pages.yml", "publish.yml"):
+        for workflow in ("ci.yml", "pages.yml", "publish.yml"):
             with self.subTest(workflow=workflow):
                 self.assertTrue(
                     by_workflow[workflow],
                     f"{workflow} contributed no network calls; the scan read {by_workflow}",
                 )
         tools = Counter(call.tool for call in self.calls)
-        self.assertGreaterEqual(tools["pip"], 12, f"too few `pip` calls found: {tools}")
+        self.assertGreaterEqual(tools["pip"], 10, f"too few `pip` calls found: {tools}")
         self.assertGreaterEqual(tools["gh"], 11, f"too few `gh` calls found: {tools}")
-        self.assertGreaterEqual(tools["git"], 1, f"the `git fetch` was not found: {tools}")
+        # No `git` floor: removing `keel-ship.yml` with the evidence gate (#801)
+        # took the only `git fetch` in the directory with it, and a floor of 1
+        # over a tool nothing calls is a failure with no defect behind it. `git`
+        # stays in `NETWORK_TOOLS`, so the next workflow to fetch is scanned;
+        # restore the floor with it.
         # #751: the three `uv sync --locked` calls that replaced `pip install`
         # in `lint`, `coverage` and the Pages deploy. Anchored for the reason
         # every count here is anchored — a tool added to `NETWORK_TOOLS` and
@@ -1669,13 +1714,20 @@ class EveryWorkflowBoundsItsNetworkCalls(unittest.TestCase):
                 self.assertIsNotNone(ceilings.get(where), f"{where} waives a bound and sets none")
 
     def test_it_would_have_caught_the_check_run_writes_left_unbounded(self):
-        """The two `gh api` calls that write the gating check, stripped.
+        """The two `gh api` calls that write a gating check, stripped.
 
         `gh` has no timeout flag and no environment variable for one, so the
         wrapper is the whole bound. These are the writes that leave a required
         check incomplete when they hang, which is why they are the ones mutated.
+
+        Written as a fixture rather than read from a file: the workflow this was
+        found in (`keel-ship.yml`) went away with the evidence gate (#801), and a
+        rule that only holds while one file exists is a rule that leaves with it.
+        The shape is what matters — a check-run upsert is the next such job's
+        shape too, whoever writes it.
         """
-        source = (WORKFLOW_DIR / "keel-ship.yml").read_text(encoding="utf-8")
+        source = _SCRATCH_WORKFLOW.format(step=_CHECK_RUN_UPSERT_STEP)
+        self.assertEqual([call.bounded for call in scan(source)], [True, True, True])
         broken, swapped = re.subn(r"timeout 60 gh api -X (PATCH|POST)", r"gh api -X \1", source)
         self.assertEqual(swapped, 2, "the mutation did not strip both writes; rewrite it")
         caught = [call for call in scan(broken) if not call.bounded]
@@ -1708,9 +1760,17 @@ class EveryWorkflowBoundsItsNetworkCalls(unittest.TestCase):
         self.assertEqual([call.tool for call in caught], ["pip"], [c.why() for c in caught])
         self.assertIn("`timeout` wrapper", caught[0].why())
 
-    def test_it_would_have_caught_the_base_branch_fetch_left_unbounded(self):
-        """`git fetch` is a network call in a job that gates every merge."""
-        source = (WORKFLOW_DIR / "keel-ship.yml").read_text(encoding="utf-8")
+    def test_it_would_have_caught_a_base_branch_fetch_left_unbounded(self):
+        """`git fetch` is a network call, and no workflow here makes one today.
+
+        It did: `keel-ship.yml` fetched the base branch so keel could diff
+        against it, and that file left with the evidence gate (#801). `git` stays
+        in `NETWORK_TOOLS` for the next workflow that fetches, and this keeps the
+        rule exercised in the meantime — an entry in that table that nothing
+        reaches is an entry nobody notices has stopped working.
+        """
+        source = _SCRATCH_WORKFLOW.format(step=_BASE_BRANCH_FETCH_STEP)
+        self.assertEqual([call.bounded for call in scan(source)], [True])
         broken = source.replace("timeout 60 git fetch", "git fetch")
         self.assertNotEqual(broken, source, "the mutation matched nothing; rewrite it")
         caught = [call for call in scan(broken) if not call.bounded]
@@ -1723,7 +1783,7 @@ class EveryWorkflowBoundsItsNetworkCalls(unittest.TestCase):
         the match starting at the *first* `<`: on the next pass `<<<"$existing"`
         matched from the second one with `"$existing"` read as the delimiter.
         A delimiter that never appears on a line of its own means the skip runs
-        to the end of the script — so in `keel-ship.yml`'s `evidence` step,
+        to the end of the script — so in the check-run upsert this was found in,
         everything after `read -r id stamp <<<"$existing"` was invisible,
         including both `gh api` calls that publish the gating check-run. The scan
         reported them bounded by never having seen them, which is worse than
@@ -1736,27 +1796,15 @@ class EveryWorkflowBoundsItsNetworkCalls(unittest.TestCase):
         self.assertEqual(
             network_calls('cat <<"EOF" > n.md\ngh api repos/example/example\nEOF\n', "x"), []
         )
-        # And the workflow this was found in has both writes in the scan again.
+        # And the step shape this was found in has all three calls in the scan
+        # again — the read that follows the herestring included.
         writes = [
             call
-            for call in self.calls
-            if "keel-ship.yml" in call.job and "check-runs" in call.command
+            for call in scan(_SCRATCH_WORKFLOW.format(step=_CHECK_RUN_UPSERT_STEP))
+            if "check-runs" in call.command
         ]
         self.assertEqual(len(writes), 3, [call.command[:60] for call in writes])
 
-
-#: A whole workflow rather than a step, so the case goes through the same
-#: `jobs:` walk the real files do — which is where the list-item spelling was
-#: lost: `scan()` returned *nothing* for this file, and returning nothing is how
-#: every assertion in this module passes over a step it never saw.
-_SCRATCH_WORKFLOW = """name: Scratch
-on: workflow_dispatch
-jobs:
-  scratch:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-{step}"""
 
 #: A step written as a list item: `- run: |`, the spelling a step with no `name:`
 #: takes. `env:` follows the script deliberately — it is a sibling key of `run:`,
