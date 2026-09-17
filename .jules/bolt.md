@@ -43,3 +43,7 @@
 ## 2025-06-18 - Silence SIM110 when converting any() to loops
 **Learning:** When explicitly unwinding an `any()` generator into a `for` loop to avoid Python interpreter generator overhead for performance, Ruff will aggressively flag it as `SIM110` (Use any(...) instead of for loop).
 **Action:** Add `# noqa: SIM110` with an explanatory comment to the loop to ensure CI passes while preserving the intended C-level optimization.
+
+## 2026-09-17 - Avoid Micro-Optimizing Generator Overhead on Small Data Collections
+**Learning:** The guideline to convert generator expressions inside `str.join()` to list comprehensions for performance (to bypass interpreter overhead) is intended for significantly large arrays. Attempting this conversion on a list of file diffs (which are structurally tiny collections, usually < 20 files, even though the strings they contain are large) yields nanosecond-to-microsecond improvements with zero measurable impact at the application level.
+**Action:** Only apply explicit list comprehensions inside `str.join()` or `list.extend()` when traversing massive iterations. For tiny structures like list of files, avoid polluting the codebase with noisy micro-optimizations that offer no real-world performance win.
