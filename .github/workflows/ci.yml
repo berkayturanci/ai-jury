@@ -315,6 +315,15 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: timeout 300 python -m unittest tests.test_homebrew_formula -v
 
+      # Same reason again: nothing offline can tell a right Subresource Integrity
+      # hash from a wrong one, and a wrong one makes every reader's browser refuse
+      # the docs page's scripts. The way that happens is a CDN version bumped
+      # without its hash, so the scripts are fetched and hashed here (#817).
+      - name: Verify the docs page's CDN scripts match their integrity hashes
+        env:
+          AI_JURY_CHECK_EXTERNAL: "1"
+        run: timeout 300 python -m unittest tests.test_website_sri -v
+
   release-lockfiles:
     # publish.yml runs only on a v* tag, so a pin in .github/requirements that
     # PyPI no longer serves, or a hash that no longer matches, would surface
