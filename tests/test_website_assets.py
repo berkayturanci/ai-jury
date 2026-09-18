@@ -228,6 +228,103 @@ class TheTableOfContentsBuildsNodes(unittest.TestCase):
         self.assertEqual({first["cls"], second["cls"]}, {"ds-sub"})
 
 
+#: Runs docs.html's own `renderDoc` under node three ways — no DOMPurify, a working one,
+#: and a fetch that fails with a message shaped like markup — and reports every HTML write.
+_RENDER_DRIVER = r"""
+const fs = require("fs"), vm = require("vm");
+const html = fs.readFileSync(process.argv[2], "utf8");
+function extract(name) {
+  const start = html.indexOf("function " + name + "(");
+  if (start < 0) throw new Error("no function " + name);
+  let depth = 0;
+  for (let i = html.indexOf("{", start); i < html.length; i++) {
+    if (html[i] === "{") depth++;
+    else if (html[i] === "}" && --depth === 0) return html.slice(start, i + 1);
+  }
+  throw new Error("unbalanced " + name);
+}
+const HOSTILE = "<img src=x onerror=alert(1)>";
+async function run(purify, fetchFails) {
+  const writes = [];
+  function node(tag) {
+    const n = { tagName: tag, children: [], className: "", text: "",
+      appendChild(c) { this.children.push(c); return c; },
+      querySelectorAll() { return []; } };
+    Object.defineProperty(n, "innerHTML", { set(v) { writes.push(String(v)); }, get() { return ""; } });
+    Object.defineProperty(n, "textContent", { set(v) { n.text = String(v); }, get() { return n.text; } });
+    return n;
+  }
+  const mono = node("P");
+  const contentEl = node("MAIN");
+  contentEl.querySelector = (sel) => (sel === ".mono" ? mono : null);
+  const win = { scrollTo() {} };
+  if (purify) win.DOMPurify = { sanitize: () => "<p>clean</p>" };
+  const ctx = {
+    window: win, DOMPurify: win.DOMPurify, contentEl, document: { createElement: (t) => node(t.toUpperCase()), title: "" },
+    BY_SLUG: { guide: { file: "guide.md", title: "Guide" } }, RAW_DOCS: "https://raw.example/", BLOB_ROOT: "https://blob.example/",
+    currentSlug: null, buildSidebar() {}, renderHome() {}, rewrite() {}, buildTOC() {}, scrollToAnchor() {},
+    marked: { parse: () => "<p>hi</p>" + HOSTILE },
+    fetch: () => fetchFails ? Promise.reject(new Error(HOSTILE))
+                            : Promise.resolve({ ok: true, text: () => Promise.resolve("# t") }),
+  };
+  vm.runInNewContext(extract("renderDoc") + "; renderDoc('guide', null);", ctx);
+  await new Promise((r) => setTimeout(r, 20));
+  return { writes, mono: mono.text };
+}
+(async () => {
+  console.log(JSON.stringify({
+    no_purify: await run(false, false),
+    purify: await run(true, false),
+    fetch_fails: await run(true, true),
+  }));
+})();
+"""
+
+
+@unittest.skipUnless(shutil.which("node"), "needs node to execute the page script")
+class TheDocsPageFailsClosed(unittest.TestCase):
+    """marked does not sanitize; DOMPurify is what does (#815).
+
+    With DOMPurify missing, the page rendered marked's output as it was — raw HTML and
+    event handlers included. It now shows the error box instead, and that box sets the
+    failure's message as text rather than splicing it into markup.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        import json
+        import tempfile
+
+        workdir = tempfile.mkdtemp()
+        cls.addClassCleanup(shutil.rmtree, workdir, True)
+        driver = Path(workdir) / "render.js"
+        driver.write_text(_RENDER_DRIVER, encoding="utf-8")
+        done = subprocess.run(
+            [shutil.which("node"), str(driver), str(WEBSITE / "docs.html")],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            stdin=subprocess.DEVNULL,
+        )
+        assert done.returncode == 0, done.stderr
+        cls.ran = json.loads(done.stdout)
+
+    def test_without_the_sanitizer_no_document_html_is_written(self):
+        writes = self.ran["no_purify"]["writes"]
+        self.assertFalse([w for w in writes if "onerror" in w], writes)
+        self.assertIn("doc-error", writes[-1])
+        self.assertEqual(self.ran["no_purify"]["mono"], "the HTML sanitizer did not load")
+
+    def test_with_the_sanitizer_the_document_still_renders(self):
+        self.assertIn("<p>clean</p>", self.ran["purify"]["writes"])
+        self.assertEqual(self.ran["purify"]["mono"], "")
+
+    def test_a_failure_message_is_shown_as_text(self):
+        failed = self.ran["fetch_fails"]
+        self.assertFalse([w for w in failed["writes"] if "onerror" in w], failed["writes"])
+        self.assertEqual(failed["mono"], "<img src=x onerror=alert(1)>")
+
+
 class SkipToContentLinks(unittest.TestCase):
     """Every page under ``website/`` must offer the skip-to-content link as its
     first tab stop (#790). The affordance is four separate parts, and dropping

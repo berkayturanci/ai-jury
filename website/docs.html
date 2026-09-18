@@ -342,7 +342,11 @@
         .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
         .then(function (md) {
           var raw = marked.parse(md, { gfm: true, breaks: false });
-          var clean = window.DOMPurify ? DOMPurify.sanitize(raw, { ADD_ATTR: ["target"] }) : raw;
+          // Fail closed: marked does not sanitize, so without DOMPurify the markdown's raw
+          // HTML would go into the page as it is. A page that cannot sanitize shows the
+          // error box and the GitHub link instead (#815).
+          if (!window.DOMPurify) throw new Error("the HTML sanitizer did not load");
+          var clean = DOMPurify.sanitize(raw, { ADD_ATTR: ["target"] });
           var wrap = document.createElement("div");
           wrap.className = "md-body";
           wrap.innerHTML = clean;
@@ -370,7 +374,9 @@
           if (anchor) { scrollToAnchor(anchor); }
         })
         .catch(function (err) {
-          contentEl.innerHTML = '<div class="doc-error"><p><strong>Couldn\u2019t load this doc.</strong></p><p class="mono">' + (err && err.message ? err.message : "fetch failed") + '</p><p><a href="' + BLOB_ROOT + "docs/" + item.file + '" target="_blank" rel="noopener">Read it on GitHub →</a></p></div>';
+          contentEl.innerHTML = '<div class="doc-error"><p><strong>Couldn\u2019t load this doc.</strong></p><p class="mono"></p><p><a href="' + BLOB_ROOT + "docs/" + item.file + '" target="_blank" rel="noopener">Read it on GitHub →</a></p></div>';
+          // The failure's own words, as text: whatever it says, it is not markup (#815).
+          contentEl.querySelector(".mono").textContent = err && err.message ? err.message : "fetch failed";
         });
     }
 
