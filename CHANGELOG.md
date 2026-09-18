@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.18.1] - 2026-09-19
+
 ### Fixed
 - **The Groq card on ai-jury.dev shows Groq's mark, not an error icon** (#811). `website/logos/groq.svg`, added in #546, was Material Design's `error` glyph tinted orange, so the Groq card showed a warning sign. It is now Groq's own favicon (362 bytes, checked script-free), verified live on the site.
 
