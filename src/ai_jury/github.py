@@ -251,7 +251,9 @@ def _finding_signature(finding) -> str:
     sev = (getattr(finding, "severity", "") or "").strip().lower()
     claim = (getattr(finding, "claim", "") or "").strip().lower()
     raw = f"{sev}|{claim}"
-    return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
+    # A deduplication key, not a security boundary — said so, for FIPS-mode Pythons and for
+    # the linters that cannot tell the two apart (#813). The digest is the same either way.
+    return hashlib.sha1(raw.encode("utf-8"), usedforsecurity=False).hexdigest()[:12]
 
 
 def _sig_marker(signature: str) -> str:

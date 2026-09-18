@@ -136,6 +136,98 @@ class EscapeRegressionPins(unittest.TestCase):
             self.assertIn("esc(", body)
 
 
+#: Runs docs.html's own `buildTOC` (and the `slugify` it calls) under node against a stub
+#: DOM, feeding it headings whose text and id are hostile, and reports what it built.
+_TOC_DRIVER = r"""
+const fs = require("fs"), vm = require("vm");
+const html = fs.readFileSync(process.argv[2], "utf8");
+function extract(name) {
+  const start = html.indexOf("function " + name + "(");
+  if (start < 0) throw new Error("no function " + name);
+  let depth = 0;
+  for (let i = html.indexOf("{", start); i < html.length; i++) {
+    if (html[i] === "{") depth++;
+    else if (html[i] === "}" && --depth === 0) return html.slice(start, i + 1);
+  }
+  throw new Error("unbalanced " + name);
+}
+function node(tag) {
+  const n = { tagName: tag, children: [], attrs: {}, style: {}, className: "", markup: 0, text: "",
+    setAttribute(k, v) { this.attrs[k] = String(v); },
+    getAttribute(k) { return this.attrs[k]; },
+    appendChild(c) { this.children.push(c); return c; },
+    querySelectorAll() { return this.children; },
+    addEventListener() {} };
+  Object.defineProperty(n, "innerHTML", { set() { n.markup++; }, get() { return ""; } });
+  Object.defineProperty(n, "textContent", {
+    set(v) { n.text = String(v); if (v === "") n.children = []; }, get() { return n.text; } });
+  return n;
+}
+const toc = node("NAV");
+const heads = [
+  { tagName: "H2", id: "", textContent: "jury init <agent>" },
+  { tagName: "H3", id: 'x" onmouseover="alert(1)', textContent: "<img src=x onerror=alert(1)>" },
+];
+const ctx = {
+  $: (id) => (id === "toc" ? toc : null),
+  location: { hash: "#install--cursor" },
+  document: { createElement: (t) => node(t.toUpperCase()) },
+  scrollToAnchor() {}, sideEl: { classList: { add() {} } }, window: { innerWidth: 1200 },
+  container: { querySelectorAll: () => heads },
+};
+vm.runInNewContext(extract("slugify") + extract("buildTOC") + "; buildTOC(container);", ctx);
+console.log(JSON.stringify({
+  markup: toc.markup,
+  links: toc.children.map((c) => ({ tag: c.tagName, text: c.text, id: c.attrs["data-id"],
+    href: c.attrs["href"], pad: c.style.paddingLeft || "", cls: c.className })),
+}));
+"""
+
+
+@unittest.skipUnless(shutil.which("node"), "needs node to execute the page script")
+class TheTableOfContentsBuildsNodes(unittest.TestCase):
+    """docs.html sanitizes each document, then builds its contents list from the headings.
+
+    Concatenating their text and ids back into `innerHTML` undid the sanitizing: a
+    heading reading `<agent>` lost it, one showing `<img onerror>` as code became live
+    markup, and an id with a quote left its attribute (#813). The links are nodes now.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        import json
+        import tempfile
+
+        workdir = tempfile.mkdtemp()
+        cls.addClassCleanup(shutil.rmtree, workdir, True)
+        driver = Path(workdir) / "toc.js"
+        driver.write_text(_TOC_DRIVER, encoding="utf-8")
+        done = subprocess.run(
+            [shutil.which("node"), str(driver), str(WEBSITE / "docs.html")],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            stdin=subprocess.DEVNULL,
+        )
+        assert done.returncode == 0, done.stderr
+        cls.built = json.loads(done.stdout)
+
+    def test_no_markup_is_written(self):
+        self.assertEqual(self.built["markup"], 0)
+
+    def test_heading_text_is_kept_as_text(self):
+        texts = [link["text"] for link in self.built["links"]]
+        self.assertEqual(texts, ["jury init <agent>", "<img src=x onerror=alert(1)>"])
+
+    def test_ids_and_the_page_hash_are_attribute_values(self):
+        first, second = self.built["links"]
+        self.assertEqual(first["id"], "jury-init-agent")
+        self.assertEqual(second["id"], 'x" onmouseover="alert(1)')
+        self.assertEqual({first["href"], second["href"]}, {"#install--cursor"})
+        self.assertEqual((first["pad"], second["pad"]), ("", "1.4rem"))
+        self.assertEqual({first["cls"], second["cls"]}, {"ds-sub"})
+
+
 class SkipToContentLinks(unittest.TestCase):
     """Every page under ``website/`` must offer the skip-to-content link as its
     first tab stop (#790). The affordance is four separate parts, and dropping

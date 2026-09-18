@@ -253,13 +253,23 @@
       var toc = $("toc");
       if (!toc) return;
       var heads = container.querySelectorAll("h2, h3");
-      var html = "";
+      var page = location.hash.replace("#", "").split("/")[0] || "";
+      toc.textContent = "";
+      // Built as nodes, never as markup. The headings were sanitized as HTML, and their
+      // text and ids are data from there on: concatenated back into innerHTML, a heading
+      // reading `<agent>` lost that text to the parser, one showing `<img onerror>` as
+      // code became live markup, and an id with a quote left its attribute (#813).
       Array.prototype.forEach.call(heads, function (h) {
         var id = h.id || slugify(h.textContent);
         h.id = id;
-        html += '<a class="ds-sub" data-id="' + id + '" href="#' + (location.hash.replace("#","").split("/")[0] || "") + '" style="' + (h.tagName === "H3" ? "padding-left:1.4rem" : "") + '">' + h.textContent + "</a>";
+        var link = document.createElement("a");
+        link.className = "ds-sub";
+        link.setAttribute("data-id", id);
+        link.setAttribute("href", "#" + page);
+        if (h.tagName === "H3") link.style.paddingLeft = "1.4rem";
+        link.textContent = h.textContent;
+        toc.appendChild(link);
       });
-      toc.innerHTML = html;
       // clicking a TOC item scrolls to heading without changing the doc hash
       Array.prototype.forEach.call(toc.querySelectorAll(".ds-sub"), function (link) {
         link.addEventListener("click", function (e) {

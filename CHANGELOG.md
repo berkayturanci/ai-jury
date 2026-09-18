@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The Groq card on ai-jury.dev shows Groq's mark, not an error icon** (#811). `website/logos/groq.svg`, added in #546, was Material Design's `error` glyph tinted orange, so the Groq card showed a warning sign. It is now Groq's own favicon (362 bytes, checked script-free), verified live on the site.
+
+### Security
+- **The docs page's table of contents builds nodes from sanitized headings** (#813). Each document is rendered with `marked` and sanitized with DOMPurify, and `buildTOC` then concatenated every heading's `textContent` and `id` back into `innerHTML`. That undid the sanitizing: a heading reading `<agent>` lost the text to the parser, a heading showing `<img onerror>` as code became live markup in the contents list, and an `id` holding a quote broke out of its attribute. The documents come from this repository's own `docs/`, so only a merged change could plant such a heading. The links are now built with `createElement`, `textContent` and `setAttribute`. A test runs the page's own `buildTOC` under node with hostile headings, and it fails against the old code.
+- **The finding signature says SHA-1 is not for security** (#813). `_finding_signature` hashes a finding's severity and claim to deduplicate review comments, which is not a security use. It now passes `usedforsecurity=False`, so FIPS-mode Pythons and security linters stop treating it as one. The digest is unchanged, and a test pins it, so signatures on existing comments still match.
+
 ## [1.18.0] - 2026-09-17
 
 ### Removed

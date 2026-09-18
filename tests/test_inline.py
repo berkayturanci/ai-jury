@@ -82,6 +82,16 @@ class FindingSignatureTests(unittest.TestCase):
         self.assertIn(github.INLINE_MARKER, body)
         self.assertEqual(github._sig_from_body(body), github._finding_signature(f))
 
+    def test_signature_digest_is_unchanged(self):
+        # Comments already on GitHub carry these signatures; declaring the hash
+        # not-for-security must not change a single one of them (#813).
+        import hashlib
+        import inspect
+
+        f = Finding(severity="Major", claim="  C1 ", file="a.py", line=1)
+        self.assertEqual(github._finding_signature(f), hashlib.sha1(b"major|c1").hexdigest()[:12])
+        self.assertIn("usedforsecurity=False", inspect.getsource(github._finding_signature))
+
     def test_sig_from_body_absent(self):
         self.assertEqual(github._sig_from_body(""), "")
         self.assertEqual(github._sig_from_body(None), "")
