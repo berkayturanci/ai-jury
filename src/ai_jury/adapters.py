@@ -625,7 +625,7 @@ def effort_warnings(agents, adapter_factory=None) -> list[str]:
                 known_models=known_models,
             )
         except ValueError as exc:
-            message = str(exc)
+            message = redaction.redact(str(exc))[0]
         else:
             message = plan.warning
         if message and message not in seen:

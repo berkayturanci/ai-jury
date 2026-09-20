@@ -99,3 +99,8 @@ expensive: the next reader takes this file as established fact.
 **Prevention:** apply `redact(...)[0]` to external command output before embedding it
 in an exception, and check the call sites before assigning a severity — "stderr could
 contain a secret" is a property of the command, not of stderr.
+
+## 2026-09-20 - [CRITICAL] Fix exception string secret leakage in adapters.py
+**Vulnerability:** Unsanitized exception string (str(exc)) in `_collect_effort_warnings` in `src/ai_jury/adapters.py` could leak secrets if the error message is logged or displayed.
+**Learning:** Just like stdout/stderr, exception messages containing raw inputs/urls/commands must be sanitized, as they often include verbatim tokens or paths that crashed the process. When catching `ValueError` inside effort handling, the `str(exc)` must be redacted.
+**Prevention:** Always wrap str(exc) with redaction.redact()[0] before logging or returning it in the user report.
