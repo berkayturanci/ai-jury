@@ -99,3 +99,8 @@ expensive: the next reader takes this file as established fact.
 **Prevention:** apply `redact(...)[0]` to external command output before embedding it
 in an exception, and check the call sites before assigning a severity — "stderr could
 contain a secret" is a property of the command, not of stderr.
+
+## 2024-09-22 - [CRITICAL] Fix exception string secret leakage in github CLI wrapper
+**Vulnerability:** Unsanitized exception strings in `_gh_with_input` could leak secrets into the standard error output when `subprocess.run` fails to spawn the process (e.g. `OSError`).
+**Learning:** Same as adapter spawning, utility wrappers calling external CLIs like `gh` using `subprocess.run` must intercept base execution exceptions like `OSError` and redact them before raising domain-specific exceptions.
+**Prevention:** Wrap execution of `subprocess.run` with try/except blocks catching `OSError` and `subprocess.SubprocessError`, and redact their string representations when throwing application errors.
