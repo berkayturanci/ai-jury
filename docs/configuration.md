@@ -774,22 +774,61 @@ invalidated by this.
 
 #### Custom Pluggable Python Adapter
 
+For a backend that is neither a coding-agent CLI (`vendor = "cli"`) nor an
+OpenAI-/Anthropic-compatible HTTP endpoint, subclass `Adapter`, override `run()`
+to call your backend, and return an `AgentResult`:
+
 ```python
-from ai_jury.adapters import BaseAdapter, register_adapter, AgentResult
+# docs-exec: custom-adapter — this block is executed verbatim by
+# tests/test_docs_python_snippets.py, so it must import and run as written.
+from ai_jury.adapters import Adapter, AgentResult, register_adapter
 
 
-class CustomCompanyAdapter(BaseAdapter):
-    def invoke(self, prompt: str, timeout: float) -> AgentResult:
-        # Custom HTTP, gRPC, or CLI logic here
-        return AgentResult(ok=True, text="Response from custom adapter")
+class CustomCompanyAdapter(Adapter):
+    def available(self) -> bool:
+        return True  # whether your backend is reachable (shown by --doctor)
+
+    def run(self, prompt, phase="review", timeout=None, role_policy=None):
+        # Call your HTTP/gRPC/SDK backend with `prompt` and return its text.
+        # `phase` is "review", "debate", or "verify"; a reviewer emits a fenced
+        # JSON findings block the panel parses out of `output`. This stub returns
+        # an empty review so the example runs offline.
+        review_text = "Checked: src/example.py\nTested: nothing\n[]"
+        return AgentResult(
+            agent=self.name,
+            vendor=self.spec.vendor,
+            ok=True,
+            output=review_text,
+            duration_s=0.0,
+        )
 
 
-# Register custom vendor
+# Teach this build the vendor name so a seat can select it.
 register_adapter("company-llm", CustomCompanyAdapter)
 ```
+
+Reference it from a seat like any built-in vendor (no `command` — your `run()`
+is the invocation):
+
 ```toml
 [[agent]]
 name = "internal-llm"
 vendor = "company-llm"
 model = "company-v1"
+```
+
+The `jury` CLI reviews with the adapters compiled into the build — it does not
+import external Python, so there is no `--load` flag. Register your adapter in
+the **same process** that runs the panel, i.e. drive the jury from Python:
+
+```python
+from ai_jury.config import load_config
+from ai_jury.orchestrator import review_diff
+
+# ...after the register_adapter(...) call above has run in this process...
+config = load_config("jury.toml")  # the seat above selects vendor = company-llm
+with open("changes.diff", encoding="utf-8") as fh:
+    diff = fh.read()
+outcome, _plan = review_diff(config, diff)  # runs the panel with your adapter
+print(len(outcome.findings), "finding(s)")
 ```
