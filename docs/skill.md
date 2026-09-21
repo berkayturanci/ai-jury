@@ -98,7 +98,7 @@ must have:
   The jury runs with whoever is available.
 
 The same prerequisite detail lives in the [platform matrix](platforms.md); a future
-`jury doctor` command will check these per host.
+`jury --doctor` command will check these per host.
 
 ## Versioning policy (skill ↔ CLI)
 

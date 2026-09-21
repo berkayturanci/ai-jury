@@ -81,6 +81,13 @@ runs:
         INPUT_MIN_VENDORS: ${{ inputs.min-vendors }}
         PR_NUM: ${{ github.event.pull_request.number }}
         BASE_REF: ${{ github.base_ref }}
+        # The workflow is the repository's own deliberate CI, so a committed jury.toml with
+        # command seats is trusted here without a prompt. Without this, a jury.toml that
+        # defines any `command` seat is refused non-interactively (the untrusted-checkout
+        # guard, ai-jury >= the release that ships it), and the Action would fail for every
+        # repo that committed a CLI-agent config. `on: pull_request` keeps a fork PR's config
+        # to a read-only token and no secrets.
+        JURY_TRUST_PROJECT_CONFIG: "1"
       run: |
         # The cross-vendor guard, made explicit for Action consumers (#682).
         # `args` wins when it already says something about it, so a caller who

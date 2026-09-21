@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Now.** The pages carry the token of a Cloudflare site configured for `ai-jury.dev`. History before 2026-09-21 stays in the old dashboard.
 
 ### Fixed
+- **The GitHub Action still runs when the repo commits a `jury.toml`, and `jury --doctor` is spelled right** (#831). The untrusted-checkout trust gate refuses a discovered `jury.toml` with a `command` seat non-interactively; the Action is the repository's own deliberate CI, so it now sets `JURY_TRUST_PROJECT_CONFIG=1` and is not refused (a fork PR stays on `on: pull_request`'s read-only token and no secrets). And `jury examples` / `jury guide` told users to run `jury doctor` — the command is `jury --doctor`; the examples, the guide and `docs/skill.md` now say so.
 - **The site's published README no longer claims Google Analytics** (#829). `https://ai-jury.dev/README.md` is served with the site and described a GA4 setup — `gtag.js`, a `MEASUREMENT_ID` — that no page has carried since #373 replaced it with cookieless Cloudflare Web Analytics in June. The section now says what the pages do, and `tests/test_site_seo.py` pins it to the files: one beacon per page, one token across pages, no `gtag` anywhere, and no claim of another setup.
 
 ## [1.18.1] - 2026-09-19

@@ -2000,7 +2000,7 @@ Setup
   jury init --wizard                 guided setup (writes jury.toml)
   jury init --preset thorough        non-interactive preset
   jury config show                   print the effective, resolved config
-  jury doctor                        check which agents/CLIs are available
+  jury --doctor                      check which agents/CLIs are available
 
 Review
   jury --pr 123                      review a pull request
@@ -2026,7 +2026,7 @@ ai-jury — a short walkthrough
 1. Install the agent CLIs you have (any subset works): Claude Code, Codex,
    Antigravity. Optionally run a local model via Ollama for a free panelist.
    Check what's available:
-       jury doctor
+       jury --doctor
 
 2. Create a config (picks reviewers, rounds, chair/vote, verify):
        jury init --wizard
