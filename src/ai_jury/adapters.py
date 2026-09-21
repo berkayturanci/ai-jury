@@ -625,7 +625,9 @@ def effort_warnings(agents, adapter_factory=None) -> list[str]:
                 known_models=known_models,
             )
         except ValueError as exc:
-            message = str(exc)
+            # Redact before it reaches a warning/log, like every other str(exc) in this
+            # module — an effort-args failure can echo attacker/config-influenced text (#828).
+            message = redaction.redact(str(exc))[0]
         else:
             message = plan.warning
         if message and message not in seen:

@@ -225,6 +225,16 @@ class EffortWarningsTest(unittest.TestCase):
         self.assertEqual(len(warnings), 1)
         self.assertIn("unknown effort", warnings[0])
 
+    def test_the_exception_string_is_redacted(self):
+        # #828: every str(exc) in this module is redacted before it becomes a warning; the one
+        # in effort_warnings was not. A secret in the exception must not survive into the log.
+        secret = "AKIAIOSFODNN7EXAMPLE"
+        with mock.patch("ai_jury.adapters.effort_args", side_effect=ValueError(f"boom {secret}")):
+            warnings = effort_warnings([_spec("openai-api", model="gpt-x", effort="high")])
+        self.assertEqual(len(warnings), 1)
+        self.assertNotIn(secret, warnings[0])
+        self.assertIn("[REDACTED:aws_access_key]", warnings[0])
+
 
 class EffortAppliedToRequestsTest(unittest.TestCase):
     """Each adapter actually sends what ``effort_args`` decided (mocked HTTP)."""
