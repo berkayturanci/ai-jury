@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **ai-jury.dev reports into an analytics site of its own, through one tag per page** (#829).
+  - **Before.** Every page carried a Cloudflare Web Analytics token created in June for `berkayturanci.github.io`; the sibling project's site and two github.io project pages carried it too, so one dashboard mixed four properties. Nothing was lost — a token records a beacon from any host — but visits and Core Web Vitals could only be read per site through a Host filter.
+  - **Two loaders.** Five pages loaded the beacon twice: through `analytics.js` and through the inline tag added later. Measured on the live home page it sent one report at load, so it did not double-count — but the token lived in two places, and changing one would have split the numbers across two dashboards with no error. `analytics.js` and its five includes are gone; every page keeps the one inline tag.
+  - **Now.** The pages carry the token of a Cloudflare site configured for `ai-jury.dev`. History before 2026-09-21 stays in the old dashboard.
+
+### Fixed
+- **The site's published README no longer claims Google Analytics** (#829). `https://ai-jury.dev/README.md` is served with the site and described a GA4 setup — `gtag.js`, a `MEASUREMENT_ID` — that no page has carried since #373 replaced it with cookieless Cloudflare Web Analytics in June. The section now says what the pages do, and `tests/test_site_seo.py` pins it to the files: one beacon per page, one token across pages, no `gtag` anywhere, and no claim of another setup.
+
 ## [1.18.1] - 2026-09-19
 
 ### Fixed

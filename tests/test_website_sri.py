@@ -112,7 +112,9 @@ class TestExternalScriptsArePinnedOrNamed(unittest.TestCase):
         # Vacuity: a pattern that matched nothing would pass both tests above.
         self.assertGreaterEqual(len(_pinned()), 3, "the docs page loads three CDN scripts")
         self.assertTrue(UNPINNABLE & {attrs["src"] for _, attrs in _external_scripts()})
-        self.assertTrue(_LOADED_BY_CODE.findall((WEBSITE / "analytics.js").read_text("utf-8")))
+        # No site script loads one by code any more: `analytics.js`, the last that did, went
+        # in #829. `test_the_code_load_pattern_sees_each_shape` is what keeps the pattern honest.
+        self.assertFalse((WEBSITE / "analytics.js").exists())
 
     def test_a_tag_is_read_whichever_way_it_is_quoted(self):
         tag = """ defer src='https://cdn.example/x@1.2.3/x.js' integrity="sha384-abc" """

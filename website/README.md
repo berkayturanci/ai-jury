@@ -29,10 +29,23 @@ One-time repository setup (Settings → Pages):
 
 ## Analytics
 
-Google Analytics 4 (gtag.js) is wired in via `analytics.js`, loaded from every
-HTML `<head>`. The active GA4 property is set by `MEASUREMENT_ID` at the top of
-that file (`G-…`); change it to rotate, or leave it as `G-REPLACE_ME…` to
-disable tracking entirely (the loader short-circuits).
+Every page loads Cloudflare Web Analytics through one inline tag in its `<head>`
+(`static.cloudflareinsights.com/beacon.min.js`). It is cookieless — no cookies, no
+cross-site identifiers — so the site needs no consent banner, and there is no other
+analytics on it. An earlier revision of this file described a different setup that
+no page has carried since June 2026; `tests/test_site_seo.py` now pins this section
+to the files.
+
+The pages report into a Cloudflare site of this site's own (`ai-jury.dev`, since
+2026-09-21). Until then they shared a dashboard with the sibling project's site,
+created when both lived under github.io; the history before that date stays there.
+
+A Cloudflare token is not bound to the hostname it was created for: a beacon from
+any host that carries it is recorded, and the endpoint answers 204 either way. So a
+fork or a local preview that keeps the token also reports — filter by hostname in
+the dashboard — and a page left on a different token would go missing without any
+error, which is why every page must carry the same one, exactly once. To publish a
+fork without reporting, delete the tag.
 
 This only measures the **website**; the `ai-jury` CLI itself sends no
 telemetry.
