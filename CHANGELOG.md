@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- **An auto-discovered `jury.toml` that runs local commands is trusted before those commands run** (#831). A `[[agent]]` `command` (the generic-CLI adapter) runs a program when the review runs. `jury` auto-discovers `./jury.toml`, so running it inside a repository you did not write — a clone, a fork's PR branch — could run a command that config shipped (`command = "sh"`, `extra_args = ["-c", …]`). Now a discovered config with a `command` seat is refused unless trusted: an explicit `--config`, `JURY_TRUST_PROJECT_CONFIG=1`, a terminal confirmation (remembered per file by content hash), or the config `jury init` just wrote. Relative-path commands and non-loopback endpoints were already refused; this closes the bare-name command gap. `src/ai_jury/configtrust.py`; `tests/test_configtrust.py` pins the scope, each trust path, and an end-to-end refusal.
+
 ### Changed
 - **ai-jury.dev reports into an analytics site of its own, through one tag per page** (#829).
   - **Before.** Every page carried a Cloudflare Web Analytics token created in June for `berkayturanci.github.io`; the sibling project's site and two github.io project pages carried it too, so one dashboard mixed four properties. Nothing was lost — a token records a beacon from any host — but visits and Core Web Vitals could only be read per site through a Host filter.

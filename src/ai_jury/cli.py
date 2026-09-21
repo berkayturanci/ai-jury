@@ -20,7 +20,7 @@ import os
 import sys
 from pathlib import Path
 
-from . import __version__, panel
+from . import __version__, configtrust, panel
 from . import doctor as doctor_module
 from .adapters import EFFORT_LEVELS, effort_warnings, make_adapter
 from .ci import evaluate_ci, fail_on_error
@@ -1167,6 +1167,9 @@ def _run_init(rest: list[str]) -> int:
         return 2
 
     out_path.write_text(render_toml(config), encoding="utf-8")
+    # This config is the operator's own deliberate act, so record it as trusted: the
+    # ordinary `jury init` → `jury` path then never has to ask (#831).
+    configtrust.record_trust(out_path, configtrust.content_digest(out_path.read_bytes()))
     chosen = ", ".join(a["name"] for a in config["agent"])
     print(f"Wrote {out_path} — panel: {chosen} · rounds: {config['jury']['rounds']}")
     print(f"Next: jury --config-validate --config {out_path}")
@@ -2188,6 +2191,13 @@ def main(argv: list[str] | None = None) -> int:
         config = load_config(args.config, validate=True, strict=args.strict_config)
     except ConfigError as exc:
         print(f"Config invalid: {redact(str(exc))[0]}", file=sys.stderr)
+        return 2
+    # An auto-discovered ./jury.toml that runs local commands must be trusted before those
+    # commands run — the checkout may be one this operator did not write (#831).
+    try:
+        configtrust.enforce(args.config, config, mock=args.mock)
+    except configtrust.ConfigTrustError as exc:
+        print(f"error: {exc}", file=sys.stderr)
         return 2
     # One value, one field, one answer, whichever surface it was written on
     # (issue #748). The overrides below are assigned straight onto the config

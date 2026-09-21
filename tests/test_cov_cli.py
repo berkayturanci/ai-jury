@@ -68,14 +68,22 @@ def gh_mocked(diff=DIFF, head="abc123def456789", comments=None):
 @contextlib.contextmanager
 def offline_review():
     """Force ``cli.review_diff`` onto the deterministic mock agents so a
-    dispatched run never invokes a real vendor CLI (which would block)."""
+    dispatched run never invokes a real vendor CLI (which would block).
+
+    Also trusts the project config: these tests dispatch a real review against the
+    repository's own ``jury.toml`` (command seats), and the #831 trust gate would
+    otherwise refuse it non-interactively. The gate is exercised on its own in
+    ``tests/test_configtrust.py``; here it is not what is under test."""
     real = cli.review_diff
 
     def _offline(config, diff, **kw):
         kw["mock"] = True
         return real(config, diff, **kw)
 
-    with mock.patch("ai_jury.cli.review_diff", side_effect=_offline):
+    with (
+        mock.patch("ai_jury.cli.review_diff", side_effect=_offline),
+        mock.patch.dict(os.environ, {"JURY_TRUST_PROJECT_CONFIG": "1"}),
+    ):
         yield
 
 

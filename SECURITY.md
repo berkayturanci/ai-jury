@@ -26,6 +26,8 @@ This tool invokes local agent CLIs and may pass PR diffs or repository context t
 tools. Review your configured agent CLIs, authentication state, and `jury.toml`
 before running it on sensitive repositories.
 
+**A project's `jury.toml` can run commands, so it is trusted like code.** A `[[agent]]` with a `command` runs that program when a review runs. When `jury` auto-discovers `./jury.toml` in a directory you did not write — a clone, a fork's pull-request branch — a hostile config could run an arbitrary command. So an *auto-discovered* config that defines any `command` seat is refused until it is trusted: pass `--config ./jury.toml` if you trust it, set `JURY_TRUST_PROJECT_CONFIG=1`, or confirm once at a terminal (remembered per file, by content). `jury init` trusts the config it writes, so the ordinary flow never prompts. Two existing opt-ins harden the command further: `JURY_REQUIRE_ABSOLUTE_COMMAND=1` rejects even a bare name, and a relative-path `command` is always refused.
+
 **Fail-soft is not a multi-vendor guarantee.** If you gate a merge on this
 tool's verdict, note that adapters fail soft by design: an agent that is
 missing, broken, unauthenticated, or whose CLI flags changed under it is
