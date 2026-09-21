@@ -1384,7 +1384,7 @@
         color: "var(--c-grok)",
         desc: "Direct REST API access to Grok reasoning and code models.",
         config: '[[agent]]\nname = "grok"\nvendor = "openai-compatible"\nendpoint = "https://api.x.ai/v1/chat/completions"\napi_key_env = "XAI_API_KEY"\nmodel = "grok-2-latest"',
-        command: "XAI_API_KEY=... jury --pr 123"
+        command: "JURY_ALLOW_REMOTE_ENDPOINT=1 XAI_API_KEY=... jury --pr 123"
       },
       {
         id: "groq",
@@ -1398,7 +1398,7 @@
         color: "var(--c-groq)",
         desc: "Ultra high-speed LPU inference engine for near-instant multi-agent debate.",
         config: '[[agent]]\nname = "groq"\nvendor = "openai-compatible"\nendpoint = "https://api.groq.com/openai/v1/chat/completions"\napi_key_env = "GROQ_API_KEY"\nmodel = "llama-3.3-70b-versatile"',
-        command: "GROQ_API_KEY=... jury --pr 123"
+        command: "JURY_ALLOW_REMOTE_ENDPOINT=1 GROQ_API_KEY=... jury --pr 123"
       },
       {
         id: "openrouter",
@@ -1412,7 +1412,7 @@
         color: "var(--c-openrouter)",
         desc: "Unified routing gateway giving instant access to over 200 AI models.",
         config: '[[agent]]\nname = "openrouter"\nvendor = "openai-compatible"\nendpoint = "https://openrouter.ai/api/v1/chat/completions"\napi_key_env = "OPENROUTER_API_KEY"\nmodel = "anthropic/claude-3.7-sonnet"',
-        command: "OPENROUTER_API_KEY=... jury --pr 123"
+        command: "JURY_ALLOW_REMOTE_ENDPOINT=1 OPENROUTER_API_KEY=... jury --pr 123"
       },
       {
         id: "together",
@@ -1426,7 +1426,7 @@
         color: "#6366f1",
         desc: "Cloud inference hosting for open-weights Llama 3.3, Qwen, and DeepSeek.",
         config: '[[agent]]\nname = "together"\nvendor = "openai-compatible"\nendpoint = "https://api.together.xyz/v1/chat/completions"\napi_key_env = "TOGETHER_API_KEY"\nmodel = "meta-llama/Llama-3.3-70B-Instruct-Turbo"',
-        command: "jury --pr 123"
+        command: "JURY_ALLOW_REMOTE_ENDPOINT=1 TOGETHER_API_KEY=... jury --pr 123"
       },
 
       // 3. Local & Offline Engines
@@ -1493,7 +1493,7 @@
         name: "Claude Code Plugin & Skill",
         vendor: "Anthropic Skill",
         cat: "cicd",
-        badge: "Slash Command",
+        badge: "Chat Skill",
         badgeType: "accent",
         iconKey: "claude",
         logo: "logos/claude.svg",
