@@ -185,6 +185,10 @@ def preview_patch_suggestion(
         target.relative_to(root)
     except (ValueError, RuntimeError):
         return [], f"Path traversal rejected: {suggestion.file}"
+    sensitive = _sensitive_target(target, root)
+    if sensitive is not None:
+        # Preview and apply must agree (#605): the same refusal an apply would raise.
+        return [], sensitive
     if not target.exists() or not target.is_file():
         return [], f"File not found: {suggestion.file}"
 
@@ -289,6 +293,28 @@ def _looks_like_patch(fix: str) -> bool:
     return False
 
 
+#: Directories a suggested patch may never write into, even though they sit inside the
+#: working tree. ``.git`` holds config and hooks that run a command on the next git
+#: operation; ``.github`` holds the workflows that run in CI. ``target`` is already
+#: ``resolve()``-d, so a symlink that redirects here is caught by the same check (#831).
+_SENSITIVE_DIRS = frozenset({".git", ".github"})
+
+
+def _sensitive_target(target: Path, root: Path) -> str | None:
+    # Precondition: ``target`` is already under ``root`` (the caller's traversal check
+    # returned otherwise), so ``relative_to`` cannot raise here. Case-fold the comparison:
+    # on a case-insensitive filesystem (macOS APFS, Windows NTFS) ``.Git/config`` names the
+    # real ``.git/config`` while ``resolve()`` keeps the casing it was given.
+    parts = target.relative_to(root).parts
+    for part in parts:
+        if part.lower() in _SENSITIVE_DIRS:
+            return (
+                f"refusing to write inside {part}/ ({'/'.join(parts)}): a suggested patch may "
+                "not touch the repository's git internals or CI configuration"
+            )
+    return None
+
+
 def apply_patch_suggestion(
     suggestion: PatchSuggestion, root_dir: Path | None = None
 ) -> tuple[bool, str]:
@@ -299,6 +325,10 @@ def apply_patch_suggestion(
         target.relative_to(root)
     except (ValueError, RuntimeError):
         return False, f"Path traversal rejected: {suggestion.file}"
+
+    sensitive = _sensitive_target(target, root)
+    if sensitive is not None:
+        return False, sensitive
 
     if not target.exists() or not target.is_file():
         return False, f"File not found: {suggestion.file}"
