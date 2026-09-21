@@ -206,6 +206,32 @@ class DoctorWarningBranches(unittest.TestCase):
         empty = cfgmod._from_dict({"jury": {"rounds": 1}, "agent": []})
         self.assertIn("no agents are configured", doctor._detect_warnings(empty))
 
+    def test_available_api_seat_with_no_model_is_flagged(self):
+        # An available *-api seat (no command, no endpoint) with no model is reported ready by
+        # --doctor but fails at request time; it is now warned about, as --config-validate does (#831).
+        cfg = cfgmod._from_dict(
+            {
+                "jury": {"rounds": 1, "chair": "claude-api"},
+                "agent": [{"name": "claude-api", "vendor": "anthropic-api"}],
+            }
+        )
+        with mock.patch.object(doctor, "_is_available", return_value=True):
+            warnings = doctor._detect_warnings(cfg)
+        self.assertTrue(any("has no 'model'" in w for w in warnings), warnings)
+
+    def test_available_api_seat_with_a_model_is_not_flagged(self):
+        cfg = cfgmod._from_dict(
+            {
+                "jury": {"rounds": 1, "chair": "claude-api"},
+                "agent": [
+                    {"name": "claude-api", "vendor": "anthropic-api", "model": "claude-opus-5"}
+                ],
+            }
+        )
+        with mock.patch.object(doctor, "_is_available", return_value=True):
+            warnings = doctor._detect_warnings(cfg)
+        self.assertFalse(any("has no 'model'" in w for w in warnings), warnings)
+
     def test_local_agent_unreachable_endpoint_warning(self):
         # doctor.py:119-120 — enabled local agent whose endpoint is unreachable.
         cfg = self.d / "jury.toml"

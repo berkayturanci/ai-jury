@@ -1297,3 +1297,36 @@ class ReviewDiffBranches(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SkipReasonTransport(unittest.TestCase):
+    """`_skip_reason` names the transport instead of `CLI not found ()` (#831)."""
+
+    def test_cli_seat_keeps_its_command(self):
+        from types import SimpleNamespace
+
+        from ai_jury import orchestrator
+
+        spec = SimpleNamespace(command="agy", endpoint="", vendor="agy")
+        self.assertEqual(orchestrator._skip_reason(spec), "CLI not found (agy)")
+
+    def test_local_seat_names_the_endpoint_not_empty_parens(self):
+        from types import SimpleNamespace
+
+        from ai_jury import orchestrator
+
+        spec = SimpleNamespace(command="", endpoint="http://localhost:11434/v1", vendor="local")
+        reason = orchestrator._skip_reason(spec)
+        self.assertNotIn("()", reason)
+        self.assertIn("endpoint not reachable", reason)
+        self.assertIn("localhost:11434", reason)
+
+    def test_hosted_api_seat_has_no_empty_parens(self):
+        from types import SimpleNamespace
+
+        from ai_jury import orchestrator
+
+        spec = SimpleNamespace(command="", endpoint="", vendor="anthropic-api")
+        reason = orchestrator._skip_reason(spec)
+        self.assertNotIn("()", reason)
+        self.assertIn("anthropic-api", reason)

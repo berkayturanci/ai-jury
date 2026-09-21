@@ -316,6 +316,24 @@ def _debate_round(
     return _order_by_agents(results, agent_order)
 
 
+def _skip_reason(spec) -> str:
+    """Why an unavailable seat was skipped, worded for its transport (#831).
+
+    The one hardcoded ``CLI not found ({command})`` rendered ``CLI not found ()`` for a
+    commandless local or hosted-API seat, whose ``command`` is empty. Name what is actually
+    missing instead — a CLI on PATH, a reachable endpoint, or an API key — with the value
+    passed through :func:`redact` so an endpoint's credentials never reach the log.
+    """
+    command = getattr(spec, "command", "") or ""
+    if command:
+        return f"CLI not found ({redact(command)[0]})"
+    endpoint = getattr(spec, "endpoint", "") or ""
+    if endpoint:
+        return f"endpoint not reachable ({redact(endpoint)[0]})"
+    vendor = redact(getattr(spec, "vendor", "") or "hosted-API")[0]
+    return f"{vendor} seat unavailable (no API key, or the API is unreachable)"
+
+
 def run_jury(
     config: JuryConfig,
     diff: str,
@@ -438,7 +456,7 @@ def run_jury(
         elif strict:
             raise RuntimeError(f"agent '{a.name}' CLI not available: {a.spec.command}")
         else:
-            reason = f"CLI not found ({a.spec.command})"
+            reason = _skip_reason(a.spec)
             log(f"skipping '{a.name}': {reason}")
             skipped.append((a.name, reason))
     if not usable:

@@ -255,6 +255,19 @@ def _detect_warnings(cfg) -> list[str]:
         warnings.append(f"chair '{_redact_value(cfg.chair)}' does not match any configured agent")
     for agent in enabled:
         if _is_available(agent):
+            # An available hosted-API seat (no command, no endpoint) with no model is still
+            # reported ready, but the API call fails at request time — `--config-validate`
+            # warns while `--doctor` did not (#831). Flag it here too, in the same words.
+            if not (
+                (getattr(agent, "command", "") or "")
+                or (getattr(agent, "endpoint", "") or "")
+                or (getattr(agent, "model", "") or "")
+            ):
+                warnings.append(
+                    f"agent '{_redact_value(agent.name)}' "
+                    f"({_redact_value(vendor_identity(getattr(agent, 'vendor', '')))}) "
+                    "has no 'model'; the server or API call will likely reject the request"
+                )
             continue
         # Classified by the SAME predicate `_unavailable_reason` uses, so the
         # warning list and the per-agent `reason` cannot diagnose one seat two
