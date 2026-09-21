@@ -14,12 +14,16 @@ from .findings import SEVERITY_ORDER, Finding, flatten_inline
 #: and a reviewer's raw output is rendered into the transcript verbatim (#831 F3). A space
 #: between the fence and ``suggestion`` breaks the apply parser's exact match while the block
 #: still renders as a labelled code block, so a reviewer cannot smuggle in an applicable patch.
-_SUGGESTION_FENCE = re.compile(r"(?m)^(\s*)(`{3,}|~{3,})(suggestion)(?=\s*$)")
+#:
+#: NOT anchored to the line start: the apply parser (``patches.parse_patch_suggestions``) is
+#: itself unanchored, so it matches ``` ```suggestion ``` after a blockquote (``> ``) or list
+#: (``- ``) marker too, and the defuser has to reach the same spellings (agy round 1).
+_SUGGESTION_FENCE = re.compile(r"(?m)(`{3,}|~{3,})(suggestion)(?=\s*$)")
 
 
 def _defuse_patch_syntax(text: str) -> str:
     """Neutralise a ``suggestion`` code fence in untrusted agent output (#831 F3)."""
-    return _SUGGESTION_FENCE.sub(r"\1\2 \3", text)
+    return _SUGGESTION_FENCE.sub(r"\1 \2", text)
 
 
 def _block(title: str, body: str) -> str:
