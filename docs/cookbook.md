@@ -259,23 +259,24 @@ turns the jury into an enforced quality gate. Start advisory, graduate to
 ## 6. Run in mock mode for smoke testing
 
 **Prerequisites:** none. `--mock` runs the entire pipeline offline with
-deterministic mock agents — no live CLIs, no `gh`, no credentials.
+deterministic mock agents — no live CLIs, no `gh`, no credentials. With no diff
+source it reviews a diff bundled with the package, so this needs no checkout:
 
 ```bash
-jury --mock --diff-file - < examples/sample.diff
+jury --mock
 ```
 
-Or against any diff file or piped branch diff:
+Or against your own change — any diff file or piped branch diff:
 
 ```bash
-jury --mock --diff-file examples/sample.diff
+jury --mock --diff-file your-changes.diff
 git diff main... | jury --mock --diff-file -
 ```
 
 You can exercise the CI gate offline too:
 
 ```bash
-jury --mock --ci --fail-on critical,major --diff-file examples/sample.diff
+jury --mock --ci --fail-on critical,major
 ```
 
 **Outcome:** a complete markdown report (headed `# 🏛️ AI Jury`)

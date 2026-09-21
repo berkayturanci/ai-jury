@@ -68,8 +68,9 @@ jury --pr 123 --rounds 1
 #   → each agent reviews once; skips the debate round (a fixed value disables early-stop)
 
 # Offline demo with deterministic mock agents (no CLIs, no network)
-jury --mock --diff-file examples/sample.diff
-#   → exercise the full pipeline locally; byte-identical output every run
+jury --mock
+#   → reviews a diff bundled with the package; byte-identical output every run
+#   → point it at your own change with --diff-file <path> or --diff-file -
 
 # Run ONE agent for one role and get a JSON result (orchestrator integration)
 jury run-agent --agent claude --role review --prompt-file gate.md

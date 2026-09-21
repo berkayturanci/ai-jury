@@ -41,6 +41,11 @@ jury = "ai_jury.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+# Ship the offline-demo diff inside the wheel so `jury --mock` (issue #21) runs on
+# a fresh `pipx install ai-jury`, with no repo checkout and nothing to download.
+[tool.setuptools.package-data]
+ai_jury = ["data/*.diff"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"

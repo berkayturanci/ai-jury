@@ -184,8 +184,8 @@ A minimal pass to confirm the skill is installed and wired correctly:
 - [ ] `jury --help` runs (CLI is on `PATH`).
 - [ ] The skill directory is present in the host's skill folder
       (`.claude/skills/ai-jury/SKILL.md`), or the plugin shows as installed.
-- [ ] Offline dry run produces a report with no live CLIs:
-      `jury --mock --diff-file examples/sample.diff`
+- [ ] Offline dry run produces a report with no live CLIs: `jury --mock`
+      (reviews a diff bundled with the package; no checkout needed)
 - [ ] At least one agent CLI is resolvable (`claude`, `codex`, or `agy`), or a live run is
       not expected.
 - [ ] For PR runs: `gh auth status` is authenticated.

@@ -48,7 +48,9 @@ curl -fsSL https://ai-jury.dev/install.sh | sh
 pipx install ai-jury
 ```
 
-Requires Python 3.11+. Then scaffold a config with **`jury init`** (it detects your
+Requires Python 3.11+. **Try it instantly, no config:** `jury --mock` runs the full
+offline deliberation on a diff bundled with the package (add `--theater` to watch the
+panel animate). Then scaffold a config with **`jury init`** (it detects your
 installed agents and local models). You need at least one reviewer: an agent CLI
 (`claude`, `codex`, `agy`, `aider`), a free local model via Ollama, **or** a hosted-API reviewer
 (Anthropic, OpenAI, Gemini, OpenRouter, DeepSeek, Groq, xAI Grok, Moonshot Kimi) — no CLI install or interactive login needed,
@@ -352,9 +354,9 @@ jury --pr 123 --incremental               # review only changes since the last r
 
 ```bash
 git diff origin/HEAD... | jury --diff-file -   # review the current branch
-jury --diff-file examples/sample.diff          # review a diff file
-jury --rounds 1                                # independent review only (no debate)
-jury --mock --diff-file examples/sample.diff   # offline demo, no live CLIs
+jury --diff-file changes.diff                  # review a diff file
+jury --mock                                     # offline demo on a bundled sample, no live CLIs
+jury --mock --rounds 1                          # offline: independent review only (no debate)
 ```
 
 **Inspect:**

@@ -1,0 +1,16 @@
+diff --git a/src/payments.py b/src/payments.py
+index 1111111..2222222 100644
+--- a/src/payments.py
++++ b/src/payments.py
+@@ -10,6 +10,14 @@ class PaymentProcessor:
+     def charge(self, user_id, amount_cents):
+-        return self._gateway.charge(user_id, amount_cents)
++        # Retry charge up to 3 times on transient failure
++        for attempt in range(3):
++            resp = self._gateway.charge(user_id, amount_cents)
++            if resp.ok:
++                return resp
++        return resp
++
++    def refund(self, charge_id):
++        self._gateway.refund(charge_id)

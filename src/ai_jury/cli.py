@@ -18,6 +18,7 @@ import io
 import json
 import os
 import sys
+from importlib import resources
 from pathlib import Path
 
 from . import __version__, configtrust, panel
@@ -117,6 +118,17 @@ def _git_diff(argv: list[str], label: str) -> str:
     return _read_capped(io.StringIO(proc.stdout), label)
 
 
+def _bundled_sample_diff() -> str:
+    """The offline-demo diff shipped inside the package (issue #21).
+
+    Read from ``ai_jury/data/sample.diff`` via ``importlib.resources`` so it
+    resolves the same way from a wheel, a zipapp, or a source checkout — no
+    ``examples/`` directory and no repo needed. Kept byte-identical to
+    ``examples/sample.diff`` by a test.
+    """
+    return resources.files("ai_jury").joinpath("data/sample.diff").read_text(encoding="utf-8")
+
+
 def _read_diff(args) -> tuple[str, str]:
     """Return (diff, context)."""
     if getattr(args, "commit", None):
@@ -148,6 +160,19 @@ def _read_diff(args) -> tuple[str, str]:
             raise SystemExit(
                 f"error reading diff file '{args.diff_file}': {redact(str(exc))[0]}"
             ) from None
+    if getattr(args, "mock", False):
+        # Offline demo (issue #21): `--mock` with no diff source reviews a diff
+        # bundled in the package, so `jury --mock` / `jury --mock --theater`
+        # deliver the deliberation the docs promise on a fresh install — no
+        # checkout, no PR, no network. A real (non-`--mock`) run still requires
+        # an explicit source. Announced on stderr so the payments.py sample is
+        # never mistaken for the caller's own change.
+        print(
+            "no diff source given; reviewing the bundled offline-demo diff. "
+            "Pass --diff-file/--pr/--commit to review your own change.",
+            file=sys.stderr,
+        )
+        return _bundled_sample_diff(), ""
     raise SystemExit(
         "error: provide one of --pr, --issue, --diff-file, --commit, --commits "
         "(or --diff-file - for stdin)"
