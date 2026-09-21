@@ -51,7 +51,7 @@ class TestTheGateScope(unittest.TestCase):
     def test_no_gate_when_no_command_seat(self):
         with TemporaryDirectory() as d:
             Path(d, "jury.toml").write_text("x", encoding="utf-8")
-            cwd = os.getcwd()
+            cwd = Path.cwd()
             os.chdir(d)
             try:
                 configtrust.enforce(None, _Config(_Spec("a", ""), _Spec("b")), mock=False)
@@ -61,7 +61,7 @@ class TestTheGateScope(unittest.TestCase):
     def test_no_gate_for_a_mock_run(self):
         with TemporaryDirectory() as d:
             Path(d, "jury.toml").write_text("x", encoding="utf-8")
-            cwd = os.getcwd()
+            cwd = Path.cwd()
             os.chdir(d)
             try:
                 configtrust.enforce(None, _Config(_Spec("a", "sh")), mock=True)
@@ -71,7 +71,7 @@ class TestTheGateScope(unittest.TestCase):
     def test_no_gate_when_there_is_no_discovered_file(self):
         # path is None but ./jury.toml does not exist → the built-in default is in use.
         with TemporaryDirectory() as d:
-            cwd = os.getcwd()
+            cwd = Path.cwd()
             os.chdir(d)
             try:
                 configtrust.enforce(None, _Config(_Spec("a", "sh")), mock=False)
@@ -84,7 +84,7 @@ class TestTheGateEnforces(unittest.TestCase):
         d = TemporaryDirectory()
         self.addCleanup(d.cleanup)
         Path(d.name, "jury.toml").write_text('[[agent]]\ncommand="sh"\n', encoding="utf-8")
-        cwd = os.getcwd()
+        cwd = Path.cwd()
         os.chdir(d.name)
         self.addCleanup(os.chdir, cwd)
         return Path(d.name)
@@ -140,15 +140,18 @@ class TestTheGateEnforces(unittest.TestCase):
 
     def test_a_tty_no_is_refused(self):
         self._in_repo()
-        with TemporaryDirectory() as store, _isolated_env(store):
-            with self.assertRaises(configtrust.ConfigTrustError):
-                configtrust.enforce(
-                    None,
-                    _Config(_Spec("helper", "sh")),
-                    mock=False,
-                    stdin=_tty("n\n"),
-                    stdout=io.StringIO(),
-                )
+        with (
+            TemporaryDirectory() as store,
+            _isolated_env(store),
+            self.assertRaises(configtrust.ConfigTrustError),
+        ):
+            configtrust.enforce(
+                None,
+                _Config(_Spec("helper", "sh")),
+                mock=False,
+                stdin=_tty("n\n"),
+                stdout=io.StringIO(),
+            )
 
     def test_editing_the_file_re_asks(self):
         repo = self._in_repo()
@@ -176,48 +179,58 @@ class TestTheErrorBranches(unittest.TestCase):
         d = TemporaryDirectory()
         self.addCleanup(d.cleanup)
         Path(d.name, "jury.toml").write_text('[[agent]]\ncommand="sh"\n', encoding="utf-8")
-        cwd = os.getcwd()
+        cwd = Path.cwd()
         os.chdir(d.name)
         self.addCleanup(os.chdir, cwd)
         return Path(d.name)
 
     def test_an_unreadable_config_is_a_trust_error(self):
         self._in_repo_with_command()
-        with TemporaryDirectory() as store, _isolated_env(store):
-            with mock.patch.object(Path, "read_bytes", side_effect=OSError("boom")):
-                with self.assertRaises(configtrust.ConfigTrustError) as ctx:
-                    configtrust.enforce(
-                        None,
-                        _Config(_Spec("helper", "sh")),
-                        mock=False,
-                        stdin=_NoTTY(),
-                        stdout=io.StringIO(),
-                    )
+        with (
+            TemporaryDirectory() as store,
+            _isolated_env(store),
+            mock.patch.object(Path, "read_bytes", side_effect=OSError("boom")),
+            self.assertRaises(configtrust.ConfigTrustError) as ctx,
+        ):
+            configtrust.enforce(
+                None,
+                _Config(_Spec("helper", "sh")),
+                mock=False,
+                stdin=_NoTTY(),
+                stdout=io.StringIO(),
+            )
         self.assertIn("cannot read", str(ctx.exception))
 
     def test_an_empty_answer_at_the_prompt_is_a_refusal(self):
         self._in_repo_with_command()
-        with TemporaryDirectory() as store, _isolated_env(store):
-            with self.assertRaises(configtrust.ConfigTrustError):
-                configtrust.enforce(
-                    None,
-                    _Config(_Spec("helper", "sh")),
-                    mock=False,
-                    stdin=_tty(""),
-                    stdout=io.StringIO(),
-                )
+        with (
+            TemporaryDirectory() as store,
+            _isolated_env(store),
+            self.assertRaises(configtrust.ConfigTrustError),
+        ):
+            configtrust.enforce(
+                None,
+                _Config(_Spec("helper", "sh")),
+                mock=False,
+                stdin=_tty(""),
+                stdout=io.StringIO(),
+            )
 
     def test_a_store_that_cannot_be_written_does_not_crash_the_run(self):
-        with TemporaryDirectory() as store:
-            with mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": store}):
-                with mock.patch.object(Path, "mkdir", side_effect=OSError("readonly")):
-                    # Returns without raising; the decision to trust was already made.
-                    configtrust.record_trust(Path("jury.toml"), "deadbeef")
+        with (
+            TemporaryDirectory() as store,
+            mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": store}),
+            mock.patch.object(Path, "mkdir", side_effect=OSError("readonly")),
+        ):
+            # Returns without raising; the decision to trust was already made.
+            configtrust.record_trust(Path("jury.toml"), "deadbeef")
 
     def test_a_missing_store_reads_as_untrusted(self):
-        with TemporaryDirectory() as store:
-            with mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": store}):
-                self.assertFalse(configtrust.is_trusted(Path("jury.toml"), "deadbeef"))
+        with (
+            TemporaryDirectory() as store,
+            mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": store}),
+        ):
+            self.assertFalse(configtrust.is_trusted(Path("jury.toml"), "deadbeef"))
 
 
 class TestTheCliRefusesAHostileDiscoveredConfig(unittest.TestCase):
@@ -232,7 +245,7 @@ class TestTheCliRefusesAHostileDiscoveredConfig(unittest.TestCase):
     def test_piped_review_refuses_and_runs_nothing(self):
         with TemporaryDirectory() as d, TemporaryDirectory() as store:
             Path(d, "jury.toml").write_text(self.HOSTILE, encoding="utf-8")
-            cwd = os.getcwd()
+            cwd = Path.cwd()
             os.chdir(d)
             try:
                 with mock.patch.dict(
@@ -268,7 +281,7 @@ class TestRunAgentAlsoRefusesAHostileDiscoveredConfig(unittest.TestCase):
         with TemporaryDirectory() as d, TemporaryDirectory() as store:
             Path(d, "jury.toml").write_text(self.HOSTILE, encoding="utf-8")
             Path(d, "task.md").write_text("review this", encoding="utf-8")
-            cwd = os.getcwd()
+            cwd = Path.cwd()
             os.chdir(d)
             try:
                 with mock.patch.dict(
