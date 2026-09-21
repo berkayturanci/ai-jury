@@ -2,14 +2,28 @@
 
 from __future__ import annotations
 
+import re
+
 from . import classification as _classification
 from . import panel as panel_mod
 from .adapters import AgentResult
 from .findings import SEVERITY_ORDER, Finding, flatten_inline
 
+#: A fenced ``suggestion`` block opener (``` ```suggestion ``` or a longer run, tildes too).
+#: ``jury apply`` parses ``` ```suggestion ``` blocks out of a report's prose to build a patch,
+#: and a reviewer's raw output is rendered into the transcript verbatim (#831 F3). A space
+#: between the fence and ``suggestion`` breaks the apply parser's exact match while the block
+#: still renders as a labelled code block, so a reviewer cannot smuggle in an applicable patch.
+_SUGGESTION_FENCE = re.compile(r"(?m)^(\s*)(`{3,}|~{3,})(suggestion)(?=\s*$)")
+
+
+def _defuse_patch_syntax(text: str) -> str:
+    """Neutralise a ``suggestion`` code fence in untrusted agent output (#831 F3)."""
+    return _SUGGESTION_FENCE.sub(r"\1\2 \3", text)
+
 
 def _block(title: str, body: str) -> str:
-    return f"### {title}\n\n{body.strip() or '_(no output)_'}\n"
+    return f"### {title}\n\n{_defuse_patch_syntax(body).strip() or '_(no output)_'}\n"
 
 
 def _fail_status(r: AgentResult) -> str:
@@ -364,7 +378,7 @@ def render(
         lines.append("## Verification\n")
         lines.append(f"> Verified by `{chair}`\n")
         if verify.ok:
-            lines.append(verify.output.strip() + "\n")
+            lines.append(_defuse_patch_syntax(verify.output).strip() + "\n")
         else:
             lines.append(f"_Verification failed: {flatten_inline(verify.error)}_\n")
         lines.append("---\n")
@@ -373,7 +387,7 @@ def render(
     if synthesis and synthesis.ok:
         lines.append(f"## {chair_heading}\n")
         lines.append(f"> Synthesized by `{chair}`\n")
-        lines.append(synthesis.output.strip() + "\n")
+        lines.append(_defuse_patch_syntax(synthesis.output).strip() + "\n")
     elif synthesis and not synthesis.ok:
         lines.append(f"## {chair_heading}\n")
         lines.append(f"_Synthesis failed: {flatten_inline(synthesis.error)}_\n")
@@ -450,7 +464,7 @@ def render_live_step(
         who = f"`{result.agent}` ({result.vendor})"
     status = f"{result.duration_s:.0f}s" if result.ok else _fail_status(result)
     title = f"🏛️ AI Jury — {label}: {who} — {status}"
-    body = result.output.strip() if result.ok else ""
+    body = _defuse_patch_syntax(result.output).strip() if result.ok else ""
     return title, (body or "_(no output)_")
 
 
@@ -479,14 +493,14 @@ def _conversation_blocks(
         lines.append("## Verification\n")
         lines.append(f"> Verified by `{chair}`\n")
         lines.append(
-            verify.output.strip() + "\n"
+            _defuse_patch_syntax(verify.output).strip() + "\n"
             if verify.ok
             else f"_Verification failed: {flatten_inline(verify.error)}_\n"
         )
     lines.append("## Decision — verdict & reasoning\n")
     if synthesis and synthesis.ok:
         lines.append(f"> Decided by `{chair}`\n")
-        lines.append(synthesis.output.strip() + "\n")
+        lines.append(_defuse_patch_syntax(synthesis.output).strip() + "\n")
     elif synthesis and not synthesis.ok:
         lines.append(f"_Synthesis failed: {flatten_inline(synthesis.error)}_\n")
     else:
@@ -669,7 +683,7 @@ def render_sections(
         dec.append("## Verification\n")
         dec.append(f"> Verified by `{chair}`\n")
         dec.append(
-            verify.output.strip() + "\n"
+            _defuse_patch_syntax(verify.output).strip() + "\n"
             if verify.ok
             else f"_Verification failed: {flatten_inline(verify.error)}_\n"
         )
@@ -677,7 +691,7 @@ def render_sections(
     if synthesis and synthesis.ok:
         dec.append(f"## {chair_heading}\n")
         dec.append(f"> Synthesized by `{chair}`\n")
-        dec.append(synthesis.output.strip() + "\n")
+        dec.append(_defuse_patch_syntax(synthesis.output).strip() + "\n")
     elif synthesis and not synthesis.ok:
         dec.append(f"## {chair_heading}\n\n_Synthesis failed: {flatten_inline(synthesis.error)}_\n")
     if findings:
