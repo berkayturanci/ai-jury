@@ -15,8 +15,12 @@ class PreCommitHookTests(unittest.TestCase):
 
         content = hook_path.read_text(encoding="utf-8")
         self.assertIn("- id: ai-jury", content)
-        self.assertIn("entry: jury", content)
-        self.assertIn("language: python", content)
+        # The hook pipes the staged diff into the review and must not pass filenames as
+        # positional args (the review command has none, so that exits 2); see #831.
+        self.assertIn("git diff --cached", content)
+        self.assertIn("jury --diff-file -", content)
+        self.assertIn("pass_filenames: false", content)
+        self.assertIn("language: system", content)
         self.assertIn("stages:", content)
 
 

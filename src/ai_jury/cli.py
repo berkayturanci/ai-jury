@@ -2198,7 +2198,9 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         config = load_config(args.config, validate=True, strict=args.strict_config)
-    except ConfigError as exc:
+    except (ConfigError, FileNotFoundError) as exc:
+        # A missing --config path raises FileNotFoundError; the other load sites already catch
+        # both, so a bad path prints `Config invalid: …` instead of a traceback (#831).
         print(f"Config invalid: {redact(str(exc))[0]}", file=sys.stderr)
         return 2
     # An auto-discovered ./jury.toml that runs local commands must be trusted before those
@@ -2335,7 +2337,13 @@ def main(argv: list[str] | None = None) -> int:
     # explicit config or a working CLI panel.
     _maybe_add_local_fallback(config, args, log)
 
-    diff, context = _read_diff(args)
+    try:
+        diff, context = _read_diff(args)
+    except RuntimeError as exc:
+        # `--pr` shells out to `gh`; a missing or failing `gh` raises RuntimeError, which was
+        # otherwise uncaught here and printed a Python traceback (#831).
+        print(f"error: {redact(str(exc))[0]}", file=sys.stderr)
+        return 2
 
     # Incremental review (issue #9): when --incremental and a prior jury
     # marker exists, narrow the diff to the range since the last reviewed SHA;
