@@ -63,7 +63,7 @@ Key facts:
   `timeout`, `total_timeout`/`phase_timeout`/`retries`, `verify`; per-agent
   `vendor`/`command`/`extra_args`, or for a local agent `vendor = "local"` +
   `endpoint`/`model`.
-- `[jury.ci]` takes exactly three keys: `fail_on`, `ignore_unverified`, and
+- `[jury.ci]` takes four keys: `fail_on`, `ignore_unverified`, `min_reviews` (panel-size floor, default 0), and
   `min_vendors` — distinct vendors that must have contributed a review before the run
   counts as cross-vendor consensus (default 2; fewer exits 3, `0` disables it). Report
   format is the `--format` flag, not a key in this section.
