@@ -1527,6 +1527,15 @@ def _run_run_agent(rest: list[str], spawn=None, sleep=None, clock=None) -> int:
         print(redact(f"error: {exc}")[0], file=sys.stderr)
         return 2
 
+    # run-agent runs a config-defined command too, and a discovered config can even shadow
+    # a built-in name (`--agent claude` with `command = "sh"`), so it needs the same trust
+    # gate as a review (#831).
+    try:
+        configtrust.enforce(ns.config, config, mock=ns.mock)
+    except configtrust.ConfigTrustError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
     spec, error = runagent.resolve_agent(config, ns.agent)
     if error is not None:
         print(f"error: {error}", file=sys.stderr)

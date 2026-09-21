@@ -128,16 +128,18 @@ def enforce(config_arg, config, *, mock: bool, stdin=None, stdout=None) -> None:
     stream_in = stdin if stdin is not None else sys.stdin
     stream_out = stdout if stdout is not None else sys.stdout
     if stream_in is not None and hasattr(stream_in, "isatty") and stream_in.isatty():
+        # Read the answer from the passed-in streams, not the builtin ``input()`` — that
+        # would always read the real ``sys.stdin`` and ignore an injected stream.
         print(
             f"\n{path} was found in this directory and runs local command(s) as part of the "
             f"review:\n  agents with a command: {listed}\n"
-            "A cloned or fork repository can ship a jury.toml that runs arbitrary commands.",
+            "A cloned or fork repository can ship a jury.toml that runs arbitrary commands.\n"
+            "Trust this config and run its commands? [y/N] ",
+            end="",
             file=stream_out,
+            flush=True,
         )
-        try:
-            answer = input("Trust this config and run its commands? [y/N] ").strip().lower()
-        except EOFError:
-            answer = ""
+        answer = (stream_in.readline() or "").strip().lower()
         if answer in {"y", "yes"}:
             record_trust(path, digest)
             return

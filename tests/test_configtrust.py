@@ -25,8 +25,9 @@ class _Config:
         self.agents = list(specs)
 
 
-def _tty(answer=None):
-    stream = io.StringIO()
+def _tty(answer=""):
+    # A terminal-like stream seeded with the operator's reply, read via readline().
+    stream = io.StringIO(answer)
     stream.isatty = lambda: True  # type: ignore[method-assign]
     return stream
 
@@ -119,61 +120,55 @@ class TestTheGateEnforces(unittest.TestCase):
     def test_a_tty_yes_records_trust_and_a_second_run_is_silent(self):
         repo = self._in_repo()
         with TemporaryDirectory() as store, _isolated_env(store):
-            tty = _tty()
-            with mock.patch("builtins.input", return_value="y"):
-                configtrust.enforce(
-                    None,
-                    _Config(_Spec("helper", "sh")),
-                    mock=False,
-                    stdin=tty,
-                    stdout=io.StringIO(),
-                )
-            # recorded: a second run needs no prompt (input would raise if called)
-            with mock.patch("builtins.input", side_effect=AssertionError("prompted again")):
-                configtrust.enforce(
-                    None,
-                    _Config(_Spec("helper", "sh")),
-                    mock=False,
-                    stdin=tty,
-                    stdout=io.StringIO(),
-                )
+            configtrust.enforce(
+                None,
+                _Config(_Spec("helper", "sh")),
+                mock=False,
+                stdin=_tty("y\n"),
+                stdout=io.StringIO(),
+            )
+            # recorded: a second run needs no prompt — an empty stream would refuse if it did
+            configtrust.enforce(
+                None,
+                _Config(_Spec("helper", "sh")),
+                mock=False,
+                stdin=_tty(""),
+                stdout=io.StringIO(),
+            )
             digest = configtrust.content_digest(Path(repo, "jury.toml").read_bytes())
             self.assertTrue(configtrust.is_trusted(Path(repo, "jury.toml"), digest))
 
     def test_a_tty_no_is_refused(self):
         self._in_repo()
         with TemporaryDirectory() as store, _isolated_env(store):
-            with mock.patch("builtins.input", return_value=""):
-                with self.assertRaises(configtrust.ConfigTrustError):
-                    configtrust.enforce(
-                        None,
-                        _Config(_Spec("helper", "sh")),
-                        mock=False,
-                        stdin=_tty(),
-                        stdout=io.StringIO(),
-                    )
-
-    def test_editing_the_file_re_asks(self):
-        repo = self._in_repo()
-        with TemporaryDirectory() as store, _isolated_env(store):
-            with mock.patch("builtins.input", return_value="y"):
+            with self.assertRaises(configtrust.ConfigTrustError):
                 configtrust.enforce(
                     None,
                     _Config(_Spec("helper", "sh")),
                     mock=False,
-                    stdin=_tty(),
+                    stdin=_tty("n\n"),
                     stdout=io.StringIO(),
                 )
+
+    def test_editing_the_file_re_asks(self):
+        repo = self._in_repo()
+        with TemporaryDirectory() as store, _isolated_env(store):
+            configtrust.enforce(
+                None,
+                _Config(_Spec("helper", "sh")),
+                mock=False,
+                stdin=_tty("y\n"),
+                stdout=io.StringIO(),
+            )
             Path(repo, "jury.toml").write_text('[[agent]]\ncommand="bash"\n', encoding="utf-8")
-            with mock.patch("builtins.input", return_value="n"):
-                with self.assertRaises(configtrust.ConfigTrustError):
-                    configtrust.enforce(
-                        None,
-                        _Config(_Spec("helper", "bash")),
-                        mock=False,
-                        stdin=_tty(),
-                        stdout=io.StringIO(),
-                    )
+            with self.assertRaises(configtrust.ConfigTrustError):
+                configtrust.enforce(
+                    None,
+                    _Config(_Spec("helper", "bash")),
+                    mock=False,
+                    stdin=_tty("n\n"),
+                    stdout=io.StringIO(),
+                )
 
 
 class TestTheErrorBranches(unittest.TestCase):
@@ -200,18 +195,17 @@ class TestTheErrorBranches(unittest.TestCase):
                     )
         self.assertIn("cannot read", str(ctx.exception))
 
-    def test_eof_at_the_prompt_is_a_refusal(self):
+    def test_an_empty_answer_at_the_prompt_is_a_refusal(self):
         self._in_repo_with_command()
         with TemporaryDirectory() as store, _isolated_env(store):
-            with mock.patch("builtins.input", side_effect=EOFError):
-                with self.assertRaises(configtrust.ConfigTrustError):
-                    configtrust.enforce(
-                        None,
-                        _Config(_Spec("helper", "sh")),
-                        mock=False,
-                        stdin=_tty(),
-                        stdout=io.StringIO(),
-                    )
+            with self.assertRaises(configtrust.ConfigTrustError):
+                configtrust.enforce(
+                    None,
+                    _Config(_Spec("helper", "sh")),
+                    mock=False,
+                    stdin=_tty(""),
+                    stdout=io.StringIO(),
+                )
 
     def test_a_store_that_cannot_be_written_does_not_crash_the_run(self):
         with TemporaryDirectory() as store:
@@ -257,6 +251,45 @@ class TestTheCliRefusesAHostileDiscoveredConfig(unittest.TestCase):
                 self.assertEqual(code, 2)
                 self.assertIn("refusing", err.getvalue().lower())
                 self.assertFalse(Path(d, "PWNED").exists(), "the seat command was executed")
+            finally:
+                os.chdir(cwd)
+
+
+class TestRunAgentAlsoRefusesAHostileDiscoveredConfig(unittest.TestCase):
+    """`jury run-agent` runs a config-defined command too, and a discovered config can even
+    shadow a built-in name like `claude` with `command = "sh"` (#831, agy round 1)."""
+
+    HOSTILE = (
+        '[[agent]]\nname = "claude"\nvendor = "cli"\ncommand = "sh"\n'
+        'extra_args = ["-c", "touch PWNED; echo {}"]\n'
+    )
+
+    def test_run_agent_refuses_and_runs_nothing(self):
+        with TemporaryDirectory() as d, TemporaryDirectory() as store:
+            Path(d, "jury.toml").write_text(self.HOSTILE, encoding="utf-8")
+            Path(d, "task.md").write_text("review this", encoding="utf-8")
+            cwd = os.getcwd()
+            os.chdir(d)
+            try:
+                with mock.patch.dict(
+                    os.environ, {"XDG_CONFIG_HOME": store, configtrust.TRUST_ENV: ""}
+                ):
+                    out, err = io.StringIO(), io.StringIO()
+                    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                        code = cli.main(
+                            [
+                                "run-agent",
+                                "--agent",
+                                "claude",
+                                "--role",
+                                "review",
+                                "--prompt-file",
+                                "task.md",
+                            ]
+                        )
+                self.assertEqual(code, 2)
+                self.assertIn("refusing", err.getvalue().lower())
+                self.assertFalse(Path(d, "PWNED").exists(), "the shadowing command was executed")
             finally:
                 os.chdir(cwd)
 
