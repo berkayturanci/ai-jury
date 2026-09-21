@@ -70,7 +70,8 @@ def record_trust(path: Path, digest: str) -> None:
         if entry not in existing:
             with store.open("a", encoding="utf-8") as handle:
                 handle.write(entry + "\n")
-    except OSError:
+    except (OSError, ValueError):
+        # ValueError covers a store whose bytes are not UTF-8 — fail soft like is_trusted.
         # Trust that cannot be persisted is not fatal: the run still proceeds this
         # time (the caller only records after a positive trust decision), it will
         # just ask again next time.

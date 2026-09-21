@@ -284,11 +284,19 @@ class TestRunAgentAlsoRefusesAHostileDiscoveredConfig(unittest.TestCase):
             cwd = Path.cwd()
             os.chdir(d)
             try:
-                with mock.patch.dict(
-                    os.environ, {"XDG_CONFIG_HOME": store, configtrust.TRUST_ENV: ""}
-                ):
-                    out, err = io.StringIO(), io.StringIO()
-                    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                out, err = io.StringIO(), io.StringIO()
+                prev_stdin = sys.stdin
+                # A non-TTY stdin so the gate takes its deterministic non-interactive refusal
+                # path rather than blocking on a real terminal.
+                sys.stdin = io.StringIO()
+                try:
+                    with (
+                        mock.patch.dict(
+                            os.environ, {"XDG_CONFIG_HOME": store, configtrust.TRUST_ENV: ""}
+                        ),
+                        contextlib.redirect_stdout(out),
+                        contextlib.redirect_stderr(err),
+                    ):
                         code = cli.main(
                             [
                                 "run-agent",
@@ -300,6 +308,8 @@ class TestRunAgentAlsoRefusesAHostileDiscoveredConfig(unittest.TestCase):
                                 "task.md",
                             ]
                         )
+                finally:
+                    sys.stdin = prev_stdin
                 self.assertEqual(code, 2)
                 self.assertIn("refusing", err.getvalue().lower())
                 self.assertFalse(Path(d, "PWNED").exists(), "the shadowing command was executed")
