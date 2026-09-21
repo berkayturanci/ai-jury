@@ -291,5 +291,71 @@ class TestAnalyticsCoverage(unittest.TestCase):
                 )
 
 
+class TestAnalyticsIsOneMechanismAndTheReadmeSaysSo(unittest.TestCase):
+    """website/README.md is inside the Pages artifact, so it is served publicly (#829).
+
+    It described a Google Analytics 4 setup — ``gtag.js``, a ``MEASUREMENT_ID`` — that no
+    page has carried since #373. Meanwhile five pages loaded the Cloudflare beacon twice:
+    once through ``analytics.js`` and once through the inline tag, two places holding the
+    token. A Cloudflare token accepts a beacon from any host and the endpoint answers 204
+    for any token, so a wrong or half-changed one fails silently: the page views land in
+    another dashboard. Documentation nobody can check drifts; pin all of it to the files.
+    """
+
+    BEACON = "beacon.min.js"
+    #: The token this site shared with keel-ship.dev and two github.io project pages until
+    #: 2026-09-21. It belongs to a Cloudflare site configured for `berkayturanci.github.io`.
+    SHARED_UNTIL_2026_09 = "f9a978b9ccc64ff49460fbcee8f722ef"
+    TOKEN = re.compile(r"""data-cf-beacon='\{"token": "([0-9a-f]{32})"\}'""")
+
+    def _pages(self) -> list:
+        pages = sorted(SITE.glob("*.html"))
+        self.assertGreaterEqual(len(pages), len(INDEXED_PAGES) + 1, "the site lost pages")
+        return pages
+
+    def test_each_page_loads_the_beacon_exactly_once(self):
+        for page in self._pages():
+            with self.subTest(page=page.name):
+                text = page.read_text(encoding="utf-8")
+                self.assertEqual(text.count(self.BEACON), 1, "one inline tag, no more")
+                self.assertNotIn("analytics.js", text, "a second loader for the same beacon")
+
+    def test_no_site_script_injects_a_second_beacon(self):
+        for script in sorted(SITE.glob("*.js")):
+            with self.subTest(script=script.name):
+                self.assertNotIn("cloudflareinsights", script.read_text(encoding="utf-8"))
+
+    def test_every_page_reports_into_one_site_and_it_is_this_sites_own(self):
+        tokens = {}
+        for page in self._pages():
+            found = self.TOKEN.findall(page.read_text(encoding="utf-8"))
+            self.assertEqual(len(found), 1, f"{page.name} must carry exactly one beacon token")
+            tokens[page.name] = found[0]
+        self.assertEqual(len(set(tokens.values())), 1, f"pages disagree on the token: {tokens}")
+        for page, token in tokens.items():
+            with self.subTest(page=page):
+                self.assertNotEqual(token, self.SHARED_UNTIL_2026_09, "still the shared dashboard")
+
+    def test_no_page_carries_google_analytics(self):
+        for page in self._pages():
+            with self.subTest(page=page.name):
+                text = page.read_text(encoding="utf-8")
+                for marker in ("gtag(", "googletagmanager"):
+                    self.assertNotIn(marker, text)
+
+    def _analytics_section(self) -> str:
+        readme = (SITE / "README.md").read_text(encoding="utf-8")
+        start = readme.index("## Analytics")
+        end = readme.find("\n## ", start + 1)
+        return readme[start:end] if end != -1 else readme[start:]
+
+    def test_the_readme_describes_the_analytics_the_pages_carry(self):
+        section = self._analytics_section()
+        self.assertIn("Cloudflare Web Analytics", section)
+        for fiction in ("Google Analytics", "gtag", "MEASUREMENT_ID", "analytics.js", "G-"):
+            with self.subTest(fiction=fiction):
+                self.assertNotIn(fiction, section)
+
+
 if __name__ == "__main__":
     unittest.main()
