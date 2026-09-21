@@ -12,11 +12,19 @@ so this is reachable without the operator noticing which path a preview names.
 from __future__ import annotations
 
 import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-from ai_jury.patches import PatchSuggestion, apply_patch_suggestion
+REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT / "src"))
+
+from ai_jury.patches import (  # noqa: E402
+    PatchSuggestion,
+    apply_patch_suggestion,
+    preview_patch_suggestion,
+)
 
 
 def _suggest(file, fix, line=1):
@@ -66,6 +74,27 @@ class TestApplyRefusesSensitiveTargets(unittest.TestCase):
             )
             self.assertFalse(ok)
             self.assertEqual((root / ".git" / "config").read_text(encoding="utf-8"), before)
+
+    def test_a_case_variant_of_dot_git_is_refused(self):
+        # On a case-insensitive filesystem `.Git/config` names the real `.git/config`; the
+        # check case-folds so the variant cannot slip past (agy round 1).
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._repo(tmp)
+            for name in (".Git/config", ".GITHUB/workflows/ci.yml"):
+                with self.subTest(name=name):
+                    ok, msg = apply_patch_suggestion(_suggest(name, "evil = 1"), root_dir=root)
+                    self.assertFalse(ok, msg)
+
+    def test_the_dry_run_preview_refuses_a_sensitive_target(self):
+        # Preview and apply must agree (#605): a dry run may not report `.git/config` as
+        # something it "would touch" with no refusal.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._repo(tmp)
+            paths, refusal = preview_patch_suggestion(
+                _suggest(".git/config", "x = 1"), root_dir=root
+            )
+            self.assertIsNotNone(refusal)
+            self.assertEqual(paths, [])
 
     def test_an_ordinary_source_file_still_applies(self):
         with tempfile.TemporaryDirectory() as tmp:
