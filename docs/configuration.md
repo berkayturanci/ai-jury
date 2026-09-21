@@ -761,7 +761,8 @@ extra_args = ["-p", "--model", "cursor-grok-4.6-high-fast", "--force", "--output
 [[agent]]
 name = "aider"
 vendor = "cli"
-command = "aider --message"
+command = "aider"
+extra_args = ["--message"]
 prompt_mode = "arg" # "arg" (appends prompt as last argument) or "stdin" (pipes prompt to stdin)
 ```
 

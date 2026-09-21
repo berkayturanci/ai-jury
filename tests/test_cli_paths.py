@@ -195,6 +195,35 @@ class ErrorPaths(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("Config invalid", err)
 
+    def test_config_missing_path_is_a_clean_error(self):
+        # A nonexistent --config raised FileNotFoundError (a traceback); it now prints
+        # `Config invalid: …` and exits 2, like every other config load site (#831).
+        d = Path(tempfile.mkdtemp()) / "x.diff"
+        d.write_text(DIFF, encoding="utf-8")
+        missing = str(Path(tempfile.mkdtemp()) / "nope.toml")
+        code, _, err = run(["--mock", "--diff-file", str(d), "--config", missing])
+        self.assertEqual(code, 2)
+        self.assertIn("Config invalid", err)
+        self.assertNotIn("Traceback", err)
+
+    def test_missing_gh_is_a_clean_error(self):
+        # `--pr` shells out to gh; a missing or failing gh raised RuntimeError (a traceback).
+        # It is now caught and printed as `error: …` with exit 2 (#831).
+        cfg = Path(tempfile.mkdtemp()) / "ok.toml"
+        cfg.write_text(
+            '[jury]\nrounds = 1\n\n[[agent]]\nname = "a"\nvendor = "anthropic"\ncommand = "claude"\n',
+            encoding="utf-8",
+        )
+        with mock.patch.object(
+            cli,
+            "pr_diff",
+            side_effect=RuntimeError("the GitHub CLI `gh` is not installed or not on PATH"),
+        ):
+            code, _, err = run(["--mock", "--pr", "7", "--config", str(cfg)])
+        self.assertEqual(code, 2)
+        self.assertIn("error:", err)
+        self.assertNotIn("Traceback", err)
+
 
 class CliOverrideBounds(unittest.TestCase):
     """Issue #748: a bound holds on the flag as well as on the config key.

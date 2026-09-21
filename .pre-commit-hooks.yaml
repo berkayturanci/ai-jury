@@ -1,8 +1,12 @@
 - id: ai-jury
   name: ai-jury
   description: "Cross-vendor multi-agent code review jury"
-  entry: jury
-  language: python
+  # Pipe the staged diff into the review; pre-commit otherwise appends the staged
+  # filenames as positional args (the review command has none, so it exits 2), and it
+  # never feeds a diff on stdin. `language: system` runs the ai-jury already installed in
+  # the environment. `--rounds 1` is the fast single pass.
+  entry: bash -c 'git diff --cached | jury --diff-file - --rounds 1'
+  language: system
   types: [text]
+  pass_filenames: false
   stages: [pre-commit, pre-push]
-  args: [--diff-file, -, --rounds, "1"]

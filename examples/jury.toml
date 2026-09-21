@@ -67,6 +67,10 @@ enabled = false
 # ------------------------------------------------------------------------------
 # 2. Hosted OpenAI-Compatible REST APIs (vendor = "openai-compatible")
 # ------------------------------------------------------------------------------
+# These reach a NON-loopback host, refused by default so a config file cannot silently
+# point the API key at an arbitrary server. Export the opt-in before using any of them
+# (env-only on purpose, never a config key):  export JURY_ALLOW_REMOTE_ENDPOINT=1
+# Without it, `jury --config-validate` rejects each seat below by design.
 
 # OpenRouter (Unified API Gateway)
 [[agent]]
@@ -159,6 +163,7 @@ prompt_mode = "arg"
 [[agent]]
 name = "aider"
 vendor = "cli"
-command = "aider --message"
+command = "aider"
+extra_args = ["--message"]
 prompt_mode = "arg"
 enabled = false

@@ -617,7 +617,8 @@ prompt_mode = "arg"
 [[agent]]
 name = "aider"
 vendor = "cli"
-command = "aider --message"
+command = "aider"
+extra_args = ["--message"]
 prompt_mode = "arg"
 ```
 
@@ -635,8 +636,8 @@ repos:
     rev: v1.18.1
     hooks:
       - id: ai-jury
-        # Optional args: e.g. single round or fast preset
-        args: [--diff-file, -, --rounds, "1", --preset, fast]
+        # Optional args: e.g. a single round
+        args: [--diff-file, -, --rounds, "1"]
 ```
 
 ---

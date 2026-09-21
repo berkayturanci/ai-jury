@@ -50,7 +50,7 @@ pipx install ai-jury
 
 Requires Python 3.11+. Then scaffold a config with **`jury init`** (it detects your
 installed agents and local models). You need at least one reviewer: an agent CLI
-(`claude`, `codex`, `agy`, `cursor`, `aider`), a free local model via Ollama, **or** a hosted-API reviewer
+(`claude`, `codex`, `agy`, `aider`), a free local model via Ollama, **or** a hosted-API reviewer
 (Anthropic, OpenAI, Gemini, OpenRouter, DeepSeek, Groq, xAI Grok, Moonshot Kimi) — no CLI install or interactive login needed,
 useful for CI and containers; missing/unreachable/unkeyed reviewers are skipped. `gh` is
 needed for `--pr` / `--post`.
@@ -385,7 +385,7 @@ jury run-agent --agent codex:gpt-5.2 --role implement --allow-write --prompt-fil
     - id: ai-jury
 ```
 
-**1-Click GitHub Action (`.github/workflows/ai-jury.yml`):**
+**GitHub Action (`.github/workflows/ai-jury.yml`):**
 
 ```yaml
 name: ai-jury
@@ -393,6 +393,9 @@ on: [pull_request]
 jobs:
   review:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write   # the default args (--post) write the review to the PR
     steps:
       - uses: actions/checkout@v4
       - uses: berkayturanci/ai-jury@v1
@@ -400,6 +403,11 @@ jobs:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
+
+Commit a `jury.toml` naming `*-api` seats (each with a `model`) for the keys you pass —
+the built-in default seats are agent **CLIs** a runner does not have, and the keys alone do
+not form a panel, so a keyless/config-less run exits with `no usable agents`. `jury init`
+scaffolds those seats; fill in each seat's `model`.
 
 
 A sample report is in [`docs/example-run.md`](docs/example-run.md). For a **real**
@@ -469,7 +477,7 @@ A structured report with these top-level keys:
 
 | Key | Description |
 | --- | --- |
-| `schema_version` | Version of this JSON schema (currently `1.3`). |
+| `schema_version` | Version of this JSON schema (currently `1.4`). |
 | `metadata` | Run metadata (agents, rounds, context mode, redaction stats, wall-clock proxy). |
 | `findings` | All raw findings; each carries `severity`, `file`, `line`, `claim`, `evidence`, `suggested_fix`, `confidence`, `reviewer`. |
 | `consensus` | Per consensus group: `representative` finding, `agreement` count, `reviewers`, `bucket`, `verification_status`. |
@@ -480,10 +488,12 @@ A structured report with these top-level keys:
 The output is deterministic for a deterministic run (e.g. `--mock`) and contains
 only legitimate finding fields — never raw diff or prompt text.
 
-This JSON is also a **replayable artifact**: feed it to `jury replay` (above) to re-watch
-the run in the terminal theater, or drag it onto the **"Load a real run"** panel on the
-[website](https://ai-jury.dev/) to play the real reviewers, findings,
+This JSON drives the **"Load a real run"** panel on the
+[website](https://ai-jury.dev/): drag it on to play the real reviewers, findings,
 and verdict through the in-browser theater (fully client-side — nothing is uploaded).
+For the terminal `jury replay` (above), save the default outcome dump (`-o run.json`,
+**not** `--format json`) instead — the `--format json` report omits the per-agent
+deliberation stream, so `jury replay` rejects it, as noted above.
 
 ### keel-reviews
 

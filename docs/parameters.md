@@ -640,7 +640,7 @@ Set with `jury init --preset`.
 | `offline` | Local-only ($0), no cloud CLIs. |
 | `fast` | 1 round (review only). |
 | `balanced` | Debate + early-stop. |
-| `thorough` | All available agents + debate + verify. |
+| `thorough` | All **known** agents (installed or not) + debate + verify. On a machine missing some, the panel can collapse below `min_vendors` (exit 3); the scaffolded `[jury.ci]` comment says so. |
 
 ### Reasoning effort (`--effort` / `[[agent]] effort`)
 `low` · `medium` · `high`. Supported by `google` (agy), `anthropic-api`,
@@ -676,7 +676,6 @@ Used by `jury comment`: `review` (full review) · `summary` (fast single-round p
 
 | Variable | Purpose |
 | --- | --- |
-| `JURY_CONFIG` | Custom path to `jury.toml` config file (overridden by `--config`). |
 | `JURY_CACHE_DIR` | Cache directory (default `~/.cache/ai-jury`); overridden by `--cache-dir`. |
 | `JURY_ALLOW_REMOTE_ENDPOINT` | Set to `1` to allow non-loopback HTTP/HTTPS endpoints for `vendor = "local"` and `openai-compatible`. |
 | `ANTHROPIC_API_KEY` | API key used by `vendor = "anthropic-api"`. |
