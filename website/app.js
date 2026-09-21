@@ -1283,7 +1283,7 @@
         logo: "logos/cursor.svg",
         color: "var(--c-cursor)",
         desc: "Headless CLI agent from the popular AI-native code editor.",
-        config: '[[agent]]\nname = "cursor"\nvendor = "generic_cli"\ncommand = "agent"',
+        config: '[[agent]]\nname = "cursor"\nvendor = "cli"\ncommand = "cursor-agent"\nextra_args = ["--print", "--force"]\nprompt_mode = "arg"',
         command: "jury --pr 123"
       },
       {
@@ -1297,7 +1297,7 @@
         logo: "logos/aider.svg",
         color: "var(--c-aider)",
         desc: "Popular terminal pair-programming agent driven in non-interactive review mode.",
-        config: '[[agent]]\nname = "aider"\nvendor = "generic_cli"\ncommand = "aider --message"',
+        config: '[[agent]]\nname = "aider"\nvendor = "cli"\ncommand = "aider"\nextra_args = ["--message"]\nprompt_mode = "arg"',
         command: "jury --pr 123"
       },
       {
@@ -1311,7 +1311,7 @@
         logo: "logos/opencode.svg",
         color: "#10b981",
         desc: "Wrap any arbitrary coding CLI (Goose, OpenHands, Devin) as an autonomous juror.",
-        config: '[[agent]]\nname = "my-agent"\nvendor = "generic_cli"\ncommand = "my-tool review"',
+        config: '[[agent]]\nname = "my-agent"\nvendor = "cli"\ncommand = "my-tool"\nextra_args = ["review"]\nprompt_mode = "arg"',
         command: "jury --pr 123"
       },
 
@@ -1369,8 +1369,8 @@
         logo: "logos/deepseek.svg",
         color: "var(--c-deepseek)",
         desc: "DeepSeek-V3 and DeepSeek-R1 reasoning models via official API.",
-        config: '[[agent]]\nname = "deepseek"\nvendor = "generic_openai_api"\nendpoint = "https://api.deepseek.com/v1/chat/completions"\napi_key_env = "DEEPSEEK_API_KEY"\nmodel = "deepseek-chat"',
-        command: "DEEPSEEK_API_KEY=... jury --pr 123"
+        config: '[[agent]]\nname = "deepseek"\nvendor = "openai-compatible"\nendpoint = "https://api.deepseek.com/v1/chat/completions"\napi_key_env = "DEEPSEEK_API_KEY"\nmodel = "deepseek-chat"',
+        command: "JURY_ALLOW_REMOTE_ENDPOINT=1 DEEPSEEK_API_KEY=... jury --pr 123"
       },
       {
         id: "xai-grok-api",
@@ -1383,7 +1383,7 @@
         logo: "logos/xai.svg",
         color: "var(--c-grok)",
         desc: "Direct REST API access to Grok reasoning and code models.",
-        config: '[[agent]]\nname = "grok"\nvendor = "generic_openai_api"\nendpoint = "https://api.x.ai/v1/chat/completions"\napi_key_env = "XAI_API_KEY"\nmodel = "grok-2-latest"',
+        config: '[[agent]]\nname = "grok"\nvendor = "openai-compatible"\nendpoint = "https://api.x.ai/v1/chat/completions"\napi_key_env = "XAI_API_KEY"\nmodel = "grok-2-latest"',
         command: "XAI_API_KEY=... jury --pr 123"
       },
       {
@@ -1397,7 +1397,7 @@
         logo: "logos/groq.svg",
         color: "var(--c-groq)",
         desc: "Ultra high-speed LPU inference engine for near-instant multi-agent debate.",
-        config: '[[agent]]\nname = "groq"\nvendor = "generic_openai_api"\nendpoint = "https://api.groq.com/openai/v1/chat/completions"\napi_key_env = "GROQ_API_KEY"\nmodel = "llama-3.3-70b-versatile"',
+        config: '[[agent]]\nname = "groq"\nvendor = "openai-compatible"\nendpoint = "https://api.groq.com/openai/v1/chat/completions"\napi_key_env = "GROQ_API_KEY"\nmodel = "llama-3.3-70b-versatile"',
         command: "GROQ_API_KEY=... jury --pr 123"
       },
       {
@@ -1411,7 +1411,7 @@
         logo: "logos/openrouter.svg",
         color: "var(--c-openrouter)",
         desc: "Unified routing gateway giving instant access to over 200 AI models.",
-        config: '[[agent]]\nname = "openrouter"\nvendor = "generic_openai_api"\nendpoint = "https://openrouter.ai/api/v1/chat/completions"\napi_key_env = "OPENROUTER_API_KEY"\nmodel = "anthropic/claude-3.7-sonnet"',
+        config: '[[agent]]\nname = "openrouter"\nvendor = "openai-compatible"\nendpoint = "https://openrouter.ai/api/v1/chat/completions"\napi_key_env = "OPENROUTER_API_KEY"\nmodel = "anthropic/claude-3.7-sonnet"',
         command: "OPENROUTER_API_KEY=... jury --pr 123"
       },
       {
@@ -1425,7 +1425,7 @@
         logo: "logos/together.svg",
         color: "#6366f1",
         desc: "Cloud inference hosting for open-weights Llama 3.3, Qwen, and DeepSeek.",
-        config: '[[agent]]\nname = "together"\nvendor = "generic_openai_api"\nendpoint = "https://api.together.xyz/v1/chat/completions"\napi_key_env = "TOGETHER_API_KEY"\nmodel = "meta-llama/Llama-3.3-70B-Instruct-Turbo"',
+        config: '[[agent]]\nname = "together"\nvendor = "openai-compatible"\nendpoint = "https://api.together.xyz/v1/chat/completions"\napi_key_env = "TOGETHER_API_KEY"\nmodel = "meta-llama/Llama-3.3-70B-Instruct-Turbo"',
         command: "jury --pr 123"
       },
 
@@ -1500,7 +1500,7 @@
         color: "var(--c-claude)",
         desc: "First-class Claude Code plugin and skill for direct chat reviews. Updating is not a re-install.",
         config: "# .claude-plugin/plugin.json\n{\n  \"name\": \"ai-jury\",\n  \"description\": \"Multi-agent review jury\"\n}",
-        command: "/jury review"
+        command: "convene the jury on this PR"
       },
       {
         id: "codex-plugin",
