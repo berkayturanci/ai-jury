@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- **`jury apply` cannot write into `.git/` or `.github/`** (#831). The containment check refused only a path that escaped the working tree, so a suggestion naming `.git/config` — which resolves *inside* the tree — passed, and the line-replacement branch overwrote it. A `core.fsmonitor`/hook there runs a command on the next git operation; a `.github/workflows/*.yml` runs one in CI. Since the suggestion text rides the report the tool posts on a pull request and `apply` parses that report's prose, this was reachable. `apply_patch_suggestion` now refuses a resolved target with a `.git` or `.github` path component (a redirecting symlink resolves to the same real path, so it is caught too). `tests/test_patches_apply_sensitive.py` pins the `.git`, `.github` and symlink refusals and that an ordinary source file still applies.
+
 ### Changed
 - **ai-jury.dev reports into an analytics site of its own, through one tag per page** (#829).
   - **Before.** Every page carried a Cloudflare Web Analytics token created in June for `berkayturanci.github.io`; the sibling project's site and two github.io project pages carried it too, so one dashboard mixed four properties. Nothing was lost — a token records a beacon from any host — but visits and Core Web Vitals could only be read per site through a Host filter.
