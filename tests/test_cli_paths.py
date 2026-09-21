@@ -215,7 +215,9 @@ class ErrorPaths(unittest.TestCase):
             encoding="utf-8",
         )
         with mock.patch.object(
-            cli, "pr_diff", side_effect=RuntimeError("the GitHub CLI `gh` is not installed or not on PATH")
+            cli,
+            "pr_diff",
+            side_effect=RuntimeError("the GitHub CLI `gh` is not installed or not on PATH"),
         ):
             code, _, err = run(["--mock", "--pr", "7", "--config", str(cfg)])
         self.assertEqual(code, 2)
