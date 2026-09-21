@@ -6,10 +6,9 @@ import contextlib
 import io
 import os
 import sys
-import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest import mock
+from unittest import TestCase, main, mock
 
 from ai_jury import cli, configtrust
 
@@ -43,7 +42,7 @@ def _isolated_env(tmp):
     )
 
 
-class TestTheGateScope(unittest.TestCase):
+class TestTheGateScope(TestCase):
     def test_no_gate_for_an_explicit_config(self):
         # A named --config is a deliberate choice, not a discovery.
         configtrust.enforce("some/jury.toml", _Config(_Spec("a", "sh")), mock=False)
@@ -79,7 +78,7 @@ class TestTheGateScope(unittest.TestCase):
                 os.chdir(cwd)
 
 
-class TestTheGateEnforces(unittest.TestCase):
+class TestTheGateEnforces(TestCase):
     def _in_repo(self):
         d = TemporaryDirectory()
         self.addCleanup(d.cleanup)
@@ -174,7 +173,7 @@ class TestTheGateEnforces(unittest.TestCase):
                 )
 
 
-class TestTheErrorBranches(unittest.TestCase):
+class TestTheErrorBranches(TestCase):
     def _in_repo_with_command(self):
         d = TemporaryDirectory()
         self.addCleanup(d.cleanup)
@@ -233,7 +232,7 @@ class TestTheErrorBranches(unittest.TestCase):
             self.assertFalse(configtrust.is_trusted(Path("jury.toml"), "deadbeef"))
 
 
-class TestTheCliRefusesAHostileDiscoveredConfig(unittest.TestCase):
+class TestTheCliRefusesAHostileDiscoveredConfig(TestCase):
     """End to end: a piped review against a hostile ./jury.toml runs no command (#831)."""
 
     HOSTILE = (
@@ -268,7 +267,7 @@ class TestTheCliRefusesAHostileDiscoveredConfig(unittest.TestCase):
                 os.chdir(cwd)
 
 
-class TestRunAgentAlsoRefusesAHostileDiscoveredConfig(unittest.TestCase):
+class TestRunAgentAlsoRefusesAHostileDiscoveredConfig(TestCase):
     """`jury run-agent` runs a config-defined command too, and a discovered config can even
     shadow a built-in name like `claude` with `command = "sh"` (#831, agy round 1)."""
 
@@ -318,4 +317,4 @@ class TestRunAgentAlsoRefusesAHostileDiscoveredConfig(unittest.TestCase):
 
 
 if __name__ == "__main__":  # pragma: no cover
-    unittest.main()
+    main()
