@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Python 3.14 is tested and declared** (#849, item 6). CI's Linux matrix runs 3.14 beside 3.11–3.13, and `pyproject.toml` gains the 3.14 classifier, so the PyPI version badge matches what the package already accepted (the pre-launch audit ran everything on 3.14.7). The classifier waited for the CI job, because a classifier is a claim, and `tests/test_release_metadata.py` now keeps it one: every classified version must appear in the CI matrix.
+
 ### Fixed
 - **A local model server with nothing to serve is no longer a reviewer** (#849). With `ollama serve` running and no model pulled, `jury init` wrote `model = "qwen2.5-coder:7b"` without a word, `jury --doctor` said `[available] qwen … (probe: ok)` and `ready to run: yes`, and a review exited **0** with every section `HTTP 404: model … not found` and `effective panel: 0 of 1`.
   - **`--doctor`**: a local seat whose server lists **no** model is reported unavailable, with `ollama pull <model>` as the reason, so `ready to run` is `no` when it is the only seat. A server that lists models but not the configured one draws a warning naming what it does serve — only a warning, because a llama.cpp server ignores the model name and serves the one it loaded. An untagged name matches its `:latest` tag, and a listing that fails changes nothing. Ollama with nothing pulled answers `/v1/models` with `"data": null`, not `[]` (measured on Ollama 0.34.1), and that reads as empty too. The doctor lists each available local server once and uses that for both the seat's reason and the warning the text report prints; an unavailable seat is not listed, and recording a run makes no listing request.

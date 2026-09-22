@@ -55,8 +55,8 @@ section is reading those jobs, not repeating their work by hand.
       how they are built and verified.
 
 ### CI & quality
-- [x] CI green on the matrix in `.github/workflows/ci.yml`: Python 3.11, 3.12 and
-      3.13 on Linux, plus 3.13 on macOS and 3.13 on Windows. It is deliberately
+- [x] CI green on the matrix in `.github/workflows/ci.yml`: Python 3.11, 3.12,
+      3.13 and 3.14 on Linux, plus 3.13 on macOS and 3.13 on Windows. It is deliberately
       not every version on every OS — the two cross-OS legs exist to prove
       subprocess and path behaviour, and the matrix comment says so.
 - [x] Unit tests + mock CLI smoke test pass — every matrix leg runs

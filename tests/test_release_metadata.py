@@ -161,6 +161,25 @@ class PackagingMetadataIsComplete(unittest.TestCase):
             f"the declared Python classifiers have a gap: {declared}",
         )
 
+    def test_every_classified_python_is_one_ci_runs(self):
+        """A classifier is a claim; CI is what backs it (#849). Declaring 3.14 before
+        any job ran on it is the drift this catches."""
+        supported = re.compile(r"Programming Language :: Python :: (3\.\d+)")
+        declared = {
+            found.group(1)
+            for found in (supported.fullmatch(c) for c in self.project["classifiers"])
+            if found
+        }
+        workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+        tested = set()
+        for line in workflow.splitlines():
+            if line.strip().startswith("python-version:"):
+                tested.update(re.findall(r"3\.\d+", line))
+        self.assertTrue(tested, "no python-version found in ci.yml")
+        self.assertEqual(
+            declared - tested, set(), f"classified but never tested: {declared - tested}"
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

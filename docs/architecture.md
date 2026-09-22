@@ -234,8 +234,8 @@ CI proves the package on a deliberately small matrix (see
 
 | OS | Python | Notes |
 |:--|:--|:--|
-| Ubuntu (latest) | 3.11, 3.12, 3.13 | Full version coverage; primary CI target. |
-| macOS (latest) | 3.13 | Latest Python only, to keep the matrix cheap. |
+| Ubuntu (latest) | 3.11, 3.12, 3.13, 3.14 | Full version coverage; primary CI target. |
+| macOS (latest) | 3.13 | One Python only, to keep the matrix cheap. |
 | Windows (latest) | 3.13 | Unit tests + mock smoke test run here. The mock path is fully cross-platform. |
 
 OS-specific notes:
@@ -244,8 +244,8 @@ OS-specific notes:
 - **Live agent CLIs** (`claude`, `codex`, `agy`) and `gh` are spawned as subprocesses.
   Their availability and behavior on Windows depend on each vendor's own Windows
   support; the orchestrator itself is OS-agnostic and fails soft when a CLI is missing.
-- Only the latest supported Python is exercised on macOS/Windows; the full
-  3.11–3.13 sweep runs on Linux. The supported range is declared once in
+- One Python (3.13) is exercised on macOS/Windows; the full
+  3.11–3.14 sweep runs on Linux. The supported range is declared once in
   `pyproject.toml` (`requires-python`) and mirrored by this matrix and the README.
 
 ### CI & runners
@@ -253,7 +253,7 @@ OS-specific notes:
 The repository is **public**, so GitHub-hosted runner minutes are free and
 unlimited. The **authoritative** per-push / per-PR signal is the hosted
 [`ci.yml`](../.github/workflows/ci.yml) matrix: the stdlib-only unit tests and
-the mock smoke test across ubuntu/macOS/windows × Python 3.11–3.13, plus a
+the mock smoke test on Python 3.11–3.14 (Linux) and 3.13 (macOS, Windows), plus a
 dedicated coverage gate (`fail_under` in `pyproject.toml`).
 
 There is **no self-hosted runner**. An earlier self-hosted macOS runner was

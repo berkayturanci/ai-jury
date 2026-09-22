@@ -974,7 +974,7 @@ flag, changing an error message or exit code, or altering a report heading —
 intentional, regenerate the help snapshot with
 `UPDATE_GOLDEN=1 PYTHONPATH=src python3 -m unittest tests.test_cli_contract`.
 The help-snapshot exact match is pinned to Python 3.13 argparse formatting; the
-flag-presence checks run on all supported versions (3.11–3.13).
+flag-presence checks run on all supported versions (3.11–3.14).
 
 ## Documentation
 

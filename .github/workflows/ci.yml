@@ -29,11 +29,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Full Python-version coverage on Linux; the latest supported Python on
-        # macOS and Windows to prove cross-OS CLI/subprocess behavior while keeping
-        # the matrix small and cheap. See docs/architecture.md for OS notes.
+        # Full Python-version coverage on Linux; one Python (3.13) on macOS and
+        # Windows to prove cross-OS CLI/subprocess behavior while keeping the matrix
+        # small and cheap. Every version a classifier declares must appear here —
+        # tests/test_release_metadata.py checks it. See docs/architecture.md.
         os: [ubuntu-latest]
-        python-version: ["3.11", "3.12", "3.13"]
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
         include:
           - os: macos-latest
             python-version: "3.13"
