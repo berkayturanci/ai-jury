@@ -114,6 +114,41 @@ class TestGithubSubprocess(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, r"timed out after \d+s"):
             github._gh_with_input(["api", "-X", "POST"], '{"body": "x"}')
 
+    # A spawn that fails before the process exists used to leave as a raw OSError.
+    # `cli.py` only catches RuntimeError, so the user got a traceback and exit 1
+    # instead of `error: …` and exit 2 — the class of defect #836 fixed for the
+    # other `gh` failure paths. `shutil.which` does not close this: the fork can be
+    # refused (ENOMEM/EAGAIN) with `gh` perfectly present.
+    @mock.patch("shutil.which")
+    @mock.patch("subprocess.Popen")
+    def test_gh_spawn_failure_is_a_runtime_error(self, mock_popen, mock_which):
+        mock_which.return_value = "/usr/bin/gh"
+        mock_popen.side_effect = OSError(12, "Cannot allocate memory")
+        with self.assertRaisesRegex(RuntimeError, r"gh pr diff could not be started"):
+            github._gh("pr", "diff")
+
+    @mock.patch("shutil.which")
+    @mock.patch("subprocess.run")
+    def test_gh_with_input_spawn_failure_is_a_runtime_error(self, mock_run, mock_which):
+        mock_which.return_value = "/usr/bin/gh"
+        mock_run.side_effect = OSError(12, "Cannot allocate memory")
+        with self.assertRaisesRegex(RuntimeError, r"gh api could not be started"):
+            github._gh_with_input(["api"], '{"body": "x"}')
+
+    @mock.patch("shutil.which")
+    @mock.patch("subprocess.Popen")
+    def test_gh_spawn_failure_detail_is_redacted(self, mock_popen, mock_which):
+        # Defence in depth, matching every other error path here. An OSError from a
+        # spawn carries errno and the executable path, not the argv, so this is not
+        # the reason for the fix — but the message is built the same way as the
+        # others, and the others do carry command output.
+        mock_which.return_value = "/usr/bin/gh"
+        token = "ghp_123456789012345678901234567890123456"
+        mock_popen.side_effect = OSError(13, f"Permission denied: {token}")
+        with self.assertRaises(RuntimeError) as caught:
+            github._gh("pr", "diff")
+        self.assertNotIn(token, str(caught.exception))
+
 
 class CommentBodyTest(unittest.TestCase):
     def test_strips_html_comments_so_markers_cannot_be_forged(self):

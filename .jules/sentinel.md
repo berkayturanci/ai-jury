@@ -99,3 +99,33 @@ expensive: the next reader takes this file as established fact.
 **Prevention:** apply `redact(...)[0]` to external command output before embedding it
 in an exception, and check the call sites before assigning a severity — "stderr could
 contain a secret" is a property of the command, not of stderr.
+
+## 2026-09-22 - [LOW] A `gh` spawn failure escaped as a traceback, not as `error: …`
+
+**Observed before-behaviour.** With `subprocess.Popen` / `subprocess.run` patched to raise
+`OSError(12, "Cannot allocate memory")` and `shutil.which("gh")` returning a path, both
+`github._gh("pr", "diff")` and `github._gh_with_input(["api"], "{}")` let the raw
+`OSError` out. `cli.py` catches `RuntimeError` there (the handler #836 added), not
+`OSError`, so the user saw a Python traceback and exit 1 instead of `error: …` and exit 2.
+Both now raise `RuntimeError("gh <label> could not be started: …")`, and three tests fail
+on the unfixed file.
+
+**Severity is [LOW], and the secret-leak framing was wrong.** This was first raised as
+[CRITICAL] "unsanitized exception strings could leak secrets" (#842). Measured: an
+`OSError` from a spawn stringifies to errno plus the executable path —
+`"[Errno 2] No such file or directory: '/usr/bin/gh'"` — and carries no argv. The one
+call that handles a payload, `_gh_with_input`, passes it over **stdin** (`--input -`);
+its argv is a literal API route. So no path was demonstrated by which a secret reaches
+this string. `redact()` is applied anyway, for consistency with the neighbouring error
+paths that *do* carry command output — that is defence in depth, not the reason.
+
+**The first patch was also incomplete.** It fixed only `_gh_with_input`. `_gh` is the
+`Popen` path behind `pr_diff`, `issue_body`, `pr_context`, `_resolve_repo` and
+`_existing_inline_keys` — far more reachable — and had the identical gap.
+
+**Prevention:** `shutil.which` narrows a spawn failure, it does not close it: the binary
+can be removed between the check and the spawn, and a loaded machine refuses the fork
+(`ENOMEM`, `EAGAIN`) however present the binary is. When a module's contract is "every
+failure leaves as `RuntimeError`", audit **every** spawn site in that module at once, and
+derive the severity from what the exception text actually contains — print it — rather
+than from the fact that an exception was unhandled.
