@@ -857,6 +857,9 @@ class DoctorJsonSchemaTests(unittest.TestCase):
         with (
             mock.patch.object(doctor, "_is_available", return_value=True),
             mock.patch.object(doctor, "_probe_models", return_value=None),
+            # The local seat's model listing (#849) is a network call: no evidence
+            # here, so the test does not depend on a server running on this machine.
+            mock.patch.object(doctor, "local_model_listing", return_value=None),
         ):
             diag = doctor.build_diagnostics(path)
         report = doctor.doctor_report_dict(diag)

@@ -459,14 +459,69 @@ class InstallScriptOnAPep668Machine(unittest.TestCase):
         self.assertIn("via uv", result.stdout)
         self.assertNotIn("-m venv", self.calls_text())
 
+    def fake_brew(self, prefix: Path, install: str | None = None) -> None:
+        """A Homebrew that answers `--prefix` and links `jury` into `<prefix>/bin`."""
+        body = install if install is not None else f'D="{prefix}/bin"; {self._WRITE_JURY}'
+        self.fake_tool(
+            "brew",
+            f"""case "$1" in
+              --prefix) echo "{prefix}" ;;
+              *) {body} ;;
+            esac""",
+        )
+
     def test_homebrew_is_used_first_when_it_works(self):
         self.fake_python()
-        self.fake_tool("brew", f'D="{self.bin}"; {self._WRITE_JURY}')
+        self.fake_brew(self.tmp)
         result = self.run_installer()
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("via Homebrew", result.stdout)
         self.assertNotIn("-m venv", self.calls_text())
+        self.assertNotIn("Note:", result.stdout)
+
+    def test_an_older_jury_earlier_on_path_is_not_taken_for_homebrews(self):
+        """#850 third seat: success was judged by `command -v jury`, so an old
+        `pip install --user` jury earlier on PATH was reported as Homebrew's, and the
+        foreign-file note then told a Homebrew user to run pipx."""
+        self.fake_python()
+        old = self.home / ".local/bin"
+        old.mkdir(parents=True)
+        (old / "jury").write_text('#!/bin/sh\necho "jury 1.0.0-old"\n', encoding="utf-8")
+        (old / "jury").chmod(0o755)
+        self.fake_brew(self.tmp)
+        result = self.run_installer(PATH=f"{old}:{self.bin}")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("via Homebrew", result.stdout)
+        self.assertIn(f"the `jury` on your PATH is {old}/jury", result.stdout)
+        self.assertIn(f"{self.bin}/jury", result.stdout)
+        self.assertNotIn("pipx", result.stdout)
+
+    def test_a_brew_that_links_nothing_is_not_a_success(self):
+        """The same rule's other edge: brew exits 0, links no `jury`, and an older one
+        on PATH must not stand in for it."""
+        self.fake_python()
+        old = self.home / ".local/bin"
+        old.mkdir(parents=True)
+        (old / "jury").write_text('#!/bin/sh\necho "jury 1.0.0-old"\n', encoding="utf-8")
+        (old / "jury").chmod(0o755)
+        self.fake_brew(self.tmp, install="exit 0")
+        result = self.run_installer(PATH=f"{old}:{self.bin}")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Homebrew did not produce a working jury", result.stdout)
+
+    def test_a_file_in_homebrews_bin_is_named_with_homebrews_fix(self):
+        self.fake_python()
+        (self.bin / "jury").write_text('#!/bin/sh\necho "jury 1.0.0-old"\n', encoding="utf-8")
+        (self.bin / "jury").chmod(0o755)
+        self.fake_brew(self.tmp, install="exit 0")
+        result = self.run_installer()
+
+        self.assertIn("is not the link Homebrew creates", result.stdout)
+        self.assertIn("brew link --overwrite ai-jury", result.stdout)
+        self.assertNotIn("pipx install --force", result.stdout)
 
     def test_a_failed_homebrew_install_falls_through(self):
         self.fake_python()

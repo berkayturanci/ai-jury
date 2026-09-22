@@ -1234,7 +1234,7 @@ def local_model_listing(endpoint: str = _DEFAULT_LOCAL_ENDPOINT) -> list[str] | 
     including the un-gated ``jury init --local-endpoint`` discovery path — gets
     the same SSRF gate that ``config._endpoint_issues`` enforces for config-file
     endpoints: a non-``http(s)`` scheme or a non-loopback host (without the
-    ``JURY_ALLOW_REMOTE_ENDPOINT`` opt-in) yields ``[]`` without any network call.
+    ``JURY_ALLOW_REMOTE_ENDPOINT`` opt-in) yields ``None`` without any network call.
     """
     import json as _json
 
@@ -1252,7 +1252,13 @@ def local_model_listing(endpoint: str = _DEFAULT_LOCAL_ENDPOINT) -> list[str] | 
             data = _json.loads(resp.read(_MAX_RESPONSE_BYTES).decode("utf-8", errors="replace"))
     except Exception:  # noqa: BLE001 - discovery is best-effort
         return None
-    models = data.get("data") if isinstance(data, dict) else None
+    if not isinstance(data, dict) or "data" not in data:
+        return None
+    models = data["data"]
+    if models is None:
+        # Ollama with nothing pulled answers `{"object": "list", "data": null}`, not
+        # `"data": []` (measured on Ollama 0.34.1) — the very server #849 is about.
+        return []
     if not isinstance(models, list):
         return None
     ids = [m.get("id") for m in models if isinstance(m, dict) and m.get("id")]

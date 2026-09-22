@@ -39,9 +39,17 @@ real_dir() {
 # overwrite, so it keeps running while the tool says it succeeded (#849).
 foreign_jury_note() {
     if [ -e "$2/jury" ] && [ ! -L "$2/jury" ]; then
+        case "$1" in
+            pipx) fix="pipx install --force ai-jury" ;;
+            uv) fix="uv tool install --force ai-jury" ;;
+            Homebrew) fix="brew link --overwrite ai-jury" ;;
+            *) fix="" ;;
+        esac
         say "👉 Note: $2/jury is not the link $1 creates — an older jury is in the way,"
-        say "   and it is the one that runs. Remove it and run this again"
-        say "   (with pipx: pipx install --force ai-jury)."
+        say "   and it is the one that runs. Remove it and run this again."
+        if [ -n "$fix" ]; then
+            say "   Or let $1 replace it: $fix"
+        fi
     fi
 }
 
@@ -115,8 +123,14 @@ main() {
     # 1. Homebrew
     if command -v brew >/dev/null 2>&1; then
         say "==> Installing via Homebrew (berkayturanci/ai-jury/ai-jury)..."
-        if brew install berkayturanci/ai-jury/ai-jury </dev/null && command -v jury >/dev/null 2>&1; then
-            finish Homebrew "$(dirname "$(command -v jury)")"
+        # Judge success by Homebrew's own bin directory, not by `command -v jury`:
+        # an older jury earlier on PATH would pass that test and be reported as the
+        # new install (#850 review).
+        if brew install berkayturanci/ai-jury/ai-jury </dev/null; then
+            brew_bin="$(brew --prefix </dev/null 2>/dev/null)/bin"
+            if [ -x "$brew_bin/jury" ]; then
+                finish Homebrew "$brew_bin"
+            fi
         fi
         say "   Homebrew did not produce a working jury; trying the next method."
     fi

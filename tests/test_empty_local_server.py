@@ -49,6 +49,11 @@ def _spec(**fields):
     )
 
 
+def _entry(spec):
+    """The seat's doctor entry, with the local-model gap the doctor computes for it."""
+    return doctor._agent_entry(spec, local_gap=doctor._local_model_gap(spec))
+
+
 class TheDoctorSeesAnEmptyServer(unittest.TestCase):
     def test_a_server_listing_no_models_makes_the_seat_unusable(self):
         spec = _local_config().enabled_agents[0]
@@ -56,7 +61,7 @@ class TheDoctorSeesAnEmptyServer(unittest.TestCase):
             mock.patch.object(doctor, "_is_available", return_value=True),
             mock.patch.object(doctor, "local_model_listing", return_value=[]),
         ):
-            entry = doctor._agent_entry(spec)
+            entry = _entry(spec)
 
         self.assertFalse(entry["available"])
         self.assertIn("lists no models", entry["reason"])
@@ -69,30 +74,56 @@ class TheDoctorSeesAnEmptyServer(unittest.TestCase):
             mock.patch.object(doctor, "local_model_listing", return_value=[]),
             mock.patch("ai_jury.adapters.list_local_models", return_value=[]),
         ):
-            entry = doctor._agent_entry(spec)
+            entry = _entry(spec)
             recs = doctor._recommendations("jury.toml", {"enabled_agents": ["qwen"]}, [entry])
 
         self.assertFalse(recs["ready"], "ready to run: yes for a panel with nothing to run")
 
-    def test_the_warning_list_says_it_too(self):
+    def test_the_doctor_says_it_once_and_lists_the_server_once(self):
+        """#850 third seat: the entry and the warnings each listed the server, and an
+        empty one was reported twice — as the seat's reason and as a warning."""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "jury.toml"
+            path.write_text(
+                '[jury]\nrounds = 1\nchair = "qwen"\n\n'
+                '[[agent]]\nname = "qwen"\nvendor = "local"\nmodel = "qwen2.5-coder:7b"\n',
+                encoding="utf-8",
+            )
+            with (
+                mock.patch.object(doctor, "_is_available", return_value=True),
+                mock.patch.object(doctor, "_detect_capabilities", return_value={}),
+                mock.patch.object(doctor, "local_model_listing", return_value=[]) as listing,
+            ):
+                diag = doctor.build_diagnostics(str(path))
+
+        self.assertEqual(listing.call_count, 1)
+        self.assertIn("lists no models", diag["agents"][0]["reason"])
+        self.assertFalse(any("lists no models" in w for w in diag["config_warnings"]))
+
+    def test_recording_a_run_makes_no_listing_request(self):
+        """A run's metadata builds the same entries; it must not probe the server."""
+        spec = _local_config().enabled_agents[0]
         with (
             mock.patch.object(doctor, "_is_available", return_value=True),
-            mock.patch.object(doctor, "local_model_listing", return_value=[]),
+            mock.patch.object(doctor, "local_model_listing") as listing,
         ):
-            warnings = doctor._detect_warnings(_local_config())
+            entry = doctor._agent_entry(spec)
 
-        self.assertTrue(any("lists no models" in w for w in warnings), warnings)
+        listing.assert_not_called()
+        self.assertTrue(entry["available"])
 
     def test_a_model_the_server_does_not_list_is_a_warning_not_a_verdict(self):
         """llama.cpp ignores the name and serves the model it loaded, so a seat
         whose model is unlisted stays available; the doctor only warns."""
-        spec = _local_config().enabled_agents[0]
+        cfg = _local_config()
+        spec = cfg.enabled_agents[0]
         with (
             mock.patch.object(doctor, "_is_available", return_value=True),
             mock.patch.object(doctor, "local_model_listing", return_value=["llama3:8b"]),
         ):
-            entry = doctor._agent_entry(spec)
-            warnings = doctor._detect_warnings(_local_config())
+            gap = doctor._local_model_gap(spec)
+            entry = doctor._agent_entry(spec, local_gap=gap)
+            warnings = doctor._detect_warnings(cfg, {spec.name: gap})
 
         self.assertTrue(entry["available"])
         self.assertTrue(any("is not among the models" in w for w in warnings), warnings)
@@ -115,10 +146,11 @@ class TheDoctorSeesAnEmptyServer(unittest.TestCase):
             mock.patch.object(doctor, "_is_available", return_value=True),
             mock.patch.object(doctor, "local_model_listing", return_value=None),
         ):
-            entry = doctor._agent_entry(spec)
+            entry = _entry(spec)
+            gap = doctor._local_model_gap(spec)
 
         self.assertTrue(entry["available"])
-        self.assertIsNone(doctor._local_model_gap(spec))
+        self.assertIsNone(gap)
 
     def test_a_listing_that_raises_changes_nothing_either(self):
         """Diagnostics never crash: a listing that raises is treated as no evidence."""
