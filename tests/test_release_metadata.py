@@ -182,6 +182,10 @@ class PackagingMetadataIsComplete(unittest.TestCase):
             if header or (line and not line.startswith(" ")):
                 job = header.group(1) if header else None
                 continue
+            if job == "test" and re.match(r"\s*exclude:", line):
+                # An exclude: drops a listed version from what runs, and this check
+                # does not model it: drop the version from the list instead.
+                self.fail("the test matrix has an exclude:; remove the version instead")
             if job == "test" and re.match(r"\s*(- )?python-version:", line):
                 tested.update(re.findall(r"3\.\d+", line))
         self.assertGreaterEqual(tested, {"3.11", "3.12", "3.13"}, "the test matrix was not read")
