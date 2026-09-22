@@ -48,8 +48,8 @@ jobs:
       # `timeout(1)` is GNU coreutils and the `macos-latest` runner ships neither
       # it nor `gtimeout`, so a `timeout 300` here exits 127 on that leg before
       # pip is reached — a red required check on every pull request rather than a
-      # bound. One step serves all five matrix legs, so the bound has to be one
-      # all five have, and `bounded` is that: `subprocess.run(timeout=…)`, which
+      # bound. One step serves every matrix leg, so the bound has to be one
+      # they all have, and `bounded` is that: `subprocess.run(timeout=…)`, which
       # kills the child and exits non-zero on Linux, macOS and Windows alike. The
       # interpreter is the one `setup-python` installed in the step above, so it
       # is already here and is the same on every leg.
@@ -143,7 +143,7 @@ jobs:
   version-integrity:
     # Its own job, not a step in the test matrix, for one reason: the check needs
     # the git tags, and fetching them means a full-history checkout. Paying that
-    # on five matrix combinations to run the same assertion five times is waste;
+    # on every matrix combination to run the same assertion once per leg is waste;
     # paying it once here is not. #556 — before this, the step ran inside `test`
     # with the default shallow checkout, so `git tag -l` was empty and the
     # monotonicity comparison silently did nothing on every run.

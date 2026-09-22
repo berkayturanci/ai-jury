@@ -168,7 +168,7 @@ class HelpSnapshotTests(unittest.TestCase):
         self.assertEqual(_render_help(), _render_help())
 
     def test_help_lists_every_documented_flag(self):
-        # Version-independent: argparse formatting varies across 3.11-3.13, but
+        # Version-independent: argparse formatting varies across Python versions, but
         # every public flag must always appear somewhere in the help output.
         help_text = _render_help()
         for flag in DOCUMENTED_FLAGS:

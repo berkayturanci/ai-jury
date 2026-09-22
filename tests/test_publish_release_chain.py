@@ -153,7 +153,7 @@ _JOB_NAME = re.compile(r"^  ([A-Za-z_][\w-]*):[ \t]*$")
 #: `bounded` is not a program. It is a shell function `ci.yml`'s cross-OS `test`
 #: job defines at the top of its install step, because `timeout(1)` is GNU
 #: coreutils and `macos-latest` ships neither it nor `gtimeout`: a wrapper that
-#: exits 127 on one leg of a five-leg matrix is a red required check, not a bound.
+#: exits 127 on one leg of the matrix is a red required check, not a bound.
 #: It runs its argument under `subprocess.run(timeout=…)`, which kills the child
 #: and exits non-zero on all three operating systems. Because a function dies with
 #: the step that defines it, :func:`undefined_wrapper_calls` refuses a call to it
@@ -1594,7 +1594,7 @@ class EveryWorkflowBoundsItsNetworkCalls(unittest.TestCase):
         """Every network call takes a bound, or appears in `KNOWN_UNBOUNDED`.
 
         None do. Two used to: `ci.yml`'s cross-OS `test` job installs the package
-        on five matrix legs from one step, and `timeout(1)` is GNU coreutils that
+        on every matrix leg from one step, and `timeout(1)` is GNU coreutils that
         `macos-latest` does not ship, so the wrapper written there exited 127 on
         that leg before pip ran. The step defines `bounded` now — the same limit
         expressed in the interpreter `setup-python` has just installed, which
@@ -1603,7 +1603,7 @@ class EveryWorkflowBoundsItsNetworkCalls(unittest.TestCase):
         unbounded = [call.why() for call in self.calls if not call.bounded and not is_waived(call)]
         self.assertEqual(unbounded, [], "unbounded network commands:\n" + "\n".join(unbounded))
 
-    def test_the_cross_os_install_is_bounded_by_something_all_five_legs_have(self):
+    def test_the_cross_os_install_is_bounded_by_something_every_leg_has(self):
         """The waived pair, now limited — and limited by a countable limit.
 
         Both halves of this module have to agree about it, which is the mistake

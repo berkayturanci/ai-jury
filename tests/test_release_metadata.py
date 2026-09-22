@@ -170,23 +170,38 @@ class PackagingMetadataIsComplete(unittest.TestCase):
             for found in (supported.fullmatch(c) for c in self.project["classifiers"])
             if found
         }
-        # Only the `test` job's matrix counts: the other jobs pin one Python to run a
-        # tool, and a version named only there is not tested. Comments are dropped,
-        # so a version parked in one does not count either.
+        # Only the `test` job's `strategy.matrix` block counts: other jobs pin one
+        # Python to run a tool, and a `python-version:` in a step's `with:` or `env:`
+        # is not a leg. Comments are dropped, so a version parked in one does not
+        # count. Two things the check cannot model are refused instead: an
+        # `exclude:` (it drops a listed version) and `continue-on-error` in the test
+        # job (it lets a red leg pass) — drop the version from the list instead.
         workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
         tested: set[str] = set()
-        job = None
+        job, matrix_indent = None, None
         for raw in workflow.splitlines():
             line = raw.split("#", 1)[0].rstrip()
-            header = re.fullmatch(r"  ([\w-]+):", line)
-            if header or (line and not line.startswith(" ")):
-                job = header.group(1) if header else None
+            if not line:
                 continue
-            if job == "test" and re.match(r"\s*exclude:", line):
-                # An exclude: drops a listed version from what runs, and this check
-                # does not model it: drop the version from the list instead.
+            indent = len(line) - len(line.lstrip())
+            header = re.fullmatch(r"  ([\w-]+):", line)
+            if header or indent == 0:
+                job, matrix_indent = (header.group(1) if header else None), None
+                continue
+            if job != "test":
+                continue
+            if re.match(r"\s*continue-on-error:", line):
+                self.fail("the test job has continue-on-error, so a red 3.x leg would pass")
+            if re.fullmatch(r"\s*matrix:", line):
+                matrix_indent = indent
+                continue
+            if matrix_indent is not None and indent <= matrix_indent:
+                matrix_indent = None
+            if matrix_indent is None:
+                continue
+            if re.match(r"\s*exclude:", line):
                 self.fail("the test matrix has an exclude:; remove the version instead")
-            if job == "test" and re.match(r"\s*(- )?python-version:", line):
+            if re.match(r"\s*(- )?python-version:", line):
                 tested.update(re.findall(r"3\.\d+", line))
         self.assertGreaterEqual(tested, {"3.11", "3.12", "3.13"}, "the test matrix was not read")
         self.assertEqual(
