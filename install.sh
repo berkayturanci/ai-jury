@@ -47,10 +47,22 @@ finish() {
 # reports. Judging a tool's success by this script's own BIN_DIR is wrong — with
 # PIPX_BIN_DIR, UV_TOOL_BIN_DIR or AI_JURY_BIN_DIR set, a successful install was
 # read as a failure and a second copy went into the venv.
+#
+# A tool too old to answer falls back to its documented default. `pipx
+# environment` arrived in pipx 1.1.0, and Ubuntu 22.04 LTS ships pipx 1.0.0 — the
+# very `apt install pipx` this script recommends. Returning nothing there read a
+# good install as failed, installed the venv on top, and overwrote pipx's own
+# `jury` link.
 tool_bin_dir() {
     case "$1" in
-        pipx) pipx environment --value PIPX_BIN_DIR </dev/null 2>/dev/null || true ;;
-        uv) uv tool dir --bin </dev/null 2>/dev/null || true ;;
+        pipx)
+            pipx environment --value PIPX_BIN_DIR </dev/null 2>/dev/null ||
+                printf '%s\n' "${PIPX_BIN_DIR:-$HOME/.local/bin}"
+            ;;
+        uv)
+            uv tool dir --bin </dev/null 2>/dev/null ||
+                printf '%s\n' "${UV_TOOL_BIN_DIR:-${XDG_BIN_HOME:-$HOME/.local/bin}}"
+            ;;
     esac
 }
 

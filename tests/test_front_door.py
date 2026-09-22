@@ -280,6 +280,43 @@ class InstallScriptOnAPep668Machine(unittest.TestCase):
             (self.home / ".local/share/ai-jury").exists(), "a second copy was installed"
         )
 
+    def test_a_pipx_too_old_to_report_its_bin_dir_still_counts(self):
+        """Lead round 2. `pipx environment` arrived in pipx 1.1.0; Ubuntu 22.04 LTS
+        ships 1.0.0, which exits 2 with usage. Reading that as "no bin dir" turned a
+        good install into a failure: a venv went on top and overwrote pipx's link.
+        The fallback is pipx's documented default, ~/.local/bin."""
+        self.fake_python()
+        d = self.home / ".local/bin"
+        self.fake_tool(
+            "pipx",
+            f"""case "$1" in
+              environment) echo "usage: pipx [-h] ..." >&2; exit 2 ;;
+              *) D="{d}"; {self._WRITE_JURY} ;;
+            esac""",
+        )
+        result = self.run_installer()
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("via pipx", result.stdout)
+        self.assertNotIn("-m venv", self.calls_text())
+        self.assertFalse((d / "jury").is_symlink(), "pipx's jury was overwritten by a venv link")
+
+    def test_a_uv_too_old_to_report_its_bin_dir_still_counts(self):
+        self.fake_python()
+        d = self.home / ".local/bin"
+        self.fake_tool(
+            "uv",
+            f"""case "$1 $2" in
+              "tool dir") echo "error: unexpected argument '--bin'" >&2; exit 2 ;;
+              "tool install") D="{d}"; {self._WRITE_JURY} ;;
+            esac""",
+        )
+        result = self.run_installer()
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("via uv", result.stdout)
+        self.assertNotIn("-m venv", self.calls_text())
+
     def test_a_custom_bin_dir_does_not_cause_a_second_install(self):
         """The same defect through AI_JURY_BIN_DIR, the variable this script adds."""
         self.fake_python()
