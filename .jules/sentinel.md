@@ -105,10 +105,21 @@ contain a secret" is a property of the command, not of stderr.
 **Observed before-behaviour.** With `subprocess.Popen` / `subprocess.run` patched to raise
 `OSError(12, "Cannot allocate memory")` and `shutil.which("gh")` returning a path, both
 `github._gh("pr", "diff")` and `github._gh_with_input(["api"], "{}")` let the raw
-`OSError` out. `cli.py` catches `RuntimeError` there (the handler #836 added), not
-`OSError`, so the user saw a Python traceback and exit 1 instead of `error: …` and exit 2.
-Both now raise `RuntimeError("gh <label> could not be started: …")`, and three tests fail
-on the unfixed file.
+`OSError` out. On the path that reads the diff, `cli.py` catches
+`RuntimeError` around `_read_diff` (the handler #836 added for #831) and prints
+`error: …` with exit 2; `OSError` is not one, so it escaped that handler and reached the
+user as a traceback. Both wrappers now raise `RuntimeError("gh <label> could not be
+started: …")`, and three tests fail on the unfixed file. Measured after the fix:
+`jury --pr 123` with the spawn refused prints
+`error: gh pr diff -- 123 could not be started: [Errno 12] Cannot allocate memory` and
+returns 2.
+
+**A first draft of this entry cited the wrong handler** — the `except RuntimeError` that
+wraps `review_diff`/`run_jury`, not the one around `_read_diff` — and generalised it to
+"every `gh` call". The review caught it. The post-review block that comments, posts
+inline findings and applies labels has **no** such handler, so a `gh` failure there is
+still a traceback for every failure kind; that is a separate defect, filed as #844 rather
+than folded in.
 
 **Severity is [LOW], and the secret-leak framing was wrong.** This was first raised as
 [CRITICAL] "unsanitized exception strings could leak secrets" (#842). Measured: an
@@ -119,9 +130,13 @@ its argv is a literal API route. So no path was demonstrated by which a secret r
 this string. `redact()` is applied anyway, for consistency with the neighbouring error
 paths that *do* carry command output — that is defence in depth, not the reason.
 
-**The first patch was also incomplete.** It fixed only `_gh_with_input`. `_gh` is the
-`Popen` path behind `pr_diff`, `issue_body`, `pr_context`, `_resolve_repo` and
-`_existing_inline_keys` — far more reachable — and had the identical gap.
+**The first patch was also incomplete, and so was the second.** #842 fixed only
+`_gh_with_input`. `_gh` is the `Popen` path behind `pr_diff`, `issue_body`, `pr_context`,
+`_resolve_repo` and `_existing_inline_keys` — far more reachable — and had the identical
+gap. The re-land fixed both, then the review found the same gap again in `patches.py`,
+where `git apply` is spawned twice with no `shutil.which` guard at all: a machine without
+git turned `jury apply` into a `FileNotFoundError` traceback. Writing "audit every spawn
+site in the module" and then auditing one module is the mistake this entry exists to stop.
 
 **Prevention:** `shutil.which` narrows a spawn failure, it does not close it: the binary
 can be removed between the check and the spawn, and a loaded machine refuses the fork

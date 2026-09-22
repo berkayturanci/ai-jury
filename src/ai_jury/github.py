@@ -32,12 +32,19 @@ _GH_MAX_OUTPUT_BYTES = 64 * 1024 * 1024  # 64 MiB
 # Spawning `gh` can fail before the process exists, and the `shutil.which` guard that opens
 # each of the two callers below narrows that without closing it: the binary can be removed
 # or unmounted between the check and the spawn, and a machine already short of memory or
-# process slots refuses the fork outright
-# (`ENOMEM`, `EAGAIN`) however present `gh` is. Every other failure in this module —
-# missing CLI, timeout, non-zero exit, output over the cap — leaves as a `RuntimeError`,
-# which `cli.py` turns into `error: …` and exit 2; an `OSError` is not one, so it used to
-# escape as a traceback instead. `TimeoutExpired` is the only `SubprocessError` these calls
-# raise and it is caught where it happens, so `OSError` is the whole remaining gap.
+# process slots refuses the fork outright (`ENOMEM`, `EAGAIN`) however present `gh` is.
+#
+# Every other failure in this module — missing CLI, timeout, non-zero exit, output over the
+# cap — leaves as a `RuntimeError`, and on the path that reads the diff `cli.py` catches
+# exactly that and prints `error: …` with exit 2 (the handler #836 added around
+# `_read_diff`). An `OSError` is not a `RuntimeError`, so it escaped that handler and
+# reached the user as a traceback. `TimeoutExpired` is the only `SubprocessError` these
+# calls raise and it is caught where it happens, so `OSError` is the whole remaining gap.
+#
+# The handler is specific to reading the diff: the post-review block that comments, posts
+# inline findings and applies labels has no such guard, so a `gh` failure there still
+# surfaces as a traceback — for every failure kind, not only this one. That is a separate
+# defect, tracked on its own rather than widened into this change.
 _GH_SPAWN_FAILED = "gh {label} could not be started: {detail}"
 
 

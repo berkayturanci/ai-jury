@@ -151,17 +151,38 @@ def _patch_body(fix: str) -> str:
     return fix if fix.endswith("\n") else fix + "\n"
 
 
-def _probe_patch(fix: str, root: Path):
-    """Ask git what ``fix`` would do, writing nothing (``--check``)."""
+#: What a caller gets back when `git` could not be started at all. Unlike the `gh`
+#: wrappers in `github.py` there is no `shutil.which` guard here, so a machine without
+#: git on PATH raises `FileNotFoundError` from the spawn — and `jury apply` reached the
+#: user as a traceback rather than as the refusal both of these functions otherwise
+#: return. A spawn can also fail with git perfectly present, when the fork is refused
+#: (`ENOMEM`, `EAGAIN`); both are `OSError`.
+_GIT_SPAWN_FAILED = "Cannot run git: {detail}"
+
+
+def _git_apply(argv: list[str], fix: str, root: Path):
+    """Run ``git apply`` with ``fix`` on stdin, or None when git could not be started."""
     import subprocess
 
-    return subprocess.run(
-        ["git", "apply", "--numstat", "-z", "--summary", "--check", "-"],
-        input=_patch_body(fix),
-        text=True,
-        cwd=str(root),
-        capture_output=True,
-    )
+    try:
+        return subprocess.run(
+            argv,
+            input=_patch_body(fix),
+            text=True,
+            cwd=str(root),
+            capture_output=True,
+        )
+    except OSError:
+        return None
+
+
+def _probe_patch(fix: str, root: Path):
+    """Ask git what ``fix`` would do, writing nothing (``--check``).
+
+    Returns None when git could not be started; every caller treats that as "this
+    patch cannot be vouched for", which is the same answer a failed probe gives.
+    """
+    return _git_apply(["git", "apply", "--numstat", "-z", "--summary", "--check", "-"], fix, root)
 
 
 def preview_patch_suggestion(
@@ -198,6 +219,8 @@ def preview_patch_suggestion(
         return [suggestion.file], None
 
     probe = _probe_patch(fix, root)
+    if probe is None:
+        return [], _GIT_SPAWN_FAILED.format(detail="it could not be started")
     if probe.returncode != 0:
         detail = redact(probe.stderr.strip())[0] or "patch does not apply cleanly"
         return [], f"Git apply failed: {detail}"
@@ -229,6 +252,10 @@ def _containment_refusal(fix: str, *, root: Path, target: Path, file: str) -> st
     share one parser, which is what closes the gap rather than narrowing it.
     """
     probe = _probe_patch(fix, root)
+    if probe is None:
+        # Containment is decided by this probe, so "git would not start" is a refusal,
+        # never a pass: an unvalidated patch must not reach `git apply` below.
+        return _GIT_SPAWN_FAILED.format(detail="it could not be started")
     if probe.returncode != 0:
         detail = redact(probe.stderr.strip())[0] or "patch does not apply cleanly"
         return f"Git apply failed: {detail}"
@@ -335,21 +362,15 @@ def apply_patch_suggestion(
 
     fix = suggestion.suggested_fix
     if _looks_like_patch(fix):
-        import subprocess
-
         refusal = _containment_refusal(fix, root=root, target=target, file=suggestion.file)
         if refusal is not None:
             return False, refusal
 
         # Same body the probe validated — a different one here would mean the
         # containment check answered a question about a patch that is not applied.
-        proc = subprocess.run(
-            ["git", "apply", "-"],
-            input=_patch_body(fix),
-            text=True,
-            cwd=str(root),
-            capture_output=True,
-        )
+        proc = _git_apply(["git", "apply", "-"], fix, root)
+        if proc is None:
+            return False, _GIT_SPAWN_FAILED.format(detail="it could not be started")
         if proc.returncode == 0:
             return True, f"Applied git patch to {suggestion.file}"
         return (

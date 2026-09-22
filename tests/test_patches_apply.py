@@ -19,6 +19,7 @@ from ai_jury.patches import (  # noqa: E402
     PatchSuggestion,
     apply_patch_suggestion,
     parse_patch_suggestions,
+    preview_patch_suggestion,
 )
 
 SAMPLE_PATCH_REPORT = """# 🏛️ AI Jury
@@ -734,6 +735,52 @@ class IoErrorRedactionTests(unittest.TestCase):
             self.assertIn("Error reading report file", text)
             self.assertIn("[REDACTED:github_token]", text)
             self.assertEqual(text.count(_TOKEN_DIR), 1)
+
+
+class GitSpawnFailureIsARefusal(unittest.TestCase):
+    """#842 follow-up: `git apply` is spawned with no `shutil.which` guard, so a
+    machine without git on PATH raised `FileNotFoundError` straight out of
+    `jury apply` — a traceback where both of these functions otherwise return a
+    refusal. A fork the kernel declines (`ENOMEM`, `EAGAIN`) fails the same way
+    with git perfectly present.
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name)
+        (self.root / "target.py").write_text("x = 1\n", encoding="utf-8")
+
+    EDIT = "--- a/target.py\n+++ b/target.py\n@@ -1 +1 @@\n-x = 1\n+x = 2\n"
+
+    def _suggestion(self):
+        return PatchSuggestion(
+            file="target.py", line=1, severity="major", claim="c", suggested_fix=self.EDIT
+        )
+
+    def _no_git(self):
+        return patch("subprocess.run", side_effect=OSError(2, "No such file or directory"))
+
+    def test_apply_returns_a_refusal_instead_of_raising(self):
+        with self._no_git():
+            ok, msg = apply_patch_suggestion(self._suggestion(), root_dir=self.root)
+
+        self.assertFalse(ok)
+        self.assertIn("Cannot run git", msg)
+
+    def test_nothing_is_written_when_git_cannot_be_started(self):
+        """The probe decides containment, so an unvalidated patch must not be applied."""
+        with self._no_git():
+            apply_patch_suggestion(self._suggestion(), root_dir=self.root)
+
+        self.assertEqual("x = 1\n", (self.root / "target.py").read_text(encoding="utf-8"))
+
+    def test_preview_reports_the_refusal_and_no_paths(self):
+        with self._no_git():
+            paths, refusal = preview_patch_suggestion(self._suggestion(), root_dir=self.root)
+
+        self.assertEqual([], paths)
+        self.assertIn("Cannot run git", refusal)
 
 
 if __name__ == "__main__":
