@@ -241,9 +241,10 @@ class InstallScriptOnAPep668Machine(unittest.TestCase):
             #!/bin/sh
             echo "pipx $*" >> "{self.calls}"
             if [ "$1" = environment ]; then echo "$HOME/.local/bin"; exit 0; fi
-            mkdir -p "$HOME/.local/bin"
-            printf '#!/bin/sh\\necho "jury 9.9.9"\\n' > "$HOME/.local/bin/jury"
-            chmod +x "$HOME/.local/bin/jury"
+            mkdir -p "$HOME/.local/bin" "$HOME/.pipx-env"
+            printf '#!/bin/sh\\necho "jury 9.9.9"\\n' > "$HOME/.pipx-env/jury"
+            chmod +x "$HOME/.pipx-env/jury"
+            ln -sf "$HOME/.pipx-env/jury" "$HOME/.local/bin/jury"
             """,
         )
         result = self.run_installer()
@@ -252,9 +253,12 @@ class InstallScriptOnAPep668Machine(unittest.TestCase):
         self.assertIn("via pipx", result.stdout)
         self.assertNotIn("-m venv", self.calls_text())
 
-    # Shell that writes a fake `jury` into $D, the way pipx / uv / brew would.
+    # Shell that installs a fake `jury` into $D the way pipx / uv / brew do: the
+    # executable lives in the tool's environment and $D/jury is a symlink to it.
     _WRITE_JURY = (
-        'mkdir -p "$D"; printf \'#!/bin/sh\\necho "jury 9.9.9"\\n\' > "$D/jury"; chmod +x "$D/jury"'
+        'mkdir -p "$D/.tool-env"; '
+        'printf \'#!/bin/sh\\necho "jury 9.9.9"\\n\' > "$D/.tool-env/jury"; '
+        'chmod +x "$D/.tool-env/jury"; ln -sf "$D/.tool-env/jury" "$D/jury"'
     )
 
     def test_pipx_into_its_own_bin_dir_is_not_mistaken_for_a_failure(self):
@@ -299,7 +303,9 @@ class InstallScriptOnAPep668Machine(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("via pipx", result.stdout)
         self.assertNotIn("-m venv", self.calls_text())
-        self.assertFalse((d / "jury").is_symlink(), "pipx's jury was overwritten by a venv link")
+        self.assertIn(
+            ".tool-env", str((d / "jury").readlink()), "pipx's link was replaced by a venv link"
+        )
 
     def test_a_uv_too_old_to_report_its_bin_dir_still_counts(self):
         self.fake_python()
@@ -370,6 +376,37 @@ class InstallScriptOnAPep668Machine(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("via uv", result.stdout)
         self.assertNotIn("-m venv", self.calls_text())
+
+    def test_an_older_jury_in_the_tools_own_bin_dir_is_named(self):
+        """#850 lead: the old installer's `pip install --user` wrote a regular
+        ~/.local/bin/jury — the same directory pipx uses. pipx refuses to overwrite a
+        file it did not create and still exits 0, so the old binary keeps running."""
+        self.fake_python()
+        d = self.home / ".local/bin"
+        d.mkdir(parents=True)
+        (d / "jury").write_text('#!/bin/sh\necho "jury 1.0.0-old"\n', encoding="utf-8")
+        (d / "jury").chmod(0o755)
+        self.fake_tool(
+            "pipx",
+            f"""case "$1" in
+              environment) echo "{d}" ;;
+              *) echo "⚠️  File exists at {d}/jury, skipping." >&2; exit 0 ;;
+            esac""",
+        )
+        result = self.run_installer()
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("is not the link pipx creates", result.stdout)
+        self.assertIn("pipx install --force ai-jury", result.stdout)
+
+    def test_a_tool_link_draws_no_foreign_note(self):
+        """The counterweight: the link a tool creates is not a stranger."""
+        self.fake_python()
+        self._pipx_into_local_bin()
+        result = self.run_installer()
+
+        self.assertIn("via pipx", result.stdout)
+        self.assertNotIn("is not the link", result.stdout)
 
     def test_a_custom_bin_dir_does_not_cause_a_second_install(self):
         """The same defect through AI_JURY_BIN_DIR, the variable this script adds."""

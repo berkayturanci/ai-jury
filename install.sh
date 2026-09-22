@@ -32,6 +32,19 @@ real_dir() {
     (cd "$1" 2>/dev/null && pwd -P) || printf '%s\n' "$1"
 }
 
+# pipx, uv and Homebrew all install `jury` as a symlink into their own environment,
+# and this script's venv fallback links it too. A regular file there, after a tool
+# reported success, is one the tool did not write: an older install — the previous
+# installer's `pip install --user` put one exactly there — that pipx refuses to
+# overwrite, so it keeps running while the tool says it succeeded (#849).
+foreign_jury_note() {
+    if [ -e "$2/jury" ] && [ ! -L "$2/jury" ]; then
+        say "👉 Note: $2/jury is not the link $1 creates — an older jury is in the way,"
+        say "   and it is the one that runs. Remove it and run this again"
+        say "   (with pipx: pipx install --force ai-jury)."
+    fi
+}
+
 # Report success and exit. $1 names the method, $2 is the directory the method
 # puts `jury` in. That directory may not be on PATH yet, so say where it is
 # rather than claim it is runnable.
@@ -46,9 +59,11 @@ finish() {
             say "👉 Note: the \`jury\` on your PATH is $on_path, not the one just installed"
             say "   at $2/jury. Remove the older one, or put $2 earlier on PATH."
         fi
+        foreign_jury_note "$1" "$2"
         jury --version
     else
         say "✨ ai-jury installed via $1 to $2/jury."
+        foreign_jury_note "$1" "$2"
         say "👉 $2 is not on your PATH yet. Add it, e.g.:"
         say "   export PATH=\"$2:\$PATH\""
         "$2/jury" --version

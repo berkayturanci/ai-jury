@@ -165,8 +165,10 @@ def _local_model_gap(spec):
         pull = _redact_value(model) if model else _SUGGESTED_LOCAL_MODEL
         return (
             "unusable",
-            f"the local server at '{shown}' lists no models, so nothing can answer a "
-            f"review — pull one first (for Ollama: `ollama pull {pull}`)",
+            f"the local server at '{shown}' lists no models — Ollama, vLLM, LM Studio and "
+            f"llama.cpp all list the one they serve, so this seat has nothing to answer "
+            f"with; pull one first (for Ollama: `ollama pull {pull}`). A proxy that serves "
+            f"models it does not list is unaffected: a run still calls it",
         )
     if model and not _model_is_listed(model, listing):
         served = ", ".join(_redact_value(m) for m in listing[:5])
