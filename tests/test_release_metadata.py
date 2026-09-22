@@ -170,12 +170,21 @@ class PackagingMetadataIsComplete(unittest.TestCase):
             for found in (supported.fullmatch(c) for c in self.project["classifiers"])
             if found
         }
+        # Only the `test` job's matrix counts: the other jobs pin one Python to run a
+        # tool, and a version named only there is not tested. Comments are dropped,
+        # so a version parked in one does not count either.
         workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
-        tested = set()
-        for line in workflow.splitlines():
-            if line.strip().startswith("python-version:"):
+        tested: set[str] = set()
+        job = None
+        for raw in workflow.splitlines():
+            line = raw.split("#", 1)[0].rstrip()
+            header = re.fullmatch(r"  ([\w-]+):", line)
+            if header or (line and not line.startswith(" ")):
+                job = header.group(1) if header else None
+                continue
+            if job == "test" and re.match(r"\s*(- )?python-version:", line):
                 tested.update(re.findall(r"3\.\d+", line))
-        self.assertTrue(tested, "no python-version found in ci.yml")
+        self.assertGreaterEqual(tested, {"3.11", "3.12", "3.13"}, "the test matrix was not read")
         self.assertEqual(
             declared - tested, set(), f"classified but never tested: {declared - tested}"
         )
