@@ -242,15 +242,18 @@ def _unavailable_reason(spec, capability_warnings) -> str:
     return "not available"
 
 
-def _agent_entry(spec, probe_models: bool = False, local_gap=None):
+def _agent_entry(spec, probe_models: bool = False, local_gaps=None):
     caps = _detect_capabilities(spec)
     available = _is_available(spec)
     # A server that answers but lists no model cannot review (#849): the seat is
     # reported unavailable, with that as its reason, so `ready to run` stops saying
-    # yes for a panel whose only reviewer has nothing to run. The doctor lists each
-    # local server once and passes the result in; a run's metadata passes nothing,
-    # so recording a run never makes a listing request of its own.
-    gap = local_gap if available else None
+    # yes for a panel whose only reviewer has nothing to run. The doctor passes a
+    # dict: an available seat's server is listed once, here, and the result kept for
+    # the warnings. A run's metadata passes nothing, so recording a run never makes
+    # a listing request, and an unavailable seat is never listed.
+    gap = None
+    if available and local_gaps is not None:
+        gap = local_gaps[spec.name] = _local_model_gap(spec)
     unusable = gap[1] if gap and gap[0] == "unusable" else None
     if unusable:
         available = False
@@ -326,10 +329,11 @@ def _detect_warnings(cfg, local_gaps=None) -> list[str]:
         warnings.append(f"chair '{_redact_value(cfg.chair)}' does not match any configured agent")
     for agent in enabled:
         if _is_available(agent):
-            # An empty server is already the seat's "unavailable" reason; only the
-            # softer "not listed" case is a warning, so neither is said twice.
+            # Both cases are warnings as well as the seat's reason: the text report
+            # prints warnings, not reasons, and `ollama pull <model>` is the line a
+            # user needs to see (#850 third seat).
             gap = (local_gaps or {}).get(agent.name)
-            if gap and gap[0] == "unlisted":
+            if gap:
                 warnings.append(f"agent '{_redact_value(agent.name)}' (local): {gap[1]}")
             # An available hosted-API seat (no command, no endpoint) with no model is still
             # reported ready, but the API call fails at request time — `--config-validate`
@@ -591,10 +595,10 @@ def build_diagnostics(config_path=None, probe_models: bool = False):
     else:
         config_error = False
         config_summary = _config_summary(cfg)
-        # One listing per local server, shared by the seat's entry and the warnings.
-        local_gaps = {spec.name: _local_model_gap(spec) for spec in cfg.agents}
+        # One listing per available local server, shared by the entry and the warnings.
+        local_gaps: dict = {}
         agents = [
-            _agent_entry(spec, probe_models=probe_models, local_gap=local_gaps[spec.name])
+            _agent_entry(spec, probe_models=probe_models, local_gaps=local_gaps)
             for spec in cfg.agents
         ]
         config_warnings = _detect_warnings(cfg, local_gaps)

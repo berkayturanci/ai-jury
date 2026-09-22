@@ -50,8 +50,8 @@ def _spec(**fields):
 
 
 def _entry(spec):
-    """The seat's doctor entry, with the local-model gap the doctor computes for it."""
-    return doctor._agent_entry(spec, local_gap=doctor._local_model_gap(spec))
+    """The seat's doctor entry, computed the way the doctor does it."""
+    return doctor._agent_entry(spec, local_gaps={})
 
 
 class TheDoctorSeesAnEmptyServer(unittest.TestCase):
@@ -79,9 +79,7 @@ class TheDoctorSeesAnEmptyServer(unittest.TestCase):
 
         self.assertFalse(recs["ready"], "ready to run: yes for a panel with nothing to run")
 
-    def test_the_doctor_says_it_once_and_lists_the_server_once(self):
-        """#850 third seat: the entry and the warnings each listed the server, and an
-        empty one was reported twice — as the seat's reason and as a warning."""
+    def _diagnose(self, listing, available=True):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "jury.toml"
             path.write_text(
@@ -90,15 +88,28 @@ class TheDoctorSeesAnEmptyServer(unittest.TestCase):
                 encoding="utf-8",
             )
             with (
-                mock.patch.object(doctor, "_is_available", return_value=True),
+                mock.patch.object(doctor, "_is_available", return_value=available),
                 mock.patch.object(doctor, "_detect_capabilities", return_value={}),
-                mock.patch.object(doctor, "local_model_listing", return_value=[]) as listing,
+                mock.patch.object(doctor, "local_model_listing", return_value=listing) as call,
             ):
-                diag = doctor.build_diagnostics(str(path))
+                return doctor.build_diagnostics(str(path)), call
+
+    def test_the_doctor_lists_the_server_once_and_the_text_report_says_why(self):
+        """#850 third seat, twice: the entry and the warnings each listed the server;
+        and with the warning dropped to avoid saying it twice, the text report — which
+        prints warnings, not reasons — lost `ollama pull` altogether."""
+        diag, listing = self._diagnose([])
 
         self.assertEqual(listing.call_count, 1)
         self.assertIn("lists no models", diag["agents"][0]["reason"])
-        self.assertFalse(any("lists no models" in w for w in diag["config_warnings"]))
+        self.assertTrue(any("ollama pull" in w for w in diag["config_warnings"]))
+        self.assertIn("ollama pull qwen2.5-coder:7b", doctor.render_report(diag))
+
+    def test_an_unavailable_seat_is_never_listed(self):
+        """A server that is down costs one probe, not a probe and a listing."""
+        _diag, listing = self._diagnose([], available=False)
+
+        listing.assert_not_called()
 
     def test_recording_a_run_makes_no_listing_request(self):
         """A run's metadata builds the same entries; it must not probe the server."""
@@ -121,9 +132,9 @@ class TheDoctorSeesAnEmptyServer(unittest.TestCase):
             mock.patch.object(doctor, "_is_available", return_value=True),
             mock.patch.object(doctor, "local_model_listing", return_value=["llama3:8b"]),
         ):
-            gap = doctor._local_model_gap(spec)
-            entry = doctor._agent_entry(spec, local_gap=gap)
-            warnings = doctor._detect_warnings(cfg, {spec.name: gap})
+            gaps: dict = {}
+            entry = doctor._agent_entry(spec, local_gaps=gaps)
+            warnings = doctor._detect_warnings(cfg, gaps)
 
         self.assertTrue(entry["available"])
         self.assertTrue(any("is not among the models" in w for w in warnings), warnings)
