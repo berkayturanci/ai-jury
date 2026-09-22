@@ -688,7 +688,7 @@ class PostReviewBlockSurvivesAGhFailure(unittest.TestCase):
             code, _, err = self._run(["--mock", "--pr", "7", "--post", "-q"])
 
         self.assertEqual(2, code)
-        self.assertIn("could not post the verdict to PR #7", err)
+        self.assertIn("error: could not post the verdict to PR #7", err)
         self.assertIn("HTTP 403", err)
 
     def test_a_failed_inline_post_reports_and_keeps_the_gate_exit(self):
@@ -731,7 +731,7 @@ class PostReviewBlockSurvivesAGhFailure(unittest.TestCase):
             code, _, err = self._run(["--mock", "--issue", "9", "--post", "-q"])
 
         self.assertEqual(2, code)
-        self.assertIn("could not post the verdict to issue #9", err)
+        self.assertIn("error: could not post the verdict to issue #9", err)
 
     def test_phased_posting_stops_at_the_first_failure(self):
         """Each phased comment is its own post; the run must not carry on writing the
@@ -749,7 +749,7 @@ class PostReviewBlockSurvivesAGhFailure(unittest.TestCase):
             )
 
         self.assertEqual(2, code)
-        self.assertIn("could not post phased comment 2", err)
+        self.assertIn("error: could not post phased comment 2", err)
         self.assertEqual(2, len(calls), "posting continued past the failure")
 
     def test_a_known_head_sha_is_not_read_a_second_time(self):
