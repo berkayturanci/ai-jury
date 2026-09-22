@@ -120,7 +120,8 @@ def enforce(config_arg, config, *, mock: bool, stdin=None, stdout=None) -> None:
     try:
         raw = path.read_bytes()
     except OSError as exc:
-        raise ConfigTrustError(f"cannot read {path} to check whether it is trusted: {exc}") from exc
+        from ai_jury.redaction import redact
+        raise ConfigTrustError(f"cannot read {path} to check whether it is trusted: {redact(str(exc))[0]}") from None
     digest = content_digest(raw)
     if is_trusted(path, digest):
         return

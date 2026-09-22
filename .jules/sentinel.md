@@ -144,3 +144,8 @@ can be removed between the check and the spawn, and a loaded machine refuses the
 failure leaves as `RuntimeError`", audit **every** spawn site in that module at once, and
 derive the severity from what the exception text actually contains — print it — rather
 than from the fact that an exception was unhandled.
+
+## 2026-09-22 - [MEDIUM] Fix Exception Context Secret Leakage in configtrust.py
+**Vulnerability:** When catching `OSError` in `configtrust.py` and wrapping it in `ConfigTrustError`, using `from exc` retained the original exception, allowing unredacted stack traces to leak. Additionally, the raw exception string was interpolated into the error message without redaction.
+**Learning:** Both the string representation and the exception cause (`__cause__`) must be sanitized when wrapping exceptions. Using `from exc` defeats string redaction by preserving the original unredacted exception chain.
+**Prevention:** Use `raise DomainError(...) from None` instead of `from exc` and wrap `str(exc)` in `redact(...)[0]` to completely sever the chain and prevent unredacted stack trace leakage.
