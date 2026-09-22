@@ -6,3 +6,4 @@ state/
 activity/
 scratch/
 *.tmp
+/worktrees/

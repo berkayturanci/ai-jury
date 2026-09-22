@@ -677,11 +677,18 @@ class PostReviewBlockSurvivesAGhFailure(unittest.TestCase):
         """`run()` re-raises anything that is not SystemExit, so an unguarded `gh`
         failure would surface as a test *error*. What is under test is that it does not
         escape at all, so the escape is converted into an assertion failure — by this
-        repo's own rule (#1289) an error is not a test failing."""
+        repo's own rule (#1289) an error is not a test failing.
+
+        `raise self.failureException` rather than `self.fail()`: the two are the same
+        assertion failure, but `self.fail()` reads to a static analyser as a branch that
+        falls through and returns `None` beside an explicit `return` (CodeQL flagged it).
+        Raising says what happens, and `from exc` keeps the escaped `gh` error attached."""
         try:
             return run(argv)
         except RuntimeError as exc:  # pragma: no cover - only on a regression
-            self.fail(f"the gh failure escaped main() instead of being reported: {exc!r}")
+            raise self.failureException(
+                f"the gh failure escaped main() instead of being reported: {exc!r}"
+            ) from exc
 
     def test_a_failed_summary_post_exits_2_instead_of_raising(self):
         with mock.patch("ai_jury.cli.post_pr_comment", side_effect=self._boom):
