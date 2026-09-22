@@ -642,5 +642,124 @@ class PolicyAndPostGuards(unittest.TestCase):
         self.assertIn("Suggested patches", outp.read_text(encoding="utf-8"))
 
 
+class PostReviewBlockSurvivesAGhFailure(unittest.TestCase):
+    """#844: a `gh` failure after the review has run must not become a traceback.
+
+    By the time these run the panel has finished and the verdict is on stdout. The two
+    kinds are pinned separately because they answer differently, and that difference is
+    the whole point: `--post-summary` is a contract and exits 2, while `--post-inline`
+    and `--label` are additions to a delivered review and leave `ci_exit` — the gate's
+    answer about the *code* — intact.
+    """
+
+    def setUp(self):
+        # `--pr` is the only way into the post block — the CLI refuses it beside
+        # `--diff-file` ("choose one input source") — so the PR read is mocked and the
+        # run reaches the post block the way a real `--pr` review does.
+        patches = [
+            mock.patch("ai_jury.cli.pr_diff", return_value=DIFF),
+            mock.patch("ai_jury.cli.pr_context", return_value=""),
+            mock.patch("ai_jury.github.pr_head_sha", return_value="a" * 40),
+        ]
+        for patcher in patches:
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    @staticmethod
+    def _boom(*_a, **_k):
+        raise RuntimeError("gh pr comment failed: HTTP 403")
+
+    def _run(self, argv):
+        """`run()` re-raises anything that is not SystemExit, so an unguarded `gh`
+        failure would surface as a test *error*. What is under test is that it does not
+        escape at all, so the escape is converted into an assertion failure — by this
+        repo's own rule (#1289) an error is not a test failing."""
+        try:
+            return run(argv)
+        except RuntimeError as exc:  # pragma: no cover - only on a regression
+            self.fail(f"the gh failure escaped main() instead of being reported: {exc!r}")
+
+    def test_a_failed_summary_post_exits_2_instead_of_raising(self):
+        with mock.patch("ai_jury.cli.post_pr_comment", side_effect=self._boom):
+            code, _, err = self._run(["--mock", "--pr", "7", "--post", "-q"])
+
+        self.assertEqual(2, code)
+        self.assertIn("could not post the verdict to PR #7", err)
+        self.assertIn("HTTP 403", err)
+
+    def test_a_failed_inline_post_reports_and_keeps_the_gate_exit(self):
+        with mock.patch("ai_jury.cli.post_inline_comments", side_effect=self._boom):
+            code, _, err = self._run(["--mock", "--pr", "7", "--post-inline", "-q"])
+
+        self.assertEqual(0, code)
+        self.assertIn("could not post inline comments to PR #7", err)
+
+    def test_a_failed_label_apply_reports_and_keeps_the_gate_exit(self):
+        with mock.patch("ai_jury.cli.apply_labels", side_effect=self._boom):
+            code, _, err = self._run(["--mock", "--pr", "7", "--label", "-q"])
+
+        self.assertEqual(0, code)
+        self.assertIn("could not apply labels to PR #7", err)
+
+    def test_a_failed_issue_post_exits_2_as_well(self):
+        """The issue arm is a separate return path from the PR arm."""
+        with (
+            mock.patch("ai_jury.cli.issue_body", return_value=DIFF),
+            mock.patch("ai_jury.cli.post_issue_comment", side_effect=self._boom),
+        ):
+            code, _, err = self._run(["--mock", "--issue", "9", "--post", "-q"])
+
+        self.assertEqual(2, code)
+        self.assertIn("could not post the verdict to issue #9", err)
+
+    def test_phased_posting_stops_at_the_first_failure(self):
+        """Each phased comment is its own post; the run must not carry on writing the
+        rest of a conversation whose opening never landed."""
+        calls = []
+
+        def fail_after_first(*a, **_k):
+            calls.append(a)
+            if len(calls) > 1:
+                raise RuntimeError("gh pr comment failed: HTTP 403")
+
+        with mock.patch("ai_jury.cli.post_pr_comment", side_effect=fail_after_first):
+            code, _, err = self._run(
+                ["--mock", "--pr", "7", "--post", "--post-mode", "phased", "-q"]
+            )
+
+        self.assertEqual(2, code)
+        self.assertIn("could not post phased comment 2", err)
+        self.assertEqual(2, len(calls), "posting continued past the failure")
+
+    def test_a_known_head_sha_is_not_read_a_second_time(self):
+        """`--incremental` reads the head itself. Asking `gh` again for the marker would
+        be a second call that can fail on its own, for a value already in hand."""
+        with (
+            mock.patch("ai_jury.cli.post_pr_comment"),
+            mock.patch("ai_jury.github.pr_head_sha", return_value="b" * 40) as asked,
+            mock.patch("ai_jury.github.pr_comment_bodies", return_value=[]),
+        ):
+            code, _, _ = self._run(["--mock", "--pr", "7", "--post", "--incremental", "-q"])
+
+        self.assertEqual(0, code)
+        self.assertEqual(1, asked.call_count, "gh was asked for a head sha it already had")
+
+    def test_an_unreadable_head_sha_warns_and_still_posts(self):
+        """The marker only narrows a later --incremental run; losing it is not worth
+        refusing to post the verdict over."""
+        posted = []
+        with (
+            mock.patch("ai_jury.github.pr_head_sha", side_effect=self._boom),
+            mock.patch(
+                "ai_jury.cli.post_pr_comment", side_effect=lambda *a, **_k: posted.append(a)
+            ),
+        ):
+            code, _, err = self._run(["--mock", "--pr", "7", "--post", "-q"])
+
+        self.assertEqual(0, code)
+        self.assertIn("will not carry an incremental marker", err)
+        self.assertEqual(1, len(posted), "the verdict was not posted")
+
+
 if __name__ == "__main__":
     unittest.main()
