@@ -48,7 +48,7 @@ _RAW = f"https://raw.githubusercontent.com/{_OWNER_REPO}/main/"
 
 # "Not already pointing somewhere of its own": any URL scheme (`https:`, `tel:`,
 # `data:`, `mailto:`…), a protocol-relative `//host/…`, or a same-page `#anchor`.
-# Ported from keel's `scripts/absolutize_readme.py` (berkayturanci/keel#1260, #1261).
+# Ported from keel's `scripts/absolutize_readme.py` (berkayturanci/keel#1260 and berkayturanci/keel#1261).
 _REL = r"(?![a-zA-Z][a-zA-Z0-9+.\-]*:|//|#)"
 
 # A fenced code block boundary. The marker is captured whole, because CommonMark

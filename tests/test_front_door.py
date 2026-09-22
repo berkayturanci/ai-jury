@@ -67,17 +67,24 @@ def run_jury(args: list[str]) -> subprocess.CompletedProcess[str]:
         if key.endswith("_API_KEY"):
             env.pop(key)
     with tempfile.TemporaryDirectory() as cwd:
+        # UTF-8, because the CLI forces its own streams to UTF-8 and the report
+        # carries emoji; the locale codec (cp1252 on Windows) cannot decode them.
+        # `input=""` is a pipe: DEVNULL answers isatty() True on Windows, which
+        # sends a bare `jury` down the first-impression overview instead of the
+        # no-source error the formula asserts.
         return subprocess.run(
             [sys.executable, "-c", "from ai_jury.cli import main; raise SystemExit(main())", *args],
             capture_output=True,
-            text=True,
+            encoding="utf-8",
+            errors="replace",
             cwd=cwd,
             env=env,
-            stdin=subprocess.DEVNULL,
+            input="",
             timeout=120,
         )
 
 
+@unittest.skipIf(os.name == "nt", "Homebrew runs a formula's test block on macOS and Linux only")
 class FormulaTestBlockMatchesTheCli(unittest.TestCase):
     def test_the_block_is_found_and_not_empty(self):
         """Vacuity: a reshaped block would otherwise pass every check below."""
@@ -154,14 +161,29 @@ class InstallScriptOnAPep668Machine(unittest.TestCase):
             """,
         )
 
-    def run_installer(self) -> subprocess.CompletedProcess[str]:
+    def run_installer(
+        self, *, piped: bool = False, **extra_env: str
+    ) -> subprocess.CompletedProcess[str]:
+        """Run install.sh. `piped` feeds it on stdin, as `curl … | sh` does."""
+        env = {"PATH": str(self.bin), "HOME": str(self.home), **extra_env}
+        if piped:
+            return subprocess.run(
+                ["/bin/sh"],
+                input=INSTALL_SH.read_text(encoding="utf-8"),
+                capture_output=True,
+                text=True,
+                env=env,
+                timeout=60,
+            )
         return subprocess.run(
-            ["/bin/sh", str(INSTALL_SH)],
-            capture_output=True,
-            text=True,
-            env={"PATH": str(self.bin), "HOME": str(self.home)},
-            timeout=60,
+            ["/bin/sh", str(INSTALL_SH)], capture_output=True, text=True, env=env, timeout=60
         )
+
+    def fake_tool(self, name: str, body: str) -> None:
+        _executable(self.bin / name, f'#!/bin/sh\necho "{name} $*" >> "{self.calls}"\n{body}\n')
+
+    def calls_text(self) -> str:
+        return self.calls.read_text(encoding="utf-8") if self.calls.exists() else ""
 
     def test_it_installs_into_a_private_venv_and_never_asks_system_pip(self):
         self.fake_python()
@@ -175,7 +197,7 @@ class InstallScriptOnAPep668Machine(unittest.TestCase):
             os.path.realpath(self.home / ".local/share/ai-jury/bin/jury"),
         )
         self.assertIn("jury 9.9.9", result.stdout)
-        self.assertNotIn("python3 -m pip", self.calls.read_text(encoding="utf-8"))
+        self.assertNotIn("python3 -m pip", self.calls_text())
         self.assertNotIn("externally-managed", result.stderr)
 
     def test_it_says_where_jury_is_when_that_is_not_on_path(self):
@@ -192,7 +214,7 @@ class InstallScriptOnAPep668Machine(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("sudo apt install python3-venv", result.stderr)
         self.assertIn("pipx install ai-jury", result.stderr)
-        self.assertNotIn("python3 -m pip", self.calls.read_text(encoding="utf-8"))
+        self.assertNotIn("python3 -m pip", self.calls_text())
 
     def test_a_python_older_than_3_11_is_not_used(self):
         self.fake_python(version_ok=False)
@@ -200,7 +222,7 @@ class InstallScriptOnAPep668Machine(unittest.TestCase):
 
         self.assertEqual(result.returncode, 1)
         self.assertIn("Python 3.11 or newer", result.stderr)
-        self.assertNotIn("-m venv", self.calls.read_text(encoding="utf-8"))
+        self.assertNotIn("-m venv", self.calls_text())
 
     def test_a_newer_versioned_python_is_found_behind_an_old_default(self):
         self.fake_python("python3", version_ok=False)
@@ -208,7 +230,7 @@ class InstallScriptOnAPep668Machine(unittest.TestCase):
         result = self.run_installer()
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("python3.12 -m venv", self.calls.read_text(encoding="utf-8"))
+        self.assertIn("python3.12 -m venv", self.calls_text())
 
     def test_pipx_is_preferred_when_present(self):
         """The counterweight: the venv fallback must not run when a tool manager can."""
@@ -218,6 +240,7 @@ class InstallScriptOnAPep668Machine(unittest.TestCase):
             f"""
             #!/bin/sh
             echo "pipx $*" >> "{self.calls}"
+            if [ "$1" = environment ]; then echo "$HOME/.local/bin"; exit 0; fi
             mkdir -p "$HOME/.local/bin"
             printf '#!/bin/sh\\necho "jury 9.9.9"\\n' > "$HOME/.local/bin/jury"
             chmod +x "$HOME/.local/bin/jury"
@@ -227,7 +250,143 @@ class InstallScriptOnAPep668Machine(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("via pipx", result.stdout)
-        self.assertNotIn("-m venv", self.calls.read_text(encoding="utf-8"))
+        self.assertNotIn("-m venv", self.calls_text())
+
+    # Shell that writes a fake `jury` into $D, the way pipx / uv / brew would.
+    _WRITE_JURY = (
+        'mkdir -p "$D"; printf \'#!/bin/sh\\necho "jury 9.9.9"\\n\' > "$D/jury"; chmod +x "$D/jury"'
+    )
+
+    def test_pipx_into_its_own_bin_dir_is_not_mistaken_for_a_failure(self):
+        """Lead round 1: success was judged by this script's BIN_DIR, so a pipx
+        install into PIPX_BIN_DIR was read as a failure and a second copy went into
+        the venv. The tool is now asked where it put `jury`."""
+        self.fake_python()
+        pipx_bin = self.home / "pipxbin"
+        self.fake_tool(
+            "pipx",
+            f"""case "$1" in
+              environment) echo "{pipx_bin}" ;;
+              *) D="{pipx_bin}"; {self._WRITE_JURY} ;;
+            esac""",
+        )
+        result = self.run_installer()
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("via pipx", result.stdout)
+        self.assertIn(str(pipx_bin), result.stdout)
+        self.assertNotIn("-m venv", self.calls_text())
+        self.assertFalse(
+            (self.home / ".local/share/ai-jury").exists(), "a second copy was installed"
+        )
+
+    def test_a_custom_bin_dir_does_not_cause_a_second_install(self):
+        """The same defect through AI_JURY_BIN_DIR, the variable this script adds."""
+        self.fake_python()
+        default_bin = self.home / ".local/bin"
+        self.fake_tool(
+            "pipx",
+            f"""case "$1" in
+              environment) echo "{default_bin}" ;;
+              *) D="{default_bin}"; {self._WRITE_JURY} ;;
+            esac""",
+        )
+        result = self.run_installer(AI_JURY_BIN_DIR=str(self.home / "bin"))
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("via pipx", result.stdout)
+        self.assertNotIn("-m venv", self.calls_text())
+
+    def test_an_already_installed_pipx_package_is_upgraded(self):
+        """`pipx install` refuses an installed package; the script falls back to upgrade."""
+        self.fake_python()
+        d = self.home / ".local/bin"
+        self.fake_tool(
+            "pipx",
+            f"""case "$1" in
+              install) echo "already installed" >&2; exit 1 ;;
+              upgrade) D="{d}"; {self._WRITE_JURY} ;;
+              environment) echo "{d}" ;;
+            esac""",
+        )
+        result = self.run_installer()
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("pipx upgrade ai-jury", self.calls_text())
+        self.assertIn("via pipx", result.stdout)
+
+    def test_uv_is_used_when_pipx_is_absent(self):
+        self.fake_python()
+        uv_bin = self.home / "uvbin"
+        self.fake_tool(
+            "uv",
+            f"""case "$1 $2" in
+              "tool dir") echo "{uv_bin}" ;;
+              "tool install") D="{uv_bin}"; {self._WRITE_JURY} ;;
+            esac""",
+        )
+        result = self.run_installer()
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("via uv", result.stdout)
+        self.assertNotIn("-m venv", self.calls_text())
+
+    def test_homebrew_is_used_first_when_it_works(self):
+        self.fake_python()
+        self.fake_tool("brew", f'D="{self.bin}"; {self._WRITE_JURY}')
+        result = self.run_installer()
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("via Homebrew", result.stdout)
+        self.assertNotIn("-m venv", self.calls_text())
+
+    def test_a_failed_homebrew_install_falls_through(self):
+        self.fake_python()
+        self.fake_tool("brew", "exit 1")
+        result = self.run_installer()
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Homebrew did not produce a working jury", result.stdout)
+        self.assertIn("private virtual environment", result.stdout)
+
+    def test_a_tool_that_reads_stdin_cannot_swallow_a_piped_script(self):
+        """Lead round 1: under `curl … | sh` a child reading stdin ate the rest of the
+        script, and the run exited 0 with nothing installed."""
+        self.fake_python()
+        self.fake_tool("pipx", "cat >/dev/null; exit 1")
+        result = self.run_installer(piped=True)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue((self.home / ".local/bin/jury").is_symlink(), "nothing was installed")
+
+    def test_a_second_run_succeeds(self):
+        self.fake_python()
+        first = self.run_installer()
+        second = self.run_installer()
+
+        self.assertEqual(
+            (first.returncode, second.returncode), (0, 0), second.stdout + second.stderr
+        )
+
+    def test_a_directory_where_jury_would_go_is_refused_before_installing(self):
+        self.fake_python()
+        (self.home / ".local/bin/jury").mkdir(parents=True)
+        result = self.run_installer()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("is a directory", result.stderr)
+        self.assertNotIn("-m venv", self.calls_text())
+
+    def test_a_non_link_jury_is_replaced_with_a_notice(self):
+        self.fake_python()
+        target = self.home / ".local/bin/jury"
+        target.parent.mkdir(parents=True)
+        target.write_text("#!/bin/sh\\necho mine\\n", encoding="utf-8")
+        result = self.run_installer()
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Replacing the existing", result.stdout)
+        self.assertTrue(target.is_symlink())
 
 
 if __name__ == "__main__":
