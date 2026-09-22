@@ -23,7 +23,7 @@ import tomllib
 from pathlib import Path
 
 from . import __version__
-from .adapters import effort_supported, make_adapter
+from .adapters import effort_supported, local_model_listing, make_adapter
 from .config import (
     ConfigError,
     is_commandless_vendor,
@@ -123,6 +123,64 @@ def _probe_models(spec):
     return [_redact_value(m) for m in models]
 
 
+#: The model `ollama pull` is suggested for when a seat names none (it is the one
+#: `jury init --preset offline` writes).
+_SUGGESTED_LOCAL_MODEL = "qwen2.5-coder:7b"
+
+
+def _model_is_listed(model: str, listing: list[str]) -> bool:
+    """Whether a local server lists ``model``. Ollama resolves an untagged name to
+    ``:latest``, so ``qwen2.5-coder`` is served by ``qwen2.5-coder:latest``."""
+    return model in listing or (":" not in model and f"{model}:latest" in listing)
+
+
+def _local_model_gap(spec):
+    """What a reachable local seat's server says about its model (issue #849).
+
+    A local seat was reported ready whenever its server answered, so Ollama with
+    nothing pulled read as a working reviewer and every run through it came back
+    `HTTP 404: model … not found`. Returns:
+
+    * ``("unusable", why)`` — the server lists **no** model. Ollama, vLLM,
+      LM Studio and llama.cpp all list at least the one they would serve, so an
+      empty list means nothing can answer a review, whatever the seat names.
+    * ``("unlisted", why)`` — models are listed but not the configured one. Ollama
+      answers that with a 404, but a llama.cpp server ignores the name and serves
+      the model it loaded, so this is a warning, never a verdict.
+    * ``None`` — the model is listed, or the listing itself failed. No evidence is
+      not evidence of a fault, so a failed listing changes nothing.
+    """
+    if spec_adapter(spec) != "local":
+        return None
+    endpoint = getattr(spec, "endpoint", None) or _DEFAULT_LOCAL_ENDPOINT
+    try:
+        listing = local_model_listing(endpoint)
+    except Exception:  # noqa: BLE001 - diagnostics must never crash
+        return None
+    if listing is None:
+        return None
+    shown = redact_url_userinfo(endpoint)
+    model = getattr(spec, "model", "") or ""
+    if not listing:
+        pull = _redact_value(model) if model else _SUGGESTED_LOCAL_MODEL
+        return (
+            "unusable",
+            f"the local server at '{shown}' lists no models, so nothing can answer a "
+            f"review — pull one first (for Ollama: `ollama pull {pull}`)",
+        )
+    if model and not _model_is_listed(model, listing):
+        served = ", ".join(_redact_value(m) for m in listing[:5])
+        more = ", …" if len(listing) > 5 else ""
+        return (
+            "unlisted",
+            f"model '{_redact_value(model)}' is not among the models the local server at "
+            f"'{shown}' lists ({served}{more}); pull it (for Ollama: `ollama pull "
+            f"{_redact_value(model)}`) or set 'model' to one it serves — a llama.cpp "
+            f"server ignores the name and uses the model it loaded, so there it is harmless",
+        )
+    return None
+
+
 def _endpoint_for(spec):
     """The HTTP endpoint an agent talks to, or None for a CLI agent.
 
@@ -185,6 +243,13 @@ def _unavailable_reason(spec, capability_warnings) -> str:
 def _agent_entry(spec, probe_models: bool = False):
     caps = _detect_capabilities(spec)
     available = _is_available(spec)
+    # A server that answers but lists no model cannot review (#849): the seat is
+    # reported unavailable, with that as its reason, so `ready to run` stops saying
+    # yes for a panel whose only reviewer has nothing to run.
+    gap = _local_model_gap(spec) if available else None
+    unusable = gap[1] if gap and gap[0] == "unusable" else None
+    if unusable:
+        available = False
     capability_warnings = [_redact_value(w) for w in caps.get("warnings", [])]
     return {
         "name": _redact_value(spec.name),
@@ -206,7 +271,9 @@ def _agent_entry(spec, probe_models: bool = False):
         # Codex seat and a GPT-through-Cursor seat differ in nothing else.
         "adapter": spec_adapter(spec),
         "available": available,
-        "reason": None if available else _unavailable_reason(spec, capability_warnings),
+        "reason": None
+        if available
+        else (unusable or _unavailable_reason(spec, capability_warnings)),
         "version": _redact_value(caps.get("version")),
         "capabilities": {
             "supports_headless": caps.get("supports_headless"),
@@ -255,6 +322,9 @@ def _detect_warnings(cfg) -> list[str]:
         warnings.append(f"chair '{_redact_value(cfg.chair)}' does not match any configured agent")
     for agent in enabled:
         if _is_available(agent):
+            gap = _local_model_gap(agent)
+            if gap:
+                warnings.append(f"agent '{_redact_value(agent.name)}' (local): {gap[1]}")
             # An available hosted-API seat (no command, no endpoint) with no model is still
             # reported ready, but the API call fails at request time — `--config-validate`
             # warns while `--doctor` did not (#831). Flag it here too, in the same words.
@@ -441,10 +511,12 @@ def _recommendations(config_path, config_summary, agents, config_error: bool = F
             )
         else:
             steps.append(
-                "No reviewer is available. Install an agent CLI (claude / codex / agy), "
-                "or run a local model (e.g. `ollama serve` + `ollama pull "
-                'qwen2.5-coder:7b`) and add a `vendor = "local"` agent — or use '
-                "`--mock` for an offline demo."
+                "No reviewer is available. Install an agent CLI (claude / codex / agy); "
+                "run a local model (e.g. `ollama serve` + `ollama pull "
+                'qwen2.5-coder:7b`) and add a `vendor = "local"` agent; or, with no '
+                "install at all, set a hosted-API key (e.g. ANTHROPIC_API_KEY) and add "
+                "that seat with `jury init --agents claude-api` — or use `--mock` for an "
+                "offline demo."
             )
     else:
         missing = [

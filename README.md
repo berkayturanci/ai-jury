@@ -18,7 +18,7 @@
 
 > **Install once. Run a cross-vendor review jury anywhere.**
 
-Most "multi-model review" tools call models at the **API level**. This one drives **any AI agent provider**: vendor native CLI agents (`claude`, `codex`, `agy`), hosted API providers (Anthropic, OpenAI, Gemini, OpenRouter, DeepSeek, Groq, Mistral), free local open-weight models (Ollama, llama.cpp, vLLM, LM Studio), and arbitrary coding-agent CLIs (`vendor = "cli"` like Aider, Goose, OpenHands) — so every reviewer runs in its own environment with its own tooling. Each agent runs headless; the orchestrator owns the round structure.
+Most "multi-model review" tools call models at the **API level**. This one drives **any AI agent provider**: vendor native CLI agents (`claude`, `codex`, `agy`), hosted API providers (Anthropic, OpenAI, Gemini, xAI Grok, OpenRouter, DeepSeek, Groq, and any other OpenAI-compatible API such as Mistral), free local open-weight models (Ollama, llama.cpp, vLLM, LM Studio), and arbitrary coding-agent CLIs (`vendor = "cli"` like Aider, Goose, OpenHands) — so every reviewer runs in its own environment with its own tooling. Each agent runs headless; the orchestrator owns the round structure.
 
 ```
         ┌──────── round 1 ────────┐   ┌─ round 2 (adaptive) ─┐   ┌─ verify + synthesis ─┐
@@ -53,7 +53,8 @@ offline deliberation on a diff bundled with the package (add `--theater` to watc
 panel animate). Then scaffold a config with **`jury init`** (it detects your
 installed agents and local models). You need at least one reviewer: an agent CLI
 (`claude`, `codex`, `agy`, `aider`), a free local model via Ollama, **or** a hosted-API reviewer
-(Anthropic, OpenAI, Gemini, OpenRouter, DeepSeek, Groq, xAI Grok, Moonshot Kimi) — no CLI install or interactive login needed,
+(Anthropic, OpenAI, Gemini, xAI Grok, OpenRouter, DeepSeek, Groq — or Moonshot Kimi, Mistral or any other
+OpenAI-compatible API through `vendor = "openai-compatible"`) — no CLI install or interactive login needed,
 useful for CI and containers; missing/unreachable/unkeyed reviewers are skipped. `gh` is
 needed for `--pr` / `--post`.
 
@@ -961,6 +962,7 @@ documented and a documented flag can't silently disappear.
 | Successful review (no `--ci`) | exits `0` |
 | `--ci` with blocking findings remaining | exits `1` (see `ci.evaluate_ci`) |
 | Fewer than `min_vendors` **distinct vendors contributed** a review | exits `3` — the cross-vendor guard, *not* a findings failure. Checked on every run, with or without `--ci`, and it outranks the `--ci` severity gate. Default `2` (`[jury.ci] min_vendors`); the default is scoped to runs that claimed cross-vendor consensus, so a config with fewer distinct vendors enabled than the threshold is never failed by it. An explicit `--min-vendors N` is enforced as asked. Opt out with `--no-min-vendors` (or `min_vendors = 0`); to fail at *startup* on a missing CLI instead, use `--strict`. |
+| **Every** seat failed to return a result — a CLI that crashed or timed out, an API error, a local model that is not pulled | exits `3` — nothing was reviewed, so the run is *not* a pass and *not* a findings failure. Checked on every run and it outranks the `--ci` severity gate; `--no-min-vendors` does not waive it. A seat that answered in prose with no findings is an abstention, not a failure, so a clean single-seat run still exits `0`. `jury --doctor` names the usual cause (#849). |
 | Fewer **reviews** than `min_reviews` — a review is a panel ballot that named what it read and voted; neither the chair's synthesis record nor an abstaining ballot is one | exits `3` — the panel-size guard, *not* a findings failure, and it outranks the `--ci` severity gate. Off by default (`[jury.ci] min_reviews = 0`, `--min-reviews N`). When the *available* bench cannot reach even the ceiling, the run refuses **before** the panel runs and exits `2` with `error: panel too small before the panel runs: …`. |
 
 **Stable report headings** (substrings other tooling may parse):

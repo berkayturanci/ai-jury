@@ -1197,6 +1197,19 @@ def _run_init(rest: list[str]) -> int:
     configtrust.record_trust(out_path, configtrust.content_digest(out_path.read_bytes()))
     chosen = ", ".join(a["name"] for a in config["agent"])
     print(f"Wrote {out_path} — panel: {chosen} · rounds: {config['jury']['rounds']}")
+    # A local seat whose server does not list its model is still a valid config,
+    # so it is written — but said now, not discovered by the first review as an
+    # `HTTP 404` (#849). `--list-models` already knew; init never asked. The
+    # doctor's own diagnosis is reused so the two cannot disagree about a seat.
+    from types import SimpleNamespace
+
+    from .doctor import _local_model_gap
+
+    for agent in config["agent"]:
+        fields = ("name", "vendor", "adapter", "endpoint", "model")
+        gap = _local_model_gap(SimpleNamespace(**{k: agent.get(k) for k in fields}))
+        if gap:
+            print(f"warning: agent '{agent['name']}': {gap[1]}", file=sys.stderr)
     print(f"Next: jury --config-validate --config {out_path}")
     print("Then: git diff main... | jury --diff-file -")
     return 0
@@ -2712,6 +2725,23 @@ def main(argv: list[str] | None = None) -> int:
     )
     if collapsed:
         log(collapsed)
+        ci_exit = 3
+    # No seat returned anything (#849). One local seat pointed at a model its
+    # server does not have failed every call with `HTTP 404`, and the run still
+    # exited 0 with a report of nothing. The collapse guard above is scoped to
+    # runs that claimed cross-vendor consensus and `min_reviews` is off by default,
+    # so neither saw it. This is narrower than both on purpose: not "too few
+    # reviews" — a seat that answered "looks good" is an abstention, and a clean
+    # single-seat run must stay green — but "every seat failed to return a result
+    # at all". A run that reviewed nothing is not a pass.
+    ran = metadata.get("panel") or {}
+    configured_seats = int(ran.get("configured") or 0)
+    if configured_seats and int(ran.get("failed") or 0) == configured_seats:
+        log(
+            f"no reviewer returned a result: all {configured_seats} seat(s) failed, so "
+            f"nothing was reviewed. A run with no review is not a pass — see each "
+            f"seat's error above, and `jury --doctor` (e.g. a local model not pulled)."
+        )
         ci_exit = 3
     # The other half of the #699 gate. The orchestrator refuses a bench that is
     # too small before spending it; this catches the two cases a pre-flight

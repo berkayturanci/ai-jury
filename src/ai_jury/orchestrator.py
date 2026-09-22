@@ -460,7 +460,11 @@ def run_jury(
             log(f"skipping '{a.name}': {reason}")
             skipped.append((a.name, reason))
     if not usable:
-        raise RuntimeError("no usable agents — install at least one agent CLI or use --mock")
+        raise RuntimeError(
+            "no usable agents — install an agent CLI (claude / codex / agy), run a local "
+            "model, or set a hosted-API key (e.g. ANTHROPIC_API_KEY with `jury init --agents "
+            "claude-api`) — or use --mock"
+        )
 
     usable_names = [a.name for a in usable]
     # Tiered routing (#714): a pure plan over the enabled bench, the usable

@@ -317,6 +317,60 @@ class InstallScriptOnAPep668Machine(unittest.TestCase):
         self.assertIn("via uv", result.stdout)
         self.assertNotIn("-m venv", self.calls_text())
 
+    def _pipx_into_local_bin(self):
+        d = self.home / ".local/bin"
+        self.fake_tool(
+            "pipx",
+            f"""case "$1" in
+              environment) echo "{d}" ;;
+              *) D="{d}"; {self._WRITE_JURY} ;;
+            esac""",
+        )
+
+    def test_an_older_jury_earlier_on_path_is_named(self):
+        """#849: an older `jury` on PATH (the old installer's `pip install --user`)
+        kept running while the script reported the new install."""
+        self.fake_python()
+        self.fake_tool("jury", 'echo "jury 1.0.0-old"')
+        self._pipx_into_local_bin()
+        result = self.run_installer()
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("the `jury` on your PATH is", result.stdout)
+        self.assertIn(str(self.bin / "jury"), result.stdout)
+
+    def test_a_symlinked_bin_dir_on_path_is_not_called_a_stranger(self):
+        """The counterweight: ~/bin -> ~/.local/bin is the same directory."""
+        self.fake_python()
+        (self.home / ".local/bin").mkdir(parents=True)
+        link = self.home / "linkbin"
+        link.symlink_to(self.home / ".local/bin")
+        self._pipx_into_local_bin()
+        result = self.run_installer(PATH=f"{self.bin}:{link}")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("via pipx", result.stdout)
+        self.assertNotIn("the `jury` on your PATH is", result.stdout)
+
+    def test_an_old_uv_under_xdg_data_home_is_found(self):
+        """uv's documented fallback includes $XDG_DATA_HOME/../bin before ~/.local/bin."""
+        self.fake_python()
+        data = self.home / "data"
+        data.mkdir()
+        d = self.home / "bin"
+        self.fake_tool(
+            "uv",
+            f"""case "$1 $2" in
+              "tool dir") echo "error: unexpected argument '--bin'" >&2; exit 2 ;;
+              "tool install") D="{d}"; {self._WRITE_JURY} ;;
+            esac""",
+        )
+        result = self.run_installer(XDG_DATA_HOME=str(data))
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("via uv", result.stdout)
+        self.assertNotIn("-m venv", self.calls_text())
+
     def test_a_custom_bin_dir_does_not_cause_a_second_install(self):
         """The same defect through AI_JURY_BIN_DIR, the variable this script adds."""
         self.fake_python()

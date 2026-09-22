@@ -7,8 +7,8 @@ updates.
 
 | Version | Supported |
 | ------- | --------- |
-| >= 0.1.0 | Yes |
-| < 0.1.0 | No |
+| Latest release | Yes |
+| Earlier releases | No |
 
 ## Reporting a Vulnerability
 

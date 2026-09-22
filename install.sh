@@ -27,12 +27,25 @@ fail() {
     exit 1
 }
 
+# The physical directory a path names, so two spellings of one directory compare equal.
+real_dir() {
+    (cd "$1" 2>/dev/null && pwd -P) || printf '%s\n' "$1"
+}
+
 # Report success and exit. $1 names the method, $2 is the directory the method
 # puts `jury` in. That directory may not be on PATH yet, so say where it is
 # rather than claim it is runnable.
 finish() {
     if command -v jury >/dev/null 2>&1; then
         say "✨ ai-jury installed via $1."
+        # A `jury` earlier on PATH — the old installer's `pip install --user`, say —
+        # would keep running while this reported success (#849). Compare the real
+        # directories, so a symlinked bin dir on PATH is not reported as a stranger.
+        on_path=$(command -v jury)
+        if [ -x "$2/jury" ] && [ "$(real_dir "$(dirname "$on_path")")" != "$(real_dir "$2")" ]; then
+            say "👉 Note: the \`jury\` on your PATH is $on_path, not the one just installed"
+            say "   at $2/jury. Remove the older one, or put $2 earlier on PATH."
+        fi
         jury --version
     else
         say "✨ ai-jury installed via $1 to $2/jury."
@@ -60,8 +73,19 @@ tool_bin_dir() {
                 printf '%s\n' "${PIPX_BIN_DIR:-$HOME/.local/bin}"
             ;;
         uv)
-            uv tool dir --bin </dev/null 2>/dev/null ||
-                printf '%s\n' "${UV_TOOL_BIN_DIR:-${XDG_BIN_HOME:-$HOME/.local/bin}}"
+            # uv's own order: UV_TOOL_BIN_DIR, XDG_BIN_HOME, $XDG_DATA_HOME/../bin,
+            # then ~/.local/bin.
+            uv tool dir --bin </dev/null 2>/dev/null || {
+                if [ -n "${UV_TOOL_BIN_DIR:-}" ]; then
+                    printf '%s\n' "$UV_TOOL_BIN_DIR"
+                elif [ -n "${XDG_BIN_HOME:-}" ]; then
+                    printf '%s\n' "$XDG_BIN_HOME"
+                elif [ -n "${XDG_DATA_HOME:-}" ]; then
+                    printf '%s\n' "$XDG_DATA_HOME/../bin"
+                else
+                    printf '%s\n' "$HOME/.local/bin"
+                fi
+            }
             ;;
     esac
 }
