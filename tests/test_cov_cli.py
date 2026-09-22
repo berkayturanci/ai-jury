@@ -19,7 +19,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from ai_jury import cli  # noqa: E402
+from ai_jury import cli, github  # noqa: E402
 
 DIFF = """diff --git a/app.py b/app.py
 index 0000000..1111111 100644
@@ -656,6 +656,10 @@ class PostReviewBlockSurvivesAGhFailure(unittest.TestCase):
         # `--pr` is the only way into the post block — the CLI refuses it beside
         # `--diff-file` ("choose one input source") — so the PR read is mocked and the
         # run reaches the post block the way a real `--pr` review does.
+        # Kept so one test can put the genuine implementation back and cut the
+        # `gh` call underneath it instead — the only honest way to reach its
+        # failure branch.
+        self.real_pr_head_sha = github.pr_head_sha
         patches = [
             mock.patch("ai_jury.cli.pr_diff", return_value=DIFF),
             mock.patch("ai_jury.cli.pr_context", return_value=""),
@@ -694,7 +698,7 @@ class PostReviewBlockSurvivesAGhFailure(unittest.TestCase):
             code, _, err = self._run(["--mock", "--pr", "7", "--post-inline"])
 
         self.assertEqual(0, code)
-        self.assertIn("could not post inline comments to PR #7", err)
+        self.assertIn("warning: could not post inline comments to PR #7", err)
         self.assertNotIn("posted inline comments", err)
 
     def test_a_failed_label_apply_reports_and_keeps_the_gate_exit(self):
@@ -702,7 +706,7 @@ class PostReviewBlockSurvivesAGhFailure(unittest.TestCase):
             code, _, err = self._run(["--mock", "--pr", "7", "--label"])
 
         self.assertEqual(0, code)
-        self.assertIn("could not apply labels to PR #7", err)
+        self.assertIn("warning: could not apply labels to PR #7", err)
         self.assertNotIn("applied labels", err)
 
     def test_a_landed_decoration_still_logs_its_success(self):
@@ -749,8 +753,10 @@ class PostReviewBlockSurvivesAGhFailure(unittest.TestCase):
         self.assertEqual(2, len(calls), "posting continued past the failure")
 
     def test_a_known_head_sha_is_not_read_a_second_time(self):
-        """`--incremental` reads the head itself. Asking `gh` again for the marker would
-        be a second call that can fail on its own, for a value already in hand."""
+        """A regression guard on behaviour this change must not lose, **not** a new
+        behaviour: the pre-existing `marker_sha = head_sha or pr_head_sha(...)`
+        already short-circuited. Rewriting it as an explicit if/else is what this
+        test holds — an `or` is easy to turn back into an unconditional call."""
         with (
             mock.patch("ai_jury.cli.post_pr_comment"),
             mock.patch("ai_jury.github.pr_head_sha", return_value="b" * 40) as asked,
@@ -763,10 +769,17 @@ class PostReviewBlockSurvivesAGhFailure(unittest.TestCase):
 
     def test_an_unreadable_head_sha_warns_and_still_posts(self):
         """The marker only narrows a later --incremental run; losing it is not worth
-        refusing to post the verdict over."""
+        refusing to post the verdict over.
+
+        The failure is injected at `github._gh` — the process call — not at
+        `pr_head_sha`. `pr_head_sha` is best-effort: it catches its own `RuntimeError`
+        and returns "", so mocking *it* to raise tests a path production never takes,
+        which is how an unreachable `try/except` here passed a green test.
+        """
         posted = []
         with (
-            mock.patch("ai_jury.github.pr_head_sha", side_effect=self._boom),
+            mock.patch("ai_jury.github.pr_head_sha", self.real_pr_head_sha),
+            mock.patch("ai_jury.github._gh", side_effect=self._boom),
             mock.patch(
                 "ai_jury.cli.post_pr_comment", side_effect=lambda *a, **_k: posted.append(a)
             ),
@@ -776,6 +789,22 @@ class PostReviewBlockSurvivesAGhFailure(unittest.TestCase):
         self.assertEqual(0, code)
         self.assertIn("will not carry an incremental marker", err)
         self.assertEqual(1, len(posted), "the verdict was not posted")
+
+    def test_a_readable_head_sha_still_rides_the_verdict(self):
+        """Counterweight: the warning test also passes if the marker is never
+        attached at all."""
+        posted = []
+        with (
+            mock.patch("ai_jury.github.pr_head_sha", return_value="c" * 40),
+            mock.patch(
+                "ai_jury.cli.post_pr_comment", side_effect=lambda *a, **_k: posted.append(a)
+            ),
+        ):
+            code, _, err = self._run(["--mock", "--pr", "7", "--post", "-q"])
+
+        self.assertEqual(0, code)
+        self.assertNotIn("will not carry an incremental marker", err)
+        self.assertIn("c" * 40, posted[0][1], "the reviewed-sha marker is missing")
 
 
 if __name__ == "__main__":

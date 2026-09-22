@@ -2839,9 +2839,12 @@ def main(argv: list[str] | None = None) -> int:
         try:
             call()
         except RuntimeError as exc:
-            print(f"error: could not {action}: {redact(str(exc))[0]}", file=sys.stderr)
+            # `contractual` is the severity: failing a promise is an error, failing
+            # an addition to a verdict that did land is a warning. Printing both as
+            # `error:` while exiting 0 told the reader the opposite of the exit code.
+            prefix = "error" if contractual else "warning"
+            print(f"{prefix}: could not {action}: {redact(str(exc))[0]}", file=sys.stderr)
             return False
-        _ = contractual
         return True
 
     if args.post_summary:
@@ -2865,18 +2868,22 @@ def main(argv: list[str] | None = None) -> int:
 
         # A missing marker costs a later `--incremental` run its narrowing; it is not
         # worth refusing to post the verdict over, so this one degrades rather than exits.
+        # `pr_head_sha` is best-effort: it catches its own `gh` failure and returns
+        # "". An earlier version of this guard wrapped it in `try/except RuntimeError`,
+        # which is unreachable — the warning it promised could never print, and the
+        # test only passed because it mocked `pr_head_sha` itself rather than the `gh`
+        # call underneath. The empty string is the failure signal, so that is what is
+        # checked.
         if head_sha:
             marker_sha = head_sha
         else:
-            try:
-                marker_sha = pr_head_sha(args.pr, args.repo)
-            except RuntimeError as exc:
+            marker_sha = pr_head_sha(args.pr, args.repo)
+            if not marker_sha:
                 print(
-                    f"warning: could not read the PR head sha, so this review will not "
-                    f"carry an incremental marker: {redact(str(exc))[0]}",
+                    "warning: could not read the PR head sha, so this review will not "
+                    "carry an incremental marker",
                     file=sys.stderr,
                 )
-                marker_sha = ""
         marker = f"\n\n{reviewed_sha_marker(marker_sha)}" if marker_sha else ""
 
         if args.post_mode == "phased":
