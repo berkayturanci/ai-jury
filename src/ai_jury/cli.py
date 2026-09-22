@@ -2827,25 +2827,33 @@ def main(argv: list[str] | None = None) -> int:
     #     delivered. They report the failure and leave `ci_exit` — the gate's own answer
     #     about the code — intact, because losing it would turn "the code is fine, GitHub
     #     hiccuped" into "the gate failed".
-    def _post(action: str, call, *, contractual: bool) -> int | None:
+    def _post(action: str, call, *, contractual: bool) -> bool:
+        """Run *call*, reporting a `gh` failure instead of letting it escape.
+
+        Returns **whether the post landed**, so no caller can log a success that
+        did not happen. An earlier version returned `2 if contractual else None`,
+        which made failure and success indistinguishable for the non-contractual
+        callers — both were `None` — and `--post-inline` printed the error and the
+        "posted inline comments" line one after the other.
+        """
         try:
             call()
         except RuntimeError as exc:
             print(f"error: could not {action}: {redact(str(exc))[0]}", file=sys.stderr)
-            return 2 if contractual else None
-        return None
+            return False
+        _ = contractual
+        return True
 
     if args.post_summary:
         if args.issue:
             # Plain issues use `gh issue comment`; phased/SHA-marker posting is
             # PR-only, so the issue path posts the single rendered report.
-            failed = _post(
+            if not _post(
                 f"post the verdict to issue #{args.issue}",
                 lambda: post_issue_comment(args.issue, report, args.repo),
                 contractual=True,
-            )
-            if failed is not None:
-                return failed
+            ):
+                return 2
             log(f"posted verdict to issue #{args.issue}")
             return ci_exit
         if not args.pr:
@@ -2889,38 +2897,33 @@ def main(argv: list[str] | None = None) -> int:
             )
             for i, (title, body) in enumerate(sections):
                 tail = marker if i == len(sections) - 1 else ""
-                failed = _post(
+                if not _post(
                     f"post phased comment {i + 1} of {len(sections)} to PR #{args.pr}",
                     lambda t=title, b=body, x=tail: post_pr_comment(
                         args.pr, f"## {t}\n\n{b}{x}", args.repo
                     ),
                     contractual=True,
-                )
-                if failed is not None:
-                    return failed
+                ):
+                    return 2
             log(f"posted {len(sections)} phased comments to PR #{args.pr}")
         else:
-            failed = _post(
+            if not _post(
                 f"post the verdict to PR #{args.pr}",
                 lambda: post_pr_comment(args.pr, f"{report}{marker}", args.repo),
                 contractual=True,
-            )
-            if failed is not None:
-                return failed
+            ):
+                return 2
             log(f"posted verdict to PR #{args.pr}")
 
     if args.post_inline:
         if not args.pr:
             raise SystemExit("error: --post-inline requires --pr")
-        if (
-            _post(
-                f"post inline comments to PR #{args.pr}",
-                lambda: post_inline_comments(
-                    args.pr, outcome.findings, repo=args.repo, dry_run=args.dry_run
-                ),
-                contractual=False,
-            )
-            is None
+        if _post(
+            f"post inline comments to PR #{args.pr}",
+            lambda: post_inline_comments(
+                args.pr, outcome.findings, repo=args.repo, dry_run=args.dry_run
+            ),
+            contractual=False,
         ):
             log(f"posted inline comments to PR #{args.pr}")
 
@@ -2930,13 +2933,10 @@ def main(argv: list[str] | None = None) -> int:
         if not args.pr:
             raise SystemExit("error: --label requires --pr")
         labels = label_strings(classify(outcome))
-        if (
-            _post(
-                f"apply labels to PR #{args.pr}",
-                lambda: apply_labels(args.pr, labels, args.repo),
-                contractual=False,
-            )
-            is None
+        if _post(
+            f"apply labels to PR #{args.pr}",
+            lambda: apply_labels(args.pr, labels, args.repo),
+            contractual=False,
         ):
             log(f"applied labels to PR #{args.pr}: {', '.join(labels)}")
 

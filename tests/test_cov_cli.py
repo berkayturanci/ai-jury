@@ -688,18 +688,35 @@ class PostReviewBlockSurvivesAGhFailure(unittest.TestCase):
         self.assertIn("HTTP 403", err)
 
     def test_a_failed_inline_post_reports_and_keeps_the_gate_exit(self):
+        """Run without `-q`: the success line goes through `log()`, which `-q`
+        silences, so a quiet run cannot see a failure that still claims success."""
         with mock.patch("ai_jury.cli.post_inline_comments", side_effect=self._boom):
-            code, _, err = self._run(["--mock", "--pr", "7", "--post-inline", "-q"])
+            code, _, err = self._run(["--mock", "--pr", "7", "--post-inline"])
 
         self.assertEqual(0, code)
         self.assertIn("could not post inline comments to PR #7", err)
+        self.assertNotIn("posted inline comments", err)
 
     def test_a_failed_label_apply_reports_and_keeps_the_gate_exit(self):
         with mock.patch("ai_jury.cli.apply_labels", side_effect=self._boom):
-            code, _, err = self._run(["--mock", "--pr", "7", "--label", "-q"])
+            code, _, err = self._run(["--mock", "--pr", "7", "--label"])
 
         self.assertEqual(0, code)
         self.assertIn("could not apply labels to PR #7", err)
+        self.assertNotIn("applied labels", err)
+
+    def test_a_landed_decoration_still_logs_its_success(self):
+        """The counterweight: the two assertions above would also pass if the
+        success line were simply deleted."""
+        with (
+            mock.patch("ai_jury.cli.post_inline_comments"),
+            mock.patch("ai_jury.cli.apply_labels"),
+        ):
+            code, _, err = self._run(["--mock", "--pr", "7", "--post-inline", "--label"])
+
+        self.assertEqual(0, code)
+        self.assertIn("posted inline comments to PR #7", err)
+        self.assertIn("applied labels to PR #7", err)
 
     def test_a_failed_issue_post_exits_2_as_well(self):
         """The issue arm is a separate return path from the PR arm."""
