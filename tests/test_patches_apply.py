@@ -782,6 +782,40 @@ class GitSpawnFailureIsARefusal(unittest.TestCase):
         self.assertEqual([], paths)
         self.assertIn("Cannot run git", refusal)
 
+    def test_a_spawn_that_fails_only_on_the_apply_is_still_a_refusal(self):
+        """The two spawns are separate events: a fork refused for a moment can let the
+        probe through and then decline the apply. Containment already passed here, so
+        this branch is the only thing between that and an unreported silent no-op."""
+        for argv in (
+            ["git", "init", "-q", "."],
+            ["git", "config", "user.email", "t@example.com"],
+            ["git", "config", "user.name", "t"],
+            ["git", "config", "core.autocrlf", "false"],
+        ):
+            subprocess.run(argv, cwd=self.root, check=True, capture_output=True)
+        subprocess.run(["git", "add", "-A"], cwd=self.root, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-qm", "init"], cwd=self.root, check=True, capture_output=True
+        )
+
+        real_run = subprocess.run
+        seen = []
+
+        def once(argv, *a, **k):
+            # The probe carries --check and writes nothing; the apply is the bare form.
+            if "--check" not in argv:
+                seen.append(argv)
+                raise OSError(12, "Cannot allocate memory")
+            return real_run(argv, *a, **k)
+
+        with patch("subprocess.run", side_effect=once):
+            ok, msg = apply_patch_suggestion(self._suggestion(), root_dir=self.root)
+
+        self.assertTrue(seen, "the probe never got through, so the apply branch was not reached")
+        self.assertFalse(ok)
+        self.assertIn("Cannot run git", msg)
+        self.assertEqual("x = 1\n", (self.root / "target.py").read_text(encoding="utf-8"))
+
 
 if __name__ == "__main__":
     unittest.main()
