@@ -137,6 +137,16 @@ jobs:
             --require-hashes --only-binary=:all: \
             -r .github/requirements/publish-tools.txt
 
+      # README.md is the PyPI long description (`pyproject.toml: readme`), and
+      # PyPI's renderer cannot resolve a relative `](docs/…)` link or
+      # `<img src="docs/…">`: 46 in-repo links 404'd on the project page and the
+      # favicon and hero images broke. This rewrites them to absolute GitHub URLs
+      # in the working tree only — never committed, so GitHub keeps rendering the
+      # relative README. It runs BEFORE the build so the rewrite reaches both the
+      # sdist and the wheel, and it is idempotent, so a rebuild reads the same bytes.
+      - name: Absolutize README links for the PyPI long description
+        run: python scripts/absolutize_readme.py README.md
+
       - name: Build package distributions
         run: python -m build --sdist --wheel --outdir dist/
 

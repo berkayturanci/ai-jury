@@ -15,6 +15,10 @@ class AiJury < Formula
 
   test do
     assert_match "jury @VERSION@", shell_output("#{bin}/jury --version")
-    assert_match "error: provide one of", shell_output("#{bin}/jury --mock 2>&1", 1)
+    # Bare `--mock` reviews the diff bundled with the package (#841): the whole
+    # offline pipeline, with no network and no key.
+    assert_match "bundled offline-demo diff", shell_output("#{bin}/jury --mock 2>&1")
+    # A real run with no diff source still refuses, with the documented message.
+    assert_match "error: provide one of", shell_output("#{bin}/jury 2>&1", 1)
   end
 end

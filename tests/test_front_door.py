@@ -1,0 +1,234 @@
+"""The two things a new user runs before anything else: the installer, and `brew test`.
+
+Both drifted without anything noticing, and a pre-launch audit found each.
+
+**The Homebrew formula's `test do` block.** It asserted that bare `jury --mock` fails
+with "error: provide one of". #841 made bare `--mock` run the offline demo on a diff
+bundled with the package, so every formula rendered from that template would ship a
+`test do` that fails `brew test ai-jury`. Nothing ran it: the tap's own checks verify
+the digest and the URL, never the test block. `FormulaTestBlockMatchesTheCli` runs each
+`assert_match … shell_output("#{bin}/jury …")` line against the real CLI, so the block
+cannot fall behind the code again without a red test.
+
+**`install.sh` on a stock Linux.** Its last resort was `python3 -m pip install --user`.
+On a PEP 668 "externally managed" interpreter — Debian 12, Ubuntu 23.04+, Fedora 38+,
+Homebrew's python — pip refuses that, and under `set -eu` the script died with pip's raw
+error before printing its own help. That is the machine a visitor pastes
+`curl … | sh` into. `InstallScriptOnAPep668Machine` runs the script against fake
+interpreters on a PATH that has nothing else, so it exercises the real control flow
+without a network: the fake refuses `-m pip` exactly as an externally-managed Python
+does, and the test fails if the script ever reaches for it.
+"""
+
+from __future__ import annotations
+
+import os
+import re
+import shutil
+import stat
+import subprocess
+import sys
+import tempfile
+import textwrap
+import unittest
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+TEMPLATE = REPO_ROOT / "packaging" / "homebrew" / "ai-jury.rb.template"
+INSTALL_SH = REPO_ROOT / "install.sh"
+
+sys.path.insert(0, str(REPO_ROOT / "src"))
+from ai_jury import __version__  # noqa: E402
+
+# `assert_match "<needle>", shell_output("#{bin}/jury <args>[ 2>&1]"[, <exit>])`
+_ASSERTION = re.compile(
+    r'assert_match\s+"(?P<needle>[^"]*)",\s*'
+    r'shell_output\("#\{bin\}/jury(?P<args>[^"]*?)(?P<merge>\s+2>&1)?"'
+    r"(?:,\s*(?P<code>\d+))?\)"
+)
+
+
+def formula_assertions() -> list[tuple[str, list[str], bool, int]]:
+    """Every `assert_match` in the template's `test do` block, as run-able parts."""
+    body = TEMPLATE.read_text(encoding="utf-8")
+    block = body[body.index("test do") :]
+    found = []
+    for m in _ASSERTION.finditer(block):
+        needle = m.group("needle").replace("@VERSION@", __version__)
+        found.append(
+            (needle, m.group("args").split(), bool(m.group("merge")), int(m.group("code") or 0))
+        )
+    return found
+
+
+def run_jury(args: list[str]) -> subprocess.CompletedProcess[str]:
+    env = dict(os.environ, PYTHONPATH=str(REPO_ROOT / "src"))
+    for key in list(env):
+        if key.endswith("_API_KEY"):
+            env.pop(key)
+    with tempfile.TemporaryDirectory() as cwd:
+        return subprocess.run(
+            [sys.executable, "-c", "from ai_jury.cli import main; raise SystemExit(main())", *args],
+            capture_output=True,
+            text=True,
+            cwd=cwd,
+            env=env,
+            stdin=subprocess.DEVNULL,
+            timeout=120,
+        )
+
+
+class FormulaTestBlockMatchesTheCli(unittest.TestCase):
+    def test_the_block_is_found_and_not_empty(self):
+        """Vacuity: a reshaped block would otherwise pass every check below."""
+        self.assertGreaterEqual(len(formula_assertions()), 3)
+
+    def test_every_assertion_holds_against_the_real_cli(self):
+        for needle, args, merged, code in formula_assertions():
+            with self.subTest(args=args):
+                result = run_jury(args)
+                # `shell_output` fails the test when the exit status differs.
+                self.assertEqual(result.returncode, code, result.stderr[-500:])
+                seen = result.stdout + (result.stderr if merged else "")
+                self.assertIn(needle, seen)
+
+    def test_the_block_exercises_the_offline_demo(self):
+        """The assertion that matters most: `brew test` runs the whole pipeline once."""
+        self.assertIn(["--mock"], [args for _, args, _, _ in formula_assertions()])
+
+
+def _executable(path: Path, text: str) -> None:
+    path.write_text(textwrap.dedent(text).lstrip(), encoding="utf-8")
+    path.chmod(path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+
+@unittest.skipIf(os.name == "nt", "install.sh is a POSIX shell script")
+class InstallScriptOnAPep668Machine(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.home = self.tmp / "home"
+        self.home.mkdir()
+        self.bin = self.tmp / "bin"
+        self.bin.mkdir()
+        self.calls = self.tmp / "calls.log"
+        # Only what the script needs from the system, so a real python, brew, pipx
+        # or uv on the host can never be picked up instead of the fakes.
+        for tool in ("mkdir", "ln", "rm", "cat", "dirname", "chmod"):
+            real = shutil.which(tool)
+            if real:
+                (self.bin / tool).symlink_to(real)
+
+    def fake_python(
+        self, name: str = "python3", *, version_ok: bool = True, venv_ok: bool = True
+    ) -> None:
+        """An externally-managed interpreter: `-m pip` is refused, as PEP 668 does."""
+        venv_bin = '"$3/bin"'
+        _executable(
+            self.bin / name,
+            f"""
+            #!/bin/sh
+            echo "{name} $*" >> "{self.calls}"
+            case "$1" in
+              -c) exit {0 if version_ok else 1} ;;
+              -m)
+                case "$2" in
+                  pip)
+                    echo "error: externally-managed-environment" >&2
+                    exit 1 ;;
+                  venv)
+                    [ "{int(venv_ok)}" = 1 ] || {{ echo "ensurepip is not available" >&2; exit 1; }}
+                    mkdir -p {venv_bin}
+                    cat > {venv_bin}/python <<'EOF'
+            #!/bin/sh
+            case "$1 $2" in
+              "-m pip") d=$(dirname "$0"); printf '#!/bin/sh\\necho "jury 9.9.9"\\n' > "$d/jury"; chmod +x "$d/jury"; exit 0 ;;
+            esac
+            exit 1
+            EOF
+                    chmod +x {venv_bin}/python
+                    exit 0 ;;
+                esac ;;
+            esac
+            exit 1
+            """,
+        )
+
+    def run_installer(self) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["/bin/sh", str(INSTALL_SH)],
+            capture_output=True,
+            text=True,
+            env={"PATH": str(self.bin), "HOME": str(self.home)},
+            timeout=60,
+        )
+
+    def test_it_installs_into_a_private_venv_and_never_asks_system_pip(self):
+        self.fake_python()
+        result = self.run_installer()
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        linked = self.home / ".local" / "bin" / "jury"
+        self.assertTrue(linked.is_symlink(), "jury was not linked into ~/.local/bin")
+        self.assertEqual(
+            os.path.realpath(linked),
+            os.path.realpath(self.home / ".local/share/ai-jury/bin/jury"),
+        )
+        self.assertIn("jury 9.9.9", result.stdout)
+        self.assertNotIn("python3 -m pip", self.calls.read_text(encoding="utf-8"))
+        self.assertNotIn("externally-managed", result.stderr)
+
+    def test_it_says_where_jury_is_when_that_is_not_on_path(self):
+        self.fake_python()
+        result = self.run_installer()
+
+        self.assertIn("is not on your PATH yet", result.stdout)
+
+    def test_a_missing_venv_module_ends_in_advice_not_a_pip_error(self):
+        """Debian ships the venv module separately (`python3-venv`)."""
+        self.fake_python(venv_ok=False)
+        result = self.run_installer()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("sudo apt install python3-venv", result.stderr)
+        self.assertIn("pipx install ai-jury", result.stderr)
+        self.assertNotIn("python3 -m pip", self.calls.read_text(encoding="utf-8"))
+
+    def test_a_python_older_than_3_11_is_not_used(self):
+        self.fake_python(version_ok=False)
+        result = self.run_installer()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Python 3.11 or newer", result.stderr)
+        self.assertNotIn("-m venv", self.calls.read_text(encoding="utf-8"))
+
+    def test_a_newer_versioned_python_is_found_behind_an_old_default(self):
+        self.fake_python("python3", version_ok=False)
+        self.fake_python("python3.12")
+        result = self.run_installer()
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("python3.12 -m venv", self.calls.read_text(encoding="utf-8"))
+
+    def test_pipx_is_preferred_when_present(self):
+        """The counterweight: the venv fallback must not run when a tool manager can."""
+        self.fake_python()
+        _executable(
+            self.bin / "pipx",
+            f"""
+            #!/bin/sh
+            echo "pipx $*" >> "{self.calls}"
+            mkdir -p "$HOME/.local/bin"
+            printf '#!/bin/sh\\necho "jury 9.9.9"\\n' > "$HOME/.local/bin/jury"
+            chmod +x "$HOME/.local/bin/jury"
+            """,
+        )
+        result = self.run_installer()
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("via pipx", result.stdout)
+        self.assertNotIn("-m venv", self.calls.read_text(encoding="utf-8"))
+
+
+if __name__ == "__main__":
+    unittest.main()
