@@ -634,7 +634,7 @@ endpoint = <span class="s">"http://localhost:11434/v1"</span></code></pre>
         <div class="cfg-key"><code>[[agent]]</code><span>Per reviewer: <code>vendor</code>, <code>command</code>, <code>extra_args</code>; for a local seat use <code>vendor = "local"</code> + <code>endpoint</code> + <code>model</code>.</span></div>
         <div class="cfg-key"><code>timeout · retries</code><span><code>total_timeout</code> / <code>phase_timeout</code> / <code>retries</code> bound a run; results can be cached and reviews made incremental.</span></div>
         <div class="cfg-key"><code>[jury.diff]</code><span>Large diffs are filtered + chunked; <code>[jury.context]</code> is <code>diff-only</code> by default with secret redaction on.</span></div>
-        <div class="cfg-key"><code>[jury.ci]</code><span>Exactly three keys: <code>fail_on</code> (severities that fail <code class="mono">--ci</code>), <code>ignore_unverified</code>, and <code>min_vendors</code> — the cross-vendor guard. Report format is a flag (<code class="mono">--format</code>), not a key here.</span></div>
+        <div class="cfg-key"><code>[jury.ci]</code><span>Four keys: <code>fail_on</code> (severities that fail <code class="mono">--ci</code>), <code>ignore_unverified</code>, <code>min_vendors</code> — the cross-vendor guard — and <code>min_reviews</code>, a panel-size floor that is off at its default <code>0</code>. Report format is a flag (<code class="mono">--format</code>), not a key here.</span></div>
         <div class="cfg-key"><code>min_vendors</code><span>Distinct vendors that must have <em>contributed</em> a review before the run counts as cross-vendor consensus. Ships at <code>2</code>: fewer, and the run exits <code>3</code> — its own code, so a collapsed panel never reads as a clean pass. It only applies once that many vendors are enabled, so a deliberate one-CLI setup is untouched; <code class="mono">--no-min-vendors</code> (or <code>min_vendors = 0</code>) accepts a collapsed panel, <code class="mono">--strict</code> fails at startup on a missing CLI instead.</span></div>
       </div>
 
@@ -786,7 +786,7 @@ endpoint = <span class="s">"http://localhost:11434/v1"</span></code></pre>
         </div>
         <div class="when-card">
           <h3>Use an API-level tool</h3>
-          <p>Star Chamber — when you want multi-model consensus but prefer provider APIs over installing each vendor's CLI.</p>
+          <p>Star Chamber — when you want multi-model consensus over provider APIs. (ai-jury's hosted-API seats also need only an API key, no CLI install.)</p>
         </div>
         <div class="when-card pick">
           <h3>Use ai-jury</h3>
@@ -941,7 +941,7 @@ endpoint = <span class="s">"http://localhost:11434/v1"</span></code></pre>
         <a href="agent-pr-said-one-line.html">Write-up: an agent PR that changed five files</a>
         <a href="docs.html#architecture">Architecture</a>
         <a href="docs.html#feasibility">Feasibility</a>
-        <a href="https://github.com/berkayturanci/keel" title="keel runs ai-jury as its tier-3 review jury (fail-soft)">keel</a>
+        <a href="https://github.com/berkayturanci/keel" title="keel can run ai-jury as a review gate (fail-soft)">keel</a>
       </div>
     </div>
     <div class="wrap foot-base">

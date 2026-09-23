@@ -96,5 +96,76 @@ class TheStatedCoverageGateIsTheEnforcedOne(unittest.TestCase):
         )
 
 
+#: Every public page a reader or a model might quote a coverage figure from. The
+#: served `website/llms.txt` said "100% test coverage" while the suite measured
+#: 98.95% (#862); nothing enforced 100, so nothing noticed.
+PUBLIC_TEXT: tuple[Path, ...] = (
+    README,
+    REPO_ROOT / "llms.txt",
+    REPO_ROOT / "llms-full.txt",
+    REPO_ROOT / "website" / "llms.txt",
+    REPO_ROOT / "website" / "index.html",
+    REPO_ROOT / "website" / "docs.html",
+    *sorted((REPO_ROOT / "docs").glob("*.md")),
+)
+
+#: A claim about the *whole* suite: "100% test coverage", "100 % total coverage",
+#: "test coverage: 100%", "overall coverage is 100%". The qualifier is what makes it
+#: suite-level, so a true per-module statement ("`voting.py` has 100% coverage") is
+#: not refused — the gate is a total, and a single module can be fully covered
+#: under it.
+_SUITE = r"(?:test|total|overall|code|suite|project|package)"
+FULL_COVERAGE_CLAIM = re.compile(
+    rf"100\s?%\s+{_SUITE}\s+coverage\b"
+    rf"|\b{_SUITE}\s+coverage\b[^.\n<]{{0,20}}?\b100\s?%",
+    re.IGNORECASE,
+)
+
+
+class NoCoverageFigureTheGateDoesNotEnforce(unittest.TestCase):
+    def test_no_public_page_claims_full_coverage_unless_it_is_enforced(self):
+        """A "100%" claim is only true while `fail_under` makes it so."""
+        if _fail_under() == 100:
+            self.skipTest("fail_under = 100 enforces the claim")
+        for path in PUBLIC_TEXT:
+            with self.subTest(file=str(path.relative_to(REPO_ROOT))):
+                found = FULL_COVERAGE_CLAIM.findall(path.read_text(encoding="utf-8"))
+                self.assertEqual(
+                    found,
+                    [],
+                    f"{path.name} claims full coverage, but fail_under is {_fail_under()}",
+                )
+
+    def test_the_pattern_refuses_suite_claims_and_allows_module_ones(self):
+        """Pin what counts as a suite-level claim, both ways."""
+        for claim in (
+            "zero runtime dependencies, 100% test coverage.",
+            "100 % total coverage",
+            "Test coverage: 100%",
+            "overall coverage is 100%",
+        ):
+            with self.subTest(claim=claim):
+                self.assertIsNotNone(FULL_COVERAGE_CLAIM.search(claim))
+        for statement in (
+            "`voting.py` has 100% coverage.",
+            "`make coverage` gate passing (theater.py 100%)",
+            "the four-vendor panel caught 100% of them",
+        ):
+            with self.subTest(statement=statement):
+                self.assertIsNone(FULL_COVERAGE_CLAIM.search(statement))
+
+    def test_pyproject_records_no_measured_total(self):
+        """The comment above `fail_under` said ~99.95% while the suite measured 98.95%.
+
+        A measured figure written into the file goes stale on the next commit; the
+        badge and a local `make coverage` run are the measurement. Only a decimal
+        percentage is refused, so the integer gate itself stays expressible.
+        """
+        text = PYPROJECT.read_text(encoding="utf-8")
+        section = text[text.index("[tool.coverage.report]") :].split("\n[", 1)[0]
+        self.assertIn("fail_under", section)
+        self.assertEqual(re.findall(r"\d+\.\d+\s?%", section), [])
+
+
 if __name__ == "__main__":
     unittest.main()

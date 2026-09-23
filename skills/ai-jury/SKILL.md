@@ -5,10 +5,10 @@ description: Convene a cross-vendor multi-agent review jury on a diff, PR, or is
 
 # AI Jury
 
-Convene a panel of native coding-agent CLIs from **different vendors** to review the
-same change, debate each other's findings, and produce one consolidated verdict.
-This is multi-model review where each agent runs in its own native CLI (with its own
-tooling), not API-level prompting.
+Convene a panel of reviewers from **different vendors** to review the same change,
+debate each other's findings, and produce one consolidated verdict. A seat is a
+vendor's own coding-agent CLI, which runs with its own tooling, or a hosted-API or
+local model, which the jury prompts over HTTP.
 
 ## Prerequisites
 
