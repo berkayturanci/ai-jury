@@ -9,7 +9,7 @@ would have been decided by the host.
 
 `unittest discover` imports every test module before it runs the first test, so the
 guard installed at import time below covers the whole run: every request to the
-default local endpoint is refused exactly as a machine with no server refuses it.
+default local endpoint is refused with the `URLError` a refused connection raises.
 Anything else passes through, and a test that patches `adapters._open` itself still
 sees its own patch. A run that does not import this module is unguarded: a single
 module (`-m unittest tests.test_x`) or a narrowed pattern (`discover -p test_x.py`).
@@ -34,24 +34,30 @@ _PORT = urlsplit(adapters._DEFAULT_LOCAL_ENDPOINT).port
 _real_open = adapters._open
 
 
-def _is_loopback(host: str) -> bool:
-    if host.rstrip(".") in ("localhost", "0.0.0.0"):
+def _is_local(host: str) -> bool:
+    """This machine: `localhost`, a loopback address, or the unspecified address
+    (`0.0.0.0`, `::`), which a client connects to as this machine."""
+    if host.rstrip(".") == "localhost":
         return True
     try:
-        return ipaddress.ip_address(host).is_loopback
+        ip = ipaddress.ip_address(host)
     except ValueError:
-        pass
-    try:  # the legacy IPv4 spellings a resolver accepts: `127.1`, `2130706433`
-        return ipaddress.ip_address(socket.inet_ntoa(socket.inet_aton(host))).is_loopback
-    except OSError:
-        return False
+        try:  # the legacy IPv4 spellings a resolver accepts: `127.1`, `0`, `2130706433`
+            ip = ipaddress.ip_address(socket.inet_ntoa(socket.inet_aton(host)))
+        except OSError:
+            return False
+    return ip.is_loopback or ip.is_unspecified
 
 
 def _refuses(target) -> bool:
     """Any spelling of this machine on the default port: `urlsplit` lowercases the
     host, and `127.1` or `[0:0:0:0:0:0:0:1]` are loopback addresses too."""
     parts = urlsplit(str(getattr(target, "full_url", target)))
-    return parts.port == _PORT and _is_loopback(parts.hostname or "")
+    try:
+        port = parts.port
+    except ValueError:  # a malformed port is the real opener's to report
+        return False
+    return port == _PORT and _is_local(parts.hostname or "")
 
 
 def _guarded_open(target, timeout):
@@ -68,6 +74,7 @@ class TheSuiteReachesNoLocalModelServer(unittest.TestCase):
         self.assertIs(adapters._open, _guarded_open)
 
     def test_the_default_endpoint_is_refused_like_a_machine_with_no_server(self):
+        module = sys.modules[__name__]
         for url in (
             adapters._DEFAULT_LOCAL_ENDPOINT + "/models",
             f"http://127.0.0.1:{_PORT}/v1/models",
@@ -79,10 +86,21 @@ class TheSuiteReachesNoLocalModelServer(unittest.TestCase):
             f"http://127.1:{_PORT}/v1",
             f"http://[0:0:0:0:0:0:0:1]:{_PORT}/v1",
             f"http://2130706433:{_PORT}/v1",
+            f"http://0:{_PORT}/v1",
+            f"http://[::]:{_PORT}/v1",
         ):
-            with self.subTest(url), self.assertRaises(urllib.error.URLError):
-                adapters._open(url, 1)
+            # A server that answers with an error raises URLError too, so the proof is
+            # that the real opener is never reached, not that something raised.
+            with self.subTest(url), mock.patch.object(module, "_real_open") as real:
+                with self.assertRaises(urllib.error.URLError):
+                    adapters._open(url, 1)
+                real.assert_not_called()
         self.assertIsNone(adapters.local_model_listing())
+
+    def test_a_malformed_port_is_left_to_the_real_opener(self):
+        module = sys.modules[__name__]
+        with mock.patch.object(module, "_real_open", return_value="opened"):
+            self.assertEqual(adapters._open("http://localhost:abc/v1", 1), "opened")
 
     def test_any_other_target_reaches_the_real_opener(self):
         """The counterweight: only the default endpoint is refused."""
