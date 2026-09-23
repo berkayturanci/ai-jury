@@ -166,7 +166,7 @@ class TheNetworkListNamesEverythingTheToolCalls(unittest.TestCase):
     # paths list models (and so read the ids).
     WHEN = (
         "every `jury init` checks whether it is reachable",
-        "`jury init --list-models` lists its models instead",
+        "except `jury init --list-models`, which lists its models instead",
         "`jury --doctor` lists them when no reviewer is available",
         "a run with no `jury.toml` and no usable agent CLI",
         "`jury init --local-endpoint URL` asks `URL/models`",
@@ -183,6 +183,39 @@ class TheNetworkListNamesEverythingTheToolCalls(unittest.TestCase):
                 # --list-models returns before the reachability check, so it does
                 # not "ask again".
                 self.assertNotIn("ask again", text)
+
+    #: Every surface that states when the loopback listing happens.
+    WHEN_SURFACES = ("README.md", "SECURITY.md", "docs/positioning.md", "llms-full.txt")
+
+    @staticmethod
+    def _unreleased_network_bullet() -> str:
+        text = _text("CHANGELOG.md")
+        head = text.index("## [Unreleased]")
+        unreleased = text[head : text.index("\n## [", head + 1)]
+        start = unreleased.index("**The network list is complete**")
+        return re.sub(r"\s+", " ", unreleased[start : unreleased.index("\n- ", start)])
+
+    def test_no_surface_puts_list_models_under_the_every_init_check(self):
+        # `_run_init` returns at `--list-models` before `_init_available()`, so the
+        # reachability check does not run there: every surface that says "every
+        # `jury init`" checks reachability must carve `--list-models` out with
+        # "except", not list it among the paths that also list models.
+        texts = {rel: _flat(rel) for rel in self.WHEN_SURFACES}
+        texts["CHANGELOG.md [Unreleased]"] = self._unreleased_network_bullet()
+        carve_out = re.compile(
+            r"except `jury init\s+--list-models`, which lists its models instead"
+        )
+        for where, text in texts.items():
+            with self.subTest(where):
+                self.assertIn("every `jury init`", text.replace("Every", "every"))
+                self.assertRegex(text, carve_out)
+                for wrong in (
+                    "`jury init --list-models`/`--list-agents`",
+                    "listing for `--list-models`",
+                    "model listing for `jury init --list-models",
+                    "listing its models (`jury init",
+                ):
+                    self.assertNotIn(wrong, text)
 
     def test_llms_full_lists_every_destination(self):
         text = _flat("llms-full.txt")
@@ -247,6 +280,50 @@ class TheLoopbackListingHappensWhereTheDocsSay(unittest.TestCase):
             with self.subTest(argv), self._record() as (urls, tmp):
                 cli._run_init([*argv, "-o", str(tmp / "j.toml")])
                 self.assertIn(self.DEFAULT, urls)
+
+    def _calls(self):
+        """Spies on the two ways init reaches the server, in the order they run."""
+        order: list[str] = []
+        real_available = adapters.LocalAdapter.available
+        real_list = adapters.list_local_models
+
+        def available(adapter):
+            order.append("available")
+            return real_available(adapter)
+
+        def listing(*args, **kwargs):
+            order.append("list_local_models")
+            return real_list(*args, **kwargs)
+
+        patches = contextlib.ExitStack()
+        patches.enter_context(mock.patch.object(adapters.LocalAdapter, "available", available))
+        patches.enter_context(mock.patch.object(adapters, "list_local_models", listing))
+        return patches, order
+
+    def test_list_models_lists_instead_of_checking(self):
+        patches, order = self._calls()
+        with patches, self._record() as (urls, _tmp):
+            cli._run_init(["--list-models"])
+        self.assertEqual(urls, [self.DEFAULT])
+        self.assertEqual(order, ["list_local_models"])
+
+    def test_list_agents_checks_then_lists(self):
+        patches, order = self._calls()
+        with patches, self._record() as (urls, _tmp):
+            cli._run_init(["--list-agents"])
+        self.assertEqual(urls, [self.DEFAULT, self.DEFAULT])
+        self.assertEqual(order, ["available", "list_local_models"])
+
+    def test_seating_a_local_reviewer_asks_the_given_endpoint(self):
+        remote = "http://gpu.example:8080/v1"
+        for argv in (["--agents", "qwen"], ["--preset", "offline"]):
+            with (
+                self.subTest(argv),
+                self._record(env={"JURY_ALLOW_REMOTE_ENDPOINT": "1"}) as (urls, tmp),
+            ):
+                cli._run_init([*argv, "--local-endpoint", remote, "-o", str(tmp / "j.toml")])
+                self.assertIn(f"{remote}/models", urls)
+                self.assertIn(self.DEFAULT, urls, "the reachability check still asks loopback")
 
     def test_a_local_endpoint_is_asked_only_when_loopback_or_opted_in(self):
         remote = "http://gpu.example:8080/v1"

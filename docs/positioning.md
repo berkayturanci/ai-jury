@@ -103,11 +103,12 @@ data surface:
   talks to its own vendor), the hosted-API and local model endpoints you
   configure (the jury calls them itself), and `gh` for `--pr` and `--issue`
   (fetching, posting, labelling). Every `jury init` checks whether the default
-  local model server on `localhost:11434` is reachable; listing its models (`jury init
-  --list-models`/`--list-agents`, seating a local reviewer, `jury --doctor` when no
-  reviewer is available, a run with no `jury.toml` and no usable agent CLI) asks it which it has;
-  `jury init --local-endpoint URL` asks that URL when it lists models, and a URL
-  that is not loopback only with `JURY_ALLOW_REMOTE_ENDPOINT=1`. There is no telemetry and no ai-jury
+  local model server on `localhost:11434` is reachable, except `jury init
+  --list-models`, which lists its models instead; `--list-agents`, seating a local
+  reviewer, `jury --doctor` when no reviewer is available, and a run with no
+  `jury.toml` and no usable agent CLI list them too. `jury init --local-endpoint
+  URL` asks that URL for those listings instead, and a URL that is not loopback
+  only with `JURY_ALLOW_REMOTE_ENDPOINT=1`. There is no telemetry and no ai-jury
   server; your diff goes only to the model vendors you configure (or nowhere if
   every seat is local).
 

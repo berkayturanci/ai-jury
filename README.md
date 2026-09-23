@@ -807,12 +807,14 @@ tool never phones home. Network traffic goes to:
 - **`gh`**, for `--pr` and `--issue` (fetching, posting, labelling);
 - and the default local model server on loopback (`http://localhost:11434/v1`),
   to offer a free offline reviewer: every `jury init` checks whether it is reachable
-  (a status-only request); `jury init --list-models` lists its models instead, and
-  `--list-agents` or seating a local reviewer lists them after that check; `jury
-  --doctor` lists them when no reviewer is available, and so does a run with no
-  `jury.toml` and no usable agent CLI. `jury init --local-endpoint URL` asks `URL/models` for that listing
-  (interactive, `--wizard`, `--list-models`, `--list-agents`); a URL that is not
-  loopback is asked only with `JURY_ALLOW_REMOTE_ENDPOINT=1` set.
+  (a status-only request), except `jury init --list-models`, which lists its models
+  instead; `--list-agents` and seating a local reviewer list them after that check;
+  `jury --doctor` lists them when no reviewer is available, and so does a run with
+  no `jury.toml` and no usable agent CLI. `jury init --local-endpoint URL` asks
+  `URL/models` for those listings instead (`--list-models`, `--list-agents`, and
+  seating a local reviewer: interactive, `--wizard`, `--agents qwen`, `--preset
+  offline`); a URL that is not loopback is asked only with
+  `JURY_ALLOW_REMOTE_ENDPOINT=1` set.
 
 ### Diagnostics — `jury --doctor`
 
