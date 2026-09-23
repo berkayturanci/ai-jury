@@ -121,10 +121,14 @@ Network traffic goes to:
 - the **local model endpoints** you configure, which the jury calls itself the same
   way;
 - **`gh`**, for `--pr` and `--issue` (fetching, posting, labelling);
-- and, on loopback only, the default local model server
-  (`http://localhost:11434/v1`), which `jury init` always, `jury --doctor` when no
-  reviewer is available, and a run with no `jury.toml` and no usable agent CLI ask
-  for its model list, to offer a free offline reviewer.
+- and the default local model server on loopback (`http://localhost:11434/v1`),
+  asked for its model list to offer a free offline reviewer: by every `jury init`
+  (it checks whether the local seat it can offer is reachable; `--list-models`,
+  `--list-agents` and seating a local reviewer ask again), by `jury --doctor` when
+  no reviewer is available, and by a run with no `jury.toml` and no usable agent
+  CLI. `jury init --local-endpoint URL` asks `URL/models` for that listing
+  (interactive, `--wizard`, `--list-models`, `--list-agents`); a URL that is not
+  loopback is asked only with `JURY_ALLOW_REMOTE_ENDPOINT=1` set.
 
 The `jury --doctor` command produces a local diagnostics report intended to
 be safe to share when filing a bug report. It includes the tool/Python/OS
