@@ -842,8 +842,10 @@ ai-jury as a review gate. A project turns it on by adding `jury` to its `gates:`
 list, or by naming `jury` as a tier's reviewers under `knobs.team.review`.
 `keel ship` also enables the jury for a change in the project's tier-3 risk class
 (paths matching its `tier3_globs`) unless the run passes `--no-jury`. The `jury`
-gate is **fail-soft** — a no-op when ai-jury isn't installed — so keel never
-hard-depends on it. keel's optional
+gate is **fail-soft** — a no-op when ai-jury isn't installed. A tier whose reviewers
+*are* the jury is different: keel checks first that the panel can sit, and when it
+cannot (no `jury` binary counts) it seats host reviewers by default, or refuses the
+run if the project set `knobs.team.jury.on_unavailable: block`. keel's optional
 [keel-visual](https://github.com/berkayturanci/keel/tree/main/keel-visual) run
 visualizer surfaces the jury on the review step when a run used it.
 

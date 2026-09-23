@@ -729,16 +729,22 @@ for the full field list.
 `ship` command itself:
 
 ```bash
-keel ship --jury            # force the jury on, gating mode
-keel ship --jury-advisory   # force the jury on, report-only (never blocks)
-keel ship --no-jury         # force the jury off for this run
+keel ship .keel/project.yaml --jury                   # force the jury on, gating mode
+keel ship .keel/project.yaml --jury --jury-advisory   # force it on, report-only (never blocks)
+keel ship .keel/project.yaml --no-jury                # force the jury off for this run
 ```
 
-Precedence is `--no-jury` > `--jury` > tier-3 auto-on > off — a change that
-touches a `tier3_globs` path turns the jury on automatically (gating, unless
-`--jury-advisory` is also passed), and `--no-jury` wins over that. A tier whose
-`knobs.team.review` names `jury` outranks all three: there the panel *is* the
-tier's review, so keel records the flags as warnings and does not apply them.
+`--jury-advisory` does not turn the jury on by itself: it makes a jury that is
+already on advisory. Precedence is `--no-jury` > `--jury` > tier-3 auto-on > off —
+a change that touches a `tier3_globs` path turns the jury on automatically
+(gating, unless `--jury-advisory` is also passed), and `--no-jury` wins over that.
+
+A tier whose `knobs.team.review` names `jury` outranks all three: there the panel
+*is* the tier's review, so the jury stays on and gating. `--no-jury` and
+`--jury-advisory` are recorded in `assignment.warnings` and not applied. One thing
+outranks the panel tier in turn: when keel's pre-dispatch probe finds the panel
+cannot sit and `knobs.team.jury.on_unavailable` is `fallback` (the default), the
+jury is off and host reviewers take the tier.
 
 ### What keel does with the report
 
@@ -1062,7 +1068,7 @@ of one contract, agreeing by construction and by review, neither running the
 other.
 
 [keel#1015](https://github.com/berkayturanci/keel/issues/1015) has since
-merged, and it did not change this. A tier whose `knobs.team.review` names `jury`
+closed, and it did not change this. A tier whose `knobs.team.review` names `jury`
 dispatches the whole panel once from `s7` with `jury --format json` and reads the
 ballots with `keel review --from-jury`; it does not call `jury run-agent`.
 

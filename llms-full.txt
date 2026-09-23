@@ -158,8 +158,10 @@ fail_on = ["critical", "major"]   # severities that fail `--ci` (exit 1)
 ignore_unverified = true          # only verified findings can fail CI
 min_vendors = 2                   # distinct vendors that must have CONTRIBUTED a
                                   # review; fewer exits 3. 0 disables the guard (#682)
-min_reviews = 0                   # reviews the panel must deliver; fewer exits 3.
-                                  # 0 (the default) disables it (#699)
+min_reviews = 0                   # reviews the panel must deliver. A bench that
+                                  # cannot reach it exits 2 before the panel runs;
+                                  # fewer after the panel ran exits 3. 0 (the
+                                  # default) disables it (#699)
 
 [jury.context]
 mode = "diff-only"      # "diff-only" (default) or "expanded"
