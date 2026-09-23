@@ -161,10 +161,14 @@ class TheNetworkListNamesEverythingTheToolCalls(unittest.TestCase):
 
     #: When the default loopback listing happens, as README and SECURITY.md say.
     #: `TheLoopbackListingHappensWhereTheDocsSay` holds the code to it.
+    # Measured at adapters._open: every init makes one status-only reachability check;
+    # --list-models lists models *instead* of that check (it returns first); the other
+    # paths list models (and so read the ids).
     WHEN = (
-        "by every `jury init`",
-        "by `jury --doctor` when no reviewer is available",
-        "by a run with no `jury.toml` and no usable agent CLI",
+        "every `jury init` checks whether it is reachable",
+        "`jury init --list-models` lists its models instead",
+        "`jury --doctor` lists them when no reviewer is available",
+        "a run with no `jury.toml` and no usable agent CLI",
         "`jury init --local-endpoint URL` asks `URL/models`",
         "only with `JURY_ALLOW_REMOTE_ENDPOINT=1` set",
     )
@@ -176,6 +180,9 @@ class TheNetworkListNamesEverythingTheToolCalls(unittest.TestCase):
                 for clause in self.WHEN:
                     self.assertIn(clause, text)
                 self.assertNotIn("`jury init` always", text)
+                # --list-models returns before the reachability check, so it does
+                # not "ask again".
+                self.assertNotIn("ask again", text)
 
     def test_llms_full_lists_every_destination(self):
         text = _flat("llms-full.txt")

@@ -246,9 +246,10 @@ Invocations:
   nowhere if every seat is local). No telemetry. Network traffic: the agent CLIs you
   configure, the hosted-API and local model endpoints you configure (called by the jury
   itself), and `gh` for `--pr` / `--issue` (fetching, posting, labelling);
-  plus a model listing from the default local server on loopback, `localhost:11434`
-  (every `jury init`; `--doctor` when no reviewer is available; a run with no
-  `jury.toml` and no usable agent CLI), and from `jury init --local-endpoint URL` when
+  plus the default local server on loopback, `localhost:11434`: a reachability check
+  on every `jury init`, and a model listing for `jury init --list-models`/`--list-agents`,
+  seating a local reviewer, `--doctor` when no reviewer is available, and a run with no
+  `jury.toml` and no usable agent CLI; and a listing from `jury init --local-endpoint URL` when
   it lists models (a non-loopback URL only with `JURY_ALLOW_REMOTE_ENDPOINT=1`).
 - Repository security posture: CodeQL + OpenSSF Scorecard + SHA-pinned Actions.
 - Canonical reference: [SECURITY.md](SECURITY.md).
