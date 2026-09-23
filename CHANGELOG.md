@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.19.1] - 2026-09-23
+
 ### Changed
 - **Python 3.14 is tested and declared** (#849, item 6). CI's Linux matrix runs 3.14 beside 3.11–3.13, and `pyproject.toml` gains the 3.14 classifier, so the PyPI version badge matches what the package already accepted (the pre-launch audit ran everything on 3.14.7). The classifier waited for the CI job, because a classifier is a claim, and `tests/test_release_metadata.py` now keeps it one: every classified version must appear in the CI matrix.
 

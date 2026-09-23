@@ -634,7 +634,7 @@ Add `ai-jury` to your repository's `.pre-commit-config.yaml` to catch security i
 ```yaml
 repos:
   - repo: https://github.com/berkayturanci/ai-jury
-    rev: v1.19.0
+    rev: v1.19.1
     hooks:
       - id: ai-jury
         # Optional args: e.g. a single round
