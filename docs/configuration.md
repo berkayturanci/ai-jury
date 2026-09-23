@@ -368,7 +368,9 @@ Notes:
   only when an effort level is set, and at most once per run per agent.
 - **`local` is deliberately excluded.** Many local OpenAI-compatible servers
   reject an unknown request field outright, which would turn a hint into a failed
-  review; effort is not sent on speculation.
+  review; effort is not sent on speculation. For a local reasoning model, set the
+  level in the model itself. For example, an Ollama Modelfile can rewrite
+  gpt-oss's template default `Reasoning: medium` to `low`.
 - **`openai-compatible` is only as good as the provider behind it.** The vendor
   covers OpenRouter, DeepSeek, Groq, Mistral, LiteLLM and any other
   OpenAI-shaped endpoint, and `reasoning_effort` is sent to all of them. A
@@ -383,6 +385,43 @@ Notes:
   a clear message.
 - Effort is part of the config hash, so two runs that differ only by effort do
   not share a cache entry.
+
+## Sampling temperature (`[[agent]] temperature`, local seats)
+
+A local seat sends `temperature: 0` (greedy decoding) unless it is told
+otherwise. Greedy is the right default for a reviewer, and most models are fine
+with it. Some are not. Replaying a real jury prompt (a 36 KB diff) against
+gpt-oss 20B on Ollama:
+
+| `temperature` | Result |
+|---|---|
+| `0` | reasoning looped ("Ok." ×164, "Stop." ×48) to the 8,192-token output cap; **no answer** (`empty_output`, or a timeout without a cap) |
+| `1` | a review in 164 s, with its `Checked:` and `Tested:` lines |
+
+A model's own `PARAMETER temperature` cannot help, because the request value
+overrides it. So the seat takes the setting:
+
+```toml
+[[agent]]
+name = "gpt-oss"
+vendor = "local"
+model = "gpt-oss:20b"
+temperature = 1.0      # OpenAI's recommended setting for gpt-oss; 0 loops
+```
+
+- **Local seats only.** It is sent by the `local` adapter, which is decided by the
+  seat's [adapter](#identity-vs-protocol-the-adapter-key), not its vendor. On any
+  other seat it is a warning (`temperature applies only to local seats`) and is
+  ignored, because hosted and CLI seats own their own sampling.
+- **Unset changes nothing.** The request carries the same literal `0` as before
+  this key existed, and the config hash gains nothing, so existing cache entries
+  stay valid. Set it only for a model that needs it.
+- **Validated like `effort`.** A number from `0` to `2`, the OpenAI range, which
+  every OpenAI-compatible server accepts. A string, a boolean, `nan`, or a value
+  out of range is a **hard config error**: a silent fallback to `0` would bring
+  back exactly the empty review the operator set it to fix.
+- Part of the config hash when set, so runs at different temperatures do not
+  share a cache entry.
 
 ## Machine-readable diagnostics (`jury --doctor --json`)
 

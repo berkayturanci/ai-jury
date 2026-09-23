@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`[[agent]] temperature` for local seats** (#857). Until now the local adapter always sent `temperature: 0` and nothing could change it. gpt-oss does not survive greedy decoding: replaying a real jury prompt (a 36 KB diff) against gpt-oss 20B on Ollama, at `0` its reasoning looped ("Ok." ×164, "Stop." ×48) to the 8,192-token output cap and it never answered, and at `1` it returned a review in 164 s. A Modelfile's own `PARAMETER temperature` cannot fix this, because the request value overrides it.
+  - A local seat now takes `temperature` (a number from 0 to 2). Unset sends the same literal `0` as before and leaves the config hash unchanged, so existing configs and cache entries behave identically.
+  - Out of range, non-numeric, boolean or `nan` is a hard config error, for the same reason `effort` is: a silent fallback to `0` brings back the empty review.
+  - On a non-local seat it warns and is ignored. The local adapter is decided by the seat's `adapter`, not its vendor.
+  - When set, it is part of the config hash.
+  - `reasoning_effort` is still **not** sent to local seats: many local servers reject unknown fields, which is why `local` was left out of `effort` (#662). For a local reasoning model, set the level in the model itself.
+  - `tests/test_local_temperature.py`.
+
 ## [1.19.1] - 2026-09-23
 
 ### Changed

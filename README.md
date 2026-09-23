@@ -715,6 +715,11 @@ continues with the other agents). See the
 [benchmark note](benchmark/README.md#local--open-weight-reviewer-issue-43) for the
 measured diversity contribution.
 
+A local seat decodes greedily (`temperature = 0`) by default. Some reasoning
+models loop at 0 and never answer; gpt-oss is one of them. Give such a seat
+`temperature = 1.0`, which is what OpenAI recommends for gpt-oss. See
+[sampling temperature](docs/configuration.md#sampling-temperature-agent-temperature-local-seats).
+
 ## Repository review policy (optional)
 
 A repository under review may ship an optional, separate **review policy** that

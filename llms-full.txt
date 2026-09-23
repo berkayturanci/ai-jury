@@ -185,6 +185,7 @@ extra_args = ["--output-format", "text", "--disallowed-tools", "Edit,Write,Noteb
 # vendor = "local"
 # model = "qwen2.5-coder:7b"
 # endpoint = "http://localhost:11434/v1"   # OpenAI-compatible (Ollama/llama.cpp/vLLM/LM Studio)
+# temperature = 1.0   # optional; default 0 (greedy). gpt-oss loops at 0 and needs 1.
 ```
 
 Scaffold the file with `jury init` instead of writing it by hand. See
@@ -205,7 +206,7 @@ Antigravity `--sandbox`; `privilege.py` audits this. Invocations:
 - Anthropic `ClaudeAdapter`: `claude -p "<prompt>" --output-format text`
 - OpenAI `CodexAdapter`: `codex exec` (prompt on stdin), `-s read-only`
 - Google `AgyAdapter`: `agy --print "<prompt>" --sandbox`
-- local `LocalAdapter`: HTTP `POST {endpoint}/v1/chat/completions` (stdlib `urllib`)
+- local `LocalAdapter`: HTTP `POST {endpoint}/v1/chat/completions` (stdlib `urllib`), `temperature` 0 unless the seat sets one
 - `MockAdapter`: deterministic, phase-aware output; no subprocess (tests/CI).
 
 ## Output formats

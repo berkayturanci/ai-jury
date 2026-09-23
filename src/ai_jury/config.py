@@ -461,7 +461,28 @@ KNOWN_AGENT_KEYS = (
     # Cost tier (issue #714): what tiered routing reads to decide which seats
     # sit on a routine diff and which one anchors it.
     "tier",
+    # Sampling temperature for a local seat's chat-completions request. Some
+    # open-weight models (gpt-oss) loop under the greedy default of 0.
+    "temperature",
 )
+
+#: Inclusive bounds for ``[[agent]] temperature`` — the OpenAI chat-completions
+#: range, which every OpenAI-compatible local server accepts.
+TEMPERATURE_MIN = 0.0
+TEMPERATURE_MAX = 2.0
+
+
+def is_valid_temperature(value) -> bool:
+    """Whether *value* is a usable ``[[agent]] temperature`` (pure).
+
+    A TOML integer or float in ``[TEMPERATURE_MIN, TEMPERATURE_MAX]``. ``bool``
+    is refused although it subclasses ``int`` (``temperature = true`` is a typo,
+    not 1.0), and ``nan`` fails the range test like any other out-of-range value.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    return TEMPERATURE_MIN <= value <= TEMPERATURE_MAX
+
 
 #: Accepted values for ``[[agent]] effort`` / ``--effort`` (issue #662).
 #: Duplicated as a literal rather than imported from ``adapters`` so config
@@ -938,6 +959,25 @@ def validate_config(data: dict, strict: bool = False) -> list:
                 f"agent '{label}' tier must be one of {', '.join(KNOWN_TIERS)} (got {tier!r})."
             )
 
+        # Sampling temperature. Hard when present and not a number in range,
+        # for the reason `effort` is: `temperature = "1"` or `= 5` would
+        # otherwise fall back to the greedy default, and a model that loops at 0
+        # (gpt-oss) returns an empty review the operator believes they fixed.
+        # Only the local adapter sends it; on any other seat it is a warning,
+        # because the seat still runs — without the setting the operator wrote.
+        temperature = agent.get("temperature")
+        if temperature is not None:
+            if not is_valid_temperature(temperature):
+                errors.append(
+                    f"agent '{label}' temperature must be a number from "
+                    f"{TEMPERATURE_MIN:g} to {TEMPERATURE_MAX:g} (got {temperature!r})."
+                )
+            elif adapter != "local":
+                warnings.append(
+                    f"agent '{label}' temperature applies only to local seats "
+                    f"(adapter '{adapter}' does not send it); ignored."
+                )
+
         # Known vendor (soft). The warning names the CONSEQUENCE, not just the
         # fact: the fallback seat still runs, but it answers to `cli` at the
         # cross-vendor gate, so two of them are one vendor (issue #701).
@@ -1025,6 +1065,10 @@ class AgentSpec:
     # `validate_config` and falls back to the default here so the reader never
     # carries a spelling no rule knows.
     tier: str = DEFAULT_TIER
+    # Sampling temperature a local seat sends. ``None`` keeps the local
+    # adapter's greedy default of 0, byte for byte. Declared last for the reason
+    # `adapter` was: no positional construction site is re-bound.
+    temperature: float | None = None
 
     def __post_init__(self) -> None:
         # The single normalisation point. Every construction site — `_from_dict`,
@@ -1383,6 +1427,10 @@ def _from_dict(data: dict) -> JuryConfig:
         effort_val = str(raw_effort).strip().lower() if isinstance(raw_effort, str) else None
         raw_tier = raw.get("tier")
         tier_val = str(raw_tier).strip().lower() if isinstance(raw_tier, str) else ""
+        # An invalid value is refused by `validate_config`; here it reads as
+        # unset, like an unknown `effort`, so this reader never carries it.
+        raw_temperature = raw.get("temperature")
+        temperature_val = float(raw_temperature) if is_valid_temperature(raw_temperature) else None
         agents.append(
             AgentSpec(
                 name=raw["name"],
@@ -1406,6 +1454,7 @@ def _from_dict(data: dict) -> JuryConfig:
                 # and a second normalisation here would be a second place to keep
                 # in step (issue #701 r3, extended by #705).
                 adapter=raw.get("adapter"),
+                temperature=temperature_val,
             )
         )
     return JuryConfig(
@@ -1572,6 +1621,12 @@ def config_hash(config: JuryConfig) -> str:
                 # the table happened to be written in.
                 "api_key_env": a.api_key_env,
                 "headers": sorted(a.headers.items()),
+                # The sampling temperature changes what a local seat answers —
+                # at 0 gpt-oss returns nothing, at 1 a review — so a cached
+                # outcome from one must not serve the other. Conditional for the
+                # reason `tier` is: an unset key means what it meant before it
+                # existed, so every existing cache entry stays byte-identical.
+                **({"temperature": a.temperature} if a.temperature is not None else {}),
             }
             for a in config.agents
         ],

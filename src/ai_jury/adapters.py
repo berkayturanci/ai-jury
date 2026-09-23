@@ -1278,6 +1278,10 @@ class LocalAdapter(Adapter):
     ``endpoint`` (base URL, default ``http://localhost:11434/v1``), and a
     ``model``. ``extra_args`` is unused. An unreachable server fails with the
     typed ``connection_error`` code (issue #29) rather than a crash.
+
+    ``temperature`` is sent as configured, else the greedy ``0``. Greedy is the
+    right default for a reviewer, but some models do not survive it: gpt-oss
+    loops in its reasoning at 0 until its output cap and never answers.
     """
 
     SUPPORTS_HEADLESS = True
@@ -1304,7 +1308,8 @@ class LocalAdapter(Adapter):
             "model": self.resolved_model(),
             "messages": [{"role": "user", "content": prompt}],
             "stream": False,
-            "temperature": 0,
+            # Unset keeps the literal `0` every earlier release sent.
+            "temperature": 0 if self.spec.temperature is None else self.spec.temperature,
         }
 
     @staticmethod
