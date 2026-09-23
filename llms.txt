@@ -20,8 +20,9 @@ Key facts:
   result cache.
 - Secure by default: reviewers read attacker-controlled diffs, so Claude gets no tools at
   all, Codex runs `-s read-only` (it can still read files), and native reviewers start in
-  an empty directory; Antigravity's `--sandbox` does not confine it, so keep it off
-  untrusted PRs.
+  an empty directory. The default panel is Claude + Codex: Antigravity (`agy`) is
+  opt-in only, because its `--sandbox` does not confine it; an agy seat always warns
+  and fails `--strict`.
 - Output: markdown / JSON / SARIF report; optional GitHub summary + inline comments;
   structured findings (severity/file/line); CI gating via exit code.
 - Privacy: `diff-only` context by default; secret redaction on by default; local-first.

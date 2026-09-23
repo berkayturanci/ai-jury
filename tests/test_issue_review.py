@@ -18,12 +18,17 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from ai_jury import cli, github, prompts  # noqa: E402
-from ai_jury.config import DEFAULT_CONFIG, JuryConfig, _from_dict  # noqa: E402
+from ai_jury.config import AGY_AGENT, DEFAULT_CONFIG, JuryConfig, _from_dict  # noqa: E402
 from ai_jury.orchestrator import run_jury  # noqa: E402
+
+#: The three-vendor mock panel these tests were written against. `agy` left the
+#: built-in default panel (it cannot be confined for untrusted diffs), so it is
+#: seated explicitly here, as a user config would.
+THREE_VENDOR_MOCK_PANEL = {**DEFAULT_CONFIG, "agent": [*DEFAULT_CONFIG["agent"], AGY_AGENT]}
 
 
 def _config() -> JuryConfig:
-    return _from_dict(DEFAULT_CONFIG)
+    return _from_dict(THREE_VENDOR_MOCK_PANEL)
 
 
 def _run_cli(argv):

@@ -23,7 +23,9 @@ synthesize one verdict. Entry point: `ai_jury.cli:main`.
 - **Read-only / secure by default.** Reviewers process attacker-controlled diffs,
   so agents run sandboxed (Claude with no tools: `--tools ""`, `--disallowed-tools …`,
   `--strict-mcp-config`; Codex `-s read-only`;
-  Antigravity `--sandbox`). `privilege.py` audits this. Don't loosen defaults.
+  Antigravity `--sandbox`, which does not confine it — so agy is opt-in only,
+  never in the default panel, and always flagged). `privilege.py` audits this.
+  Don't loosen defaults.
 - **Project-agnostic.** No downstream/private project names or workflows in core.
 
 ## Commands

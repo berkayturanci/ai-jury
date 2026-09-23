@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from ai_jury import policy as policy_mod  # noqa: E402
 from ai_jury import prompts  # noqa: E402
-from ai_jury.config import DEFAULT_CONFIG, _from_dict  # noqa: E402
+from ai_jury.config import AGY_AGENT, DEFAULT_CONFIG, _from_dict  # noqa: E402
 from ai_jury.orchestrator import run_jury  # noqa: E402
 from ai_jury.policy import (  # noqa: E402
     PolicyError,
@@ -43,8 +43,14 @@ severity = "blocker"
 """
 
 
+#: The three-vendor mock panel these tests were written against. `agy` left the
+#: built-in default panel (it cannot be confined for untrusted diffs), so it is
+#: seated explicitly here, as a user config would.
+THREE_VENDOR_MOCK_PANEL = {**DEFAULT_CONFIG, "agent": [*DEFAULT_CONFIG["agent"], AGY_AGENT]}
+
+
 def _config():
-    return _from_dict(DEFAULT_CONFIG)
+    return _from_dict(THREE_VENDOR_MOCK_PANEL)
 
 
 class LoadPolicyTest(unittest.TestCase):

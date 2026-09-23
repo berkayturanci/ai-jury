@@ -124,7 +124,7 @@
       {
         "@type": "Question",
         "name": "How does ai-jury keep secrets and untrusted diffs safe?",
-        "acceptedAnswer": { "@type": "Answer", "text": "Reviewers read attacker-controlled diffs, so they get as little as each CLI allows. The claude seat has no tools at all; the codex seat runs a read-only sandbox but can still read files; the agy seat is not confined by its sandbox, so keep it off untrusted pull requests. Each native reviewer starts in an empty directory rather than your repository, diff-only context is the default, and secret redaction is on before anything is sent." }
+        "acceptedAnswer": { "@type": "Answer", "text": "Reviewers read attacker-controlled diffs, so they get as little as each CLI allows. The claude seat has no tools at all; the codex seat runs a read-only sandbox but can still read files; agy is opt-in only and not in the default panel, because its sandbox does not confine it. Each native reviewer starts in an empty directory rather than your repository, diff-only context is the default, and secret redaction is on before anything is sent." }
       }
     ]
   }
@@ -666,7 +666,7 @@ endpoint = <span class="s">"http://localhost:11434/v1"</span></code></pre>
         <div class="feature reveal" data-d="3">
           <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
           <h3>Secure by default</h3>
-          <p>Reviewers read attacker-controlled diffs. The <code>claude</code> seat gets no tools at all; <code>codex</code> runs <code>-s read-only</code> but can still read files; <code>agy</code> is not confined by its sandbox, so keep it off untrusted PRs. Native reviewers start in an empty directory, not your repo. <code>diff-only</code> context plus secret redaction are on by default.</p>
+          <p>Reviewers read attacker-controlled diffs. The <code>claude</code> seat gets no tools at all; <code>codex</code> runs <code>-s read-only</code> but can still read files; <code>agy</code> is opt-in only, because its sandbox does not confine it. Native reviewers start in an empty directory, not your repo. <code>diff-only</code> context plus secret redaction are on by default.</p>
         </div>
         <div class="feature reveal" data-d="1">
           <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div>
@@ -904,7 +904,7 @@ endpoint = <span class="s">"http://localhost:11434/v1"</span></code></pre>
         </details>
         <details class="qa">
           <summary>How does it keep secrets and untrusted diffs safe?<span class="chev"></span></summary>
-          <div class="qa-body"><p>Reviewers read attacker-controlled diffs, so they get as little as each CLI allows. The <code class="mono">claude</code> seat has no tools at all; the <code class="mono">codex</code> seat runs a read-only sandbox but can still read files; the <code class="mono">agy</code> seat is not confined by its sandbox, so keep it off untrusted pull requests. Each native reviewer starts in an empty directory rather than your repository, <code class="mono">diff-only</code> context is the default, and secret redaction is on before anything is sent. See the <a href="docs.html#security">security model</a>.</p></div>
+          <div class="qa-body"><p>Reviewers read attacker-controlled diffs, so they get as little as each CLI allows. The <code class="mono">claude</code> seat has no tools at all; the <code class="mono">codex</code> seat runs a read-only sandbox but can still read files; <code class="mono">agy</code> is opt-in only and not in the default panel, because its sandbox does not confine it. Each native reviewer starts in an empty directory rather than your repository, <code class="mono">diff-only</code> context is the default, and secret redaction is on before anything is sent. See the <a href="docs.html#security">security model</a>.</p></div>
         </details>
       </div>
     </section>

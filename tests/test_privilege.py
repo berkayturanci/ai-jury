@@ -25,6 +25,14 @@ DENY = "Edit,Write,NotebookEdit,Bash,Read,Grep,Glob,WebFetch,WebSearch,Task,Agen
 LOCKDOWN = ["--tools", "", "--strict-mcp-config"]
 
 
+def agy_warning(label: str) -> str:
+    """The one warning every agy seat draws: `--sandbox` does not confine agy."""
+    return (
+        f"agent '{label}' (agy) cannot be confined: even with --sandbox it reads and "
+        f"writes files and reaches the network; do not use it on untrusted diffs."
+    )
+
+
 class AuditAgentTest(unittest.TestCase):
     def test_claude_without_disallowed_tools_is_spawned_locked_down(self):
         # Issue #750: the recommended configuration — a `claude` seat with no
@@ -134,7 +142,8 @@ class AuditAgentTest(unittest.TestCase):
             privilege.enforce_read_only("google", list(spec.extra_args)),
             ["--sandbox", "--dangerously-skip-permissions"],
         )
-        self.assertEqual(privilege.audit_agent(spec), [])
+        # Sandboxed, so nothing about the sandbox — only that agy is agy.
+        self.assertEqual(privilege.audit_agent(spec), [agy_warning("agy")])
 
     def test_yolo_flag_is_spawned_sandboxed(self):
         spec = AgentSpec(name="gemini", vendor="google", command="gemini", extra_args=["--yolo"])
@@ -142,7 +151,7 @@ class AuditAgentTest(unittest.TestCase):
             privilege.enforce_read_only("google", list(spec.extra_args)),
             ["--sandbox", "--yolo"],
         )
-        self.assertEqual(privilege.audit_agent(spec), [])
+        self.assertEqual(privilege.audit_agent(spec), [agy_warning("gemini")])
 
     def test_full_auto_flag_warns(self):
         # Still warns after #750, and deliberately: unlike `--yolo`, codex's
@@ -175,7 +184,8 @@ class AuditAgentTest(unittest.TestCase):
             command="agy",
             extra_args=["--dangerously-skip-permissions", "--sandbox"],
         )
-        self.assertEqual(privilege.audit_agent(spec), [])
+        # No sandbox warning; the one that remains is that agy is not confinable.
+        self.assertEqual(privilege.audit_agent(spec), [agy_warning("agy")])
 
     # Issue #300: an unsandboxed non-claude agent must warn even with no
     # dangerous flag (closes the audit blind spot).
@@ -275,7 +285,8 @@ class AuditPrivilegeTest(unittest.TestCase):
                 extra_args=["--dangerously-skip-permissions"],
             ),
         ]
-        self.assertEqual(privilege.audit_privilege(specs), [])
+        # Every sandbox gap is closed; agy's own warning is not about a gap.
+        self.assertEqual(privilege.audit_privilege(specs), [agy_warning("agy")])
 
     def test_codex_workspace_write_produces_dangerous_flag_warning(self):
         spec = AgentSpec(
@@ -483,7 +494,7 @@ class ASandboxIsNotSettledByTheFirstOneNamed(unittest.TestCase):
         """agy's `--yolo` only skips approvals; its sandbox still holds."""
         spec = AgentSpec(name="agy", vendor="google", command="agy", extra_args=["--yolo"])
 
-        self.assertEqual(privilege.audit_agent(spec), [])
+        self.assertEqual(privilege.audit_agent(spec), [agy_warning("agy")])
 
     def test_agys_boolean_sandbox_selects_nothing(self):
         """A bare `--sandbox`, or one followed by another flag, names no value."""
@@ -491,7 +502,7 @@ class ASandboxIsNotSettledByTheFirstOneNamed(unittest.TestCase):
             with self.subTest(extra=extra):
                 spec = AgentSpec(name="agy", vendor="google", command="agy", extra_args=extra)
 
-                self.assertEqual(privilege.audit_agent(spec), [])
+                self.assertEqual(privilege.audit_agent(spec), [agy_warning("agy")])
 
     def test_the_equals_spelling_of_a_selector_is_matched_too(self):
         """`-s=` (#316) and `--disallowed-tools=` (#717) are already first-class here."""
@@ -541,10 +552,13 @@ class ASandboxIsNotSettledByTheFirstOneNamed(unittest.TestCase):
         for name in ("codex-vs-gemini", "agy"):
             spec = AgentSpec(name=name, vendor="google", command="agy", extra_args=["--yolo"])
             argvs.add(tuple(adapters._read_only_extra_args(spec)))
-            verdicts.add(tuple(privilege.audit_agent(spec)))
+            # The label differs by construction; the verdict must not.
+            verdicts.add(
+                tuple(w.replace(f"'{name}'", "'<seat>'") for w in privilege.audit_agent(spec))
+            )
 
         self.assertEqual(len(argvs), 1)
-        self.assertEqual(verdicts, {()})
+        self.assertEqual(verdicts, {(agy_warning("<seat>"),)})
 
     def test_a_seat_carrying_both_kinds_is_described_by_the_worse_one(self):
         """`all(...)` picked the milder sentence when a seat had a selector too."""

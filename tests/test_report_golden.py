@@ -41,6 +41,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from ai_jury.adapters import AgentResult  # noqa: E402
 from ai_jury.config import (  # noqa: E402
+    AGY_AGENT,
     DEFAULT_CONFIG,
     JuryConfig,
     _from_dict,
@@ -63,8 +64,14 @@ SAMPLE_DIFF = """diff --git a/src/example.py b/src/example.py
 _DURATION_RE = re.compile(r"\b\d+s\b")
 
 
+#: The three-vendor mock panel these tests were written against. `agy` left the
+#: built-in default panel (it cannot be confined for untrusted diffs), so it is
+#: seated explicitly here, as a user config would.
+THREE_VENDOR_MOCK_PANEL = {**DEFAULT_CONFIG, "agent": [*DEFAULT_CONFIG["agent"], AGY_AGENT]}
+
+
 def _config() -> JuryConfig:
-    return _from_dict(DEFAULT_CONFIG)
+    return _from_dict(THREE_VENDOR_MOCK_PANEL)
 
 
 def _normalize(report: str) -> str:

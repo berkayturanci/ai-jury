@@ -140,7 +140,8 @@ shipped defaults give each as little as its CLI allows — Claude no tools at al
 (`--tools ""`, a deny list of every write, shell, read, network and subagent tool,
 `--strict-mcp-config`, `--permission-mode dontAsk`), Codex `-s read-only`,
 Antigravity `--sandbox` (which, measured, does not stop it reading, writing or
-reaching the network; see [security.md](security.md#other-agents)). A panel call
+reaching the network, so agy is opt-in only — not in the default panel, and
+flagged by the audit whenever seated; see [security.md](security.md#other-agents)). A panel call
 of any of the three starts in a fresh, empty temporary directory. `privilege.py` both *enforces* this at the adapter layer and *audits*
 the argv that enforcement produces. Enforcement is narrower than it sounds, and the
 audit is what covers the rest: it **injects** a sandbox when the config

@@ -27,7 +27,7 @@ from ai_jury.adapters import (  # noqa: E402
     Adapter,
     AgentResult,
 )
-from ai_jury.config import DEFAULT_CONFIG, AgentSpec, _from_dict  # noqa: E402
+from ai_jury.config import AGY_AGENT, DEFAULT_CONFIG, AgentSpec, _from_dict  # noqa: E402
 from ai_jury.consensus import demote_local_only_groups, group_findings  # noqa: E402
 from ai_jury.findings import Finding, Verdict  # noqa: E402
 from ai_jury.orchestrator import (  # noqa: E402
@@ -59,8 +59,14 @@ index 0000000..1111111 100644
 """
 
 
+#: The three-vendor mock panel these tests were written against. `agy` left the
+#: built-in default panel (it cannot be confined for untrusted diffs), so it is
+#: seated explicitly here, as a user config would.
+THREE_VENDOR_MOCK_PANEL = {**DEFAULT_CONFIG, "agent": [*DEFAULT_CONFIG["agent"], AGY_AGENT]}
+
+
 def _cfg(**over):
-    c = _from_dict(DEFAULT_CONFIG)
+    c = _from_dict(THREE_VENDOR_MOCK_PANEL)
     for k, v in over.items():
         setattr(c, k, v)
     return c
@@ -197,7 +203,9 @@ class RunJuryBranches(unittest.TestCase):
         self.assertIn("least-privilege", str(ctx.exception))
 
     def test_strict_missing_cli_raises(self):
-        cfg = _cfg()
+        # The default panel: an agy seat would fail --strict on its privilege
+        # warning before availability is ever checked.
+        cfg = _from_dict(DEFAULT_CONFIG)
         amap = {s.name: ScriptedAdapter(s, available_flag=False) for s in cfg.enabled_agents}
         with (
             mock.patch("ai_jury.orchestrator.make_adapter", _patched_make(amap)),

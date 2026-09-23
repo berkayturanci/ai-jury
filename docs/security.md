@@ -137,7 +137,18 @@ content; the least-privilege audit (`--strict` to fail the run) will flag it.
   list names only tools that CLI still has (it warns on stderr about any other).
   A Claude Code too old to know one of the flags rejects it, and the seat fails
   soft (`nonzero_exit`) rather than running open.
-- **`agy`** runs with `--sandbox`, which the CLI describes as terminal
+- **`agy` is opt-in only: it is not in the default panel.** A run with no
+  `jury.toml` seats `claude` and `codex` (two vendors, so the default
+  `min_vendors = 2` guard is still met), and `jury init` never picks agy on its
+  own — not from detection, not in a preset, not as an interactive default. It is
+  written only when named (`jury init --agents agy`), with a warning. Every panel
+  run with an enabled agy seat draws a least-privilege warning, and `--strict`
+  fails the run on it; a disabled seat (`enabled = false`) draws nothing. A
+  machine whose only CLI is agy is told why it was not used, in the "no usable
+  agents" error, `jury --doctor` and the local-model fallback. `jury run-agent
+  --agent agy` still works, including the implementer role. The reason:
+
+  an **`agy`** seat runs with `--sandbox`, which the CLI describes as terminal
   restrictions, and `--dangerously-skip-permissions`, which auto-approves every
   tool request. **`--sandbox` does not make it read-only.** Measured against agy
   1.2.9 on macOS with that shipped argv, in an empty working directory, a prompt
@@ -148,11 +159,9 @@ content; the least-privilege audit (`--strict` to fail the run) will flag it.
   Dropping `--dangerously-skip-permissions` makes headless agy deny the tool call
   instead, but on the same CLI a real review prompt then tried a command, was
   denied, and returned no review at all, twice out of two runs, so the shipped
-  seat keeps the flag. Treat an `agy` seat as able to do what your user can do;
-  keep it off a panel that reviews pull requests you do not trust
-  (`enabled = false` on its `[[agent]]`, or leave it out of `jury.toml`). A
-  config that omits `--sandbox` has it injected at spawn time, and the
-  least-privilege audit does not flag the shipped agy argv.
+  seat keeps the flag. Treat an `agy` seat as able to do what your user can do,
+  and seat it only for diffs you trust. A config that omits `--sandbox` has it
+  injected at spawn time, and the audit warns about the seat whatever its flags.
 - **`anthropic-api` / `openai-api` / `google-api`** (hosted-API reviewers) are out of
   scope for the sandbox audit entirely, and there is no `--strict` finding to fix here:
   unlike every CLI-backed adapter, a hosted-API call makes a single HTTP request with
@@ -267,7 +276,8 @@ make the reviewers approve a bad change or suppress findings. This is a classic
 4. **Least privilege.** Reviewers must run **read-only**, so that a successful
    injection cannot escalate to file edits, shell execution or network side
    effects. How close each shipped seat comes to that differs by CLI, and the
-   table below says so — `agy`'s `--sandbox` does not get there. Every seat's
+   table below says so — `agy`'s `--sandbox` does not get there, which is why agy
+   is opt-in and always flagged. Every seat's
    `extra_args` pass through
    `privilege.enforce_read_only` on the way to the process, which **injects** the
    sandbox when the config names none. Injection is not override: a config that
@@ -280,8 +290,8 @@ make the reviewers approve a bad change or suppress findings. This is a classic
    | Agent | Read-only invocation (shipped default) | Writes / shell | Reads files outside the diff | Network |
    | --- | --- | --- | --- | --- |
    | `claude` | `--tools ""`, `--disallowed-tools` naming every write, shell, read, network and subagent tool, `--strict-mcp-config`, `--permission-mode dontAsk` | no | no | no |
-   | `codex` | `-s read-only` (the diff is fetched by the jury via `gh`, not by the agent) | no writes; shell commands run inside the read-only sandbox | **yes** — any file your user can read | none from its shell; MCP servers from your codex config run outside the sandbox |
-   | `agy` / gemini | `--sandbox` with `--dangerously-skip-permissions` | **yes** — wrote files in its directory, another temporary directory and the home directory (measured) | **yes** (measured) | **yes** (measured) |
+   | `codex` | `-s read-only` (the diff is fetched by the jury via `gh`, not by the agent) | no writes; shell commands run inside the read-only sandbox | **yes** — any file your user can read, by absolute path | none from its shell; the MCP servers enabled in your `~/.codex/config.toml` still load, and run outside the sandbox |
+   | `agy` / gemini (opt-in, not in the default panel; always warned about) | `--sandbox` with `--dangerously-skip-permissions` | **yes** — wrote files in its directory, another temporary directory and the home directory (measured) | **yes** (measured) | **yes** (measured) |
    | `cli` / `xai` | whatever you configure | whatever you configure | whatever you configure | whatever you configure |
 
    Every row was measured with the shipped argv, in an empty working directory,
@@ -295,9 +305,9 @@ make the reviewers approve a bad change or suppress findings. This is a classic
    spawned with the full no-tool lockdown, and used to be reported as write-capable.
 
    The audit is **advisory by default** (warnings surfaced in `run_jury`);
-   `--strict` promotes these warnings to a hard failure. The shipped defaults are
-   the ones this tool can confine and raise **no** warnings — which, for `agy`,
-   is not the same as being confined (see the table). The audit fires for what enforcement cannot fix — a sandbox you
+   `--strict` promotes these warnings to a hard failure. The default panel
+   (`claude`, `codex`) raises **no** warnings. The audit fires for any enabled
+   `agy` seat, and for what enforcement cannot fix — a sandbox you
    widened on purpose (codex `-s danger-full-access`, `-s workspace-write`), a
    second sandbox selected beside the enforced one (`--full-auto`), a `claude`
    seat given tools back (`--tools …`) or MCP servers (`--mcp-config`), or a
@@ -315,7 +325,7 @@ an attack but is not a complete defense. The primary guarantees come from
 structured-output validation (the gate cannot be talked into approving) and
 least-privilege execution: the `claude` seat has no tools at all, and the `codex`
 seat cannot write and its shell has no network, though it can read files your user
-can read. The shipped `agy` seat is not confined — it can read and write files and
-reach the network — and what any reviewer reads can surface in the review it
-posts.
+can read. An `agy` seat, which only a config that names it gets, is not confined
+— it can read and write files and reach the network — and what any reviewer reads
+can surface in the review it posts.
 Human review of flagged PRs remains the backstop.

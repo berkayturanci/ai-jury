@@ -50,15 +50,18 @@ jury init --agents claude,codex,qwen --rounds 2   # non-interactive / scriptable
 > automatically — so `git diff main... | jury --diff-file -` just works offline.
 
 **Outcome:** a validated `jury.toml` using the secure-by-default agent templates
-(Claude with no tools, Codex read-only, Antigravity under `--sandbox` — see
-[security.md](security.md#other-agents) for what each can still reach). It won't overwrite
+(Claude with no tools, Codex read-only — see [security.md](security.md#other-agents)
+for what each can still reach). Antigravity (`agy`) is never picked on its own —
+not from detection, not by a preset — because it cannot be confined for untrusted
+diffs; `jury init --agents agy` writes it, with a warning. It won't overwrite
 an existing file without `--force`.
 
 ---
 
 ## 1. Review a local branch before opening a PR
 
-**Prerequisites:** at least one agent CLI (`claude`, `codex`, or `agy`). No `gh`
+**Prerequisites:** at least one agent CLI (`claude` or `codex`; `agy` only if you
+seat it by name). No `gh`
 needed — this reviews a diff, not a PR.
 
 Pipe the branch diff straight into the jury via stdin (`--diff-file -`):

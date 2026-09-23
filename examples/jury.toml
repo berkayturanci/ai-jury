@@ -60,7 +60,11 @@ vendor = "openai"
 command = "codex"
 extra_args = ["-s", "read-only"]
 
-# Google Antigravity CLI
+# Google Antigravity CLI — opt-in only, and disabled here. agy is not in the
+# default panel because it cannot be confined for untrusted diffs: measured on
+# agy 1.2.9, `--sandbox` did not stop it reading or writing files or reaching
+# the network, and it has no flag that removes its tools. Enable it only for
+# diffs you trust; every run with it enabled warns, and `--strict` fails.
 [[agent]]
 name = "agy"
 vendor = "google"

@@ -28,10 +28,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - A relative path in a native seat's `extra_args` (`--mcp-config ./servers.json`) now resolves against that empty directory; use an absolute path.
   - Not moved: bring-your-own `cli`/`xai` seats and custom registered adapters, whose CLI may need its directory, and `jury run-agent`, which runs where `--cwd` says.
 - **The security documentation says what each shipped seat can reach.** `README.md`, `SECURITY.md`, `docs/security.md` and the website no longer say that reviewers cannot read files outside the diff or reach the network. That holds for `claude` only. Measured with the shipped argv:
-  - `codex -s read-only` cannot write and its shell has no network, but it can read any file the user can read, and it starts the MCP servers enabled in the user's codex configuration.
-  - `agy --sandbox --dangerously-skip-permissions` (agy 1.2.9) read and wrote files outside its working directory and reached the network. agy has no flag that removes its tools, and without `--dangerously-skip-permissions` a real review prompt returned no review twice out of two runs, so the seat is unchanged and the documentation says to keep it off panels that review untrusted pull requests.
+  - `codex -s read-only` cannot write and its shell has no network, but it can read any file the user can read, by absolute path, and the MCP servers enabled in the user's `~/.codex/config.toml` still load. Its flags are unchanged.
+  - `agy --sandbox --dangerously-skip-permissions` (agy 1.2.9) read and wrote files outside its working directory and reached the network (see the next entry).
   - A bring-your-own `cli` seat runs with whatever permissions its own flags give it.
   - `tests/test_privilege.py` (`AClaudeReviewerHasNoToolsAtAll`, `TheClaudeWriteRoleLiftsTheLockdown`), `tests/test_review_workdir.py`, `APanelSeatRunsOutsideTheRepository` in `tests/test_adapter_contracts.py`, and the `claude`/`codex` entries of `tests/golden/adapter_contracts.json`.
+- **agy is opt-in only: it is no longer in the built-in default panel.** agy cannot be confined for a reviewer of untrusted diffs: it has no flag that removes its tools, `--sandbox` did not stop it reading, writing or reaching the network, and without `--dangerously-skip-permissions` a real review prompt returned no review twice out of two runs.
+  - A run with no `jury.toml` seats `claude` and `codex`. That is still two vendors, so the default `min_vendors = 2` guard is met.
+  - `jury init` never picks agy on its own. Detection, the `fast`/`balanced`/`thorough` presets, and the interactive and wizard defaults leave it out; `--list-agents` still shows it, marked opt-in. `jury init --agents agy` writes the seat and warns.
+  - Every panel run with an enabled agy seat draws a least-privilege warning, which `--strict` turns into a failure: "cannot be confined: even with --sandbox it reads and writes files and reaches the network; do not use it on untrusted diffs". A disabled seat draws nothing. `jury run-agent --agent agy` still resolves, and its implementer role is unchanged.
+  - A machine whose only agent CLI is agy is told why it was not used: the "no usable agents" error, `jury --doctor` and the local-model fallback add that agy is not in the default panel because it cannot be confined for untrusted diffs, and that it can be added explicitly in `jury.toml`. The error no longer suggests installing agy.
+  - The repository's own `jury.toml` and `examples/jury.toml` keep an agy seat, disabled, with the reason beside it.
+  - `tests/test_agy_opt_in.py`. Test fixtures that relied on a three-vendor default now seat agy explicitly, and the report goldens show the warning.
 
 ## [1.19.1] - 2026-09-23
 

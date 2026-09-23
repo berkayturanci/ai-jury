@@ -66,6 +66,10 @@ REQUEST CHANGES — one confirmed major issue.
 - [minor] src/example.py:7 — codex: missing docstring (medium, by codex)
 - [minor] src/example.py:7 — agy: missing docstring (medium, by agy)
 
+> ⚠️ agent output warnings
+
+- agent 'agy' (agy) cannot be confined: even with --sandbox it reads and writes files and reaches the network; do not use it on untrusted diffs.
+
 ## Round 1 — independent reviews
 
 ### `claude` (anthropic) — 0s

@@ -38,7 +38,9 @@ Required read-only invocation per adapter (documented here and in docs/security.
                 ``--sandbox`` confines is agy's to decide: measured on agy 1.2.9,
                 the shipped argv still read and wrote files outside its
                 working directory and reached the network (docs/security.md).
-                It is the only restriction agy offers, not proof of one.
+                It is the only restriction agy offers, not proof of one — so
+                agy is out of the default panel, and every seat on this
+                adapter is flagged by :func:`audit_agent` (``--strict`` fails).
 - ``cli``/``xai`` : the operator's own binary, for which this tool knows no
                 sandbox flag to add. Nothing is enforced, so for these the
                 declared ``extra_args`` really are the whole story and an
@@ -775,6 +777,20 @@ def audit_agent(spec) -> list[str]:
                     f"unasked. Drop them — a reviewer only reads its prompt."
                 )
         return warnings
+
+    # agy is spawned with `--sandbox` (enforced above), and that is still not
+    # confinement: measured on agy 1.2.9 the shipped argv read and wrote files
+    # outside its working directory and reached the network, and agy has no
+    # flag that removes its tools. It is out of the default panel for that
+    # reason, so a seat on this adapter is one the operator configured — and is
+    # told, whatever flags it carries. The implementer role never reaches this:
+    # the audit covers panel seats only.
+    if vendor == "google":
+        warnings.append(
+            f"agent '{label}' (agy) cannot be confined: even with --sandbox it reads "
+            f"and writes files and reaches the network; do not use it on untrusted "
+            f"diffs."
+        )
 
     # Non-claude agents must run under a restricting sandbox (issue #100) — one
     # the config named, or one enforcement injected above.

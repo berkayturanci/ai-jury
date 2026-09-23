@@ -207,20 +207,53 @@ DEFAULT_CONFIG: dict = {
             # or `danger-full-access`) only if your workflow truly needs it.
             "extra_args": ["-s", "read-only"],
         },
-        {
-            "name": "agy",
-            "vendor": "google",
-            "command": "agy",
-            # `--dangerously-skip-permissions` auto-approves agy's tools: without
-            # it, headless agy denies the first command a review tries and returns
-            # no review (measured on agy 1.2.9). `--sandbox` restricts its terminal
-            # (issue #100), but on that version it did not stop the agent reading
-            # or writing files or reaching the network; docs/security.md has the
-            # measurements. agy offers no flag that removes its tools.
-            "extra_args": ["--dangerously-skip-permissions", "--sandbox"],
-        },
+        # No `agy` here: see AGY_AGENT below. A run with no jury.toml never
+        # spawns it; claude + codex are still two vendors, so the shipped
+        # DEFAULT_MIN_VENDORS guard is met by the default panel alone.
     ],
 }
+
+
+#: The Antigravity seat, for a config that asks for it by name. It is NOT in
+#: :data:`DEFAULT_CONFIG`'s panel, because agy cannot be confined for a reviewer
+#: of untrusted diffs: `--dangerously-skip-permissions` auto-approves its tools
+#: (without it, headless agy denies the first command a review tries and returns
+#: no review), and `--sandbox` (issue #100) restricts its terminal but, measured
+#: on agy 1.2.9, did not stop it reading or writing files outside its working
+#: directory or reaching the network. agy offers no flag that removes its tools.
+#: `jury init --agents agy` and `jury run-agent --agent agy` still use this entry;
+#: a panel that seats it draws a least-privilege warning (`--strict` fails).
+AGY_AGENT: dict = {
+    "name": "agy",
+    "vendor": "google",
+    "command": "agy",
+    "extra_args": ["--dangerously-skip-permissions", "--sandbox"],
+}
+
+#: Why agy is opt-in, in the words every "no reviewer" message and `jury init`
+#: use, so they cannot drift apart.
+AGY_OPT_IN_NOTE = (
+    "agy is not in the default panel because it cannot be confined for untrusted "
+    "diffs (it reads, writes and reaches the network even with --sandbox); add it "
+    "explicitly in jury.toml if you accept that (`jury init --agents agy` writes "
+    "the seat)"
+)
+
+
+def agy_opt_in_hint(adapter_keys, which) -> str | None:
+    """:data:`AGY_OPT_IN_NOTE` when agy is installed but no seat uses it, else None.
+
+    Pure but for *which* (``shutil.which`` in production), so a caller that has
+    just found no usable reviewer can tell an agy-only machine why its one CLI
+    was not used, instead of telling it to install a CLI it already has.
+    *adapter_keys* are the adapter keys of the configured seats; ``google`` is
+    agy's.
+    """
+    if "google" in set(adapter_keys):
+        return None
+    if not which(AGY_AGENT["command"]):
+        return None
+    return AGY_OPT_IN_NOTE
 
 
 # Vendors that talk HTTP directly (no CLI subprocess), so they need no
