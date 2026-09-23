@@ -11,12 +11,14 @@ would have been decided by the host.
 guard installed at import time below covers the whole run: every request to the
 default local endpoint is refused exactly as a machine with no server refuses it.
 Anything else passes through, and a test that patches `adapters._open` itself still
-sees its own patch. A single module run on its own (`-m unittest tests.test_x`) does
-not import this one and is unguarded.
+sees its own patch. A run that does not import this module is unguarded: a single
+module (`-m unittest tests.test_x`) or a narrowed pattern (`discover -p test_x.py`).
 """
 
 from __future__ import annotations
 
+import ipaddress
+import socket
 import sys
 import unittest
 import unittest.mock as mock
@@ -29,13 +31,27 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from ai_jury import adapters  # noqa: E402
 
 _PORT = urlsplit(adapters._DEFAULT_LOCAL_ENDPOINT).port
-_REFUSED = tuple(f"{host}:{_PORT}" for host in ("localhost", "127.0.0.1", "[::1]"))
 _real_open = adapters._open
 
 
+def _is_loopback(host: str) -> bool:
+    if host.rstrip(".") in ("localhost", "0.0.0.0"):
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        pass
+    try:  # the legacy IPv4 spellings a resolver accepts: `127.1`, `2130706433`
+        return ipaddress.ip_address(socket.inet_ntoa(socket.inet_aton(host))).is_loopback
+    except OSError:
+        return False
+
+
 def _refuses(target) -> bool:
-    url = str(getattr(target, "full_url", target))
-    return urlsplit(url).netloc.rsplit("@", 1)[-1] in _REFUSED
+    """Any spelling of this machine on the default port: `urlsplit` lowercases the
+    host, and `127.1` or `[0:0:0:0:0:0:0:1]` are loopback addresses too."""
+    parts = urlsplit(str(getattr(target, "full_url", target)))
+    return parts.port == _PORT and _is_loopback(parts.hostname or "")
 
 
 def _guarded_open(target, timeout):
@@ -56,6 +72,13 @@ class TheSuiteReachesNoLocalModelServer(unittest.TestCase):
             adapters._DEFAULT_LOCAL_ENDPOINT + "/models",
             f"http://127.0.0.1:{_PORT}/v1/models",
             f"http://[::1]:{_PORT}/api/tags",
+            f"http://LOCALHOST:{_PORT}/v1",
+            f"http://localhost.:{_PORT}/v1",
+            f"http://0.0.0.0:{_PORT}/v1",
+            f"http://127.0.0.2:{_PORT}/v1",
+            f"http://127.1:{_PORT}/v1",
+            f"http://[0:0:0:0:0:0:0:1]:{_PORT}/v1",
+            f"http://2130706433:{_PORT}/v1",
         ):
             with self.subTest(url), self.assertRaises(urllib.error.URLError):
                 adapters._open(url, 1)
