@@ -18,8 +18,10 @@ Key facts:
   early-stop) → optional verification pass → chair synthesis → one report. Large diffs
   are filtered + chunked; runs are bounded by an optional budget/retries and an optional
   result cache.
-- Secure by default: reviewers run sandboxed/read-only (Codex `-s read-only`, Antigravity
-  `--sandbox`, Claude write-tool denylist), since they read attacker-controlled diffs.
+- Secure by default: reviewers read attacker-controlled diffs, so Claude gets no tools at
+  all, Codex runs `-s read-only` (it can still read files), and native reviewers start in
+  an empty directory; Antigravity's `--sandbox` does not confine it, so keep it off
+  untrusted PRs.
 - Output: markdown / JSON / SARIF report; optional GitHub summary + inline comments;
   structured findings (severity/file/line); CI gating via exit code.
 - Privacy: `diff-only` context by default; secret redaction on by default; local-first.

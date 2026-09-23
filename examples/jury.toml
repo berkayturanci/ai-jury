@@ -40,12 +40,17 @@ redact_secrets = true
 name = "claude"
 vendor = "anthropic"
 command = "claude"
+# No tools for the reviewer: no file reads, no shell, no network, no MCP servers.
 extra_args = [
   "--output-format",
   "text",
+  "--tools",
+  "",
   "--disallowed-tools",
-  "Edit,Write,NotebookEdit,Bash",
-  "--dangerously-skip-permissions",
+  "Edit,Write,NotebookEdit,Bash,Read,Grep,Glob,WebFetch,WebSearch,Task,Agent",
+  "--strict-mcp-config",
+  "--permission-mode",
+  "dontAsk",
 ]
 
 # OpenAI Codex CLI

@@ -661,7 +661,8 @@ name = "claude"
 vendor = "anthropic"   # anthropic | openai | google | xai
 command = "claude"
 # model = "claude-opus-4-8"
-extra_args = ["--output-format", "text", "--disallowed-tools", "Edit,Write,NotebookEdit,Bash", "--dangerously-skip-permissions"]
+# The reviewer gets no tools: no file reads, no shell, no network, no MCP servers.
+extra_args = ["--output-format", "text", "--tools", "", "--disallowed-tools", "Edit,Write,NotebookEdit,Bash,Read,Grep,Glob,WebFetch,WebSearch,Task,Agent", "--strict-mcp-config", "--permission-mode", "dontAsk"]
 ```
 
 Override per run with `--rounds`, `--chair`, `--config`.
@@ -761,8 +762,13 @@ redact_secrets = true   # scrub recognized secrets before sending (default on)
   reviewing with `--pr`) to improve review quality. Use this only when you trust
   the configured agent endpoints.
 
-Either way, no source files outside the diff, no repository history, and no
-environment variables are read or sent.
+Either way, the jury itself reads and sends no source files outside the diff, no
+repository history, and no environment variables. What an agent CLI can reach on
+its own, once started, depends on the seat: the shipped `claude` seat has no tools
+at all, the shipped `codex` seat can read any file your user can read but not
+write or reach the network from its shell, the shipped `agy` seat can read and
+write files and reach the network, and a bring-your-own `cli` seat has whatever
+its own flags give it — see [Security & the Codex sandbox](#security--the-codex-sandbox).
 
 **Secret redaction** — before anything is sent to an agent, the diff (and any
 context) is passed through a redactor (`src/ai_jury/redaction.py`)
@@ -912,7 +918,18 @@ issues are tracked under [milestones](https://github.com/berkayturanci/ai-jury/m
 
 The jury performs **read-only review orchestration** — it sends a diff to each agent CLI and collects their feedback; it does not apply edits.
 
-The Codex adapter pipes the prompt on **stdin** (`codex exec` with no positional prompt) so non-interactive runs never hang waiting for input, and defaults `extra_args` to **`["-s", "read-only"]`** — a secure-by-default sandbox. The diff is fetched by the jury (`gh`), not by codex, so the reviewer only needs to read its prompt and print findings; a prompt injection in the diff can't make it write files, run shell, or reach the network. The `agy` agent runs under `--sandbox`, and `claude` under a write-tool denylist, for the same reason.
+The Codex adapter pipes the prompt on **stdin** (`codex exec` with no positional prompt) so non-interactive runs never hang waiting for input, and defaults `extra_args` to **`["-s", "read-only"]`** — a secure-by-default sandbox. The diff is fetched by the jury (`gh`), not by codex, so the reviewer only needs to read its prompt and print findings; a prompt injection in the diff can't make it write files, and its shell has no network. The read-only sandbox does not stop it *reading* files your user can read, and it starts the MCP servers enabled in your own codex configuration.
+
+What each shipped seat can reach while it reads an attacker-controlled diff:
+
+| Seat | Shipped flags | Writes / shell | Reads files outside the diff | Network |
+| --- | --- | --- | --- | --- |
+| `claude` | `--tools ""`, a deny list naming every write, shell, read, network and subagent tool, `--strict-mcp-config`, `--permission-mode dontAsk` | no | no | no |
+| `codex` | `-s read-only` | no writes; read-only shell | yes | not from its shell |
+| `agy` | `--sandbox --dangerously-skip-permissions` | yes — `--sandbox` did not stop it writing files | yes | yes |
+| `cli` / `xai` | yours | whatever your flags give it | whatever your flags give it | whatever your flags give it |
+
+Each row was measured with the shipped flags against Claude Code 2.1.236, codex-cli 0.155.0 and agy 1.2.9. Keep `agy` off a panel that reviews pull requests you do not trust (`enabled = false` on its `[[agent]]`). `claude`, `codex` and `agy` start each panel call in a fresh, empty temporary directory rather than the repository under review, so the instruction files, project settings and `.env` a checkout carries are not picked up; a bring-your-own seat runs where `jury` was started, with whatever permissions its own flags give it. Details in [docs/security.md](docs/security.md#other-agents).
 
 Need codex to write or reach the network for your flow? Widen `extra_args` for the `codex` agent in `jury.toml` (e.g. `-s workspace-write`). See [docs/security.md](docs/security.md) for details.
 

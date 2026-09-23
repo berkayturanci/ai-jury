@@ -93,8 +93,10 @@ data surface:
 
 - **Diff-only by default.** Agents receive only the diff. Surrounding PR context
   (title/body) is dropped unless you opt into `expanded` mode.
-- **No ambient reads.** No source files outside the diff, no repository history,
-  and no environment variables are read or sent.
+- **No ambient reads by the jury.** The jury reads and sends no source files
+  outside the diff, no repository history, and no environment variables. What an
+  agent CLI can reach on its own depends on its seat: the shipped Claude seat has
+  no tools at all; see [security.md](security.md#other-agents) for the rest.
 - **Secret redaction on by default.** The diff and any context pass through a
   redactor that masks recognized secrets before anything reaches an agent.
 - **Network only when you ask.** The tool reaches the network only to drive the

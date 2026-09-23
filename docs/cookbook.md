@@ -50,7 +50,8 @@ jury init --agents claude,codex,qwen --rounds 2   # non-interactive / scriptable
 > automatically — so `git diff main... | jury --diff-file -` just works offline.
 
 **Outcome:** a validated `jury.toml` using the secure-by-default agent templates
-(Codex read-only, Antigravity sandboxed, Claude write-tool denylist). It won't overwrite
+(Claude with no tools, Codex read-only, Antigravity under `--sandbox` — see
+[security.md](security.md#other-agents) for what each can still reach). It won't overwrite
 an existing file without `--force`.
 
 ---
@@ -986,8 +987,8 @@ when you need the exact id.
 
 **Roles decide privilege, and the flag cannot override that.** `review`, `gate`
 and `chair` always run under the vendor's read-only invocation — the exact one a
-panel review uses (`claude --disallowed-tools …`, `codex -s read-only`, `agy
---sandbox`). Passing `--allow-write` to them warns and is ignored: those roles
+panel review uses (`claude --tools "" --disallowed-tools … --strict-mcp-config`,
+`codex -s read-only`, `agy --sandbox`). Passing `--allow-write` to them warns and is ignored: those roles
 read attacker-controlled content, and a flag must not be able to make a reviewer
 write-capable. `implement` and `fix` are the only write-capable roles, and only
 with `--allow-write`; without it the command exits 2 rather than quietly running
