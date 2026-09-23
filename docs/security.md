@@ -154,14 +154,25 @@ content; the least-privilege audit (`--strict` to fail the run) will flag it.
   warning, and a failure under `--strict`:
   - a `--tools` list or an `--mcp-config`, naming the permission bypass too if
     the argv has one;
-  - a permission setting other than `dontAsk` — `--dangerously-skip-permissions`,
-    or `--permission-mode bypassPermissions`, `auto`, `acceptEdits`, `default` or
-    `plan`. It is kept rather than overridden: with `--tools ""` in force there is
-    no tool for any mode to approve, so it grants nothing, and silently replacing
-    a setting you wrote would hide what is actually running. (A
-    `--dangerously-skip-permissions` with no `--permission-mode` still gets
-    `dontAsk` injected beside it; which of the two Claude Code honours is its own
-    precedence rule, and the audit reports the flag either way.)
+  - a permission setting other than `dontAsk`. It is kept rather than overridden:
+    with `--tools ""` in force there is no tool for any mode to approve, and
+    silently replacing a setting you wrote would hide what is actually running.
+    What each one does, and what the warning says:
+    - `--dangerously-skip-permissions`: `dontAsk` is still injected beside it,
+      but the flag wins. Measured on Claude Code 2.1.236 with `Read` available: a
+      `Read` outside the working directory was denied under `dontAsk` alone, and
+      went through with `--dangerously-skip-permissions` added before or after
+      it. The seat runs in bypass mode and would approve any tool call unasked;
+      with `--tools ""` it has none to approve.
+    - `--permission-mode bypassPermissions`, `auto` or `acceptEdits`: a named mode
+      is kept and no `dontAsk` is injected, so the seat runs in that mode, which
+      approves tool calls (for `acceptEdits`, file edits) without asking; again,
+      with `--tools ""` there is nothing to approve.
+    - `--permission-mode manual` or `plan`: used instead of `dontAsk`; with
+      `--tools ""` it has nothing to act on.
+    - any other value, `default` included, or no value: Claude Code 2.1.236
+      rejects it (it accepts `acceptEdits`, `auto`, `bypassPermissions`,
+      `manual`, `dontAsk`, `plan`), so the seat fails before it reviews anything.
   - configuration beyond the prompt: `--settings`, `--setting-sources`,
     `--plugin-dir`, `--plugin-url`, `--add-dir`, `--agents`, `--agent`.
     **`--safe-mode` wins over all of these**: measured on Claude Code 2.1.236, a
