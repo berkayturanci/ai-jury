@@ -79,9 +79,13 @@ class Recorder:
     def __init__(self, stdout: str = "", stderr: str = "", returncode: int = 0):
         self.stdout, self.stderr, self.returncode = stdout, stderr, returncode
         self.calls: list[tuple[list[str], str | None, int]] = []
+        # The directory each call was started in, and what it held at the time:
+        # `None` means "this process's own directory".
+        self.workdirs: list[tuple[str | None, list[str] | None]] = []
 
-    def __call__(self, argv, stdin, timeout):
+    def __call__(self, argv, stdin, timeout, cwd=None):
         self.calls.append((list(argv), stdin, timeout))
+        self.workdirs.append((cwd, sorted(p.name for p in Path(cwd).iterdir()) if cwd else None))
         return subprocess.CompletedProcess(argv, self.returncode, self.stdout, self.stderr)
 
     @property
@@ -242,6 +246,37 @@ class TheTransportCarriesThePrompt(unittest.TestCase):
                 _result, recorder = probe(name, stdout=fixture(contract["stdout_fixture"]))
                 expected = [a if a != "<PROMPT>" else PROMPT for a in contract["argv"]]
                 self.assertEqual(recorder.argv, expected)
+
+
+class APanelSeatRunsOutsideTheRepository(unittest.TestCase):
+    """Where each locked adapter's panel invocation is started.
+
+    The three native CLIs start in a fresh empty directory, so nothing the
+    repository under review carries for them (instruction files, project settings
+    with hooks or MCP servers, a `.env`) is within reach; it is gone once the call
+    returns. A bring-your-own CLI keeps the directory `jury` was run from.
+    """
+
+    def test_native_clis_start_in_an_empty_directory_that_is_not_ours(self):
+        here = Path.cwd().resolve()
+        for name, contract in CONTRACTS.items():
+            if contract["vendor"] not in ("anthropic", "openai", "google"):
+                continue
+            with self.subTest(name):
+                _result, recorder = probe(name, stdout=fixture(contract["stdout_fixture"]))
+                cwd, entries = recorder.workdirs[-1]
+                self.assertIsNotNone(cwd, f"{name}: the reviewer ran in jury's own directory")
+                self.assertNotEqual(Path(cwd).resolve(), here)
+                self.assertEqual(entries, [])
+                self.assertFalse(Path(cwd).exists(), f"{name}: the directory outlived the call")
+
+    def test_bring_your_own_clis_keep_the_directory(self):
+        for name, contract in CONTRACTS.items():
+            if contract["vendor"] in ("anthropic", "openai", "google"):
+                continue
+            with self.subTest(name):
+                _result, recorder = probe(name, stdout=fixture(contract["stdout_fixture"]))
+                self.assertEqual(recorder.workdirs[-1], (None, None))
 
 
 class ARecordedResponseParsesIntoAReview(unittest.TestCase):

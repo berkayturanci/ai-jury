@@ -175,13 +175,25 @@ DEFAULT_CONFIG: dict = {
             "name": "claude",
             "vendor": "anthropic",
             "command": "claude",
+            # The reviewer only needs its prompt, which already carries the diff,
+            # so it gets no tools at all: `--tools ""` leaves no built-in tool
+            # available, the deny list names every write, shell, read, network and
+            # subagent tool as a second layer, and `--strict-mcp-config` with no
+            # `--mcp-config` keeps the user's own MCP servers out. `dontAsk` denies
+            # a tool call instead of prompting (so `-p` cannot hang) or approving
+            # it. `privilege.enforce_read_only` injects the same lockdown into a
+            # seat configured without it; `privilege._CLAUDE_DENIED_TOOLS` is the
+            # list below, and a test keeps the two equal.
             "extra_args": [
                 "--output-format",
                 "text",
+                "--tools",
+                "",
                 "--disallowed-tools",
-                "Edit,Write,NotebookEdit,Bash",
-                # Avoid `-p` blocking on a permission prompt in non-interactive mode.
-                "--dangerously-skip-permissions",
+                "Edit,Write,NotebookEdit,Bash,Read,Grep,Glob,WebFetch,WebSearch,Task,Agent",
+                "--strict-mcp-config",
+                "--permission-mode",
+                "dontAsk",
             ],
         },
         {
@@ -199,9 +211,12 @@ DEFAULT_CONFIG: dict = {
             "name": "agy",
             "vendor": "google",
             "command": "agy",
-            # `--dangerously-skip-permissions` avoids a non-interactive permission
-            # prompt hanging the run; `--sandbox` keeps the agent's tools
-            # restricted while it reviews untrusted content (issue #100).
+            # `--dangerously-skip-permissions` auto-approves agy's tools: without
+            # it, headless agy denies the first command a review tries and returns
+            # no review (measured on agy 1.2.9). `--sandbox` restricts its terminal
+            # (issue #100), but on that version it did not stop the agent reading
+            # or writing files or reaching the network; docs/security.md has the
+            # measurements. agy offers no flag that removes its tools.
             "extra_args": ["--dangerously-skip-permissions", "--sandbox"],
         },
     ],
