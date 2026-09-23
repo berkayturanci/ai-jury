@@ -109,9 +109,16 @@ PUBLIC_TEXT: tuple[Path, ...] = (
     *sorted((REPO_ROOT / "docs").glob("*.md")),
 )
 
-#: "100% coverage", "100 % test coverage", "coverage: 100%", "fully covered at 100%".
+#: A claim about the *whole* suite: "100% test coverage", "100 % total coverage",
+#: "test coverage: 100%", "overall coverage is 100%". The qualifier is what makes it
+#: suite-level, so a true per-module statement ("`voting.py` has 100% coverage") is
+#: not refused — the gate is a total, and a single module can be fully covered
+#: under it.
+_SUITE = r"(?:test|total|overall|code|suite|project|package)"
 FULL_COVERAGE_CLAIM = re.compile(
-    r"100\s?%[^.\n<]{0,30}\bcover|\bcover(?:age|ed)\b[^.\n<]{0,30}100\s?%", re.IGNORECASE
+    rf"100\s?%\s+{_SUITE}\s+coverage\b"
+    rf"|\b{_SUITE}\s+coverage\b[^.\n<]{{0,20}}?\b100\s?%",
+    re.IGNORECASE,
 )
 
 
@@ -128,6 +135,24 @@ class NoCoverageFigureTheGateDoesNotEnforce(unittest.TestCase):
                     [],
                     f"{path.name} claims full coverage, but fail_under is {_fail_under()}",
                 )
+
+    def test_the_pattern_refuses_suite_claims_and_allows_module_ones(self):
+        """Pin what counts as a suite-level claim, both ways."""
+        for claim in (
+            "zero runtime dependencies, 100% test coverage.",
+            "100 % total coverage",
+            "Test coverage: 100%",
+            "overall coverage is 100%",
+        ):
+            with self.subTest(claim=claim):
+                self.assertIsNotNone(FULL_COVERAGE_CLAIM.search(claim))
+        for statement in (
+            "`voting.py` has 100% coverage.",
+            "`make coverage` gate passing (theater.py 100%)",
+            "the four-vendor panel caught 100% of them",
+        ):
+            with self.subTest(statement=statement):
+                self.assertIsNone(FULL_COVERAGE_CLAIM.search(statement))
 
     def test_pyproject_records_no_measured_total(self):
         """The comment above `fail_under` said ~99.95% while the suite measured 98.95%.

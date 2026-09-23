@@ -30,7 +30,9 @@ SITE_INDEX = REPO_ROOT / "website" / "index.html"
 
 NUMBER_WORDS = {"two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7}
 
-#: Every place that counts the `[jury.ci]` keys, and how it says the number.
+#: Every place that may count the `[jury.ci]` keys, and where the count would sit.
+#: A page may drop the count (#869 allows it); only a number it does state is
+#: checked. The names are pinned separately, by `test_the_site_names_every_key`.
 CI_KEY_COUNTS: dict[str, re.Pattern[str]] = {
     "website/index.html": re.compile(r"<code>\[jury\.ci\]</code><span>(?:Exactly )?(\w+) keys:"),
     "llms.txt": re.compile(r"`\[jury\.ci\]` takes (\w+) keys"),
@@ -43,6 +45,11 @@ DESCRIPTION_BLOCKQUOTES = ("README.md", "llms.txt", "llms-full.txt", "website/ll
 
 def _description() -> str:
     return tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))["project"]["description"]
+
+
+def _as_count(word: str) -> int | None:
+    """The number a word states, or ``None`` when it states none."""
+    return int(word) if word.isdigit() else NUMBER_WORDS.get(word.lower())
 
 
 def _first_blockquote(path: Path) -> str:
@@ -59,15 +66,28 @@ def _first_blockquote(path: Path) -> str:
 class TheJuryCiKeyCountIsTheSchemas(unittest.TestCase):
     def test_every_stated_count_matches_the_config_schema(self):
         for rel, pattern in CI_KEY_COUNTS.items():
-            with self.subTest(file=rel):
-                found = pattern.findall((REPO_ROOT / rel).read_text(encoding="utf-8"))
-                self.assertEqual(len(found), 1, f"{rel} no longer counts the [jury.ci] keys")
-                self.assertEqual(
-                    NUMBER_WORDS.get(found[0].lower()),
-                    len(KNOWN_CI_KEYS),
-                    f"{rel} says [jury.ci] has {found[0]} keys; the schema has "
-                    f"{len(KNOWN_CI_KEYS)}: {', '.join(KNOWN_CI_KEYS)}",
-                )
+            text = (REPO_ROOT / rel).read_text(encoding="utf-8")
+            for word in pattern.findall(text):
+                count = _as_count(word)
+                if count is None:
+                    continue  # "The keys:", say — no number is claimed
+                with self.subTest(file=rel, stated=word):
+                    self.assertEqual(
+                        count,
+                        len(KNOWN_CI_KEYS),
+                        f"{rel} says [jury.ci] has {word} keys; the schema has "
+                        f"{len(KNOWN_CI_KEYS)}: {', '.join(KNOWN_CI_KEYS)}",
+                    )
+
+    def test_a_page_may_drop_the_count(self):
+        pattern = CI_KEY_COUNTS["website/index.html"]
+        for entry, stated in (
+            ("<code>[jury.ci]</code><span>The keys: ", None),
+            ("<code>[jury.ci]</code><span>Exactly three keys: ", 3),
+            ("<code>[jury.ci]</code><span>4 keys: ", 4),
+        ):
+            with self.subTest(entry=entry):
+                self.assertEqual([_as_count(w) for w in pattern.findall(entry)], [stated])
 
     def test_the_site_names_every_key(self):
         text = SITE_INDEX.read_text(encoding="utf-8")
