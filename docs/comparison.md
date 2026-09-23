@@ -51,7 +51,7 @@ Legend: ✅ yes · ➖ partial / optional · ❌ no · — not applicable.
 | Offline / local open-weight reviewer | ✅ (`vendor = "local"`, Ollama/etc., $0) | ➖ | ➖ | ❌ |
 | Guided config setup | ✅ (`jury init`, `--wizard`) | ❌ | ❌ | n/a (hosted) |
 | Hosted dashboard | ❌ | ❌ | ❌ | ✅ |
-| Local-first (no data leaves to a SaaS) | ✅ | ✅ | ➖ | ❌ |
+| No review server of its own (the diff goes only to the model vendors you configure) | ✅ | ✅ | ➖ | ❌ |
 | Secret redaction before send | ✅ | ➖ | ➖ | n/a (hosted) |
 | Dependency footprint | ✅ stdlib-only | ➖ (Node/Bun runtimes) | ➖ (Python + `any-llm`) | — (hosted) |
 | Project-specific review policy | ✅ (`.jury/policy.toml`) | ➖ | ➖ | ✅ |

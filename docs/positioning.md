@@ -34,9 +34,9 @@ already have installed.
 - **Stdlib-first.** No third-party Python dependencies — just `subprocess`,
   `tomllib`, `concurrent.futures`, and `argparse`. Easy to read, audit, and
   vendor into any repo or CI.
-- **Local-first.** It runs on your machine, spawns the CLIs you already have, and
-  only talks to the network when *you* point it at a PR. There is no service to
-  sign up for and no central server in the loop.
+- **Local-first.** It runs on your machine and spawns the CLIs you already have.
+  There is no ai-jury server and no service to sign up for; your diff goes only
+  to the model vendors you configure (or nowhere if every seat is local).
 - **Project-agnostic.** Configuration lives in a single `jury.toml`. Nothing
   about the jury assumes a particular codebase, language, or team.
 
@@ -48,8 +48,8 @@ already have installed.
   them into a review pass.
 - CI and automation authors who want a self-contained, dependency-free reviewer
   they can vendor into a pipeline.
-- Anyone who wants reviews to stay on their own machine and under their own
-  control rather than going through a hosted product.
+- Anyone who wants to choose which model vendors see their diff — or keep it on
+  their own machine with local seats — rather than going through a hosted product.
 
 ## Non-goals
 
@@ -99,17 +99,23 @@ data surface:
   no tools at all; see [security.md](security.md#other-agents) for the rest.
 - **Secret redaction on by default.** The diff and any context pass through a
   redactor that masks recognized secrets before anything reaches an agent.
-- **Network only when you ask.** The tool reaches the network only to drive the
-  configured agent CLIs and, when you use `--pr` / `--post`, the GitHub API via
-  `gh`. There is no telemetry and no third-party service in the path.
+- **Network only to what you configure.** The agent CLIs you configure (each
+  talks to its own vendor), the hosted-API and local model endpoints you
+  configure (the jury calls them itself), and `gh` for `--pr` and `--issue`
+  (fetching, posting, labelling). On loopback only, `jury init`
+  always, `jury --doctor` when no reviewer is available, and a run with no
+  `jury.toml` and no usable agent CLI ask the default local model server on
+  `localhost:11434` which models it has. There is no telemetry and no ai-jury
+  server; your diff goes only to the model vendors you configure (or nowhere if
+  every seat is local).
 
 See the [README data-flow / privacy section](../README.md#data-flow--privacy)
 and `SECURITY.md` for the full reference.
 
 ## When to use this instead of hosted PR-review products
 
-- You want reviews to stay local and under your control, not uploaded to a
-  third-party service.
+- You want to choose which model vendors see your diff (or keep it local with
+  local seats), rather than send it through a review service's own server.
 - You value a cross-vendor adversarial panel (multiple vendors arguing) over a
   single hosted reviewer.
 - You want a dependency-free tool you can vendor into a repo or CI and audit in

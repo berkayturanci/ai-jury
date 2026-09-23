@@ -110,8 +110,21 @@ diff or any agent output, and applies the same redaction to config values it pri
 
 This project collects and transmits **no telemetry** of any kind — there is no
 analytics, no usage reporting, and no opt-in data collection. The tool never
-phones home; the only network activity is performed by the agent CLIs you
-explicitly configure (and `gh` for `--pr` / `--post*`).
+phones home. There is no ai-jury server; your diff goes only to the model vendors
+you configure (or nowhere if every seat is local).
+
+Network traffic goes to:
+
+- the **agent CLIs** you configure, each of which talks to its own vendor;
+- the **hosted-API endpoints** you configure (Anthropic, OpenAI, Google, xAI, or
+  any OpenAI-compatible URL), which the jury calls itself with the prompt, diff included;
+- the **local model endpoints** you configure, which the jury calls itself the same
+  way;
+- **`gh`**, for `--pr` and `--issue` (fetching, posting, labelling);
+- and, on loopback only, the default local model server
+  (`http://localhost:11434/v1`), which `jury init` always, `jury --doctor` when no
+  reviewer is available, and a run with no `jury.toml` and no usable agent CLI ask
+  for its model list, to offer a free offline reviewer.
 
 The `jury --doctor` command produces a local diagnostics report intended to
 be safe to share when filing a bug report. It includes the tool/Python/OS

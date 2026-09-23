@@ -773,6 +773,9 @@ the default panel — can read and write files and reach the network, and a
 bring-your-own `cli` seat has whatever its own flags give it — see
 [Security & the Codex sandbox](#security--the-codex-sandbox).
 
+There is no ai-jury server; your diff goes only to the model vendors you
+configure (or nowhere if every seat is local).
+
 **Secret redaction** — before anything is sent to an agent, the diff (and any
 context) is passed through a redactor (`src/ai_jury/redaction.py`)
 that masks recognized secrets: PEM private keys, AWS access keys, GitHub/OpenAI
@@ -794,8 +797,18 @@ full data-flow and redaction reference.
 
 **No telemetry (by default and always)** — this project collects and sends **no
 telemetry** and **no analytics**, not now and not behind any opt-in flag. The
-tool never phones home. The only network activity is performed by the agent CLIs
-you explicitly configure (and `gh` for `--pr` / `--post*`).
+tool never phones home. Network traffic goes to:
+
+- the **agent CLIs** you configure, each of which talks to its own vendor;
+- the **hosted-API endpoints** you configure (Anthropic, OpenAI, Google, xAI, or
+  any OpenAI-compatible URL), which the jury calls itself with the prompt, diff included;
+- the **local model endpoints** you configure, which the jury calls itself the same
+  way;
+- **`gh`**, for `--pr` and `--issue` (fetching, posting, labelling);
+- and, on loopback only, the default local model server
+  (`http://localhost:11434/v1`), which `jury init` always, `jury --doctor` when no
+  reviewer is available, and a run with no `jury.toml` and no usable agent CLI ask
+  for its model list, to offer a free offline reviewer.
 
 ### Diagnostics — `jury --doctor`
 

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The site and docs no longer say your code does not leave** (#860). The site FAQ said "your code doesn't leave to a third-party service", and the comparison tables on the site and in `docs/comparison.md` ticked "no code/data leaves to a SaaS". Unless every seat is local, the diff goes to the model vendors configured. They now say: there is no ai-jury server; your diff goes only to the model vendors you configure (or nowhere if every seat is local). The same sentence is in the README privacy section, `SECURITY.md`, `docs/positioning.md` and the `llms` files, and `docs/positioning.md` no longer says the tool reaches the network only when pointed at a PR.
+- **The network list is complete** (#873). `README.md` and `SECURITY.md` said the only network activity was the agent CLIs and `gh`. The jury itself calls the hosted-API and local model endpoints you configure, and on loopback asks the default local model server (`http://localhost:11434/v1`) for its model list: `jury init` always, `jury --doctor` when no reviewer is available, and a run with no `jury.toml` and no usable agent CLI. Both files now list all of it, with `gh` for `--pr` and `--issue`. No telemetry is unchanged.
+- **The least-privilege warning for a claude permission mode says what that mode does.** It said every such seat "runs with `--permission-mode dontAsk`", which is false for all of them. Now, per setting:
+  - `--dangerously-skip-permissions` overrides the injected `dontAsk` whichever comes first, and the seat runs in bypass mode. Measured on Claude Code 2.1.236: with `Read` available, a read outside the working directory was denied under `dontAsk` alone and went through with the flag added before or after it.
+  - A named `bypassPermissions`, `auto` or `acceptEdits` is the mode the seat runs in, and it approves tool calls (for `acceptEdits`, file edits) without asking.
+  - `manual` and `plan` are used instead of `dontAsk`.
+  - Any other value, `default` included, and a missing value are rejected by Claude Code 2.1.236 (it accepts `acceptEdits`, `auto`, `bypassPermissions`, `manual`, `dontAsk`, `plan`), so the seat fails before it reviews anything. The 1.20.0 notes listed `default` as a mode that is kept and grants nothing.
+  - `docs/security.md` states the measured precedence instead of "its own precedence rule".
+  - `tests/test_privacy_claims.py`, and the per-mode cases in `tests/test_privilege.py`.
+
 ## [1.20.0] - 2026-09-23
 
 ### Added
