@@ -16,9 +16,12 @@ Required read-only invocation per adapter (documented here and in docs/security.
 
 - ``claude``  : no tools at all. ``--tools ""`` (an empty allow-list of built-in
                 tools), ``--disallowed-tools`` naming every write, shell, read,
-                network and subagent tool, and ``--strict-mcp-config`` with no
+                network and subagent tool, ``--strict-mcp-config`` with no
                 ``--mcp-config`` (so the operator's own MCP servers are not
-                loaded). Each is injected when absent and the deny list is
+                loaded), ``--safe-mode``, ``--no-session-persistence`` and
+                ``--permission-mode dontAsk``. A permission mode, settings,
+                plugins, extra directories or agents the operator named are
+                kept and reported. Each is injected when absent and the deny list is
                 merged into a narrower one, unconditionally — config can add
                 denials, never remove them. A ``--tools`` list or ``--mcp-config``
                 the operator DID write is kept as written and flagged here,
@@ -95,10 +98,31 @@ _CLAUDE_DENIED_TOOLS: tuple[str, ...] = _WRITE_TOOLS + _READ_NETWORK_TOOLS
 #: are what turns "the model asked for a file" into "the model read the file".
 _CLAUDE_APPROVING_MODES: tuple[str, ...] = ("bypassPermissions", "auto")
 
-#: The permission mode the shipped reviewer runs in: a tool call that is not
-#: pre-approved is denied, never prompted for (so ``-p`` cannot hang) and never
-#: waved through. The write role swaps it for the bypass it had before.
+#: The permission mode every read-only claude call runs in: a tool call that is
+#: not pre-approved is denied, never prompted for (so ``-p`` cannot hang) and
+#: never waved through. Injected when the argv names no ``--permission-mode``; a
+#: mode the operator DID name is kept and reported by :func:`audit_agent`. The
+#: write role swaps it for the bypass it had before.
 _CLAUDE_REVIEW_MODE = "dontAsk"
+
+#: claude options that point the CLI at configuration beyond its prompt:
+#: settings files and sources (hooks live there), plugins, extra directories
+#: (their CLAUDE.md), custom agents. ``--safe-mode`` keeps all of them from
+#: loading — measured on Claude Code 2.1.236, a ``--settings`` file's
+#: SessionStart/UserPromptSubmit hooks, ``--setting-sources project`` in a
+#: checkout with hooks and a CLAUDE.md, and an ``--add-dir`` holding a CLAUDE.md
+#: each loaded nothing under ``--safe-mode`` (and the ``--settings`` hooks ran
+#: without it). Kept as written, then, and reported: a reviewer needs none of
+#: them, and an operator should not be surprised to find one ignored.
+_CLAUDE_CONFIG_OPTIONS: tuple[str, ...] = (
+    "--settings",
+    "--setting-sources",
+    "--plugin-dir",
+    "--plugin-url",
+    "--add-dir",
+    "--agents",
+    "--agent",
+)
 
 # The subset of _DANGEROUS_FLAGS a sandbox does NOT settle, because they SELECT a
 # sandbox themselves rather than merely skipping an approval prompt (issue #750).
@@ -486,6 +510,12 @@ def _ensure_claude_locked_down(extra_args: list[str]) -> list[str]:
         front += ["--tools", ""]
     # Flag-aware: a token that is another option's value does not count.
     front += [f for f in _CLAUDE_LOCKDOWN_FLAGS if not _claude_flag_present(f, args)]
+    # The reviewer's permission mode, unless the operator named one — which is
+    # kept, and reported by `audit_agent`. With `--tools ""` in force a mode has
+    # no tool to approve, so keeping it grants nothing; overriding it silently
+    # would hide a configuration the operator believes is in effect.
+    if not _claude_flag_present("--permission-mode", args):
+        front += ["--permission-mode", _CLAUDE_REVIEW_MODE]
     return [*front, *args]
 
 
@@ -795,6 +825,30 @@ def _claude_open_surface(extra_args: list[str]) -> list[str]:
     return surface
 
 
+def _claude_mode_override(extra_args: list[str]) -> str | None:
+    """A permission setting other than the reviewer's ``dontAsk``, as written; or None.
+
+    ``--dangerously-skip-permissions``, or a ``--permission-mode`` naming any other
+    mode (``bypassPermissions``, ``auto``, ``acceptEdits``, ``default``, ``plan``,
+    or none at all). Read at flag positions only.
+    """
+    args = list(extra_args)
+    if _claude_flag_present("--dangerously-skip-permissions", args):
+        return "--dangerously-skip-permissions"
+    values = _claude_value_positions(args)
+    for i in range(len(args)):
+        mode = None if i in values else _permission_mode_at(args, i)
+        if mode is not None and mode[0] != _CLAUDE_REVIEW_MODE:
+            return f"--permission-mode {mode[0]}".rstrip()
+    return None
+
+
+def _claude_config_options(extra_args: list[str]) -> list[str]:
+    """The :data:`_CLAUDE_CONFIG_OPTIONS` present at flag positions, in that order."""
+    args = list(extra_args)
+    return [f for f in _CLAUDE_CONFIG_OPTIONS if _claude_flag_present(f, args)]
+
+
 def _claude_permission_bypass(extra_args: list[str]) -> str | None:
     """The token that makes claude approve tool calls unasked, or ``None``."""
     args = list(extra_args)
@@ -885,9 +939,9 @@ def audit_agent(spec) -> list[str]:
         # What enforcement keeps as written: a `--tools` list, or MCP servers the
         # operator loaded. The shipped default has neither, so it raises nothing.
         surface = _claude_open_surface(extra_args)
+        bypass = _claude_permission_bypass(extra_args)
         if surface:
             named = ", ".join(surface)
-            bypass = _claude_permission_bypass(extra_args)
             if bypass:
                 warnings.append(
                     f"agent '{label}' (claude) is given {named} and skips permission "
@@ -902,6 +956,28 @@ def audit_agent(spec) -> list[str]:
                     f"them, and whatever your Claude settings pre-approve runs "
                     f"unasked. Drop them — a reviewer only reads its prompt."
                 )
+        # A permission setting other than dontAsk, kept as written. Said once:
+        # the warning above already named an approving one next to its tools.
+        override = _claude_mode_override(extra_args)
+        if override and not (surface and bypass):
+            warnings.append(
+                f"agent '{label}' (claude) is configured with `{override}`; a reviewer "
+                f"runs with `--permission-mode {_CLAUDE_REVIEW_MODE}`, which denies any "
+                f"tool call that is not pre-approved. With no tools available it grants "
+                f"nothing today, but it would approve whatever a later flag or Claude "
+                f"Code release made available. Drop it."
+            )
+        # Configuration beyond the prompt. `--safe-mode` keeps it from loading
+        # (measured), so this is a surprise to prevent, not a hole to close.
+        loaded = _claude_config_options(extra_args)
+        if loaded:
+            named = ", ".join(f"`{f}`" for f in loaded)
+            warnings.append(
+                f"agent '{label}' (claude) is configured with {named}; `--safe-mode` "
+                f"keeps them from loading hooks, CLAUDE.md, plugins or agents into a "
+                f"reviewer, so they have no effect there. A reviewer needs none of "
+                f"them — drop them."
+            )
         return warnings
 
     # agy is spawned with `--sandbox` (enforced above), and that is still not

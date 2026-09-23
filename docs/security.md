@@ -145,19 +145,39 @@ content; the least-privilege audit (`--strict` to fail the run) will flag it.
   it. These flags go on **every** read-only claude invocation, the panel's and
   `jury run-agent`'s review/gate/chair roles alike. You do not have to write any
   of it: `--tools ""`, `--strict-mcp-config`, `--safe-mode`,
-  `--no-session-persistence` and the deny list are injected at spawn time into a
-  seat configured without them (a flag that only appears as another option's
-  value, as in `--append-system-prompt --safe-mode`, does not count), and the deny list is merged into a narrower one you did
-  write. A `--tools` list or an `--mcp-config` you *do* write is kept, and the
-  least-privilege audit flags it, naming the permission bypass too if the argv has
-  one (`--dangerously-skip-permissions`, `--permission-mode bypassPermissions` or
-  `auto`).
+  `--no-session-persistence`, `--permission-mode dontAsk` and the deny list are
+  injected at spawn time into a seat configured without them (a flag that only
+  appears as another option's value, as in `--append-system-prompt --safe-mode`,
+  does not count), and the deny list is merged into a narrower one you did write.
+
+  What you *do* write is kept, and the least-privilege audit reports it — a
+  warning, and a failure under `--strict`:
+  - a `--tools` list or an `--mcp-config`, naming the permission bypass too if
+    the argv has one;
+  - a permission setting other than `dontAsk` — `--dangerously-skip-permissions`,
+    or `--permission-mode bypassPermissions`, `auto`, `acceptEdits`, `default` or
+    `plan`. It is kept rather than overridden: with `--tools ""` in force there is
+    no tool for any mode to approve, so it grants nothing, and silently replacing
+    a setting you wrote would hide what is actually running. (A
+    `--dangerously-skip-permissions` with no `--permission-mode` still gets
+    `dontAsk` injected beside it; which of the two Claude Code honours is its own
+    precedence rule, and the audit reports the flag either way.)
+  - configuration beyond the prompt: `--settings`, `--setting-sources`,
+    `--plugin-dir`, `--plugin-url`, `--add-dir`, `--agents`, `--agent`.
+    **`--safe-mode` wins over all of these**: measured on Claude Code 2.1.236, a
+    `--settings` file's `SessionStart`/`UserPromptSubmit` hooks did not run,
+    `--setting-sources project` in a checkout with hooks and a CLAUDE.md loaded
+    neither, and a CLAUDE.md in an `--add-dir` directory was not loaded — while the
+    same `--settings` hooks did run once `--safe-mode` was removed. They are
+    reported anyway, because a reviewer needs none of them and an option that
+    silently does nothing is a surprise.
 
   Up to 1.19.1 the shipped seat denied only `Edit,Write,NotebookEdit,Bash` and ran
   with `--dangerously-skip-permissions`, which approved every other tool — `Read`,
   `Grep`, `Glob`, `WebFetch`, `WebSearch`, `Task` and any MCP tool from your Claude
   configuration — without asking. A `jury.toml` that copied that argv is spawned
-  with the lockdown above added. Measured against Claude Code 2.1.236: the previous
+  with the lockdown above added, and the audit reports the
+  `--dangerously-skip-permissions` it still carries (drop it). Measured against Claude Code 2.1.236: the previous
   argv, asked to, read a file outside its working directory; this one, asked to
   `Read` the same file or `WebFetch` a URL, has no tool to do either. The deny
   list names only tools that CLI still has (it warns on stderr about any other).
@@ -344,7 +364,9 @@ make the reviewers approve a bad change or suppress findings. This is a classic
    `agy` seat, and for what enforcement cannot fix — a sandbox you
    widened on purpose (codex `-s danger-full-access`, `-s workspace-write`), a
    second sandbox selected beside the enforced one (`--full-auto`), a `claude`
-   seat given tools back (`--tools …`) or MCP servers (`--mcp-config`), or a
+   seat given tools back (`--tools …`), MCP servers (`--mcp-config`), a
+   permission mode other than `dontAsk`, or settings, plugins, extra directories
+   or agents (which `--safe-mode` keeps from loading), or a
    bring-your-own-CLI seat (`vendor = "cli"` / `"xai"`, or `adapter = "cli"`)
    with no sandbox flag this tool knows how to add.
 

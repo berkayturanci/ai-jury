@@ -48,6 +48,8 @@ class BuildArgvTests(unittest.TestCase):
                 "--strict-mcp-config",
                 "--safe-mode",
                 "--no-session-persistence",
+                "--permission-mode",
+                "dontAsk",
                 "--disallowed-tools",
                 "Edit,Write,NotebookEdit,Bash,Read,Grep,Glob,WebFetch,WebSearch,Task,Agent",
                 "-x",
