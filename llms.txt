@@ -25,7 +25,9 @@ Key facts:
   and fails `--strict`.
 - Output: markdown / JSON / SARIF report; optional GitHub summary + inline comments;
   structured findings (severity/file/line); CI gating via exit code.
-- Privacy: `diff-only` context by default; secret redaction on by default; local-first.
+- Privacy: `diff-only` context by default; secret redaction on by default; no telemetry.
+  There is no ai-jury server; your diff goes only to the model vendors you configure
+  (or nowhere if every seat is local).
 
 ## Quickstart
 

@@ -94,7 +94,7 @@
       {
         "@type": "Question",
         "name": "Is ai-jury a hosted service or SaaS?",
-        "acceptedAnswer": { "@type": "Answer", "text": "No. ai-jury is a local-first CLI and skill that runs on your machine or in your CI. There is no dashboard and no review server — your code does not leave to a third-party service. A hosted review SaaS is a deliberate non-goal." }
+        "acceptedAnswer": { "@type": "Answer", "text": "No. ai-jury is a local-first CLI and skill that runs on your machine or in your CI. There is no dashboard and no ai-jury server; your diff goes only to the model vendors you configure (or nowhere if every seat is local). A hosted review SaaS is a deliberate non-goal." }
       },
       {
         "@type": "Question",
@@ -769,7 +769,7 @@ endpoint = <span class="s">"http://localhost:11434/v1"</span></code></pre>
             <tr><th scope="row">Risk-aware auto-depth</th><td class="me"><span class="y">✓</span></td><td><span class="n">✕</span></td><td><span class="n">✕</span></td><td><span class="p">◐</span></td></tr>
             <tr><th scope="row">Animated deliberation view (in-terminal)</th><td class="me"><span class="y">✓</span></td><td><span class="n">✕</span></td><td><span class="n">✕</span></td><td><span class="n">✕</span></td></tr>
             <tr><th scope="row">Offline / local open-weight reviewer ($0)</th><td class="me"><span class="y">✓</span></td><td><span class="p">◐</span></td><td><span class="p">◐</span></td><td><span class="n">✕</span></td></tr>
-            <tr><th scope="row">Local-first (no code leaves to a SaaS)</th><td class="me"><span class="y">✓</span></td><td><span class="y">✓</span></td><td><span class="p">◐</span></td><td><span class="n">✕</span></td></tr>
+            <tr><th scope="row">No review server of its own (the diff goes only to the model vendors you configure)</th><td class="me"><span class="y">✓</span></td><td><span class="y">✓</span></td><td><span class="p">◐</span></td><td><span class="n">✕</span></td></tr>
             <tr><th scope="row">Secret redaction before send</th><td class="me"><span class="y">✓</span></td><td><span class="p">◐</span></td><td><span class="p">◐</span></td><td><span class="dash">—</span></td></tr>
             <tr><th scope="row">Auto-apply fixes</th><td class="me"><span class="p">◐</span></td><td><span class="p">◐</span></td><td><span class="n">✕</span></td><td><span class="y">✓</span></td></tr>
             <tr><th scope="row">Hosted dashboard</th><td class="me"><span class="n">✕</span></td><td><span class="n">✕</span></td><td><span class="n">✕</span></td><td><span class="y">✓</span></td></tr>
@@ -880,7 +880,7 @@ endpoint = <span class="s">"http://localhost:11434/v1"</span></code></pre>
       <div class="faq reveal">
         <details class="qa">
           <summary>Is this a hosted service or SaaS?<span class="chev"></span></summary>
-          <div class="qa-body"><p>No. ai-jury is a local-first CLI + skill that runs on your machine or in your CI. There's no dashboard and no review server — your code doesn't leave to a third-party service. A landing/docs site exists, but a hosted review SaaS is a deliberate non-goal.</p></div>
+          <div class="qa-body"><p>No. ai-jury is a local-first CLI + skill that runs on your machine or in your CI. There's no dashboard and no ai-jury server; your diff goes only to the model vendors you configure (or nowhere if every seat is local). A landing/docs site exists, but a hosted review SaaS is a deliberate non-goal.</p></div>
         </details>
         <details class="qa">
           <summary>Does it edit or auto-apply fixes to my code?<span class="chev"></span></summary>

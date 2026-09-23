@@ -1440,7 +1440,7 @@
         iconKey: "ollama",
         logo: "logos/ollama.svg",
         color: "var(--c-qwen)",
-        desc: "Run Qwen 2.5 Coder, Llama 3.3, and DeepSeek locally with 100% data privacy.",
+        desc: "Run Qwen 2.5 Coder, Llama 3.3, and DeepSeek locally: this seat sends the diff only to your own model server.",
         config: '[[agent]]\nname = "qwen"\nvendor = "local"\nendpoint = "http://localhost:11434/v1/chat/completions"\nmodel = "qwen2.5-coder:7b"',
         command: "jury --preset offline --pr 123"
       },

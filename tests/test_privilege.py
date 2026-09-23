@@ -663,10 +663,15 @@ class AClaudeReviewerHasNoToolsAtAll(unittest.TestCase):
         self.assertEqual(argv[: len(LOCKDOWN)], LOCKDOWN)
         self.assertEqual(argv[argv.index("--disallowed-tools") + 1], DENY)
         self.assertEqual(privilege._claude_tools(argv), [])
-        # Its bypass flag is kept beside the injected dontAsk, and reported once.
+        # Its bypass flag is kept beside the injected dontAsk, and reported once —
+        # as what it is: it wins over dontAsk (measured), with nothing to approve.
         warnings = privilege.audit_agent(self._seat(*self.OLD_DEFAULT))
         self.assertEqual(len(warnings), 1)
         self.assertIn("`--dangerously-skip-permissions`", warnings[0])
+        self.assertIn(
+            "overrides any `--permission-mode`, including the injected `dontAsk`", warnings[0]
+        )
+        self.assertIn("runs in bypass mode", warnings[0])
         self.assertIn("grants nothing today", warnings[0])
 
     def test_a_deny_list_of_write_tools_alone_is_not_locked_down(self):
@@ -824,8 +829,21 @@ class EveryReadOnlyClaudeCallRunsInDontAsk(unittest.TestCase):
         self.assertEqual(argv[: len(LOCKDOWN)], LOCKDOWN)
         self.assertEqual(argv[-2:], ["--append-system-prompt", "--permission-mode"])
 
-    def test_a_configured_mode_is_kept_and_reported_once(self):
-        for mode in ("bypassPermissions", "auto", "acceptEdits", "default", "plan"):
+    #: What the warning must say for each mode — what that mode really does.
+    #: `default` is missing from the choices Claude Code 2.1.236 prints but is
+    #: accepted as an alias of `manual` (measured), so it says what `manual` says.
+    MODE_SAYS = {
+        "bypassPermissions": ("approves every tool call without asking", "grants nothing today"),
+        "auto": ("approve tool calls without asking you", "grants nothing today"),
+        "acceptEdits": ("approves file edits without asking", "grants nothing today"),
+        "manual": ("is used instead of the reviewer's `dontAsk`", "changes nothing today"),
+        "plan": ("is used instead of the reviewer's `dontAsk`", "changes nothing today"),
+        # Not in the list Claude Code prints, but accepted as an alias of manual.
+        "default": ("is used instead of the reviewer's `dontAsk`", "changes nothing today"),
+    }
+
+    def test_a_configured_mode_is_kept_and_reported_once_as_what_it_does(self):
+        for mode, says in self.MODE_SAYS.items():
             for spelling in (["--permission-mode", mode], [f"--permission-mode={mode}"]):
                 with self.subTest(spelling):
                     argv = privilege.enforce_read_only("anthropic", list(spelling))
@@ -834,7 +852,40 @@ class EveryReadOnlyClaudeCallRunsInDontAsk(unittest.TestCase):
                     warnings = privilege.audit_agent(self._seat(*spelling))
                     self.assertEqual(len(warnings), 1)
                     self.assertIn(f"`--permission-mode {mode}`", warnings[0])
-                    self.assertIn("grants nothing today", warnings[0])
+                    for phrase in says:
+                        self.assertIn(phrase, warnings[0])
+                    self.assertNotIn("a reviewer runs with `--permission-mode", warnings[0])
+
+    def test_a_mode_claude_code_rejects_is_named_as_rejected(self):
+        # A value outside the accepted set, an empty value and no value at all.
+        for spelling in (
+            ["--permission-mode", "bogus"],
+            ["--permission-mode="],
+            ["--permission-mode"],
+        ):
+            with self.subTest(spelling):
+                warnings = privilege.audit_agent(self._seat(*spelling))
+                self.assertEqual(len(warnings), 1)
+                self.assertIn("Claude Code 2.1.236 rejects", warnings[0])
+                self.assertIn("fails before it reviews anything", warnings[0])
+
+    def test_the_bypass_flag_beside_a_named_mode_does_not_claim_dont_ask_was_injected(self):
+        for mode in ("plan", "auto"):
+            with self.subTest(mode):
+                args = ["--permission-mode", mode, "--dangerously-skip-permissions"]
+                self.assertNotIn("dontAsk", privilege.enforce_read_only("anthropic", list(args)))
+                warnings = privilege.audit_agent(self._seat(*args))
+                self.assertEqual(len(warnings), 1)
+                self.assertIn("overrides any `--permission-mode`", warnings[0])
+                self.assertNotIn("overrides the reviewer's", warnings[0])
+
+    def test_a_mode_beside_configured_tools_says_it_applies_to_them(self):
+        warnings = privilege.audit_agent(
+            self._seat("--tools", "Read", "--permission-mode", "acceptEdits")
+        )
+        self.assertEqual(len(warnings), 2)
+        self.assertIn("so this applies to them", warnings[1])
+        self.assertNotIn("grants nothing today", warnings[1])
 
     def test_dont_ask_named_explicitly_is_clean(self):
         self.assertEqual(privilege.audit_agent(self._seat("--permission-mode", "dontAsk")), [])

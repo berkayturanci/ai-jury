@@ -242,6 +242,16 @@ Invocations:
   generic `api_key`/`secret`/`token` assignments → `[REDACTED:<kind>]`.
 - **Posting** sends the rendered report/comments to the GitHub API; `--dry-run` previews
   the inline payload with no network call.
+- **No ai-jury server:** your diff goes only to the model vendors you configure (or
+  nowhere if every seat is local). No telemetry. Network traffic: the agent CLIs you
+  configure, the hosted-API and local model endpoints you configure (called by the jury
+  itself), and `gh` for `--pr` / `--issue` (fetching, posting, labelling);
+  plus the default local server on loopback, `localhost:11434`: a reachability check
+  on every `jury init` except `jury init --list-models`, which lists its models instead;
+  a model listing for `--list-agents`, seating a local reviewer, `--doctor` when no
+  reviewer is available, and a run with no `jury.toml` and no usable agent CLI; and
+  `jury init --local-endpoint URL` asks that URL for those listings instead (a
+  non-loopback URL only with `JURY_ALLOW_REMOTE_ENDPOINT=1`).
 - Repository security posture: CodeQL + OpenSSF Scorecard + SHA-pinned Actions.
 - Canonical reference: [SECURITY.md](SECURITY.md).
 
