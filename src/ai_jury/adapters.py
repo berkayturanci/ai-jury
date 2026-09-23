@@ -758,15 +758,19 @@ class Adapter:
     SUPPORTS_HEADLESS = True
     SUPPORTS_MODEL_SELECTION = True
 
-    #: Start a panel invocation (review, debate, verify, synthesis — every call
-    #: with no ``role_policy``) in a fresh empty directory rather than the one
-    #: ``jury`` runs in (see :func:`_review_workdir`). On for the three native
+    #: Start every READ-ONLY invocation — the panel's review, debate, verify and
+    #: synthesis calls, and ``jury run-agent``'s review/gate/chair roles — in a
+    #: fresh empty directory rather than the one ``jury`` runs in (see
+    #: :func:`_review_workdir`). A read-only role reads its prompt and nothing
+    #: else, so it never needs the repository, and a PR checkout's project
+    #: settings (a ``.claude/settings.json`` hook ran from one, measured) must not
+    #: reach it. Only a write role (``implement``/``fix`` with ``--allow-write``)
+    #: stays in ``--cwd``: it has to edit that worktree. On for the three native
     #: CLIs, whose behaviour there is known — codex needs
     #: ``--skip-git-repo-check`` outside a git repository, and its read-only argv
     #: carries it. Off by default, so a bring-your-own ``cli`` seat and a
     #: registered custom adapter keep running where they always did: this tool
     #: cannot know what an operator's own binary expects of its directory.
-    #: ``jury run-agent`` is not a panel invocation and runs in ``--cwd``.
     ISOLATE_REVIEW_CWD = False
 
     # Args passed to the CLI to print its version. Subclasses override if the CLI
@@ -974,7 +978,8 @@ class Adapter:
             # A command is a bare name or an absolute path (config validation
             # refuses a relative one, #293/F-6), so moving the directory cannot
             # change which binary runs.
-            with _review_workdir(self.ISOLATE_REVIEW_CWD and role_policy is None) as cwd:
+            read_only = not getattr(role_policy, "write", False)
+            with _review_workdir(self.ISOLATE_REVIEW_CWD and read_only) as cwd:
                 if cwd is None:
                     proc = _spawn(argv, stdin, effective_timeout)
                 else:
@@ -1105,11 +1110,16 @@ class CodexAdapter(Adapter):
             argv += ["-m", model]
         return argv
 
+    #: ``codex exec --ephemeral`` ("Run without persisting session files to
+    #: disk", codex-cli 0.155.0): a reviewer's session holds the untrusted diff
+    #: and is never resumed.
+    _EPHEMERAL = "--ephemeral"
+
     def build_argv(self, prompt: str) -> list[str]:
         del prompt
         extra = _read_only_extra_args(self.spec)
-        skip = [] if self._SKIP_GIT_CHECK in extra else [self._SKIP_GIT_CHECK]
-        return self._head_argv() + skip + extra
+        added = [f for f in (self._SKIP_GIT_CHECK, self._EPHEMERAL) if f not in extra]
+        return self._head_argv() + added + extra
 
     def build_write_argv(self, prompt: str) -> list[str]:
         """Implementer invocation: ``-s workspace-write`` instead of read-only (#661)."""

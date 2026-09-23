@@ -160,6 +160,67 @@ class AnAgyOnlyMachineIsToldWhy(unittest.TestCase):
         self.assertIn(f"note: {AGY_OPT_IN_NOTE}", logged)
 
 
+class ACollapsedPanelOnAnAgyMachineSaysWhy(unittest.TestCase):
+    """claude + agy installed, no codex, no config: the vendor guard exits 3.
+
+    Before agy left the default panel that runner had two vendors. Now it has
+    one, and the exit must say which second vendor it already has and why it
+    was not seated.
+    """
+
+    TOML = (
+        '[jury]\nrounds = 1\nchair = "claude"\n\n'
+        '[[agent]]\nname = "claude"\nvendor = "anthropic"\ncommand = "claude"\n\n'
+        '[[agent]]\nname = "codex"\nvendor = "openai"\ncommand = "codex"\n'
+    )
+
+    def _jury(self, which):
+        from ai_jury import adapters as adapters_module
+        from ai_jury.adapters import AgentResult, MockAdapter
+
+        real = MockAdapter.run
+
+        def run(self, prompt, phase="review", timeout=None, role_policy=None):
+            if phase == "review" and self.name == "codex":
+                return AgentResult(
+                    "codex",
+                    "openai",
+                    False,
+                    "",
+                    0.0,
+                    "missing",
+                    error_code=adapters_module.ERR_MISSING_CLI,
+                )
+            return real(self, prompt, phase=phase, timeout=timeout, role_policy=role_policy)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Path(tmp) / "jury.toml"
+            config.write_text(self.TOML, encoding="utf-8")
+            diff = Path(tmp) / "changes.diff"
+            diff.write_text(DIFF, encoding="utf-8")
+            err = io.StringIO()
+            with (
+                mock.patch.object(MockAdapter, "run", run),
+                mock.patch("shutil.which", which),
+                contextlib.redirect_stdout(io.StringIO()),
+                contextlib.redirect_stderr(err),
+            ):
+                code = cli.main(["--mock", "--diff-file", str(diff), "--config", str(config)])
+        return code, err.getvalue()
+
+    def test_the_guard_failure_names_agy_when_it_is_installed(self):
+        code, err = self._jury(_only_agy_on_path)
+        self.assertEqual(code, 3)
+        self.assertIn("panel collapsed", err)
+        self.assertIn(f"note: {AGY_OPT_IN_NOTE}", err)
+        self.assertIn("lower --min-vendors", err)
+
+    def test_the_guard_failure_is_unchanged_without_agy(self):
+        code, err = self._jury(_nothing_on_path)
+        self.assertEqual(code, 3)
+        self.assertNotIn("agy", err)
+
+
 class JuryInitSeatsAgyOnlyByName(unittest.TestCase):
     AGY_ONLY = {name: name == "agy" for name in scaffold.KNOWN_AGENTS}
 

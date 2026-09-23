@@ -1367,7 +1367,11 @@ def _run_agent_parser() -> argparse.ArgumentParser:
         f"{'/'.join(sorted(runagent.WRITE_ROLES))} need --allow-write",
     )
     sub.add_argument("--prompt-file", help="path to the prompt to send, or '-' for stdin")
-    sub.add_argument("--cwd", help="directory to run the agent in (default: the current one)")
+    sub.add_argument(
+        "--cwd",
+        help="directory a write role (implement/fix) runs in (default: the current one); "
+        "read-only roles on claude/codex/agy start in an empty temporary directory",
+    )
     sub.add_argument(
         "--timeout",
         type=int,
@@ -1586,6 +1590,14 @@ def _run_run_agent(rest: list[str], spawn=None, sleep=None, clock=None) -> int:
     if ns.cwd and not Path(ns.cwd).is_dir():
         print(f"error: --cwd is not a directory: {ns.cwd}", file=sys.stderr)
         return 2
+    if ns.cwd and not policy.write:
+        # Said, not silently dropped: a read-only role on a native CLI starts in an
+        # empty directory, so a checkout's project settings cannot reach it.
+        print(
+            f"note: --cwd applies to write roles; the read-only role '{policy.role}' "
+            f"starts in an empty temporary directory (claude/codex/agy).",
+            file=sys.stderr,
+        )
 
     try:
         config = load_config(ns.config)
@@ -2759,6 +2771,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     if collapsed:
         log(collapsed)
+        # A runner with claude + agy and no codex lands here since agy left the
+        # default panel: name the second vendor it already has, and why it sat out.
+        from .config import agy_opt_in_hint
+
+        hint = agy_opt_in_hint((s.adapter_key for s in config.agents), shutil.which)
+        if hint:
+            log(f"note: {hint}; or install another vendor's CLI, or lower --min-vendors")
         ci_exit = 3
     # No seat returned anything (#849). One local seat pointed at a model its
     # server does not have failed every call with `HTTP 404`, and the run still

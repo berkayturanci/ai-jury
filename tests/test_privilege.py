@@ -22,7 +22,7 @@ from ai_jury.config import DEFAULT_CONFIG, AgentSpec, spec_adapter
 #: The whole claude deny list, in the order enforcement writes it.
 DENY = "Edit,Write,NotebookEdit,Bash,Read,Grep,Glob,WebFetch,WebSearch,Task,Agent"
 #: What enforcement puts in front of a claude argv that has neither flag.
-LOCKDOWN = ["--tools", "", "--strict-mcp-config"]
+LOCKDOWN = ["--tools", "", "--strict-mcp-config", "--safe-mode", "--no-session-persistence"]
 
 
 def agy_warning(label: str) -> str:
@@ -615,6 +615,8 @@ class AClaudeReviewerHasNoToolsAtAll(unittest.TestCase):
                 "--disallowed-tools",
                 DENY,
                 "--strict-mcp-config",
+                "--safe-mode",
+                "--no-session-persistence",
                 "--permission-mode",
                 "dontAsk",
             ],
@@ -640,7 +642,7 @@ class AClaudeReviewerHasNoToolsAtAll(unittest.TestCase):
         # A jury.toml that copied the pre-fix default keeps working, and gets the
         # lockdown: config can add restrictions, never remove them.
         argv = privilege.enforce_read_only("anthropic", list(self.OLD_DEFAULT))
-        self.assertEqual(argv[:3], LOCKDOWN)
+        self.assertEqual(argv[: len(LOCKDOWN)], LOCKDOWN)
         self.assertEqual(argv[argv.index("--disallowed-tools") + 1], DENY)
         self.assertEqual(privilege._claude_tools(argv), [])
         self.assertEqual(privilege.audit_agent(self._seat(*self.OLD_DEFAULT)), [])
@@ -722,6 +724,53 @@ class AClaudeReviewerHasNoToolsAtAll(unittest.TestCase):
     def test_a_valueless_permission_mode_is_not_a_bypass(self):
         self.assertIsNone(privilege._claude_permission_bypass(["--permission-mode"]))
         self.assertIsNone(privilege._claude_permission_bypass(["--permission-mode", "dontAsk"]))
+
+
+class AFlagSpelledAsAnotherOptionsValueIsNotThatFlag(unittest.TestCase):
+    """claude's parser hands a value-taking option the next token, dashes and all.
+
+    In `--append-system-prompt --tools`, `--tools` is prompt text. The presence
+    checks were token-based, so a configured value that spelled a lockdown flag
+    stopped the real flag from being injected.
+    """
+
+    def test_each_lockdown_flag_is_injected_despite_a_value_that_spells_it(self):
+        for flag in ("--tools", "--strict-mcp-config", "--safe-mode", "--no-session-persistence"):
+            with self.subTest(flag):
+                args = ["--append-system-prompt", flag]
+                argv = privilege.enforce_read_only("anthropic", list(args))
+                self.assertEqual(argv[: len(LOCKDOWN)], LOCKDOWN)
+                self.assertEqual(argv[-2:], args, "the configured value was altered")
+
+    def test_a_value_that_spells_the_deny_flag_neither_hides_nor_gets_rewritten(self):
+        args = ["--system-prompt", "--disallowed-tools", "--output-format", "text"]
+        argv = privilege.enforce_read_only("anthropic", list(args))
+        self.assertEqual(argv[: len(LOCKDOWN)], LOCKDOWN)
+        self.assertEqual(argv[len(LOCKDOWN) : len(LOCKDOWN) + 2], ["--disallowed-tools", DENY])
+        self.assertEqual(argv[-4:], args)
+        self.assertTrue(privilege._claude_is_locked_down(argv))
+
+    def test_a_value_that_spells_a_bypass_or_mcp_config_is_not_one(self):
+        args = ["--tools", "Read", "--append-system-prompt", "--dangerously-skip-permissions"]
+        warnings = privilege.audit_agent(
+            AgentSpec(name="c", vendor="anthropic", command="claude", extra_args=args)
+        )
+        self.assertEqual(len(warnings), 1)
+        self.assertNotIn("skips permission checks", warnings[0])
+        self.assertFalse(privilege._claude_flag_present("--mcp-config", ["--name", "--mcp-config"]))
+
+    def test_a_variadic_option_takes_its_first_value_whatever_it_spells(self):
+        self.assertEqual(privilege._claude_tools(["--tools", "--safe-mode"]), ["--safe-mode"])
+        self.assertEqual(
+            privilege._claude_value_positions(["--add-dir", "a", "b", "--safe-mode"]),
+            frozenset({1, 2}),
+        )
+
+    def test_the_write_role_leaves_a_value_that_spells_a_lockdown_flag_alone(self):
+        args = ["--append-system-prompt", "--safe-mode", "--safe-mode"]
+        self.assertEqual(
+            privilege.enable_write("anthropic", args), ["--append-system-prompt", "--safe-mode"]
+        )
 
 
 class TheClaudeWriteRoleLiftsTheLockdown(unittest.TestCase):

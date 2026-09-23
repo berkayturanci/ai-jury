@@ -178,8 +178,11 @@ DEFAULT_CONFIG: dict = {
             # The reviewer only needs its prompt, which already carries the diff,
             # so it gets no tools at all: `--tools ""` leaves no built-in tool
             # available, the deny list names every write, shell, read, network and
-            # subagent tool as a second layer, and `--strict-mcp-config` with no
-            # `--mcp-config` keeps the user's own MCP servers out. `dontAsk` denies
+            # subagent tool as a second layer, `--strict-mcp-config` with no
+            # `--mcp-config` keeps the user's own MCP servers out, `--safe-mode`
+            # drops CLAUDE.md, hooks, skills and plugins (a PR checkout's project
+            # settings included), `--no-session-persistence` writes no transcript
+            # of the untrusted diff to ~/.claude/projects, and `dontAsk` denies
             # a tool call instead of prompting (so `-p` cannot hang) or approving
             # it. `privilege.enforce_read_only` injects the same lockdown into a
             # seat configured without it; `privilege._CLAUDE_DENIED_TOOLS` is the
@@ -192,6 +195,8 @@ DEFAULT_CONFIG: dict = {
                 "--disallowed-tools",
                 "Edit,Write,NotebookEdit,Bash,Read,Grep,Glob,WebFetch,WebSearch,Task,Agent",
                 "--strict-mcp-config",
+                "--safe-mode",
+                "--no-session-persistence",
                 "--permission-mode",
                 "dontAsk",
             ],

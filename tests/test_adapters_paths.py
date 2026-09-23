@@ -46,6 +46,8 @@ class BuildArgvTests(unittest.TestCase):
                 "--tools",
                 "",
                 "--strict-mcp-config",
+                "--safe-mode",
+                "--no-session-persistence",
                 "--disallowed-tools",
                 "Edit,Write,NotebookEdit,Bash,Read,Grep,Glob,WebFetch,WebSearch,Task,Agent",
                 "-x",
@@ -63,7 +65,8 @@ class BuildArgvTests(unittest.TestCase):
             _spec(name="codex", vendor="openai", command="codex", extra_args=["-s", "read-only"])
         )
         self.assertEqual(
-            a.build_argv("P"), ["codex", "exec", "--skip-git-repo-check", "-s", "read-only"]
+            a.build_argv("P"),
+            ["codex", "exec", "--skip-git-repo-check", "--ephemeral", "-s", "read-only"],
         )
         self.assertIn("P", a._stdin_for("P"))  # the prompt travels on stdin (#287)
 

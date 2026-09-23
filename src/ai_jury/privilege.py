@@ -266,6 +266,92 @@ def _competing_sandboxes(extra_args: list[str], vendor: str = "") -> list[tuple[
     return found
 
 
+#: claude options that take one required value. claude's parser (commander)
+#: hands such an option the next token *even when it starts with ``--``*, so in
+#: ``--append-system-prompt --tools`` the ``--tools`` is prompt text, not a flag.
+#: Every reader below skips value positions, or a configured value could pass
+#: for a restriction that is not there (and the real one would not be injected).
+#: From ``claude --help`` of Claude Code 2.1.236, plus the two ``-file`` forms
+#: its ``--bare`` text names.
+_CLAUDE_VALUE_OPTIONS: frozenset[str] = frozenset(
+    {
+        "--agent",
+        "--agents",
+        "--append-system-prompt",
+        "--append-system-prompt-file",
+        "--autocompact",
+        "--debug-file",
+        "--effort",
+        "--environment",
+        "--fallback-model",
+        "--input-format",
+        "--json-schema",
+        "--max-budget-usd",
+        "--model",
+        "-n",
+        "--name",
+        "--output-format",
+        "--permission-mode",
+        "--plugin-dir",
+        "--plugin-url",
+        "--remote-control-session-name-prefix",
+        "--session-id",
+        "--setting-sources",
+        "--settings",
+        "--system-prompt",
+        "--system-prompt-file",
+    }
+)
+
+#: claude options declared ``<values...>``: the first value is taken whatever it
+#: looks like, then every following token up to the next one starting with ``-``.
+_CLAUDE_VARIADIC_OPTIONS: frozenset[str] = frozenset(
+    {
+        "--add-dir",
+        "--allowed-tools",
+        "--allowedTools",
+        "--betas",
+        "--disallowed-tools",
+        "--disallowedTools",
+        "--file",
+        "--mcp-config",
+        "--tools",
+    }
+)
+
+
+def _claude_value_positions(args: list[str]) -> frozenset[int]:
+    """Indices of *args* that claude reads as an option's value, not as a flag."""
+    values: set[int] = set()
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a in _CLAUDE_VALUE_OPTIONS:
+            values.add(i + 1)
+            i += 2
+            continue
+        if a in _CLAUDE_VARIADIC_OPTIONS:
+            j = i + 1
+            if j < len(args):
+                values.add(j)
+                j += 1
+            while j < len(args) and not args[j].startswith("-"):
+                values.add(j)
+                j += 1
+            i = j
+            continue
+        i += 1
+    return frozenset(v for v in values if v < len(args))
+
+
+def _claude_flag_present(flag: str, args: list[str]) -> bool:
+    """*flag* (bare or ``flag=…``) at a flag position of *args*, not as a value."""
+    values = _claude_value_positions(args)
+    return any(
+        (a == flag or a.startswith(flag + "=")) and i not in values for i, a in enumerate(args)
+    )
+
+
 def _ensure_claude_disallowed(extra_args: list[str]) -> list[str]:
     """Guarantee ``--disallowed-tools`` covers every denied tool (issue #288).
 
@@ -284,11 +370,16 @@ def _ensure_claude_disallowed(extra_args: list[str]) -> list[str]:
         return ",".join(existing)
 
     args = list(extra_args)
+    values = _claude_value_positions(args)
     out: list[str] = []
     i = 0
     found = False
     while i < len(args):
         a = args[i]
+        if i in values:  # another option's value, whatever it spells
+            out.append(a)
+            i += 1
+            continue
         # Both spellings, via the shared reader: the space form
         # (--disallowed-tools Edit,Write) and the equals form
         # (--disallowed-tools=Edit,Write — review of #288: the exact-match check
@@ -316,16 +407,17 @@ def _claude_tools_at(args: list[str], i: int) -> tuple[list[str], int] | None:
     """Read a ``--tools`` flag at *args[i]*: ``(tool names, span)`` or ``None``.
 
     claude declares the option variadic (``--tools <tools...>``), so the space
-    form takes every following token up to the next flag, and each token may
-    itself be a comma or space separated list. ``--tools ""`` is one empty token
-    and so names no tool at all — the documented way to disable them. The equals
-    form (``--tools=Read,Grep``) takes exactly its own value.
+    form takes its first value whatever it looks like and then every following
+    token up to the next flag (see :data:`_CLAUDE_VARIADIC_OPTIONS`), and each
+    token may itself be a comma or space separated list. ``--tools ""`` is one
+    empty token and so names no tool at all — the documented way to disable
+    them. The equals form (``--tools=Read,Grep``) takes exactly its own value.
     """
     a = args[i]
     if a.startswith("--tools="):
         values, span = [a.split("=", 1)[1]], 1
     elif a == "--tools":
-        j = i + 1
+        j = min(i + 2, len(args))
         while j < len(args) and not args[j].startswith("-"):
             j += 1
         values, span = args[i + 1 : j], j - i
@@ -343,9 +435,10 @@ def _claude_tools(args: list[str]) -> list[str] | None:
     variadic option.
     """
     found: list[str] | None = None
+    values = _claude_value_positions(args)
     i = 0
     while i < len(args):
-        hit = _claude_tools_at(args, i)
+        hit = None if i in values else _claude_tools_at(args, i)
         if hit is None:
             i += 1
             continue
@@ -355,8 +448,27 @@ def _claude_tools(args: list[str]) -> list[str] | None:
     return found
 
 
+#: Flags every read-only claude invocation carries, injected when absent.
+#: ``--strict-mcp-config`` (with no ``--mcp-config``) loads none of the user's MCP
+#: servers. ``--safe-mode`` starts claude with every customization off — CLAUDE.md
+#: and its imports, skills, plugins, hooks, MCP servers, custom agents — while
+#: login, model selection and permissions work as usual (``claude --help``,
+#: Claude Code 2.1.236): measured, a project ``.claude/settings.json`` hook ran
+#: under the no-tool argv without it and not with it, and ``~/.claude/CLAUDE.md``
+#: was in the reviewer's context without it and not with it.
+#: ``--no-session-persistence`` keeps claude from writing a transcript — which
+#: holds the untrusted diff — under ``~/.claude/projects/`` for every call.
+_CLAUDE_LOCKDOWN_FLAGS: tuple[str, ...] = (
+    "--strict-mcp-config",
+    "--safe-mode",
+    "--no-session-persistence",
+)
+
+
 def _ensure_claude_locked_down(extra_args: list[str]) -> list[str]:
-    """The claude reviewer argv: no built-in tools, no MCP servers, full deny list.
+    """The claude reviewer argv: no tools, no customizations, no transcript.
+
+    ``--tools ""``, the full deny list and :data:`_CLAUDE_LOCKDOWN_FLAGS`.
 
     Injection, not override, like every other enforcement here: a ``--tools``
     list the operator wrote is kept (the deny list still removes every tool this
@@ -372,8 +484,8 @@ def _ensure_claude_locked_down(extra_args: list[str]) -> list[str]:
     front: list[str] = []
     if _claude_tools(args) is None:
         front += ["--tools", ""]
-    if "--strict-mcp-config" not in args:
-        front.append("--strict-mcp-config")
+    # Flag-aware: a token that is another option's value does not count.
+    front += [f for f in _CLAUDE_LOCKDOWN_FLAGS if not _claude_flag_present(f, args)]
     return [*front, *args]
 
 
@@ -430,10 +542,15 @@ def _drop_claude_disallowed(extra_args: list[str]) -> list[str]:
     which is what an implementer role needs.
     """
     args = list(extra_args)
+    values = _claude_value_positions(args)
     out: list[str] = []
     i = 0
     while i < len(args):
         a = args[i]
+        if i in values:
+            out.append(a)
+            i += 1
+            continue
         if a == "--disallowed-tools":
             i += 2 if i + 1 < len(args) else 1
             continue
@@ -459,29 +576,36 @@ def _claude_write_args(extra_args: list[str]) -> list[str]:
     """The claude implementer argv: the reviewer lockdown lifted (#661).
 
     Drops everything :func:`_ensure_claude_locked_down` adds — the deny list, the
-    ``--tools`` allow-list and ``--strict-mcp-config`` — so the CLI's own default
-    tool set and MCP servers are back. The reviewer's ``--permission-mode
+    ``--tools`` allow-list and :data:`_CLAUDE_LOCKDOWN_FLAGS` — so the CLI's own
+    default tool set, MCP servers, CLAUDE.md, hooks and session history are back:
+    an implementer works in the operator's own worktree, as it did before. The reviewer's ``--permission-mode
     dontAsk`` would deny every edit the implementer exists to make, so it becomes
     ``--dangerously-skip-permissions``: the flag the shipped default carried for
     both roles until they were split, which keeps the write role's argv what it
     was.
     """
     args = _drop_claude_disallowed(extra_args)
+    values = _claude_value_positions(args)
+    skip_bypass = _claude_flag_present("--dangerously-skip-permissions", args)
     out: list[str] = []
     i = 0
     while i < len(args):
         a = args[i]
+        if i in values:
+            out.append(a)
+            i += 1
+            continue
         tools = _claude_tools_at(args, i)
         if tools is not None:
             i += tools[1]
             continue
         mode = _permission_mode_at(args, i)
         if mode is not None and mode[0] == _CLAUDE_REVIEW_MODE:
-            if "--dangerously-skip-permissions" not in args:
+            if not skip_bypass:
                 out.append("--dangerously-skip-permissions")
             i += mode[1]
             continue
-        if a != "--strict-mcp-config":
+        if a not in _CLAUDE_LOCKDOWN_FLAGS:
             out.append(a)
         i += 1
     return out
@@ -633,9 +757,10 @@ def _claude_is_locked_down(extra_args: list[str]) -> bool:
     """
     disallowed: set[str] = set()
     args = list(extra_args)
+    values = _claude_value_positions(args)
     i = 0
     while i < len(args):
-        hit = _disallowed_tools_at(args, i)
+        hit = None if i in values else _disallowed_tools_at(args, i)
         if hit is None:
             i += 1
             continue
@@ -663,9 +788,9 @@ def _claude_open_surface(extra_args: list[str]) -> list[str]:
         surface.append("the CLI's default tool set (no `--tools`)")
     elif tools:
         surface.append(f"`--tools {','.join(dict.fromkeys(tools))}`")
-    if _present("--mcp-config", args):
+    if _claude_flag_present("--mcp-config", args):
         surface.append("MCP servers from `--mcp-config`")
-    if "--strict-mcp-config" not in args:  # pragma: no cover - enforcement injects it
+    if not _claude_flag_present("--strict-mcp-config", args):  # pragma: no cover - injected
         surface.append("the MCP servers in the user's Claude configuration")
     return surface
 
@@ -673,10 +798,11 @@ def _claude_open_surface(extra_args: list[str]) -> list[str]:
 def _claude_permission_bypass(extra_args: list[str]) -> str | None:
     """The token that makes claude approve tool calls unasked, or ``None``."""
     args = list(extra_args)
-    if "--dangerously-skip-permissions" in args:
+    if _claude_flag_present("--dangerously-skip-permissions", args):
         return "--dangerously-skip-permissions"
+    values = _claude_value_positions(args)
     for i in range(len(args)):
-        mode = _permission_mode_at(args, i)
+        mode = None if i in values else _permission_mode_at(args, i)
         if mode is not None and mode[0] in _CLAUDE_APPROVING_MODES:
             return f"--permission-mode {mode[0]}"
     return None
