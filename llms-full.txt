@@ -177,8 +177,8 @@ command = "claude"
 # model = "claude-opus-4-8"
 # effort = "medium"     # low | medium | high; google + the *-api/openai-compatible
                         # vendors act on it, the claude/codex CLIs warn and ignore it
-# The reviewer gets no tools: no file reads, no shell, no network, no MCP servers.
-extra_args = ["--output-format", "text", "--tools", "", "--disallowed-tools", "Edit,Write,NotebookEdit,Bash,Read,Grep,Glob,WebFetch,WebSearch,Task,Agent", "--strict-mcp-config", "--permission-mode", "dontAsk"]
+# No tools (file reads, shell, network, MCP), no CLAUDE.md/hooks/skills/plugins, no transcript.
+extra_args = ["--output-format", "text", "--tools", "", "--disallowed-tools", "Edit,Write,NotebookEdit,Bash,Read,Grep,Glob,WebFetch,WebSearch,Task,Agent", "--strict-mcp-config", "--safe-mode", "--no-session-persistence", "--permission-mode", "dontAsk"]
 
 # A free, offline local / open-weight reviewer (#43):
 # [[agent]]
@@ -202,10 +202,11 @@ unreachable local endpoint (`connection_error`) becomes a non-fatal
 
 **Secure by default:** reviewers read attacker-controlled diffs, so each shipped seat
 gets as little as its CLI allows — Claude no tools at all (`--tools ""`, a deny list of
-every write/shell/read/network/subagent tool, `--strict-mcp-config`,
-`--permission-mode dontAsk`), Codex `-s read-only` (no writes, no shell network, but it
-can read files by absolute path, and user MCP servers from `~/.codex/config.toml` still
-load). The default panel is Claude + Codex: Antigravity is opt-in only, because
+every write/shell/read/network/subagent tool, `--strict-mcp-config`, `--safe-mode` so
+no CLAUDE.md, hooks, skills or plugins load, `--no-session-persistence`,
+`--permission-mode dontAsk`), Codex `-s read-only --ephemeral` (no writes, no shell
+network, but it can read files by absolute path, user MCP servers from
+`~/.codex/config.toml` still load, and `~/.codex/AGENTS.md` is in its context). The default panel is Claude + Codex: Antigravity is opt-in only, because
 `--sandbox` does not stop it reading, writing or reaching the network; an agy seat
 always warns and fails `--strict`. Native reviewers start in an empty
 temporary directory, not the repository. `privilege.py` enforces and audits the flags.

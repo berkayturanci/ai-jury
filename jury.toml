@@ -104,7 +104,9 @@ command = "claude"
 # The reviewer only needs its prompt, which carries the diff, so it gets no
 # tools at all: `--tools ""` leaves no built-in tool, the deny list names every
 # write, shell, read, network and subagent tool as a second layer,
-# `--strict-mcp-config` (with no --mcp-config) loads none of your MCP servers, and
+# `--strict-mcp-config` (with no --mcp-config) loads none of your MCP servers,
+# `--safe-mode` loads no CLAUDE.md, hooks, skills or plugins (yours or a
+# checkout's), `--no-session-persistence` keeps no transcript of the diff, and
 # `--permission-mode dontAsk` denies a tool call instead of prompting (so `-p`
 # cannot hang) or approving it. jury injects the same lockdown if you omit it.
 extra_args = [
@@ -112,6 +114,8 @@ extra_args = [
     "--tools", "",
     "--disallowed-tools", "Edit,Write,NotebookEdit,Bash,Read,Grep,Glob,WebFetch,WebSearch,Task,Agent",
     "--strict-mcp-config",
+    "--safe-mode",
+    "--no-session-persistence",
     "--permission-mode", "dontAsk",
 ]
 

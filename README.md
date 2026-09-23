@@ -22,7 +22,7 @@ Most "multi-model review" tools call models at the **API level**. This one drive
 
 ```
         ┌──────── round 1 ────────┐   ┌─ round 2 (adaptive) ─┐   ┌─ verify + synthesis ─┐
-diff ──▶ claude codex agy deepseek  ▶ each rebuts the      ▶ chair verifies, then   ▶ verdict
+diff ──▶ claude codex deepseek qwen ▶ each rebuts the      ▶ chair verifies, then   ▶ verdict
          (parallel, independent)           others' findings       consolidates             + report
 ```
 
@@ -661,8 +661,9 @@ name = "claude"
 vendor = "anthropic"   # anthropic | openai | google | xai
 command = "claude"
 # model = "claude-opus-4-8"
-# The reviewer gets no tools: no file reads, no shell, no network, no MCP servers.
-extra_args = ["--output-format", "text", "--tools", "", "--disallowed-tools", "Edit,Write,NotebookEdit,Bash,Read,Grep,Glob,WebFetch,WebSearch,Task,Agent", "--strict-mcp-config", "--permission-mode", "dontAsk"]
+# The reviewer gets no tools (no file reads, shell, network or MCP servers), loads no
+# CLAUDE.md, hooks, skills or plugins, and keeps no transcript of the diff.
+extra_args = ["--output-format", "text", "--tools", "", "--disallowed-tools", "Edit,Write,NotebookEdit,Bash,Read,Grep,Glob,WebFetch,WebSearch,Task,Agent", "--strict-mcp-config", "--safe-mode", "--no-session-persistence", "--permission-mode", "dontAsk"]
 ```
 
 Override per run with `--rounds`, `--chair`, `--config`.
@@ -926,12 +927,12 @@ What each seat can reach while it reads an attacker-controlled diff. The default
 
 | Seat | Shipped flags | Writes / shell | Reads files outside the diff | Network |
 | --- | --- | --- | --- | --- |
-| `claude` | `--tools ""`, a deny list naming every write, shell, read, network and subagent tool, `--strict-mcp-config`, `--permission-mode dontAsk` | no | no | no |
+| `claude` | `--tools ""`, a deny list naming every write, shell, read, network and subagent tool, `--strict-mcp-config`, `--safe-mode` (no CLAUDE.md, hooks, skills or plugins), `--no-session-persistence`, `--permission-mode dontAsk` | no | no — and with `--safe-mode` not even your own `~/.claude/CLAUDE.md` is loaded into its context | no |
 | `codex` | `-s read-only` | no writes; read-only shell | yes, by absolute path | not from its shell; user MCP servers from `~/.codex/config.toml` still load |
 | `agy` (opt-in) | `--sandbox --dangerously-skip-permissions` | yes — `--sandbox` did not stop it writing files | yes | yes |
 | `cli` / `xai` | yours | whatever your flags give it | whatever your flags give it | whatever your flags give it |
 
-Each row was measured with the shipped flags against Claude Code 2.1.236, codex-cli 0.155.0 and agy 1.2.9. **agy is not in the default panel** because it cannot be confined for untrusted diffs: agy has no flag that removes its tools, and `--sandbox` did not stop it. Seat it only by name (`jury init --agents agy`, or an `[[agent]]` in `jury.toml`) and only for diffs you trust; every run with an agy seat prints a least-privilege warning, and `--strict` fails on it. `claude`, `codex` and `agy` start each panel call in a fresh, empty temporary directory rather than the repository under review, so the instruction files, project settings and `.env` a checkout carries are not picked up; a bring-your-own seat runs where `jury` was started, with whatever permissions its own flags give it. Details in [docs/security.md](docs/security.md#other-agents).
+Each row was measured with the shipped flags against Claude Code 2.1.236, codex-cli 0.155.0 and agy 1.2.9. **agy is not in the default panel** because it cannot be confined for untrusted diffs: agy has no flag that removes its tools, and `--sandbox` did not stop it. Seat it only by name (`jury init --agents agy`, or an `[[agent]]` in `jury.toml`) and only for diffs you trust; every run with an agy seat prints a least-privilege warning, and `--strict` fails on it. `claude`, `codex` and `agy` start every read-only call — each panel call, and `jury run-agent`'s review/gate/chair roles — in a fresh, empty temporary directory rather than the repository under review, so the instruction files, project settings (a `.claude/settings.json` hook ran from one before) and `.env` a checkout carries are not picked up; a bring-your-own seat runs where `jury` was started, with whatever permissions its own flags give it. Details in [docs/security.md](docs/security.md#other-agents).
 
 Need codex to write or reach the network for your flow? Widen `extra_args` for the `codex` agent in `jury.toml` (e.g. `-s workspace-write`). See [docs/security.md](docs/security.md) for details.
 

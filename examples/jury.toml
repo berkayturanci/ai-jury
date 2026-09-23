@@ -40,7 +40,8 @@ redact_secrets = true
 name = "claude"
 vendor = "anthropic"
 command = "claude"
-# No tools for the reviewer: no file reads, no shell, no network, no MCP servers.
+# No tools for the reviewer: no file reads, no shell, no network, no MCP servers,
+# no CLAUDE.md/hooks/skills/plugins, and no transcript of the diff kept.
 extra_args = [
   "--output-format",
   "text",
@@ -49,6 +50,8 @@ extra_args = [
   "--disallowed-tools",
   "Edit,Write,NotebookEdit,Bash,Read,Grep,Glob,WebFetch,WebSearch,Task,Agent",
   "--strict-mcp-config",
+  "--safe-mode",
+  "--no-session-persistence",
   "--permission-mode",
   "dontAsk",
 ]

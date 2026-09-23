@@ -75,9 +75,23 @@ Two deliberate choices:
   reading any file your user can, inside the working directory or not (measured:
   a file in another temporary directory was read by absolute path), and what it
   reads can end up in the review text, which is posted to the pull request.
-  codex also starts the MCP servers enabled in your own `~/.codex/config.toml`,
-  which run outside its sandbox. Live web search stays off unless you add
-  `--search`.
+  Three more things codex brings with it, none of them changed by this tool:
+  - **Your MCP servers.** The servers enabled in `~/.codex/config.toml` start,
+    and run outside the sandbox; plugins can provide servers too. `-c
+    'mcp_servers={}'` does **not** clear them. `-c
+    mcp_servers.<name>.enabled=false` in the seat's `extra_args` turns one off.
+    `codex exec --ignore-user-config` skips the whole file, but that also drops
+    your model and provider settings.
+  - **Your global instructions.** `~/.codex/AGENTS.md` is in the reviewer's
+    context (measured: asked for its instructions, the shipped argv quoted that
+    file's first heading, from an empty directory too); `-c
+    project_doc_max_bytes=0` did not remove it.
+  - **Web search.** `codex exec --help` says live search needs `--search`, but
+    that has not been verified here, and a session has reported a web tool
+    without it. Do not rely on the reviewer having no web access.
+
+  The read-only argv also carries `--ephemeral`, so no session file holding the
+  diff is written (measured: no new file under `~/.codex/sessions`).
 - **`--skip-git-repo-check`, and an empty working directory.** A panel
   reviewer starts in a fresh empty temporary directory (see
   [Where a reviewer runs](#where-a-reviewer-runs)), and `codex exec` refuses to
@@ -110,18 +124,30 @@ content; the least-privilege audit (`--strict` to fail the run) will flag it.
   ```
   claude -p --output-format text --tools "" \
     --disallowed-tools Edit,Write,NotebookEdit,Bash,Read,Grep,Glob,WebFetch,WebSearch,Task,Agent \
-    --strict-mcp-config --permission-mode dontAsk
+    --strict-mcp-config --safe-mode --no-session-persistence --permission-mode dontAsk
   ```
 
   `--tools ""` leaves no built-in tool available; it is an allow-list, so it also
   covers a tool a later Claude Code release adds. The deny list is a second
   layer naming every write, shell, read, network and subagent tool.
   `--strict-mcp-config` with no `--mcp-config` means the MCP servers in your own
-  Claude configuration are not loaded. `--permission-mode dontAsk` denies a tool
-  call that is not pre-approved instead of prompting for it (so `-p` cannot hang)
-  or approving it. You do not have to write any of it: `--tools ""`,
-  `--strict-mcp-config` and the deny list are injected at spawn time into a seat
-  configured without them, and the deny list is merged into a narrower one you did
+  Claude configuration are not loaded. `--safe-mode` starts Claude Code with every
+  customization off — CLAUDE.md and its `@` imports, skills, plugins, hooks, MCP
+  servers, custom agents — while login, model selection and permissions work as
+  usual. Without it, measured on Claude Code 2.1.236, the tool-less reviewer still
+  had `~/.claude/CLAUDE.md` in its context and quoted its first heading when asked,
+  and a `SessionStart`/`UserPromptSubmit` hook in the working directory's
+  `.claude/settings.json` ran with no trust prompt; with it, the same probes
+  answered `NONE` and no hook ran. `--no-session-persistence` stops Claude Code
+  writing a transcript of each call — which holds the diff — under
+  `~/.claude/projects/`. `--permission-mode dontAsk` denies a tool call that is
+  not pre-approved instead of prompting for it (so `-p` cannot hang) or approving
+  it. These flags go on **every** read-only claude invocation, the panel's and
+  `jury run-agent`'s review/gate/chair roles alike. You do not have to write any
+  of it: `--tools ""`, `--strict-mcp-config`, `--safe-mode`,
+  `--no-session-persistence` and the deny list are injected at spawn time into a
+  seat configured without them (a flag that only appears as another option's
+  value, as in `--append-system-prompt --safe-mode`, does not count), and the deny list is merged into a narrower one you did
   write. A `--tools` list or an `--mcp-config` you *do* write is kept, and the
   least-privilege audit flags it, naming the permission bypass too if the argv has
   one (`--dangerously-skip-permissions`, `--permission-mode bypassPermissions` or
@@ -178,15 +204,20 @@ in the directory `jury` was started from, not in an empty one — see below.
 
 ### Where a reviewer runs
 
-Every panel invocation of `claude`, `codex` and `agy` — review, debate, verify
-and synthesis — starts in a **fresh, empty temporary directory** that is removed
+Every read-only invocation of `claude`, `codex` and `agy` — the panel's review,
+debate, verify and synthesis calls, and `jury run-agent`'s `review`, `gate` and
+`chair` roles — starts in a **fresh, empty temporary directory** that is removed
 when the call returns, not in the repository under review. On a pull-request
 checkout that repository is the author's, and an agent CLI started inside it
 picks things up on its own: instruction files (`CLAUDE.md`, `AGENTS.md`), project
 settings that can carry hooks or MCP servers (`.claude/settings.json`,
 `.mcp.json`), and a `.env` one relative path away. A reviewer needs none of it.
-This narrows what a reviewer finds by accident; it is not a sandbox, and a seat
-that can read files by absolute path (codex, agy — above) still can.
+Measured on Claude Code 2.1.236: a `SessionStart` and a `UserPromptSubmit` hook
+in a working directory's `.claude/settings.json` both ran under the tool-less
+argv, with no trust prompt. The empty directory is one of two defences against
+that; `--safe-mode` on every read-only claude call is the other. This narrows what
+a reviewer finds by accident; it is not a sandbox, and a seat that can read files
+by absolute path (codex, agy — above) still can.
 
 One consequence for configuration: a relative path in a native seat's
 `extra_args` (`--mcp-config ./servers.json`, `--add-dir .`) resolves against that
@@ -195,8 +226,11 @@ is already required to be a bare name or an absolute path.
 
 Not moved: bring-your-own `cli`/`xai` seats and custom registered adapters,
 whose CLI may need its directory (`cursor-agent` asks for workspace trust,
-Aider for a repository), and `jury run-agent`, which runs where `--cwd` says —
-an implementer has to edit that worktree.
+Aider for a repository), and `jury run-agent`'s write roles (`implement`/`fix`
+with `--allow-write`), which run where `--cwd` says — an implementer has to edit
+that worktree, and it keeps its CLAUDE.md and hooks. A read-only role reads only
+its prompt file, so it never needed the repository; `--cwd` passed to one now
+prints a note instead of taking effect.
 
 ### Hosted-API reviewers (no CLI, no sandbox needed)
 
@@ -289,7 +323,7 @@ make the reviewers approve a bad change or suppress findings. This is a classic
 
    | Agent | Read-only invocation (shipped default) | Writes / shell | Reads files outside the diff | Network |
    | --- | --- | --- | --- | --- |
-   | `claude` | `--tools ""`, `--disallowed-tools` naming every write, shell, read, network and subagent tool, `--strict-mcp-config`, `--permission-mode dontAsk` | no | no | no |
+   | `claude` | `--tools ""`, `--disallowed-tools` naming every write, shell, read, network and subagent tool, `--strict-mcp-config`, `--safe-mode`, `--no-session-persistence`, `--permission-mode dontAsk` | no | no — `--safe-mode` also keeps your `~/.claude/CLAUDE.md` out of its context | no |
    | `codex` | `-s read-only` (the diff is fetched by the jury via `gh`, not by the agent) | no writes; shell commands run inside the read-only sandbox | **yes** — any file your user can read, by absolute path | none from its shell; the MCP servers enabled in your `~/.codex/config.toml` still load, and run outside the sandbox |
    | `agy` / gemini (opt-in, not in the default panel; always warned about) | `--sandbox` with `--dangerously-skip-permissions` | **yes** — wrote files in its directory, another temporary directory and the home directory (measured) | **yes** (measured) | **yes** (measured) |
    | `cli` / `xai` | whatever you configure | whatever you configure | whatever you configure | whatever you configure |
