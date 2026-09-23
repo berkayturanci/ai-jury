@@ -158,9 +158,11 @@ class ScaffoldCovTests(unittest.TestCase):
         self.assertIn("qwen", templates)
 
     def test_scalar_unsupported_type_raises(self):
-        # line 132: a float is none of bool/int/str -> TypeError.
-        with self.assertRaises(TypeError):
-            scaffold._scalar(3.14)
+        # A table or a non-finite float is none of the scalars TOML is written
+        # with here -> TypeError. (A finite float renders since `temperature`.)
+        for value in ({"a": 1}, float("nan")):
+            with self.assertRaises(TypeError):
+                scaffold._scalar(value)
 
     def test_render_toml_omits_empty_agent_values(self):
         # line 170: agent keys whose value is None/""/[] are skipped on render.

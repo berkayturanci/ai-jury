@@ -14,7 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - On a non-local seat it warns and is ignored. The local adapter is decided by the seat's `adapter`, not its vendor.
   - When set, it is part of the config hash.
   - `reasoning_effort` is still **not** sent to local seats: many local servers reject unknown fields, which is why `local` was left out of `effort` (#662). For a local reasoning model, set the level in the model itself.
-  - `tests/test_local_temperature.py`.
+  - `jury init` writes a commented `# temperature = 1.0` hint under every local seat, in the same way as the `effort` hint, so the knob can be found from the generated file. It is a comment, so a generated config's hash is unchanged. The scaffold's TOML renderer now writes finite floats; it had no float case, so a scaffolded `temperature` would have raised `TypeError`.
+  - `tests/test_local_temperature.py`, and `TemperatureHintTest` in `tests/test_scaffold.py`.
 
 ## [1.19.1] - 2026-09-23
 

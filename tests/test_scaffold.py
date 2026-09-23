@@ -510,6 +510,45 @@ class EffortScaffoldingTest(unittest.TestCase):
         self.assertNotIn('# effort = "medium"', text)
 
 
+class TemperatureHintTest(unittest.TestCase):
+    """Local seats get a commented `temperature` hint; nothing else does."""
+
+    def test_local_seat_gets_the_commented_hint(self):
+        text = render_toml(build_config(["qwen"]))
+        self.assertIn("# temperature = 1.0", text)
+        # A comment, not a setting: the seat still sends the greedy default and
+        # the config hash is the one a config without the key has.
+        parsed = tomllib.loads(text)
+        self.assertNotIn("temperature", parsed["agent"][0])
+        self.assertIsNone(_from_dict(parsed).agents[0].temperature)
+
+    def test_no_hint_on_seats_that_do_not_send_it(self):
+        text = render_toml(build_config(["claude", "codex", "gemini-api", "openrouter"]))
+        self.assertNotIn("temperature", text)
+
+    def test_the_adapter_decides_not_the_vendor(self):
+        config = build_config(["claude"])
+        config["agent"][0].update({"vendor": "openai", "adapter": "local"})
+        self.assertIn("# temperature = 1.0", render_toml(config))
+
+    def test_an_explicit_value_is_rendered_and_replaces_the_hint(self):
+        config = build_config(["qwen"])
+        config["agent"][0]["temperature"] = 1.0
+        text = render_toml(config)
+        self.assertIn("temperature = 1.0", text)
+        self.assertNotIn("# temperature", text)
+        self.assertEqual(_from_dict(tomllib.loads(text)).agents[0].temperature, 1.0)
+
+    def test_floats_render_as_toml_floats(self):
+        # The renderer had no float case, so a scaffolded temperature crashed it.
+        for value in (1.0, 0.7, 2.0, 1e-05):
+            with self.subTest(value=value):
+                self.assertEqual(tomllib.loads(f"t = {scaffold._scalar(value)}")["t"], value)
+        for value in (float("nan"), float("inf")):
+            with self.assertRaises(TypeError):
+                scaffold._scalar(value)
+
+
 class InteractiveEffortQuestionTest(unittest.TestCase):
     """The effort question exists only on the interactive path (issue #662)."""
 
