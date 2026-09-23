@@ -1,11 +1,11 @@
 # ai-jury
 
-> ai-jury convenes a cross-vendor, multi-agent code-review jury on a diff, PR, or
-> issue and produces one report. Independent reviewers — Claude Code, Codex,
-> Antigravity, a free local/open-weight model, and/or a hosted-API key (no CLI
-> install needed) — each review, then cross-examine each other, verify findings,
-> and reach a single verdict: either a chair's synthesis or a panel vote.
-> Stdlib-only Python CLI, zero runtime dependencies, 100% test coverage.
+> Convene a cross-vendor multi-agent review jury: coding-agent CLIs, hosted model APIs
+> and local models review the same diff, PR or issue, cross-examine each other, verify
+> the findings, and reach one verdict — a chair's synthesis or a panel vote.
+
+A stdlib-only Python CLI with zero runtime dependencies. A hosted-API seat needs only an
+API key, no CLI install.
 
 ## Docs
 

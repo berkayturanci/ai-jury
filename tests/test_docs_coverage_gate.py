@@ -96,5 +96,51 @@ class TheStatedCoverageGateIsTheEnforcedOne(unittest.TestCase):
         )
 
 
+#: Every public page a reader or a model might quote a coverage figure from. The
+#: served `website/llms.txt` said "100% test coverage" while the suite measured
+#: 98.95% (#862); nothing enforced 100, so nothing noticed.
+PUBLIC_TEXT: tuple[Path, ...] = (
+    README,
+    REPO_ROOT / "llms.txt",
+    REPO_ROOT / "llms-full.txt",
+    REPO_ROOT / "website" / "llms.txt",
+    REPO_ROOT / "website" / "index.html",
+    REPO_ROOT / "website" / "docs.html",
+    *sorted((REPO_ROOT / "docs").glob("*.md")),
+)
+
+#: "100% coverage", "100 % test coverage", "coverage: 100%", "fully covered at 100%".
+FULL_COVERAGE_CLAIM = re.compile(
+    r"100\s?%[^.\n<]{0,30}\bcover|\bcover(?:age|ed)\b[^.\n<]{0,30}100\s?%", re.IGNORECASE
+)
+
+
+class NoCoverageFigureTheGateDoesNotEnforce(unittest.TestCase):
+    def test_no_public_page_claims_full_coverage_unless_it_is_enforced(self):
+        """A "100%" claim is only true while `fail_under` makes it so."""
+        if _fail_under() == 100:
+            self.skipTest("fail_under = 100 enforces the claim")
+        for path in PUBLIC_TEXT:
+            with self.subTest(file=str(path.relative_to(REPO_ROOT))):
+                found = FULL_COVERAGE_CLAIM.findall(path.read_text(encoding="utf-8"))
+                self.assertEqual(
+                    found,
+                    [],
+                    f"{path.name} claims full coverage, but fail_under is {_fail_under()}",
+                )
+
+    def test_pyproject_records_no_measured_total(self):
+        """The comment above `fail_under` said ~99.95% while the suite measured 98.95%.
+
+        A measured figure written into the file goes stale on the next commit; the
+        badge and a local `make coverage` run are the measurement. Only a decimal
+        percentage is refused, so the integer gate itself stays expressible.
+        """
+        text = PYPROJECT.read_text(encoding="utf-8")
+        section = text[text.index("[tool.coverage.report]") :].split("\n[", 1)[0]
+        self.assertIn("fail_under", section)
+        self.assertEqual(re.findall(r"\d+\.\d+\s?%", section), [])
+
+
 if __name__ == "__main__":
     unittest.main()

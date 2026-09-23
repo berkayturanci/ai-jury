@@ -736,7 +736,9 @@ keel ship --no-jury         # force the jury off for this run
 
 Precedence is `--no-jury` > `--jury` > tier-3 auto-on > off — a change that
 touches a `tier3_globs` path turns the jury on automatically (gating, unless
-`--jury-advisory` is also passed), and `--no-jury` always wins over that.
+`--jury-advisory` is also passed), and `--no-jury` wins over that. A tier whose
+`knobs.team.review` names `jury` outranks all three: there the panel *is* the
+tier's review, so keel records the flags as warnings and does not apply them.
 
 ### What keel does with the report
 
@@ -779,14 +781,14 @@ any code path in `src/keel/*.py`. (Anchors below are keel `main` as of
   [evidence guide](https://github.com/berkayturanci/keel/blob/main/docs/keel/evidence.md)
   for how the pre-merge evidence gate reads these signals.
 
-### Not yet available
+### Beyond the gate
 
-Two `ai-jury` capabilities mentioned elsewhere in this cookbook are not wired
-into Keel yet: per-panelist ballots (`--format keel-reviews`) are tracked in
-[ai-jury#663](https://github.com/berkayturanci/ai-jury/issues/663), and a
-`jury run-agent` recipe for Keel's implementer/reviewer roles is tracked in
-[ai-jury#661](https://github.com/berkayturanci/ai-jury/issues/661). Until
-those land, the `jury` gate above is the full extent of the Keel integration.
+The `jury` gate is not the only way keel uses the panel. Per-panelist ballots
+([ai-jury#663](https://github.com/berkayturanci/ai-jury/issues/663)) let each
+panelist stand as one of keel's reviewers, below. `jury run-agent`
+([ai-jury#661](https://github.com/berkayturanci/ai-jury/issues/661)) exists for
+an orchestrator that wants one agent for one role, but keel does not call it; see
+[§21](#21-run-one-agent-for-an-orchestrator-keel).
 
 ### Use the panel as Keel's reviewers
 
@@ -797,7 +799,7 @@ carrying the vendor and model that produced it — render the run with
 
 ```bash
 jury --pr 123 --format keel-reviews -o reviews.json
-keel review --reviews reviews.json --dry-run
+keel review .keel/project.yaml --pr 123 --reviews reviews.json --dry-run
 ```
 
 The file is a JSON array of `{reviewer, verdict, scope, findings, testing,
@@ -809,8 +811,10 @@ as an abstention and carries `counts_as_review: false`; that is the flag to coun
 on, because keel refuses such a verdict itself.
 Because every record carries its own `vendor`, a three-seat panel spread over
 three vendors satisfies Keel's distinct-vendor evidence requirement on its own.
-Producing the bundle is an `ai-jury` concern only; the Keel-side consumption of
-it is tracked in [keel#1015](https://github.com/berkayturanci/keel/issues/1015).
+Producing the bundle is an `ai-jury` concern only. On a tier whose
+`knobs.team.review` names `jury`, keel skips the bundle: `keel review --from-jury`
+reads the same ballots straight from the `jury --format json` report
+([keel#1015](https://github.com/berkayturanci/keel/issues/1015)).
 
 ---
 
@@ -1057,10 +1061,10 @@ tree — `git grep 'jury run-agent'` there returns nothing. Two implementations
 of one contract, agreeing by construction and by review, neither running the
 other.
 
-The change that will make keel call the jury is
-[keel#1015](https://github.com/berkayturanci/keel/issues/1015), which makes the
-panel keel's tier-3 review panel, invoked from `s7`. Update this section again
-when that merges.
+[keel#1015](https://github.com/berkayturanci/keel/issues/1015) has since
+merged, and it did not change this. A tier whose `knobs.team.review` names `jury`
+dispatches the whole panel once from `s7` with `jury --format json` and reads the
+ballots with `keel review --from-jury`; it does not call `jury run-agent`.
 
 So the invocation below is the shape a caller uses — written with keel's
 environment variable names, since a host agent driving a keel worktree is the

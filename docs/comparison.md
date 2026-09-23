@@ -12,7 +12,7 @@ against their current docs before deciding.
 
 - **Native-CLI orchestration** — drives each vendor's *own* coding-agent CLI
   (`claude`, `codex`, `agy`/`gemini`, `qwen`, …) as a subprocess. Each reviewer runs in
-  its native environment. *This project, Magpie, agent-jury, the-jury.*
+  its native environment. *This project, Magpie, agent-council, the-council.*
 - **API-level multi-model** — calls models through provider/aggregator APIs rather than
   their CLIs. *Star Chamber (Mozilla.ai); Calimero ai-code-reviewer (parallel specialized
   agents + consensus scoring, but Anthropic-only).*
@@ -30,12 +30,12 @@ against their current docs before deciding.
 
 Legend: ✅ yes · ➖ partial / optional · ❌ no · — not applicable.
 
-| Capability | ai-jury | Native-CLI peers (Magpie / agent-jury / the-jury) | API-level (Star Chamber) | Hosted PR reviewers |
+| Capability | ai-jury | Native-CLI peers (Magpie / agent-council / the-council) | API-level (Star Chamber) | Hosted PR reviewers |
 |:--|:--:|:--:|:--:|:--:|
 | Native CLI execution (per-vendor agent) | ✅ | ✅ | ❌ | ❌ |
 | API-level model calls | ❌ | ❌ | ✅ | ✅ |
 | Multiple vendors / models | ✅ | ✅ | ✅ | ➖ |
-| Consensus / debate rounds | ✅ | ✅ (Magpie, agent-jury) | ➖ (`--debate`) | ➖ |
+| Consensus / debate rounds | ✅ | ✅ (Magpie, agent-council) | ➖ (`--debate`) | ➖ |
 | Verification pass (re-read code) | ✅ | ➖ | ❌ | ➖ |
 | Panel voting verdict (tally vs. single chair) | ✅ (`--decision vote`) | ❌ | ❌ | ❌ |
 | Issue-quality review (completeness, not diffs) | ✅ (`--issue`) | ❌ | ❌ | ❌ |
@@ -55,7 +55,7 @@ Legend: ✅ yes · ➖ partial / optional · ❌ no · — not applicable.
 | Secret redaction before send | ✅ | ➖ | ➖ | n/a (hosted) |
 | Dependency footprint | ✅ stdlib-only | ➖ (Node/Bun runtimes) | ➖ (Python + `any-llm`) | — (hosted) |
 | Project-specific review policy | ✅ (`.jury/policy.toml`) | ➖ | ➖ | ✅ |
-| Skill drop-in for an existing repo | ✅ (Claude Code skill) | ➖ (the-jury, agent-jury are skills) | ➖ | ❌ |
+| Skill drop-in for an existing repo | ✅ (Claude Code skill) | ➖ (the-council, agent-council are skills) | ➖ | ❌ |
 
 Entries for other projects are intentionally conservative; where a project's support is
 configurable or undocumented it is marked ➖. Corrections via PR are welcome.

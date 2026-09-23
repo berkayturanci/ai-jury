@@ -17,6 +17,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `jury init` writes a commented `# temperature = 1.0` hint under every local seat, in the same way as the `effort` hint, so the knob can be found from the generated file. It is a comment, so a generated config's hash is unchanged. The scaffold's TOML renderer now writes finite floats; it had no float case, so a scaffolded `temperature` would have raised `TypeError`.
   - `tests/test_local_temperature.py`, and `TemperatureHintTest` in `tests/test_scaffold.py`.
 
+### Fixed
+- **The public text claims only what the project does** (#861, #862, #869, #872, #874). Pre-launch audit corrections:
+  - **One description everywhere** (#872): the PyPI summary, the README's first line, `llms.txt`, `llms-full.txt` and the served `website/llms.txt` now carry the same sentence, which names hosted APIs and local models beside the agent CLIs. The "once published; until then `pipx install git+…`" note is gone. The PyPI summary changes with the next release.
+  - **No coverage figure the gate does not enforce** (#862): the served `llms.txt` said "100% test coverage" and the comment above `fail_under` said ~99.95%; the suite measures 98.95% (2026-09-23). Both figures are removed, and the README points to the badge and `make coverage` instead of that comment.
+  - **`[jury.ci]` has four keys** (#869): the site and `llms-full.txt` said three and left out `min_reviews`.
+  - **keel's use of the jury** (#861): the README described keel's jury only as auto-enabled on tier-3, and the site footer as keel's tier-3 review jury. The README now says how a project turns it on (`gates: [jury]` or `knobs.team.review`), and when `keel ship` also enables it. The cookbook no longer lists ballots and keel#1015 as future work.
+  - **Dead links** (#874): the agent-jury and the-jury links returned 404; they now point at the same authors' current projects, `yogirk/agent-council` and `DantesPeak85/the-council`, whose READMEs match the descriptions. Karpathy's `llm-jury` link is now `llm-council`.
+  - `tests/test_public_claims.py` checks the description and the `[jury.ci]` key count against `pyproject.toml` and `config.KNOWN_CI_KEYS`. `NoCoverageFigureTheGateDoesNotEnforce` in `tests/test_docs_coverage_gate.py` refuses a "100%" claim unless `fail_under` is 100, and a decimal figure in `pyproject.toml`'s coverage table. Each check fails on the old text.
+
 ## [1.19.1] - 2026-09-23
 
 ### Changed

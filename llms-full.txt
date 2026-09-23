@@ -1,11 +1,11 @@
 # ai-jury — full reference
 
-> Install once. Run a cross-vendor review jury anywhere.
+> Convene a cross-vendor multi-agent review jury: coding-agent CLIs, hosted model APIs
+> and local models review the same diff, PR or issue, cross-examine each other, verify
+> the findings, and reach one verdict — a chair's synthesis or a panel vote.
 
-A small, stdlib-only Python CLI that orchestrates native coding-agent CLIs from
-different vendors to review the same diff/PR, debate, verify, and synthesize one
-verdict. This file is a fuller agent-readable reference; it links to canonical docs
-rather than duplicating them.
+A small, stdlib-only Python CLI. This file is a fuller agent-readable reference; it
+links to canonical docs rather than duplicating them.
 
 ## What it is / is not
 
@@ -22,9 +22,8 @@ rather than duplicating them.
 
 - Python ≥3.11. Zero runtime dependencies (stdlib: `subprocess`, `tomllib`,
   `concurrent.futures`, `argparse`).
-- `pipx install ai-jury` → `jury` entry point (once published; until then
-  `pipx install git+https://github.com/berkayturanci/ai-jury.git`).
-  `pip install -e .` for dev. Run `jury init` to scaffold a `jury.toml`.
+- `pipx install ai-jury` → `jury` entry point. `pip install -e .` for dev. Run
+  `jury init` to scaffold a `jury.toml`.
 - Install at least one agent CLI: `claude` (Claude Code), `codex` (OpenAI Codex CLI),
   `agy` (Google Antigravity); OR run a free **local / open-weight** model via Ollama (or
   any OpenAI-compatible server) as a `vendor = "local"` agent. Missing/unreachable agents
@@ -154,11 +153,13 @@ verify = true
 # auto_depth = false                              # risk-aware auto-depth (#120; CLI --auto)
 # total_timeout = 1200 ; phase_timeout = 600 ; retries = 0   # run budget (#30)
 
-[jury.ci]                         # exactly these three keys (`--format` is a flag)
+[jury.ci]                         # exactly these four keys (`--format` is a flag)
 fail_on = ["critical", "major"]   # severities that fail `--ci` (exit 1)
 ignore_unverified = true          # only verified findings can fail CI
 min_vendors = 2                   # distinct vendors that must have CONTRIBUTED a
                                   # review; fewer exits 3. 0 disables the guard (#682)
+min_reviews = 0                   # reviews the panel must deliver; fewer exits 3.
+                                  # 0 (the default) disables it (#699)
 
 [jury.context]
 mode = "diff-only"      # "diff-only" (default) or "expanded"

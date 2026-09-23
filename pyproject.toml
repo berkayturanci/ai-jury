@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ai-jury"
 version = "1.19.1"
-description = "Cross-vendor multi-agent PR review jury — orchestrate native coding-agent CLIs (Claude Code, Codex, Antigravity) to mutually review and debate the same pull request."
+description = "Convene a cross-vendor multi-agent review jury: coding-agent CLIs, hosted model APIs and local models review the same diff, PR or issue, cross-examine each other, verify the findings, and reach one verdict — a chair's synthesis or a panel vote."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
@@ -90,7 +90,8 @@ show_missing = true
 skip_covered = false
 # Minimum total coverage. Keep at or just below the measured baseline so the
 # gate reflects reality today; raise it deliberately as coverage improves.
-# Current measured total ~99.95% (statements + branches): 0 uncovered statements,
-# every module 100% except 2 documented-unreachable defensive branches in
-# orchestrator.py. Raise deliberately as coverage improves.
+# The measured total is not written here: a figure in a comment goes stale
+# (the one here overstated the suite by a full point, #862). The published
+# badge (pages.yml) and your own `make coverage` run are the measurement;
+# tests/test_docs_coverage_gate.py refuses a decimal percentage in this table.
 fail_under = 98

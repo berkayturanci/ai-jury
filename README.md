@@ -1,8 +1,8 @@
 # <img src="website/favicon.svg" alt="" height="30" align="top"> ai-jury
 
-> Convene a **cross-vendor multi-agent review jury**: native coding-agent CLIs from
-> different vendors review the *same* diff, PR, or issue, cross-examine each other,
-> verify, and reach **one verdict** — a chair's synthesis or a **panel vote**.
+> Convene a cross-vendor multi-agent review jury: coding-agent CLIs, hosted model APIs
+> and local models review the same diff, PR or issue, cross-examine each other, verify
+> the findings, and reach one verdict — a chair's synthesis or a panel vote.
 
 [![CI](https://github.com/berkayturanci/ai-jury/actions/workflows/ci.yml/badge.svg)](https://github.com/berkayturanci/ai-jury/actions/workflows/ci.yml)
 [![coverage](https://img.shields.io/endpoint?url=https://ai-jury.dev/coverage-badge.json)](https://ai-jury.dev/coverage/)
@@ -225,9 +225,9 @@ of step for several releases.
 suite actually reaches, so that an unrelated refactor moving the total by a
 fraction of a point is caught in review rather than by a red CI job, and it is
 raised on purpose as coverage improves. For the current *measured* total see the
-comment directly above `fail_under` in `pyproject.toml`, the live
-[coverage badge](https://ai-jury.dev/coverage/), or your own `make coverage` run
-— not this paragraph, which would go stale.
+live [coverage badge](https://ai-jury.dev/coverage/), rebuilt from `main` on every
+push, or your own `make coverage` run. Neither this paragraph nor `pyproject.toml`
+records it, because a written figure goes stale.
 
 **Measurement method.** Branch coverage is enabled (`branch = true`) and the
 package is measured by import name (`source = ["ai_jury"]`).
@@ -837,10 +837,13 @@ it composes with existing review workflows: run the jury for a cross-vendor pass
 then act on the consensus findings. For support status per platform, see the
 [platform support matrix](docs/platforms.md).
 
-For a concrete consumer: [**keel**](https://github.com/berkayturanci/keel)'s review
-gate (step `s7`, auto-enabled on its tier-3 risk class) runs ai-jury as its
-cross-vendor jury — **fail-soft**, a no-op when ai-jury isn't installed, so keel
-never hard-depends on it. keel's optional
+For a concrete consumer: [**keel**](https://github.com/berkayturanci/keel) can run
+ai-jury as a review gate. A project turns it on by adding `jury` to its `gates:`
+list, or by naming `jury` as a tier's reviewers under `knobs.team.review`.
+`keel ship` also enables the jury for a change in the project's tier-3 risk class
+(paths matching its `tier3_globs`) unless the run passes `--no-jury`. The `jury`
+gate is **fail-soft** — a no-op when ai-jury isn't installed — so keel never
+hard-depends on it. keel's optional
 [keel-visual](https://github.com/berkayturanci/keel/tree/main/keel-visual) run
 visualizer surfaces the jury on the review step when a run used it.
 
@@ -874,8 +877,8 @@ This is a known pattern, not a new invention. The closest project is
 **[Magpie](https://github.com/liliu-z/magpie)** (multi-vendor CLI review + debate, with a
 [benchmark](https://milvus.io/blog/ai-code-review-gets-better-when-models-debate-claude-vs-gemini-vs-codex-vs-qwen-vs-minimax.md)
 showing debate lifts bug detection to ~80%); see also
-[agent-jury](https://github.com/yogirk/agent-jury),
-[the-jury](https://github.com/DantesPeak85/the-jury), and Mozilla.ai's
+[agent-council](https://github.com/yogirk/agent-council),
+[the-council](https://github.com/DantesPeak85/the-council), and Mozilla.ai's
 [Star Chamber](https://blog.mozilla.ai/the-star-chamber-multi-llm-consensus-for-code-quality/).
 The jury/courtroom metaphor shows up in research too — e.g.
 **[VulTrial](https://arxiv.org/abs/2505.10961)** (ICSE 2026), which casts
