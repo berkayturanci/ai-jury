@@ -109,17 +109,37 @@ PUBLIC_TEXT: tuple[Path, ...] = (
     *sorted((REPO_ROOT / "docs").glob("*.md")),
 )
 
-#: A claim about the *whole* suite: "100% test coverage", "100 % total coverage",
-#: "test coverage: 100%", "overall coverage is 100%". The qualifier is what makes it
-#: suite-level, so a true per-module statement ("`voting.py` has 100% coverage") is
-#: not refused — the gate is a total, and a single module can be fully covered
-#: under it.
-_SUITE = r"(?:test|total|overall|code|suite|project|package)"
-FULL_COVERAGE_CLAIM = re.compile(
-    rf"100\s?%\s+{_SUITE}\s+coverage\b"
-    rf"|\b{_SUITE}\s+coverage\b[^.\n<]{{0,20}}?\b100\s?%",
-    re.IGNORECASE,
-)
+#: "100%" (or "100 %") within this many words of "cover…" is a coverage claim.
+NEARBY_WORDS = 4
+_PERCENT = re.compile(r"100\s?%")
+_CLAUSE_BREAK = re.compile(r"[\n<>]|\.(?:\s|$)")
+#: A module named just before the figure: `voting.py`, theater.py, `ballots`.
+_MODULE = re.compile(r"\w\.py\b|`[^`\s]+`")
+
+
+def full_coverage_claims(text: str) -> list[str]:
+    """Every "100%" in ``text`` that claims coverage for the whole project.
+
+    #862 was "zero runtime dependencies, 100% test coverage" on the served
+    `llms.txt`, and the likeliest recurrence drops the qualifier: "100% coverage".
+    So any 100% within a few words of "coverage" (or "covered") is refused,
+    whatever the wording around it — "coverage: 100%", "100% branch coverage",
+    "100 % unit test coverage". The one exception is a figure with a module named
+    just before it ("`voting.py` has 100% coverage", "theater.py 100%"): the gate
+    is a total, and a single module can truly be fully covered under it.
+    """
+    claims = []
+    for match in _PERCENT.finditer(text):
+        before = _CLAUSE_BREAK.split(text[max(0, match.start() - 120) : match.start()])[-1]
+        after = _CLAUSE_BREAK.split(text[match.end() : match.end() + 120])[0]
+        near_before = before.split()[-NEARBY_WORDS:]
+        near_after = after.split()[:NEARBY_WORDS]
+        if not re.search(r"cover", " ".join(near_before + near_after), re.IGNORECASE):
+            continue
+        if _MODULE.search(" ".join(near_before)):
+            continue
+        claims.append(" ".join([*near_before, match.group(), *near_after]))
+    return claims
 
 
 class NoCoverageFigureTheGateDoesNotEnforce(unittest.TestCase):
@@ -129,30 +149,37 @@ class NoCoverageFigureTheGateDoesNotEnforce(unittest.TestCase):
             self.skipTest("fail_under = 100 enforces the claim")
         for path in PUBLIC_TEXT:
             with self.subTest(file=str(path.relative_to(REPO_ROOT))):
-                found = FULL_COVERAGE_CLAIM.findall(path.read_text(encoding="utf-8"))
+                found = full_coverage_claims(path.read_text(encoding="utf-8"))
                 self.assertEqual(
                     found,
                     [],
                     f"{path.name} claims full coverage, but fail_under is {_fail_under()}",
                 )
 
-    def test_the_pattern_refuses_suite_claims_and_allows_module_ones(self):
-        """Pin what counts as a suite-level claim, both ways."""
+    def test_the_check_refuses_project_claims_and_allows_module_ones(self):
+        """Pin what counts as a coverage claim, both ways."""
         for claim in (
             "zero runtime dependencies, 100% test coverage.",
+            "zero runtime dependencies, 100% coverage.",
+            "100% coverage.",
+            "coverage: 100%",
+            "100% branch coverage",
+            "100 % unit test coverage",
             "100 % total coverage",
             "Test coverage: 100%",
             "overall coverage is 100%",
+            "every line is 100% covered",
         ):
             with self.subTest(claim=claim):
-                self.assertIsNotNone(FULL_COVERAGE_CLAIM.search(claim))
+                self.assertNotEqual(full_coverage_claims(claim), [])
         for statement in (
             "`voting.py` has 100% coverage.",
             "`make coverage` gate passing (theater.py 100%)",
             "the four-vendor panel caught 100% of them",
+            "all at 100% precision. Coverage is on the badge.",
         ):
             with self.subTest(statement=statement):
-                self.assertIsNone(FULL_COVERAGE_CLAIM.search(statement))
+                self.assertEqual(full_coverage_claims(statement), [])
 
     def test_pyproject_records_no_measured_total(self):
         """The comment above `fail_under` said ~99.95% while the suite measured 98.95%.

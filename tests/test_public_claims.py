@@ -28,7 +28,37 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 PYPROJECT = REPO_ROOT / "pyproject.toml"
 SITE_INDEX = REPO_ROOT / "website" / "index.html"
 
-NUMBER_WORDS = {"two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7}
+NUMBER_WORDS = {
+    word: n
+    for n, word in enumerate(
+        [
+            "zero",
+            "one",
+            "two",
+            "three",
+            "four",
+            "five",
+            "six",
+            "seven",
+            "eight",
+            "nine",
+            "ten",
+            "eleven",
+            "twelve",
+            "thirteen",
+            "fourteen",
+            "fifteen",
+            "sixteen",
+            "seventeen",
+            "eighteen",
+            "nineteen",
+            "twenty",
+        ]
+    )
+}
+#: A number word past the table ("thirty", "forty") must not be mistaken for "no
+#: count stated": it fails loudly instead.
+_UNLISTED_NUMBER = re.compile(r"(?i)(?:thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred)\w*")
 
 #: Every place that may count the `[jury.ci]` keys, and where the count would sit.
 #: A page may drop the count (#869 allows it); only a number it does state is
@@ -49,7 +79,13 @@ def _description() -> str:
 
 def _as_count(word: str) -> int | None:
     """The number a word states, or ``None`` when it states none."""
-    return int(word) if word.isdigit() else NUMBER_WORDS.get(word.lower())
+    if word.isdigit():
+        return int(word)
+    if word.lower() in NUMBER_WORDS:
+        return NUMBER_WORDS[word.lower()]
+    if _UNLISTED_NUMBER.fullmatch(word):
+        raise AssertionError(f"{word!r} looks like a number NUMBER_WORDS does not list")
+    return None
 
 
 def _first_blockquote(path: Path) -> str:
@@ -85,9 +121,14 @@ class TheJuryCiKeyCountIsTheSchemas(unittest.TestCase):
             ("<code>[jury.ci]</code><span>The keys: ", None),
             ("<code>[jury.ci]</code><span>Exactly three keys: ", 3),
             ("<code>[jury.ci]</code><span>4 keys: ", 4),
+            ("<code>[jury.ci]</code><span>Eight keys: ", 8),
         ):
             with self.subTest(entry=entry):
                 self.assertEqual([_as_count(w) for w in pattern.findall(entry)], [stated])
+
+    def test_an_unlisted_number_word_is_not_read_as_no_count(self):
+        with self.assertRaises(AssertionError):
+            _as_count("thirty")
 
     def test_the_site_names_every_key(self):
         text = SITE_INDEX.read_text(encoding="utf-8")
