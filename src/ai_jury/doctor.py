@@ -26,6 +26,7 @@ from . import __version__
 from .adapters import effort_supported, local_model_listing, make_adapter
 from .config import (
     ConfigError,
+    agy_opt_in_hint,
     is_commandless_vendor,
     load_config,
     normalise_vendor,
@@ -521,13 +522,17 @@ def _recommendations(config_path, config_summary, agents, config_error: bool = F
             )
         else:
             steps.append(
-                "No reviewer is available. Install an agent CLI (claude / codex / agy); "
+                "No reviewer is available. Install an agent CLI (claude / codex); "
                 "run a local model (e.g. `ollama serve` + `ollama pull "
                 'qwen2.5-coder:7b`) and add a `vendor = "local"` agent; or, with no '
                 "install at all, set a hosted-API key (e.g. ANTHROPIC_API_KEY) and add "
                 "that seat with `jury init --agents claude-api` — or use `--mock` for an "
                 "offline demo."
             )
+        # agy on PATH but in no seat: say why the one CLI here was not used.
+        hint = agy_opt_in_hint((a.get("adapter") for a in agents), shutil.which)
+        if hint:
+            steps.append(f"Note: {hint}.")
     else:
         missing = [
             a["name"]

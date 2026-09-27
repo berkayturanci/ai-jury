@@ -8,6 +8,7 @@ independent, IO-bound subprocess.
 from __future__ import annotations
 
 import random
+import shutil
 import string
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -15,7 +16,7 @@ from dataclasses import dataclass, field, replace
 
 from . import convergence, injection, largediff, panel, prompts, routing
 from .adapters import RETRYABLE_ERROR_CODES, Adapter, AgentResult, make_adapter
-from .config import JuryConfig
+from .config import JuryConfig, agy_opt_in_hint
 from .consensus import FindingGroup, demote_local_only_groups, group_findings
 from .diffprofile import profile_diff
 from .findings import (
@@ -460,11 +461,17 @@ def run_jury(
             log(f"skipping '{a.name}': {reason}")
             skipped.append((a.name, reason))
     if not usable:
-        raise RuntimeError(
-            "no usable agents — install an agent CLI (claude / codex / agy), run a local "
+        message = (
+            "no usable agents — install an agent CLI (claude / codex), run a local "
             "model, or set a hosted-API key (e.g. ANTHROPIC_API_KEY with `jury init --agents "
             "claude-api`) — or use --mock"
         )
+        # An agy-only machine: the one CLI it has is opt-in, so say why it was
+        # not used rather than only telling it to install another.
+        hint = agy_opt_in_hint((s.adapter_key for s in specs), shutil.which)
+        if hint:
+            message += f". Note: {hint}."
+        raise RuntimeError(message)
 
     usable_names = [a.name for a in usable]
     # Tiered routing (#714): a pure plan over the enabled bench, the usable

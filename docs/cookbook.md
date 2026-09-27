@@ -50,14 +50,18 @@ jury init --agents claude,codex,qwen --rounds 2   # non-interactive / scriptable
 > automatically — so `git diff main... | jury --diff-file -` just works offline.
 
 **Outcome:** a validated `jury.toml` using the secure-by-default agent templates
-(Codex read-only, Antigravity sandboxed, Claude write-tool denylist). It won't overwrite
+(Claude with no tools, Codex read-only — see [security.md](security.md#other-agents)
+for what each can still reach). Antigravity (`agy`) is never picked on its own —
+not from detection, not by a preset — because it cannot be confined for untrusted
+diffs; `jury init --agents agy` writes it, with a warning. It won't overwrite
 an existing file without `--force`.
 
 ---
 
 ## 1. Review a local branch before opening a PR
 
-**Prerequisites:** at least one agent CLI (`claude`, `codex`, or `agy`). No `gh`
+**Prerequisites:** at least one agent CLI (`claude` or `codex`; `agy` only if you
+seat it by name). No `gh`
 needed — this reviews a diff, not a PR.
 
 Pipe the branch diff straight into the jury via stdin (`--diff-file -`):
@@ -378,7 +382,7 @@ panel.
 
 ```bash
 jury --pr 123 --ci                     # guard on by default (min_vendors = 2)
-jury --pr 123 --min-vendors 3          # require all three vendors
+jury --pr 123 --min-vendors 3          # require three vendors (your config must seat three)
 jury --pr 123 --no-min-vendors         # accept a collapsed panel (explicit)
 ```
 
@@ -634,7 +638,7 @@ Add `ai-jury` to your repository's `.pre-commit-config.yaml` to catch security i
 ```yaml
 repos:
   - repo: https://github.com/berkayturanci/ai-jury
-    rev: v1.19.1
+    rev: v1.20.0
     hooks:
       - id: ai-jury
         # Optional args: e.g. a single round
@@ -996,8 +1000,11 @@ when you need the exact id.
 
 **Roles decide privilege, and the flag cannot override that.** `review`, `gate`
 and `chair` always run under the vendor's read-only invocation — the exact one a
-panel review uses (`claude --disallowed-tools …`, `codex -s read-only`, `agy
---sandbox`). Passing `--allow-write` to them warns and is ignored: those roles
+panel review uses (`claude --tools "" --disallowed-tools … --strict-mcp-config
+--safe-mode --no-session-persistence`, `codex -s read-only --ephemeral`, `agy
+--sandbox`), and on `claude`, `codex` and `agy` they start in a fresh, empty
+temporary directory rather than `--cwd`, so a checkout's project settings and
+hooks cannot reach them; `--cwd` applies to the write roles only. Passing `--allow-write` to them warns and is ignored: those roles
 read attacker-controlled content, and a flag must not be able to make a reviewer
 write-capable. `implement` and `fix` are the only write-capable roles, and only
 with `--allow-write`; without it the command exits 2 rather than quietly running

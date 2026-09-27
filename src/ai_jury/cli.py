@@ -17,6 +17,7 @@ import contextlib
 import io
 import json
 import os
+import shutil
 import sys
 from importlib import resources
 from pathlib import Path
@@ -793,7 +794,7 @@ def _run_comment_command(rest: list[str]) -> int:
 _AGENT_BLURB = {
     "claude": "Claude Code (Anthropic)",
     "codex": "Codex CLI (OpenAI)",
-    "agy": "Antigravity (Google)",
+    "agy": "Antigravity (Google) — opt-in only, cannot be confined",
     "qwen": "local / open-weight via Ollama (free, offline)",
     "claude-api": "hosted Anthropic API (ANTHROPIC_API_KEY, no CLI needed)",
     "codex-api": "hosted OpenAI API (OPENAI_API_KEY, no CLI needed)",
@@ -803,6 +804,17 @@ _AGENT_BLURB = {
     "groq": "hosted Groq API (GROQ_API_KEY)",
     "aider": "generic CLI coding agent (Aider)",
 }
+
+
+def _default_init_agents(available: dict) -> list[str]:
+    """The agents an interactive `jury init` pre-fills: detected, never opt-in-only.
+
+    agy stays listed and can be typed in, but pressing Enter never seats it.
+    """
+    from .scaffold import KNOWN_AGENTS, implicit_choices
+
+    detected = implicit_choices(n for n in KNOWN_AGENTS if available.get(n))
+    return detected or implicit_choices(KNOWN_AGENTS)
 
 
 def _init_available() -> dict:
@@ -836,7 +848,7 @@ def _init_interactive(available: dict, input_fn=input, local_endpoint=None, mode
     for name in KNOWN_AGENTS:
         mark = "available" if available.get(name) else "not found"
         print(f"  - {name}: {_AGENT_BLURB[name]} [{mark}]", file=sys.stderr)
-    default_agents = [n for n in KNOWN_AGENTS if available.get(n)] or list(KNOWN_AGENTS)
+    default_agents = _default_init_agents(available)
     raw_agents = input_fn(f"\nAgents to include [default: {','.join(default_agents)}]: ").strip()
     agents = [a.strip() for a in raw_agents.split(",") if a.strip()] or default_agents
 
@@ -931,7 +943,7 @@ def _init_wizard(available: dict, input_fn=input, local_endpoint=None, models_fn
     for name in KNOWN_AGENTS:
         mark = "available" if available.get(name) else "not found"
         print(f"  - {name}: {_AGENT_BLURB[name]} [{mark}]", file=sys.stderr)
-    default_agents = [n for n in KNOWN_AGENTS if available.get(n)] or list(KNOWN_AGENTS)
+    default_agents = _default_init_agents(available)
     raw_agents = ask(f"\nReviewers to include [default: {','.join(default_agents)}]: ")
     agents = [a.strip() for a in raw_agents.split(",") if a.strip()] or default_agents
 
@@ -1028,12 +1040,14 @@ def _init_wizard(available: dict, input_fn=input, local_endpoint=None, models_fn
 
 def _run_init(rest: list[str]) -> int:
     """Handle ``jury init`` (issue #107): scaffold a jury.toml."""
-    from .config import ConfigError, validate_config
+    from .config import AGY_OPT_IN_NOTE, ConfigError, validate_config
     from .scaffold import (
         KNOWN_AGENTS,
+        OPT_IN_AGENTS,
         PRESETS,
         agents_needing_remote_opt_in,
         build_config,
+        implicit_choices,
         render_toml,
     )
 
@@ -1044,7 +1058,10 @@ def _run_init(rest: list[str]) -> int:
         help="setup preset: offline (local-only), fast (1 round), balanced "
         "(debate + early-stop), thorough (all agents + debate + verify)",
     )
-    sub.add_argument("--agents", help="comma-separated: claude,codex,agy,qwen")
+    sub.add_argument(
+        "--agents",
+        help="comma-separated: claude,codex,qwen (agy only by name: it cannot be confined)",
+    )
     sub.add_argument("--rounds", type=int, default=None)
     sub.add_argument("--chair")
     sub.add_argument("--verify", dest="verify", action="store_true", default=None)
@@ -1102,7 +1119,8 @@ def _run_init(rest: list[str]) -> int:
     preset = PRESETS.get(ns.preset, {})
 
     def _detected_agents():
-        return [n for n in KNOWN_AGENTS if available.get(n)]
+        # Never an opt-in-only agent (agy): "detected" is a default, not a choice.
+        return implicit_choices(n for n in KNOWN_AGENTS if available.get(n))
 
     def _selectable_agents():
         """Every known agent whose template scaffolds to a *valid* config here.
@@ -1115,9 +1133,9 @@ def _run_init(rest: list[str]) -> int:
         name; they are only excluded from "all" until the opt-in is present.
         """
         if os.environ.get("JURY_ALLOW_REMOTE_ENDPOINT"):
-            return list(KNOWN_AGENTS)
+            return implicit_choices(KNOWN_AGENTS)
         needs_opt_in = set(agents_needing_remote_opt_in())
-        return [n for n in KNOWN_AGENTS if n not in needs_opt_in]
+        return implicit_choices(n for n in KNOWN_AGENTS if n not in needs_opt_in)
 
     def _resolve_preset_agents(spec):
         if spec == "all":
@@ -1159,6 +1177,8 @@ def _run_init(rest: list[str]) -> int:
                     "or --preset (e.g. --preset offline), or run interactively.",
                     file=sys.stderr,
                 )
+                if available.get("agy"):
+                    print(f"note: {AGY_OPT_IN_NOTE}.", file=sys.stderr)
                 return 2
         kwargs = {
             "agents": agents,
@@ -1197,6 +1217,14 @@ def _run_init(rest: list[str]) -> int:
     configtrust.record_trust(out_path, configtrust.content_digest(out_path.read_bytes()))
     chosen = ", ".join(a["name"] for a in config["agent"])
     print(f"Wrote {out_path} — panel: {chosen} · rounds: {config['jury']['rounds']}")
+    # Seated by name only, so the operator chose it — say what they chose.
+    if any(a["name"] in OPT_IN_AGENTS for a in config["agent"]):
+        print(
+            "warning: agy cannot be confined (it reads, writes and reaches the network "
+            "even with --sandbox); do not use it on untrusted diffs. A review run warns "
+            "about this seat, and `--strict` fails on it.",
+            file=sys.stderr,
+        )
     # A local seat whose server does not list its model is still a valid config,
     # so it is written — but said now, not discovered by the first review as an
     # `HTTP 404` (#849). `--list-models` already knew; init never asked. The
@@ -1339,7 +1367,11 @@ def _run_agent_parser() -> argparse.ArgumentParser:
         f"{'/'.join(sorted(runagent.WRITE_ROLES))} need --allow-write",
     )
     sub.add_argument("--prompt-file", help="path to the prompt to send, or '-' for stdin")
-    sub.add_argument("--cwd", help="directory to run the agent in (default: the current one)")
+    sub.add_argument(
+        "--cwd",
+        help="directory a write role (implement/fix) runs in (default: the current one); "
+        "read-only roles on claude/codex/agy start in an empty temporary directory",
+    )
     sub.add_argument(
         "--timeout",
         type=int,
@@ -1558,6 +1590,14 @@ def _run_run_agent(rest: list[str], spawn=None, sleep=None, clock=None) -> int:
     if ns.cwd and not Path(ns.cwd).is_dir():
         print(f"error: --cwd is not a directory: {ns.cwd}", file=sys.stderr)
         return 2
+    if ns.cwd and not policy.write:
+        # Said, not silently dropped: a read-only role on a native CLI starts in an
+        # empty directory, so a checkout's project settings cannot reach it.
+        print(
+            f"note: --cwd applies to write roles; the read-only role '{policy.role}' "
+            f"starts in an empty temporary directory (claude/codex/agy).",
+            file=sys.stderr,
+        )
 
     try:
         config = load_config(ns.config)
@@ -1995,6 +2035,12 @@ def _maybe_add_local_fallback(config, args, log) -> None:
     )
     config.chair = "local"
     log(f"no agent CLIs found; using local model '{model}' (offline, $0)")
+    # An agy-only machine lands here too: say why its one CLI sat out.
+    from .config import agy_opt_in_hint
+
+    hint = agy_opt_in_hint((s.adapter_key for s in config.agents), shutil.which)
+    if hint:
+        log(f"note: {hint}")
 
 
 def _force_utf8_output() -> None:
@@ -2725,6 +2771,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     if collapsed:
         log(collapsed)
+        # A runner with claude + agy and no codex lands here since agy left the
+        # default panel: name the second vendor it already has, and why it sat out.
+        from .config import agy_opt_in_hint
+
+        hint = agy_opt_in_hint((s.adapter_key for s in config.agents), shutil.which)
+        if hint:
+            log(f"note: {hint}; or install another vendor's CLI, or lower --min-vendors")
         ci_exit = 3
     # No seat returned anything (#849). One local seat pointed at a model its
     # server does not have failed every call with `HTTP 404`, and the run still

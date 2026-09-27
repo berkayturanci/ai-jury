@@ -22,6 +22,7 @@ import re
 import shutil
 import signal
 import subprocess
+import tempfile
 import time
 from dataclasses import dataclass, field
 
@@ -46,14 +47,18 @@ def _kill_process_group(proc: subprocess.Popen) -> None:
         proc.kill()
 
 
-def _spawn(argv: list[str], stdin: str | None, timeout: int) -> subprocess.CompletedProcess:
+def _spawn(
+    argv: list[str], stdin: str | None, timeout: int, cwd: str | None = None
+) -> subprocess.CompletedProcess:
     """Run a CLI with stdout/stderr captured, killing the whole group on timeout.
 
     ``subprocess.run(timeout=…)`` SIGKILLs only the direct child, so an agent CLI
     that wraps node/python can leak orphaned grandchildren (issue #293/F-7). The
     child is started in its own session (process-group leader); on timeout the
     entire group is killed before re-raising ``TimeoutExpired`` so the caller's
-    handling is unchanged. Returns a ``CompletedProcess``.
+    handling is unchanged. ``cwd`` starts the child somewhere other than this
+    process's working directory (see :func:`_review_workdir`). Returns a
+    ``CompletedProcess``.
     """
     popen_kwargs: dict = {
         "stdin": subprocess.PIPE if stdin is not None else None,
@@ -61,6 +66,8 @@ def _spawn(argv: list[str], stdin: str | None, timeout: int) -> subprocess.Compl
         "stderr": subprocess.PIPE,
         "text": True,
     }
+    if cwd is not None:
+        popen_kwargs["cwd"] = cwd
     if hasattr(os, "setsid"):
         popen_kwargs["start_new_session"] = True
     proc = subprocess.Popen(argv, **popen_kwargs)
@@ -72,6 +79,29 @@ def _spawn(argv: list[str], stdin: str | None, timeout: int) -> subprocess.Compl
             proc.communicate()  # reap the killed child
         raise
     return subprocess.CompletedProcess(argv, proc.returncode, out, err)
+
+
+@contextlib.contextmanager
+def _review_workdir(isolate: bool):
+    """A fresh, empty directory for one reviewer process, removed afterwards.
+
+    Yields ``None`` — "inherit this process's directory" — when ``isolate`` is
+    false. Otherwise the reviewer starts outside the repository under review, so
+    whatever that repository carries for the agent CLI to pick up on its own is
+    out of reach: instruction files (``CLAUDE.md``, ``AGENTS.md``), project
+    settings with hooks or MCP servers (``.claude/settings.json``, ``.mcp.json``),
+    and the relative path to a ``.env``. On a PR checkout every one of those is
+    the author's, and a reviewer needs none of them — its prompt carries the diff.
+
+    Cleanup ignores errors, so a file the CLI left behind can never turn a
+    finished review into a failure; the directory is created per call, so two
+    seats running in parallel never share one.
+    """
+    if not isolate:
+        yield None
+        return
+    with tempfile.TemporaryDirectory(prefix="ai-jury-review-", ignore_cleanup_errors=True) as path:
+        yield path
 
 
 def _read_only_extra_args(spec: AgentSpec) -> list[str]:
@@ -728,6 +758,21 @@ class Adapter:
     SUPPORTS_HEADLESS = True
     SUPPORTS_MODEL_SELECTION = True
 
+    #: Start every READ-ONLY invocation — the panel's review, debate, verify and
+    #: synthesis calls, and ``jury run-agent``'s review/gate/chair roles — in a
+    #: fresh empty directory rather than the one ``jury`` runs in (see
+    #: :func:`_review_workdir`). A read-only role reads its prompt and nothing
+    #: else, so it never needs the repository, and a PR checkout's project
+    #: settings (a ``.claude/settings.json`` hook ran from one, measured) must not
+    #: reach it. Only a write role (``implement``/``fix`` with ``--allow-write``)
+    #: stays in ``--cwd``: it has to edit that worktree. On for the three native
+    #: CLIs, whose behaviour there is known — codex needs
+    #: ``--skip-git-repo-check`` outside a git repository, and its read-only argv
+    #: carries it. Off by default, so a bring-your-own ``cli`` seat and a
+    #: registered custom adapter keep running where they always did: this tool
+    #: cannot know what an operator's own binary expects of its directory.
+    ISOLATE_REVIEW_CWD = False
+
     # Args passed to the CLI to print its version. Subclasses override if the CLI
     # uses a different verb/flag (e.g. ``codex --version``).
     _VERSION_ARGS = ("--version",)
@@ -930,7 +975,15 @@ class Adapter:
         stdin = self._stdin_for(prompt)
         start = time.monotonic()
         try:
-            proc = _spawn(argv, stdin, effective_timeout)
+            # A command is a bare name or an absolute path (config validation
+            # refuses a relative one, #293/F-6), so moving the directory cannot
+            # change which binary runs.
+            read_only = not getattr(role_policy, "write", False)
+            with _review_workdir(self.ISOLATE_REVIEW_CWD and read_only) as cwd:
+                if cwd is None:
+                    proc = _spawn(argv, stdin, effective_timeout)
+                else:
+                    proc = _spawn(argv, stdin, effective_timeout, cwd=cwd)
         except subprocess.TimeoutExpired:
             return AgentResult(
                 self.name,
@@ -1013,6 +1066,8 @@ class ClaudeAdapter(Adapter):
     # STDIN rather than as a process argument so it is not exposed in `ps` /
     # /proc/<pid>/cmdline to other local users (issue #287). `claude -p` reads
     # the prompt from stdin when no positional prompt is given.
+    ISOLATE_REVIEW_CWD = True
+
     def _head_argv(self) -> list[str]:
         argv = [self.spec.command, "-p"]
         model = self.resolved_model()
@@ -1038,6 +1093,16 @@ class CodexAdapter(Adapter):
     # waiting for input in non-interactive runs. Sandbox flags live in extra_args;
     # the shipped default is ``-s read-only`` (secure by default, #100) — the
     # reviewer only reads its prompt, since the jury fetches the diff via ``gh``.
+    ISOLATE_REVIEW_CWD = True
+
+    #: `codex exec` refuses to start outside a git repository ("Not inside a
+    #: trusted directory and --skip-git-repo-check was not specified", verified
+    #: against codex-cli 0.155.0), and a panel invocation starts in an empty
+    #: temporary directory. The check keeps an agent out of a directory nobody
+    #: vouched for; a reviewer is kept in check by its read-only sandbox instead,
+    #: which ``privilege.audit_agent`` reports on, and the directory is empty.
+    _SKIP_GIT_CHECK = "--skip-git-repo-check"
+
     def _head_argv(self) -> list[str]:
         argv = [self.spec.command, "exec"]
         model = self.resolved_model()
@@ -1045,9 +1110,16 @@ class CodexAdapter(Adapter):
             argv += ["-m", model]
         return argv
 
+    #: ``codex exec --ephemeral`` ("Run without persisting session files to
+    #: disk", codex-cli 0.155.0): a reviewer's session holds the untrusted diff
+    #: and is never resumed.
+    _EPHEMERAL = "--ephemeral"
+
     def build_argv(self, prompt: str) -> list[str]:
         del prompt
-        return self._head_argv() + _read_only_extra_args(self.spec)
+        extra = _read_only_extra_args(self.spec)
+        added = [f for f in (self._SKIP_GIT_CHECK, self._EPHEMERAL) if f not in extra]
+        return self._head_argv() + added + extra
 
     def build_write_argv(self, prompt: str) -> list[str]:
         """Implementer invocation: ``-s workspace-write`` instead of read-only (#661)."""
@@ -1076,6 +1148,10 @@ class AgyAdapter(Adapter):
     # format implies print mode, and passing it would reintroduce the arity
     # problem. Verified end to end against agy 1.1.22.
     _STREAM_ARGS = ("--input-format", "stream-json", "--output-format", "stream-json")
+
+    # A panel review starts in an empty temporary directory; agy 1.2.9 answers
+    # from one (checked by hand against the installed CLI).
+    ISOLATE_REVIEW_CWD = True
 
     # `agy models` lists the model ids the CLI can be pointed at.
     _MODELS_ARGS = ("models",)

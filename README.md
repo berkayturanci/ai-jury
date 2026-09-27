@@ -22,7 +22,7 @@ Most "multi-model review" tools call models at the **API level**. This one drive
 
 ```
         ┌──────── round 1 ────────┐   ┌─ round 2 (adaptive) ─┐   ┌─ verify + synthesis ─┐
-diff ──▶ claude codex agy deepseek  ▶ each rebuts the      ▶ chair verifies, then   ▶ verdict
+diff ──▶ claude codex deepseek qwen ▶ each rebuts the      ▶ chair verifies, then   ▶ verdict
          (parallel, independent)           others' findings       consolidates             + report
 ```
 
@@ -383,7 +383,7 @@ jury run-agent --agent codex:gpt-5.2 --role implement --allow-write --prompt-fil
 
 ```yaml
 - repo: https://github.com/berkayturanci/ai-jury
-  rev: v1.19.1
+  rev: v1.20.0
   hooks:
     - id: ai-jury
 ```
@@ -661,7 +661,9 @@ name = "claude"
 vendor = "anthropic"   # anthropic | openai | google | xai
 command = "claude"
 # model = "claude-opus-4-8"
-extra_args = ["--output-format", "text", "--disallowed-tools", "Edit,Write,NotebookEdit,Bash", "--dangerously-skip-permissions"]
+# The reviewer gets no tools (no file reads, shell, network or MCP servers), loads no
+# CLAUDE.md, hooks, skills or plugins, and keeps no transcript of the diff.
+extra_args = ["--output-format", "text", "--tools", "", "--disallowed-tools", "Edit,Write,NotebookEdit,Bash,Read,Grep,Glob,WebFetch,WebSearch,Task,Agent", "--strict-mcp-config", "--safe-mode", "--no-session-persistence", "--permission-mode", "dontAsk"]
 ```
 
 Override per run with `--rounds`, `--chair`, `--config`.
@@ -761,8 +763,15 @@ redact_secrets = true   # scrub recognized secrets before sending (default on)
   reviewing with `--pr`) to improve review quality. Use this only when you trust
   the configured agent endpoints.
 
-Either way, no source files outside the diff, no repository history, and no
-environment variables are read or sent.
+Either way, the jury itself reads and sends no source files outside the diff, no
+repository history, and no environment variables. What an agent CLI can reach on
+its own, once started, depends on the seat: the shipped `claude` seat has no tools
+at all, the shipped `codex` seat can read any file your user can read by absolute
+path but not write or reach the network from its shell (and it loads the MCP
+servers in your `~/.codex/config.toml`), an `agy` seat — opt-in only, never in
+the default panel — can read and write files and reach the network, and a
+bring-your-own `cli` seat has whatever its own flags give it — see
+[Security & the Codex sandbox](#security--the-codex-sandbox).
 
 **Secret redaction** — before anything is sent to an agent, the diff (and any
 context) is passed through a redactor (`src/ai_jury/redaction.py`)
@@ -893,7 +902,7 @@ it differs from hosted, API-level, and other native-CLI tools, and
 
 ## Status
 
-Active (v1.19.1). The full pipeline runs end-to-end with the real CLIs and the offline
+Active (v1.20.0). The full pipeline runs end-to-end with the real CLIs and the offline
 `--mock` path is covered by tests. **Shipped:** structured findings + tiered consensus
 (consensus / majority / single-reviewer), a verification pass that drops false positives,
 **universal agent provider support** (cloud CLIs, hosted APIs, arbitrary coding-agent CLIs, local models),
@@ -917,7 +926,18 @@ issues are tracked under [milestones](https://github.com/berkayturanci/ai-jury/m
 
 The jury performs **read-only review orchestration** — it sends a diff to each agent CLI and collects their feedback; it does not apply edits.
 
-The Codex adapter pipes the prompt on **stdin** (`codex exec` with no positional prompt) so non-interactive runs never hang waiting for input, and defaults `extra_args` to **`["-s", "read-only"]`** — a secure-by-default sandbox. The diff is fetched by the jury (`gh`), not by codex, so the reviewer only needs to read its prompt and print findings; a prompt injection in the diff can't make it write files, run shell, or reach the network. The `agy` agent runs under `--sandbox`, and `claude` under a write-tool denylist, for the same reason.
+The Codex adapter pipes the prompt on **stdin** (`codex exec` with no positional prompt) so non-interactive runs never hang waiting for input, and defaults `extra_args` to **`["-s", "read-only"]`** — a secure-by-default sandbox. The diff is fetched by the jury (`gh`), not by codex, so the reviewer only needs to read its prompt and print findings; a prompt injection in the diff can't make it write files, and its shell has no network. The read-only sandbox does not stop it *reading* any file your user can read, by absolute path, and the MCP servers enabled in your own `~/.codex/config.toml` still load (they run outside its sandbox).
+
+What each seat can reach while it reads an attacker-controlled diff. The default panel — what runs with no `jury.toml` — is `claude` + `codex`; `agy` is **opt-in only**:
+
+| Seat | Shipped flags | Writes / shell | Reads files outside the diff | Network |
+| --- | --- | --- | --- | --- |
+| `claude` | `--tools ""`, a deny list naming every write, shell, read, network and subagent tool, `--strict-mcp-config`, `--safe-mode` (no CLAUDE.md, hooks, skills or plugins), `--no-session-persistence`, `--permission-mode dontAsk` | no | no — and with `--safe-mode` not even your own `~/.claude/CLAUDE.md` is loaded into its context | no |
+| `codex` | `-s read-only` | no writes; read-only shell | yes, by absolute path | not from its shell; user MCP servers from `~/.codex/config.toml` still load |
+| `agy` (opt-in) | `--sandbox --dangerously-skip-permissions` | yes — `--sandbox` did not stop it writing files | yes | yes |
+| `cli` / `xai` | yours | whatever your flags give it | whatever your flags give it | whatever your flags give it |
+
+Each row was measured with the shipped flags against Claude Code 2.1.236, codex-cli 0.155.0 and agy 1.2.9. **agy is not in the default panel** because it cannot be confined for untrusted diffs: agy has no flag that removes its tools, and `--sandbox` did not stop it. Seat it only by name (`jury init --agents agy`, or an `[[agent]]` in `jury.toml`) and only for diffs you trust; every run with an agy seat prints a least-privilege warning, and `--strict` fails on it. `claude`, `codex` and `agy` start every read-only call — each panel call, and `jury run-agent`'s review/gate/chair roles — in a fresh, empty temporary directory rather than the repository under review, so the instruction files, project settings (a `.claude/settings.json` hook ran from one before) and `.env` a checkout carries are not picked up; a bring-your-own seat runs where `jury` was started, with whatever permissions its own flags give it. Details in [docs/security.md](docs/security.md#other-agents).
 
 Need codex to write or reach the network for your flow? Widen `extra_args` for the `codex` agent in `jury.toml` (e.g. `-s workspace-write`). See [docs/security.md](docs/security.md) for details.
 

@@ -297,10 +297,12 @@ class PresetTest(unittest.TestCase):
             data = tomllib.loads(path.read_text(encoding="utf-8"))
             # Derived, not listed: a hardcoded roster here is a second copy of
             # KNOWN_AGENTS, and two copies drifting apart is what #589 was about.
+            # agy is seated by name only: "all" is a default, not a choice.
             expected = [
                 n
                 for n in scaffold.KNOWN_AGENTS
                 if n not in set(scaffold.agents_needing_remote_opt_in())
+                and n not in scaffold.OPT_IN_AGENTS
             ]
             self.assertEqual([a["name"] for a in data["agent"]], expected)
             self.assertNotEqual(

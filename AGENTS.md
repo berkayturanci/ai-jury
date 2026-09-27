@@ -21,8 +21,11 @@ synthesize one verdict. Entry point: `ai_jury.cli:main`.
   extra. Talk to local model servers over HTTP via `urllib`, not `requests`.
 - **Python ≥ 3.11.** `requires-python` in `pyproject.toml` is the source of truth.
 - **Read-only / secure by default.** Reviewers process attacker-controlled diffs,
-  so agents run sandboxed (Claude `--disallowed-tools …`, Codex `-s read-only`,
-  Antigravity `--sandbox`). `privilege.py` audits this. Don't loosen defaults.
+  so agents run sandboxed (Claude with no tools: `--tools ""`, `--disallowed-tools …`,
+  `--strict-mcp-config`, `--safe-mode`; Codex `-s read-only`;
+  Antigravity `--sandbox`, which does not confine it — so agy is opt-in only,
+  never in the default panel, and always flagged). `privilege.py` audits this.
+  Don't loosen defaults.
 - **Project-agnostic.** No downstream/private project names or workflows in core.
 
 ## Commands

@@ -30,7 +30,7 @@ import time
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from .config import DEFAULT_CONFIG, AgentSpec
+from .config import AGY_AGENT, DEFAULT_CONFIG, AgentSpec
 
 #: Stable schema identifier for the ``jury run-agent`` JSON result. Bump this
 #: when a key changes meaning or disappears; ``tests/test_cli_run_agent.py``
@@ -163,12 +163,14 @@ def builtin_spec(name: str) -> AgentSpec | None:
     A CLI vendor reuses the entry from :data:`config.DEFAULT_CONFIG` — the same
     command and the same read-only ``extra_args`` a default panel would use — so
     a bare ``--agent claude`` and a configured ``[[agent]] name = "claude"``
-    cannot drift apart.
+    cannot drift apart. ``agy`` is not in that panel (it cannot be confined for
+    untrusted diffs), but naming it here is an explicit single dispatch, so it
+    resolves to :data:`config.AGY_AGENT`, the entry ``jury init`` writes.
     """
     key = (name or "").strip().lower()
     if key not in BUILTIN_AGENTS:
         return None
-    for raw in DEFAULT_CONFIG["agent"]:
+    for raw in [*DEFAULT_CONFIG["agent"], AGY_AGENT]:
         if raw["name"] == key:
             return AgentSpec(
                 name=raw["name"],

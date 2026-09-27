@@ -14,10 +14,21 @@ the warnings to a hard failure.
 
 Required read-only invocation per adapter (documented here and in docs/security.md):
 
-- ``claude``  : ``--disallowed-tools Edit,Write,NotebookEdit,Bash`` so the
-                reviewer cannot edit files or run shell commands. Injected, and
-                merged into a narrower deny list, unconditionally — config can
-                add denials, never remove them.
+- ``claude``  : no tools at all. ``--tools ""`` (an empty allow-list of built-in
+                tools), ``--disallowed-tools`` naming every write, shell, read,
+                network and subagent tool, ``--strict-mcp-config`` with no
+                ``--mcp-config`` (so the operator's own MCP servers are not
+                loaded), ``--safe-mode``, ``--no-session-persistence`` and
+                ``--permission-mode dontAsk``. A permission mode, settings,
+                plugins, extra directories or agents the operator named are
+                kept and reported. Each is injected when absent and the deny list is
+                merged into a narrower one, unconditionally — config can add
+                denials, never remove them. A ``--tools`` list or ``--mcp-config``
+                the operator DID write is kept as written and flagged here,
+                louder when permission checks are skipped as well. The reviewer
+                only needs its prompt, which already carries the diff; a tool it
+                can call is a way for a prompt injection to read a file outside
+                the diff (``.env``) or send one to the network (``WebFetch``).
 - ``codex``   : ``-s read-only`` (the shipped default, issue #100), injected when
                 the config names no sandbox at all. A wider sandbox the operator
                 DID name (``workspace-write``/``danger-full-access``) is kept as
@@ -26,7 +37,13 @@ Required read-only invocation per adapter (documented here and in docs/security.
                 ``--dangerously-skip-permissions`` / ``--yolo`` only skip an
                 approval prompt, so the sandbox beside them — whether the
                 operator wrote it or this module injected it — is what settles
-                the question.
+                the question as far as this module can settle it. What
+                ``--sandbox`` confines is agy's to decide: measured on agy 1.2.9,
+                the shipped argv still read and wrote files outside its
+                working directory and reached the network (docs/security.md).
+                It is the only restriction agy offers, not proof of one — so
+                agy is out of the default panel, and every seat on this
+                adapter is flagged by :func:`audit_agent` (``--strict`` fails).
 - ``cli``/``xai`` : the operator's own binary, for which this tool knows no
                 sandbox flag to add. Nothing is enforced, so for these the
                 declared ``extra_args`` really are the whole story and an
@@ -48,6 +65,64 @@ _DANGEROUS_FLAGS: tuple[str, ...] = (
 
 # Tool names that allow filesystem writes or shell execution.
 _WRITE_TOOLS: tuple[str, ...] = ("Edit", "Write", "NotebookEdit", "Bash")
+
+#: Claude tools that read the filesystem, reach the network, or hand the turn to a
+#: subagent that could do either. Denying only the write tools left all of these
+#: auto-approved under ``--dangerously-skip-permissions``: an injected instruction
+#: in the diff could ``Read`` the repository's ``.env`` and ``WebFetch`` it out.
+#:
+#: Only names the CLI still has. Claude Code 2.1.236 answers a deny rule for a
+#: tool it no longer ships (``LS``, ``NotebookRead``) with "Permission deny rule
+#: … matches no known tool" on stderr, on every run, and ``classify_stderr``
+#: reads that line as ``permission_prompt`` whenever the seat fails for another
+#: reason. ``--tools ""`` already leaves neither available.
+_READ_NETWORK_TOOLS: tuple[str, ...] = (
+    "Read",
+    "Grep",
+    "Glob",
+    "WebFetch",
+    "WebSearch",
+    "Task",
+    "Agent",
+)
+
+#: Every tool a claude reviewer is denied. The deny list is the second layer: the
+#: first is ``--tools ""``, which leaves no built-in tool available at all, and is
+#: an allow-list, so it also covers a tool a later Claude Code release adds. The
+#: shipped default in ``config.DEFAULT_CONFIG`` spells this same list out (config
+#: cannot import this module); ``tests/test_privilege.py`` keeps the two equal.
+_CLAUDE_DENIED_TOOLS: tuple[str, ...] = _WRITE_TOOLS + _READ_NETWORK_TOOLS
+
+#: claude's permission settings that approve a tool call without asking. With no
+#: tool available there is nothing for them to approve; with one available, they
+#: are what turns "the model asked for a file" into "the model read the file".
+_CLAUDE_APPROVING_MODES: tuple[str, ...] = ("bypassPermissions", "auto")
+
+#: The permission mode every read-only claude call runs in: a tool call that is
+#: not pre-approved is denied, never prompted for (so ``-p`` cannot hang) and
+#: never waved through. Injected when the argv names no ``--permission-mode``; a
+#: mode the operator DID name is kept and reported by :func:`audit_agent`. The
+#: write role swaps it for the bypass it had before.
+_CLAUDE_REVIEW_MODE = "dontAsk"
+
+#: claude options that point the CLI at configuration beyond its prompt:
+#: settings files and sources (hooks live there), plugins, extra directories
+#: (their CLAUDE.md), custom agents. ``--safe-mode`` keeps all of them from
+#: loading — measured on Claude Code 2.1.236, a ``--settings`` file's
+#: SessionStart/UserPromptSubmit hooks, ``--setting-sources project`` in a
+#: checkout with hooks and a CLAUDE.md, and an ``--add-dir`` holding a CLAUDE.md
+#: each loaded nothing under ``--safe-mode`` (and the ``--settings`` hooks ran
+#: without it). Kept as written, then, and reported: a reviewer needs none of
+#: them, and an operator should not be surprised to find one ignored.
+_CLAUDE_CONFIG_OPTIONS: tuple[str, ...] = (
+    "--settings",
+    "--setting-sources",
+    "--plugin-dir",
+    "--plugin-url",
+    "--add-dir",
+    "--agents",
+    "--agent",
+)
 
 # The subset of _DANGEROUS_FLAGS a sandbox does NOT settle, because they SELECT a
 # sandbox themselves rather than merely skipping an approval prompt (issue #750).
@@ -215,28 +290,120 @@ def _competing_sandboxes(extra_args: list[str], vendor: str = "") -> list[tuple[
     return found
 
 
-def _ensure_claude_disallowed(extra_args: list[str]) -> list[str]:
-    """Guarantee ``--disallowed-tools`` covers every write tool (issue #288).
+#: claude options that take one required value. claude's parser (commander)
+#: hands such an option the next token *even when it starts with ``--``*, so in
+#: ``--append-system-prompt --tools`` the ``--tools`` is prompt text, not a flag.
+#: Every reader below skips value positions, or a configured value could pass
+#: for a restriction that is not there (and the real one would not be injected).
+#: From ``claude --help`` of Claude Code 2.1.236, plus the two ``-file`` forms
+#: its ``--bare`` text names.
+_CLAUDE_VALUE_OPTIONS: frozenset[str] = frozenset(
+    {
+        "--agent",
+        "--agents",
+        "--append-system-prompt",
+        "--append-system-prompt-file",
+        "--autocompact",
+        "--debug-file",
+        "--effort",
+        "--environment",
+        "--fallback-model",
+        "--input-format",
+        "--json-schema",
+        "--max-budget-usd",
+        "--model",
+        "-n",
+        "--name",
+        "--output-format",
+        "--permission-mode",
+        "--plugin-dir",
+        "--plugin-url",
+        "--remote-control-session-name-prefix",
+        "--session-id",
+        "--setting-sources",
+        "--settings",
+        "--system-prompt",
+        "--system-prompt-file",
+    }
+)
 
-    Merges the mandatory write tools into any existing ``--disallowed-tools``
-    value (config may ADD denials, never REMOVE the mandatory ones), or injects
-    the flag when absent. Idempotent: the shipped default already lists all four,
-    so it is returned unchanged.
+#: claude options declared ``<values...>``: the first value is taken whatever it
+#: looks like, then every following token up to the next one starting with ``-``.
+_CLAUDE_VARIADIC_OPTIONS: frozenset[str] = frozenset(
+    {
+        "--add-dir",
+        "--allowed-tools",
+        "--allowedTools",
+        "--betas",
+        "--disallowed-tools",
+        "--disallowedTools",
+        "--file",
+        "--mcp-config",
+        "--tools",
+    }
+)
+
+
+def _claude_value_positions(args: list[str]) -> frozenset[int]:
+    """Indices of *args* that claude reads as an option's value, not as a flag."""
+    values: set[int] = set()
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a in _CLAUDE_VALUE_OPTIONS:
+            values.add(i + 1)
+            i += 2
+            continue
+        if a in _CLAUDE_VARIADIC_OPTIONS:
+            j = i + 1
+            if j < len(args):
+                values.add(j)
+                j += 1
+            while j < len(args) and not args[j].startswith("-"):
+                values.add(j)
+                j += 1
+            i = j
+            continue
+        i += 1
+    return frozenset(v for v in values if v < len(args))
+
+
+def _claude_flag_present(flag: str, args: list[str]) -> bool:
+    """*flag* (bare or ``flag=…``) at a flag position of *args*, not as a value."""
+    values = _claude_value_positions(args)
+    return any(
+        (a == flag or a.startswith(flag + "=")) and i not in values for i, a in enumerate(args)
+    )
+
+
+def _ensure_claude_disallowed(extra_args: list[str]) -> list[str]:
+    """Guarantee ``--disallowed-tools`` covers every denied tool (issue #288).
+
+    Merges the mandatory tools — write and shell, and since the read/network
+    hardening also read, network and subagent tools — into any existing
+    ``--disallowed-tools`` value (config may ADD denials, never REMOVE the
+    mandatory ones), or injects the flag when absent. Idempotent: the shipped
+    default already lists all of them, so it is returned unchanged.
     """
 
     def _merged(value: str) -> str:
         existing = [t.strip() for t in value.split(",") if t.strip()]
-        for tool in _WRITE_TOOLS:
+        for tool in _CLAUDE_DENIED_TOOLS:
             if tool not in existing:
                 existing.append(tool)
         return ",".join(existing)
 
     args = list(extra_args)
+    values = _claude_value_positions(args)
     out: list[str] = []
     i = 0
     found = False
     while i < len(args):
         a = args[i]
+        if i in values:  # another option's value, whatever it spells
+            out.append(a)
+            i += 1
+            continue
         # Both spellings, via the shared reader: the space form
         # (--disallowed-tools Edit,Write) and the equals form
         # (--disallowed-tools=Edit,Write — review of #288: the exact-match check
@@ -256,8 +423,100 @@ def _ensure_claude_disallowed(extra_args: list[str]) -> list[str]:
         out.append(a)
         i += 1
     if not found:
-        out = ["--disallowed-tools", ",".join(_WRITE_TOOLS), *out]
+        out = ["--disallowed-tools", ",".join(_CLAUDE_DENIED_TOOLS), *out]
     return out
+
+
+def _claude_tools_at(args: list[str], i: int) -> tuple[list[str], int] | None:
+    """Read a ``--tools`` flag at *args[i]*: ``(tool names, span)`` or ``None``.
+
+    claude declares the option variadic (``--tools <tools...>``), so the space
+    form takes its first value whatever it looks like and then every following
+    token up to the next flag (see :data:`_CLAUDE_VARIADIC_OPTIONS`), and each
+    token may itself be a comma or space separated list. ``--tools ""`` is one
+    empty token and so names no tool at all — the documented way to disable
+    them. The equals form (``--tools=Read,Grep``) takes exactly its own value.
+    """
+    a = args[i]
+    if a.startswith("--tools="):
+        values, span = [a.split("=", 1)[1]], 1
+    elif a == "--tools":
+        j = min(i + 2, len(args))
+        while j < len(args) and not args[j].startswith("-"):
+            j += 1
+        values, span = args[i + 1 : j], j - i
+    else:
+        return None
+    names = [t for v in values for t in v.replace(",", " ").split() if t]
+    return names, span
+
+
+def _claude_tools(args: list[str]) -> list[str] | None:
+    """The built-in tools a ``--tools`` flag leaves available, or ``None`` if absent.
+
+    ``None`` means the flag is not there, which leaves the CLI's whole default
+    tool set available. Repeated flags accumulate, as claude's parser does for a
+    variadic option.
+    """
+    found: list[str] | None = None
+    values = _claude_value_positions(args)
+    i = 0
+    while i < len(args):
+        hit = None if i in values else _claude_tools_at(args, i)
+        if hit is None:
+            i += 1
+            continue
+        names, span = hit
+        found = [*(found or []), *names]
+        i += span
+    return found
+
+
+#: Flags every read-only claude invocation carries, injected when absent.
+#: ``--strict-mcp-config`` (with no ``--mcp-config``) loads none of the user's MCP
+#: servers. ``--safe-mode`` starts claude with every customization off — CLAUDE.md
+#: and its imports, skills, plugins, hooks, MCP servers, custom agents — while
+#: login, model selection and permissions work as usual (``claude --help``,
+#: Claude Code 2.1.236): measured, a project ``.claude/settings.json`` hook ran
+#: under the no-tool argv without it and not with it, and ``~/.claude/CLAUDE.md``
+#: was in the reviewer's context without it and not with it.
+#: ``--no-session-persistence`` keeps claude from writing a transcript — which
+#: holds the untrusted diff — under ``~/.claude/projects/`` for every call.
+_CLAUDE_LOCKDOWN_FLAGS: tuple[str, ...] = (
+    "--strict-mcp-config",
+    "--safe-mode",
+    "--no-session-persistence",
+)
+
+
+def _ensure_claude_locked_down(extra_args: list[str]) -> list[str]:
+    """The claude reviewer argv: no tools, no customizations, no transcript.
+
+    ``--tools ""``, the full deny list and :data:`_CLAUDE_LOCKDOWN_FLAGS`.
+
+    Injection, not override, like every other enforcement here: a ``--tools``
+    list the operator wrote is kept (the deny list still removes every tool this
+    module names from it), and so is an ``--mcp-config``; both are what
+    :func:`audit_agent` then reports. The injected flags go in front, as one
+    block, and the empty ``--tools`` value is followed by a flag — the injected
+    ``--strict-mcp-config`` or ``--disallowed-tools``, or the configured argv's
+    own first flag — never by a bare token its variadic parser would take as
+    another tool name. (A configured argv that starts with a bare token was
+    already broken: claude reads that token as the prompt.)
+    """
+    args = _ensure_claude_disallowed(extra_args)
+    front: list[str] = []
+    if _claude_tools(args) is None:
+        front += ["--tools", ""]
+    # Flag-aware: a token that is another option's value does not count.
+    front += [f for f in _CLAUDE_LOCKDOWN_FLAGS if not _claude_flag_present(f, args)]
+    # The reviewer's permission mode, unless the operator named one — which is
+    # kept, and reported by `audit_agent`. With `--tools ""` in force a mode has
+    # no tool to approve, so keeping it grants nothing; overriding it silently
+    # would hide a configuration the operator believes is in effect.
+    if not _claude_flag_present("--permission-mode", args):
+        front += ["--permission-mode", _CLAUDE_REVIEW_MODE]
+    return [*front, *args]
 
 
 def _ensure_value_sandbox(extra_args: list[str], default: list[str]) -> list[str]:
@@ -313,10 +572,15 @@ def _drop_claude_disallowed(extra_args: list[str]) -> list[str]:
     which is what an implementer role needs.
     """
     args = list(extra_args)
+    values = _claude_value_positions(args)
     out: list[str] = []
     i = 0
     while i < len(args):
         a = args[i]
+        if i in values:
+            out.append(a)
+            i += 1
+            continue
         if a == "--disallowed-tools":
             i += 2 if i + 1 < len(args) else 1
             continue
@@ -324,6 +588,55 @@ def _drop_claude_disallowed(extra_args: list[str]) -> list[str]:
             i += 1
             continue
         out.append(a)
+        i += 1
+    return out
+
+
+def _permission_mode_at(args: list[str], i: int) -> tuple[str, int] | None:
+    """Read a ``--permission-mode`` flag at *args[i]*: ``(mode, span)`` or ``None``."""
+    a = args[i]
+    if a == "--permission-mode":
+        return (args[i + 1], 2) if i + 1 < len(args) else ("", 1)
+    if a.startswith("--permission-mode="):
+        return a.split("=", 1)[1], 1
+    return None
+
+
+def _claude_write_args(extra_args: list[str]) -> list[str]:
+    """The claude implementer argv: the reviewer lockdown lifted (#661).
+
+    Drops everything :func:`_ensure_claude_locked_down` adds — the deny list, the
+    ``--tools`` allow-list and :data:`_CLAUDE_LOCKDOWN_FLAGS` — so the CLI's own
+    default tool set, MCP servers, CLAUDE.md, hooks and session history are back:
+    an implementer works in the operator's own worktree, as it did before. The reviewer's ``--permission-mode
+    dontAsk`` would deny every edit the implementer exists to make, so it becomes
+    ``--dangerously-skip-permissions``: the flag the shipped default carried for
+    both roles until they were split, which keeps the write role's argv what it
+    was.
+    """
+    args = _drop_claude_disallowed(extra_args)
+    values = _claude_value_positions(args)
+    skip_bypass = _claude_flag_present("--dangerously-skip-permissions", args)
+    out: list[str] = []
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if i in values:
+            out.append(a)
+            i += 1
+            continue
+        tools = _claude_tools_at(args, i)
+        if tools is not None:
+            i += tools[1]
+            continue
+        mode = _permission_mode_at(args, i)
+        if mode is not None and mode[0] == _CLAUDE_REVIEW_MODE:
+            if not skip_bypass:
+                out.append("--dangerously-skip-permissions")
+            i += mode[1]
+            continue
+        if a not in _CLAUDE_LOCKDOWN_FLAGS:
+            out.append(a)
         i += 1
     return out
 
@@ -374,8 +687,10 @@ def enable_write(vendor: str, extra_args: list[str]) -> list[str]:
     invocation still goes through :func:`enforce_read_only`, so a prompt
     injection in an attacker-controlled diff cannot reach it.
 
-    Per vendor: claude drops ``--disallowed-tools`` (restoring its own default
-    tool set), codex moves to ``-s workspace-write``, and agy (plus any unknown
+    Per vendor: claude drops ``--disallowed-tools``, ``--tools`` and
+    ``--strict-mcp-config`` (restoring its own default tool set and MCP servers)
+    and trades the reviewer's ``--permission-mode dontAsk`` for
+    ``--dangerously-skip-permissions``, codex moves to ``-s workspace-write``, and agy (plus any unknown
     vendor, which routes to the agy adapter) drops the boolean ``--sandbox``.
     Network vendors have no such surface and are returned unchanged.
     """
@@ -389,7 +704,7 @@ def enable_write(vendor: str, extra_args: list[str]) -> list[str]:
     if vendor in _NO_SANDBOX_VENDORS or vendor.endswith("-api"):
         return args
     if vendor == "anthropic":
-        return _drop_claude_disallowed(args)
+        return _claude_write_args(args)
     if vendor == "openai":
         return _set_value_sandbox(args, "-s", "workspace-write")
     return _drop_bare_sandbox(args)
@@ -447,7 +762,7 @@ def enforce_read_only(vendor: str, extra_args: list[str]) -> list[str]:
     if vendor in _NO_SANDBOX_VENDORS or vendor.endswith("-api"):
         return extra_args
     if vendor == "anthropic":
-        return _ensure_claude_disallowed(extra_args)
+        return _ensure_claude_locked_down(extra_args)
     if vendor == "openai":
         return _ensure_value_sandbox(extra_args, ["-s", "read-only"])
     # google / agy / gemini AND any unknown vendor (issue #310, completes #300):
@@ -459,7 +774,11 @@ def enforce_read_only(vendor: str, extra_args: list[str]) -> list[str]:
 
 
 def _claude_is_locked_down(extra_args: list[str]) -> bool:
-    """True when claude is given --disallowed-tools covering all write tools.
+    """True when claude's --disallowed-tools covers every denied tool.
+
+    Every one of :data:`_CLAUDE_DENIED_TOOLS` — write and shell, read, network and
+    subagent — not only the write tools: a deny list that stopped at those left
+    ``Read`` and ``WebFetch`` open, and this check passed it.
 
     Reads the flag through :func:`_disallowed_tools_at`, the same reader
     :func:`_ensure_claude_disallowed` enforces it with (issue #717), so a seat
@@ -468,16 +787,79 @@ def _claude_is_locked_down(extra_args: list[str]) -> bool:
     """
     disallowed: set[str] = set()
     args = list(extra_args)
+    values = _claude_value_positions(args)
     i = 0
     while i < len(args):
-        hit = _disallowed_tools_at(args, i)
+        hit = None if i in values else _disallowed_tools_at(args, i)
         if hit is None:
             i += 1
             continue
         value, span = hit
         disallowed |= {t.strip() for t in value.split(",") if t.strip()}
         i += span
-    return all(t in disallowed for t in _WRITE_TOOLS)
+    return all(t in disallowed for t in _CLAUDE_DENIED_TOOLS)
+
+
+def _claude_open_surface(extra_args: list[str]) -> list[str]:
+    """What a claude reviewer argv still offers the model, in words; ``[]`` if nothing.
+
+    Every tool a ``--tools`` list names counts, the denied ones included. The
+    deny list is meant to remove those again, but it is the second layer, and a
+    configuration that asks for ``Read`` or ``WebFetch`` on a reviewer is one the
+    operator should hear about rather than one this module quietly trusts the
+    CLI's precedence rules to undo. MCP servers count when ``--mcp-config`` loads
+    some, or when ``--strict-mcp-config`` is missing and the operator's own
+    Claude configuration would.
+    """
+    args = list(extra_args)
+    surface: list[str] = []
+    tools = _claude_tools(args)
+    if tools is None:  # pragma: no cover - enforcement injects `--tools ""`
+        surface.append("the CLI's default tool set (no `--tools`)")
+    elif tools:
+        surface.append(f"`--tools {','.join(dict.fromkeys(tools))}`")
+    if _claude_flag_present("--mcp-config", args):
+        surface.append("MCP servers from `--mcp-config`")
+    if not _claude_flag_present("--strict-mcp-config", args):  # pragma: no cover - injected
+        surface.append("the MCP servers in the user's Claude configuration")
+    return surface
+
+
+def _claude_mode_override(extra_args: list[str]) -> str | None:
+    """A permission setting other than the reviewer's ``dontAsk``, as written; or None.
+
+    ``--dangerously-skip-permissions``, or a ``--permission-mode`` naming any other
+    mode (``bypassPermissions``, ``auto``, ``acceptEdits``, ``default``, ``plan``,
+    or none at all). Read at flag positions only.
+    """
+    args = list(extra_args)
+    if _claude_flag_present("--dangerously-skip-permissions", args):
+        return "--dangerously-skip-permissions"
+    values = _claude_value_positions(args)
+    for i in range(len(args)):
+        mode = None if i in values else _permission_mode_at(args, i)
+        if mode is not None and mode[0] != _CLAUDE_REVIEW_MODE:
+            return f"--permission-mode {mode[0]}".rstrip()
+    return None
+
+
+def _claude_config_options(extra_args: list[str]) -> list[str]:
+    """The :data:`_CLAUDE_CONFIG_OPTIONS` present at flag positions, in that order."""
+    args = list(extra_args)
+    return [f for f in _CLAUDE_CONFIG_OPTIONS if _claude_flag_present(f, args)]
+
+
+def _claude_permission_bypass(extra_args: list[str]) -> str | None:
+    """The token that makes claude approve tool calls unasked, or ``None``."""
+    args = list(extra_args)
+    if _claude_flag_present("--dangerously-skip-permissions", args):
+        return "--dangerously-skip-permissions"
+    values = _claude_value_positions(args)
+    for i in range(len(args)):
+        mode = None if i in values else _permission_mode_at(args, i)
+        if mode is not None and mode[0] in _CLAUDE_APPROVING_MODES:
+            return f"--permission-mode {mode[0]}"
+    return None
 
 
 def audit_agent(spec) -> list[str]:
@@ -540,7 +922,7 @@ def audit_agent(spec) -> list[str]:
     is_claude = vendor == "anthropic"
 
     if is_claude:
-        # A tripwire, not a live check: `_ensure_claude_disallowed` merges the write
+        # A tripwire, not a live check: `_ensure_claude_disallowed` merges the denied
         # tools into the argv this function just enforced, so a locked-down result is
         # guaranteed and the body below cannot run. It is kept because the guarantee
         # lives in another function — if enforcement ever stops injecting, this is
@@ -550,13 +932,67 @@ def audit_agent(spec) -> list[str]:
         if not _claude_is_locked_down(extra_args):  # pragma: no cover - see above
             warnings.append(
                 f"agent '{label}' (claude) is not restricted to read-only: add "
-                f"`--disallowed-tools {','.join(_WRITE_TOOLS)}` so a prompt "
-                f"injection in the diff cannot edit files or run commands."
+                f"`--disallowed-tools {','.join(_CLAUDE_DENIED_TOOLS)}` so a prompt "
+                f"injection in the diff cannot edit files, run commands, read "
+                f"files outside the diff or reach the network."
             )
-        # claude's own default config additionally uses
-        # --dangerously-skip-permissions; that is safe only *because* write
-        # tools are disallowed, so we don't warn separately when locked down.
+        # What enforcement keeps as written: a `--tools` list, or MCP servers the
+        # operator loaded. The shipped default has neither, so it raises nothing.
+        surface = _claude_open_surface(extra_args)
+        bypass = _claude_permission_bypass(extra_args)
+        if surface:
+            named = ", ".join(surface)
+            if bypass:
+                warnings.append(
+                    f"agent '{label}' (claude) is given {named} and skips permission "
+                    f"checks (`{bypass}`), so a prompt injection in the diff can use "
+                    f"them unasked — to read files outside the diff or reach the "
+                    f"network. Drop them — a reviewer only reads its prompt."
+                )
+            else:
+                warnings.append(
+                    f"agent '{label}' (claude) is given {named} while reviewing "
+                    f"untrusted content; a prompt injection in the diff can ask for "
+                    f"them, and whatever your Claude settings pre-approve runs "
+                    f"unasked. Drop them — a reviewer only reads its prompt."
+                )
+        # A permission setting other than dontAsk, kept as written. Said once:
+        # the warning above already named an approving one next to its tools.
+        override = _claude_mode_override(extra_args)
+        if override and not (surface and bypass):
+            warnings.append(
+                f"agent '{label}' (claude) is configured with `{override}`; a reviewer "
+                f"runs with `--permission-mode {_CLAUDE_REVIEW_MODE}`, which denies any "
+                f"tool call that is not pre-approved. With no tools available it grants "
+                f"nothing today, but it would approve whatever a later flag or Claude "
+                f"Code release made available. Drop it."
+            )
+        # Configuration beyond the prompt. `--safe-mode` keeps it from loading
+        # (measured), so this is a surprise to prevent, not a hole to close.
+        loaded = _claude_config_options(extra_args)
+        if loaded:
+            named = ", ".join(f"`{f}`" for f in loaded)
+            warnings.append(
+                f"agent '{label}' (claude) is configured with {named}; `--safe-mode` "
+                f"keeps them from loading hooks, CLAUDE.md, plugins or agents into a "
+                f"reviewer, so they have no effect there. A reviewer needs none of "
+                f"them — drop them."
+            )
         return warnings
+
+    # agy is spawned with `--sandbox` (enforced above), and that is still not
+    # confinement: measured on agy 1.2.9 the shipped argv read and wrote files
+    # outside its working directory and reached the network, and agy has no
+    # flag that removes its tools. It is out of the default panel for that
+    # reason, so a seat on this adapter is one the operator configured — and is
+    # told, whatever flags it carries. The implementer role never reaches this:
+    # the audit covers panel seats only.
+    if vendor == "google":
+        warnings.append(
+            f"agent '{label}' (agy) cannot be confined: even with --sandbox it reads "
+            f"and writes files and reaches the network; do not use it on untrusted "
+            f"diffs."
+        )
 
     # Non-claude agents must run under a restricting sandbox (issue #100) — one
     # the config named, or one enforcement injected above.

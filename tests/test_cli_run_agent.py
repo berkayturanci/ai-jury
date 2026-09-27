@@ -35,7 +35,7 @@ from ai_jury.cli import (  # noqa: E402
     _spawn_detached,
     main,
 )
-from ai_jury.config import DEFAULT_CONFIG, AgentSpec, _from_dict  # noqa: E402
+from ai_jury.config import AGY_AGENT, DEFAULT_CONFIG, AgentSpec, _from_dict  # noqa: E402
 
 # Flags that would let an agent edit files or run commands. NONE of these may
 # appear in a read-only role's argv, whatever the operator passed.
@@ -137,7 +137,11 @@ class RoleArgvTests(unittest.TestCase):
     """The role policy as it actually reaches each vendor's argv."""
 
     def setUp(self):
-        self.agents = _from_dict(DEFAULT_CONFIG).agents
+        # agy is out of the default panel but still dispatchable by name, so its
+        # role argv is checked here too.
+        self.agents = _from_dict(
+            {**DEFAULT_CONFIG, "agent": [*DEFAULT_CONFIG["agent"], AGY_AGENT]}
+        ).agents
 
     def test_panel_invocation_is_byte_identical(self):
         # No policy = every existing call site. The seam must not move a byte.

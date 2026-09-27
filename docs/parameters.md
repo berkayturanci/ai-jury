@@ -440,7 +440,7 @@ run`) or a CI script. See the [cookbook recipe](cookbook.md#21-run-one-agent-for
 | `--agent` | name \| `vendor[:model]` | A `[[agent]]` name from `jury.toml`, or a built-in vendor (`claude`, `codex`, `agy`, `anthropic-api`, `openai-api`, `google-api`, `xai-api`). A configured entry wins over a built-in of the same name. `:model` overrides the model. |
 | `--role` | `implement` \| `review` \| `gate` \| `chair` \| `fix` | What the agent is asked to do. Decides privilege — see below. |
 | `--prompt-file` | path \| `-` | The prompt to send (`-` reads stdin; not allowed with `--detach`). |
-| `--cwd` | directory | Run the agent in this directory (default: the current one). |
+| `--cwd` | directory | The directory a write role (`implement`/`fix`) runs in (default: the current one). The read-only roles on `claude`, `codex` and `agy` start in a fresh, empty temporary directory instead, and passing `--cwd` to one prints a note. |
 | `--timeout` | seconds | Wall-clock bound on the **agent** (default: the agent's configured timeout). It never bounds a `--wait` — that is `--wait-timeout`. |
 | `--effort` | `low` \| `medium` \| `high` | Reasoning [effort](#reasoning-effort---effort--agent-effort) for vendors that support one; warns and is ignored otherwise. |
 | `--allow-write` | flag | Grant the vendor's write/tool mode. **Required** by `implement`/`fix`; warned about and ignored by the read-only roles. |

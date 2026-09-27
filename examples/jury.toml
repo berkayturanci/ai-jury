@@ -40,12 +40,20 @@ redact_secrets = true
 name = "claude"
 vendor = "anthropic"
 command = "claude"
+# No tools for the reviewer: no file reads, no shell, no network, no MCP servers,
+# no CLAUDE.md/hooks/skills/plugins, and no transcript of the diff kept.
 extra_args = [
   "--output-format",
   "text",
+  "--tools",
+  "",
   "--disallowed-tools",
-  "Edit,Write,NotebookEdit,Bash",
-  "--dangerously-skip-permissions",
+  "Edit,Write,NotebookEdit,Bash,Read,Grep,Glob,WebFetch,WebSearch,Task,Agent",
+  "--strict-mcp-config",
+  "--safe-mode",
+  "--no-session-persistence",
+  "--permission-mode",
+  "dontAsk",
 ]
 
 # OpenAI Codex CLI
@@ -55,7 +63,11 @@ vendor = "openai"
 command = "codex"
 extra_args = ["-s", "read-only"]
 
-# Google Antigravity CLI
+# Google Antigravity CLI — opt-in only, and disabled here. agy is not in the
+# default panel because it cannot be confined for untrusted diffs: measured on
+# agy 1.2.9, `--sandbox` did not stop it reading or writing files or reaching
+# the network, and it has no flag that removes its tools. Enable it only for
+# diffs you trust; every run with it enabled warns, and `--strict` fails.
 [[agent]]
 name = "agy"
 vendor = "google"

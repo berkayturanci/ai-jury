@@ -14,6 +14,19 @@
     "here supplies its own sandbox flags, so the sandbox assertion could only",
     "prove they were echoed back. With nothing supplied, the same assertion",
     "proves the adapter ADDS the read-only sandbox itself (#288).",
+    "The claude reviewer's no-tool lockdown (--tools \"\", the read/network deny",
+    "list, --strict-mcp-config, --safe-mode, --no-session-persistence,",
+    "--permission-mode dontAsk) was verified live",
+    "against Claude Code 2.1.236 in an empty directory: it answers a prompt, and",
+    "a request to Read a file outside that directory or to WebFetch a URL gets",
+    "no tool, where the previous argv read the file. Every name in the deny list",
+    "is one that CLI knows; it warns on stderr about any other. codex's",
+    "--skip-git-repo-check was verified live against codex-cli 0.155.0 in an",
+    "empty directory, where codex exec refuses to start without it, and its",
+    "--ephemeral (no session files) is from `codex exec --help` of that version.",
+    "--safe-mode was verified live too: with it a project .claude/settings.json",
+    "hook in the working directory did not run and ~/.claude/CLAUDE.md was not in",
+    "context; without it both were.",
     "'grok-cursor' is vendor 'xai' on the same generic bring-your-own-CLI",
     "adapter as the 'cli' entries: the flags are the cursor-agent invocation",
     "reported in #701, and the locked argv is the pass-through this tool",
@@ -27,9 +40,15 @@
     "extra_args": [
       "--output-format",
       "text",
+      "--tools",
+      "",
       "--disallowed-tools",
-      "Edit,Write,NotebookEdit,Bash",
-      "--dangerously-skip-permissions"
+      "Edit,Write,NotebookEdit,Bash,Read,Grep,Glob,WebFetch,WebSearch,Task,Agent",
+      "--strict-mcp-config",
+      "--safe-mode",
+      "--no-session-persistence",
+      "--permission-mode",
+      "dontAsk"
     ],
     "argv": [
       "claude",
@@ -38,9 +57,15 @@
       "claude-probe-1",
       "--output-format",
       "text",
+      "--tools",
+      "",
       "--disallowed-tools",
-      "Edit,Write,NotebookEdit,Bash",
-      "--dangerously-skip-permissions"
+      "Edit,Write,NotebookEdit,Bash,Read,Grep,Glob,WebFetch,WebSearch,Task,Agent",
+      "--strict-mcp-config",
+      "--safe-mode",
+      "--no-session-persistence",
+      "--permission-mode",
+      "dontAsk"
     ],
     "write_argv": [
       "claude",
@@ -53,7 +78,13 @@
     ],
     "stdin": "prompt",
     "prompt_absent_from_argv": true,
-    "sandbox_flags": ["--disallowed-tools"],
+    "sandbox_flags": [
+      "--tools",
+      "--disallowed-tools",
+      "--strict-mcp-config",
+      "--safe-mode",
+      "--no-session-persistence"
+    ],
     "stdout_fixture": "review.stdout"
   },
   "claude-bare": {
@@ -66,13 +97,30 @@
       "-p",
       "--model",
       "claude-probe-1",
+      "--tools",
+      "",
+      "--strict-mcp-config",
+      "--safe-mode",
+      "--no-session-persistence",
+      "--permission-mode",
+      "dontAsk",
       "--disallowed-tools",
-      "Edit,Write,NotebookEdit,Bash"
+      "Edit,Write,NotebookEdit,Bash,Read,Grep,Glob,WebFetch,WebSearch,Task,Agent"
     ],
     "write_argv": ["claude", "-p", "--model", "claude-probe-1"],
     "stdin": "prompt",
     "prompt_absent_from_argv": true,
-    "sandbox_flags": ["--disallowed-tools", "Edit,Write,NotebookEdit,Bash"],
+    "sandbox_flags": [
+      "--tools",
+      "",
+      "--strict-mcp-config",
+      "--safe-mode",
+      "--no-session-persistence",
+      "--permission-mode",
+      "dontAsk",
+      "--disallowed-tools",
+      "Edit,Write,NotebookEdit,Bash,Read,Grep,Glob,WebFetch,WebSearch,Task,Agent"
+    ],
     "stdout_fixture": "review.stdout"
   },
   "codex": {
@@ -80,7 +128,7 @@
     "command": "codex",
     "model": "gpt-probe-1",
     "extra_args": ["-s", "read-only"],
-    "argv": ["codex", "exec", "-m", "gpt-probe-1", "-s", "read-only"],
+    "argv": ["codex", "exec", "-m", "gpt-probe-1", "--skip-git-repo-check", "--ephemeral", "-s", "read-only"],
     "write_argv": ["codex", "exec", "-m", "gpt-probe-1", "-s", "workspace-write"],
     "stdin": "prompt",
     "prompt_absent_from_argv": true,
@@ -92,7 +140,7 @@
     "command": "codex",
     "model": "gpt-probe-1",
     "extra_args": [],
-    "argv": ["codex", "exec", "-m", "gpt-probe-1", "-s", "read-only"],
+    "argv": ["codex", "exec", "-m", "gpt-probe-1", "--skip-git-repo-check", "--ephemeral", "-s", "read-only"],
     "write_argv": ["codex", "exec", "-m", "gpt-probe-1", "-s", "workspace-write"],
     "stdin": "prompt",
     "prompt_absent_from_argv": true,

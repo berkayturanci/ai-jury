@@ -101,13 +101,22 @@ name = "claude"
 vendor = "anthropic"
 command = "claude"
 # model = "claude-opus-4-8"   # optional; omit to use the CLI default
-# Read-only review: --disallowed-tools removes mutating tools entirely, while
-# --dangerously-skip-permissions stops `-p` from blocking on a permission prompt
-# in non-interactive mode (the two combine: no mutations AND no hangs).
+# The reviewer only needs its prompt, which carries the diff, so it gets no
+# tools at all: `--tools ""` leaves no built-in tool, the deny list names every
+# write, shell, read, network and subagent tool as a second layer,
+# `--strict-mcp-config` (with no --mcp-config) loads none of your MCP servers,
+# `--safe-mode` loads no CLAUDE.md, hooks, skills or plugins (yours or a
+# checkout's), `--no-session-persistence` keeps no transcript of the diff, and
+# `--permission-mode dontAsk` denies a tool call instead of prompting (so `-p`
+# cannot hang) or approving it. jury injects the same lockdown if you omit it.
 extra_args = [
     "--output-format", "text",
-    "--disallowed-tools", "Edit,Write,NotebookEdit,Bash",
-    "--dangerously-skip-permissions",
+    "--tools", "",
+    "--disallowed-tools", "Edit,Write,NotebookEdit,Bash,Read,Grep,Glob,WebFetch,WebSearch,Task,Agent",
+    "--strict-mcp-config",
+    "--safe-mode",
+    "--no-session-persistence",
+    "--permission-mode", "dontAsk",
 ]
 
 [[agent]]
@@ -118,19 +127,26 @@ command = "codex"
 # `codex exec` receives the prompt on stdin (no positional prompt, so it never
 # hangs waiting for input non-interactively). The diff is fetched by the jury
 # (`gh`), not by codex, so the reviewer only needs to READ its prompt and print a
-# review — `-s read-only` is the secure default (#100). Widen it only if your
-# workflow truly needs it: `-s workspace-write` or `-s danger-full-access`.
+# review — `-s read-only` is the secure default (#100): no writes, no network
+# from its shell, though it can still read files your user can read. Widen it
+# only if your workflow truly needs it: `-s workspace-write` or
+# `-s danger-full-access`.
 extra_args = ["-s", "read-only"]
 
 [[agent]]
 name = "agy"
 vendor = "google"
 command = "agy"
-# Antigravity CLI; alias on interactive shells, real binary on PATH.
-# `--dangerously-skip-permissions` avoids a non-interactive permission prompt
-# hanging the run; `--sandbox` keeps the agent's tools restricted while it reads
-# untrusted PR content (#100). Drop `--sandbox` only if you fully trust the diff.
+# Antigravity CLI — opt-in only, and disabled here. It is not in the built-in
+# default panel because it cannot be confined for untrusted diffs:
+# `--dangerously-skip-permissions` auto-approves its tools (without it, headless
+# agy denies the first command a review tries and returns no review), and
+# `--sandbox` restricts its terminal but, measured on agy 1.2.9, does not stop it
+# reading or writing files or reaching the network. Set `enabled = true` only for
+# diffs you trust: every run with it enabled warns, and `--strict` fails
+# (docs/security.md).
 extra_args = ["--dangerously-skip-permissions", "--sandbox"]
+enabled = false
 
 # Local / open-weight reviewer (#43): a free, offline panelist over any
 # OpenAI-compatible server (Ollama, llama.cpp, vLLM, LM Studio). It talks plain

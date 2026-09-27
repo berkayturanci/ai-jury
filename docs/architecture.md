@@ -136,9 +136,15 @@ the same contract (`tests/live/test_live_contracts.py`) proves the locked
 invocation still *works* against an installed CLI, and is a release step.
 
 **Read-only by default (secure):** reviewers read attacker-controlled diffs, so the
-shipped defaults run them sandboxed — Claude with `--disallowed-tools
-Edit,Write,NotebookEdit,Bash`, Codex with `-s read-only`, Antigravity with
-`--sandbox`. `privilege.py` both *enforces* this at the adapter layer and *audits*
+shipped defaults give each as little as its CLI allows — Claude no tools at all
+(`--tools ""`, a deny list of every write, shell, read, network and subagent tool,
+`--strict-mcp-config`, `--safe-mode`, `--no-session-persistence`,
+`--permission-mode dontAsk`), Codex `-s read-only`,
+Antigravity `--sandbox` (which, measured, does not stop it reading, writing or
+reaching the network, so agy is opt-in only — not in the default panel, and
+flagged by the audit whenever seated; see [security.md](security.md#other-agents)). Every read-only call
+of any of the three (panel, and `jury run-agent` review/gate/chair) starts in a fresh,
+empty temporary directory. `privilege.py` both *enforces* this at the adapter layer and *audits*
 the argv that enforcement produces. Enforcement is narrower than it sounds, and the
 audit is what covers the rest: it **injects** a sandbox when the config
 names none, so on the adapters that have enforcement an empty `extra_args` cannot

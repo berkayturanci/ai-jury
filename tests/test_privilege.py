@@ -17,18 +17,49 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from ai_jury import adapters, privilege
-from ai_jury.config import AgentSpec, spec_adapter
+from ai_jury.config import DEFAULT_CONFIG, AgentSpec, spec_adapter
+
+#: The whole claude deny list, in the order enforcement writes it.
+DENY = "Edit,Write,NotebookEdit,Bash,Read,Grep,Glob,WebFetch,WebSearch,Task,Agent"
+
+
+#: What enforcement puts in front of a claude argv that has neither flag.
+def _from_dict_with_claude(extra_args):
+    """A one-seat claude config with *extra_args*."""
+    from ai_jury.config import _from_dict
+
+    seat = {"name": "claude", "vendor": "anthropic", "command": "claude", "extra_args": extra_args}
+    return _from_dict({"jury": {"chair": "claude"}, "agent": [seat]})
+
+
+LOCKDOWN = [
+    "--tools",
+    "",
+    "--strict-mcp-config",
+    "--safe-mode",
+    "--no-session-persistence",
+    "--permission-mode",
+    "dontAsk",
+]
+
+
+def agy_warning(label: str) -> str:
+    """The one warning every agy seat draws: `--sandbox` does not confine agy."""
+    return (
+        f"agent '{label}' (agy) cannot be confined: even with --sandbox it reads and "
+        f"writes files and reaches the network; do not use it on untrusted diffs."
+    )
 
 
 class AuditAgentTest(unittest.TestCase):
     def test_claude_without_disallowed_tools_is_spawned_locked_down(self):
         # Issue #750: the recommended configuration — a `claude` seat with no
-        # `extra_args` at all — is spawned with the whole write-tool denylist,
+        # `extra_args` at all — is spawned with the whole no-tool lockdown,
         # so it cannot write and must not be reported as though it could.
         spec = AgentSpec(name="claude", vendor="anthropic", command="claude", extra_args=[])
         self.assertEqual(
             privilege.enforce_read_only("anthropic", []),
-            ["--disallowed-tools", "Edit,Write,NotebookEdit,Bash"],
+            [*LOCKDOWN, "--disallowed-tools", DENY],
         )
         self.assertEqual(privilege.audit_agent(spec), [])
 
@@ -49,7 +80,7 @@ class AuditAgentTest(unittest.TestCase):
             name="claude",
             vendor="anthropic",
             command="claude",
-            extra_args=["--disallowed-tools=Edit,Write,NotebookEdit,Bash"],
+            extra_args=[*LOCKDOWN, "--disallowed-tools=" + DENY],
         )
         self.assertEqual(privilege.audit_agent(spec), [])
         self.assertEqual(
@@ -69,7 +100,7 @@ class AuditAgentTest(unittest.TestCase):
         )
         self.assertEqual(
             privilege.enforce_read_only("anthropic", list(spec.extra_args)),
-            ["--disallowed-tools=Edit,Write,NotebookEdit,Bash"],
+            [*LOCKDOWN, "--disallowed-tools=" + DENY],
         )
         self.assertEqual(privilege.audit_agent(spec), [])
 
@@ -85,7 +116,7 @@ class AuditAgentTest(unittest.TestCase):
         )
         self.assertEqual(
             privilege.enforce_read_only("anthropic", list(spec.extra_args)),
-            ["--disallowed-tools", "Edit,Write,NotebookEdit,Bash", "--disallowed-tools"],
+            [*LOCKDOWN, "--disallowed-tools", DENY, "--disallowed-tools"],
         )
         self.assertEqual(privilege.audit_agent(spec), [])
 
@@ -100,7 +131,7 @@ class AuditAgentTest(unittest.TestCase):
         )
         self.assertEqual(
             privilege.enforce_read_only("anthropic", list(spec.extra_args)),
-            ["--disallowed-tools", "Edit,Write,NotebookEdit,Bash"],
+            [*LOCKDOWN, "--disallowed-tools", DENY],
         )
         self.assertEqual(privilege.audit_agent(spec), [])
 
@@ -129,7 +160,8 @@ class AuditAgentTest(unittest.TestCase):
             privilege.enforce_read_only("google", list(spec.extra_args)),
             ["--sandbox", "--dangerously-skip-permissions"],
         )
-        self.assertEqual(privilege.audit_agent(spec), [])
+        # Sandboxed, so nothing about the sandbox — only that agy is agy.
+        self.assertEqual(privilege.audit_agent(spec), [agy_warning("agy")])
 
     def test_yolo_flag_is_spawned_sandboxed(self):
         spec = AgentSpec(name="gemini", vendor="google", command="gemini", extra_args=["--yolo"])
@@ -137,7 +169,7 @@ class AuditAgentTest(unittest.TestCase):
             privilege.enforce_read_only("google", list(spec.extra_args)),
             ["--sandbox", "--yolo"],
         )
-        self.assertEqual(privilege.audit_agent(spec), [])
+        self.assertEqual(privilege.audit_agent(spec), [agy_warning("gemini")])
 
     def test_full_auto_flag_warns(self):
         # Still warns after #750, and deliberately: unlike `--yolo`, codex's
@@ -170,7 +202,8 @@ class AuditAgentTest(unittest.TestCase):
             command="agy",
             extra_args=["--dangerously-skip-permissions", "--sandbox"],
         )
-        self.assertEqual(privilege.audit_agent(spec), [])
+        # No sandbox warning; the one that remains is that agy is not confinable.
+        self.assertEqual(privilege.audit_agent(spec), [agy_warning("agy")])
 
     # Issue #300: an unsandboxed non-claude agent must warn even with no
     # dangerous flag (closes the audit blind spot).
@@ -270,7 +303,8 @@ class AuditPrivilegeTest(unittest.TestCase):
                 extra_args=["--dangerously-skip-permissions"],
             ),
         ]
-        self.assertEqual(privilege.audit_privilege(specs), [])
+        # Every sandbox gap is closed; agy's own warning is not about a gap.
+        self.assertEqual(privilege.audit_privilege(specs), [agy_warning("agy")])
 
     def test_codex_workspace_write_produces_dangerous_flag_warning(self):
         spec = AgentSpec(
@@ -366,27 +400,21 @@ class EnforceReadOnlyTest(unittest.TestCase):
 
     def test_claude_injects_disallowed_tools_when_absent(self):
         out = privilege.enforce_read_only("anthropic", [])
-        self.assertEqual(out, ["--disallowed-tools", "Edit,Write,NotebookEdit,Bash"])
+        self.assertEqual(out, [*LOCKDOWN, "--disallowed-tools", DENY])
 
     def test_claude_merges_missing_write_tools_into_existing(self):
         out = privilege.enforce_read_only("anthropic", ["--disallowed-tools", "Edit,Write"])
-        self.assertEqual(out, ["--disallowed-tools", "Edit,Write,NotebookEdit,Bash"])
+        self.assertEqual(out, [*LOCKDOWN, "--disallowed-tools", DENY])
 
     def test_claude_shipped_default_is_unchanged(self):
-        shipped = [
-            "--output-format",
-            "text",
-            "--disallowed-tools",
-            "Edit,Write,NotebookEdit,Bash",
-            "--dangerously-skip-permissions",
-        ]
-        self.assertEqual(privilege.enforce_read_only("anthropic", shipped), shipped)
+        shipped = next(a for a in DEFAULT_CONFIG["agent"] if a["name"] == "claude")["extra_args"]
+        self.assertEqual(privilege.enforce_read_only("anthropic", list(shipped)), shipped)
 
     def test_claude_equals_form_disallowed_is_merged(self):
         # Review of #288: the =-form must be merged too, not left to sit after the
         # injected safe set where a last-wins CLI could narrow the deny set.
         out = privilege.enforce_read_only("anthropic", ["--disallowed-tools=Edit"])
-        self.assertEqual(out, ["--disallowed-tools=Edit,Write,NotebookEdit,Bash"])
+        self.assertEqual(out, [*LOCKDOWN, "--disallowed-tools=" + DENY])
 
     def test_codex_injects_read_only_when_no_sandbox(self):
         out = privilege.enforce_read_only("openai", [])
@@ -484,7 +512,7 @@ class ASandboxIsNotSettledByTheFirstOneNamed(unittest.TestCase):
         """agy's `--yolo` only skips approvals; its sandbox still holds."""
         spec = AgentSpec(name="agy", vendor="google", command="agy", extra_args=["--yolo"])
 
-        self.assertEqual(privilege.audit_agent(spec), [])
+        self.assertEqual(privilege.audit_agent(spec), [agy_warning("agy")])
 
     def test_agys_boolean_sandbox_selects_nothing(self):
         """A bare `--sandbox`, or one followed by another flag, names no value."""
@@ -492,7 +520,7 @@ class ASandboxIsNotSettledByTheFirstOneNamed(unittest.TestCase):
             with self.subTest(extra=extra):
                 spec = AgentSpec(name="agy", vendor="google", command="agy", extra_args=extra)
 
-                self.assertEqual(privilege.audit_agent(spec), [])
+                self.assertEqual(privilege.audit_agent(spec), [agy_warning("agy")])
 
     def test_the_equals_spelling_of_a_selector_is_matched_too(self):
         """`-s=` (#316) and `--disallowed-tools=` (#717) are already first-class here."""
@@ -542,10 +570,13 @@ class ASandboxIsNotSettledByTheFirstOneNamed(unittest.TestCase):
         for name in ("codex-vs-gemini", "agy"):
             spec = AgentSpec(name=name, vendor="google", command="agy", extra_args=["--yolo"])
             argvs.add(tuple(adapters._read_only_extra_args(spec)))
-            verdicts.add(tuple(privilege.audit_agent(spec)))
+            # The label differs by construction; the verdict must not.
+            verdicts.add(
+                tuple(w.replace(f"'{name}'", "'<seat>'") for w in privilege.audit_agent(spec))
+            )
 
         self.assertEqual(len(argvs), 1)
-        self.assertEqual(verdicts, {()})
+        self.assertEqual(verdicts, {(agy_warning("<seat>"),)})
 
     def test_a_seat_carrying_both_kinds_is_described_by_the_worse_one(self):
         """`all(...)` picked the milder sentence when a seat had a selector too."""
@@ -566,6 +597,343 @@ class ASandboxIsNotSettledByTheFirstOneNamed(unittest.TestCase):
 
     def test_a_seat_with_only_the_enforced_sandbox_is_still_clean(self):
         self.assertEqual(privilege.audit_agent(self._codex([])), [])
+
+
+class AClaudeReviewerHasNoToolsAtAll(unittest.TestCase):
+    """The reviewer reads its prompt and nothing else: no file, no network, no MCP.
+
+    Denying only Edit/Write/NotebookEdit/Bash left every other tool auto-approved
+    under `--dangerously-skip-permissions`, so an instruction planted in the diff
+    could `Read` the repository's `.env` and `WebFetch` it to a server of its
+    choosing.
+    """
+
+    OLD_DEFAULT = [
+        "--output-format",
+        "text",
+        "--disallowed-tools",
+        "Edit,Write,NotebookEdit,Bash",
+        "--dangerously-skip-permissions",
+    ]
+
+    def _seat(self, *extra_args):
+        return AgentSpec(
+            name="claude", vendor="anthropic", command="claude", extra_args=list(extra_args)
+        )
+
+    def test_the_shipped_default_is_the_no_tool_lockdown(self):
+        shipped = next(a for a in DEFAULT_CONFIG["agent"] if a["name"] == "claude")["extra_args"]
+        self.assertEqual(
+            shipped,
+            [
+                "--output-format",
+                "text",
+                "--tools",
+                "",
+                "--disallowed-tools",
+                DENY,
+                "--strict-mcp-config",
+                "--safe-mode",
+                "--no-session-persistence",
+                "--permission-mode",
+                "dontAsk",
+            ],
+        )
+        self.assertNotIn("--dangerously-skip-permissions", shipped)
+        self.assertNotIn("--mcp-config", " ".join(shipped))
+
+    def test_the_deny_list_names_every_read_network_and_subagent_tool(self):
+        self.assertEqual(DENY, ",".join(privilege._CLAUDE_DENIED_TOOLS))
+        for tool in ("Read", "Grep", "Glob", "WebFetch", "WebSearch"):
+            self.assertIn(tool, privilege._CLAUDE_DENIED_TOOLS)
+        for tool in ("Task", "Agent", *privilege._WRITE_TOOLS):
+            self.assertIn(tool, privilege._CLAUDE_DENIED_TOOLS)
+
+    def test_the_deny_list_names_no_tool_the_cli_has_dropped(self):
+        # Claude Code 2.1.236 warns on stderr about a deny rule for a tool it no
+        # longer ships, on every run, and `classify_stderr` then reads any other
+        # failure of the seat as `permission_prompt`.
+        for dropped in ("LS", "NotebookRead", "MultiEdit", "SlashCommand"):
+            self.assertNotIn(dropped, privilege._CLAUDE_DENIED_TOOLS)
+
+    def test_the_old_default_is_spawned_without_read_or_network_tools(self):
+        # A jury.toml that copied the pre-fix default keeps working, and gets the
+        # lockdown: config can add restrictions, never remove them.
+        argv = privilege.enforce_read_only("anthropic", list(self.OLD_DEFAULT))
+        self.assertEqual(argv[: len(LOCKDOWN)], LOCKDOWN)
+        self.assertEqual(argv[argv.index("--disallowed-tools") + 1], DENY)
+        self.assertEqual(privilege._claude_tools(argv), [])
+        # Its bypass flag is kept beside the injected dontAsk, and reported once.
+        warnings = privilege.audit_agent(self._seat(*self.OLD_DEFAULT))
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("`--dangerously-skip-permissions`", warnings[0])
+        self.assertIn("grants nothing today", warnings[0])
+
+    def test_a_deny_list_of_write_tools_alone_is_not_locked_down(self):
+        self.assertFalse(
+            privilege._claude_is_locked_down(["--disallowed-tools", "Edit,Write,NotebookEdit,Bash"])
+        )
+        self.assertTrue(privilege._claude_is_locked_down(["--disallowed-tools", DENY]))
+
+    def test_re_enabled_read_and_network_tools_warn_when_permissions_are_skipped(self):
+        warnings = privilege.audit_agent(
+            self._seat("--tools", "Read,WebFetch", "--dangerously-skip-permissions")
+        )
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("`--tools Read,WebFetch`", warnings[0])
+        self.assertIn("`--dangerously-skip-permissions`", warnings[0])
+        self.assertIn("reach the network", warnings[0])
+
+    def test_every_approving_permission_mode_counts_as_skipping(self):
+        for bypass in (
+            ["--permission-mode", "bypassPermissions"],
+            ["--permission-mode=bypassPermissions"],
+            ["--permission-mode", "auto"],
+        ):
+            with self.subTest(bypass):
+                warnings = privilege.audit_agent(self._seat("--tools", "WebSearch", *bypass))
+                self.assertEqual(len(warnings), 1)
+                self.assertIn("skips permission checks", warnings[0])
+
+    def test_re_enabled_tools_warn_without_a_bypass_too(self):
+        # `dontAsk` denies what is not pre-approved — but the user's own Claude
+        # settings can pre-approve, so a reviewer given a tool is still flagged.
+        warnings = privilege.audit_agent(
+            self._seat("--tools", "Read", "--permission-mode", "dontAsk")
+        )
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("`--tools Read`", warnings[0])
+        self.assertIn("pre-approve", warnings[0])
+
+    def test_the_default_tool_set_warns(self):
+        warnings = privilege.audit_agent(self._seat("--tools", "default"))
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("`--tools default`", warnings[0])
+
+    def test_mcp_servers_the_operator_loads_warn(self):
+        for spelling in (["--mcp-config", "servers.json"], ["--mcp-config=servers.json"]):
+            with self.subTest(spelling):
+                warnings = privilege.audit_agent(self._seat(*spelling))
+                self.assertEqual(len(warnings), 1)
+                self.assertIn("MCP servers from `--mcp-config`", warnings[0])
+
+    def test_a_variadic_tools_list_is_read_whole_and_kept(self):
+        args = ["--tools", "Read", "Grep", "--output-format", "text"]
+        self.assertEqual(privilege._claude_tools(args), ["Read", "Grep"])
+        argv = privilege.enforce_read_only("anthropic", list(args))
+        self.assertEqual(argv.count("--tools"), 1, "a configured --tools must not be doubled")
+        self.assertIn("`--tools Read,Grep`", privilege.audit_agent(self._seat(*args))[0])
+
+    def test_repeated_tools_flags_accumulate(self):
+        self.assertEqual(
+            privilege._claude_tools(["--tools=Read", "--tools", "WebFetch Glob"]),
+            ["Read", "WebFetch", "Glob"],
+        )
+
+    def test_an_empty_tools_value_in_either_spelling_is_no_tools(self):
+        for args in (["--tools", ""], ["--tools="]):
+            with self.subTest(args):
+                self.assertEqual(privilege._claude_tools(args), [])
+                argv = privilege.enforce_read_only("anthropic", list(args))
+                self.assertEqual(argv.count("--tools") + argv.count("--tools="), 1)
+                self.assertEqual(privilege.audit_agent(self._seat(*args)), [])
+
+    def test_a_configured_strict_mcp_config_is_not_doubled(self):
+        argv = privilege.enforce_read_only("anthropic", ["--strict-mcp-config"])
+        self.assertEqual(argv.count("--strict-mcp-config"), 1)
+        self.assertEqual(argv[:2], ["--tools", ""])
+
+    def test_a_valueless_permission_mode_is_not_a_bypass(self):
+        self.assertIsNone(privilege._claude_permission_bypass(["--permission-mode"]))
+        self.assertIsNone(privilege._claude_permission_bypass(["--permission-mode", "dontAsk"]))
+
+
+class AFlagSpelledAsAnotherOptionsValueIsNotThatFlag(unittest.TestCase):
+    """claude's parser hands a value-taking option the next token, dashes and all.
+
+    In `--append-system-prompt --tools`, `--tools` is prompt text. The presence
+    checks were token-based, so a configured value that spelled a lockdown flag
+    stopped the real flag from being injected.
+    """
+
+    def test_each_lockdown_flag_is_injected_despite_a_value_that_spells_it(self):
+        for flag in ("--tools", "--strict-mcp-config", "--safe-mode", "--no-session-persistence"):
+            with self.subTest(flag):
+                args = ["--append-system-prompt", flag]
+                argv = privilege.enforce_read_only("anthropic", list(args))
+                self.assertEqual(argv[: len(LOCKDOWN)], LOCKDOWN)
+                self.assertEqual(argv[-2:], args, "the configured value was altered")
+
+    def test_a_value_that_spells_the_deny_flag_neither_hides_nor_gets_rewritten(self):
+        args = ["--system-prompt", "--disallowed-tools", "--output-format", "text"]
+        argv = privilege.enforce_read_only("anthropic", list(args))
+        self.assertEqual(argv[: len(LOCKDOWN)], LOCKDOWN)
+        self.assertEqual(argv[len(LOCKDOWN) : len(LOCKDOWN) + 2], ["--disallowed-tools", DENY])
+        self.assertEqual(argv[-4:], args)
+        self.assertTrue(privilege._claude_is_locked_down(argv))
+
+    def test_a_value_that_spells_a_bypass_or_mcp_config_is_not_one(self):
+        args = ["--tools", "Read", "--append-system-prompt", "--dangerously-skip-permissions"]
+        warnings = privilege.audit_agent(
+            AgentSpec(name="c", vendor="anthropic", command="claude", extra_args=args)
+        )
+        self.assertEqual(len(warnings), 1)
+        self.assertNotIn("skips permission checks", warnings[0])
+        self.assertFalse(privilege._claude_flag_present("--mcp-config", ["--name", "--mcp-config"]))
+
+    def test_a_variadic_option_takes_its_first_value_whatever_it_spells(self):
+        self.assertEqual(privilege._claude_tools(["--tools", "--safe-mode"]), ["--safe-mode"])
+        self.assertEqual(
+            privilege._claude_value_positions(["--add-dir", "a", "b", "--safe-mode"]),
+            frozenset({1, 2}),
+        )
+
+    def test_the_write_role_leaves_a_value_that_spells_a_lockdown_flag_alone(self):
+        args = ["--append-system-prompt", "--safe-mode", "--safe-mode"]
+        self.assertEqual(
+            privilege.enable_write("anthropic", args), ["--append-system-prompt", "--safe-mode"]
+        )
+
+
+class EveryReadOnlyClaudeCallRunsInDontAsk(unittest.TestCase):
+    """The reviewer's permission mode is enforced, not only shipped.
+
+    The docs said every read-only claude call runs in `--permission-mode
+    dontAsk`; only the shipped default carried it, and a seat configured without
+    it was spawned in the CLI's default mode.
+    """
+
+    def _seat(self, *extra_args):
+        return AgentSpec(
+            name="claude", vendor="anthropic", command="claude", extra_args=list(extra_args)
+        )
+
+    def test_it_is_injected_when_no_mode_is_named(self):
+        for args in ([], ["--output-format", "text"], ["--dangerously-skip-permissions"]):
+            with self.subTest(args):
+                argv = privilege.enforce_read_only("anthropic", list(args))
+                self.assertIn("--permission-mode", argv)
+                i = argv.index("--permission-mode")
+                self.assertEqual(argv[i + 1], "dontAsk")
+                self.assertEqual(argv.count("--permission-mode"), 1)
+
+    def test_a_value_that_spells_the_flag_does_not_stop_the_injection(self):
+        argv = privilege.enforce_read_only(
+            "anthropic", ["--append-system-prompt", "--permission-mode"]
+        )
+        self.assertEqual(argv[: len(LOCKDOWN)], LOCKDOWN)
+        self.assertEqual(argv[-2:], ["--append-system-prompt", "--permission-mode"])
+
+    def test_a_configured_mode_is_kept_and_reported_once(self):
+        for mode in ("bypassPermissions", "auto", "acceptEdits", "default", "plan"):
+            for spelling in (["--permission-mode", mode], [f"--permission-mode={mode}"]):
+                with self.subTest(spelling):
+                    argv = privilege.enforce_read_only("anthropic", list(spelling))
+                    self.assertNotIn("dontAsk", argv, "a named mode was overridden")
+                    self.assertEqual(argv[-len(spelling) :], spelling)
+                    warnings = privilege.audit_agent(self._seat(*spelling))
+                    self.assertEqual(len(warnings), 1)
+                    self.assertIn(f"`--permission-mode {mode}`", warnings[0])
+                    self.assertIn("grants nothing today", warnings[0])
+
+    def test_dont_ask_named_explicitly_is_clean(self):
+        self.assertEqual(privilege.audit_agent(self._seat("--permission-mode", "dontAsk")), [])
+
+    def test_strict_refuses_a_seat_with_another_mode(self):
+        from ai_jury.orchestrator import run_jury
+
+        config = _from_dict_with_claude(["--permission-mode", "bypassPermissions"])
+        with self.assertRaises(RuntimeError) as ctx:
+            run_jury(config, "diff --git a/x b/x\n", strict=True, seed=1)
+        self.assertIn("least-privilege check failed (--strict)", str(ctx.exception))
+        self.assertIn("--permission-mode bypassPermissions", str(ctx.exception))
+
+    def test_the_write_role_is_unchanged(self):
+        shipped = next(a for a in DEFAULT_CONFIG["agent"] if a["name"] == "claude")["extra_args"]
+        self.assertEqual(
+            privilege.enable_write("anthropic", list(shipped)),
+            ["--output-format", "text", "--dangerously-skip-permissions"],
+        )
+        self.assertEqual(privilege.enable_write("anthropic", []), [])
+
+
+class ConfigurationBeyondThePromptIsReported(unittest.TestCase):
+    """`--settings`, `--setting-sources`, plugins, `--add-dir` and agents.
+
+    Measured on Claude Code 2.1.236: under `--safe-mode` a `--settings` file's
+    hooks did not run, `--setting-sources project` in a checkout loaded neither
+    its hooks nor its CLAUDE.md, and an `--add-dir` CLAUDE.md was not loaded —
+    so they are kept, but an operator is told they have no effect on a reviewer.
+    """
+
+    CASES = {
+        "--settings": ["--settings", "/etc/claude.json"],
+        "--setting-sources": ["--setting-sources", "project"],
+        "--plugin-dir": ["--plugin-dir", "/opt/plugin"],
+        "--plugin-url": ["--plugin-url", "https://example.invalid/p.zip"],
+        "--add-dir": ["--add-dir", "/opt/extra"],
+        "--agents": ["--agents", '{"r": {"description": "d", "prompt": "p"}}'],
+        "--agent": ["--agent", "reviewer"],
+    }
+
+    def test_each_is_kept_and_reported(self):
+        for flag, args in self.CASES.items():
+            with self.subTest(flag):
+                argv = privilege.enforce_read_only("anthropic", list(args))
+                self.assertEqual(argv[-len(args) :], args)
+                self.assertIn("--safe-mode", argv)
+                spec = AgentSpec(name="c", vendor="anthropic", command="claude", extra_args=args)
+                warnings = privilege.audit_agent(spec)
+                self.assertEqual(len(warnings), 1)
+                self.assertIn(f"`{flag}`", warnings[0])
+                self.assertIn("`--safe-mode` keeps them from loading", warnings[0])
+
+    def test_equals_spelling_counts_and_a_value_that_spells_one_does_not(self):
+        spec = AgentSpec(
+            name="c", vendor="anthropic", command="claude", extra_args=["--settings=/x.json"]
+        )
+        self.assertEqual(len(privilege.audit_agent(spec)), 1)
+        spec = AgentSpec(
+            name="c",
+            vendor="anthropic",
+            command="claude",
+            extra_args=["--append-system-prompt", "--settings"],
+        )
+        self.assertEqual(privilege.audit_agent(spec), [])
+
+    def test_the_shipped_default_names_none(self):
+        shipped = next(a for a in DEFAULT_CONFIG["agent"] if a["name"] == "claude")["extra_args"]
+        self.assertEqual(privilege._claude_config_options(list(shipped)), [])
+
+
+class TheClaudeWriteRoleLiftsTheLockdown(unittest.TestCase):
+    """`jury run-agent --role implement --allow-write` (#661) gets its tools back."""
+
+    def test_the_shipped_default_becomes_the_implementer_it_always_was(self):
+        shipped = next(a for a in DEFAULT_CONFIG["agent"] if a["name"] == "claude")["extra_args"]
+        self.assertEqual(
+            privilege.enable_write("anthropic", list(shipped)),
+            ["--output-format", "text", "--dangerously-skip-permissions"],
+        )
+
+    def test_the_injected_lockdown_is_removed_whole(self):
+        # Every lockdown flag goes; the reviewer's dontAsk becomes the bypass an
+        # implementer needs. (The write role is built from the configured
+        # extra_args, never from this enforced argv — this only pins the mapping.)
+        locked = privilege.enforce_read_only("anthropic", [])
+        self.assertEqual(
+            privilege.enable_write("anthropic", locked), ["--dangerously-skip-permissions"]
+        )
+
+    def test_the_equals_spellings_are_lifted_and_a_bypass_is_not_doubled(self):
+        args = ["--tools=", "--permission-mode=dontAsk", "--dangerously-skip-permissions", "-x"]
+        self.assertEqual(
+            privilege.enable_write("anthropic", args), ["--dangerously-skip-permissions", "-x"]
+        )
+
+    def test_another_permission_mode_is_the_operators_and_is_kept(self):
+        args = ["--permission-mode", "acceptEdits"]
+        self.assertEqual(privilege.enable_write("anthropic", list(args)), args)
 
 
 class TheAuditReadsTheArgvTheSeatIsSpawnedWith(unittest.TestCase):

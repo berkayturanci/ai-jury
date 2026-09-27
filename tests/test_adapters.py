@@ -69,9 +69,23 @@ class CodexAdapterTest(unittest.TestCase):
 
     def test_custom_extra_args_are_passed_through(self):
         # Custom args pass through; the secure-default sandbox (-s read-only) is
-        # injected because none was configured (issue #288 enforcement).
+        # injected because none was configured (issue #288 enforcement), and the
+        # git-repo check is skipped because a panel reviewer starts in an empty
+        # temporary directory, and --ephemeral keeps no session file of the diff.
         argv = CodexAdapter(_codex_spec(extra_args=["--foo", "bar"])).build_argv(PROMPT)
-        self.assertEqual(argv, ["codex", "exec", "-s", "read-only", "--foo", "bar"])
+        self.assertEqual(
+            argv,
+            [
+                "codex",
+                "exec",
+                "--skip-git-repo-check",
+                "--ephemeral",
+                "-s",
+                "read-only",
+                "--foo",
+                "bar",
+            ],
+        )
 
     def test_model_flag_present_when_model_set(self):
         argv = CodexAdapter(_codex_spec(model="gpt-5-codex")).build_argv(PROMPT)

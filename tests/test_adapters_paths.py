@@ -32,8 +32,9 @@ def _proc(returncode=0, stdout="", stderr=""):
 
 class BuildArgvTests(unittest.TestCase):
     def test_claude_argv(self):
-        # The prompt is delivered on stdin, not argv (issue #287); the mandatory
-        # --disallowed-tools is injected at the adapter layer (issue #288).
+        # The prompt is delivered on stdin, not argv (issue #287); the no-tool
+        # lockdown and the mandatory --disallowed-tools are injected at the
+        # adapter layer (issue #288).
         a = adapters.ClaudeAdapter(_spec(model="m", extra_args=["-x"]))
         self.assertEqual(
             a.build_argv("P"),
@@ -42,8 +43,15 @@ class BuildArgvTests(unittest.TestCase):
                 "-p",
                 "--model",
                 "m",
+                "--tools",
+                "",
+                "--strict-mcp-config",
+                "--safe-mode",
+                "--no-session-persistence",
+                "--permission-mode",
+                "dontAsk",
                 "--disallowed-tools",
-                "Edit,Write,NotebookEdit,Bash",
+                "Edit,Write,NotebookEdit,Bash,Read,Grep,Glob,WebFetch,WebSearch,Task,Agent",
                 "-x",
             ],
         )
@@ -58,7 +66,10 @@ class BuildArgvTests(unittest.TestCase):
         a = adapters.CodexAdapter(
             _spec(name="codex", vendor="openai", command="codex", extra_args=["-s", "read-only"])
         )
-        self.assertEqual(a.build_argv("P"), ["codex", "exec", "-s", "read-only"])
+        self.assertEqual(
+            a.build_argv("P"),
+            ["codex", "exec", "--skip-git-repo-check", "--ephemeral", "-s", "read-only"],
+        )
         self.assertIn("P", a._stdin_for("P"))  # the prompt travels on stdin (#287)
 
     def test_agy_argv(self):

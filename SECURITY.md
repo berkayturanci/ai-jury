@@ -51,6 +51,35 @@ send:
 - repository history (commits, branches, blame), or
 - environment variables or shell state.
 
+That is what the **jury** sends. What an agent CLI can reach **on its own**, once
+started, depends on the seat (details and measurements in
+[docs/security.md](docs/security.md#other-agents)):
+
+- the shipped **`claude`** seat has no tools at all — no file reads, no shell,
+  no network, no MCP servers — and loads no CLAUDE.md, hooks, skills or plugins,
+  its user's or a checkout's (`--tools ""`, a deny list naming every write, shell,
+  read, network and subagent tool, `--strict-mcp-config`, `--safe-mode`,
+  `--no-session-persistence`, `--permission-mode dontAsk`);
+- the shipped **`codex`** seat (`-s read-only`) cannot write and its shell has no
+  network, but it can read any file your user can read by absolute path, the MCP
+  servers enabled in your own `~/.codex/config.toml` still load, and your global
+  `~/.codex/AGENTS.md` is in its context;
+- **`agy` is opt-in only and not in the default panel.** An agy seat
+  (`--sandbox --dangerously-skip-permissions`) is not confined by `--sandbox`: it
+  can read and write files and reach the network from its terminal. Seat it only
+  by name, for diffs you trust; every run with an enabled agy seat warns, and
+  `--strict` fails;
+- a bring-your-own **`cli`/`xai`** seat runs with whatever permissions its own
+  flags give it.
+
+A reviewer is prompted with attacker-controlled content, and what it reads can
+surface in the review text the jury posts. The default panel is `claude` +
+`codex`. The native `claude`, `codex` and `agy` seats start every read-only call — each panel call, and `jury run-agent`'s
+review/gate/chair roles — in a fresh, empty temporary directory rather than the
+repository under review, so files the repository carries for them (`CLAUDE.md`,
+`.claude/settings.json` and its hooks, `.mcp.json`, `.env`) are not picked up; a
+bring-your-own `cli`/`xai` seat runs in the directory `jury` was started from.
+
 **Secret redaction is on by default.** Before any text is handed to an agent, it is
 scanned by `redaction.py` and recognized secrets are replaced with
 `[REDACTED:<kind>]`. The recognized secret shapes are:
