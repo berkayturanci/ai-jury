@@ -58,7 +58,17 @@ BANNED = (
     # A local seat is sent the diff too: LocalAdapter.run POSTs the prompt to
     # its endpoint, which need not even be on this machine.
     "nowhere if every seat is local",
+    # The diff goes to every configured model endpoint, a local seat's included,
+    # not only to "model vendors".
+    "model vendors you configure",
 )
+
+
+def _unreleased() -> str:
+    """The CHANGELOG's [Unreleased] section: current wording, not released history."""
+    text = _text("CHANGELOG.md")
+    head = text.index("## [Unreleased]")
+    return text[head : text.index("\n## [", head + 1)]
 
 
 def leaks_claim(text: str) -> list[str]:
@@ -123,6 +133,23 @@ class NothingSaysTheDiffNeverLeaves(unittest.TestCase):
             for phrase in BANNED:
                 with self.subTest(rel=rel, phrase=phrase):
                     self.assertNotIn(phrase.lower(), _text(rel).lower())
+
+    def test_the_unreleased_changelog_uses_no_banned_phrasing(self):
+        # Only [Unreleased]: released entries are history and may quote what was
+        # true then. (The leak detector is not applied here: the #860 entry quotes
+        # the old site wording on purpose.)
+        text = re.sub(r"\s+", " ", _unreleased()).lower()
+        for phrase in BANNED:
+            with self.subTest(phrase=phrase):
+                self.assertNotIn(phrase.lower(), text)
+
+    def test_the_comparison_rows_name_model_endpoints(self):
+        row = (
+            "No review server of its own (the diff goes only to the model endpoints you configure)"
+        )
+        for rel in ("docs/comparison.md", "website/index.html"):
+            with self.subTest(rel):
+                self.assertIn(row, _flat(rel))
 
     def test_the_accurate_sentence_is_where_the_claim_was(self):
         for rel in ("README.md", "SECURITY.md", "llms.txt", "website/index.html"):
@@ -202,9 +229,7 @@ class TheNetworkListNamesEverythingTheToolCalls(unittest.TestCase):
 
     @staticmethod
     def _unreleased_network_bullet() -> str:
-        text = _text("CHANGELOG.md")
-        head = text.index("## [Unreleased]")
-        unreleased = text[head : text.index("\n## [", head + 1)]
+        unreleased = _unreleased()
         start = unreleased.index("**The network list is complete**")
         return re.sub(r"\s+", " ", unreleased[start : unreleased.index("\n- ", start)])
 
@@ -385,6 +410,14 @@ class TheSecurityDocStatesTheMeasuredPrecedence(unittest.TestCase):
         self.assertIn("added before or after", text)
         self.assertIn("`--permission-mode manual`, `default` or `plan`", text)
         self.assertIn("accepts it as an alias of `manual`", text)
+
+    def test_it_says_dont_ask_is_injected_only_when_no_mode_is_named(self):
+        text = _flat("docs/security.md")
+        self.assertIn(
+            "with no `--permission-mode` named, `dontAsk` is still injected beside it", text
+        )
+        self.assertIn("Beside a named `plan` or `auto` nothing is injected", text)
+        self.assertNotIn("`--dangerously-skip-permissions`: `dontAsk` is still injected", text)
 
 
 if __name__ == "__main__":

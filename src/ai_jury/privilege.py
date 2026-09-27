@@ -833,15 +833,36 @@ def _claude_mode_override(extra_args: list[str]) -> str | None:
     ``acceptEdits``, ``manual`` or its hidden alias ``default``, ``plan``) or one
     it rejects (a value outside that set, an empty value, no value at all). Read
     at flag positions only.
+
+    A rejected mode comes first, ahead of ``--dangerously-skip-permissions``:
+    Claude Code 2.1.236 refuses to start on it whatever else is in the argv
+    (measured with the skip flag beside ``bogus`` and beside a missing value), so
+    the seat fails rather than running in bypass mode, and the warning must say so.
+    An empty value is shown as ``--permission-mode=`` and a missing one as
+    ``--permission-mode``, so neither renders as a flag with a blank after it.
     """
     args = list(extra_args)
-    if _claude_flag_present("--dangerously-skip-permissions", args):
-        return "--dangerously-skip-permissions"
     values = _claude_value_positions(args)
+    accepted = (*_CLAUDE_KNOWN_MODES, "default")
+    named: list[str] = []
     for i in range(len(args)):
         mode = None if i in values else _permission_mode_at(args, i)
-        if mode is not None and mode[0] != _CLAUDE_REVIEW_MODE:
-            return f"--permission-mode {mode[0]}".rstrip()
+        if mode is None:
+            continue
+        if mode[0] not in accepted:
+            if mode[0]:
+                return f"--permission-mode {mode[0]}"
+            return (
+                "--permission-mode="
+                if args[i].startswith("--permission-mode=")
+                else ("--permission-mode")
+            )
+        named.append(mode[0])
+    if _claude_flag_present("--dangerously-skip-permissions", args):
+        return "--dangerously-skip-permissions"
+    for mode in named:
+        if mode != _CLAUDE_REVIEW_MODE:
+            return f"--permission-mode {mode}"
     return None
 
 
@@ -919,6 +940,12 @@ def _claude_mode_warning(label: str, override: str, extra_args: list[str]) -> st
     key = override.split(" ", 1)[1] if override.startswith("--permission-mode ") else override
     head = f"agent '{label}' (claude) is configured with `{override}`, which "
     if key not in _CLAUDE_MODE_EFFECTS:
+        if override == "--permission-mode":
+            head = f"agent '{label}' (claude) is configured with `--permission-mode` and no value, which "
+        elif override == "--permission-mode=":
+            head = (
+                f"agent '{label}' (claude) is configured with an empty `--permission-mode=`, which "
+            )
         return (
             f"{head}Claude Code 2.1.236 rejects (it accepts "
             f"{', '.join(_CLAUDE_KNOWN_MODES)}, and `default` as an alias of `manual`), "

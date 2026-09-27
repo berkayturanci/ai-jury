@@ -880,6 +880,34 @@ class EveryReadOnlyClaudeCallRunsInDontAsk(unittest.TestCase):
                 self.assertNotIn("dontAsk", warnings[0].split("which", 1)[1].split("(")[0])
                 self.assertNotIn("injected", warnings[0])
 
+    def test_a_rejected_mode_beside_the_bypass_flag_is_reported_as_rejected(self):
+        # Claude Code 2.1.236 refuses to start on the mode whatever else is there
+        # (measured for skip + bogus and skip + a missing value), so the seat fails:
+        # it does not run in bypass mode, and the warning must not say it does.
+        cases = {
+            "bogus": (
+                ["--dangerously-skip-permissions", "--permission-mode", "bogus"],
+                "`--permission-mode bogus`",
+            ),
+            "missing": (
+                ["--dangerously-skip-permissions", "--permission-mode"],
+                "`--permission-mode` and no value",
+            ),
+            "empty": (
+                ["--permission-mode=", "--dangerously-skip-permissions"],
+                "an empty `--permission-mode=`",
+            ),
+        }
+        for name, (args, shown) in cases.items():
+            with self.subTest(name):
+                warnings = privilege.audit_agent(self._seat(*args))
+                self.assertEqual(len(warnings), 1)
+                self.assertIn(shown, warnings[0])
+                self.assertIn("Claude Code 2.1.236 rejects", warnings[0])
+                self.assertIn("fails before it reviews anything", warnings[0])
+                self.assertNotIn("bypass mode", warnings[0])
+                self.assertNotIn("`--permission-mode `", warnings[0])
+
     def test_a_mode_beside_configured_tools_says_it_applies_to_them(self):
         warnings = privilege.audit_agent(
             self._seat("--tools", "Read", "--permission-mode", "acceptEdits")

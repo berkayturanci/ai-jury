@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `--dangerously-skip-permissions` overrides the `--permission-mode` beside it — the injected `dontAsk` when no mode is named (in either order), or a named `plan` or `auto` — and the warning names which; the seat runs in bypass mode. Measured on Claude Code 2.1.236: with `Read` available, a read outside the working directory was denied under `dontAsk` alone and went through with the flag added before or after it.
   - A named `bypassPermissions`, `auto` or `acceptEdits` is the mode the seat runs in, and it approves tool calls (for `acceptEdits`, file edits) without asking.
   - `manual`, `default` (an unlisted alias of `manual`) and `plan` are used instead of `dontAsk`.
-  - A value outside the modes Claude Code 2.1.236 accepts, an empty value and a missing value are rejected by it, so the seat fails before it reviews anything.
+  - A value outside the modes Claude Code 2.1.236 accepts, an empty value and a missing value are rejected by it, so the seat fails before it reviews anything — even beside `--dangerously-skip-permissions`, so that warning takes precedence over the bypass one.
   - `docs/security.md` states the measured precedence instead of "its own precedence rule".
   - `tests/test_privacy_claims.py`, and the per-mode cases in `tests/test_privilege.py`.
 - **The public text claims only what the project does** (#861, #862, #869, #872, #874). Pre-launch audit corrections:
