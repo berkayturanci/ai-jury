@@ -144,3 +144,8 @@ can be removed between the check and the spawn, and a loaded machine refuses the
 failure leaves as `RuntimeError`", audit **every** spawn site in that module at once, and
 derive the severity from what the exception text actually contains — print it — rather
 than from the fact that an exception was unhandled.
+
+## 2024-05-15 - Unredacted Exceptions in Trust Gate
+**Vulnerability:** OSError was caught and re-raised using `from exc` and with an unredacted exception message inside `src/ai_jury/configtrust.py`.
+**Learning:** When raising custom exceptions from caught ones, using `from exc` retains the original traceback and defeats redaction. Also, the string representation of an exception might contain sensitive information.
+**Prevention:** Always use `from None` to prevent traceback leakage and wrap the exception message using `redact(str(exc))[0]` before embedding it in an error message.
