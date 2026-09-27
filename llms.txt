@@ -1,18 +1,17 @@
 # ai-jury
 
-> Install once. Run a cross-vendor review jury anywhere. A small, stdlib-only Python
-> CLI that orchestrates native coding-agent CLIs from different vendors (Claude Code,
-> OpenAI Codex, Google Antigravity, Cursor CLI, DeepSeek, Groq, local models) to review the *same* diff/PR, debate each other's
-> findings, verify them against the code, and synthesize one chair verdict.
+> Convene a cross-vendor multi-agent review jury: coding-agent CLIs, hosted model APIs
+> and local models review the same diff, PR or issue, cross-examine each other, verify
+> the findings, and reach one verdict — a chair's synthesis or a panel vote.
 
 Key facts:
 
-- Language/runtime: Python ≥3.11, **zero runtime dependencies** (standard library only).
-- Install: `pipx install ai-jury` once published; until then
-  `pipx install git+https://github.com/berkayturanci/ai-jury.git`
-  (entry point: `jury`).
-- Differentiator: drives each vendor's **native CLI agent** as a headless subprocess,
-  not API-level model calls. The research-backed lever is **vendor heterogeneity**.
+- Language/runtime: a small Python ≥3.11 CLI, **zero runtime dependencies** (standard
+  library only).
+- Install: `pipx install ai-jury` (entry point: `jury`).
+- Differentiator: drives each vendor's **native CLI agent** as a headless subprocess
+  where one is installed; hosted-API and local-model seats join the same panel over
+  HTTP. The research-backed lever is **vendor heterogeneity**.
 - Panel: Universal agent provider support — Cloud CLIs (Claude Code, OpenAI Codex, Google Antigravity), hosted APIs (OpenRouter, DeepSeek, Groq, Anthropic, OpenAI, Gemini), free local open-weight models (Ollama, llama.cpp, vLLM, LM Studio), and arbitrary coding CLI tools (`vendor = "cli"` like Aider, Goose, OpenHands).
 - Pipeline: round 1 independent review → round 2 cross-examination/debate (adaptive
   early-stop) → optional verification pass → chair synthesis → one report. Large diffs
