@@ -856,10 +856,10 @@ def _claude_mode_override(extra_args: list[str]) -> str | None:
 #: ``default`` is not in Claude Code's listed choices but is accepted as an alias
 #: of ``manual``: its init event reports ``"permissionMode":"default"`` for both.
 _CLAUDE_MODE_EFFECTS: dict[str, tuple[str, bool]] = {
+    # The first half of this entry names the mode actually beside the flag; see
+    # `_claude_skip_overrides`.
     "--dangerously-skip-permissions": (
-        "overrides any `--permission-mode`, including the injected `dontAsk`, "
-        "whichever comes first (measured on Claude Code 2.1.236), so the seat runs in "
-        "bypass mode, which approves every tool call without asking",
+        "so the seat runs in bypass mode, which approves every tool call without asking",
         True,
     ),
     "bypassPermissions": (
@@ -893,6 +893,27 @@ _CLAUDE_KNOWN_MODES: tuple[str, ...] = (
 )
 
 
+def _claude_skip_overrides(extra_args: list[str]) -> str:
+    """What ``--dangerously-skip-permissions`` overrides in *extra_args*, in words.
+
+    ``dontAsk`` is injected only when the argv names no ``--permission-mode``, so
+    beside a named ``plan`` or ``auto`` there is no ``dontAsk`` to override — the
+    sentence names the mode that is actually there.
+    """
+    args = list(extra_args)
+    values = _claude_value_positions(args)
+    modes = [
+        m[0] for i in range(len(args)) if i not in values and (m := _permission_mode_at(args, i))
+    ]
+    measured = (
+        "measured on Claude Code 2.1.236 for `dontAsk` in either order, and for `plan` and `auto`"
+    )
+    if not modes:  # pragma: no cover - enforcement injects `--permission-mode dontAsk`
+        return f"overrides any `--permission-mode` ({measured})"
+    named = ", ".join(f"`--permission-mode {m}`" for m in dict.fromkeys(modes))
+    return f"overrides the {named} beside it ({measured})"
+
+
 def _claude_mode_warning(label: str, override: str, extra_args: list[str]) -> str:
     """The audit's sentence for *override*, saying what that setting really does."""
     key = override.split(" ", 1)[1] if override.startswith("--permission-mode ") else override
@@ -905,6 +926,8 @@ def _claude_mode_warning(label: str, override: str, extra_args: list[str]) -> st
             f"in `dontAsk`."
         )
     effect, approves = _CLAUDE_MODE_EFFECTS[key]
+    if key == "--dangerously-skip-permissions":
+        effect = f"{_claude_skip_overrides(extra_args)}, {effect}"
     if _claude_tools(list(extra_args)):
         tail = "The seat is also given tools (see above), so this applies to them. Drop it."
     elif approves:

@@ -35,8 +35,7 @@ already have installed.
   `tomllib`, `concurrent.futures`, and `argparse`. Easy to read, audit, and
   vendor into any repo or CI.
 - **Local-first.** It runs on your machine and spawns the CLIs you already have.
-  There is no ai-jury server and no service to sign up for; your diff goes only
-  to the model vendors you configure (or nowhere if every seat is local).
+  There is no ai-jury server and no service to sign up for; your diff goes only to the model endpoints you configure — vendor CLIs and APIs, or your own model server for local seats.
 - **Project-agnostic.** Configuration lives in a single `jury.toml`. Nothing
   about the jury assumes a particular codebase, language, or team.
 
@@ -105,12 +104,10 @@ data surface:
   (fetching, posting, labelling). Every `jury init` checks whether the default
   local model server on `localhost:11434` is reachable, except `jury init
   --list-models`, which lists its models instead; `--list-agents`, seating a local
-  reviewer, `jury --doctor` when no reviewer is available, and a run with no
-  `jury.toml` and no usable agent CLI list them too. `jury init --local-endpoint
+  reviewer, `jury --doctor` when no reviewer is available, and a run with no `jury.toml`, no `--config`, not `--mock`, and no usable agent CLI list them too. `jury init --local-endpoint
   URL` asks that URL for those listings instead, and a URL that is not loopback
   only with `JURY_ALLOW_REMOTE_ENDPOINT=1`. There is no telemetry and no ai-jury
-  server; your diff goes only to the model vendors you configure (or nowhere if
-  every seat is local).
+  server; your diff goes only to the model endpoints you configure — vendor CLIs and APIs, or your own model server for local seats.
 
 See the [README data-flow / privacy section](../README.md#data-flow--privacy)
 and `SECURITY.md` for the full reference.

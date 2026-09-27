@@ -158,13 +158,15 @@ content; the least-privilege audit (`--strict` to fail the run) will flag it.
     with `--tools ""` in force there is no tool for any mode to approve, and
     silently replacing a setting you wrote would hide what is actually running.
     What each one does, and what the warning says:
-    - `--dangerously-skip-permissions`: `dontAsk` is still injected beside it,
-      but the flag wins. Measured on Claude Code 2.1.236 with `Read` available: a
-      `Read` outside the working directory was denied under `dontAsk` alone, and
-      went through with `--dangerously-skip-permissions` added before or after
-      it. It overrides a named `plan` or `auto` too (the seat reports
-      `bypassPermissions`). The seat runs in bypass mode and would approve any
-      tool call unasked; with `--tools ""` it has none to approve.
+    - `--dangerously-skip-permissions`: with no `--permission-mode` named,
+      `dontAsk` is still injected beside it, but the flag wins. Measured on Claude
+      Code 2.1.236 with `Read` available: a `Read` outside the working directory
+      was denied under `dontAsk` alone, and went through with
+      `--dangerously-skip-permissions` added before or after it. Beside a named
+      `plan` or `auto` nothing is injected, and the flag overrides that mode too
+      (the seat reports `bypassPermissions`); the warning names the mode it
+      overrides. The seat runs in bypass mode and would approve any tool call
+      unasked; with `--tools ""` it has none to approve.
     - `--permission-mode bypassPermissions`, `auto` or `acceptEdits`: a named mode
       is kept and no `dontAsk` is injected, so the seat runs in that mode, which
       approves tool calls (for `acceptEdits`, file edits) without asking; again,

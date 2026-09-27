@@ -773,8 +773,7 @@ the default panel — can read and write files and reach the network, and a
 bring-your-own `cli` seat has whatever its own flags give it — see
 [Security & the Codex sandbox](#security--the-codex-sandbox).
 
-There is no ai-jury server; your diff goes only to the model vendors you
-configure (or nowhere if every seat is local).
+There is no ai-jury server; your diff goes only to the model endpoints you configure — vendor CLIs and APIs, or your own model server for local seats.
 
 **Secret redaction** — before anything is sent to an agent, the diff (and any
 context) is passed through a redactor (`src/ai_jury/redaction.py`)
@@ -810,7 +809,7 @@ tool never phones home. Network traffic goes to:
   (a status-only request), except `jury init --list-models`, which lists its models
   instead; `--list-agents` and seating a local reviewer list them after that check;
   `jury --doctor` lists them when no reviewer is available, and so does a run with
-  no `jury.toml` and no usable agent CLI. `jury init --local-endpoint URL` asks
+  no `jury.toml`, no `--config`, not `--mock`, and no usable agent CLI. `jury init --local-endpoint URL` asks
   `URL/models` for those listings instead (`--list-models`, `--list-agents`, and
   seating a local reviewer: interactive, `--wizard`, `--agents qwen`, `--preset
   offline`); a URL that is not loopback is asked only with

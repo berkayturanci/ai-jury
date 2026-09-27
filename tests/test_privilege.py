@@ -668,9 +668,8 @@ class AClaudeReviewerHasNoToolsAtAll(unittest.TestCase):
         warnings = privilege.audit_agent(self._seat(*self.OLD_DEFAULT))
         self.assertEqual(len(warnings), 1)
         self.assertIn("`--dangerously-skip-permissions`", warnings[0])
-        self.assertIn(
-            "overrides any `--permission-mode`, including the injected `dontAsk`", warnings[0]
-        )
+        # No mode was named, so dontAsk was injected beside it, and that is the one named.
+        self.assertIn("overrides the `--permission-mode dontAsk` beside it", warnings[0])
         self.assertIn("runs in bypass mode", warnings[0])
         self.assertIn("grants nothing today", warnings[0])
 
@@ -876,8 +875,10 @@ class EveryReadOnlyClaudeCallRunsInDontAsk(unittest.TestCase):
                 self.assertNotIn("dontAsk", privilege.enforce_read_only("anthropic", list(args)))
                 warnings = privilege.audit_agent(self._seat(*args))
                 self.assertEqual(len(warnings), 1)
-                self.assertIn("overrides any `--permission-mode`", warnings[0])
-                self.assertNotIn("overrides the reviewer's", warnings[0])
+                # It names the mode that is actually there, and no dontAsk.
+                self.assertIn(f"overrides the `--permission-mode {mode}` beside it", warnings[0])
+                self.assertNotIn("dontAsk", warnings[0].split("which", 1)[1].split("(")[0])
+                self.assertNotIn("injected", warnings[0])
 
     def test_a_mode_beside_configured_tools_says_it_applies_to_them(self):
         warnings = privilege.audit_agent(

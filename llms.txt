@@ -26,8 +26,7 @@ Key facts:
 - Output: markdown / JSON / SARIF report; optional GitHub summary + inline comments;
   structured findings (severity/file/line); CI gating via exit code.
 - Privacy: `diff-only` context by default; secret redaction on by default; no telemetry.
-  There is no ai-jury server; your diff goes only to the model vendors you configure
-  (or nowhere if every seat is local).
+  There is no ai-jury server; your diff goes only to the model endpoints you configure — vendor CLIs and APIs, or your own model server for local seats.
 
 ## Quickstart
 

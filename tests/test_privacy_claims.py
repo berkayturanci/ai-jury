@@ -53,7 +53,12 @@ NOTHING_LEAVES = re.compile(
 )
 
 #: Marketing phrasing that was on the site and is not a property of the tool.
-BANNED = ("100% data privacy",)
+BANNED = (
+    "100% data privacy",
+    # A local seat is sent the diff too: LocalAdapter.run POSTs the prompt to
+    # its endpoint, which need not even be on this machine.
+    "nowhere if every seat is local",
+)
 
 
 def leaks_claim(text: str) -> list[str]:
@@ -64,14 +69,14 @@ def leaks_claim(text: str) -> list[str]:
             continue
         lowered = sentence.lower()
         if "every seat" in lowered and "local" in lowered:
-            continue  # "with every seat local, the diff does not leave" is true
+            continue  # "every seat a model on your own machine" makes it true
         found.append(sentence)
     return found
 
 
 NO_SERVER = (
-    "no ai-jury server; your diff goes only to the model vendors you configure "
-    "(or nowhere if every seat is local)"
+    "no ai-jury server; your diff goes only to the model endpoints you configure — "
+    "vendor clis and apis, or your own model server for local seats"
 )
 
 
@@ -99,9 +104,9 @@ class TheLeakDetectorIsCalibrated(unittest.TestCase):
 
     def test_it_allows_the_true_ones(self):
         for sentence in (
-            "With every seat local, the diff does not leave your machine.",
+            "With every seat a local model on your own machine, the diff does not leave it.",
             "Replay an actual run — fully client-side; the file never leaves your browser.",
-            "There is no ai-jury server; your diff goes only to the model vendors you configure.",
+            "There is no ai-jury server; your diff goes only to the model endpoints you configure.",
         ):
             with self.subTest(sentence):
                 self.assertEqual(leaks_claim(sentence), [])
@@ -125,10 +130,18 @@ class NothingSaysTheDiffNeverLeaves(unittest.TestCase):
                 self.assertIn(NO_SERVER, _flat(rel).lower().replace("there is ", ""))
         # llms-full.txt words it as a bullet: "No ai-jury server: your diff goes …"
         self.assertIn(
-            "no ai-jury server: your diff goes only to the model vendors you configure "
-            "(or nowhere if every seat is local)",
+            "no ai-jury server: " + NO_SERVER.split("server; ", 1)[1],
             _flat("llms-full.txt").lower().replace("*", ""),
         )
+
+    def test_the_site_faq_does_not_promise_reviewers_their_own_environment(self):
+        # The claude seat is tool-less and every read-only reviewer starts in an
+        # empty directory, so "each reviewer runs in its native environment with its
+        # own tooling" is false. The jury hands every seat the diff in its prompt.
+        text = _flat("website/index.html").lower()
+        for phrase in ("own tooling", "native environment"):
+            self.assertFalse(phrase in text, f"website/index.html still says {phrase!r}")
+        self.assertIn("the jury hands every seat the diff in its prompt", text)
 
     def test_both_site_faq_copies_carry_it(self):
         # The FAQ is rendered twice: the visible <details> and the JSON-LD
@@ -168,7 +181,7 @@ class TheNetworkListNamesEverythingTheToolCalls(unittest.TestCase):
         "every `jury init` checks whether it is reachable",
         "except `jury init --list-models`, which lists its models instead",
         "`jury --doctor` lists them when no reviewer is available",
-        "a run with no `jury.toml` and no usable agent CLI",
+        "a run with no `jury.toml`, no `--config`, not `--mock`, and no usable agent CLI",
         "`jury init --local-endpoint URL` asks `URL/models`",
         "only with `JURY_ALLOW_REMOTE_ENDPOINT=1` set",
     )
@@ -354,6 +367,14 @@ class TheLoopbackListingHappensWhereTheDocsSay(unittest.TestCase):
             (tmp / "jury.toml").write_text("[jury]\n", encoding="utf-8")
             cli._maybe_add_local_fallback(load_config(None), args, lambda _m: None)
         self.assertEqual(urls, [])
+        # `--config` and `--mock` return before the listing too, CLI or not.
+        for flags in ({"config": "other.toml", "mock": False}, {"config": None, "mock": True}):
+            with self.subTest(flags), self._record() as (urls, _tmp):
+                config = load_config(None)
+                cli._maybe_add_local_fallback(
+                    config, types.SimpleNamespace(**flags), lambda _m: None
+                )
+                self.assertEqual(urls, [])
 
 
 class TheSecurityDocStatesTheMeasuredPrecedence(unittest.TestCase):
