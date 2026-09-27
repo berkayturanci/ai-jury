@@ -86,7 +86,14 @@ def is_abstention(output) -> bool:
     text = (output or "").strip().lower()
     if not text:
         return True
-    return len(text) < 400 and any(m in _normalize_refusal(text) for m in _ABSTENTION_MARKERS)
+    if len(text) >= 400:
+        return False
+    # bolt: convert any() generator to explicit for loop to bypass interpreter overhead
+    text = _normalize_refusal(text)
+    for m in _ABSTENTION_MARKERS:  # noqa: SIM110 - avoiding any() generator overhead is intentional
+        if m in text:
+            return True
+    return False
 
 
 # Worst-severity thresholds. critical/major are blocking; minor/nit are middling.

@@ -47,3 +47,6 @@
 ## 2026-09-17 - Avoid Micro-Optimizing Generator Overhead on Small Data Collections
 **Learning:** The guideline to convert generator expressions inside `str.join()` to list comprehensions for performance (to bypass interpreter overhead) is intended for significantly large arrays. Attempting this conversion on a list of file diffs (which are structurally tiny collections, usually < 20 files, even though the strings they contain are large) yields nanosecond-to-microsecond improvements with zero measurable impact at the application level.
 **Action:** Only apply explicit list comprehensions inside `str.join()` or `list.extend()` when traversing massive iterations. For tiny structures like list of files, avoid polluting the codebase with noisy micro-optimizations that offer no real-world performance win.
+## 2026-09-28 - Fast Inclusion Checks for Dynamic Strings
+**Learning:** Checking string inclusion across multiple dynamically built templates (e.g. `any(f"{o}{token}{c}" in text)`) is slow due to generator overhead and formatting per iteration.
+**Action:** Avoid `any()` loops for checking string boundaries or short static sets of dynamic inclusions. Unroll the checks into explicit `A in text or B in text` expressions to dramatically reduce overhead.

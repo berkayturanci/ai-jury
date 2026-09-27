@@ -196,11 +196,12 @@ _STATED_TESTING_RE = re.compile(r"^tested\s*\**\s*:\s*\**\s*(.+)$", re.IGNORECAS
 #: ``Checked:`` token must also *resolve* against the change before it is
 #: rendered as one of these shapes, so this tool is stricter there and never
 #: looser — a scope it accepts is one the consumer accepts.
-_SCOPE_ANCHORS = (
-    re.compile(r"[\w./-]+\.[A-Za-z0-9]{1,5}:\d+"),  # path/to/file.py:42
-    re.compile(r"[\w-]+/[\w./-]+\.[A-Za-z0-9]{1,5}\b"),  # src/ai_jury/thing.py
-    re.compile(r"`[^`\n]{2,}`"),  # `a_symbol`, `--a-flag`
-    re.compile(r"\b\w+\.\w+\(\)"),  # module.function()
+# bolt: Fast C-optimized regex evaluation instead of Python any() loop
+_SCOPE_ANCHORS_RE = re.compile(
+    r"[\w./-]+\.[A-Za-z0-9]{1,5}:\d+|"  # path/to/file.py:42
+    r"[\w-]+/[\w./-]+\.[A-Za-z0-9]{1,5}\b|"  # src/ai_jury/thing.py
+    r"`[^`\n]{2,}`|"  # `a_symbol`, `--a-flag`
+    r"\b\w+\.\w+\(\)"  # module.function()
 )
 
 #: The escape hatch the consumer's rule keeps, and this one keeps with it: a
@@ -490,7 +491,9 @@ def _is_name_shaped(token: str, value: str) -> bool:
     """
     if _NAME_SHAPED_RE.search(token):
         return True
-    return any(f"{o}{token}{c}" in (value or "") for o, c in (("`", "`"), ('"', '"'), ("“", "”")))
+    v = value or ""
+    # bolt: bypass any() generator overhead by writing inclusion checks explicitly
+    return f"`{token}`" in v or f'"{token}"' in v or f"“{token}”" in v
 
 
 def _path_shaped(base: str) -> bool:
@@ -644,7 +647,7 @@ def scope_is_substantive(scope: str) -> bool:
     text = (scope or "").strip()
     if not text:
         return False
-    return bool(_CHECKED_CLAUSE_RE.search(text)) or any(p.search(text) for p in _SCOPE_ANCHORS)
+    return bool(_CHECKED_CLAUSE_RE.search(text)) or bool(_SCOPE_ANCHORS_RE.search(text))
 
 
 def _tick(text: str) -> str:
