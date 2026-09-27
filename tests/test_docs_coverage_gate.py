@@ -113,8 +113,21 @@ PUBLIC_TEXT: tuple[Path, ...] = (
 NEARBY_WORDS = 4
 _PERCENT = re.compile(r"100\s?%")
 _CLAUSE_BREAK = re.compile(r"[\n<>]|\.(?:\s|$)")
-#: A module named just before the figure: `voting.py`, theater.py, `ballots`.
-_MODULE = re.compile(r"\w\.py\b|`[^`\s]+`")
+#: A module named just before the figure: `voting.py`, theater.py, `ballots`. A
+#: backticked word counts only when it names one of ai-jury's own modules: the
+#: docs backtick `ai-jury`, `subprocess` and `tomllib` too, and "`ai-jury` has
+#: 100% test coverage" is exactly the claim #862 removed.
+_PY_FILE = re.compile(r"\w\.py\b")
+_BACKTICKED = re.compile(r"`([^`\s]+)`")
+_MODULE_STEMS = frozenset(
+    p.stem for p in (REPO_ROOT / "src" / "ai_jury").glob("*.py") if not p.stem.startswith("_")
+)
+
+
+def _names_a_module(words: str) -> bool:
+    if _PY_FILE.search(words):
+        return True
+    return any(name in _MODULE_STEMS for name in _BACKTICKED.findall(words))
 
 
 def full_coverage_claims(text: str) -> list[str]:
@@ -136,7 +149,7 @@ def full_coverage_claims(text: str) -> list[str]:
         near_after = after.split()[:NEARBY_WORDS]
         if not re.search(r"cover", " ".join(near_before + near_after), re.IGNORECASE):
             continue
-        if _MODULE.search(" ".join(near_before)):
+        if _names_a_module(" ".join(near_before)):
             continue
         claims.append(" ".join([*near_before, match.group(), *near_after]))
     return claims
@@ -169,11 +182,14 @@ class NoCoverageFigureTheGateDoesNotEnforce(unittest.TestCase):
             "Test coverage: 100%",
             "overall coverage is 100%",
             "every line is 100% covered",
+            "`ai-jury` has 100% test coverage.",
+            "Zero runtime dependencies (`subprocess`, `tomllib`), 100% coverage.",
         ):
             with self.subTest(claim=claim):
                 self.assertNotEqual(full_coverage_claims(claim), [])
         for statement in (
             "`voting.py` has 100% coverage.",
+            "`ballots` has 100% coverage.",
             "`make coverage` gate passing (theater.py 100%)",
             "the four-vendor panel caught 100% of them",
             "all at 100% precision. Coverage is on the badge.",

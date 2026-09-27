@@ -30,8 +30,8 @@ already have installed.
   notable single-reviewer findings.
 - **Native CLIs first, APIs too.** A CLI seat runs the vendor's own coding agent
   (`claude`, `codex`, `agy`) as a subprocess rather than a raw model API call;
-  hosted-API and local-model seats join the same panel over HTTP where no CLI is
-  installed.
+  hosted-API and local-model seats join the same panel over HTTP, alongside the
+  CLIs or instead of them where none is installed.
 - **Stdlib-first.** No third-party Python dependencies — just `subprocess`,
   `tomllib`, `concurrent.futures`, and `argparse`. Easy to read, audit, and
   vendor into any repo or CI.
