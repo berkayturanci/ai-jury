@@ -176,13 +176,13 @@ see `jury init --agents claude-api,codex-api,gemini-api`.
 
 ## Design decisions
 
-- **Native CLI over API, with a hosted-API escape hatch.** The differentiator for the
-  primary review adapters is that each reviewer runs in its own vendor agent with its
-  own tooling and context handling, not a raw model API call — but a review prompt
-  needs no filesystem/tool access at all (the jury fetches the diff itself), so the
-  hosted-API adapters (issue #430) trade that native tooling for zero-install,
-  API-key-only reviewers where a CLI genuinely can't be installed or authenticated
-  (CI, containers).
+- **Native CLI over API, with a hosted-API escape hatch.** The primary review
+  adapters drive each vendor's own coding-agent CLI rather than a raw model API
+  call. A review prompt needs no filesystem or tool access at all (the jury fetches
+  the diff itself and puts it in the prompt), so the hosted-API adapters (issue #430)
+  can stand in as zero-install, API-key-only reviewers where a CLI genuinely can't
+  be installed or authenticated (CI, containers). What each seat is allowed to do is
+  in [security.md](security.md).
 - **Stdlib only.** No third-party deps — `subprocess`, `tomllib`, `concurrent.futures`,
   `argparse`. Easy to vendor into any repo or CI.
 - **Mock path is first-class.** `--mock` runs the entire pipeline deterministically so
