@@ -908,6 +908,48 @@ class EveryReadOnlyClaudeCallRunsInDontAsk(unittest.TestCase):
                 self.assertNotIn("bypass mode", warnings[0])
                 self.assertNotIn("`--permission-mode `", warnings[0])
 
+    #: Each refused by Claude Code 2.1.236 (probed with an invalid model name, so
+    #: no model call): the seat never starts, so nothing runs in bypass mode.
+    REJECTED_WITH_SKIP = {
+        "bogus": (
+            ["--dangerously-skip-permissions", "--permission-mode", "bogus"],
+            "`--permission-mode bogus`",
+        ),
+        "missing": (
+            ["--dangerously-skip-permissions", "--permission-mode"],
+            "`--permission-mode` and no value",
+        ),
+        "empty": (
+            ["--dangerously-skip-permissions", "--permission-mode="],
+            "an empty `--permission-mode=`",
+        ),
+        "value is the skip flag": (
+            ["--permission-mode", "--dangerously-skip-permissions"],
+            "`--permission-mode --dangerously-skip-permissions`",
+        ),
+        "= value is the skip flag": (
+            ["--permission-mode=--dangerously-skip-permissions"],
+            "`--permission-mode --dangerously-skip-permissions`",
+        ),
+    }
+
+    def test_a_rejected_mode_wins_with_or_without_tools(self):
+        for name, (args, shown) in self.REJECTED_WITH_SKIP.items():
+            for tools in ([], ["--tools", "Read"]):
+                with self.subTest(name, tools=bool(tools)):
+                    warnings = privilege.audit_agent(self._seat(*tools, *args))
+                    joined = " | ".join(warnings)
+                    self.assertIn(shown, joined)
+                    self.assertIn("Claude Code 2.1.236 rejects", joined)
+                    self.assertNotIn("bypass mode", joined)
+                    self.assertNotIn("skips permission checks", joined)
+                    self.assertEqual(len(warnings), 2 if tools else 1)
+                    self.assertIsNone(
+                        privilege._claude_permission_bypass(
+                            privilege.enforce_read_only("anthropic", [*tools, *args])
+                        )
+                    )
+
     def test_a_mode_beside_configured_tools_says_it_applies_to_them(self):
         warnings = privilege.audit_agent(
             self._seat("--tools", "Read", "--permission-mode", "acceptEdits")

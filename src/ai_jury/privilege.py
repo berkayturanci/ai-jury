@@ -825,6 +825,35 @@ def _claude_open_surface(extra_args: list[str]) -> list[str]:
     return surface
 
 
+def _claude_rejected_mode(extra_args: list[str]) -> str | None:
+    """A ``--permission-mode`` Claude Code rejects, as it should be shown; or None.
+
+    The first decision on every audit path that talks about permissions: a
+    rejected mode makes Claude Code exit before the model is reached, whatever
+    else the argv holds — ``--dangerously-skip-permissions`` and ``--tools``
+    included (measured on 2.1.236 with an invalid model name: ``bogus``, a
+    missing value, an empty ``=`` and a value that is itself a flag, such as
+    ``--permission-mode --dangerously-skip-permissions``, were each refused). So
+    such a seat never runs, in bypass mode or any other. An empty value is shown
+    as ``--permission-mode=`` and a missing one as ``--permission-mode``.
+    """
+    args = list(extra_args)
+    values = _claude_value_positions(args)
+    accepted = (*_CLAUDE_KNOWN_MODES, "default")
+    for i in range(len(args)):
+        mode = None if i in values else _permission_mode_at(args, i)
+        if mode is None or mode[0] in accepted:
+            continue
+        if mode[0]:
+            return f"--permission-mode {mode[0]}"
+        return (
+            "--permission-mode="
+            if args[i].startswith("--permission-mode=")
+            else ("--permission-mode")
+        )
+    return None
+
+
 def _claude_mode_override(extra_args: list[str]) -> str | None:
     """A permission setting other than the reviewer's ``dontAsk``, as written; or None.
 
@@ -842,22 +871,13 @@ def _claude_mode_override(extra_args: list[str]) -> str | None:
     ``--permission-mode``, so neither renders as a flag with a blank after it.
     """
     args = list(extra_args)
+    rejected = _claude_rejected_mode(args)
+    if rejected is not None:
+        return rejected
     values = _claude_value_positions(args)
-    accepted = (*_CLAUDE_KNOWN_MODES, "default")
-    named: list[str] = []
-    for i in range(len(args)):
-        mode = None if i in values else _permission_mode_at(args, i)
-        if mode is None:
-            continue
-        if mode[0] not in accepted:
-            if mode[0]:
-                return f"--permission-mode {mode[0]}"
-            return (
-                "--permission-mode="
-                if args[i].startswith("--permission-mode=")
-                else ("--permission-mode")
-            )
-        named.append(mode[0])
+    named = [
+        m[0] for i in range(len(args)) if i not in values and (m := _permission_mode_at(args, i))
+    ]
     if _claude_flag_present("--dangerously-skip-permissions", args):
         return "--dangerously-skip-permissions"
     for mode in named:
@@ -939,7 +959,9 @@ def _claude_mode_warning(label: str, override: str, extra_args: list[str]) -> st
     """The audit's sentence for *override*, saying what that setting really does."""
     key = override.split(" ", 1)[1] if override.startswith("--permission-mode ") else override
     head = f"agent '{label}' (claude) is configured with `{override}`, which "
-    if key not in _CLAUDE_MODE_EFFECTS:
+    # A rejected mode first: `--permission-mode --dangerously-skip-permissions`
+    # names the skip flag as its VALUE, and must not be read as the flag itself.
+    if override == _claude_rejected_mode(extra_args) or key not in _CLAUDE_MODE_EFFECTS:
         if override == "--permission-mode":
             head = f"agent '{label}' (claude) is configured with `--permission-mode` and no value, which "
         elif override == "--permission-mode=":
@@ -978,8 +1000,15 @@ def _claude_config_options(extra_args: list[str]) -> list[str]:
 
 
 def _claude_permission_bypass(extra_args: list[str]) -> str | None:
-    """The token that makes claude approve tool calls unasked, or ``None``."""
+    """The token that makes claude approve tool calls unasked, or ``None``.
+
+    ``None`` too when the argv carries a rejected ``--permission-mode``: Claude
+    Code refuses to start on it, so there is no seat to approve anything, and
+    :func:`_claude_mode_warning` reports the rejection instead.
+    """
     args = list(extra_args)
+    if _claude_rejected_mode(args) is not None:
+        return None
     if _claude_flag_present("--dangerously-skip-permissions", args):
         return "--dangerously-skip-permissions"
     values = _claude_value_positions(args)
