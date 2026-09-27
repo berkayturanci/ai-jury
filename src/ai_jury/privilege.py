@@ -825,22 +825,172 @@ def _claude_open_surface(extra_args: list[str]) -> list[str]:
     return surface
 
 
+def _claude_rejected_mode(extra_args: list[str]) -> str | None:
+    """A ``--permission-mode`` Claude Code rejects, as it should be shown; or None.
+
+    The first decision on every audit path that talks about permissions: a
+    rejected mode makes Claude Code exit before the model is reached, whatever
+    else the argv holds — ``--dangerously-skip-permissions`` and ``--tools``
+    included (measured on 2.1.236 with an invalid model name: ``bogus``, a
+    missing value, an empty ``=`` and a value that is itself a flag, such as
+    ``--permission-mode --dangerously-skip-permissions``, were each refused). So
+    such a seat never runs, in bypass mode or any other. An empty value is shown
+    as ``--permission-mode=`` and a missing one as ``--permission-mode``.
+    """
+    args = list(extra_args)
+    values = _claude_value_positions(args)
+    accepted = (*_CLAUDE_KNOWN_MODES, "default")
+    for i in range(len(args)):
+        mode = None if i in values else _permission_mode_at(args, i)
+        if mode is None or mode[0] in accepted:
+            continue
+        if mode[0]:
+            return f"--permission-mode {mode[0]}"
+        return (
+            "--permission-mode="
+            if args[i].startswith("--permission-mode=")
+            else ("--permission-mode")
+        )
+    return None
+
+
 def _claude_mode_override(extra_args: list[str]) -> str | None:
     """A permission setting other than the reviewer's ``dontAsk``, as written; or None.
 
     ``--dangerously-skip-permissions``, or a ``--permission-mode`` naming any other
-    mode (``bypassPermissions``, ``auto``, ``acceptEdits``, ``default``, ``plan``,
-    or none at all). Read at flag positions only.
+    mode — one Claude Code accepts (``bypassPermissions``, ``auto``,
+    ``acceptEdits``, ``manual`` or its hidden alias ``default``, ``plan``) or one
+    it rejects (a value outside that set, an empty value, no value at all). Read
+    at flag positions only.
+
+    A rejected mode comes first, ahead of ``--dangerously-skip-permissions``:
+    Claude Code 2.1.236 refuses to start on it whatever else is in the argv
+    (measured with the skip flag beside ``bogus`` and beside a missing value), so
+    the seat fails rather than running in bypass mode, and the warning must say so.
+    An empty value is shown as ``--permission-mode=`` and a missing one as
+    ``--permission-mode``, so neither renders as a flag with a blank after it.
     """
     args = list(extra_args)
+    rejected = _claude_rejected_mode(args)
+    if rejected is not None:
+        return rejected
+    values = _claude_value_positions(args)
+    named = [
+        m[0] for i in range(len(args)) if i not in values and (m := _permission_mode_at(args, i))
+    ]
     if _claude_flag_present("--dangerously-skip-permissions", args):
         return "--dangerously-skip-permissions"
-    values = _claude_value_positions(args)
-    for i in range(len(args)):
-        mode = None if i in values else _permission_mode_at(args, i)
-        if mode is not None and mode[0] != _CLAUDE_REVIEW_MODE:
-            return f"--permission-mode {mode[0]}".rstrip()
+    for mode in named:
+        if mode != _CLAUDE_REVIEW_MODE:
+            return f"--permission-mode {mode}"
     return None
+
+
+#: What each permission setting other than ``dontAsk`` does to a reviewer, as
+#: ``(what it does, whether it approves tool calls unasked)``. Measured on Claude
+#: Code 2.1.236: with ``--permission-mode dontAsk`` and ``Read`` available, a
+#: ``Read`` outside the working directory was denied; adding
+#: ``--dangerously-skip-permissions`` before or after it let the read through.
+#: The flag also overrides a named ``plan`` or ``auto`` (the seat reports
+#: ``bypassPermissions``). A named ``--permission-mode`` is otherwise kept as
+#: written (nothing is injected beside it), so it is the mode the seat runs in.
+#: ``default`` is not in Claude Code's listed choices but is accepted as an alias
+#: of ``manual``: its init event reports ``"permissionMode":"default"`` for both.
+_CLAUDE_MODE_EFFECTS: dict[str, tuple[str, bool]] = {
+    # The first half of this entry names the mode actually beside the flag; see
+    # `_claude_skip_overrides`.
+    "--dangerously-skip-permissions": (
+        "so the seat runs in bypass mode, which approves every tool call without asking",
+        True,
+    ),
+    "bypassPermissions": (
+        "is used instead of the reviewer's `dontAsk`, and approves every tool call without asking",
+        True,
+    ),
+    "auto": (
+        "is used instead of the reviewer's `dontAsk`, and lets Claude Code approve "
+        "tool calls without asking you",
+        True,
+    ),
+    "acceptEdits": (
+        "is used instead of the reviewer's `dontAsk`, and approves file edits without asking",
+        True,
+    ),
+    "manual": ("is used instead of the reviewer's `dontAsk`", False),
+    "default": ("is used instead of the reviewer's `dontAsk`", False),
+    "plan": ("is used instead of the reviewer's `dontAsk`", False),
+}
+
+#: The ``--permission-mode`` choices Claude Code 2.1.236 lists; it also accepts
+#: ``default`` (an unlisted alias of ``manual``). Anything else, an empty value
+#: or no value makes it exit before the model is reached.
+_CLAUDE_KNOWN_MODES: tuple[str, ...] = (
+    "acceptEdits",
+    "auto",
+    "bypassPermissions",
+    "manual",
+    "dontAsk",
+    "plan",
+)
+
+
+def _claude_skip_overrides(extra_args: list[str]) -> str:
+    """What ``--dangerously-skip-permissions`` overrides in *extra_args*, in words.
+
+    ``dontAsk`` is injected only when the argv names no ``--permission-mode``, so
+    beside a named ``plan`` or ``auto`` there is no ``dontAsk`` to override — the
+    sentence names the mode that is actually there.
+    """
+    args = list(extra_args)
+    values = _claude_value_positions(args)
+    modes = [
+        m[0] for i in range(len(args)) if i not in values and (m := _permission_mode_at(args, i))
+    ]
+    measured = (
+        "measured on Claude Code 2.1.236 for `dontAsk` in either order, and for `plan` and `auto`"
+    )
+    if not modes:  # pragma: no cover - enforcement injects `--permission-mode dontAsk`
+        return f"overrides any `--permission-mode` ({measured})"
+    named = ", ".join(f"`--permission-mode {m}`" for m in dict.fromkeys(modes))
+    return f"overrides the {named} beside it ({measured})"
+
+
+def _claude_mode_warning(label: str, override: str, extra_args: list[str]) -> str:
+    """The audit's sentence for *override*, saying what that setting really does."""
+    key = override.split(" ", 1)[1] if override.startswith("--permission-mode ") else override
+    head = f"agent '{label}' (claude) is configured with `{override}`, which "
+    # A rejected mode first: `--permission-mode --dangerously-skip-permissions`
+    # names the skip flag as its VALUE, and must not be read as the flag itself.
+    if override == _claude_rejected_mode(extra_args) or key not in _CLAUDE_MODE_EFFECTS:
+        if override == "--permission-mode":
+            head = f"agent '{label}' (claude) is configured with `--permission-mode` and no value, which "
+        elif override == "--permission-mode=":
+            head = (
+                f"agent '{label}' (claude) is configured with an empty `--permission-mode=`, which "
+            )
+        return (
+            f"{head}Claude Code 2.1.236 rejects (it accepts "
+            f"{', '.join(_CLAUDE_KNOWN_MODES)}, and `default` as an alias of `manual`), "
+            f"so the seat fails before it reviews anything. Drop it — a reviewer runs "
+            f"in `dontAsk`."
+        )
+    effect, approves = _CLAUDE_MODE_EFFECTS[key]
+    if key == "--dangerously-skip-permissions":
+        effect = f"{_claude_skip_overrides(extra_args)}, {effect}"
+    if _claude_tools(list(extra_args)):
+        tail = "The seat is also given tools (see above), so this applies to them. Drop it."
+    elif approves:
+        tail = (
+            'With `--tools ""` in force there is no tool for it to approve, so it grants '
+            "nothing today, but it would approve whatever a later flag or Claude Code "
+            "release made available. Drop it."
+        )
+    else:
+        tail = (
+            'With `--tools ""` in force there is no tool for it to act on, so it changes '
+            "nothing today, but a reviewer runs in `dontAsk`. Drop it."
+        )
+    return f"{head}{effect}. {tail}"
 
 
 def _claude_config_options(extra_args: list[str]) -> list[str]:
@@ -850,8 +1000,15 @@ def _claude_config_options(extra_args: list[str]) -> list[str]:
 
 
 def _claude_permission_bypass(extra_args: list[str]) -> str | None:
-    """The token that makes claude approve tool calls unasked, or ``None``."""
+    """The token that makes claude approve tool calls unasked, or ``None``.
+
+    ``None`` too when the argv carries a rejected ``--permission-mode``: Claude
+    Code refuses to start on it, so there is no seat to approve anything, and
+    :func:`_claude_mode_warning` reports the rejection instead.
+    """
     args = list(extra_args)
+    if _claude_rejected_mode(args) is not None:
+        return None
     if _claude_flag_present("--dangerously-skip-permissions", args):
         return "--dangerously-skip-permissions"
     values = _claude_value_positions(args)
@@ -960,13 +1117,7 @@ def audit_agent(spec) -> list[str]:
         # the warning above already named an approving one next to its tools.
         override = _claude_mode_override(extra_args)
         if override and not (surface and bypass):
-            warnings.append(
-                f"agent '{label}' (claude) is configured with `{override}`; a reviewer "
-                f"runs with `--permission-mode {_CLAUDE_REVIEW_MODE}`, which denies any "
-                f"tool call that is not pre-approved. With no tools available it grants "
-                f"nothing today, but it would approve whatever a later flag or Claude "
-                f"Code release made available. Drop it."
-            )
+            warnings.append(_claude_mode_warning(label, override, extra_args))
         # Configuration beyond the prompt. `--safe-mode` keeps it from loading
         # (measured), so this is a surprise to prevent, not a hole to close.
         loaded = _claude_config_options(extra_args)
