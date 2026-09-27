@@ -7,8 +7,8 @@ description: Convene a cross-vendor multi-agent review jury on a diff, PR, or is
 
 Convene a panel of reviewers from **different vendors** to review the same change,
 debate each other's findings, and produce one consolidated verdict. A seat is a
-vendor's own coding-agent CLI, which runs with its own tooling, or a hosted-API or
-local model, which the jury prompts over HTTP.
+vendor's own coding-agent CLI, or a hosted-API or local model that the jury prompts
+over HTTP.
 
 ## Prerequisites
 

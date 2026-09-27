@@ -11,8 +11,8 @@ against their current docs before deciding.
 ## Categories
 
 - **Native-CLI orchestration** — drives each vendor's *own* coding-agent CLI
-  (`claude`, `codex`, `agy`/`gemini`, `qwen`, …) as a subprocess. Each reviewer runs in
-  its native environment. *This project, Magpie, agent-council, the-council.* `ai-jury`
+  (`claude`, `codex`, `agy`/`gemini`, `qwen`, …) as a subprocess, so each reviewer is
+  that vendor's own agent. *This project, Magpie, agent-council, the-council.* `ai-jury`
   also seats hosted-API and local models beside the CLIs, so it straddles the next
   category too.
 - **API-level multi-model** — calls models through provider/aggregator APIs rather than
@@ -72,7 +72,7 @@ configurable or undocumented it is marked ➖. Corrections via PR are welcome.
   provider APIs. Preferring APIs to installing vendor CLIs does not by itself rule
   `ai-jury` out: its hosted-API seats need only an API key.
 - **Use `ai-jury`** when you specifically want each reviewer to run as a
-  *native vendor CLI agent* (its own tooling/context), want a **local-first**,
+  *native vendor CLI agent* rather than a raw model API call, want a **local-first**,
   **stdlib-only** drop-in that snaps into an existing repo's review workflow via a
   Claude Code skill, and want debate + a verification pass + CI gating without a hosted
   service. It can also run **fully offline at $0** with a local open-weight model

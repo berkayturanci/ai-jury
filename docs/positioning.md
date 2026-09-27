@@ -28,9 +28,10 @@ already have installed.
   review; round 2 is cross-examination where each agent sees the others' findings
   and argues; synthesis produces a single verdict with consensus, disputed, and
   notable single-reviewer findings.
-- **Native CLI, not API.** Each reviewer runs in its own vendor agent (`claude`,
-  `codex`, `agy`) with its own tooling and context handling — not a raw model API
-  call.
+- **Native CLIs first, APIs too.** A CLI seat runs the vendor's own coding agent
+  (`claude`, `codex`, `agy`) as a subprocess rather than a raw model API call;
+  hosted-API and local-model seats join the same panel over HTTP where no CLI is
+  installed.
 - **Stdlib-first.** No third-party Python dependencies — just `subprocess`,
   `tomllib`, `concurrent.futures`, and `argparse`. Easy to read, audit, and
   vendor into any repo or CI.

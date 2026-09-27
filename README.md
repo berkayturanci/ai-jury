@@ -18,7 +18,7 @@
 
 > **Install once. Run a cross-vendor review jury anywhere.**
 
-Most "multi-model review" tools call models at the **API level**. This one drives **any AI agent provider**: vendor native CLI agents (`claude`, `codex`, `agy`), hosted API providers (Anthropic, OpenAI, Gemini, xAI Grok, OpenRouter, DeepSeek, Groq, and any other OpenAI-compatible API such as Mistral), free local open-weight models (Ollama, llama.cpp, vLLM, LM Studio), and arbitrary coding-agent CLIs (`vendor = "cli"` like Aider, Goose, OpenHands) — so every reviewer runs in its own environment with its own tooling. Each agent runs headless; the orchestrator owns the round structure.
+Most "multi-model review" tools call models at the **API level**. This one drives **any AI agent provider**: vendor native CLI agents (`claude`, `codex`, `agy`), hosted API providers (Anthropic, OpenAI, Gemini, xAI Grok, OpenRouter, DeepSeek, Groq, and any other OpenAI-compatible API such as Mistral), free local open-weight models (Ollama, llama.cpp, vLLM, LM Studio), and arbitrary coding-agent CLIs (`vendor = "cli"` like Aider, Goose, OpenHands) — and hands every seat the diff in its prompt, so no reviewer needs access to your repository. Each agent runs headless; the orchestrator owns the round structure.
 
 ```
         ┌──────── round 1 ────────┐   ┌─ round 2 (adaptive) ─┐   ┌─ verify + synthesis ─┐
