@@ -459,6 +459,14 @@ run`) or a CI script. See the [cookbook recipe](cookbook.md#21-run-one-agent-for
 | `--config` | path | Path to `jury.toml`. |
 | `--cache-dir` | path | Where detached-run state lives (default: `$JURY_CACHE_DIR` or `~/.cache/ai-jury`). |
 | `--mock` | flag | Run the offline mock adapter instead of a real agent. |
+| `--strict` | flag | Refuse (exit `2`) a read-only role whose seat draws a [least-privilege](security.md) warning, as a panel run with `--strict` does. The warnings are printed either way. |
+
+**Config and audit.** `run-agent` validates `jury.toml` as a review does, so a
+file the panel refuses (an `endpoint` on a CLI seat, a bad `command` path, an
+unknown adapter) exits `2` here too. For `review`, `gate` and `chair` it then
+runs the panel's least-privilege audit on the one seat and prints each warning
+to stderr; `--strict` turns any warning into exit `2`, before a `--detach` run
+starts. A write role is not audited: it asked for write access.
 
 **Role → privilege.** `review`, `gate` and `chair` always run under the vendor's
 read-only invocation — the same one a panel review uses — and `--allow-write`
