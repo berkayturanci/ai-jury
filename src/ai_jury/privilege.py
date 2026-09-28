@@ -33,7 +33,9 @@ Required read-only invocation per adapter (documented here and in docs/security.
                 the config names no sandbox at all. A wider sandbox the operator
                 DID name (``workspace-write``/``danger-full-access``) is kept as
                 written and flagged here, so the opt-in is a knowing one.
-- ``agy``/gemini : ``--sandbox`` (the shipped default), injected when absent.
+- ``agy``/gemini : ``--sandbox`` (the shipped default), injected unless the
+                argv already has that boolean flag — codex's ``-s read-only``,
+                which agy does not have, does not count (#902).
                 ``--dangerously-skip-permissions`` / ``--yolo`` only skip an
                 approval prompt, so the sandbox beside them — whether the
                 operator wrote it or this module injected it — is what settles
@@ -218,18 +220,61 @@ def _is_sandboxed(extra_args: list[str], vendor: str = "") -> bool:
             value = a.split("=", 1)[1]
             if is_codex and value in _RESTRICTING_SANDBOX_VALUES:
                 return True
-            if a.startswith("--sandbox=") and is_agy and value == "":
-                return True
             continue
         if a in ("-s", "--sandbox"):
             nxt = args[i + 1] if i + 1 < len(args) else ""
             # Codex only: an explicit read-only sandbox value.
             if is_codex and nxt in _RESTRICTING_SANDBOX_VALUES:
                 return True
-            # agy/gemini: bare boolean --sandbox (no value, or another flag next).
-            if a == "--sandbox" and is_agy and (nxt == "" or nxt.startswith("-")):
-                return True
+    # agy/gemini: its boolean --sandbox, read by the same rule enforcement injects
+    # it by (#902), so what counts as confined here is what enforcement produced.
+    return is_agy and _agy_bare_sandbox(args)
+
+
+def _agy_bare_sandbox(extra_args: list[str]) -> bool:
+    """agy's boolean ``--sandbox`` at a flag position: followed by another flag or nothing.
+
+    The one sandbox agy has. ``agy --help`` (1.2.12) lists ``--sandbox`` with no
+    value and no ``-s`` at all, so codex's ``-s read-only`` is not a sandbox on an
+    agy seat, and neither is a ``--sandbox`` that a value follows (agy reads the
+    value as prompt text) or ``--sandbox=<value>`` (agy parses it as a true/false
+    switch). Shared by :func:`enforce_read_only`, which injects ``--sandbox``
+    unless this holds, and :func:`_is_sandboxed`, which audits it (#902): the
+    enforcement used to accept any ``-s``/``--sandbox=`` token, so an agy seat
+    with ``-s read-only`` was spawned without its real sandbox.
+    """
+    args = list(extra_args)
+    for i, a in enumerate(args):
+        if a != "--sandbox":
+            continue
+        nxt = args[i + 1] if i + 1 < len(args) else ""
+        if nxt == "" or nxt.startswith("-"):
+            return True
     return False
+
+
+def _agy_foreign_sandbox_tokens(extra_args: list[str]) -> list[str]:
+    """Sandbox-looking tokens agy does not read as its sandbox, as written (#902).
+
+    codex's ``-s`` in either spelling (agy has no ``-s``), a ``--sandbox`` with a
+    value after it, and ``--sandbox=<value>``. The boolean ``--sandbox`` is
+    injected beside them, so the seat is sandboxed as far as agy's flag goes; they
+    are reported because they do not do what they look like they do.
+    """
+    args = list(extra_args)
+    found: list[str] = []
+    for i, a in enumerate(args):
+        if a.startswith(("-s=", "--sandbox=")):
+            found.append(a)
+            continue
+        if a not in ("-s", "--sandbox"):
+            continue
+        nxt = args[i + 1] if i + 1 < len(args) else ""
+        if nxt and not nxt.startswith("-"):
+            found.append(f"{a} {nxt}")
+        elif a == "-s":
+            found.append(a)
+    return found
 
 
 def _is_codex(vendor: str) -> bool:
@@ -273,20 +318,23 @@ def _competing_sandboxes(extra_args: list[str], vendor: str = "") -> list[tuple[
     nothing, a sandbox token already exists — and which one the CLI honours is its
     own argument precedence, not something this module can read.
 
-    A ``-s``/``--sandbox`` whose next token is another flag, or absent, is agy's
-    boolean sandbox and states nothing.
+    A ``-s``/``--sandbox`` whose next token is another flag, or absent, states
+    no value and so nothing here. Codex only: a value sandbox is codex's syntax,
+    and on an agy seat the same tokens are not a second sandbox but a flag agy
+    does not have — :func:`_agy_foreign_sandbox_tokens` reports those (#902).
     """
     args = list(extra_args)
     found: list[tuple[str, bool]] = []
-    if _is_codex(vendor):
-        for flag in _CODEX_SANDBOX_SELECTORS:
-            token = _present(flag, args)
-            if token:
-                found.append((token, False))
-        for flag in _CODEX_SANDBOX_DISABLERS:
-            token = _present(flag, args)
-            if token:
-                found.append((token, True))
+    if not _is_codex(vendor):
+        return found
+    for flag in _CODEX_SANDBOX_SELECTORS:
+        token = _present(flag, args)
+        if token:
+            found.append((token, False))
+    for flag in _CODEX_SANDBOX_DISABLERS:
+        token = _present(flag, args)
+        if token:
+            found.append((token, True))
     for i, a in enumerate(args):
         if a.startswith(("-s=", "--sandbox=")):
             value, shown = a.split("=", 1)[1], a
@@ -638,8 +686,10 @@ def _claude_write_args(extra_args: list[str]) -> list[str]:
             continue
         mode = _permission_mode_at(args, i)
         if mode is not None and mode[0] == _CLAUDE_REVIEW_MODE:
+            # Once: a second `dontAsk` (#888) must not add the flag again.
             if not skip_bypass:
                 out.append("--dangerously-skip-permissions")
+                skip_bypass = True
             i += mode[1]
             continue
         if a not in _CLAUDE_LOCKDOWN_FLAGS:
@@ -776,8 +826,12 @@ def enforce_read_only(vendor: str, extra_args: list[str]) -> list[str]:
     # an unknown vendor routes to the generic AgyAdapter (--print/--sandbox), so
     # inject --sandbox like agy. An agy-compatible CLI then runs sandboxed; an
     # incompatible one fails on the unknown flag rather than running UNSANDBOXED
-    # — fail-closed either way, never fail-open.
-    return _ensure_value_sandbox(extra_args, ["--sandbox"])
+    # — fail-closed either way, never fail-open. Only agy's own boolean
+    # `--sandbox` makes the injection unnecessary (#902): codex's `-s read-only`
+    # used to, and agy has no `-s`, so that seat ran without its sandbox.
+    if _agy_bare_sandbox(extra_args):
+        return extra_args
+    return ["--sandbox", *extra_args]
 
 
 def _claude_is_locked_down(extra_args: list[str]) -> bool:
@@ -861,6 +915,24 @@ def _claude_rejected_mode(extra_args: list[str]) -> str | None:
     return None
 
 
+def _claude_effective_mode(extra_args: list[str]) -> str | None:
+    """The ``--permission-mode`` Claude Code applies, or ``None`` when none is named.
+
+    The **last** one at a flag position (#888). Measured on Claude Code 2.1.236:
+    ``plan`` then ``dontAsk`` runs as ``dontAsk``, and ``dontAsk`` then ``plan``
+    runs as ``plan``. Only meaningful once :func:`_claude_rejected_mode` has
+    answered ``None`` — any rejected value stops the CLI, wherever it sits — and
+    it does not account for ``--dangerously-skip-permissions``, which overrides
+    whichever mode this returns, in either order.
+    """
+    args = list(extra_args)
+    values = _claude_value_positions(args)
+    named = [
+        m[0] for i in range(len(args)) if i not in values and (m := _permission_mode_at(args, i))
+    ]
+    return named[-1] if named else None
+
+
 def _claude_mode_override(extra_args: list[str]) -> str | None:
     """A permission setting other than the reviewer's ``dontAsk``, as written; or None.
 
@@ -876,20 +948,21 @@ def _claude_mode_override(extra_args: list[str]) -> str | None:
     the seat fails rather than running in bypass mode, and the warning must say so.
     An empty value is shown as ``--permission-mode=`` and a missing one as
     ``--permission-mode``, so neither renders as a flag with a blank after it.
+
+    Of several accepted modes, the one reported is the one the seat runs in: the
+    last (:func:`_claude_effective_mode`, #888). Reporting the first one that was
+    not ``dontAsk`` told an operator whose ``plan`` was followed by ``dontAsk``
+    that ``plan`` was in use, while the seat ran ``dontAsk``.
     """
     args = list(extra_args)
     rejected = _claude_rejected_mode(args)
     if rejected is not None:
         return rejected
-    values = _claude_value_positions(args)
-    named = [
-        m[0] for i in range(len(args)) if i not in values and (m := _permission_mode_at(args, i))
-    ]
     if _claude_flag_present("--dangerously-skip-permissions", args):
         return "--dangerously-skip-permissions"
-    for mode in named:
-        if mode != _CLAUDE_REVIEW_MODE:
-            return f"--permission-mode {mode}"
+    mode = _claude_effective_mode(args)
+    if mode is not None and mode != _CLAUDE_REVIEW_MODE:
+        return f"--permission-mode {mode}"
     return None
 
 
@@ -900,7 +973,8 @@ def _claude_mode_override(extra_args: list[str]) -> str | None:
 #: ``--dangerously-skip-permissions`` before or after it let the read through.
 #: The flag also overrides a named ``plan`` or ``auto`` (the seat reports
 #: ``bypassPermissions``). A named ``--permission-mode`` is otherwise kept as
-#: written (nothing is injected beside it), so it is the mode the seat runs in.
+#: written (nothing is injected beside it), so it is the mode the seat runs in —
+#: the last one, when several are named (#888).
 #: ``default`` is not in Claude Code's listed choices but is accepted as an alias
 #: of ``manual``: its init event reports ``"permissionMode":"default"`` for both.
 _CLAUDE_MODE_EFFECTS: dict[str, tuple[str, bool]] = {
@@ -1018,11 +1092,11 @@ def _claude_permission_bypass(extra_args: list[str]) -> str | None:
         return None
     if _claude_flag_present("--dangerously-skip-permissions", args):
         return "--dangerously-skip-permissions"
-    values = _claude_value_positions(args)
-    for i in range(len(args)):
-        mode = None if i in values else _permission_mode_at(args, i)
-        if mode is not None and mode[0] in _CLAUDE_APPROVING_MODES:
-            return f"--permission-mode {mode[0]}"
+    # The mode the seat runs in, not any mode written (#888): an approving mode
+    # followed by `dontAsk` runs as `dontAsk`, and approves nothing.
+    mode = _claude_effective_mode(args)
+    if mode in _CLAUDE_APPROVING_MODES:
+        return f"--permission-mode {mode}"
     return None
 
 
@@ -1185,6 +1259,17 @@ def audit_agent(spec) -> list[str]:
                     f"them unasked — to read files outside the diff or reach the "
                     f"network. Drop them — a reviewer only reads its prompt."
                 )
+            elif _claude_rejected_mode(extra_args) is not None:
+                # The seat never starts: Claude Code rejects its `--permission-mode`
+                # (reported below). Said conditionally, then (#888 follow-up), so
+                # this does not read as a live exposure beside that sentence.
+                warnings.append(
+                    f"agent '{label}' (claude) is given {named} while reviewing "
+                    f"untrusted content; once the seat can start, a prompt injection "
+                    f"in the diff could ask for them, and whatever your Claude "
+                    f"settings pre-approve would run unasked. Drop them — a reviewer "
+                    f"only reads its prompt."
+                )
             else:
                 warnings.append(
                     f"agent '{label}' (claude) is given {named} while reviewing "
@@ -1225,6 +1310,18 @@ def audit_agent(spec) -> list[str]:
             f"and writes files and reaches the network; do not use it on untrusted "
             f"diffs."
         )
+        # codex's sandbox spelling on an agy seat (#902). Enforcement added agy's
+        # own `--sandbox` beside it; what the operator wrote does nothing agy
+        # documents, and may keep the seat from starting.
+        foreign = _agy_foreign_sandbox_tokens(extra_args)
+        if foreign:
+            named = ", ".join(f"`{t}`" for t in foreign)
+            warnings.append(
+                f"agent '{label}' (agy) is configured with {named}, which is not agy's "
+                f"sandbox: agy 1.2.12 has only a boolean `--sandbox` (jury adds it) "
+                f"and no `-s`, so agy may refuse the argv or read a value as prompt "
+                f"text. Drop {'it' if len(foreign) == 1 else 'them'}."
+            )
 
     # Non-claude agents must run under a restricting sandbox (issue #100) — one
     # the config named, or one enforcement injected above.
@@ -1296,10 +1393,27 @@ def audit_agent(spec) -> list[str]:
         return warnings
     warnings.append(
         f"agent '{label}' is not running under a recognized read-only sandbox "
-        f"(no `-s read-only` / `--sandbox`); a prompt injection in the diff could "
+        f"({_missing_sandbox(vendor)}); a prompt injection in the diff could "
         f"reach write/tool/network. Add a sandbox, or run with `--strict` to fail.{checkout}"
     )
     return warnings
+
+
+def _missing_sandbox(vendor: str) -> str:
+    """What the generic warning says is missing, in the spawned CLI's own terms (#902).
+
+    One sentence for every CLI named both codex's and agy's flag, which read
+    wrongly on an agy seat carrying codex's ``-s read-only``, and told a seat
+    whose ``--sandbox`` jury had injected that it had "no ``--sandbox``".
+    """
+    if _is_codex(vendor):
+        return "codex needs `-s read-only`"
+    if normalise_vendor(vendor) == "google":
+        return "agy needs its boolean `--sandbox`, followed by another flag or nothing"
+    return (
+        "jury knows no sandbox flag for this CLI; the `--sandbox` it adds is agy's, "
+        "which this CLI may ignore"
+    )
 
 
 def audit_privilege(specs) -> list[str]:

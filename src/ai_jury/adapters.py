@@ -773,6 +773,15 @@ class Adapter:
     #: cannot know what an operator's own binary expects of its directory.
     ISOLATE_REVIEW_CWD = False
 
+    #: Whether this adapter runs its agent as a subprocess — the question the
+    #: least-privilege audit asks before it looks for a sandbox. ``True`` unless a
+    #: class says otherwise: the HTTP adapters (``LocalAdapter`` and the
+    #: hosted-API ones) set ``False``, and so can a custom adapter that calls its
+    #: backend over the network from ``run()`` (#903). ``register_adapter`` reads
+    #: it; a registered class that spawns a CLI and sets ``False`` would escape
+    #: the audit, so the default is the safe one.
+    SPAWNS_PROCESS = True
+
     # Args passed to the CLI to print its version. Subclasses override if the CLI
     # uses a different verb/flag (e.g. ``codex --version``).
     _VERSION_ARGS = ("--version",)
@@ -1362,6 +1371,7 @@ class LocalAdapter(Adapter):
 
     SUPPORTS_HEADLESS = True
     SUPPORTS_MODEL_SELECTION = True
+    SPAWNS_PROCESS = False  # plain HTTP, no subprocess
 
     @property
     def endpoint(self) -> str:
@@ -1632,6 +1642,7 @@ class _HostedApiAdapter(Adapter):
 
     SUPPORTS_HEADLESS = True
     SUPPORTS_MODEL_SELECTION = True
+    SPAWNS_PROCESS = False  # plain HTTP, no subprocess
 
     # The environment variable this vendor's credential is read FROM. A name,
     # never a value — deliberately not called `_API_KEY_*`: the constant holds
@@ -2387,8 +2398,11 @@ def register_adapter(vendor: str, adapter_cls: type[Adapter]) -> None:
         # they were joined to agree on.
         raise ValueError("register_adapter: vendor name is empty after normalisation")
     config_module.register_vendor(name)
+    # The class's own answer (#903), so a custom HTTP adapter written as a direct
+    # `Adapter` subclass — the documented example — can say it runs no process.
+    # A class that says nothing spawns, which keeps it under the audit.
     config_module.register_adapter_transport(
-        name, spawns=not issubclass(adapter_cls, (LocalAdapter, _HostedApiAdapter))
+        name, spawns=bool(getattr(adapter_cls, "SPAWNS_PROCESS", True))
     )
     _VENDOR_ADAPTERS[name] = adapter_cls
 

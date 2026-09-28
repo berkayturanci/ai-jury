@@ -177,6 +177,13 @@ content; the least-privilege audit (`--strict` to fail the run) will flag it.
     - any value outside that set, an empty value (`--permission-mode=`) or no
       value: Claude Code 2.1.236 rejects it, so the seat fails before it reviews
       anything.
+    - several `--permission-mode` flags: Claude Code applies the **last** one
+      (measured on 2.1.236: `plan` then `dontAsk` runs as `dontAsk`, and the
+      reverse runs as `plan`), and the warning names that one (#888). A rejected
+      value anywhere still stops the seat, and `--dangerously-skip-permissions`
+      still overrides whichever mode is last, in either order. With a `--tools`
+      list beside a rejected mode, the tools warning says what the tools would
+      allow once the seat can start.
   - configuration beyond the prompt: `--settings`, `--setting-sources`,
     `--plugin-dir`, `--plugin-url`, `--add-dir`, `--agents`, `--agent`.
     **`--safe-mode` wins over all of these**: measured on Claude Code 2.1.236, a
@@ -221,8 +228,13 @@ content; the least-privilege audit (`--strict` to fail the run) will flag it.
   instead, but on the same CLI a real review prompt then tried a command, was
   denied, and returned no review at all, twice out of two runs, so the shipped
   seat keeps the flag. Treat an `agy` seat as able to do what your user can do,
-  and seat it only for diffs you trust. A config that omits `--sandbox` has it
-  injected at spawn time, and the audit warns about the seat whatever its flags.
+  and seat it only for diffs you trust. A config without agy's boolean
+  `--sandbox` has it injected at spawn time, and the audit warns about the seat
+  whatever its flags. Codex's `-s read-only` does not count as that flag: `agy
+  --help` (1.2.12) lists `--sandbox` with no value and no `-s` at all, so such a
+  seat used to be spawned with no sandbox (#902). It now gets `--sandbox` beside
+  it, and the audit names `-s …`, `--sandbox=…` or a value after `--sandbox` as
+  not agy's sandbox.
 - **`anthropic-api` / `openai-api` / `google-api`** (hosted-API reviewers) are out of
   scope for the sandbox audit entirely, and there is no `--strict` finding to fix here:
   unlike every CLI-backed adapter, a hosted-API call makes a single HTTP request with
@@ -398,7 +410,11 @@ make the reviewers approve a bad change or suppress findings. This is a classic
    spawned with the full no-tool lockdown, and used to be reported as write-capable.
 
    The audit is **advisory by default** (warnings surfaced in `run_jury`);
-   `--strict` promotes these warnings to a hard failure. The default panel
+   `--strict` promotes these warnings to a hard failure. `jury run-agent` runs
+   the same audit on its seat for the read-only roles (`review`, `gate`,
+   `chair`), after validating the config as a review does, and `jury run-agent
+   --strict` refuses a seat it warns about with exit `2` (#903); a write role run
+   with `--allow-write` is not audited, since it asked for write access. The default panel
    (`claude`, `codex`) raises **no** warnings. The audit fires for any enabled
    `agy` seat, and for what enforcement cannot fix — a sandbox you
    widened on purpose (codex `-s danger-full-access`, `-s workspace-write`), a

@@ -353,7 +353,8 @@ def spawns_process(spec) -> bool:
     every built-in key, a registered HTTP and a registered CLI adapter, and each
     fallback shape:
 
-    1. a registered key: whatever the registered class does;
+    1. a registered key: what the registered class declares — its
+       ``SPAWNS_PROCESS`` attribute, ``True`` unless it says otherwise (#903);
     2. a built-in key: HTTP for the commandless ones (``local``, the hosted APIs,
        ``openai-compatible``), a process for :data:`CLI_ADAPTERS`;
     3. no adapter for the key: HTTP when the seat names an ``endpoint``, or an

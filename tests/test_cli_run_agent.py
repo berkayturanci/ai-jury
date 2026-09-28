@@ -798,7 +798,9 @@ class CliTests(unittest.TestCase):
                 ]
             )
         self.assertEqual(code, 2)
-        self.assertIn("error: agent 'router' headers must be a table", err)
+        # Refused by validation now (#903), which reports it in its own list form.
+        self.assertIn("error: invalid configuration", err)
+        self.assertIn("agent 'router' headers must be a table", err)
         self.assertNotIn("Traceback", err)
         self.assertNotIn("AttributeError", err)
         self.assertNotIn("sk-secret-42", err + out)
@@ -806,11 +808,11 @@ class CliTests(unittest.TestCase):
     def test_a_scalar_nested_jury_table_exits_2_without_a_traceback(self):
         """`[jury] context = "diff-only"` is a config error here, not a crash.
 
-        Same shape as the `headers` case above and for the same reason: this
-        path loads the config WITHOUT validation, so the reader is the only
-        thing between a scalar written where a table was meant and
-        `'str' object has no attribute 'get'` (issue #729). All three nested
-        tables answer the same way.
+        Same shape as the `headers` case above. This path used to load the
+        config without validation, so the reader was the only thing between a
+        scalar written where a table was meant and `'str' object has no
+        attribute 'get'` (issue #729); since #903 validation refuses it first.
+        All three nested tables answer the same way.
         """
         for table, scalar in (
             ("ci", '"critical"'),
@@ -837,7 +839,8 @@ class CliTests(unittest.TestCase):
                         ]
                     )
                 self.assertEqual(code, 2, out + err)
-                self.assertIn(f"error: [jury.{table}] must be a table", err)
+                self.assertIn("error: invalid configuration", err)
+                self.assertIn(f"[jury.{table}] must be a table", err)
                 self.assertNotIn("Traceback", err)
                 self.assertNotIn("AttributeError", err)
 
@@ -2485,6 +2488,7 @@ class HelpSurfaceTests(unittest.TestCase):
             "--run-id",
             "--wait",
             "--status",
+            "--strict",
         ):
             self.assertIn(flag, help_text, f"{flag} missing from run-agent --help")
 
@@ -2502,6 +2506,109 @@ class HelpSurfaceTests(unittest.TestCase):
         from ai_jury.cli import _run_agent_parser
 
         self.assertNotIn("--_child", _run_agent_parser().format_help())
+
+
+class RunAgentValidatesAndAuditsLikeThePanel(unittest.TestCase):
+    """`jury run-agent` validates its config and audits its seat (#903).
+
+    It loaded the config without `validate=True` and never called the
+    least-privilege audit, so neither applied on this path and `--strict` could
+    not refuse anything there.
+    """
+
+    WIDE = SAMPLE_CONFIG + textwrap.dedent(
+        """
+        [[agent]]
+        name = "wide"
+        vendor = "openai"
+        command = "codex"
+        extra_args = ["-s", "danger-full-access"]
+        """
+    )
+
+    def _run(self, root, agent, *extra, role="review", spawn=None):
+        argv = [
+            "--agent",
+            agent,
+            "--role",
+            role,
+            "--prompt-file",
+            str(root / "prompt.md"),
+            "--config",
+            str(root / "jury.toml"),
+            "--cache-dir",
+            str(root / "cache"),
+            "--mock",
+            *extra,
+        ]
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = _run_run_agent(argv, spawn=spawn)
+        return code, out.getvalue(), err.getvalue()
+
+    def test_a_config_the_panel_refuses_is_refused_here(self):
+        # An `endpoint` on a CLI seat: the loader accepts it, validation does not.
+        config = SAMPLE_CONFIG + textwrap.dedent(
+            """
+            [[agent]]
+            name = "stray"
+            vendor = "anthropic"
+            command = "claude"
+            endpoint = "http://127.0.0.1:9/v1"
+            """
+        )
+        with _workspace(config_text=config) as root:
+            code, out, err = self._run(root, "stray")
+        self.assertEqual(code, 2, out + err)
+        self.assertIn("error: invalid configuration", err)
+        self.assertIn("stray", err)
+        self.assertEqual(out, "")
+
+    def test_a_read_only_role_is_audited(self):
+        with _workspace(config_text=self.WIDE) as root:
+            code, out, err = self._run(root, "wide")
+        self.assertEqual(code, 0, err)
+        self.assertIn("warning: least-privilege: agent 'wide'", err)
+        self.assertIn("danger-full-access", err)
+
+    def test_strict_refuses_a_seat_the_audit_warns_about(self):
+        with _workspace(config_text=self.WIDE) as root:
+            code, out, err = self._run(root, "wide", "--strict")
+        self.assertEqual(code, 2)
+        self.assertIn("error: least-privilege check failed (--strict)", err)
+        self.assertEqual(out, "")
+
+    def test_strict_passes_a_seat_the_audit_accepts(self):
+        with _workspace(config_text=self.WIDE) as root:
+            code, _, err = self._run(root, "house", "--strict")
+        self.assertEqual(code, 0, err)
+        self.assertNotIn("least-privilege", err)
+
+    def test_strict_refuses_before_a_detached_run_starts(self):
+        def spawn(*_args):  # pragma: no cover - the point is that it is not called
+            raise AssertionError("a refused seat started a detached run")
+
+        with _workspace(config_text=self.WIDE) as root:
+            code, _, err = self._run(root, "wide", "--strict", "--detach", spawn=spawn)
+        self.assertEqual(code, 2)
+        self.assertIn("least-privilege check failed (--strict)", err)
+
+    def test_a_write_role_is_not_audited_as_a_reviewer(self):
+        # It asked for write access; the audit describes the read-only argv.
+        with _workspace(config_text=self.WIDE) as root:
+            code, _, err = self._run(root, "wide", "--allow-write", "--strict", role="implement")
+        self.assertEqual(code, 0, err)
+        self.assertNotIn("least-privilege", err)
+
+    def test_the_detached_child_is_told_strict(self):
+        namespace = _run_agent_parser().parse_args(
+            ["--agent", "claude", "--role", "review", "--prompt-file", "p.md", "--strict"]
+        )
+        self.assertIn("--strict", _child_argv(namespace, "rid", sys.executable))
+        namespace = _run_agent_parser().parse_args(
+            ["--agent", "claude", "--role", "review", "--prompt-file", "p.md"]
+        )
+        self.assertNotIn("--strict", _child_argv(namespace, "rid", sys.executable))
 
 
 if __name__ == "__main__":

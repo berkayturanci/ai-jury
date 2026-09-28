@@ -61,6 +61,7 @@ class ConfigurationPythonSnippets(unittest.TestCase):
 
     def _forget(self, vendor: str) -> None:
         config_module._REGISTERED_VENDORS.discard(vendor)
+        config_module._REGISTERED_ADAPTER_SPAWNS.pop(vendor, None)
         adapters._VENDOR_ADAPTERS.pop(vendor, None)
 
     def test_there_is_at_least_one_python_snippet(self):
@@ -103,6 +104,14 @@ class ConfigurationPythonSnippets(unittest.TestCase):
         self.assertTrue(result.ok)
         self.assertEqual(result.vendor, "company-llm")
         self.assertIn("Checked:", result.output)
+
+        # The example says it spawns no process (#903), so the least-privilege
+        # audit does not warn about it as an unsandboxed CLI, and `--strict`
+        # does not fail a panel that seats it.
+        from ai_jury.privilege import audit_agent
+
+        self.assertFalse(config_module.spawns_process(spec))
+        self.assertEqual(audit_agent(spec), [])
 
     def test_the_driver_snippet_names_a_real_api(self):
         # The second snippet drives the jury from Python; guard that the functions
