@@ -1933,5 +1933,133 @@ class AnAgySandboxThatIsAnotherOptionsValueIsNotTheSandbox(unittest.TestCase):
         self.assertEqual(privilege.audit_agent(spec), [agy_warning("agy")])
 
 
+class NothingAfterTheOptionTerminatorIsAFlag(unittest.TestCase):
+    """`--` ends the options for claude (commander) and codex (clap) (#908 review).
+
+    `--permission-mode=bypassPermissions -- --permission-mode=dontAsk` runs claude
+    in bypass mode: the last token is prompt text. The audit scanned past the
+    terminator, took `dontAsk` as the mode that applies and passed the seat, and
+    `--strict` let it through. Enforcement read flags there too, so a `--tools`,
+    `--disallowed-tools` or `--permission-mode` after `--` stopped the real one
+    being injected in front of it.
+    """
+
+    def _claude(self, *extra_args):
+        return AgentSpec(
+            name="claude", vendor="anthropic", command="claude", extra_args=list(extra_args)
+        )
+
+    def test_a_mode_after_the_terminator_does_not_hide_a_bypass(self):
+        args = ["--permission-mode=bypassPermissions", "--", "--permission-mode=dontAsk"]
+        self.assertEqual(privilege._claude_effective_mode(args), "bypassPermissions")
+        self.assertEqual(
+            privilege._claude_mode_override(args), "--permission-mode bypassPermissions"
+        )
+        warnings = privilege.audit_agent(self._claude(*args))
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("`--permission-mode bypassPermissions`", warnings[0])
+        self.assertIn("least-privilege check failed (--strict)", _strict_error(self._claude(*args)))
+
+    def test_the_skip_flag_after_the_terminator_is_prompt_text(self):
+        args = ["--", "--dangerously-skip-permissions"]
+        self.assertIsNone(privilege._claude_mode_override(args))
+        self.assertIsNone(privilege._claude_permission_bypass(args))
+        self.assertEqual(privilege.audit_agent(self._claude(*args)), [])
+        warnings = privilege.audit_agent(
+            self._claude("--permission-mode", "plan", "--", "--dangerously-skip-permissions")
+        )
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("`--permission-mode plan`", warnings[0])
+        self.assertNotIn("bypass mode", warnings[0])
+
+    def test_the_lockdown_is_injected_before_an_existing_terminator(self):
+        for tail in (
+            ["--permission-mode", "plan"],
+            ["--tools", "Read"],
+            ["--disallowed-tools", "Edit"],
+            ["--strict-mcp-config"],
+            ["--safe-mode", "--no-session-persistence"],
+        ):
+            with self.subTest(tail=tail):
+                argv = privilege.enforce_read_only("anthropic", ["--", *tail])
+                cut = argv.index("--")
+                self.assertEqual(argv[cut + 1 :], tail, "text after `--` was rewritten")
+                head = argv[:cut]
+                for flag in LOCKDOWN:
+                    self.assertIn(flag, head)
+                self.assertEqual(head[head.index("--disallowed-tools") + 1], DENY)
+                self.assertTrue(privilege._claude_is_locked_down(argv))
+                self.assertEqual(privilege._claude_tools(argv), [])
+
+    def test_a_terminator_that_is_an_options_value_ends_nothing(self):
+        args = ["--model", "--", "--permission-mode", "plan"]
+        self.assertEqual(privilege._claude_terminator(args), len(args))
+        argv = privilege.enforce_read_only("anthropic", list(args))
+        self.assertNotIn("dontAsk", argv)
+        warnings = privilege.audit_agent(self._claude(*args))
+        self.assertIn("`--permission-mode plan`", warnings[0])
+
+    def test_the_write_role_leaves_text_after_the_terminator_alone(self):
+        self.assertEqual(
+            privilege.enable_write(
+                "anthropic",
+                [
+                    "--permission-mode",
+                    "dontAsk",
+                    "--",
+                    "--tools",
+                    "Read",
+                    "--disallowed-tools",
+                    "X",
+                ],
+            ),
+            ["--dangerously-skip-permissions", "--", "--tools", "Read", "--disallowed-tools", "X"],
+        )
+
+    def test_every_direct_reader_stops_at_the_terminator(self):
+        self.assertFalse(privilege._claude_is_locked_down(["--", "--disallowed-tools", DENY]))
+        self.assertIsNone(privilege._claude_rejected_mode(["--", "--permission-mode", "bogus"]))
+        self.assertEqual(
+            privilege.audit_agent(self._claude("--", "--permission-mode", "bogus")), []
+        )
+        said = privilege._claude_skip_overrides(
+            [
+                "--dangerously-skip-permissions",
+                "--permission-mode",
+                "plan",
+                "--",
+                "--permission-mode",
+                "auto",
+            ]
+        )
+        self.assertIn("`--permission-mode plan`", said)
+        self.assertNotIn("`--permission-mode auto`", said)
+
+    def test_codex_reads_no_sandbox_after_the_terminator(self):
+        self.assertEqual(
+            privilege.enforce_read_only("openai", ["--", "-s", "read-only"]),
+            ["-s", "read-only", "--", "-s", "read-only"],
+        )
+        self.assertFalse(privilege._is_sandboxed(["--", "-s", "read-only"], vendor="openai"))
+        self.assertEqual(
+            privilege._competing_sandboxes(["-s", "read-only", "--", "--full-auto"], "openai"),
+            [],
+        )
+        self.assertEqual(
+            privilege.enable_write("openai", ["-s", "read-only", "--", "-s", "x"]),
+            ["-s", "workspace-write", "--", "-s", "x"],
+        )
+
+    def test_codex_adds_its_own_flags_when_they_are_only_prompt_text(self):
+        spec = AgentSpec(
+            name="codex",
+            vendor="openai",
+            command="codex",
+            extra_args=["--", "--skip-git-repo-check"],
+        )
+        argv = adapters.CodexAdapter(spec).build_argv("p")
+        self.assertIn("--skip-git-repo-check", argv[: argv.index("--")])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1127,7 +1127,9 @@ class CodexAdapter(Adapter):
     def build_argv(self, prompt: str) -> list[str]:
         del prompt
         extra = _read_only_extra_args(self.spec)
-        added = [f for f in (self._SKIP_GIT_CHECK, self._EPHEMERAL) if f not in extra]
+        # Only an option counts as present: after `--` it is prompt text (#908 review).
+        options = privilege._codex_options(extra)
+        added = [f for f in (self._SKIP_GIT_CHECK, self._EPHEMERAL) if f not in options]
         return self._head_argv() + added + extra
 
     def build_write_argv(self, prompt: str) -> list[str]:

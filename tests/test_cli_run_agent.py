@@ -2578,6 +2578,28 @@ class RunAgentValidatesAndAuditsLikeThePanel(unittest.TestCase):
         self.assertIn("error: least-privilege check failed (--strict)", err)
         self.assertEqual(out, "")
 
+    def test_strict_refuses_a_bypass_hidden_behind_the_option_terminator(self):
+        # #908 review: the token after `--` is prompt text, so this seat runs in
+        # bypass mode, and `--strict` must refuse it before a detached run starts.
+        config = SAMPLE_CONFIG + textwrap.dedent(
+            """
+            [[agent]]
+            name = "hidden"
+            vendor = "anthropic"
+            command = "claude"
+            extra_args = ["--permission-mode=bypassPermissions", "--", "--permission-mode=dontAsk"]
+            """
+        )
+
+        def spawn(*_args):  # pragma: no cover - the point is that it is not called
+            raise AssertionError("a refused seat started a detached run")
+
+        with _workspace(config_text=config) as root:
+            code, out, err = self._run(root, "hidden", "--strict", "--detach", spawn=spawn)
+        self.assertEqual(code, 2, out + err)
+        self.assertIn("least-privilege check failed (--strict)", err)
+        self.assertIn("bypassPermissions", err)
+
     def test_strict_passes_a_seat_the_audit_accepts(self):
         with _workspace(config_text=self.WIDE) as root:
             code, _, err = self._run(root, "house", "--strict")

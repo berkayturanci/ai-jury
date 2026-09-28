@@ -184,6 +184,13 @@ content; the least-privilege audit (`--strict` to fail the run) will flag it.
       still overrides whichever mode is last, in either order. With a `--tools`
       list beside a rejected mode, the tools warning says what the tools would
       allow once the seat can start.
+    - anything after an option terminator `--`: claude reads it as prompt text,
+      so `--permission-mode=bypassPermissions -- --permission-mode=dontAsk` runs
+      in bypass mode and is reported as such. The audit and the injected lockdown
+      read only what comes before `--` (a `--` that is another option's value,
+      as in `--model --`, is not a terminator), and the lockdown is injected in
+      front of it. The same holds for codex's `-s`: one after `--` is not a
+      sandbox, and `-s read-only` is injected before it.
   - configuration beyond the prompt: `--settings`, `--setting-sources`,
     `--plugin-dir`, `--plugin-url`, `--add-dir`, `--agents`, `--agent`.
     **`--safe-mode` wins over all of these**: measured on Claude Code 2.1.236, a

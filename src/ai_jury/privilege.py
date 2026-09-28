@@ -213,7 +213,7 @@ def _is_sandboxed(extra_args: list[str], vendor: str = "") -> bool:
     vendor = normalise_vendor(vendor)
     is_agy = vendor == "google"
     is_codex = _is_codex(vendor)
-    args = list(extra_args)
+    args = _codex_options(extra_args) if is_codex else list(extra_args)
     for i, a in enumerate(args):
         # Equals form (issue #316/L-6): `-s=read-only` / `--sandbox=read-only`,
         # which `enforce_read_only._ensure_value_sandbox` already recognizes — so
@@ -398,6 +398,17 @@ def _agy_foreign_sandbox_tokens(extra_args: list[str]) -> list[str]:
     return found
 
 
+def _codex_options(extra_args: list[str]) -> list[str]:
+    """The part of a codex argv its parser reads options from: up to the first ``--``.
+
+    codex's parser (clap) reads what follows ``--`` as arguments, so a ``-s
+    read-only`` there is prompt text, not a sandbox (#908 review): it must not
+    stop the injection or pass the audit.
+    """
+    args = list(extra_args)
+    return args[: args.index("--")] if "--" in args else args
+
+
 def _is_codex(vendor: str) -> bool:
     """The identity rule :func:`enforce_read_only` uses for the codex branch.
 
@@ -444,7 +455,7 @@ def _competing_sandboxes(extra_args: list[str], vendor: str = "") -> list[tuple[
     and on an agy seat the same tokens are not a second sandbox but a flag agy
     does not have — :func:`_agy_foreign_sandbox_tokens` reports those (#902).
     """
-    args = list(extra_args)
+    args = _codex_options(extra_args)
     found: list[tuple[str, bool]] = []
     if not _is_codex(vendor):
         return found
@@ -549,8 +560,35 @@ def _claude_value_positions(args: list[str]) -> frozenset[int]:
     return frozenset(v for v in values if v < len(args))
 
 
+def _claude_terminator(args: list[str]) -> int:
+    """The index of the ``--`` that ends claude's options, or ``len(args)``.
+
+    claude's parser (commander) reads every token after ``--`` as an argument,
+    not an option: ``--permission-mode=bypassPermissions -- --permission-mode=dontAsk``
+    runs in bypass mode, and the last token is prompt text (#908 review, checked
+    against Claude Code 2.1.236 with help-only probes). A ``--`` that is another
+    option's value (``--model --``) is that value, not the terminator.
+    """
+    values = _claude_value_positions(args)
+    for i, a in enumerate(args):
+        if a == "--" and i not in values:
+            return i
+    return len(args)
+
+
+def _claude_options(extra_args: list[str]) -> list[str]:
+    """The part of a claude argv its parser reads options from: up to the terminator.
+
+    Every claude reader here scans this, not the whole argv, so text after ``--``
+    can neither hide a flag in front of it nor pass for one.
+    """
+    args = list(extra_args)
+    return args[: _claude_terminator(args)]
+
+
 def _claude_flag_present(flag: str, args: list[str]) -> bool:
     """*flag* (bare or ``flag=…``) at a flag position of *args*, not as a value."""
+    args = _claude_options(args)
     values = _claude_value_positions(args)
     return any(
         (a == flag or a.startswith(flag + "=")) and i not in values for i, a in enumerate(args)
@@ -574,7 +612,11 @@ def _ensure_claude_disallowed(extra_args: list[str]) -> list[str]:
                 existing.append(tool)
         return ",".join(existing)
 
-    args = list(extra_args)
+    # Options only (#908 review): a `--disallowed-tools` after `--` is prompt
+    # text, so it is neither merged nor taken as proof the flag is present.
+    everything = list(extra_args)
+    args = _claude_options(everything)
+    rest = everything[len(args) :]
     values = _claude_value_positions(args)
     out: list[str] = []
     i = 0
@@ -605,7 +647,7 @@ def _ensure_claude_disallowed(extra_args: list[str]) -> list[str]:
         i += 1
     if not found:
         out = ["--disallowed-tools", ",".join(_CLAUDE_DENIED_TOOLS), *out]
-    return out
+    return [*out, *rest]
 
 
 def _claude_tools_at(args: list[str], i: int) -> tuple[list[str], int] | None:
@@ -640,6 +682,7 @@ def _claude_tools(args: list[str]) -> list[str] | None:
     variadic option.
     """
     found: list[str] | None = None
+    args = _claude_options(args)
     values = _claude_value_positions(args)
     i = 0
     while i < len(args):
@@ -711,7 +754,11 @@ def _ensure_value_sandbox(extra_args: list[str], default: list[str]) -> list[str
     args = list(extra_args)
     # Recognize both the space form (-s read-only) and the equals form
     # (--sandbox=read-only) so an existing sandbox is never double-specified.
-    if any(a in ("-s", "--sandbox") or a.startswith(("-s=", "--sandbox=")) for a in args):
+    # Options only (#908 review): one after `--` is prompt text, not a sandbox.
+    if any(
+        a in ("-s", "--sandbox") or a.startswith(("-s=", "--sandbox="))
+        for a in _codex_options(args)
+    ):
         return args
     return [*default, *args]
 
@@ -747,7 +794,9 @@ def _drop_claude_disallowed(extra_args: list[str]) -> list[str]:
     (rather than narrowing its value) restores the CLI's own default tool set,
     which is what an implementer role needs.
     """
-    args = list(extra_args)
+    everything = list(extra_args)
+    args = _claude_options(everything)
+    rest = everything[len(args) :]
     values = _claude_value_positions(args)
     out: list[str] = []
     i = 0
@@ -765,7 +814,7 @@ def _drop_claude_disallowed(extra_args: list[str]) -> list[str]:
             continue
         out.append(a)
         i += 1
-    return out
+    return [*out, *rest]
 
 
 def _permission_mode_at(args: list[str], i: int) -> tuple[str, int] | None:
@@ -790,7 +839,9 @@ def _claude_write_args(extra_args: list[str]) -> list[str]:
     both roles until they were split, which keeps the write role's argv what it
     was.
     """
-    args = _drop_claude_disallowed(extra_args)
+    everything = _drop_claude_disallowed(extra_args)
+    args = _claude_options(everything)
+    rest = everything[len(args) :]
     values = _claude_value_positions(args)
     skip_bypass = _claude_flag_present("--dangerously-skip-permissions", args)
     out: list[str] = []
@@ -816,12 +867,14 @@ def _claude_write_args(extra_args: list[str]) -> list[str]:
         if a not in _CLAUDE_LOCKDOWN_FLAGS:
             out.append(a)
         i += 1
-    return out
+    return [*out, *rest]
 
 
 def _set_value_sandbox(extra_args: list[str], flag: str, value: str) -> list[str]:
     """Replace any existing value sandbox with ``flag value`` (codex form)."""
-    args = list(extra_args)
+    everything = list(extra_args)
+    args = _codex_options(everything)
+    rest = everything[len(args) :]
     out: list[str] = []
     i = 0
     while i < len(args):
@@ -837,7 +890,7 @@ def _set_value_sandbox(extra_args: list[str], flag: str, value: str) -> list[str
             continue
         out.append(a)
         i += 1
-    return [flag, value, *out]
+    return [flag, value, *out, *rest]
 
 
 def _drop_bare_sandbox(extra_args: list[str]) -> list[str]:
@@ -968,7 +1021,7 @@ def _claude_is_locked_down(extra_args: list[str]) -> bool:
     leaves unchanged — in either spelling of the flag.
     """
     disallowed: set[str] = set()
-    args = list(extra_args)
+    args = _claude_options(extra_args)
     values = _claude_value_positions(args)
     i = 0
     while i < len(args):
@@ -1019,7 +1072,7 @@ def _claude_rejected_mode(extra_args: list[str]) -> str | None:
     such a seat never runs, in bypass mode or any other. An empty value is shown
     as ``--permission-mode=`` and a missing one as ``--permission-mode``.
     """
-    args = list(extra_args)
+    args = _claude_options(extra_args)
     values = _claude_value_positions(args)
     accepted = (*_CLAUDE_KNOWN_MODES, "default")
     for i in range(len(args)):
@@ -1046,7 +1099,7 @@ def _claude_effective_mode(extra_args: list[str]) -> str | None:
     it does not account for ``--dangerously-skip-permissions``, which overrides
     whichever mode this returns, in either order.
     """
-    args = list(extra_args)
+    args = _claude_options(extra_args)
     values = _claude_value_positions(args)
     named = [
         m[0] for i in range(len(args)) if i not in values and (m := _permission_mode_at(args, i))
@@ -1143,7 +1196,7 @@ def _claude_skip_overrides(extra_args: list[str]) -> str:
     beside a named ``plan`` or ``auto`` there is no ``dontAsk`` to override — the
     sentence names the mode that is actually there.
     """
-    args = list(extra_args)
+    args = _claude_options(extra_args)
     values = _claude_value_positions(args)
     modes = [
         m[0] for i in range(len(args)) if i not in values and (m := _permission_mode_at(args, i))
