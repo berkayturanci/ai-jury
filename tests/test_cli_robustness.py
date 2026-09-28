@@ -305,11 +305,11 @@ class UnreadableConfigIsAnError(unittest.TestCase):
             report = doctor.build_diagnostics(str(self.as_dir))
         except OSError as exc:
             self.fail(f"the doctor raised {exc!r} instead of reporting it")
-
-        self.assertTrue(
-            any(f"cannot read config {self.as_dir}" in w for w in report["config_warnings"]),
-            report["config_warnings"],
-        )
+        else:
+            self.assertTrue(
+                any(f"cannot read config {self.as_dir}" in w for w in report["config_warnings"]),
+                report["config_warnings"],
+            )
 
     @unittest.skipIf(os.name == "nt", "chmod 000 does not deny the owner on Windows")
     @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "root reads a 000 file")
