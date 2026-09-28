@@ -24,6 +24,7 @@ from ai_jury.config import (
     KNOWN_EFFORTS,
     KNOWN_JURY_KEYS,
     KNOWN_NESTED_JURY_KEYS,
+    KNOWN_OUTPUT_KEYS,
     AgentSpec,
     ConfigError,
     JuryConfig,
@@ -31,6 +32,7 @@ from ai_jury.config import (
     _context_from_dict,
     _diff_from_dict,
     _from_dict,
+    _output_from_dict,
     bound_error,
     config_hash,
     load_config,
@@ -948,7 +950,14 @@ class NestedJuryTableUnknownKeys(unittest.TestCase):
         for table, keys in KNOWN_NESTED_JURY_KEYS.items():
             with self.subTest(table=table):
                 # Values that pass the per-key shape rules; only the NAMES matter.
-                body = {key: [] if key in ("fail_on", "exclude", "include") else 1 for key in keys}
+                body = {
+                    key: []
+                    if key in ("fail_on", "exclude", "include")
+                    else True
+                    if key == "attribution"
+                    else 1
+                    for key in keys
+                }
                 self.assertEqual(validate_config(self._with_nested(table, body)), [])
 
     def test_an_empty_nested_table_is_accepted(self):
@@ -964,6 +973,7 @@ class NestedJuryTableUnknownKeys(unittest.TestCase):
             ("ci", "critical"),
             ("context", "diff-only"),
             ("diff", 4096),
+            ("output", False),
         ):
             with self.subTest(table=table):
                 with self.assertRaises(ConfigError) as ctx:
@@ -977,6 +987,7 @@ class NestedJuryTableUnknownKeys(unittest.TestCase):
             (_ci_from_dict, KNOWN_CI_KEYS),
             (_context_from_dict, KNOWN_CONTEXT_KEYS),
             (_diff_from_dict, KNOWN_DIFF_KEYS),
+            (_output_from_dict, KNOWN_OUTPUT_KEYS),
         ):
             with self.subTest(reader=reader.__name__):
                 table = _RecordingTable()
@@ -1034,9 +1045,14 @@ class NestedTableShapeOnTheUnvalidatedPath(unittest.TestCase):
     uses.
     """
 
-    _SCALARS = (("ci", "critical"), ("context", "diff-only"), ("diff", 4096))
+    _SCALARS = (("ci", "critical"), ("context", "diff-only"), ("diff", 4096), ("output", False))
 
-    _READERS = {"ci": _ci_from_dict, "context": _context_from_dict, "diff": _diff_from_dict}
+    _READERS = {
+        "ci": _ci_from_dict,
+        "context": _context_from_dict,
+        "diff": _diff_from_dict,
+        "output": _output_from_dict,
+    }
 
     def test_each_reader_rejects_a_scalar_with_the_shared_message(self):
         for table, scalar in self._SCALARS:

@@ -720,3 +720,30 @@ def render_sections(
     sections.append(("🏛️ AI Jury — Decision: verdict & consensus", "\n".join(dec).strip()))
 
     return sections
+
+
+#: Where the attribution footer points a reader who wants to run the jury themselves.
+ATTRIBUTION_URL = "https://ai-jury.dev"
+
+
+def render_attribution(reviews) -> str:
+    """The one-line footer a posted verdict ends with (pure, issue #911).
+
+    Names the tool and the seats that actually **returned** a review — a seat that
+    failed did not sit, so it is not claimed — deduplicated, in seat order. A seat is
+    named as the panel names it (``claude``, ``codex``, ``agy`` on the default panel),
+    which says what ran the review where the vendor (``anthropic``) would not. Returns
+    ``""`` when no seat returned a review, so a caller never posts a footer that says
+    nobody reviewed. The name comes from the operator's config, not from an agent, but
+    it is flattened and HTML-escaped anyway: the line is raw HTML in a GitHub comment.
+    """
+    import html
+
+    seats: list[str] = []
+    for r in reviews:
+        name = html.escape(flatten_inline(r.agent or ""))
+        if r.ok and name and name not in seats:
+            seats.append(name)
+    if not seats:
+        return ""
+    return f'<sub>Reviewed by <a href="{ATTRIBUTION_URL}">ai-jury</a> · {", ".join(seats)}</sub>'

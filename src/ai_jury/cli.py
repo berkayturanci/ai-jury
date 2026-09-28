@@ -490,6 +490,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="post the report as a single summary comment on --pr",
     )
     p.add_argument(
+        "--no-attribution",
+        dest="attribution",
+        action="store_false",
+        default=None,
+        help="leave the 'Reviewed by ai-jury' line off posted comments (default "
+        "from jury.toml [jury.output] attribution, on)",
+    )
+    p.add_argument(
         "--post-inline",
         dest="post_inline",
         action="store_true",
@@ -2986,9 +2994,21 @@ def main(argv: list[str] | None = None) -> int:
         else:
             log("--suggest-patches needs markdown output or --patches-out; skipped")
 
+    # The attribution footer (issue #911): one line naming the tool and the seats
+    # that returned a review, on every comment this run posts. It goes BEFORE the
+    # hidden SHA marker, so the marker stays the last thing in the last comment.
+    # Empty when switched off or when no seat returned a review.
+    attribution_on = args.attribution if args.attribution is not None else config.output.attribution
+    footer = ""
+    if attribution_on:
+        from .report import render_attribution
+
+        line = render_attribution(outcome.reviews)
+        footer = f"\n\n{line}" if line else ""
+
     # Turn the live progress comment into the final verdict (issue #125).
     if progress is not None:
-        progress.finish(report)
+        progress.finish(f"{report}{footer}")
         log(f"progress comment finalized on PR #{args.pr}")
 
     if args.output:
@@ -3070,7 +3090,7 @@ def main(argv: list[str] | None = None) -> int:
             # PR-only, so the issue path posts the single rendered report.
             if not _post(
                 f"post the verdict to issue #{args.issue}",
-                lambda: post_issue_comment(args.issue, report, args.repo),
+                lambda: post_issue_comment(args.issue, f"{report}{footer}", args.repo),
                 contractual=True,
             ):
                 return 2
@@ -3118,7 +3138,7 @@ def main(argv: list[str] | None = None) -> int:
                 vote=vote,
             )
             for i, (title, body) in enumerate(sections):
-                tail = marker if i == len(sections) - 1 else ""
+                tail = f"{footer}{marker}" if i == len(sections) - 1 else ""
                 if not _post(
                     f"post phased comment {i + 1} of {len(sections)} to PR #{args.pr}",
                     lambda t=title, b=body, x=tail: post_pr_comment(
@@ -3131,7 +3151,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             if not _post(
                 f"post the verdict to PR #{args.pr}",
-                lambda: post_pr_comment(args.pr, f"{report}{marker}", args.repo),
+                lambda: post_pr_comment(args.pr, f"{report}{footer}{marker}", args.repo),
                 contractual=True,
             ):
                 return 2

@@ -6,7 +6,7 @@ defaults apply if the file is absent. Don't hand-write it the first time — run
 discovered local models).
 
 > **Every field — type, default, allowed values** — for `[jury]`, `[jury.ci]`,
-> `[jury.context]`, `[jury.diff]` and `[[agent]]`, plus all CLI flags, lives in the
+> `[jury.context]`, `[jury.diff]`, `[jury.output]` and `[[agent]]`, plus all CLI flags, lives in the
 > single [**parameter reference**](parameters.md). This page explains the
 > *behaviour* behind those keys: validation, execution budgets, adaptive rounds,
 > large-diff handling, and the result cache.
@@ -32,12 +32,13 @@ errors (exit `2`).
   (or whose key is not a string), an `endpoint` on a seat whose adapter runs a
   CLI (`anthropic`, `openai`, `google`, `cli`, `xai` — they spawn `command` and
   never read `endpoint`; before #901's review it silently skipped the `command`
-  checks and the least-privilege audit), malformed tables.
+  checks and the least-privilege audit), a `[jury.output] attribution` that is not
+  a bool, malformed tables.
 - **Warnings** (fail only under `--strict-config`): unknown vendor, `chair` not
   matching an enabled agent, unknown top-level/section/agent keys, a non-string
   `headers` value (it is coerced to a string and sent).
   - Unknown keys are reported at *every* level, including inside the nested
-    `[jury.ci]`, `[jury.context]` and `[jury.diff]` tables, with the dotted path
+    `[jury.ci]`, `[jury.context]`, `[jury.diff]` and `[jury.output]` tables, with the dotted path
     that locates them: `unknown key 'jury.ci.min_vendor'`. A key nobody reads is
     a setting that is silently not applied, so `--strict-config` refuses it.
 
@@ -662,6 +663,34 @@ narrow the diff with `include`/`exclude`. In `chunked` mode each chunk is review
 and the findings are merged into one report. CLI overrides: `--max-diff-bytes`,
 `--chunk` / `--no-chunk`, `--exclude GLOB` (repeatable), `--include GLOB`
 (repeatable).
+
+## Posted-comment attribution (`[jury.output]`)
+
+Every comment `jury` posts ends with one small line naming the tool and the seats
+that sat:
+
+```html
+<sub>Reviewed by <a href="https://ai-jury.dev">ai-jury</a> · claude, codex, agy</sub>
+```
+
+That is the single summary comment, the issue comment, the last comment of
+`--post-mode phased`, and the final body of the `--post-progress` live comment. The
+live comment's intermediate states, the `--live` per-step comments and inline
+comments do not carry it. The seats are the ones that **returned** a review, by
+their `[[agent]] name`, deduplicated and in seat order, so a seat that failed is not
+claimed; when no seat returned a review there is no line. It sits before the hidden
+incremental SHA marker, so `--incremental` still reads the marker from the last
+comment. It is static text added to a comment you already chose to post, so it
+makes no request of its own and sends nothing the comment was not already sending.
+
+```toml
+[jury.output]
+attribution = false   # default true
+```
+
+`--no-attribution` turns it off for one run. The value must be a bool: `"false"` is
+refused by validation, because a non-empty string would read as true. The key is
+rendering-only and is not in the cache key.
 
 ## Local result cache (`--cache`)
 

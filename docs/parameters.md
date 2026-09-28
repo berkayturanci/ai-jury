@@ -305,6 +305,7 @@ full transcript to a file; `jury --pr 123 -q` silences the stderr progress logs.
 | `--post-progress` | flag | off | Keep a live, sticky status comment updated per round/chunk. **`--pr` only.** |
 | `--post-mode` | `single` \| `phased` | `single` | With `--post-summary`: one comment, or separate Round 1 / debate / decision comments. **`--pr` only.** |
 | `--dry-run` | flag | off | With `--post-inline`, print the payload without calling GitHub. |
+| `--no-attribution` | flag | from config (on) | Leave the `Reviewed by ai-jury · <seats>` line off posted comments. Overrides `[jury.output] attribution`. |
 | `--label` | flag | off | Apply classification labels (review-effort / risk / security) to the PR. **`--pr` only.** |
 
 **Depends on / conflicts:** `--post`/`--post-summary` work with `--pr` **or**
@@ -585,6 +586,12 @@ transcript = true   # default the markdown report to the full play-by-play
 | `exclude_generated` | bool | `true` | Drop binary + common generated/vendored files. |
 | `exclude` | list[str] | `[]` | Path-glob deny list (e.g. `["docs/**", "*.lock"]`). |
 | `include` | list[str] | `[]` | Path-glob allow list; when set, only matching files are reviewed. |
+
+### `[jury.output]` (posted comments)
+
+| Key | Type | Default | Allowed / notes |
+| --- | --- | --- | --- |
+| `attribution` | bool | `true` | End every posted comment (summary, issue, last phased comment, the live comment's final body) with a `Reviewed by ai-jury · <seats>` line naming the seats that returned a review. `false` or `--no-attribution` removes it. Rendering-only (not in the cache key). |
 
 ### `[[agent]]` (one table per reviewer; at least one required)
 

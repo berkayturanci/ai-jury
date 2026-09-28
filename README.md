@@ -933,7 +933,8 @@ accidental changes are caught in review.
   `--transcript` / `--no-transcript`, `--verbose`, `--live`,
   `--theater` / `--no-theater`, `--theater-style {flat,pixel}`, `-q` / `--quiet`
 - *GitHub posting:* `--post-summary` / `--post`, `--post-inline`,
-  `--post-progress`, `--post-mode {single,phased}`, `--dry-run`, `--label`
+  `--post-progress`, `--post-mode {single,phased}`, `--dry-run`, `--label`,
+  `--no-attribution`
 - *CI gating:* `--ci`, `--fail-on`, `--min-vendors`, `--no-min-vendors`,
   `--min-reviews`
 - *Cache & incremental:* `--cache`, `--clear-cache`, `--cache-dir`,

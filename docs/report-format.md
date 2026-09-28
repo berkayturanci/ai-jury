@@ -43,6 +43,21 @@ the relevant `tests/golden/*.md` file. Reviewers can therefore read the new
 report verbatim in the pull request, rather than mentally reconstructing it from
 renderer code.
 
+## The attribution line on posted comments
+
+A comment `jury` posts carries one line the rendered report does not: the
+attribution footer (issue #911), added after the report and before the hidden
+incremental SHA marker, separated from the report by a blank line.
+
+```html
+<sub>Reviewed by <a href="https://ai-jury.dev">ai-jury</a> · claude, codex, agy</sub>
+```
+
+It names the seats that returned a review (`ai_jury.report.render_attribution`),
+and is switched off by `[jury.output] attribution = false` or `--no-attribution`.
+Because it is added at posting time, `-o`, stdout and the golden fixtures never
+contain it. See [configuration](configuration.md#posted-comment-attribution-juryoutput).
+
 ## Regenerating the fixtures
 
 After an intentional change, regenerate the snapshots by setting `UPDATE_GOLDEN=1`:
