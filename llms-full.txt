@@ -177,7 +177,7 @@ vendor = "anthropic"    # anthropic | openai | google | xai | local |
                         # anthropic-api | openai-api | google-api | xai-api |
                         # openai-compatible | cli
 command = "claude"
-# model = "claude-opus-4-8"
+# model = "claude-opus-5-5"
 # effort = "medium"     # low | medium | high; google + the *-api/openai-compatible
                         # vendors act on it, the claude/codex CLIs warn and ignore it
 # No tools (file reads, shell, network, MCP), no CLAUDE.md/hooks/skills/plugins, no transcript.

@@ -17,7 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from ai_jury import adapters, privilege
-from ai_jury.config import DEFAULT_CONFIG, AgentSpec, spec_adapter
+from ai_jury.config import DEFAULT_CONFIG, AgentSpec, spawns_process, spec_adapter
 
 #: The whole claude deny list, in the order enforcement writes it.
 DENY = "Edit,Write,NotebookEdit,Bash,Read,Grep,Glob,WebFetch,WebSearch,Task,Agent"
@@ -1115,7 +1115,10 @@ class TheAuditReadsTheArgvTheSeatIsSpawnedWith(unittest.TestCase):
                 warnings = privilege.audit_agent(spec)
                 self.assertEqual(privilege.enforce_read_only(vendor, ["-p"]), ["-p"])
                 self.assertEqual(len(warnings), 1)
-                self.assertIn("not running under a recognized read-only sandbox", warnings[0])
+                # Not "no `--sandbox` … add a sandbox" (#901): jury adds and checks
+                # none for a bring-your-own CLI, which may well carry its own.
+                self.assertIn("not under a sandbox jury can verify", warnings[0])
+                self.assertNotIn("Add a sandbox", warnings[0])
 
     def test_the_same_seat_is_clean_or_warned_according_to_its_adapter(self):
         """The pair that isolates what changed: one config, two adapters.
@@ -1131,9 +1134,9 @@ class TheAuditReadsTheArgvTheSeatIsSpawnedWith(unittest.TestCase):
         self.assertEqual(privilege.audit_agent(native), [])
         warnings = privilege.audit_agent(fronted)
         self.assertEqual(len(warnings), 1)
-        # The generic sandbox message, not Claude's: the `cli` adapter speaks no
+        # The bring-your-own-CLI message, not Claude's: the `cli` adapter speaks no
         # `--disallowed-tools`, and it is the adapter that decides what is spoken.
-        self.assertIn("not running under a recognized read-only sandbox", warnings[0])
+        self.assertIn("not under a sandbox jury can verify", warnings[0])
 
     def test_extra_args_that_re_enable_writing_are_still_caught(self):
         # The audit must not go blind on the configs it exists for. A sandbox the
@@ -1161,6 +1164,339 @@ class TheAuditReadsTheArgvTheSeatIsSpawnedWith(unittest.TestCase):
         self.assertEqual(adapters._read_only_extra_args(spec), ["--sandbox"])
         self.assertEqual(len(warnings), 1)
         self.assertIn("not running under a recognized read-only sandbox", warnings[0])
+
+
+class CheckoutConfigRiskIsReportedWhateverTheSandbox(unittest.TestCase):
+    """aider and cursor-agent obey the checkout's config; no argv sandbox stops it (#901).
+
+    `_is_sandboxed` accepted codex's value form, `--sandbox read-only`, from every
+    vendor, and the checkout-config sentence was attached only after the
+    sandboxed early return. A seat that added the flag the warning itself named
+    was therefore audited clean and passed `--strict`.
+    """
+
+    SEATS = {
+        "aider": AgentSpec(
+            name="aider", vendor="cli", command="aider", extra_args=["--sandbox", "read-only"]
+        ),
+        "cursor-agent": AgentSpec(
+            name="cursor",
+            vendor="cli",
+            command="cursor-agent",
+            extra_args=["-p", "--trust", "--mode", "ask", "--sandbox", "read-only"],
+        ),
+        "cursor-agent (xai, equals form)": AgentSpec(
+            name="grok",
+            vendor="xai",
+            command="cursor-agent",
+            extra_args=["-p", "--sandbox=read-only"],
+        ),
+        "aider (-s)": AgentSpec(
+            name="aider-s", vendor="cli", command="aider", extra_args=["-s", "read-only"]
+        ),
+    }
+    RISK = {"aider": ".aider.conf.yml", "cursor-agent": ".cursor/hooks.json"}
+
+    def test_a_read_only_value_is_not_a_sandbox_for_a_bring_your_own_cli(self):
+        for name, spec in self.SEATS.items():
+            with self.subTest(seat=name):
+                self.assertFalse(privilege._is_sandboxed(spec.extra_args, vendor=spec.vendor))
+
+    def test_codex_read_only_is_still_a_sandbox(self):
+        for args in (["-s", "read-only"], ["--sandbox", "read-only"], ["--sandbox=read-only"]):
+            with self.subTest(args=args):
+                self.assertTrue(privilege._is_sandboxed(args, vendor="openai"))
+                spec = AgentSpec(name="codex", vendor="openai", command="codex", extra_args=args)
+                self.assertEqual(privilege.audit_agent(spec), [])
+
+    def test_each_seat_warns_with_its_checkout_config_risk(self):
+        for name, spec in self.SEATS.items():
+            with self.subTest(seat=name):
+                warnings = privilege.audit_agent(spec)
+                self.assertEqual(len(warnings), 1, warnings)
+                self.assertIn(self.RISK[spec.command], warnings[0])
+                self.assertIn("checkouts you trust", warnings[0])
+
+    def test_strict_refuses_each_seat(self):
+        from ai_jury.config import _from_dict
+        from ai_jury.orchestrator import run_jury
+
+        diff = "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n"
+        for name, spec in self.SEATS.items():
+            with self.subTest(seat=name):
+                agent = {
+                    "name": spec.name,
+                    "vendor": spec.vendor,
+                    "command": spec.command,
+                    "extra_args": list(spec.extra_args),
+                }
+                config = _from_dict({**DEFAULT_CONFIG, "agent": [agent]})
+                with self.assertRaises(RuntimeError) as ctx:
+                    run_jury(config, diff, strict=True, seed=1)
+                message = str(ctx.exception)
+                self.assertIn("least-privilege check failed (--strict)", message)
+                self.assertIn(self.RISK[spec.command], message)
+
+    def test_the_risk_is_reported_on_a_seat_the_audit_otherwise_accepts(self):
+        # A codex-protocol seat with a recognized sandbox, and a claude-protocol
+        # seat under the lockdown, that nonetheless spawn aider: the flags jury
+        # recognizes do not cover the checkout's config either.
+        for spec in (
+            AgentSpec(name="odd", vendor="openai", command="aider", extra_args=["-s", "read-only"]),
+            AgentSpec(name="odder", vendor="anthropic", command="/opt/bin/aider"),
+        ):
+            with self.subTest(seat=spec.name):
+                warnings = privilege.audit_agent(spec)
+                self.assertEqual(len(warnings), 1, warnings)
+                self.assertIn(".aider.conf.yml", warnings[0])
+
+    def test_another_cli_gets_no_checkout_sentence(self):
+        spec = AgentSpec(name="mine", vendor="cli", command="my-tool", extra_args=[])
+        warnings = privilege.audit_agent(spec)
+        self.assertEqual(len(warnings), 1)
+        self.assertNotIn("checkouts you trust", warnings[0])
+
+
+_ENDPOINT = "http://localhost:9/v1"
+_DIFF = "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n"
+
+
+def _strict_error(spec) -> str:
+    """The `--strict` refusal `run_jury` raises for a one-seat panel, or ""."""
+    from ai_jury.config import _from_dict
+    from ai_jury.orchestrator import run_jury
+
+    agent = {
+        k: v
+        for k, v in {
+            "name": spec.name,
+            "vendor": spec.vendor,
+            "adapter": spec.adapter,
+            "command": spec.command,
+            "endpoint": spec.endpoint,
+            "extra_args": list(spec.extra_args),
+        }.items()
+        if v
+    }
+    try:
+        run_jury(_from_dict({**DEFAULT_CONFIG, "agent": [agent]}), _DIFF, strict=True, seed=1)
+    except RuntimeError as exc:
+        return str(exc)
+    return ""  # pragma: no cover - reached only when the audit lets the seat through
+
+
+class TheAuditAsksTheAdapterTheSpawnerBuilds(unittest.TestCase):
+    """An `endpoint` does not make a CLI seat an HTTP seat (#901 review).
+
+    `make_adapter` picks the adapter by key before it looks at `endpoint`, so
+    each seat below is spawned as a CLI; the audit skipped every one because it
+    had an endpoint, and `--strict` let them through.
+    """
+
+    SHAPES = {
+        "cli aider": AgentSpec(name="a", vendor="cli", command="aider", endpoint=_ENDPOINT),
+        "claude adapter running aider": AgentSpec(
+            name="b", vendor="anthropic", command="aider", endpoint=_ENDPOINT
+        ),
+        "codex adapter running cursor-agent": AgentSpec(
+            name="c", vendor="openai", command="cursor-agent", endpoint=_ENDPOINT
+        ),
+        "codex danger-full-access": AgentSpec(
+            name="d",
+            vendor="openai",
+            command="codex",
+            extra_args=["-s", "danger-full-access"],
+            endpoint=_ENDPOINT,
+        ),
+        "claude skipping permissions": AgentSpec(
+            name="e",
+            vendor="anthropic",
+            command="claude",
+            extra_args=["--dangerously-skip-permissions"],
+            endpoint=_ENDPOINT,
+        ),
+    }
+
+    def test_each_shape_is_spawned_as_a_cli(self):
+        for name, spec in self.SHAPES.items():
+            with self.subTest(seat=name):
+                self.assertTrue(spawns_process(spec))
+                self.assertIsInstance(
+                    adapters.make_adapter(spec),
+                    (
+                        adapters.ClaudeAdapter,
+                        adapters.CodexAdapter,
+                        adapters.GenericCLIAdapter,
+                    ),
+                )
+
+    def test_each_shape_warns(self):
+        for name, spec in self.SHAPES.items():
+            with self.subTest(seat=name):
+                self.assertNotEqual(privilege.audit_agent(spec), [])
+
+    def test_strict_refuses_each_shape(self):
+        for name, spec in self.SHAPES.items():
+            with self.subTest(seat=name):
+                self.assertIn("least-privilege check failed (--strict)", _strict_error(spec))
+
+    def test_an_http_seat_with_an_endpoint_still_audits_clean(self):
+        for spec in (
+            AgentSpec(name="l", vendor="local", model="m", endpoint=_ENDPOINT),
+            AgentSpec(name="o", vendor="openai-compatible", model="m", endpoint=_ENDPOINT),
+            AgentSpec(name="u", vendor="acme", command="x", model="m", endpoint=_ENDPOINT),
+            AgentSpec(name="h", vendor="anthropic-api", model="m"),
+            AgentSpec(name="r", vendor="openai", adapter="openai-api", model="m"),
+        ):
+            with self.subTest(seat=spec.name):
+                self.assertFalse(spawns_process(spec))
+                self.assertEqual(privilege.audit_agent(spec), [])
+
+    def test_the_spawn_question_is_the_one_make_adapter_answers(self):
+        http = (adapters.LocalAdapter, adapters._HostedApiAdapter)
+        for spec in (
+            *self.SHAPES.values(),
+            AgentSpec(name="l", vendor="local", model="m"),
+            # An unknown vendor with neither command nor endpoint: agy's fallback.
+            AgentSpec(name="n", vendor="acme"),
+        ):
+            with self.subTest(seat=spec.name):
+                built = adapters.make_adapter(spec)
+                self.assertIs(type(built), adapters.adapter_class(spec))
+                self.assertEqual(spawns_process(spec), not isinstance(built, http))
+
+    def test_config_answers_as_make_adapter_does_for_every_key_and_fallback(self):
+        # `config.spawns_process` answers without importing `adapters` (no import
+        # cycle, CodeQL py/cyclic-import), so it is held here to the class
+        # `make_adapter` really builds: every built-in key, with and without a
+        # stray endpoint, and every fallback shape of an unregistered key.
+        from ai_jury.config import KNOWN_VENDORS
+
+        http = (adapters.LocalAdapter, adapters._HostedApiAdapter)
+        specs = [
+            AgentSpec(name=f"{key}{i}", vendor=key, model="m", **extra)
+            for key in KNOWN_VENDORS
+            for i, extra in enumerate(({}, {"command": "x"}, {"endpoint": _ENDPOINT}))
+        ]
+        specs += [
+            AgentSpec(name="f1", vendor="acme", command="x"),
+            AgentSpec(name="f2", vendor="acme", command="x", endpoint=_ENDPOINT),
+            AgentSpec(name="f3", vendor="acme", api_key_env="K"),
+            AgentSpec(name="f4", vendor="acme", command="x", api_key_env="K"),
+            AgentSpec(name="f5", vendor="acme"),
+            AgentSpec(name="f6", vendor="acme-api", command="x"),
+            AgentSpec(name="f7", vendor="openai", adapter="openai-api", model="m"),
+            AgentSpec(name="f8", vendor="openai", adapter="cli", command="cursor-agent"),
+        ]
+        for spec in specs:
+            with self.subTest(seat=spec.name):
+                built = adapters.make_adapter(spec)
+                self.assertEqual(spawns_process(spec), not isinstance(built, http))
+
+    def test_a_registered_adapter_is_answered_by_its_class(self):
+        from ai_jury import config as config_module
+
+        class HttpShim(adapters.GenericOpenAICompatibleAdapter):
+            pass
+
+        class CliShim(adapters.GenericCLIAdapter):
+            pass
+
+        http = (adapters.LocalAdapter, adapters._HostedApiAdapter)
+        # `cli` re-registered with an HTTP class, and a new key with a CLI one.
+        for key, cls in (("cli", HttpShim), ("shim-cli", CliShim)):
+            saved = adapters._VENDOR_ADAPTERS.get(key)
+            saved_spawn = config_module._REGISTERED_ADAPTER_SPAWNS.get(key)
+            try:
+                adapters.register_adapter(key, cls)
+                spec = AgentSpec(name="s", vendor=key, command="x", endpoint=_ENDPOINT)
+                with self.subTest(key=key):
+                    built = adapters.make_adapter(spec)
+                    self.assertEqual(spawns_process(spec), not isinstance(built, http))
+            finally:
+                if saved is None:
+                    adapters._VENDOR_ADAPTERS.pop(key, None)
+                    config_module._REGISTERED_VENDORS.discard(key)
+                else:
+                    adapters._VENDOR_ADAPTERS[key] = saved
+                if saved_spawn is None:
+                    config_module._REGISTERED_ADAPTER_SPAWNS.pop(key, None)
+                else:  # pragma: no cover - no earlier registration of these keys
+                    config_module._REGISTERED_ADAPTER_SPAWNS[key] = saved_spawn
+
+
+class RegisteringATransportIgnoresAnEmptyName(unittest.TestCase):
+    def test_an_empty_name_records_nothing(self):
+        from ai_jury import config as config_module
+
+        before = dict(config_module._REGISTERED_ADAPTER_SPAWNS)
+        config_module.register_adapter_transport("   ", spawns=False)
+        self.assertEqual(config_module._REGISTERED_ADAPTER_SPAWNS, before)
+
+
+class ThePackageHasNoImportCycle(unittest.TestCase):
+    """No module of `ai_jury` imports one that imports it back (CodeQL py/cyclic-import).
+
+    `privilege` asked `adapters` whether a seat spawns a process, from inside
+    `audit_agent`, while `adapters` imports `privilege` at the top — a cycle a
+    lazy import only hides. Every relative import is read, top-level or not.
+    """
+
+    def test_no_cycle(self):
+        import ast
+
+        pkg = Path(__file__).resolve().parent.parent / "src" / "ai_jury"
+        modules = {p.stem for p in pkg.glob("*.py")}
+        graph: dict[str, set[str]] = {}
+        for path in pkg.glob("*.py"):
+            deps = set()
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                if isinstance(node, ast.ImportFrom) and node.level == 1:
+                    names = [node.module] if node.module else [a.name for a in node.names]
+                    deps.update(n.split(".")[0] for n in names)
+            graph[path.stem] = (deps & modules) - {path.stem}
+
+        # Depth-first with three colours: an edge back to a module still on the
+        # stack closes a cycle. Linear in modules + imports.
+        cycles, done, stack = [], set(), []
+
+        def visit(node):
+            stack.append(node)
+            for dep in sorted(graph[node]):
+                if dep in stack:
+                    cycles.append(" -> ".join([*stack[stack.index(dep) :], dep]))
+                elif dep not in done:
+                    visit(dep)
+            stack.pop()
+            done.add(node)
+
+        for start in sorted(graph):
+            if start not in done:
+                visit(start)
+        self.assertEqual(cycles, [])
+
+
+class TheCheckoutRiskMatchesTheStem(unittest.TestCase):
+    """`cursor-agent.cmd` is cursor-agent (#901 review): only `.exe` was stripped."""
+
+    def test_windows_launchers_and_case_are_matched(self):
+        for command, risk in (
+            ("cursor-agent.cmd", ".cursor/hooks.json"),
+            ("C:\\Tools\\cursor-agent.bat", ".cursor/hooks.json"),
+            ("cursor-agent.ps1", ".cursor/hooks.json"),
+            ("CURSOR-AGENT.EXE", ".cursor/hooks.json"),
+            ("Aider.CMD", ".aider.conf.yml"),
+        ):
+            for vendor in ("openai", "cli"):
+                with self.subTest(command=command, vendor=vendor):
+                    spec = AgentSpec(name="s", vendor=vendor, command=command)
+                    warnings = privilege.audit_agent(spec)
+                    self.assertTrue(any(risk in w for w in warnings), warnings)
+
+    def test_a_codex_seat_through_a_cmd_launcher_is_not_clean(self):
+        spec = AgentSpec(name="s", vendor="openai", command="cursor-agent.cmd")
+        self.assertNotEqual(privilege.audit_agent(spec), [])
+        self.assertIn("least-privilege check failed (--strict)", _strict_error(spec))
 
 
 if __name__ == "__main__":

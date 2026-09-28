@@ -573,7 +573,7 @@ again.
     ],
     "testing": "Tested, as stated by the reviewer: python -m pytest tests/test_example.py — 12 passed",
     "vendor": "anthropic",
-    "model": "claude-sonnet-4-5",
+    "model": "claude-opus-5-5",
     "model_source": "requested",
     "counts_as_review": true
   }
@@ -685,7 +685,7 @@ parallel = true
 name = "claude"
 vendor = "anthropic"   # anthropic | openai | google | xai
 command = "claude"
-# model = "claude-opus-4-8"
+# model = "claude-opus-5-5"
 # The reviewer gets no tools (no file reads, shell, network or MCP servers), loads no
 # CLAUDE.md, hooks, skills or plugins, and keeps no transcript of the diff.
 extra_args = ["--output-format", "text", "--tools", "", "--disallowed-tools", "Edit,Write,NotebookEdit,Bash,Read,Grep,Glob,WebFetch,WebSearch,Task,Agent", "--strict-mcp-config", "--safe-mode", "--no-session-persistence", "--permission-mode", "dontAsk"]

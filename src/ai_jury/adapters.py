@@ -2387,6 +2387,9 @@ def register_adapter(vendor: str, adapter_cls: type[Adapter]) -> None:
         # they were joined to agree on.
         raise ValueError("register_adapter: vendor name is empty after normalisation")
     config_module.register_vendor(name)
+    config_module.register_adapter_transport(
+        name, spawns=not issubclass(adapter_cls, (LocalAdapter, _HostedApiAdapter))
+    )
     _VENDOR_ADAPTERS[name] = adapter_cls
 
 
@@ -2419,11 +2422,23 @@ def make_adapter(spec: AgentSpec, mock: bool = False) -> Adapter:
         raise config_module.ConfigError(adapter_error)
     if mock:
         return MockAdapter(spec)
+    return adapter_class(spec)(spec)
+
+
+def adapter_class(spec) -> type[Adapter]:
+    """The adapter class :func:`make_adapter` builds for *spec* (pure, duck-typed).
+
+    The ADAPTER key decides first: a registered name always gets its class,
+    whatever else the seat carries — so an ``endpoint`` on a ``cli``, ``claude``,
+    ``codex`` or ``agy`` seat changes nothing about how it runs. Only a seat with
+    no registered adapter falls through to the ``endpoint``/``command`` guess.
+    """
     cls = _VENDOR_ADAPTERS.get(config_module.spec_adapter(spec))
     if cls is not None:
-        return cls(spec)
-    if spec.endpoint or (spec.api_key_env and not spec.command):
-        return GenericOpenAICompatibleAdapter(spec)
-    if spec.command:
-        return GenericCLIAdapter(spec)
-    return AgyAdapter(spec)
+        return cls
+    command = getattr(spec, "command", "") or ""
+    if getattr(spec, "endpoint", None) or (getattr(spec, "api_key_env", None) and not command):
+        return GenericOpenAICompatibleAdapter
+    if command:
+        return GenericCLIAdapter
+    return AgyAdapter
