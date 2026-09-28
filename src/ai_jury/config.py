@@ -299,6 +299,13 @@ GENERIC_VENDOR = "cli"
 #: sandbox flag to add or remove for them (issue #701).
 GENERIC_CLI_VENDORS = ("cli", "xai")
 
+#: The built-in adapters that spawn ``command`` rather than make an HTTP call:
+#: every known vendor that is not a commandless one (claude, codex, agy and the
+#: bring-your-own CLI). None of them reads ``endpoint`` — ``make_adapter`` picks
+#: them by adapter key before it looks at ``endpoint`` — so an ``endpoint`` on
+#: one of these seats is refused by :func:`validate_config` (#901 review).
+CLI_ADAPTERS: tuple[str, ...] = tuple(v for v in KNOWN_VENDORS if v not in _NO_COMMAND_VENDORS)
+
 #: Vendors registered at runtime through ``adapters.register_adapter`` — the
 #: documented extension point for a custom adapter. Registering an adapter is
 #: what makes a vendor name *known*: without it the name is a typo as far as
@@ -313,6 +320,57 @@ def register_vendor(vendor: str) -> None:
     name = normalise_vendor(vendor)
     if name:
         _REGISTERED_VENDORS.add(name)
+
+
+#: Adapter keys registered at runtime, and whether the registered class spawns a
+#: process (#901 review). ``adapters.register_adapter`` records it here, beside
+#: the class it stores, so :func:`spawns_process` can answer for a custom adapter
+#: without importing ``adapters``. A registration replaces the built-in answer
+#: for the same key, exactly as it replaces the built-in class.
+_REGISTERED_ADAPTER_SPAWNS: dict[str, bool] = {}
+
+
+def register_adapter_transport(adapter: str, *, spawns: bool) -> None:
+    """Record whether the adapter registered under *adapter* spawns a process."""
+    name = normalise_vendor(adapter)
+    if name:
+        _REGISTERED_ADAPTER_SPAWNS[name] = spawns
+
+
+def spawns_process(spec) -> bool:
+    """Whether the adapter ``make_adapter`` builds for *spec* spawns a CLI (pure).
+
+    The least-privilege audit must ask this of the same selection the spawner
+    makes (#901 review): it used to skip any seat with an ``endpoint``, while
+    ``make_adapter`` picks the adapter by key first and ignores ``endpoint`` on
+    every CLI adapter — so a ``cli`` aider seat with a stray ``endpoint`` ran
+    aider and was audited as an HTTP seat, clean.
+
+    It lives here, not in ``adapters``, so ``privilege`` can ask it without an
+    import cycle (``adapters`` imports ``privilege`` for ``enforce_read_only``;
+    CodeQL ``py/cyclic-import``). It follows ``adapters.adapter_class`` step for
+    step, and ``tests/test_privilege.py`` holds the two to the same answer for
+    every built-in key, a registered HTTP and a registered CLI adapter, and each
+    fallback shape:
+
+    1. a registered key: whatever the registered class does;
+    2. a built-in key: HTTP for the commandless ones (``local``, the hosted APIs,
+       ``openai-compatible``), a process for :data:`CLI_ADAPTERS`;
+    3. no adapter for the key: HTTP when the seat names an ``endpoint``, or an
+       ``api_key_env`` with no ``command`` (the OpenAI-compatible adapter);
+       otherwise a process (the generic CLI adapter, or agy's with no command).
+    """
+    key = spec_adapter(spec)
+    if key in _REGISTERED_ADAPTER_SPAWNS:
+        return _REGISTERED_ADAPTER_SPAWNS[key]
+    if key in _NO_COMMAND_VENDORS:
+        return False
+    if key in CLI_ADAPTERS:
+        return True
+    command = getattr(spec, "command", "") or ""
+    return not (
+        getattr(spec, "endpoint", None) or (getattr(spec, "api_key_env", None) and not command)
+    )
 
 
 def recognised_vendors() -> tuple[str, ...]:
@@ -894,6 +952,19 @@ def validate_config(data: dict, strict: bool = False) -> list:
         # requires a non-empty ``command``.
         command = agent.get("command", "")
         has_endpoint = bool(agent.get("endpoint"))
+        # A CLI adapter does not read `endpoint` (#901 review): `make_adapter`
+        # selects it by key and spawns `command` whatever `endpoint` says. The key
+        # was worse than unused — it made this check treat the seat as HTTP, skip
+        # every `command` rule below, and made the least-privilege audit skip the
+        # seat — so a seat that runs a CLI and names an endpoint is refused, and
+        # its `command` is still checked.
+        if has_endpoint and adapter in CLI_ADAPTERS:
+            errors.append(
+                f"agent '{label}' names an 'endpoint', but its adapter '{adapter}' "
+                f"runs 'command' and never reads one; remove 'endpoint', or use "
+                f"vendor/adapter 'local' or 'openai-compatible' for an HTTP seat."
+            )
+            has_endpoint = False
         # Asked of the ADAPTER, not the vendor (#705): whether a seat needs a
         # `command` is a fact about how it is invoked. `vendor = "openai",
         # adapter = "cli"` runs a CLI and needs one; `vendor = "openai",

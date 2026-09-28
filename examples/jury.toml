@@ -88,16 +88,16 @@ enabled = false
 [[agent]]
 name = "openrouter-claude"
 vendor = "openai-compatible"
-model = "anthropic/claude-3.5-sonnet"
+model = "anthropic/claude-opus-5.5"
 endpoint = "https://openrouter.ai/api/v1/chat/completions"
 api_key_env = "OPENROUTER_API_KEY"
 enabled = false
 
-# DeepSeek API (Reasoner / V3)
+# DeepSeek API (V4 Pro)
 [[agent]]
 name = "deepseek"
 vendor = "openai-compatible"
-model = "deepseek-reasoner"
+model = "deepseek-v4-pro"
 endpoint = "https://api.deepseek.com/v1/chat/completions"
 api_key_env = "DEEPSEEK_API_KEY"
 enabled = false
@@ -115,7 +115,7 @@ enabled = false
 [[agent]]
 name = "grok"
 vendor = "openai-compatible"
-model = "grok-2-latest"
+model = "grok-4.7"
 endpoint = "https://api.x.ai/v1/chat/completions"
 api_key_env = "XAI_API_KEY"
 
@@ -123,7 +123,7 @@ api_key_env = "XAI_API_KEY"
 [[agent]]
 name = "kimi"
 vendor = "openai-compatible"
-model = "moonshot-v1-8k"
+model = "kimi-k3"
 endpoint = "https://api.moonshot.cn/v1/chat/completions"
 api_key_env = "MOONSHOT_API_KEY"
 enabled = false
@@ -132,7 +132,7 @@ enabled = false
 [[agent]]
 name = "omni-claude"
 vendor = "openai-compatible"
-model = "anthropic/claude-3-5-sonnet"
+model = "anthropic/claude-opus-5.5"
 endpoint = "http://localhost:8000/v1/chat/completions"
 api_key_env = "OMNIROUTE_API_KEY"
 enabled = false
@@ -163,19 +163,32 @@ enabled = false
 # 4. Terminal Coding CLI Agents (vendor = "cli")
 # ------------------------------------------------------------------------------
 
+# Both seats below are unsandboxed — runs with your permissions: jury adds or checks
+# no sandbox for a bring-your-own CLI, and the least-privilege audit warns about each
+# (`--strict` fails the run on them). Their flags ask the CLI for its own read-only
+# mode — never add `--force`/`--yolo` (Cursor) or `--yes-always` (aider) — but they run
+# in the checkout jury starts in, and read its config: seat them only on checkouts you
+# trust. See docs/configuration.md.
+
 # Cursor CLI Agent (standalone cursor-agent binary with model selection)
+# unsandboxed — runs with your permissions. `--mode ask` is Cursor's read-only mode and
+# `--sandbox enabled` its sandbox; `--print` alone can write files. `--trust` lets a headless
+# run start without a trust prompt — and trusts the checkout's `.cursor/` hooks too.
 [[agent]]
 name = "cursor"
 vendor = "cli"
 command = "cursor-agent"
-extra_args = ["--print", "--trust", "--model", "claude-4.6-sonnet-medium"]
+extra_args = ["--print", "--trust", "--mode", "ask", "--sandbox", "enabled", "--model", "claude-4.6-sonnet-medium", "--output-format", "text"]
 prompt_mode = "arg"
 
 # Aider CLI Agent
+# unsandboxed — runs with your permissions. Ask mode, as a dry run, with no commits; `--message`
+# stays last because the prompt is appended after it. aider still reads `.aider.conf.yml`
+# and `.env` from the checkout, which can turn on its test/lint/load commands.
 [[agent]]
 name = "aider"
 vendor = "cli"
 command = "aider"
-extra_args = ["--message"]
+extra_args = ["--chat-mode", "ask", "--dry-run", "--no-auto-commits", "--no-dirty-commits", "--no-suggest-shell-commands", "--no-auto-lint", "--no-detect-urls", "--no-gitignore", "--message"]
 prompt_mode = "arg"
 enabled = false

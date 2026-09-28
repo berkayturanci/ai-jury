@@ -16,12 +16,36 @@ from __future__ import annotations
 import math
 from urllib.parse import urlsplit
 
-from .config import AGY_AGENT, DEFAULT_CONFIG, adapter_key
+from .config import AGY_AGENT, DEFAULT_CONFIG, GENERIC_CLI_VENDORS, adapter_key
+
+#: The one list of model ids the shipped samples name, keyed by the kind of seat
+#: (#870). `jury init` writes the hosted and local ones below; the README, the
+#: site's integration cards and "Build your jury" demo, `examples/jury.toml` and
+#: the docs name the same ids, and ``tests/test_sample_configs.py`` holds every
+#: one of them to this table — so a stale id is changed here and the test lists
+#: each copy that still disagrees. Each was checked against the vendor's public
+#: model list on 2026-09-28 (no API key used): Anthropic's models overview,
+#: OpenAI's models page, Google's Gemini API models page, xAI's models page,
+#: DeepSeek's pricing page, Groq's models page, Moonshot's pricing page,
+#: OpenRouter's public ``/api/v1/models``, Together's serverless model list and
+#: Ollama's library tags.
+SAMPLE_MODELS: dict[str, str] = {
+    "anthropic": "claude-opus-5-5",
+    "openai": "gpt-6-sol",
+    "google": "gemini-3.8-flash",
+    "xai": "grok-4.7",
+    "deepseek": "deepseek-v4-pro",
+    "groq": "llama-3.3-70b-versatile",
+    "moonshot": "kimi-k3",
+    "together": "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+    "openrouter": "anthropic/claude-opus-5.5",
+    "local": "qwen2.5-coder:7b",
+}
 
 _LOCAL_TEMPLATE = {
     "name": "qwen",
     "vendor": "local",
-    "model": "qwen2.5-coder:7b",
+    "model": SAMPLE_MODELS["local"],
     "endpoint": "http://localhost:11434/v1",
 }
 
@@ -37,29 +61,66 @@ _OPENROUTER_TEMPLATE = {
     "vendor": "openai-compatible",
     "endpoint": "https://openrouter.ai/api/v1",
     "api_key_env": "OPENROUTER_API_KEY",
-    "model": "anthropic/claude-3.5-sonnet",
+    "model": SAMPLE_MODELS["openrouter"],
 }
 _DEEPSEEK_TEMPLATE = {
     "name": "deepseek",
     "vendor": "openai-compatible",
     "endpoint": "https://api.deepseek.com/v1",
     "api_key_env": "DEEPSEEK_API_KEY",
-    "model": "deepseek-coder",
+    "model": SAMPLE_MODELS["deepseek"],
 }
 _GROQ_TEMPLATE = {
     "name": "groq",
     "vendor": "openai-compatible",
     "endpoint": "https://api.groq.com/openai/v1",
     "api_key_env": "GROQ_API_KEY",
-    "model": "llama-3.3-70b-versatile",
+    "model": SAMPLE_MODELS["groq"],
 }
+#: aider with the flags that ask it not to edit (#859). `--read-only` is not an aider
+#: option (its options reference has `--read FILE`), so the template it replaces
+#: wrote a seat aider refuses to start. Ask mode "never make[s] changes",
+#: `--dry-run` stops it applying edits or committing, and the rest turn off its
+#: commits, shell-command suggestions, post-edit lint run, URL fetches and
+#: `.gitignore` edit. `--message` is last: with `prompt_mode = "arg"` the prompt
+#: is appended after it. What no flag controls: aider reads `.aider.conf.yml` and
+#: `.env` from the checkout it runs in, and those can turn on its test, lint or
+#: load commands, which it runs before the message (``--test``/``--lint`` have no
+#: ``--no-`` form, and ``--config``/``--env-file`` add a file rather than replace
+#: the ones it finds). jury adds or checks no sandbox for an arbitrary CLI, so the
+#: seat is written under :data:`UNSANDBOXED_LABEL` and :data:`UNSANDBOXED_HINT`,
+#: and the least-privilege audit still warns about it.
 _GENERIC_CLI_TEMPLATE = {
     "name": "aider",
     "vendor": "cli",
     "command": "aider",
-    "prompt_mode": "stdin",
-    "extra_args": ["--no-auto-commits", "--read-only"],
+    "prompt_mode": "arg",
+    "extra_args": [
+        "--chat-mode",
+        "ask",
+        "--dry-run",
+        "--no-auto-commits",
+        "--no-dirty-commits",
+        "--no-suggest-shell-commands",
+        "--no-auto-lint",
+        "--no-detect-urls",
+        "--no-gitignore",
+        "--message",
+    ],
 }
+
+#: Written above every bring-your-own CLI seat `jury init` scaffolds (#859): jury
+#: adds or checks no sandbox for one, so it runs with whatever its own flags
+#: allow. The same words label the seat on the site and in the docs.
+UNSANDBOXED_LABEL = "unsandboxed \u2014 runs with your permissions"
+
+#: Written under the label: the CLI runs in the checkout jury starts in and obeys
+#: that checkout's own config (aider's `.aider.conf.yml`/`.env`, Cursor's
+#: `.cursor/` hooks), which no flag in the seat turns off.
+UNSANDBOXED_HINT = (
+    "# It reads its own config from the checkout it runs in, which can run commands;",
+    "# seat it only on checkouts you trust. See docs/configuration.md.",
+)
 
 
 def _from_default(name: str) -> dict | None:
@@ -370,6 +431,9 @@ _AGENT_KEY_ORDER = (
     "effort",
     "temperature",
     "extra_args",
+    # Written when a template sets it (#859): the aider seat's argv ends in
+    # `--message`, which only works when the prompt is appended after it.
+    "prompt_mode",
 )
 
 #: Commented hint written under every effort-capable agent that has no explicit
@@ -457,6 +521,9 @@ def render_toml(config: dict, *, commented_agents: list[dict] | tuple = ()) -> s
     lines.append("")
 
     for agent in config["agent"]:
+        if adapter_key(agent.get("vendor", ""), agent.get("adapter")) in GENERIC_CLI_VENDORS:
+            lines.append(f"# {UNSANDBOXED_LABEL}")
+            lines.extend(UNSANDBOXED_HINT)
         lines.append("[[agent]]")
         lines.extend(_agent_keys(agent))
         # Only hint at `effort` where the vendor can actually act on it; a hint
