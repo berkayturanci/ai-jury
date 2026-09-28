@@ -1,4 +1,4 @@
-"""Four CLI robustness fixes: #864, #865, #866 and #893.
+"""Five CLI robustness fixes: #864, #865, #866, #893 and #897.
 
 Each fails as an assertion on the code before its fix: a crash is caught by
 ``_run`` and returned as the "exit code", so a traceback reads as a wrong code
@@ -238,6 +238,78 @@ class WizardNeedsATerminal(unittest.TestCase):
 
         self.assertEqual(code, 0)
         self.assertIn("gemma:2b", out)
+
+
+class InteractiveNeedsATerminal(unittest.TestCase):
+    """#897: `jury init --interactive` with no terminal exits 2, as the wizard does."""
+
+    _MESSAGE = (
+        "error: --interactive needs a terminal; use `jury init --preset <name>` "
+        "or `jury init --agents <list>`"
+    )
+
+    def setUp(self):
+        self.out = Path(tempfile.mkdtemp()) / "jury.toml"
+
+    def test_a_pipe_is_refused_with_a_usage_error(self):
+        with _NOTHING_AVAILABLE as probes:
+            code, _, err = _run(["init", "--interactive", "-o", str(self.out)], stdin="")
+
+        self.assertEqual(code, 2)
+        self.assertIn(self._MESSAGE, err)
+        self.assertFalse(self.out.exists())
+        # Refused up front: no agent was probed for prompts that cannot run.
+        probes.assert_not_called()
+
+    def test_no_stdin_at_all_is_refused_too(self):
+        with _NOTHING_AVAILABLE as probes:
+            code, _, err = _run(["init", "--interactive", "-o", str(self.out)], stdin=None)
+
+        self.assertEqual(code, 2)
+        self.assertIn(self._MESSAGE, err)
+        probes.assert_not_called()
+
+    def test_plain_init_with_no_stdin_detects_instead_of_crashing(self):
+        """The TTY test itself read `sys.stdin.isatty()` with no stdin to read."""
+        with mock.patch.object(cli, "_init_available", return_value={"claude": True}):
+            code, _, _ = _run(["init", "-o", str(self.out)], stdin=None)
+
+        self.assertEqual(code, 0)
+        seats = tomllib.loads(self.out.read_text("utf-8"))["agent"]
+        self.assertEqual([a["name"] for a in seats], ["claude"])
+
+    def test_flags_that_answer_the_questions_still_run_without_a_terminal(self):
+        with _NOTHING_AVAILABLE:
+            code, _, _ = _run(
+                ["init", "--interactive", "--agents", "claude", "-o", str(self.out)], stdin=""
+            )
+
+        self.assertEqual(code, 0)
+        self.assertTrue(self.out.exists())
+
+    def test_a_listing_still_answers_without_a_terminal(self):
+        with mock.patch("ai_jury.adapters.list_local_models", return_value=["gemma:2b"]):
+            code, out, _ = _run(["init", "--interactive", "--list-models"], stdin=None)
+
+        self.assertEqual(code, 0)
+        self.assertIn("gemma:2b", out)
+
+    def test_a_terminal_still_gets_the_prompts(self):
+        """The counterweight: the refusal is for a missing terminal, not the flag."""
+
+        class Terminal(io.StringIO):
+            def isatty(self):
+                return True
+
+        # agents, rounds, chair, verify, effort
+        answers = Terminal("claude\n1\n\nn\n\n")
+        with _NOTHING_AVAILABLE:
+            code, _, _ = _run(["init", "--interactive", "-o", str(self.out)], stdin=answers)
+
+        self.assertEqual(code, 0)
+        data = tomllib.loads(self.out.read_text("utf-8"))
+        self.assertEqual([a["name"] for a in data["agent"]], ["claude"])
+        self.assertEqual(data["jury"]["rounds"], 1)
 
 
 class PostingFlagsAreCheckedBeforeTheReview(unittest.TestCase):

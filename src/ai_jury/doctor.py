@@ -33,8 +33,10 @@ from .config import (
     spec_adapter,
     vendor_identity,
 )
+from .metadata import claimed_vendors, resolve_min_vendors, vendor_guard_fails
 from .panel import shortfall
 from .redaction import redact, redact_url_userinfo
+from .scaffold import zero_config_local_seat
 
 #: Version of the machine-readable export emitted by ``jury --doctor --json``.
 #: Bump this (and ``tests/test_doctor.py``'s schema test) on any breaking change
@@ -376,7 +378,7 @@ def _detect_warnings(cfg, local_gaps=None) -> list[str]:
     return warnings
 
 
-def _panel_readiness(cfg, agents) -> dict:
+def _panel_readiness(cfg, agents, min_vendors=None, local_fallback=None) -> dict:
     """How close this machine is to being able to form cross-vendor consensus.
 
     Doctor is offline and runs no review, so it can only report what it can
@@ -393,14 +395,23 @@ def _panel_readiness(cfg, agents) -> dict:
     (#701, round 2). Counting raw strings here meant two seats on the generic
     fallback read as two vendors in ``--doctor`` and as one vendor in the run:
     doctor called the bench cross-vendor ready and the run then refused it.
+
+    ``min_vendors`` is the run's ``--min-vendors`` / ``--no-min-vendors`` value
+    (``None`` when neither was named), resolved as the run resolves it. With
+    ``local_fallback`` — the seat :func:`scaffold.zero_config_local_seat` says a
+    run with no config would review with — the panel is that one seat, as the
+    run forms it (#863): the built-in seats it replaces are all unreachable, and
+    its server has just listed the model, which is the run's reason to seat it.
     """
     entries = {entry["name"]: entry for entry in agents}
     enabled = list(getattr(cfg, "enabled_agents", []) or [])
-    configured = {vendor_identity(a.vendor) for a in enabled} - {""}
+    if local_fallback is not None:
+        enabled = [local_fallback]
+        entries = {local_fallback.name: {"available": True}}
     available = {
         vendor_identity(a.vendor) for a in enabled if entries.get(a.name, {}).get("available")
     } - {""}
-    minimum = int(getattr(cfg.ci, "min_vendors", 0) or 0)
+    minimum, explicit = resolve_min_vendors(min_vendors, cfg)
     # The number a downstream consumer counts, which doctor never reported and
     # which is not the vendor count (#699): one review per agent that answers.
     # The chair's synthesis record is not added here — a consumer reads it as the
@@ -411,7 +422,7 @@ def _panel_readiness(cfg, agents) -> dict:
     # it is labelled "at most" below.
     seats = sum(1 for a in enabled if entries.get(a.name, {}).get("available"))
     panel = {
-        "vendors_configured": len(configured),
+        "vendors_configured": claimed_vendors(enabled),
         "vendors_available": len(available),
         "min_vendors": minimum,
         "contributing_vendors": None,
@@ -421,7 +432,7 @@ def _panel_readiness(cfg, agents) -> dict:
     }
     # Derived from the same predicate the warning uses, so the field and the
     # warning cannot disagree about the same machine (#682, round 3).
-    panel["multi_vendor_ready"] = not _gate_would_fail(panel)
+    panel["multi_vendor_ready"] = not _gate_would_fail(panel, explicit)
     return panel
 
 
@@ -441,7 +452,7 @@ _NO_PANEL = {
 }
 
 
-def _gate_would_fail(panel) -> bool:
+def _gate_would_fail(panel, explicit: bool = False) -> bool:
     """Would a run on this machine fail the cross-vendor gate?
 
     The single place doctor decides that, so the ``multi_vendor_ready`` field
@@ -454,14 +465,19 @@ def _gate_would_fail(panel) -> bool:
     Doctor can only see reachability, so this is a *lower* bound on failure: a
     reachable CLI that returns nothing (#635) fails the gate too, and no offline
     check can predict it. That is why the report says so in as many words.
+
+    It is :func:`metadata.vendor_guard_fails`, the run's own predicate, with the
+    reachable vendors standing in for the contributing ones; an ``explicit``
+    threshold (named on the command line) is enforced unscoped, as in the run.
     """
-    minimum = panel["min_vendors"]
-    if minimum <= 0 or panel["vendors_configured"] < minimum:
-        return False
-    return panel["vendors_available"] < minimum
+    return vendor_guard_fails(
+        panel["vendors_available"],
+        panel["min_vendors"],
+        None if explicit else panel["vendors_configured"],
+    )
 
 
-def _panel_warning(panel) -> str | None:
+def _panel_warning(panel, explicit: bool = False) -> str | None:
     """The one actionable thing offline diagnostics can say about the panel.
 
     Fires only when a run on this machine would actually fail the gate, because
@@ -471,10 +487,15 @@ def _panel_warning(panel) -> str | None:
     ``min_vendors = 2`` is silent: :func:`metadata.collapse_reason` leaves that
     run alone, so there is nothing to warn about.
     """
-    if not _gate_would_fail(panel):
+    if not _gate_would_fail(panel, explicit):
         return None
+    asked = (
+        f"--min-vendors {panel['min_vendors']} asks for {panel['min_vendors']} vendors"
+        if explicit
+        else f"{panel['vendors_configured']} vendors are enabled"
+    )
     return (
-        f"{panel['vendors_configured']} vendors are enabled but only "
+        f"{asked} but only "
         f"{panel['vendors_available']} is/are reachable; a run would fail the "
         f"cross-vendor guard (min_vendors = {panel['min_vendors']}, exit 3). "
         f"Install the missing CLI, or opt out with `--no-min-vendors` "
@@ -482,7 +503,14 @@ def _panel_warning(panel) -> str | None:
     )
 
 
-def _recommendations(config_path, config_summary, agents, config_error: bool = False) -> dict:
+def _recommendations(
+    config_path,
+    config_summary,
+    agents,
+    config_error: bool = False,
+    local_fallback=None,
+    local_models=None,
+) -> dict:
     """Build actionable next-steps from the diagnostics (issue: doctor UX).
 
     Returns ``{"ready": bool, "steps": [str, ...]}``. ``ready`` is true when at
@@ -491,6 +519,11 @@ def _recommendations(config_path, config_summary, agents, config_error: bool = F
 
     *config_error* says the config could not be loaded at all, so no seat was
     inspected — and the only honest next step is the error itself (issue #708).
+
+    *local_fallback* is the seat a run with no config would review with (#863):
+    that run has a reviewer, so the machine is ready, and the step says what the
+    run will do. *local_models* is a listing already made, reused rather than
+    asked for twice.
     """
     steps: list[str] = []
     available = [a for a in agents if a.get("available")]
@@ -510,10 +543,21 @@ def _recommendations(config_path, config_summary, agents, config_error: bool = F
         )
         return {"ready": False, "steps": steps}
 
-    if not ready:
+    if local_fallback is not None:
+        ready = True
+        steps.append(
+            f"No agent CLI is available, so a run with no jury.toml reviews with the "
+            f"local model '{local_fallback.model}' alone: a single-vendor panel, which "
+            f"the default cross-vendor guard does not fail. For a panel you choose: "
+            f"`jury init --preset offline` (or `--list-models`)."
+        )
+        hint = agy_opt_in_hint((a.get("adapter") for a in agents), shutil.which)
+        if hint:
+            steps.append(f"Note: {hint}.")
+    elif not ready:
         from .adapters import list_local_models
 
-        models = list_local_models()
+        models = local_models if local_models is not None else list_local_models()
         if models:
             steps.append(
                 f"No agent CLI is available, but a local model server is reachable "
@@ -550,7 +594,7 @@ def _recommendations(config_path, config_summary, agents, config_error: bool = F
     return {"ready": ready, "steps": steps}
 
 
-def build_diagnostics(config_path=None, probe_models: bool = False):
+def build_diagnostics(config_path=None, probe_models: bool = False, min_vendors=None):
     """Build a SAFE diagnostics dict for the given config path.
 
     Best-effort: if the config cannot be loaded, the error is captured as a
@@ -577,6 +621,13 @@ def build_diagnostics(config_path=None, probe_models: bool = False):
     time-boxed but not free. Only ``--doctor --json`` renders that listing, so
     it defaults off: the human report used to pay ~2 s (and up to the probe
     timeout if a CLI hangs) for a field it never printed.
+
+    ``min_vendors`` is the run's ``--min-vendors`` / ``--no-min-vendors`` value,
+    so the cross-vendor prediction is made for the threshold the run would use.
+    With no config file and no reachable seat, the local server is listed once
+    and :func:`scaffold.zero_config_local_seat` — the run's own decision — says
+    whether a run would review with a local model; if so, the panel and the
+    prediction are that run's (#863).
     """
     config_summary = None
     config_warnings: list[str] = []
@@ -586,6 +637,14 @@ def build_diagnostics(config_path=None, probe_models: bool = False):
     # `_recommendations` directly: this says a load was ATTEMPTED and failed.
     # Cleared only on the success path, so a new `except` arm cannot forget it.
     config_error = True
+    local_fallback = None
+    listed: list = []
+
+    def _list_once():
+        from .adapters import list_local_models
+
+        listed.append(list_local_models())
+        return listed[-1]
 
     try:
         cfg = load_config(config_path, validate=True)
@@ -624,8 +683,15 @@ def build_diagnostics(config_path=None, probe_models: bool = False):
                 config_warnings.append(f"agent '{entry['name']}': {warning}")
         # Cross-vendor readiness (issue #682), after the availability probes the
         # agent entries already ran — this adds no probe of its own.
-        panel = _panel_readiness(cfg, agents)
-        panel_warning = _panel_warning(panel)
+        local_fallback = zero_config_local_seat(
+            config_path,
+            False,
+            Path("jury.toml").exists(),
+            lambda: any(e.get("available") for e in agents if e.get("name") in enabled_names),
+            _list_once,
+        )
+        panel = _panel_readiness(cfg, agents, min_vendors, local_fallback)
+        panel_warning = _panel_warning(panel, resolve_min_vendors(min_vendors, cfg)[1])
         if panel_warning:
             config_warnings.append(panel_warning)
         # A bench that cannot reach the consumer's minimum is a shortfall this
@@ -650,8 +716,15 @@ def build_diagnostics(config_path=None, probe_models: bool = False):
         "config": config_summary,
         "config_warnings": config_warnings,
         "panel": panel,
+        # The model a run with no config would review with alone, or None (#863).
+        "local_fallback": local_fallback.model if local_fallback is not None else None,
         "recommendations": _recommendations(
-            config_path, config_summary, agents, config_error=config_error
+            config_path,
+            config_summary,
+            agents,
+            config_error=config_error,
+            local_fallback=local_fallback,
+            local_models=listed[-1] if listed else None,
         ),
     }
 
@@ -829,6 +902,11 @@ def render_report(diagnostics) -> str:
     panel = report["panel"]
     lines.append("Cross-vendor readiness")
     lines.append("-" * 40)
+    if diagnostics.get("local_fallback"):
+        lines.append(
+            f"  panel of a run:    the local model '{diagnostics['local_fallback']}' alone "
+            f"(no jury.toml and no agent CLI: the zero-config fallback)"
+        )
     lines.append(f"  vendors enabled:   {panel['vendors_configured']} (by vendor identity)")
     lines.append(f"  vendors reachable: {panel['vendors_available']} (by vendor identity)")
     lines.append(f"  min_vendors gate:  {panel['min_vendors'] or 'off'}")

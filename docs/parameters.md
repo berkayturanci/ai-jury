@@ -214,9 +214,11 @@ that many actually contributed — **including when a configured CLI is not
 installed**. The shipped three-vendor `jury.toml` on a machine with one CLI
 fails; that is a collapsed panel, not an exemption. Only a config that never
 claimed the consensus — fewer distinct vendors enabled than the threshold, e.g.
-a deliberate single-agent setup — keeps exiting 0. A threshold you type is
-enforced as typed: `--min-vendors 2` on a one-vendor config fails, because you
-asked for it.
+a deliberate single-agent setup — keeps exiting 0, and so does the zero-config
+offline run (no `jury.toml`, no agent CLI, a local model), whose panel is its one
+local seat. A threshold you type is enforced as typed: `--min-vendors 2` on a
+one-vendor config fails, because you asked for it. `jury --doctor` takes the same
+two flags and predicts the run they describe.
 
 Two escapes: `--no-min-vendors` (or `min_vendors = 0` under `[jury.ci]`) accepts
 a collapsed panel, and `--strict` catches a **missing CLI at startup** instead —
@@ -379,7 +381,7 @@ reviews only the new range since the last posted run, then posts.
 | `--config-validate` | flag | Validate the resolved config and exit (`0` valid, `2` invalid or unreadable). |
 | `--strict-config` | flag | Treat configuration warnings as errors. |
 | `--mock` | flag | Offline demo using deterministic mock agents. |
-| `--doctor` | flag | Print a local readiness diagnostics report and exit (no telemetry). |
+| `--doctor` | flag | Print a local readiness diagnostics report and exit (no telemetry). Its cross-vendor prediction uses `--min-vendors` / `--no-min-vendors` when given, as a run would. |
 | `--json` | flag | With `--doctor`, print the machine-readable provider export (schema `ai-jury.doctor.v1`) as the **only** thing on stdout. |
 | `--write` | path | With `--doctor`, also write the full internal diagnostics as JSON (secrets redacted). |
 | `--version` | flag | Print the version and exit. |
@@ -422,7 +424,7 @@ enforces it. A green doctor is not evidence of a cross-vendor panel.
 | `--local-endpoint` | URL | OpenAI-compatible base URL for a local agent. |
 | `-o`, `--output` | path | Output path (default `jury.toml`). |
 | `--force` | flag | Overwrite an existing file. |
-| `--interactive` | flag | Force interactive prompts. The interactive flow also asks for a reasoning [effort](configuration.md#reasoning-effort-agent-effort----effort) (skippable); a chosen level is written onto each agent whose vendor supports it, and every other effort-capable agent gets a commented `# effort = "medium"` hint. |
+| `--interactive` | flag | Force interactive prompts. The interactive flow also asks for a reasoning [effort](configuration.md#reasoning-effort-agent-effort----effort) (skippable); a chosen level is written onto each agent whose vendor supports it, and every other effort-capable agent gets a commented `# effort = "medium"` hint. Needs a terminal: without one it exits **2** (``error: --interactive needs a terminal; use `jury init --preset <name>` or `jury init --agents <list>` ``), before probing any agent. With `--agents` or `--preset` it never prompts, so it runs without one. Plain `jury init` prompts only on a terminal and otherwise detects. |
 | `--wizard` | flag | Guided, numbered-option setup for the most-used settings (reviewers, depth, decision, verification, context, CI gate). Every question is skippable (Enter keeps the built-in default); only the keys you choose are written, so the file stays minimal. Needs a terminal: without one it exits **2** (``error: the wizard needs a terminal; use `jury init --preset <name>` ``). |
 | `--list-agents` | flag | List known agents + availability and exit. |
 | `--list-models` | flag | List local models on the server and exit. |

@@ -40,7 +40,9 @@ jury init --agents claude,codex,qwen --rounds 2   # non-interactive / scriptable
 > default), and only the keys you explicitly choose are written, so the generated
 > file stays minimal. The wizard does not change plain `jury init`. It reads its answers
 > from a terminal, so without one (CI, a pipe) it exits `2` and points at
-> `jury init --preset <name>`.
+> `jury init --preset <name>`. `jury init --interactive` does the same unless
+> `--agents` or `--preset` answer its questions, and plain `jury init` without a
+> terminal detects your agents instead of prompting.
 
 > **Local seat:** plain `jury init` (`--agents …qwen`, or a preset) asks the local
 > server which models it has and seats the first whose name contains `coder`,
@@ -62,6 +64,10 @@ jury init --agents claude,codex,qwen --rounds 2   # non-interactive / scriptable
 > **Zero-config offline:** even without a `jury.toml`, if no agent CLI is
 > installed but a local model server is reachable, `jury` adds a local agent
 > automatically — so `git diff main... | jury --diff-file -` just works offline.
+> The panel is that one local seat, so it is a single-vendor review: the default
+> cross-vendor guard (`min_vendors`) does not apply to it, and the report still
+> lists the built-in agents it could not run. A `--min-vendors N` you name is
+> enforced as asked. For a panel you choose, run `jury init --preset offline`.
 
 **Outcome:** a validated `jury.toml` using the secure-by-default agent templates
 (Claude with no tools, Codex read-only — see [security.md](security.md#other-agents)
@@ -390,6 +396,11 @@ jury --doctor --json | jq '.panel'
 `contributing_vendors` is `null` on purpose: doctor runs no review, so it can
 only report reachability. Do not read a green doctor as proof of a cross-vendor
 panel.
+
+The doctor predicts the run you would make: pass the same `--min-vendors N` or
+`--no-min-vendors` to `jury --doctor`. With no `jury.toml` and no agent CLI but a
+local model listed, it reports the zero-config panel, that one local seat, as
+`cross-vendor ready: yes` under the default threshold, because that run exits 0.
 
 **After the run — the `--min-vendors` guard**, which counts vendors that actually
 **contributed a review** and exits **3** when there are too few:

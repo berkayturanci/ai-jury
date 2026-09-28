@@ -498,14 +498,14 @@ The document is `schema_version: "ai-jury.doctor.v1"`:
 
 | Field | Meaning |
 | --- | --- |
-| `vendors_configured` | Distinct vendor **identities** among the **enabled** agents — the same count `min_vendors` is compared against, so this number and a run's agree. Slots are not vendors: three agents on one vendor count as 1, and two seats on the generic `cli` fallback count as 1. |
+| `vendors_configured` | Distinct vendor **identities** among the **enabled** agents — the same count `min_vendors` is compared against, so this number and a run's agree. Slots are not vendors: three agents on one vendor count as 1, and two seats on the generic `cli` fallback count as 1. With no config file, no reachable agent and a local server that lists a model, a run reviews with that model alone (the zero-config fallback), so every count here is that one-seat panel's, and the text report names the model on a `panel of a run:` line. |
 | `vendors_available` | How many of those identities are reachable right now. |
-| `min_vendors` | The effective `[jury.ci] min_vendors` threshold (`0` when opted out). |
+| `min_vendors` | The effective threshold, resolved as a run resolves it: `--min-vendors N` / `--no-min-vendors` given with `--doctor`, else `[jury.ci] min_vendors` (`0` when opted out). |
 | `contributing_vendors` | **Always `null` here.** Doctor runs no review, so it cannot know how many vendors would actually contribute. The real number is `panel.vendors` in a run's `--metadata-json`. |
 | `panelists_available` | Enabled agents reachable right now — each of them a ballot in the bundle, the chairing agent included (it reviews too). |
 | `reviews_supplied_max` | **Reviews** a downstream consumer would receive: at most one per reachable agent, so the same number as `panelists_available`. The chair's synthesis record is carried beside them and is **not** added — a gate like `keel review --from-jury` splits the `reviewers` array on `role`, counts only the ballots, and then refuses any whose scope names nothing. A strict **upper bound**, which is why the text report prints it as `at most N`: an agent that runs and returns nothing, or answers without naming a file, line or symbol, casts a ballot that is recorded and not counted. |
 | `min_reviews` | The effective `[jury.ci] min_reviews` threshold (`0` when off). |
-| `multi_vendor_ready` | `false` exactly when a run on this machine would fail the gate — the guard is on, this config names at least `min_vendors` distinct vendors, and fewer than that are reachable. `true` when the guard is off, when the config never claimed that many vendors, or when enough are reachable. (Also `false` when no config could be loaded: there is nothing to be ready for.) |
+| `multi_vendor_ready` | `false` exactly when a run on this machine would fail the gate — the guard is on, this config names at least `min_vendors` distinct vendors (or `--min-vendors N` names the threshold, which a run enforces unscoped), and fewer than that are reachable. `true` when the guard is off, when the config never claimed that many vendors, or when enough are reachable. It is the run's own predicate, with reachable vendors in place of contributing ones. (Also `false` when no config could be loaded: there is nothing to be ready for.) |
 
 `contributing_vendors` is in the export precisely *because* it is null: a
 consumer must be able to see that availability was checked and contribution was
@@ -514,8 +514,11 @@ and still return nothing — that is [#635], and it is why a green doctor is not
 evidence of a cross-vendor panel. Only a run proves that.
 
 When two or more vendors are enabled and fewer than `min_vendors` are reachable,
-the same fact also appears in `warnings` (and in the human report's
-**Cross-vendor readiness** block), because the run that follows will exit 3.
+or `--min-vendors N` asks for more vendors than are reachable, the same fact also
+appears in `warnings` (and in the human report's **Cross-vendor readiness**
+block), because the run that follows will exit 3. The zero-config fallback's
+one-seat panel is not warned about under the default threshold, because its run
+exits 0.
 
 [#635]: https://github.com/berkayturanci/ai-jury/issues/635
 
@@ -614,6 +617,11 @@ It **fails closed**, and it is scoped on the vendors your config **names**:
 - it applies only when the config claimed that consensus: with fewer distinct
   vendors enabled than the threshold — a deliberate single-agent setup — it
   never fires;
+- with no config at all, the built-in seats are not that claim either. When none
+  of their CLIs is installed and a local model server lists a model, the
+  zero-config fallback seats that model, and the panel is that one seat: a
+  single-vendor run the default never fails. The built-in seats are still listed
+  in the report as never run;
 - an agent that abstained (replied with no findings block) or came back
   `ok=False` — including the typed `no_review` failure for a refusal or a CLI
   usage banner — does not count toward the total;

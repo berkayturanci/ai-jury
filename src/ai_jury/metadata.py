@@ -17,7 +17,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from . import panel
-from .config import normalise_vendor, vendor_identity
+from .config import DEFAULT_MIN_VENDORS, normalise_vendor, vendor_identity
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from .config import JuryConfig
@@ -194,6 +194,53 @@ def distinct_vendors(specs) -> int:
     return len({vendor_identity(getattr(s, "vendor", "")) for s in specs or []} - {""})
 
 
+def resolve_min_vendors(cli_value, config) -> tuple[int, bool]:
+    """The effective cross-vendor threshold, and whether a person asked for it.
+
+    PURE. ``cli_value`` is ``args.min_vendors``: ``None`` when neither
+    ``--min-vendors`` nor ``--no-min-vendors`` was passed, in which case the
+    value comes from ``[jury.ci] min_vendors`` (shipped as 2, #682).
+
+    The second element says whether the threshold was named on the command line.
+    Only an unnamed (default) threshold is scoped down to runs that actually
+    claimed cross-vendor consensus — someone who types ``--min-vendors 3`` on a
+    two-vendor panel is asking for the failure and gets it.
+
+    Lives here, beside the gate, so a run and ``jury --doctor`` resolve the same
+    threshold from the same flag (#863).
+    """
+    if cli_value is None:
+        return max(0, int(getattr(config.ci, "min_vendors", DEFAULT_MIN_VENDORS))), False
+    return max(0, int(cli_value)), True
+
+
+def claimed_vendors(enabled_agents, local_fallback=None) -> int:
+    """How many distinct vendors a run claimed, which scopes the default guard (pure).
+
+    The enabled seats, except when the zero-config local fallback seated a model
+    (#863): it does so only when none of the built-in seats can run, so the panel
+    that run can form is that one seat, and the missing seats claimed nothing.
+    The run's gate and ``jury --doctor`` both count through here.
+    """
+    return distinct_vendors([local_fallback] if local_fallback is not None else enabled_agents)
+
+
+def vendor_guard_fails(contributed: int, required: int, configured_vendors: int | None) -> bool:
+    """Whether ``contributed`` vendors fail a threshold of ``required`` (pure).
+
+    ``configured_vendors`` scopes the default: fewer than ``required`` means the
+    run never claimed cross-vendor consensus and is left alone. ``None`` is a
+    threshold named on the command line, enforced as asked. The run passes the
+    vendors that reviewed; ``jury --doctor`` passes the vendors it can reach, a
+    ceiling on that — so the two apply one rule and cannot drift (#863).
+    """
+    if required <= 0:
+        return False
+    if configured_vendors is not None and configured_vendors < required:
+        return False
+    return contributed < required
+
+
 def collapse_reason(reviews, required: int, configured_vendors: int | None = None) -> str | None:
     """Why this run may not stand as cross-vendor consensus, or ``None``.
 
@@ -213,12 +260,8 @@ def collapse_reason(reviews, required: int, configured_vendors: int | None = Non
     failure that does not say how to accept it sends them to the issue tracker
     for a flag the tool already has.
     """
-    if required <= 0:
-        return None
-    if configured_vendors is not None and configured_vendors < required:
-        return None
     contributed = panel_accounting(reviews).get("vendors", 0)
-    if contributed >= required:
+    if not vendor_guard_fails(contributed, required, configured_vendors):
         return None
     return (
         f"panel collapsed: {contributed} vendor(s) contributed a review, "
