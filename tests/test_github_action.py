@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import fnmatch
+import re
 import unittest
 from pathlib import Path
 
@@ -104,15 +105,69 @@ class NoCallerInputReachesAShellBody(unittest.TestCase):
         )
 
     def test_every_caller_supplied_input_arrives_through_env(self):
-        """The positive half: inputs must still reach the script, just safely."""
+        """The positive half: inputs must still reach the script, just safely.
+
+        Every declared input, read off the file, rather than a hand-kept list: the
+        list is how a new input (`xai-api-key`, #867) could be added and never
+        wired, or wired straight into a `run:` body, without this test noticing.
+        """
         env_values = "\n".join("\n".join(body) for _, body in self._blocks("env"))
-        for name in ("inputs.version", "inputs.args", "inputs.github-token"):
+        declared = declared_inputs()
+        self.assertIn("xai-api-key", declared)
+        for name in declared:
             with self.subTest(input=name):
                 self.assertIn(
-                    name,
+                    f"${{{{ inputs.{name} }}}}",
                     env_values,
-                    f"{name} no longer reaches any step through env:",
+                    f"inputs.{name} does not reach any step through env:",
                 )
+
+
+def declared_inputs() -> list[str]:
+    """Every input action.yml declares, in file order."""
+    text = (REPO_ROOT / "action.yml").read_text(encoding="utf-8")
+    body = text.split("\ninputs:\n", 1)[1].split("\nruns:", 1)[0]
+    return re.findall(r"^  ([a-z][a-z0-9-]*):\s*$", body, flags=re.M)
+
+
+class EveryHostedApiVendorHasAKeyInput(unittest.TestCase):
+    """#867: Grok is a documented vendor and the Action had no way to pass its key.
+
+    Derived from the adapters, so the next hosted vendor fails here until the
+    Action can key it: the key must be declared as an input and handed to the
+    `Run ai-jury` step as the environment variable that vendor's adapter reads —
+    never interpolated into a shell body (see the sweep above).
+    """
+
+    def test_each_adapters_key_variable_is_fed_from_an_input(self):
+        from ai_jury.adapters import _VENDOR_ADAPTERS
+
+        text = (REPO_ROOT / "action.yml").read_text(encoding="utf-8")
+        run_step = text.split("- name: Run ai-jury", 1)[1]
+        env_block = run_step.split("\n      run: |", 1)[0]
+        wired = dict(
+            re.findall(r"^\s+([A-Z][A-Z0-9_]*): \$\{\{ inputs\.([a-z0-9-]+) \}\}", env_block, re.M)
+        )
+        declared = set(declared_inputs())
+        vendors = {
+            vendor: cls._ENV_VAR_NAME
+            for vendor, cls in _VENDOR_ADAPTERS.items()
+            if vendor.endswith("-api") and getattr(cls, "_ENV_VAR_NAME", "")
+        }
+        self.assertIn("xai-api", vendors)
+        for vendor, variable in sorted(vendors.items()):
+            with self.subTest(vendor=vendor, variable=variable):
+                self.assertIn(variable, wired, f"no input feeds {variable} to the run step")
+                self.assertIn(wired[variable], declared)
+
+    def test_the_xai_input_is_declared_like_the_other_keys(self):
+        text = (REPO_ROOT / "action.yml").read_text(encoding="utf-8")
+        block = text.split("\n  xai-api-key:\n", 1)
+        self.assertEqual(len(block), 2, "action.yml declares no xai-api-key input")
+        entry = re.split(r"\n  [a-z]", block[1], maxsplit=1)[0]
+        self.assertIn("required: false", entry)
+        self.assertIn('default: ""', entry)
+        self.assertIn("XAI_API_KEY: ${{ inputs.xai-api-key }}", text)
 
 
 class TheActionDoesNotShipAFailSoftPanel(unittest.TestCase):

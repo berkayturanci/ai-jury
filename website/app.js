@@ -1470,9 +1470,9 @@
         iconKey: "github",
         logo: "logos/githubactions.svg",
         color: "#ffffff",
-        desc: "Official composite GitHub Action for automated PR reviews and sticky comments.",
-        config: "- uses: berkayturanci/ai-jury@v1\n  with:\n    openai-api-key: ${{ secrets.OPENAI_API_KEY }}\n    args: '--auto --post --ci --fail-on critical,major'",
-        command: "gh workflow run jury.yml"
+        desc: "Official composite GitHub Action for automated PR reviews and sticky comments. Commit both files: the keys alone do not form a panel, the jury.toml seats a hosted-API reviewer for each.",
+        config: "# .github/workflows/ai-jury.yml (a step; needs pull-requests: write)\n- uses: berkayturanci/ai-jury@v1\n  with:\n    anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}\n    openai-api-key: ${{ secrets.OPENAI_API_KEY }}\n    args: '--auto --post --ci --fail-on critical,major'\n\n# jury.toml\n[jury]\nchair = \"claude-api\"\n\n[[agent]]\nname = \"claude-api\"\nvendor = \"anthropic-api\"\nmodel = \"claude-sonnet-4-5\"\n\n[[agent]]\nname = \"codex-api\"\nvendor = \"openai-api\"\nmodel = \"gpt-5\"",
+        command: "gh pr create  # the workflow runs on every pull request"
       },
       {
         id: "pre-commit",

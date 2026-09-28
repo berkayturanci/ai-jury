@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`xai-api-key` input for the GitHub Action** (#867). Grok is a documented vendor (`vendor = "xai-api"`), and the Action had no way to pass its key. It is declared like the other three keys and reaches the run step only as `XAI_API_KEY` in `env:`, never inside a `run:` body. `EveryHostedApiVendorHasAKeyInput` in `tests/test_github_action.py` derives the list from the adapters, so the next hosted vendor fails there until the Action can key it, and the env sweep now reads every declared input instead of a hand-kept list of three.
+
+### Fixed
+- **The GitHub Action example works as pasted** (#867). The README, the cookbook and the site's Actions card passed API keys and nothing else. Without a `jury.toml` the jury seats its built-in agent CLIs, which a runner does not have, so the run exited with `no usable agents`. Each copy now shows the `jury.toml` to commit beside the workflow: a hosted-API seat per key (`anthropic-api` and `openai-api`, each with a `model`), two vendors to meet the Action's `min-vendors` default. The site card also passed one key, which that guard would fail, and suggested `gh workflow run` for a workflow with no `workflow_dispatch` trigger. `tests/test_action_example.py` reads all three copies, checks that every seat reads a key the workflow passes, and runs each one through `jury --mock`; `ci.yml` runs it on every push and pull request.
+- **A ref of the Action now pins the package it installs** (#867). An empty `version` meant `pip install ai-jury`, the newest release, so `uses: berkayturanci/ai-jury@v1.19.1` pinned only the YAML. The default is now the version in the Action's own `pyproject.toml`, read from `GITHUB_ACTION_PATH` by `scripts/action_install_spec.py`: `@vX.Y.Z` installs X.Y.Z, `@v1` installs the release the alias points at, and a branch or SHA installs the version that tree declares. `github.action_ref` was not used: GitHub's reference says it does not work in a composite action's `run:` (actions/runner#2473 is still open), and for `@v1`, a branch or a SHA it is not a version. An explicit `version:` still wins, `version: latest` gives the old behaviour, and any other value must be a release number, so a quote, space or `;` in it fails the step instead of reaching pip. No new version string is introduced, so `RELEASE_SURFACES` is unchanged; `docs/releasing.md` records the two `publish.yml` properties the pin depends on, and `tests/test_action_install_spec.py` pins them.
+
 ## [1.20.1] - 2026-09-28
 
 ### Fixed
