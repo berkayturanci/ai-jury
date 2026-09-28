@@ -1257,5 +1257,137 @@ class CheckoutConfigRiskIsReportedWhateverTheSandbox(unittest.TestCase):
         self.assertNotIn("checkouts you trust", warnings[0])
 
 
+_ENDPOINT = "http://localhost:9/v1"
+_DIFF = "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n"
+
+
+def _strict_error(spec) -> str:
+    """The `--strict` refusal `run_jury` raises for a one-seat panel, or ""."""
+    from ai_jury.config import _from_dict
+    from ai_jury.orchestrator import run_jury
+
+    agent = {
+        k: v
+        for k, v in {
+            "name": spec.name,
+            "vendor": spec.vendor,
+            "adapter": spec.adapter,
+            "command": spec.command,
+            "endpoint": spec.endpoint,
+            "extra_args": list(spec.extra_args),
+        }.items()
+        if v
+    }
+    try:
+        run_jury(_from_dict({**DEFAULT_CONFIG, "agent": [agent]}), _DIFF, strict=True, seed=1)
+    except RuntimeError as exc:
+        return str(exc)
+    return ""  # pragma: no cover - reached only when the audit lets the seat through
+
+
+class TheAuditAsksTheAdapterTheSpawnerBuilds(unittest.TestCase):
+    """An `endpoint` does not make a CLI seat an HTTP seat (#901 review).
+
+    `make_adapter` picks the adapter by key before it looks at `endpoint`, so
+    each seat below is spawned as a CLI; the audit skipped every one because it
+    had an endpoint, and `--strict` let them through.
+    """
+
+    SHAPES = {
+        "cli aider": AgentSpec(name="a", vendor="cli", command="aider", endpoint=_ENDPOINT),
+        "claude adapter running aider": AgentSpec(
+            name="b", vendor="anthropic", command="aider", endpoint=_ENDPOINT
+        ),
+        "codex adapter running cursor-agent": AgentSpec(
+            name="c", vendor="openai", command="cursor-agent", endpoint=_ENDPOINT
+        ),
+        "codex danger-full-access": AgentSpec(
+            name="d",
+            vendor="openai",
+            command="codex",
+            extra_args=["-s", "danger-full-access"],
+            endpoint=_ENDPOINT,
+        ),
+        "claude skipping permissions": AgentSpec(
+            name="e",
+            vendor="anthropic",
+            command="claude",
+            extra_args=["--dangerously-skip-permissions"],
+            endpoint=_ENDPOINT,
+        ),
+    }
+
+    def test_each_shape_is_spawned_as_a_cli(self):
+        for name, spec in self.SHAPES.items():
+            with self.subTest(seat=name):
+                self.assertTrue(adapters.spawns_process(spec))
+                self.assertIsInstance(
+                    adapters.make_adapter(spec),
+                    (
+                        adapters.ClaudeAdapter,
+                        adapters.CodexAdapter,
+                        adapters.GenericCLIAdapter,
+                    ),
+                )
+
+    def test_each_shape_warns(self):
+        for name, spec in self.SHAPES.items():
+            with self.subTest(seat=name):
+                self.assertNotEqual(privilege.audit_agent(spec), [])
+
+    def test_strict_refuses_each_shape(self):
+        for name, spec in self.SHAPES.items():
+            with self.subTest(seat=name):
+                self.assertIn("least-privilege check failed (--strict)", _strict_error(spec))
+
+    def test_an_http_seat_with_an_endpoint_still_audits_clean(self):
+        for spec in (
+            AgentSpec(name="l", vendor="local", model="m", endpoint=_ENDPOINT),
+            AgentSpec(name="o", vendor="openai-compatible", model="m", endpoint=_ENDPOINT),
+            AgentSpec(name="u", vendor="acme", command="x", model="m", endpoint=_ENDPOINT),
+            AgentSpec(name="h", vendor="anthropic-api", model="m"),
+            AgentSpec(name="r", vendor="openai", adapter="openai-api", model="m"),
+        ):
+            with self.subTest(seat=spec.name):
+                self.assertFalse(adapters.spawns_process(spec))
+                self.assertEqual(privilege.audit_agent(spec), [])
+
+    def test_the_spawn_question_is_the_one_make_adapter_answers(self):
+        http = (adapters.LocalAdapter, adapters._HostedApiAdapter)
+        for spec in (
+            *self.SHAPES.values(),
+            AgentSpec(name="l", vendor="local", model="m"),
+            # An unknown vendor with neither command nor endpoint: agy's fallback.
+            AgentSpec(name="n", vendor="acme"),
+        ):
+            with self.subTest(seat=spec.name):
+                built = adapters.make_adapter(spec)
+                self.assertIs(type(built), adapters.adapter_class(spec))
+                self.assertEqual(adapters.spawns_process(spec), not isinstance(built, http))
+
+
+class TheCheckoutRiskMatchesTheStem(unittest.TestCase):
+    """`cursor-agent.cmd` is cursor-agent (#901 review): only `.exe` was stripped."""
+
+    def test_windows_launchers_and_case_are_matched(self):
+        for command, risk in (
+            ("cursor-agent.cmd", ".cursor/hooks.json"),
+            ("C:\\Tools\\cursor-agent.bat", ".cursor/hooks.json"),
+            ("cursor-agent.ps1", ".cursor/hooks.json"),
+            ("CURSOR-AGENT.EXE", ".cursor/hooks.json"),
+            ("Aider.CMD", ".aider.conf.yml"),
+        ):
+            for vendor in ("openai", "cli"):
+                with self.subTest(command=command, vendor=vendor):
+                    spec = AgentSpec(name="s", vendor=vendor, command=command)
+                    warnings = privilege.audit_agent(spec)
+                    self.assertTrue(any(risk in w for w in warnings), warnings)
+
+    def test_a_codex_seat_through_a_cmd_launcher_is_not_clean(self):
+        spec = AgentSpec(name="s", vendor="openai", command="cursor-agent.cmd")
+        self.assertNotEqual(privilege.audit_agent(spec), [])
+        self.assertIn("least-privilege check failed (--strict)", _strict_error(spec))
+
+
 if __name__ == "__main__":
     unittest.main()

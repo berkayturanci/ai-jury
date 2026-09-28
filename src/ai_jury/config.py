@@ -299,6 +299,13 @@ GENERIC_VENDOR = "cli"
 #: sandbox flag to add or remove for them (issue #701).
 GENERIC_CLI_VENDORS = ("cli", "xai")
 
+#: The built-in adapters that spawn ``command`` rather than make an HTTP call:
+#: every known vendor that is not a commandless one (claude, codex, agy and the
+#: bring-your-own CLI). None of them reads ``endpoint`` — ``make_adapter`` picks
+#: them by adapter key before it looks at ``endpoint`` — so an ``endpoint`` on
+#: one of these seats is refused by :func:`validate_config` (#901 review).
+CLI_ADAPTERS: tuple[str, ...] = tuple(v for v in KNOWN_VENDORS if v not in _NO_COMMAND_VENDORS)
+
 #: Vendors registered at runtime through ``adapters.register_adapter`` — the
 #: documented extension point for a custom adapter. Registering an adapter is
 #: what makes a vendor name *known*: without it the name is a typo as far as
@@ -894,6 +901,19 @@ def validate_config(data: dict, strict: bool = False) -> list:
         # requires a non-empty ``command``.
         command = agent.get("command", "")
         has_endpoint = bool(agent.get("endpoint"))
+        # A CLI adapter does not read `endpoint` (#901 review): `make_adapter`
+        # selects it by key and spawns `command` whatever `endpoint` says. The key
+        # was worse than unused — it made this check treat the seat as HTTP, skip
+        # every `command` rule below, and made the least-privilege audit skip the
+        # seat — so a seat that runs a CLI and names an endpoint is refused, and
+        # its `command` is still checked.
+        if has_endpoint and adapter in CLI_ADAPTERS:
+            errors.append(
+                f"agent '{label}' names an 'endpoint', but its adapter '{adapter}' "
+                f"runs 'command' and never reads one; remove 'endpoint', or use "
+                f"vendor/adapter 'local' or 'openai-compatible' for an HTTP seat."
+            )
+            has_endpoint = False
         # Asked of the ADAPTER, not the vendor (#705): whether a seat needs a
         # `command` is a fact about how it is invoked. `vendor = "openai",
         # adapter = "cli"` runs a CLI and needs one; `vendor = "openai",

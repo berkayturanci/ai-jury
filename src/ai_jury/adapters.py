@@ -2419,11 +2419,38 @@ def make_adapter(spec: AgentSpec, mock: bool = False) -> Adapter:
         raise config_module.ConfigError(adapter_error)
     if mock:
         return MockAdapter(spec)
+    return adapter_class(spec)(spec)
+
+
+def adapter_class(spec) -> type[Adapter]:
+    """The adapter class :func:`make_adapter` builds for *spec* (pure, duck-typed).
+
+    The ADAPTER key decides first: a registered name always gets its class,
+    whatever else the seat carries — so an ``endpoint`` on a ``cli``, ``claude``,
+    ``codex`` or ``agy`` seat changes nothing about how it runs. Only a seat with
+    no registered adapter falls through to the ``endpoint``/``command`` guess.
+    """
     cls = _VENDOR_ADAPTERS.get(config_module.spec_adapter(spec))
     if cls is not None:
-        return cls(spec)
-    if spec.endpoint or (spec.api_key_env and not spec.command):
-        return GenericOpenAICompatibleAdapter(spec)
-    if spec.command:
-        return GenericCLIAdapter(spec)
-    return AgyAdapter(spec)
+        return cls
+    command = getattr(spec, "command", "") or ""
+    if getattr(spec, "endpoint", None) or (getattr(spec, "api_key_env", None) and not command):
+        return GenericOpenAICompatibleAdapter
+    if command:
+        return GenericCLIAdapter
+    return AgyAdapter
+
+
+def spawns_process(spec) -> bool:
+    """Whether the adapter :func:`make_adapter` builds for *spec* spawns a CLI.
+
+    The question the least-privilege audit has to ask of the SAME selection the
+    spawner makes (#901 review): it used to skip any seat with an ``endpoint``,
+    while the spawner ignores ``endpoint`` whenever the adapter key is
+    registered — so ``vendor = "cli", command = "aider"`` with a stray
+    ``endpoint`` ran aider and was audited as an HTTP seat, clean. The HTTP
+    transports are :class:`LocalAdapter` and :class:`_HostedApiAdapter` (which
+    the hosted APIs and the OpenAI-compatible adapter extend); every other
+    adapter, a registered custom one included, is taken to spawn a process.
+    """
+    return not issubclass(adapter_class(spec), (LocalAdapter, _HostedApiAdapter))

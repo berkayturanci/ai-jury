@@ -241,7 +241,10 @@ taken as a sandbox on such a seat: it is codex's flag, and the audit used to
 accept it from any vendor, so an `aider` or `cursor-agent` seat that wrote it
 passed `--strict` (#901). For `aider` and `cursor-agent` the warning also names
 the checkout config they obey — on every seat that spawns them, sandbox flag or
-not. Such a seat also runs in the directory `jury` was started from, not in an
+not, whichever adapter spawns them, and whatever their file extension
+(`cursor-agent.cmd`, `aider.exe`). Which seats spawn a process is asked of the
+adapter `jury` actually builds for the seat: an `endpoint` on a CLI seat used to
+make the audit skip it while the CLI still ran, and is now a config error. Such a seat also runs in the directory `jury` was started from, not in an
 empty one — see below.
 
 Every sample of one in these docs, the site, `examples/jury.toml` and the config

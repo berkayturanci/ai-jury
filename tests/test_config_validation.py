@@ -1160,3 +1160,66 @@ class DocumentedExamplesAreStrictClean(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AnEndpointOnACliSeatIsRefused(unittest.TestCase):
+    """A CLI adapter never reads `endpoint`; the key only switched checks off (#901 review).
+
+    `validate_config` treated any seat with an `endpoint` as HTTP, so a `cli`,
+    claude, codex or agy seat that named one skipped every `command` rule, and
+    the least-privilege audit skipped it too — while `make_adapter` spawned it.
+    """
+
+    @staticmethod
+    def _config(**agent) -> dict:
+        return {"jury": {"rounds": 1}, "agent": [{"name": "seat", **agent}]}
+
+    def test_every_cli_adapter_refuses_an_endpoint(self):
+        from ai_jury.config import CLI_ADAPTERS
+
+        self.assertEqual(set(CLI_ADAPTERS), {"anthropic", "openai", "google", "cli", "xai"})
+        for adapter in CLI_ADAPTERS:
+            with self.subTest(adapter=adapter):
+                data = self._config(
+                    vendor=adapter, command="tool", endpoint="http://localhost:9/v1"
+                )
+                with self.assertRaises(ConfigError) as ctx:
+                    validate_config(data)
+                self.assertIn("never reads one", str(ctx.exception))
+
+    def test_a_named_cli_adapter_refuses_it_too(self):
+        data = self._config(
+            vendor="openai", adapter="cli", command="cursor-agent", endpoint="http://localhost:9/v1"
+        )
+        with self.assertRaises(ConfigError) as ctx:
+            validate_config(data)
+        self.assertIn("adapter 'cli'", str(ctx.exception))
+
+    def test_the_command_is_still_checked(self):
+        data = self._config(vendor="cli", command="./evil", endpoint="http://localhost:9/v1")
+        with self.assertRaises(ConfigError) as ctx:
+            validate_config(data)
+        self.assertIn("is a relative path", str(ctx.exception))
+
+    def test_http_seats_keep_their_endpoint(self):
+        for agent in (
+            {"vendor": "local", "model": "m", "endpoint": "http://localhost:9/v1"},
+            {"vendor": "openai-compatible", "model": "m", "endpoint": "http://localhost:9/v1"},
+            {"vendor": "acme", "model": "m", "endpoint": "http://localhost:9/v1"},
+        ):
+            with self.subTest(vendor=agent["vendor"]):
+                warnings = validate_config(self._config(**agent))
+                self.assertFalse(any("never reads one" in w for w in warnings))
+
+    def test_the_list_is_the_adapters_that_spawn(self):
+        # One fact in two modules: config's list of CLI adapters is exactly the
+        # built-in registry keys whose adapter spawns a process.
+        from ai_jury import adapters
+        from ai_jury.config import CLI_ADAPTERS, KNOWN_VENDORS
+
+        spawning = {
+            key
+            for key in KNOWN_VENDORS
+            if adapters.spawns_process(AgentSpec(name="s", vendor=key, command="x"))
+        }
+        self.assertEqual(spawning, set(CLI_ADAPTERS))

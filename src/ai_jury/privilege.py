@@ -52,6 +52,8 @@ Required read-only invocation per adapter (documented here and in docs/security.
 
 from __future__ import annotations
 
+from pathlib import PureWindowsPath
+
 from .config import GENERIC_CLI_VENDORS, normalise_vendor, spec_adapter
 
 # Flags that grant broad write/tool/network powers — dangerous for a reviewer.
@@ -564,14 +566,9 @@ _NO_SANDBOX_VENDORS: tuple[str, ...] = (
     *GENERIC_CLI_VENDORS,
 )
 
-#: Vendors with no subprocess to audit AT ALL — the network transports above,
-#: minus the bring-your-own-CLI seats. Derived rather than re-typed (issue #701,
-#: round 3): the hand-written copy this replaces had already drifted (no
-#: ``xai-api``), and a bring-your-own CLI does spawn a process, so it stays in
-#: scope for :func:`audit_agent` even though the tool knows no sandbox flag for it.
-_NO_SUBPROCESS_VENDORS: tuple[str, ...] = tuple(
-    v for v in _NO_SANDBOX_VENDORS if v not in GENERIC_CLI_VENDORS
-)
+#: Which seats run no subprocess at all is no longer a vendor list here: it is
+#: ``adapters.spawns_process``, asked of the adapter ``make_adapter`` builds
+#: (#901 review), so the audit and the spawner cannot disagree about a seat.
 
 
 def _drop_claude_disallowed(extra_args: list[str]) -> list[str]:
@@ -1065,9 +1062,10 @@ def _checkout_config_warning(label: str, command: str) -> str:
     reported whatever the seat's sandbox status (#901). Appended to the seat's
     one warning where it has one, so a seat still gets one warning.
     """
-    name = command.replace("\\", "/").rsplit("/", 1)[-1].lower()
-    if name.endswith(".exe"):
-        name = name[: -len(".exe")]
+    # The stem, case-insensitively (#901 review): `cursor-agent.cmd`, `.bat`,
+    # `.ps1` and `AIDER.EXE` are the same CLI as the bare name.
+    # `PureWindowsPath` splits on both slash and backslash, so one reading serves both.
+    name = PureWindowsPath(command).stem.lower()
     risk = _CHECKOUT_CONFIG_RISKS.get(name)
     if risk is None:
         return ""
@@ -1136,9 +1134,15 @@ def audit_agent(spec) -> list[str]:
     # subprocess to sandbox — there is no write/tool/network surface to flag
     # (a hosted-API call has strictly less access than even a sandboxed CLI:
     # no filesystem, no shell, nothing to disallow), so they are out of scope
-    # for this audit.
-    has_endpoint = bool(getattr(spec, "endpoint", None))
-    if vendor in _NO_SUBPROCESS_VENDORS or vendor.endswith("-api") or has_endpoint:
+    # for this audit. Which seats those are is asked of the adapter the spawner
+    # builds, not of the seat's keys (#901 review): the presence of `endpoint`
+    # skipped the audit, while `make_adapter` ignores `endpoint` on every
+    # registered CLI adapter — a `cli` aider seat, a claude seat with
+    # `--dangerously-skip-permissions`, a codex seat with `danger-full-access`,
+    # each with a stray endpoint, ran as CLIs and were audited clean.
+    from .adapters import spawns_process  # adapters imports this module
+
+    if not spawns_process(spec):
         return warnings
 
     # The argv this seat is spawned with, byte for byte what
