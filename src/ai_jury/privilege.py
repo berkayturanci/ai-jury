@@ -57,7 +57,6 @@ Required read-only invocation per adapter (documented here and in docs/security.
 
 from __future__ import annotations
 
-import re
 from pathlib import PureWindowsPath
 
 from .config import GENERIC_CLI_VENDORS, normalise_vendor, spawns_process, spec_adapter
@@ -194,10 +193,14 @@ _SHOWN_VALUES: frozenset[str] = frozenset(
     }
 )
 
-#: A tool name a warning may repeat: letters only, as Claude Code's built-in
-#: tools are named (``Read``, ``WebFetch``). Anything else — an MCP tool, a
-#: pattern — is shown as ``<tool>``.
-_SHOWN_TOOL = re.compile(r"[A-Za-z]{1,32}")
+#: The ``--tools`` names a warning may repeat: a fixed list, never a shape (#908
+#: review, round 6 — a letters-only rule printed ``CorrectHorseBatteryStaple``).
+#: Claude Code's built-in tools as this module already names them in the deny
+#: list (:data:`_CLAUDE_DENIED_TOOLS`, each checked against 2.1.236), plus
+#: ``TodoWrite``, the built-in that only edits the session's todo list, and the
+#: ``default`` keyword ``claude --help`` documents for ``--tools`` ("``default``
+#: to use all tools"). Anything else, an ``mcp__…`` tool included, is ``<tool>``.
+_SHOWN_TOOLS: frozenset[str] = frozenset({*_CLAUDE_DENIED_TOOLS, "TodoWrite", "default"})
 
 
 def _shown_value(value: str) -> str:
@@ -1290,8 +1293,8 @@ def _claude_open_surface(extra_args: list[str]) -> list[str]:
     if tools is None:  # pragma: no cover - enforcement injects `--tools ""`
         surface.append("the CLI's default tool set (no `--tools`)")
     elif tools:
-        # Letters-only names, as the built-in tools are; others are not repeated.
-        names = [t if _SHOWN_TOOL.fullmatch(t) else "<tool>" for t in dict.fromkeys(tools)]
+        # Built-in names from a fixed list; others are not repeated.
+        names = [t if t in _SHOWN_TOOLS else "<tool>" for t in dict.fromkeys(tools)]
         surface.append(f"`--tools {','.join(names)}`")
     if _claude_flag_present("--mcp-config", args):
         surface.append("MCP servers from `--mcp-config`")

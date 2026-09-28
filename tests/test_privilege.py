@@ -2303,6 +2303,33 @@ class NoWarningRepeatsAnArgvValue(unittest.TestCase):
             )[0],
         )
 
+    def test_a_tool_name_outside_the_built_in_list_is_not_repeated(self):
+        # #908 review, round 6: a letters-only rule printed any alphabetic secret,
+        # and redaction does not recognise one.
+        spec = AgentSpec(
+            name="c",
+            vendor="anthropic",
+            command="claude",
+            extra_args=["--tools", "CorrectHorseBatteryStaple,Read,mcp__srv__tool"],
+        )
+        warnings = privilege.audit_agent(spec)
+        self.assertTrue(warnings)
+        text = "\n".join(warnings)
+        self.assertNotIn("CorrectHorseBatteryStaple", text)
+        self.assertNotIn("mcp__srv__tool", text)
+        self.assertIn("`--tools <tool>,Read,<tool>`", text)
+        error = _strict_error(spec)
+        self.assertIn("least-privilege check failed (--strict)", error)
+        self.assertNotIn("CorrectHorseBatteryStaple", error)
+
+    def test_every_built_in_tool_name_is_still_named(self):
+        for name in (*privilege._CLAUDE_DENIED_TOOLS, "TodoWrite", "default"):
+            with self.subTest(name=name):
+                spec = AgentSpec(
+                    name="c", vendor="anthropic", command="claude", extra_args=["--tools", name]
+                )
+                self.assertIn(f"`--tools {name}`", privilege.audit_agent(spec)[0])
+
     def test_every_warning_is_redacted_as_well(self):
         # Defence in depth: a secret-shaped seat name is not an argv value the
         # sentences guard against, and the redaction pass still masks it.

@@ -213,8 +213,9 @@ content; the least-privilege audit (`--strict` to fail the run) will flag it.
   place is named by its position and the word that flagged it ("item 2 of
   `extra_args` (it mentions `bypassPermissions`)"), since a `--settings` JSON
   can carry an API key. Other warnings repeat a value only if it is one of the
-  CLIs' own words (a permission mode, a codex sandbox value, `true`/`false`, a
-  letters-only tool name); anything else is shown as `<value>` or `<tool>`. Every
+  CLIs' own words (a permission mode, a codex sandbox value, `true`/`false`, one
+  of Claude Code's built-in tool names from a fixed list); anything else — an
+  `mcp__…` tool, any other word — is shown as `<value>` or `<tool>`. Every
   warning also passes through the same secret redaction as the prompt.
   - configuration beyond the prompt: `--settings`, `--setting-sources`,
     `--plugin-dir`, `--plugin-url`, `--add-dir`, `--agents`, `--agent`.

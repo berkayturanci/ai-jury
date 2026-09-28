@@ -2641,6 +2641,24 @@ class RunAgentValidatesAndAuditsLikeThePanel(unittest.TestCase):
                 for secret in ("hunter2", "FAKEFAKE", "sk-ant-api03"):
                     self.assertNotIn(secret, err + out)
 
+    def test_run_agent_prints_no_alphabetic_secret_from_a_tool_list(self):
+        # #908 review, round 6: `--tools CorrectHorseBatteryStaple` was printed.
+        config = SAMPLE_CONFIG + textwrap.dedent(
+            """
+            [[agent]]
+            name = "horse"
+            vendor = "anthropic"
+            command = "claude"
+            extra_args = ["--tools", "CorrectHorseBatteryStaple"]
+            """
+        )
+        for extra in ((), ("--strict",)):
+            with self.subTest(extra=extra), _workspace(config_text=config) as root:
+                code, out, err = self._run(root, "horse", *extra)
+                self.assertIn("least-privilege", err)
+                self.assertEqual(code, 2 if extra else 0, err)
+                self.assertNotIn("CorrectHorseBatteryStaple", err + out)
+
     def test_strict_passes_a_seat_the_audit_accepts(self):
         with _workspace(config_text=self.WIDE) as root:
             code, _, err = self._run(root, "house", "--strict")
