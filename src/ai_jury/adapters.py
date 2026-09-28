@@ -778,8 +778,8 @@ class Adapter:
     #: class says otherwise: the HTTP adapters (``LocalAdapter`` and the
     #: hosted-API ones) set ``False``, and so can a custom adapter that calls its
     #: backend over the network from ``run()`` (#903). ``register_adapter`` reads
-    #: it; a registered class that spawns a CLI and sets ``False`` would escape
-    #: the audit, so the default is the safe one.
+    #: it, and only an explicit ``False`` opts out; a registered class that spawns
+    #: a CLI and sets ``False`` would escape the audit, so the default is the safe one.
     SPAWNS_PROCESS = True
 
     # Args passed to the CLI to print its version. Subclasses override if the CLI
@@ -2400,9 +2400,10 @@ def register_adapter(vendor: str, adapter_cls: type[Adapter]) -> None:
     config_module.register_vendor(name)
     # The class's own answer (#903), so a custom HTTP adapter written as a direct
     # `Adapter` subclass — the documented example — can say it runs no process.
-    # A class that says nothing spawns, which keeps it under the audit.
+    # Only an explicit `False` opts out: a class that says nothing, or says
+    # `None`, spawns, which keeps it under the audit.
     config_module.register_adapter_transport(
-        name, spawns=bool(getattr(adapter_cls, "SPAWNS_PROCESS", True))
+        name, spawns=getattr(adapter_cls, "SPAWNS_PROCESS", True) is not False
     )
     _VENDOR_ADAPTERS[name] = adapter_cls
 
@@ -2423,8 +2424,9 @@ def make_adapter(spec: AgentSpec, mock: bool = False) -> Adapter:
     *vendor* — that seat named no protocol, so inheriting the generic one is the
     documented behaviour — but it must never catch a named one: falling through
     there is the silent guess #705 exists to remove, and it made every reader
-    that loads a config without validating it (``--doctor``, ``jury run-agent``)
-    disagree with the run about the very same file.
+    that builds a seat without validating the config — a caller of
+    ``load_config`` with its default ``validate=False``, or of this function
+    directly — disagree with the run about the very same file.
     """
     # ``or None`` mirrors ``AgentSpec.__post_init__``: an adapter that
     # normalises to nothing is no adapter at all, and falls back to the vendor.

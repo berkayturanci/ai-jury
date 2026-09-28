@@ -233,8 +233,18 @@ content; the least-privilege audit (`--strict` to fail the run) will flag it.
   whatever its flags. Codex's `-s read-only` does not count as that flag: `agy
   --help` (1.2.12) lists `--sandbox` with no value and no `-s` at all, so such a
   seat used to be spawned with no sandbox (#902). It now gets `--sandbox` beside
-  it, and the audit names `-s …`, `--sandbox=…` or a value after `--sandbox` as
-  not agy's sandbox.
+  it, and the audit names `-s …` or a value after `--sandbox` as not agy's
+  sandbox. A `--sandbox` that is another option's value (`--model --sandbox`:
+  agy parses flags by Go's rules, so `--model` takes the next token whatever it
+  is) or that follows a positional does not count either. agy reads
+  `--sandbox=<value>` as true or false and its last `--sandbox` wins, so every
+  `--sandbox=<value>` is **removed** before `--sandbox` is added:
+  `--sandbox=false` would otherwise switch the added flag off. The audit reports
+  a false or unreadable value as removed; `--sandbox=true` only repeats the flag.
+  The same injection covers an unknown vendor, which is spawned as agy when it
+  has no `command`: a seat with `vendor = "acme"` and `-s read-only` now gets
+  `--sandbox` added too, which the operator's own binary may reject. The audit
+  warns about an unknown vendor's seat either way.
 - **`anthropic-api` / `openai-api` / `google-api`** (hosted-API reviewers) are out of
   scope for the sandbox audit entirely, and there is no `--strict` finding to fix here:
   unlike every CLI-backed adapter, a hosted-API call makes a single HTTP request with

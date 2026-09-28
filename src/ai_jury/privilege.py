@@ -35,7 +35,10 @@ Required read-only invocation per adapter (documented here and in docs/security.
                 written and flagged here, so the opt-in is a knowing one.
 - ``agy``/gemini : ``--sandbox`` (the shipped default), injected unless the
                 argv already has that boolean flag — codex's ``-s read-only``,
-                which agy does not have, does not count (#902).
+                which agy does not have, does not count (#902), and neither
+                does a ``--sandbox`` that is another option's value. Every
+                ``--sandbox=<value>`` is removed first, since agy reads
+                ``--sandbox=false`` as switching the flag off (#908 review).
                 ``--dangerously-skip-permissions`` / ``--yolo`` only skip an
                 approval prompt, so the sandbox beside them — whether the
                 operator wrote it or this module injected it — is what settles
@@ -231,21 +234,93 @@ def _is_sandboxed(extra_args: list[str], vendor: str = "") -> bool:
     return is_agy and _agy_bare_sandbox(args)
 
 
+#: agy options that take a value, from ``agy --help`` (1.2.12): each answered
+#: ``flag needs an argument`` when given alone (``agy --model``, checked by hand;
+#: no prompt, no model call). agy parses its flags with Go's ``flag`` rules, which
+#: hand such an option the next token *whatever it looks like*, so in
+#: ``--model --sandbox`` the ``--sandbox`` is a model name, not the sandbox (#908
+#: review) — the agy counterpart of :data:`_CLAUDE_VALUE_OPTIONS`. Names without
+#: dashes: Go accepts ``-x`` and ``--x`` alike.
+_AGY_VALUE_OPTIONS: frozenset[str] = frozenset(
+    {
+        "add-dir",
+        "agent",
+        "conversation",
+        "effort",
+        "i",
+        "input-format",
+        "json-schema",
+        "log-file",
+        "mode",
+        "model",
+        "output-format",
+        "p",
+        "print",
+        "print-timeout",
+        "project",
+        "prompt",
+        "prompt-interactive",
+    }
+)
+
+#: The values Go's ``strconv.ParseBool`` reads as true. agy 1.2.12 parses
+#: ``--sandbox=<value>`` with it (``--sandbox=`` answers ``invalid boolean value
+#: … strconv.ParseBool``), so ``--sandbox=false``/``0``/``f``/``FALSE`` turn the
+#: sandbox off, and — Go's flags being last-wins — override a ``--sandbox``
+#: before them. Anything outside these and the false spellings is rejected.
+_GO_TRUE_VALUES: tuple[str, ...] = ("1", "t", "T", "TRUE", "true", "True")
+_GO_FALSE_VALUES: tuple[str, ...] = ("0", "f", "F", "FALSE", "false", "False")
+
+
+def _agy_flag_name(token: str) -> str | None:
+    """The name *token* gives agy's Go flag parser (``-x``, ``--x``, ``--x=v``), or None."""
+    if not token.startswith("-") or token in ("-", "--"):
+        return None
+    body = token[2:] if token.startswith("--") else token[1:]
+    if not body or body.startswith(("-", "=")):
+        return None
+    return body.split("=", 1)[0]
+
+
+def _agy_flag_positions(extra_args: list[str]) -> list[int]:
+    """The indices of *extra_args* agy reads as flags, by Go's ``flag`` rules.
+
+    An option in :data:`_AGY_VALUE_OPTIONS` written without ``=`` takes the next
+    token as its value, and parsing stops at the first token that is not a flag
+    (a positional) or after ``--``: a ``--sandbox`` after either is not a flag.
+    The argv the adapter puts before these (``--input-format stream-json
+    --output-format stream-json`` and ``--model <id>``) is flags and values only,
+    so the configured args start where agy is still reading flags.
+    """
+    args = list(extra_args)
+    flags: list[int] = []
+    i = 0
+    while i < len(args):
+        name = _agy_flag_name(args[i])
+        if name is None:
+            break
+        flags.append(i)
+        i += 2 if name in _AGY_VALUE_OPTIONS and "=" not in args[i] else 1
+    return flags
+
+
 def _agy_bare_sandbox(extra_args: list[str]) -> bool:
     """agy's boolean ``--sandbox`` at a flag position: followed by another flag or nothing.
 
     The one sandbox agy has. ``agy --help`` (1.2.12) lists ``--sandbox`` with no
     value and no ``-s`` at all, so codex's ``-s read-only`` is not a sandbox on an
     agy seat, and neither is a ``--sandbox`` that a value follows (agy reads the
-    value as prompt text) or ``--sandbox=<value>`` (agy parses it as a true/false
-    switch). Shared by :func:`enforce_read_only`, which injects ``--sandbox``
-    unless this holds, and :func:`_is_sandboxed`, which audits it (#902): the
-    enforcement used to accept any ``-s``/``--sandbox=`` token, so an agy seat
-    with ``-s read-only`` was spawned without its real sandbox.
+    value as prompt text), one that is another option's value, or one after a
+    positional (Go stops reading flags there). ``--sandbox=<value>`` is not it
+    either: :func:`enforce_read_only` removes those. Shared by that function,
+    which injects ``--sandbox`` unless this holds, and :func:`_is_sandboxed`,
+    which audits it (#902): the enforcement used to accept any
+    ``-s``/``--sandbox=`` token, so an agy seat with ``-s read-only`` was spawned
+    without its real sandbox.
     """
     args = list(extra_args)
-    for i, a in enumerate(args):
-        if a != "--sandbox":
+    for i in _agy_flag_positions(args):
+        if args[i] != "--sandbox":
             continue
         nxt = args[i + 1] if i + 1 < len(args) else ""
         if nxt == "" or nxt.startswith("-"):
@@ -253,18 +328,64 @@ def _agy_bare_sandbox(extra_args: list[str]) -> bool:
     return False
 
 
+def _agy_sandbox_values(extra_args: list[str]) -> list[int]:
+    """Indices of ``--sandbox=<value>`` / ``-sandbox=<value>`` at agy flag positions."""
+    args = list(extra_args)
+    return [
+        i
+        for i in _agy_flag_positions(args)
+        if _agy_flag_name(args[i]) == "sandbox" and "=" in args[i]
+    ]
+
+
+def _ensure_agy_sandbox(extra_args: list[str]) -> list[str]:
+    """agy's boolean ``--sandbox``, guaranteed; every ``--sandbox=<value>`` removed.
+
+    Removed first, fail-closed (#908 review): agy reads ``--sandbox=false`` as a
+    Go bool and its flags are last-wins, so injecting ``--sandbox`` in front of it
+    gave ``--sandbox --sandbox=false`` — a seat the audit accepted as sandboxed
+    and agy ran without one. A true value only repeats the flag and an
+    unparseable one stops agy starting, so removing every value is safe;
+    :func:`audit_agent` reports the ones that were not true.
+    """
+    args = list(extra_args)
+    drop = set(_agy_sandbox_values(args))
+    kept = [a for i, a in enumerate(args) if i not in drop]
+    if _agy_bare_sandbox(kept):
+        return kept
+    return ["--sandbox", *kept]
+
+
+def _agy_sandbox_switched_off(extra_args: list[str]) -> list[str]:
+    """The ``--sandbox=<value>`` tokens written to turn agy's sandbox off, as written.
+
+    A false value (``false``, ``0``, ``f``, ``FALSE`` …) or one Go's
+    ``ParseBool`` rejects; a true one only repeats the flag and is not reported.
+    Read from the *declared* args, since enforcement removes them.
+    """
+    args = list(extra_args)
+    return [
+        args[i]
+        for i in _agy_sandbox_values(args)
+        if args[i].split("=", 1)[1] not in _GO_TRUE_VALUES
+    ]
+
+
 def _agy_foreign_sandbox_tokens(extra_args: list[str]) -> list[str]:
     """Sandbox-looking tokens agy does not read as its sandbox, as written (#902).
 
-    codex's ``-s`` in either spelling (agy has no ``-s``), a ``--sandbox`` with a
-    value after it, and ``--sandbox=<value>``. The boolean ``--sandbox`` is
-    injected beside them, so the seat is sandboxed as far as agy's flag goes; they
-    are reported because they do not do what they look like they do.
+    codex's ``-s`` in either spelling (agy has no ``-s``) and a ``--sandbox`` with
+    a value after it, at flag positions. The boolean ``--sandbox`` is injected
+    beside them, so the seat is sandboxed as far as agy's flag goes; they are
+    reported because they do not do what they look like they do.
+    ``--sandbox=<value>`` is not here: enforcement removes it, and
+    :func:`_agy_sandbox_switched_off` reports it.
     """
     args = list(extra_args)
     found: list[str] = []
-    for i, a in enumerate(args):
-        if a.startswith(("-s=", "--sandbox=")):
+    for i in _agy_flag_positions(args):
+        a = args[i]
+        if a.startswith("-s="):
             found.append(a)
             continue
         if a not in ("-s", "--sandbox"):
@@ -828,10 +949,10 @@ def enforce_read_only(vendor: str, extra_args: list[str]) -> list[str]:
     # incompatible one fails on the unknown flag rather than running UNSANDBOXED
     # — fail-closed either way, never fail-open. Only agy's own boolean
     # `--sandbox` makes the injection unnecessary (#902): codex's `-s read-only`
-    # used to, and agy has no `-s`, so that seat ran without its sandbox.
-    if _agy_bare_sandbox(extra_args):
-        return extra_args
-    return ["--sandbox", *extra_args]
+    # used to, and agy has no `-s`, so that seat ran without its sandbox. And a
+    # `--sandbox=<value>` is removed, so `--sandbox=false` cannot switch the
+    # injected flag off again (#908 review).
+    return _ensure_agy_sandbox(extra_args)
 
 
 def _claude_is_locked_down(extra_args: list[str]) -> bool:
@@ -1222,7 +1343,8 @@ def audit_agent(spec) -> list[str]:
     # declared args, same function. The seat's name is an input to neither
     # (#758, #768) — which is what stops the auditor and the spawner disagreeing
     # about a seat whose name says one CLI and whose adapter key says another.
-    extra_args = enforce_read_only(vendor, list(getattr(spec, "extra_args", []) or []))
+    declared = list(getattr(spec, "extra_args", []) or [])
+    extra_args = enforce_read_only(vendor, declared)
     args_text = _args_str(extra_args)
     # A CLI that obeys its working directory's config (aider, cursor-agent) is
     # told so on every path below, sandboxed or not (#859, #901): no flag in the
@@ -1310,6 +1432,27 @@ def audit_agent(spec) -> list[str]:
             f"and writes files and reaches the network; do not use it on untrusted "
             f"diffs."
         )
+        # A `--sandbox=<value>` that would switch the sandbox off (#908 review).
+        # Enforcement removed it, so it is read from the declared args.
+        switched = _agy_sandbox_switched_off(declared)
+        off = [t for t in switched if t.split("=", 1)[1] in _GO_FALSE_VALUES]
+        unread = [t for t in switched if t not in off]
+        for tokens, effect in (
+            (
+                off,
+                "would turn agy's sandbox off: agy reads a `--sandbox=` value as true "
+                "or false, and the last `--sandbox` it reads wins",
+            ),
+            (unread, "is not a value agy reads as true or false, so agy refuses to start"),
+        ):
+            if tokens:
+                named = ", ".join(f"`{t}`" for t in tokens)
+                one = len(tokens) == 1
+                warnings.append(
+                    f"agent '{label}' (agy) is configured with {named}, which {effect}. "
+                    f"jury removes {'it' if one else 'them'} and spawns the seat with "
+                    f"`--sandbox`. Drop {'it' if one else 'them'}."
+                )
         # codex's sandbox spelling on an agy seat (#902). Enforcement added agy's
         # own `--sandbox` beside it; what the operator wrote does nothing agy
         # documents, and may keep the seat from starting.

@@ -1647,8 +1647,6 @@ class AnAgySeatAlwaysGetsItsOwnSandbox(unittest.TestCase):
             for args in (
                 ["-s", "read-only"],
                 ["-s=read-only"],
-                ["--sandbox=read-only"],
-                ["--sandbox="],
                 ["--sandbox", "read-only"],
             ):
                 with self.subTest(vendor=vendor, args=args):
@@ -1688,7 +1686,6 @@ class AnAgySeatAlwaysGetsItsOwnSandbox(unittest.TestCase):
     def test_every_spelling_agy_does_not_read_is_named_as_written(self):
         cases = {
             ("-s=read-only",): ["-s=read-only"],
-            ("--sandbox=true",): ["--sandbox=true"],
             ("-s", "--yolo"): ["-s"],
             ("--sandbox", "read-only"): ["--sandbox read-only"],
         }
@@ -1777,6 +1774,15 @@ class ACustomHttpAdapterCanSayItSpawnsNothing(unittest.TestCase):
         self.assertEqual(spawns_process(spec), built.SPAWNS_PROCESS)
         self.assertEqual(privilege.audit_privilege([spec]), [])
 
+    def test_only_an_explicit_false_opts_out(self):
+        class Unsure(adapters.Adapter):
+            SPAWNS_PROCESS = None
+
+        self._register("unsure", Unsure)
+        spec = AgentSpec(name="u", vendor="unsure", command="x")
+        self.assertTrue(spawns_process(spec))
+        self.assertTrue(privilege.audit_agent(spec))
+
     def test_a_direct_subclass_that_says_nothing_still_spawns(self):
         class DirectCli(adapters.Adapter):
             pass
@@ -1791,6 +1797,140 @@ class ACustomHttpAdapterCanSayItSpawnsNothing(unittest.TestCase):
         for key, cls in adapters._VENDOR_ADAPTERS.items():
             with self.subTest(key=key):
                 self.assertEqual(cls.SPAWNS_PROCESS, not issubclass(cls, http))
+
+
+class AnAgySandboxValueCannotSwitchItOff(unittest.TestCase):
+    """`--sandbox=false` must not undo the injected `--sandbox` (#908 review).
+
+    agy parses `--sandbox` as a Go bool (`--sandbox=` answers `invalid boolean
+    value … strconv.ParseBool` on 1.2.12), and Go flags are last-wins, so
+    `--sandbox --sandbox=false` ran agy with no sandbox while the audit called it
+    sandboxed. Enforcement now removes every `--sandbox=<value>` first.
+    """
+
+    def _agy(self, *extra_args):
+        return AgentSpec(name="agy", vendor="google", command="agy", extra_args=list(extra_args))
+
+    def test_every_valued_spelling_is_removed_and_the_flag_is_injected(self):
+        for vendor in ("google", "weirdvendor"):
+            for args in (
+                ["--sandbox=false"],
+                ["--sandbox=0"],
+                ["--sandbox=FALSE"],
+                ["--sandbox=f"],
+                ["--sandbox=true"],
+                ["--sandbox=read-only"],
+                ["--sandbox="],
+                ["-sandbox=false"],
+                ["--sandbox", "--sandbox=false"],
+                ["--sandbox=false", "--sandbox"],
+            ):
+                with self.subTest(vendor=vendor, args=args):
+                    argv = privilege.enforce_read_only(vendor, list(args))
+                    self.assertEqual(argv, ["--sandbox"])
+
+    def test_the_rest_of_the_argv_is_kept(self):
+        self.assertEqual(
+            privilege.enforce_read_only("google", ["--yolo", "--sandbox=false", "--mode", "plan"]),
+            ["--sandbox", "--yolo", "--mode", "plan"],
+        )
+
+    def test_a_false_value_is_reported_as_turning_the_sandbox_off(self):
+        for args in (
+            ["--sandbox=false"],
+            ["--sandbox=0"],
+            ["--sandbox=FALSE"],
+            ["--sandbox", "--sandbox=false"],
+        ):
+            with self.subTest(args=args):
+                warnings = privilege.audit_agent(self._agy(*args))
+                self.assertEqual(len(warnings), 2, warnings)
+                self.assertEqual(warnings[0], agy_warning("agy"))
+                token = next(a for a in args if "=" in a)
+                self.assertIn(f"`{token}`", warnings[1])
+                self.assertIn("would turn agy's sandbox off", warnings[1])
+                self.assertIn("jury removes it", warnings[1])
+                self.assertNotIn("not agy's sandbox", warnings[1])
+
+    def test_an_unreadable_value_is_reported_as_one(self):
+        for args in (["--sandbox=read-only"], ["--sandbox="]):
+            with self.subTest(args=args):
+                warnings = privilege.audit_agent(self._agy(*args))
+                self.assertEqual(len(warnings), 2, warnings)
+                self.assertIn("not a value agy reads as true or false", warnings[1])
+
+    def test_both_kinds_are_named_in_their_own_sentences(self):
+        warnings = privilege.audit_agent(self._agy("--sandbox=0", "--sandbox=off", "--sandbox=F"))
+        self.assertEqual(len(warnings), 3, warnings)
+        self.assertIn("`--sandbox=0`, `--sandbox=F`", warnings[1])
+        self.assertIn("jury removes them", warnings[1])
+        self.assertIn("`--sandbox=off`", warnings[2])
+
+    def test_a_true_value_is_only_redundant(self):
+        for args in (["--sandbox=true"], ["--sandbox=1"], ["--sandbox", "--sandbox=True"]):
+            with self.subTest(args=args):
+                self.assertEqual(privilege.audit_agent(self._agy(*args)), [agy_warning("agy")])
+
+
+class AnAgySandboxThatIsAnotherOptionsValueIsNotTheSandbox(unittest.TestCase):
+    """Go's `flag` gives a string option the next token, whatever it is (#908 review).
+
+    In `--model --sandbox` the `--sandbox` is the model name: nothing was
+    injected, the audit said sandboxed, and agy ran without one. Parsing also
+    stops at the first positional, so a `--sandbox` after one is prompt text.
+    """
+
+    def test_every_value_option_consumes_the_sandbox(self):
+        for option in sorted(privilege._AGY_VALUE_OPTIONS):
+            for dashes in ("--", "-"):
+                args = [f"{dashes}{option}", "--sandbox"]
+                with self.subTest(args=args):
+                    self.assertFalse(privilege._is_sandboxed(args, vendor="google"))
+                    argv = privilege.enforce_read_only("google", list(args))
+                    self.assertEqual(argv, ["--sandbox", *args])
+                    self.assertTrue(privilege._is_sandboxed(argv, vendor="google"))
+
+    def test_the_list_holds_the_value_options_agy_help_names(self):
+        # From `agy --help` 1.2.12; each answered "flag needs an argument" alone.
+        for option in ("model", "log-file", "add-dir", "agent", "project", "conversation"):
+            with self.subTest(option=option):
+                self.assertIn(option, privilege._AGY_VALUE_OPTIONS)
+        for boolean in ("sandbox", "dangerously-skip-permissions", "continue", "c"):
+            with self.subTest(boolean=boolean):
+                self.assertNotIn(boolean, privilege._AGY_VALUE_OPTIONS)
+
+    def test_an_inline_value_consumes_nothing(self):
+        args = ["--model=gemini", "--sandbox"]
+        self.assertEqual(privilege.enforce_read_only("google", list(args)), args)
+
+    def test_a_sandbox_after_a_positional_or_terminator_is_not_a_flag(self):
+        # `---x` and `-=x` are Go's "bad flag syntax": parsing stops there too.
+        for args in (
+            ["review-this", "--sandbox"],
+            ["--", "--sandbox"],
+            ["-", "--sandbox"],
+            ["---x", "--sandbox"],
+            ["-=x", "--sandbox"],
+        ):
+            with self.subTest(args=args):
+                self.assertFalse(privilege._is_sandboxed(args, vendor="google"))
+                self.assertEqual(
+                    privilege.enforce_read_only("google", list(args)), ["--sandbox", *args]
+                )
+
+    def test_a_valued_sandbox_in_a_value_position_is_left_as_the_value(self):
+        args = ["--model", "--sandbox=false"]
+        self.assertEqual(privilege.enforce_read_only("google", list(args)), ["--sandbox", *args])
+        self.assertEqual(
+            privilege.audit_agent(
+                AgentSpec(name="agy", vendor="google", command="agy", extra_args=args)
+            ),
+            [agy_warning("agy")],
+        )
+
+    def test_codex_spellings_in_a_value_position_are_not_reported(self):
+        spec = AgentSpec(name="agy", vendor="google", command="agy", extra_args=["--model", "-s"])
+        self.assertEqual(privilege.audit_agent(spec), [agy_warning("agy")])
 
 
 if __name__ == "__main__":
