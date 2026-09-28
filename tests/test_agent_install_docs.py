@@ -470,7 +470,7 @@ class NoPageStillTellsAReaderTheOldStory(unittest.TestCase):
         """
         site = (REPO_ROOT / "website" / "docs.html").read_text(encoding="utf-8")
         self.assertIn('"#" + slug + "--" + href.slice(1)', site)
-        self.assertIn("rewrite(wrap, slug)", site)
+        self.assertIn("rewrite(wrap, slug, doc.ref)", site)
 
     def test_a_jump_within_the_open_document_does_not_re_render_it(self):
         """Carrying the slug made every in-page jump a full page load.

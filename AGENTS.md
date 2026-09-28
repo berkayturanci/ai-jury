@@ -54,8 +54,9 @@ Live agent tests are opt-in: `JURY_LIVE=1` (CLIs) / `JURY_LOCAL_LIVE=1`
   typed `ERR_*` code. The run continues unless `--strict`.
 - **CLI subcommands are argv-intercepts.** `jury init|config|comment|cache clear`
   are handled in `cli.main` *before* `argparse`, so the main flag surface stays
-  flat. The public flag set is locked by `tests/test_cli_contract.py`
-  (`DOCUMENTED_FLAGS`) — update it when you add a top-level flag.
+  flat. The public flag set is locked by `tests/test_cli_contract.py`, which
+  compares the parser with the README's "Stable flags" list and the flag tables
+  of `docs/parameters.md` — list a new top-level flag in both.
 - **Determinism.** Identical inputs ⇒ identical output (no wall-clock/random in
   logic). The markdown report is golden-tested.
 
@@ -63,7 +64,8 @@ Live agent tests are opt-in: `JURY_LIVE=1` (CLIs) / `JURY_LOCAL_LIVE=1`
 
 - **Report rendering** → regenerate goldens: `UPDATE_GOLDEN=1 PYTHONPATH=src
   python3 -m unittest tests.test_report_golden`; review the fixture diff.
-- **CLI `--help` / flags** → regenerate the help golden + update `DOCUMENTED_FLAGS`:
+- **CLI `--help` / flags** → regenerate the help golden, and list the flag in the
+  README's "Stable flags" and `docs/parameters.md`:
   `UPDATE_GOLDEN=1 PYTHONPATH=src python3 -m unittest tests.test_cli_contract`.
 - **Run metadata shape** → bump `metadata.SCHEMA_VERSION` and update
   `tests/test_metadata.py`.

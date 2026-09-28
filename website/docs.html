@@ -87,10 +87,22 @@
   (function () {
     "use strict";
 
-    var OWNER = "berkayturanci", REPO = "ai-jury", BRANCH = "main";
-    var RAW_ROOT = "https://raw.githubusercontent.com/" + OWNER + "/" + REPO + "/" + BRANCH + "/";
+    var OWNER = "berkayturanci", REPO = "ai-jury";
+    // The release this page documents. It read `main`, so a visitor could read
+    // behaviour no release had yet (#876). DOCS_TAG is a release surface
+    // (scripts/release_surfaces.py): the release pull request bumps it with every
+    // other file that names the version, and `make release-check` fails until it does.
+    var DOCS_TAG = "v1.20.1";
+    // Between a release pull request merging and its tag being pushed, the tag does
+    // not exist yet; a document added since the release is not in it either. Either
+    // way the page reads `main` instead and labels it as unreleased.
+    var FALLBACK_REF = "main";
+    var RAW_ROOT = "https://raw.githubusercontent.com/" + OWNER + "/" + REPO + "/" + DOCS_TAG + "/";
     var RAW_DOCS = RAW_ROOT + "docs/";
-    var BLOB_ROOT = "https://github.com/" + OWNER + "/" + REPO + "/blob/" + BRANCH + "/";
+    var BLOB_ROOT = "https://github.com/" + OWNER + "/" + REPO + "/blob/" + DOCS_TAG + "/";
+    var MAIN_RAW_ROOT = "https://raw.githubusercontent.com/" + OWNER + "/" + REPO + "/" + FALLBACK_REF + "/";
+    var MAIN_DOCS = MAIN_RAW_ROOT + "docs/";
+    var MAIN_BLOB_ROOT = "https://github.com/" + OWNER + "/" + REPO + "/blob/" + FALLBACK_REF + "/";
 
     // Registry — grouped docs. slug -> file under docs/
     var GROUPS = [
@@ -206,7 +218,13 @@
       try { return new URL(href, "https://x/docs/").pathname.replace(/^\//, ""); }
       catch (e) { return href; }
     }
-    function rewrite(container, slug) {
+    // `ref` is where the document itself was read from (see `fetchDoc`): a document
+    // that fell back to `main` links its relative paths and images on `main` too,
+    // since what it points at may not be in the release tag either.
+    function rewrite(container, slug, ref) {
+      var onMain = ref === FALLBACK_REF;
+      var blobRoot = onMain ? MAIN_BLOB_ROOT : BLOB_ROOT;
+      var rawRoot = onMain ? MAIN_RAW_ROOT : RAW_ROOT;
       // links
       Array.prototype.forEach.call(container.querySelectorAll("a[href]"), function (a) {
         var href = a.getAttribute("href");
@@ -234,14 +252,14 @@
         // `route()` splits it back off.
         if (FILE_TO_SLUG[path]) { a.setAttribute("href", "#" + FILE_TO_SLUG[path] + (frag && frag !== "#" ? "--" + frag.slice(1) : "")); a.removeAttribute("target"); return; }
         // other repo file → blob (or raw for assets handled by img)
-        a.setAttribute("href", BLOB_ROOT + path + frag);
+        a.setAttribute("href", blobRoot + path + frag);
         a.target = "_blank"; a.rel = "noopener";
       });
       // images
       Array.prototype.forEach.call(container.querySelectorAll("img[src]"), function (img) {
         var src = img.getAttribute("src");
         if (!src || /^(https?:)?\/\//i.test(src) || /^data:/i.test(src)) return;
-        img.setAttribute("src", RAW_ROOT + resolveRel(src));
+        img.setAttribute("src", rawRoot + resolveRel(src));
         img.loading = "lazy";
       });
       // wrap tables for horizontal scroll
@@ -291,10 +309,10 @@
       currentSlug = null;
       buildSidebar(null);
       var html = '<p class="docs-kicker">Reference</p><h1 class="docs-h1">Documentation</h1>';
-      html += '<p class="docs-lede">Everything about ai-jury, rendered live from the repository\u2019s <code>docs/</code>. Pick a topic.</p>';
+      html += '<p class="docs-lede">Everything about ai-jury ' + DOCS_TAG + ', rendered from the repository\u2019s <code>docs/</code> at the <code>' + DOCS_TAG + '</code> release tag. Pick a topic.</p>';
       html += '<div class="docs-block"><h2>Documentation</h2><div class="dh-grid">'
         + '<a class="dh-card" href="coverage.html"><span class="dh-t">Test coverage</span><span class="dh-f mono">live gauge + per-file report</span></a>'
-        + '<a class="dh-card" href="https://github.com/' + OWNER + "/" + REPO + '/blob/' + BRANCH + '/README.md"><span class="dh-t">README</span><span class="dh-f mono">on GitHub</span></a>'
+        + '<a class="dh-card" href="' + BLOB_ROOT + 'README.md"><span class="dh-t">README</span><span class="dh-f mono">on GitHub</span></a>'
         + "</div></div>";
       GROUPS.forEach(function (g) {
         html += '<div class="docs-block"><h2>' + g.title + "</h2><div class=\"dh-grid\">";
@@ -305,7 +323,7 @@
       });
       html += '<div class="docs-block"><h2>More</h2><div class="dh-grid">'
         + '<a class="dh-card" href="coverage.html"><span class="dh-t">Test coverage</span><span class="dh-f mono">live gauge + report</span></a>'
-        + '<a class="dh-card" href="https://github.com/' + OWNER + "/" + REPO + '/blob/' + BRANCH + '/README.md"><span class="dh-t">README</span><span class="dh-f mono">on GitHub</span></a>'
+        + '<a class="dh-card" href="' + BLOB_ROOT + 'README.md"><span class="dh-t">README</span><span class="dh-f mono">on GitHub</span></a>'
         + "</div></div>";
       contentEl.innerHTML = html;
       document.title = "Documentation — ai-jury";
@@ -313,6 +331,20 @@
     }
 
     /* ---- doc view ---- */
+    // The markdown of one document and the ref it came from: the release tag, or
+    // `main` when the tag has no such file (a 404). Any other failure is an error,
+    // not a reason to show unreleased text.
+    function fetchDoc(file) {
+      return fetch(RAW_DOCS + file, { cache: "no-store" }).then(function (r) {
+        if (r.ok) { return r.text().then(function (md) { return { md: md, ref: DOCS_TAG }; }); }
+        if (r.status !== 404) { throw new Error("HTTP " + r.status); }
+        return fetch(MAIN_DOCS + file, { cache: "no-store" }).then(function (m) {
+          if (!m.ok) { throw new Error("HTTP " + m.status); }
+          return m.text().then(function (md) { return { md: md, ref: FALLBACK_REF }; });
+        });
+      });
+    }
+
     // One scroll, with the sticky nav's own offset — the same 76px `buildTOC` uses.
     // Without it a jump lands with the heading under the header, which is the
     // difference between "took me there" and "took me nearly there".
@@ -341,10 +373,9 @@
       buildSidebar(slug);
       contentEl.innerHTML = '<div class="doc-loading"><div class="doc-spinner"></div>Loading ' + item.title + "…</div>";
       window.scrollTo(0, 0);
-      fetch(RAW_DOCS + item.file, { cache: "no-store" })
-        .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
-        .then(function (md) {
-          var raw = marked.parse(md, { gfm: true, breaks: false });
+      fetchDoc(item.file)
+        .then(function (doc) {
+          var raw = marked.parse(doc.md, { gfm: true, breaks: false });
           // Fail closed: marked does not sanitize, so without DOMPurify the markdown's raw
           // HTML would go into the page as it is. A page that cannot sanitize shows the
           // error box and the GitHub link instead (#815).
@@ -356,10 +387,12 @@
           // meta row
           var meta = document.createElement("div");
           meta.className = "doc-meta";
-          meta.innerHTML = '<span class="doc-source">docs/' + item.file + '</span>'
-            + '<a class="doc-edit" href="' + BLOB_ROOT + "docs/" + item.file + '" target="_blank" rel="noopener">View source on GitHub →</a>';
+          var released = doc.ref === DOCS_TAG;
+          meta.innerHTML = '<span class="doc-source">docs/' + item.file + " \u00b7 "
+            + (released ? DOCS_TAG : FALLBACK_REF + " (unreleased: not in " + DOCS_TAG + ")") + "</span>"
+            + '<a class="doc-edit" href="' + (released ? BLOB_ROOT : MAIN_BLOB_ROOT) + "docs/" + item.file + '" target="_blank" rel="noopener">View source on GitHub →</a>';
           currentSlug = slug;
-          rewrite(wrap, slug);
+          rewrite(wrap, slug, doc.ref);
           // syntax highlight code blocks
           if (window.hljs) {
             Array.prototype.forEach.call(wrap.querySelectorAll("pre code"), function (block) {

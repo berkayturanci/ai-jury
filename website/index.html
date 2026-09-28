@@ -317,11 +317,13 @@
           marginal cost, and a CLI seat runs the vendor's own agent — not a raw model API call.
         </p>
         <p class="muted" style="margin-top:1rem">
-          <strong style="color:var(--text)">Measured on a small labeled benchmark:</strong> run solo,
-          <em>every</em> model missed seeded bugs — the best (Claude, Qwen) caught
-          <strong style="color:var(--text)">67%</strong>, Codex and Agy 33%. The four-vendor
-          <strong style="color:var(--text)">panel caught 100%</strong> — the lift holds whichever single
-          model you'd have picked. (Small N=5, directional; the precision/verification effect is within noise.)
+          <strong style="color:var(--text)">Measured on a small labeled benchmark</strong>
+          (v1.1.0, 2026-06-05; 5 fixtures, 3 seeded bugs, one run): the four-vendor
+          <strong style="color:var(--text)">panel caught 3/3 seeded bugs vs 2/3</strong> for the best
+          single model (Claude, Qwen; Codex and Agy 1/3),
+          <strong style="color:var(--text)">at lower precision: 0.75</strong>, and 0.60 for the full
+          jury, against 1.00 for every model run alone. More reviewers found more bugs and raised more
+          false alarms. Small N, directional, not yet repeated on the current release.
           <a href="docs.html#benchmark-results">See the benchmark →</a>
         </p>
       </div>
