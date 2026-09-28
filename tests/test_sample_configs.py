@@ -458,9 +458,19 @@ WORDING_SURFACES = (
 
 
 def _unreleased() -> str:
+    """The current release notes: [Unreleased], or the newest release right after a cut.
+
+    A release cut moves every [Unreleased] entry under a version heading and leaves
+    [Unreleased] empty; those notes are still the current wording, so an empty
+    [Unreleased] means the newest released section (as in test_privacy_claims).
+    """
     text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    start = text.index("## [Unreleased]")
-    return text[start : text.index("\n## [", start + 1)]
+    head = text.index("## [Unreleased]")
+    newest = text.index("\n## [", head + 1)
+    if text[head:newest].strip() != "## [Unreleased]":
+        return text[head:newest]
+    end = text.find("\n## [", newest + 1)
+    return text[newest : end if end != -1 else len(text)]
 
 
 class CliSeatWordingIsScoped(unittest.TestCase):
