@@ -57,6 +57,17 @@ inputs:
       number.
     required: false
     default: ""
+  diff-file:
+    description: >-
+      Path to a unified diff to review, relative to the workspace, instead of
+      the pull request (or, outside a pull request, the diff against the base
+      branch). Empty (the default) keeps that behaviour. With `args: --mock`
+      the review then needs no network, no token and no key, which is how this
+      repository's own CI runs the Action on every pull request (#900). The
+      value reaches `jury` as one `--diff-file=` argument, so it cannot add a
+      flag.
+    required: false
+    default: ""
 
 runs:
   using: "composite"
@@ -107,6 +118,7 @@ runs:
         XAI_API_KEY: ${{ inputs.xai-api-key }}
         INPUT_ARGS: ${{ inputs.args }}
         INPUT_MIN_VENDORS: ${{ inputs.min-vendors }}
+        INPUT_DIFF_FILE: ${{ inputs.diff-file }}
         PR_NUM: ${{ github.event.pull_request.number }}
         BASE_REF: ${{ github.base_ref }}
         # The workflow is the repository's own deliberate CI, so a committed jury.toml with
@@ -149,7 +161,11 @@ runs:
           *" --min-vendors "*|*" --min-vendors="*) GUARD="" ;;
           *" --no-min-vendors "*|*" --no-min-vendors="*) GUARD="" ;;
         esac
-        if [ -n "$PR_NUM" ] && [ "$PR_NUM" != "null" ]; then
+        # An explicit diff wins over the event (#900). Joined to its flag with `=`
+        # and quoted, so a value such as `--post` is a file name, never a flag.
+        if [ -n "$INPUT_DIFF_FILE" ]; then
+          jury --diff-file="$INPUT_DIFF_FILE" $INPUT_ARGS $GUARD
+        elif [ -n "$PR_NUM" ] && [ "$PR_NUM" != "null" ]; then
           jury --pr "$PR_NUM" $INPUT_ARGS $GUARD
         else
           git diff "origin/$BASE_REF...HEAD" | jury --diff-file - $INPUT_ARGS $GUARD
