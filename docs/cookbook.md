@@ -687,12 +687,12 @@ chair = "claude-api"
 [[agent]]
 name = "claude-api"
 vendor = "anthropic-api"     # reads ANTHROPIC_API_KEY
-model = "claude-sonnet-4-5"  # any model your key can call
+model = "claude-opus-5-5"   # any model your key can call
 
 [[agent]]
 name = "codex-api"
 vendor = "openai-api"        # reads OPENAI_API_KEY
-model = "gpt-5"
+model = "gpt-6-sol"
 ```
 
 `gemini-api-key` feeds a `vendor = "google-api"` seat and `xai-api-key` a
@@ -704,6 +704,8 @@ on every CI run, so the example cannot drift from the Action again.
 release the `v1` alias points at, `@vX.Y.Z` runs X.Y.Z, and a branch or SHA runs the
 version in that tree's `pyproject.toml`. `version: "X.Y.Z"` overrides it, and
 `version: latest` installs the newest release on PyPI (the default before #867).
+A branch or SHA ref installs the version its own tree declares, and fails until that
+release is on PyPI; pass `version: latest` or a released number instead.
 
 **The Action refuses a collapsed panel by default.** `min-vendors` defaults to
 `2`, so a workflow that says nothing still gets the cross-vendor guard — before

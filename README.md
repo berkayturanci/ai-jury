@@ -418,12 +418,12 @@ chair = "claude-api"
 [[agent]]
 name = "claude-api"
 vendor = "anthropic-api"     # reads ANTHROPIC_API_KEY
-model = "claude-sonnet-4-5"  # any model your key can call
+model = "claude-opus-5-5"   # any model your key can call
 
 [[agent]]
 name = "codex-api"
 vendor = "openai-api"        # reads OPENAI_API_KEY
-model = "gpt-5"
+model = "gpt-6-sol"
 ```
 
 The keys alone do not form a panel: without a `jury.toml` the jury seats its built-in
@@ -433,7 +433,9 @@ Two vendors is also what the Action's `min-vendors` guard asks for by default. A
 is added the same way. `jury init --agents claude-api,codex-api` scaffolds the file
 without the `model` lines, which you fill in.
 `@v1` installs the ai-jury release that `v1` points at, and `@vX.Y.Z` installs X.Y.Z;
-`version:` overrides it (`latest` for the newest on PyPI).
+`version:` overrides it (`latest` for the newest on PyPI). A branch or SHA ref installs
+the version its own tree declares, and fails until that release is on PyPI; pass
+`version: latest` or a released number instead.
 
 
 A sample report is in [`docs/example-run.md`](docs/example-run.md). For a **real**

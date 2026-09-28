@@ -47,7 +47,10 @@ LATEST = "latest"
 #: pinned requirement into a range, a marker, a URL or a second argument. Each
 #: separator must be followed by a run of alphanumerics and a run can only end at a
 #: separator, so there is one way to match any string and no backtracking blow-up.
-_VERSION = re.compile(r"v?\d[0-9A-Za-z]*(?:[._+!-][0-9A-Za-z]+)*")
+#: ASCII only: `[0-9]`, not `\d`, which is Unicode-aware and lets `'\u0661.0'` (an
+#: Arabic-Indic digit) through to pip. This is a safety filter, not PEP 440; pip
+#: validates what passes it.
+_VERSION = re.compile(r"v?[0-9][0-9A-Za-z]*(?:[._+!-][0-9A-Za-z]+)*")
 
 
 class SpecError(ValueError):
@@ -65,12 +68,14 @@ def requirement(explicit: str, pyproject_text: str | None) -> str:
         return PACKAGE
     if wanted:
         if not _VERSION.fullmatch(wanted):
-            raise SpecError(f"version must be a release number or {LATEST!r} (got {wanted!r})")
+            raise SpecError(
+                f"version must look like a version number or be {LATEST!r} (got {wanted!r})"
+            )
         return f"{PACKAGE}=={wanted}"
     if pyproject_text is None:
         raise SpecError(
             "cannot read the Action's own pyproject.toml to pin the release; "
-            f"pass `version:` (a release number, or {LATEST!r})"
+            f"pass `version:` (a released version number, or {LATEST!r})"
         )
     try:
         declared = tomllib.loads(pyproject_text)["project"]["version"]
@@ -78,7 +83,7 @@ def requirement(explicit: str, pyproject_text: str | None) -> str:
         raise SpecError(f"the Action's pyproject.toml names no project version ({exc})") from exc
     if not isinstance(declared, str) or not _VERSION.fullmatch(declared):
         raise SpecError(
-            f"the Action's pyproject.toml version is not a release number: {declared!r}"
+            f"the Action's pyproject.toml version does not look like a version number: {declared!r}"
         )
     return f"{PACKAGE}=={declared}"
 
@@ -99,7 +104,9 @@ def main(environ: dict[str, str] | None = None) -> int:
     except SpecError as exc:
         print(f"ai-jury: {exc}", file=sys.stderr)
         return 2
-    print(spec)
+    # No newline: on Windows sys.stdout writes "\n" as "\r\n", and the step's
+    # `$(...)` strips only the "\n", so the CR would reach pip as part of the pin.
+    sys.stdout.write(spec)
     return 0
 
 

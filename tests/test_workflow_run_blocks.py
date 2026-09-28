@@ -905,7 +905,7 @@ class AnInterpolatedExpressionIsCaughtInEveryKey(unittest.TestCase):
         target = directory / "action.yml"
         self._insert(
             target,
-            '        python -m pip install "$SPEC"',
+            '        echo "ai-jury: installing $SPEC"',
             f"        {self.OFFENDING_SH}",
         )
 

@@ -50,8 +50,11 @@ inputs:
       ai-jury package version to install. Empty (the default) installs the
       release this Action's own tree declares in its pyproject.toml, so
       `@vX.Y.Z` runs ai-jury X.Y.Z and `@v1` runs the release the alias
-      points at (#867). `latest` installs the newest release on PyPI, the
-      behaviour before #867; any other value must be a release number.
+      points at (#867). A branch or SHA ref installs the version its own tree
+      declares, and fails until that release is on PyPI; pass `version: latest`
+      or a released number instead. `latest` installs the newest release on
+      PyPI, the behaviour before #867; any other value must look like a version
+      number.
     required: false
     default: ""
 
@@ -79,8 +82,20 @@ runs:
         INPUT_VERSION: ${{ inputs.version }}
       run: |
         SPEC="$(python "$GITHUB_ACTION_PATH/scripts/action_install_spec.py")" || exit 2
+        # On Windows Python's stdout turns "\n" into "\r\n" and command substitution
+        # strips only the "\n", so a CR would reach pip. The script writes no newline
+        # at all; this strips a stray CR anyway. `$'\r'` is bash (3.2+), the shell of
+        # this step on every runner OS.
+        SPEC="${SPEC%$'\r'}"
         echo "ai-jury: installing $SPEC"
-        python -m pip install "$SPEC"
+        # pip's own error does not say why a pinned version is missing. Between a
+        # version bump and its PyPI publication, a branch or SHA ref pins a release
+        # that does not exist yet, so name the way out. $SPEC is the script's
+        # validated output, not an input.
+        if ! python -m pip install "$SPEC"; then
+          echo "ai-jury: $SPEC could not be installed. A branch or SHA ref installs the version its own tree declares, and fails until that release is on PyPI; pass version: latest or a released number." >&2
+          exit 1
+        fi
 
     - name: Run ai-jury
       shell: bash
