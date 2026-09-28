@@ -19,7 +19,9 @@ Check a config without running a review:
 jury --config-validate --config jury.toml
 ```
 
-Exit codes: `0` valid (warnings printed if any), `2` invalid. During a normal run
+Exit codes: `0` valid (warnings printed if any), `2` invalid — or unreadable: a
+`--config` that names a directory, or a file without read permission, prints
+`error: cannot read config <path>: <reason>`. During a normal run
 the config is validated too; pass `--strict-config` to turn warnings into hard
 errors (exit `2`).
 
