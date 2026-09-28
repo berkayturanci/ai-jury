@@ -193,9 +193,19 @@ def _is_sandboxed(extra_args: list[str], vendor: str = "") -> bool:
     from any other vendor — e.g. ``["--sandbox", "--dangerously-skip-permissions",
     "--yolo"]`` — is no longer accepted as a sandbox. When a restricting sandbox
     is active, an otherwise-broad flag no longer grants real powers (issue #100).
+
+    The VALUE form is codex's, and only codex's (#901): it was accepted from every
+    vendor, so a bring-your-own ``aider`` or ``cursor-agent`` seat that wrote
+    ``--sandbox read-only`` — the very flag the audit's own warning names — was
+    audited as confined and passed ``--strict``, though neither CLI has such a
+    sandbox (cursor-agent's ``--sandbox`` takes ``enabled``/``disabled``, aider has
+    none). The codex identity is :func:`_is_codex`, the rule enforcement uses to
+    inject ``-s read-only``, so what counts as confined here is what enforcement
+    would have produced there.
     """
     vendor = normalise_vendor(vendor)
     is_agy = vendor == "google"
+    is_codex = _is_codex(vendor)
     args = list(extra_args)
     for i, a in enumerate(args):
         # Equals form (issue #316/L-6): `-s=read-only` / `--sandbox=read-only`,
@@ -204,15 +214,15 @@ def _is_sandboxed(extra_args: list[str], vendor: str = "") -> bool:
         # `--strict`.
         if a.startswith(("-s=", "--sandbox=")):
             value = a.split("=", 1)[1]
-            if value in _RESTRICTING_SANDBOX_VALUES:
+            if is_codex and value in _RESTRICTING_SANDBOX_VALUES:
                 return True
             if a.startswith("--sandbox=") and is_agy and value == "":
                 return True
             continue
         if a in ("-s", "--sandbox"):
             nxt = args[i + 1] if i + 1 < len(args) else ""
-            # Codex (and any vendor): an explicit read-only sandbox value.
-            if nxt in _RESTRICTING_SANDBOX_VALUES:
+            # Codex only: an explicit read-only sandbox value.
+            if is_codex and nxt in _RESTRICTING_SANDBOX_VALUES:
                 return True
             # agy/gemini: bare boolean --sandbox (no value, or another flag next).
             if a == "--sandbox" and is_agy and (nxt == "" or nxt.startswith("-")):
@@ -1050,8 +1060,10 @@ _CHECKOUT_CONFIG_RISKS: dict[str, str] = {
 def _checkout_config_warning(label: str, command: str) -> str:
     """The sentence for a CLI that obeys its working directory's config (#859).
 
-    Empty for any other command. Appended to the seat's one warning rather than
-    added beside it, so a seat still gets one warning, and says it once.
+    Empty for any other command. Keyed by the binary, not the adapter: no argv
+    sandbox stops either CLI reading its checkout's config, so the risk is
+    reported whatever the seat's sandbox status (#901). Appended to the seat's
+    one warning where it has one, so a seat still gets one warning.
     """
     name = command.replace("\\", "/").rsplit("/", 1)[-1].lower()
     if name.endswith(".exe"):
@@ -1063,6 +1075,20 @@ def _checkout_config_warning(label: str, command: str) -> str:
         f" Also, {name} {risk}. It runs in the directory jury was started from — on "
         f"a pull request, the author's checkout — so seat '{label}' only on "
         f"checkouts you trust."
+    )
+
+
+def _checkout_only_warning(label: str, checkout: str) -> str:
+    """The checkout-config warning on its own, for a seat with no other one (#901).
+
+    Used where the audit would otherwise accept the seat — a sandbox flag it
+    recognizes, or the claude lockdown — because neither stops aider or
+    cursor-agent obeying the config in the checkout it runs in. Reporting it
+    is what makes ``--strict`` fail such a seat.
+    """
+    return (
+        f"agent '{label}' is confined only in what its flags control; its CLI's "
+        f"checkout config is not.{checkout}"
     )
 
 
@@ -1122,6 +1148,10 @@ def audit_agent(spec) -> list[str]:
     # about a seat whose name says one CLI and whose adapter key says another.
     extra_args = enforce_read_only(vendor, list(getattr(spec, "extra_args", []) or []))
     args_text = _args_str(extra_args)
+    # A CLI that obeys its working directory's config (aider, cursor-agent) is
+    # told so on every path below, sandboxed or not (#859, #901): no flag in the
+    # argv stops it reading the checkout's config.
+    checkout = _checkout_config_warning(label, str(getattr(spec, "command", "") or ""))
 
     is_claude = vendor == "anthropic"
 
@@ -1176,6 +1206,8 @@ def audit_agent(spec) -> list[str]:
                 f"reviewer, so they have no effect there. A reviewer needs none of "
                 f"them — drop them."
             )
+        if checkout:
+            warnings.append(_checkout_only_warning(label, checkout))
         return warnings
 
     # agy is spawned with `--sandbox` (enforced above), and that is still not
@@ -1231,12 +1263,9 @@ def audit_agent(spec) -> list[str]:
                     f"reads its prompt."
                 )
             warnings.append(f"agent '{label}' is configured with {named}, which {effect}; {tail}")
+        if checkout:
+            warnings.append(_checkout_only_warning(label, checkout))
         return warnings
-    # A bring-your-own CLI that obeys its working directory's config is told so,
-    # in whichever warning below says it is not sandboxed (#859).
-    checkout = ""
-    if vendor in GENERIC_CLI_VENDORS:
-        checkout = _checkout_config_warning(label, str(getattr(spec, "command", "") or ""))
     # Not sandboxed. A broad-powers flag gets a specific message…
     for flag in _DANGEROUS_FLAGS:
         if flag in extra_args or flag in args_text:
@@ -1251,6 +1280,18 @@ def audit_agent(spec) -> list[str]:
     # blind spot (issue #300): an unknown-vendor or no-flag agent previously
     # produced ZERO warnings and ran via the generic adapter without the
     # read-only guarantee — and so `--strict` could not fail it on this basis.
+    # A bring-your-own CLI (#901 item 1): jury adds and checks no sandbox for it,
+    # so telling its operator there is "no `--sandbox`" is wrong for a cursor-agent
+    # seat that passes its own `--sandbox enabled`, and "add a sandbox" names a fix
+    # jury could not verify either way.
+    if vendor in GENERIC_CLI_VENDORS:
+        warnings.append(
+            f"agent '{label}' is not under a sandbox jury can verify: jury adds or "
+            f"checks none for a bring-your-own CLI, so its own flags are the whole "
+            f"restriction, and a prompt injection in the diff could reach "
+            f"write/tool/network if they allow it. Run with `--strict` to fail.{checkout}"
+        )
+        return warnings
     warnings.append(
         f"agent '{label}' is not running under a recognized read-only sandbox "
         f"(no `-s read-only` / `--sandbox`); a prompt injection in the diff could "

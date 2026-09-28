@@ -20,6 +20,9 @@
      .cursor/ hooks), which can run commands. The same argv is in the docs, the
      example config and `jury init`; tests/test_sample_configs.py pins it. */
   var UNSANDBOXED_LABEL = "unsandboxed — runs with your permissions";
+  // The two lines `jury init` writes under the label (scaffold.UNSANDBOXED_HINT,
+  // #901): the flags do not cover the config the CLI reads from the checkout.
+  var UNSANDBOXED_HINT = "# It reads its own config from the checkout it runs in, which can run commands;\n# seat it only on checkouts you trust. See docs/configuration.md.";
   // cursor-agent: `--mode ask` is its read-only mode and `--sandbox enabled` its
   // sandbox; `--trust` is what headless `--print` needs to start in a directory it
   // has not seen before — and it trusts that directory's `.cursor/` hooks too.
@@ -565,7 +568,7 @@
       lines.push("");
       ags.forEach(function (n) {
         var a = AGENTS[n];
-        if (a.unsandboxed) lines.push("# " + UNSANDBOXED_LABEL);
+        if (a.unsandboxed) lines.push("# " + UNSANDBOXED_LABEL, UNSANDBOXED_HINT);
         lines.push("[[agent]]");
         lines.push('name = "' + n + '"');
         lines.push('vendor = "' + a.vendor + '"');
@@ -1317,7 +1320,7 @@
         logo: "logos/cursor.svg",
         color: "var(--c-cursor)",
         desc: "Headless CLI agent from the AI-native code editor, in its ask mode and sandbox. Unsandboxed \u2014 runs with your permissions: it trusts the checkout's .cursor/ hooks, so seat it only on checkouts you trust.",
-        config: "# " + UNSANDBOXED_LABEL + '\n[[agent]]\nname = "cursor"\nvendor = "cli"\ncommand = "cursor-agent"\nextra_args = ' + tomlArray(CURSOR_READ_ONLY_ARGS) + '\nprompt_mode = "arg"',
+        config: "# " + UNSANDBOXED_LABEL + "\n" + UNSANDBOXED_HINT + '\n[[agent]]\nname = "cursor"\nvendor = "cli"\ncommand = "cursor-agent"\nextra_args = ' + tomlArray(CURSOR_READ_ONLY_ARGS) + '\nprompt_mode = "arg"',
         command: "jury --pr 123"
       },
       {
@@ -1331,7 +1334,7 @@
         logo: "logos/aider.svg",
         color: "var(--c-aider)",
         desc: "Terminal pair-programming agent in ask mode, as a dry run with no commits. Unsandboxed \u2014 runs with your permissions: it reads .aider.conf.yml and .env from the checkout, which can run commands, so seat it only on checkouts you trust.",
-        config: "# " + UNSANDBOXED_LABEL + '\n[[agent]]\nname = "aider"\nvendor = "cli"\ncommand = "aider"\nextra_args = ' + tomlArray(AIDER_READ_ONLY_ARGS) + '\nprompt_mode = "arg"',
+        config: "# " + UNSANDBOXED_LABEL + "\n" + UNSANDBOXED_HINT + '\n[[agent]]\nname = "aider"\nvendor = "cli"\ncommand = "aider"\nextra_args = ' + tomlArray(AIDER_READ_ONLY_ARGS) + '\nprompt_mode = "arg"',
         command: "jury --pr 123"
       },
       {
@@ -1345,7 +1348,7 @@
         logo: "logos/opencode.svg",
         color: "#10b981",
         desc: "Wrap any coding CLI (Goose, OpenHands, Devin) as a juror. Unsandboxed \u2014 runs with your permissions, so pass it the CLI's own read-only flags.",
-        config: "# " + UNSANDBOXED_LABEL + '\n[[agent]]\nname = "my-agent"\nvendor = "cli"\ncommand = "my-tool"\nextra_args = ["review"]\nprompt_mode = "arg"',
+        config: "# " + UNSANDBOXED_LABEL + "\n" + UNSANDBOXED_HINT + '\n[[agent]]\nname = "my-agent"\nvendor = "cli"\ncommand = "my-tool"\nextra_args = ["review"]\nprompt_mode = "arg"',
         command: "jury --pr 123"
       },
 

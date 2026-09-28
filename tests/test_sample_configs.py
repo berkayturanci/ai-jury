@@ -379,7 +379,9 @@ class CliSeatsAreReadOnlyAndLabelled(unittest.TestCase):
                 self.assertEqual(seat.get("prompt_mode"), '"arg"')
         self.assertFalse(AUTO_APPROVE_FLAGS & (set(cursor) | set(aider)))
         # …and the generated TOML writes both the argv and the label.
-        self.assertIn('if (a.unsandboxed) lines.push("# " + UNSANDBOXED_LABEL);', src)
+        self.assertIn(
+            'if (a.unsandboxed) lines.push("# " + UNSANDBOXED_LABEL, UNSANDBOXED_HINT);', src
+        )
         self.assertIn('lines.push("extra_args = " + tomlArray(a.extra_args));', src)
 
     def test_the_site_shows_the_label_where_the_seat_is_picked_and_described(self):
@@ -583,6 +585,38 @@ class SampleModelIdsAreCurrent(unittest.TestCase):
             with self.subTest(seat=name):
                 self.assertEqual(agents[name]["model"], f'"{templates[name]["model"]}"')
         self.assertEqual(agents["grok"]["model"], f'"{scaffold.SAMPLE_MODELS["xai"]}"')
+
+    def test_the_site_writes_the_cli_seat_jury_init_writes(self):
+        # #901 item 2: the site carried only the one-line label, not the two-line
+        # hint `jury init` writes under it. The demo's aider block and the aider
+        # card are now byte for byte the block `jury init --agents aider` writes.
+        src = APP_JS.read_text(encoding="utf-8")
+        hint = "\n".join(scaffold.UNSANDBOXED_HINT)
+        self.assertEqual(_js_const(src, "UNSANDBOXED_HINT"), hint)
+        rendered = scaffold.render_toml(scaffold.build_config(["aider"]))
+        init_block = rendered[rendered.index(f"# {LABEL}") :].strip()
+
+        # The demo, rendered the way its generator does (its source lines are
+        # pinned in test_the_site_builder_seats_are_read_only_and_labelled).
+        seat = _builder_agents(src)["aider"]
+        demo = []
+        if seat.get("unsandboxed") == "true":
+            demo += [f"# {_js_const(src, 'UNSANDBOXED_LABEL')}", _js_const(src, "UNSANDBOXED_HINT")]
+        demo += ["[[agent]]", 'name = "aider"', f"vendor = {seat['vendor']}"]
+        demo.append(f"command = {seat['command']}")
+        argv = _js_array(src, seat["extra_args"]) or []
+        demo.append("extra_args = [" + ", ".join(f'"{a}"' for a in argv) + "]")
+        demo.append(f"prompt_mode = {seat['prompt_mode']}")
+        self.assertEqual("\n".join(demo), init_block)
+
+        cards = _site_cards(src)
+        self.assertEqual(cards["aider"]["config"].strip(), init_block)
+        for card_id in ("cursor-cli", "generic-cli"):
+            with self.subTest(card=card_id):
+                self.assertTrue(
+                    cards[card_id]["config"].startswith(f"# {LABEL}\n{hint}\n[[agent]]\n"),
+                    cards[card_id]["config"],
+                )
 
     def test_the_site_cli_argv_is_the_one_every_sample_uses(self):
         # One argv per CLI (#859 review): the site's aider argv is the template

@@ -1115,7 +1115,10 @@ class TheAuditReadsTheArgvTheSeatIsSpawnedWith(unittest.TestCase):
                 warnings = privilege.audit_agent(spec)
                 self.assertEqual(privilege.enforce_read_only(vendor, ["-p"]), ["-p"])
                 self.assertEqual(len(warnings), 1)
-                self.assertIn("not running under a recognized read-only sandbox", warnings[0])
+                # Not "no `--sandbox` … add a sandbox" (#901): jury adds and checks
+                # none for a bring-your-own CLI, which may well carry its own.
+                self.assertIn("not under a sandbox jury can verify", warnings[0])
+                self.assertNotIn("Add a sandbox", warnings[0])
 
     def test_the_same_seat_is_clean_or_warned_according_to_its_adapter(self):
         """The pair that isolates what changed: one config, two adapters.
@@ -1131,9 +1134,9 @@ class TheAuditReadsTheArgvTheSeatIsSpawnedWith(unittest.TestCase):
         self.assertEqual(privilege.audit_agent(native), [])
         warnings = privilege.audit_agent(fronted)
         self.assertEqual(len(warnings), 1)
-        # The generic sandbox message, not Claude's: the `cli` adapter speaks no
+        # The bring-your-own-CLI message, not Claude's: the `cli` adapter speaks no
         # `--disallowed-tools`, and it is the adapter that decides what is spoken.
-        self.assertIn("not running under a recognized read-only sandbox", warnings[0])
+        self.assertIn("not under a sandbox jury can verify", warnings[0])
 
     def test_extra_args_that_re_enable_writing_are_still_caught(self):
         # The audit must not go blind on the configs it exists for. A sandbox the
@@ -1161,6 +1164,97 @@ class TheAuditReadsTheArgvTheSeatIsSpawnedWith(unittest.TestCase):
         self.assertEqual(adapters._read_only_extra_args(spec), ["--sandbox"])
         self.assertEqual(len(warnings), 1)
         self.assertIn("not running under a recognized read-only sandbox", warnings[0])
+
+
+class CheckoutConfigRiskIsReportedWhateverTheSandbox(unittest.TestCase):
+    """aider and cursor-agent obey the checkout's config; no argv sandbox stops it (#901).
+
+    `_is_sandboxed` accepted codex's value form, `--sandbox read-only`, from every
+    vendor, and the checkout-config sentence was attached only after the
+    sandboxed early return. A seat that added the flag the warning itself named
+    was therefore audited clean and passed `--strict`.
+    """
+
+    SEATS = {
+        "aider": AgentSpec(
+            name="aider", vendor="cli", command="aider", extra_args=["--sandbox", "read-only"]
+        ),
+        "cursor-agent": AgentSpec(
+            name="cursor",
+            vendor="cli",
+            command="cursor-agent",
+            extra_args=["-p", "--trust", "--mode", "ask", "--sandbox", "read-only"],
+        ),
+        "cursor-agent (xai, equals form)": AgentSpec(
+            name="grok",
+            vendor="xai",
+            command="cursor-agent",
+            extra_args=["-p", "--sandbox=read-only"],
+        ),
+        "aider (-s)": AgentSpec(
+            name="aider-s", vendor="cli", command="aider", extra_args=["-s", "read-only"]
+        ),
+    }
+    RISK = {"aider": ".aider.conf.yml", "cursor-agent": ".cursor/hooks.json"}
+
+    def test_a_read_only_value_is_not_a_sandbox_for_a_bring_your_own_cli(self):
+        for name, spec in self.SEATS.items():
+            with self.subTest(seat=name):
+                self.assertFalse(privilege._is_sandboxed(spec.extra_args, vendor=spec.vendor))
+
+    def test_codex_read_only_is_still_a_sandbox(self):
+        for args in (["-s", "read-only"], ["--sandbox", "read-only"], ["--sandbox=read-only"]):
+            with self.subTest(args=args):
+                self.assertTrue(privilege._is_sandboxed(args, vendor="openai"))
+                spec = AgentSpec(name="codex", vendor="openai", command="codex", extra_args=args)
+                self.assertEqual(privilege.audit_agent(spec), [])
+
+    def test_each_seat_warns_with_its_checkout_config_risk(self):
+        for name, spec in self.SEATS.items():
+            with self.subTest(seat=name):
+                warnings = privilege.audit_agent(spec)
+                self.assertEqual(len(warnings), 1, warnings)
+                self.assertIn(self.RISK[spec.command], warnings[0])
+                self.assertIn("checkouts you trust", warnings[0])
+
+    def test_strict_refuses_each_seat(self):
+        from ai_jury.config import _from_dict
+        from ai_jury.orchestrator import run_jury
+
+        diff = "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n"
+        for name, spec in self.SEATS.items():
+            with self.subTest(seat=name):
+                agent = {
+                    "name": spec.name,
+                    "vendor": spec.vendor,
+                    "command": spec.command,
+                    "extra_args": list(spec.extra_args),
+                }
+                config = _from_dict({**DEFAULT_CONFIG, "agent": [agent]})
+                with self.assertRaises(RuntimeError) as ctx:
+                    run_jury(config, diff, strict=True, seed=1)
+                message = str(ctx.exception)
+                self.assertIn("least-privilege check failed (--strict)", message)
+                self.assertIn(self.RISK[spec.command], message)
+
+    def test_the_risk_is_reported_on_a_seat_the_audit_otherwise_accepts(self):
+        # A codex-protocol seat with a recognized sandbox, and a claude-protocol
+        # seat under the lockdown, that nonetheless spawn aider: the flags jury
+        # recognizes do not cover the checkout's config either.
+        for spec in (
+            AgentSpec(name="odd", vendor="openai", command="aider", extra_args=["-s", "read-only"]),
+            AgentSpec(name="odder", vendor="anthropic", command="/opt/bin/aider"),
+        ):
+            with self.subTest(seat=spec.name):
+                warnings = privilege.audit_agent(spec)
+                self.assertEqual(len(warnings), 1, warnings)
+                self.assertIn(".aider.conf.yml", warnings[0])
+
+    def test_another_cli_gets_no_checkout_sentence(self):
+        spec = AgentSpec(name="mine", vendor="cli", command="my-tool", extra_args=[])
+        warnings = privilege.audit_agent(spec)
+        self.assertEqual(len(warnings), 1)
+        self.assertNotIn("checkouts you trust", warnings[0])
 
 
 if __name__ == "__main__":
