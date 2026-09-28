@@ -800,7 +800,7 @@ class TheNewScansCannotSilentlyMatchNothing(unittest.TestCase):
             "the composite action's install step is not among the scanned values",
         )
         self.assertTrue(
-            any("python -m pip install ai-jury" in block.text for block in blocks),
+            any('python -m pip install "$SPEC"' in block.text for block in blocks),
             "the install script's body was not collected",
         )
 
@@ -905,8 +905,8 @@ class AnInterpolatedExpressionIsCaughtInEveryKey(unittest.TestCase):
         target = directory / "action.yml"
         self._insert(
             target,
-            '          python -m pip install "ai-jury==$INPUT_VERSION"',
-            f"          {self.OFFENDING_SH}",
+            '        echo "ai-jury: installing $SPEC"',
+            f"        {self.OFFENDING_SH}",
         )
 
         offenders = interpolating_action_blocks(directory)

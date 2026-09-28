@@ -388,7 +388,8 @@ jury run-agent --agent codex:gpt-5.2 --role implement --allow-write --prompt-fil
     - id: ai-jury
 ```
 
-**GitHub Action (`.github/workflows/ai-jury.yml`):**
+**GitHub Action** — two files, both committed. The workflow
+(`.github/workflows/ai-jury.yml`):
 
 ```yaml
 name: ai-jury
@@ -403,14 +404,38 @@ jobs:
       - uses: actions/checkout@v4
       - uses: berkayturanci/ai-jury@v1
         with:
-          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
 ```
 
-Commit a `jury.toml` naming `*-api` seats (each with a `model`) for the keys you pass —
-the built-in default seats are agent **CLIs** a runner does not have, and the keys alone do
-not form a panel, so a keyless/config-less run exits with `no usable agents`. `jury init`
-scaffolds those seats; fill in each seat's `model`.
+…and a `jury.toml` at the repository root that seats a hosted-API reviewer for each key:
+
+```toml
+# jury.toml
+[jury]
+chair = "claude-api"
+
+[[agent]]
+name = "claude-api"
+vendor = "anthropic-api"     # reads ANTHROPIC_API_KEY
+model = "claude-opus-5-5"   # any model your key can call
+
+[[agent]]
+name = "codex-api"
+vendor = "openai-api"        # reads OPENAI_API_KEY
+model = "gpt-6-sol"
+```
+
+The keys alone do not form a panel: without a `jury.toml` the jury seats its built-in
+agent **CLIs**, which a runner does not have, and the run exits with `no usable agents`.
+Two vendors is also what the Action's `min-vendors` guard asks for by default. A
+`gemini-api-key` (`vendor = "google-api"`) or `xai-api-key` (`vendor = "xai-api"`) seat
+is added the same way. `jury init --agents claude-api,codex-api` scaffolds the file
+without the `model` lines, which you fill in.
+`@v1` installs the ai-jury release that `v1` points at, and `@vX.Y.Z` installs X.Y.Z;
+`version:` overrides it (`latest` for the newest on PyPI). A branch or SHA ref installs
+the version its own tree declares, and fails until that release is on PyPI; pass
+`version: latest` or a released number instead.
 
 
 A sample report is in [`docs/example-run.md`](docs/example-run.md). For a **real**

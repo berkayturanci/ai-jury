@@ -154,6 +154,15 @@ Every release is automatically published across three primary distribution chann
 2. **GitHub Releases & GitHub Action Marketplace**:
    - Automated via `publish.yml` using `softprops/action-gh-release`.
    - GitHub Action is consumable as `uses: berkayturanci/ai-jury@v1` or pinned to release tags.
+   - **A ref of the Action is a pin on the package too** (#867). With `version:` unset,
+     the Action installs the version its own tree declares in `pyproject.toml`
+     (`scripts/action_install_spec.py`, reading `GITHUB_ACTION_PATH`). Two steps of
+     this flow are what make that exact, and neither may be reordered away: the tag
+     guard in `build-n-publish` refuses a tag that disagrees with `pyproject.toml`, and
+     `major-tag` runs after `verify`, so `v1` never points at a tree whose version is
+     not yet installable from PyPI. No new version string is introduced, so
+     `RELEASE_SURFACES` is unchanged: the bump of `pyproject.toml` is the bump of the
+     Action's default.
    - `v1` is a moving alias, and `publish.yml`'s `major-tag` job is what moves it.
      It runs **after** `verify`, so the alias only ever advances to a release that
      has been installed from the index and run; a release that fails verification
