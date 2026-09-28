@@ -2387,6 +2387,9 @@ def register_adapter(vendor: str, adapter_cls: type[Adapter]) -> None:
         # they were joined to agree on.
         raise ValueError("register_adapter: vendor name is empty after normalisation")
     config_module.register_vendor(name)
+    config_module.register_adapter_transport(
+        name, spawns=not issubclass(adapter_cls, (LocalAdapter, _HostedApiAdapter))
+    )
     _VENDOR_ADAPTERS[name] = adapter_cls
 
 
@@ -2439,18 +2442,3 @@ def adapter_class(spec) -> type[Adapter]:
     if command:
         return GenericCLIAdapter
     return AgyAdapter
-
-
-def spawns_process(spec) -> bool:
-    """Whether the adapter :func:`make_adapter` builds for *spec* spawns a CLI.
-
-    The question the least-privilege audit has to ask of the SAME selection the
-    spawner makes (#901 review): it used to skip any seat with an ``endpoint``,
-    while the spawner ignores ``endpoint`` whenever the adapter key is
-    registered — so ``vendor = "cli", command = "aider"`` with a stray
-    ``endpoint`` ran aider and was audited as an HTTP seat, clean. The HTTP
-    transports are :class:`LocalAdapter` and :class:`_HostedApiAdapter` (which
-    the hosted APIs and the OpenAI-compatible adapter extend); every other
-    adapter, a registered custom one included, is taken to spawn a process.
-    """
-    return not issubclass(adapter_class(spec), (LocalAdapter, _HostedApiAdapter))

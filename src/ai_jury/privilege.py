@@ -54,7 +54,7 @@ from __future__ import annotations
 
 from pathlib import PureWindowsPath
 
-from .config import GENERIC_CLI_VENDORS, normalise_vendor, spec_adapter
+from .config import GENERIC_CLI_VENDORS, normalise_vendor, spawns_process, spec_adapter
 
 # Flags that grant broad write/tool/network powers — dangerous for a reviewer.
 _DANGEROUS_FLAGS: tuple[str, ...] = (
@@ -567,7 +567,7 @@ _NO_SANDBOX_VENDORS: tuple[str, ...] = (
 )
 
 #: Which seats run no subprocess at all is no longer a vendor list here: it is
-#: ``adapters.spawns_process``, asked of the adapter ``make_adapter`` builds
+#: ``config.spawns_process``, which answers for the adapter ``make_adapter`` builds
 #: (#901 review), so the audit and the spawner cannot disagree about a seat.
 
 
@@ -1140,8 +1140,6 @@ def audit_agent(spec) -> list[str]:
     # registered CLI adapter — a `cli` aider seat, a claude seat with
     # `--dangerously-skip-permissions`, a codex seat with `danger-full-access`,
     # each with a stray endpoint, ran as CLIs and were audited clean.
-    from .adapters import spawns_process  # adapters imports this module
-
     if not spawns_process(spec):
         return warnings
 

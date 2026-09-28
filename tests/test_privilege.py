@@ -17,7 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from ai_jury import adapters, privilege
-from ai_jury.config import DEFAULT_CONFIG, AgentSpec, spec_adapter
+from ai_jury.config import DEFAULT_CONFIG, AgentSpec, spawns_process, spec_adapter
 
 #: The whole claude deny list, in the order enforcement writes it.
 DENY = "Edit,Write,NotebookEdit,Bash,Read,Grep,Glob,WebFetch,WebSearch,Task,Agent"
@@ -1320,7 +1320,7 @@ class TheAuditAsksTheAdapterTheSpawnerBuilds(unittest.TestCase):
     def test_each_shape_is_spawned_as_a_cli(self):
         for name, spec in self.SHAPES.items():
             with self.subTest(seat=name):
-                self.assertTrue(adapters.spawns_process(spec))
+                self.assertTrue(spawns_process(spec))
                 self.assertIsInstance(
                     adapters.make_adapter(spec),
                     (
@@ -1349,7 +1349,7 @@ class TheAuditAsksTheAdapterTheSpawnerBuilds(unittest.TestCase):
             AgentSpec(name="r", vendor="openai", adapter="openai-api", model="m"),
         ):
             with self.subTest(seat=spec.name):
-                self.assertFalse(adapters.spawns_process(spec))
+                self.assertFalse(spawns_process(spec))
                 self.assertEqual(privilege.audit_agent(spec), [])
 
     def test_the_spawn_question_is_the_one_make_adapter_answers(self):
@@ -1363,7 +1363,117 @@ class TheAuditAsksTheAdapterTheSpawnerBuilds(unittest.TestCase):
             with self.subTest(seat=spec.name):
                 built = adapters.make_adapter(spec)
                 self.assertIs(type(built), adapters.adapter_class(spec))
-                self.assertEqual(adapters.spawns_process(spec), not isinstance(built, http))
+                self.assertEqual(spawns_process(spec), not isinstance(built, http))
+
+    def test_config_answers_as_make_adapter_does_for_every_key_and_fallback(self):
+        # `config.spawns_process` answers without importing `adapters` (no import
+        # cycle, CodeQL py/cyclic-import), so it is held here to the class
+        # `make_adapter` really builds: every built-in key, with and without a
+        # stray endpoint, and every fallback shape of an unregistered key.
+        from ai_jury.config import KNOWN_VENDORS
+
+        http = (adapters.LocalAdapter, adapters._HostedApiAdapter)
+        specs = [
+            AgentSpec(name=f"{key}{i}", vendor=key, model="m", **extra)
+            for key in KNOWN_VENDORS
+            for i, extra in enumerate(({}, {"command": "x"}, {"endpoint": _ENDPOINT}))
+        ]
+        specs += [
+            AgentSpec(name="f1", vendor="acme", command="x"),
+            AgentSpec(name="f2", vendor="acme", command="x", endpoint=_ENDPOINT),
+            AgentSpec(name="f3", vendor="acme", api_key_env="K"),
+            AgentSpec(name="f4", vendor="acme", command="x", api_key_env="K"),
+            AgentSpec(name="f5", vendor="acme"),
+            AgentSpec(name="f6", vendor="acme-api", command="x"),
+            AgentSpec(name="f7", vendor="openai", adapter="openai-api", model="m"),
+            AgentSpec(name="f8", vendor="openai", adapter="cli", command="cursor-agent"),
+        ]
+        for spec in specs:
+            with self.subTest(seat=spec.name):
+                built = adapters.make_adapter(spec)
+                self.assertEqual(spawns_process(spec), not isinstance(built, http))
+
+    def test_a_registered_adapter_is_answered_by_its_class(self):
+        from ai_jury import config as config_module
+
+        class HttpShim(adapters.GenericOpenAICompatibleAdapter):
+            pass
+
+        class CliShim(adapters.GenericCLIAdapter):
+            pass
+
+        http = (adapters.LocalAdapter, adapters._HostedApiAdapter)
+        # `cli` re-registered with an HTTP class, and a new key with a CLI one.
+        for key, cls in (("cli", HttpShim), ("shim-cli", CliShim)):
+            saved = adapters._VENDOR_ADAPTERS.get(key)
+            saved_spawn = config_module._REGISTERED_ADAPTER_SPAWNS.get(key)
+            try:
+                adapters.register_adapter(key, cls)
+                spec = AgentSpec(name="s", vendor=key, command="x", endpoint=_ENDPOINT)
+                with self.subTest(key=key):
+                    built = adapters.make_adapter(spec)
+                    self.assertEqual(spawns_process(spec), not isinstance(built, http))
+            finally:
+                if saved is None:
+                    adapters._VENDOR_ADAPTERS.pop(key, None)
+                    config_module._REGISTERED_VENDORS.discard(key)
+                else:
+                    adapters._VENDOR_ADAPTERS[key] = saved
+                if saved_spawn is None:
+                    config_module._REGISTERED_ADAPTER_SPAWNS.pop(key, None)
+                else:  # pragma: no cover - no earlier registration of these keys
+                    config_module._REGISTERED_ADAPTER_SPAWNS[key] = saved_spawn
+
+
+class RegisteringATransportIgnoresAnEmptyName(unittest.TestCase):
+    def test_an_empty_name_records_nothing(self):
+        from ai_jury import config as config_module
+
+        before = dict(config_module._REGISTERED_ADAPTER_SPAWNS)
+        config_module.register_adapter_transport("   ", spawns=False)
+        self.assertEqual(config_module._REGISTERED_ADAPTER_SPAWNS, before)
+
+
+class ThePackageHasNoImportCycle(unittest.TestCase):
+    """No module of `ai_jury` imports one that imports it back (CodeQL py/cyclic-import).
+
+    `privilege` asked `adapters` whether a seat spawns a process, from inside
+    `audit_agent`, while `adapters` imports `privilege` at the top — a cycle a
+    lazy import only hides. Every relative import is read, top-level or not.
+    """
+
+    def test_no_cycle(self):
+        import ast
+
+        pkg = Path(__file__).resolve().parent.parent / "src" / "ai_jury"
+        modules = {p.stem for p in pkg.glob("*.py")}
+        graph: dict[str, set[str]] = {}
+        for path in pkg.glob("*.py"):
+            deps = set()
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                if isinstance(node, ast.ImportFrom) and node.level == 1:
+                    names = [node.module] if node.module else [a.name for a in node.names]
+                    deps.update(n.split(".")[0] for n in names)
+            graph[path.stem] = (deps & modules) - {path.stem}
+
+        # Depth-first with three colours: an edge back to a module still on the
+        # stack closes a cycle. Linear in modules + imports.
+        cycles, done, stack = [], set(), []
+
+        def visit(node):
+            stack.append(node)
+            for dep in sorted(graph[node]):
+                if dep in stack:
+                    cycles.append(" -> ".join([*stack[stack.index(dep) :], dep]))
+                elif dep not in done:
+                    visit(dep)
+            stack.pop()
+            done.add(node)
+
+        for start in sorted(graph):
+            if start not in done:
+                visit(start)
+        self.assertEqual(cycles, [])
 
 
 class TheCheckoutRiskMatchesTheStem(unittest.TestCase):

@@ -322,6 +322,57 @@ def register_vendor(vendor: str) -> None:
         _REGISTERED_VENDORS.add(name)
 
 
+#: Adapter keys registered at runtime, and whether the registered class spawns a
+#: process (#901 review). ``adapters.register_adapter`` records it here, beside
+#: the class it stores, so :func:`spawns_process` can answer for a custom adapter
+#: without importing ``adapters``. A registration replaces the built-in answer
+#: for the same key, exactly as it replaces the built-in class.
+_REGISTERED_ADAPTER_SPAWNS: dict[str, bool] = {}
+
+
+def register_adapter_transport(adapter: str, *, spawns: bool) -> None:
+    """Record whether the adapter registered under *adapter* spawns a process."""
+    name = normalise_vendor(adapter)
+    if name:
+        _REGISTERED_ADAPTER_SPAWNS[name] = spawns
+
+
+def spawns_process(spec) -> bool:
+    """Whether the adapter ``make_adapter`` builds for *spec* spawns a CLI (pure).
+
+    The least-privilege audit must ask this of the same selection the spawner
+    makes (#901 review): it used to skip any seat with an ``endpoint``, while
+    ``make_adapter`` picks the adapter by key first and ignores ``endpoint`` on
+    every CLI adapter — so a ``cli`` aider seat with a stray ``endpoint`` ran
+    aider and was audited as an HTTP seat, clean.
+
+    It lives here, not in ``adapters``, so ``privilege`` can ask it without an
+    import cycle (``adapters`` imports ``privilege`` for ``enforce_read_only``;
+    CodeQL ``py/cyclic-import``). It follows ``adapters.adapter_class`` step for
+    step, and ``tests/test_privilege.py`` holds the two to the same answer for
+    every built-in key, a registered HTTP and a registered CLI adapter, and each
+    fallback shape:
+
+    1. a registered key: whatever the registered class does;
+    2. a built-in key: HTTP for the commandless ones (``local``, the hosted APIs,
+       ``openai-compatible``), a process for :data:`CLI_ADAPTERS`;
+    3. no adapter for the key: HTTP when the seat names an ``endpoint``, or an
+       ``api_key_env`` with no ``command`` (the OpenAI-compatible adapter);
+       otherwise a process (the generic CLI adapter, or agy's with no command).
+    """
+    key = spec_adapter(spec)
+    if key in _REGISTERED_ADAPTER_SPAWNS:
+        return _REGISTERED_ADAPTER_SPAWNS[key]
+    if key in _NO_COMMAND_VENDORS:
+        return False
+    if key in CLI_ADAPTERS:
+        return True
+    command = getattr(spec, "command", "") or ""
+    return not (
+        getattr(spec, "endpoint", None) or (getattr(spec, "api_key_env", None) and not command)
+    )
+
+
 def recognised_vendors() -> tuple[str, ...]:
     """Every vendor name this run understands: shipped plus runtime-registered."""
     return (*KNOWN_VENDORS, *sorted(_REGISTERED_VENDORS - set(KNOWN_VENDORS)))

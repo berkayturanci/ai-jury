@@ -1214,12 +1214,11 @@ class AnEndpointOnACliSeatIsRefused(unittest.TestCase):
     def test_the_list_is_the_adapters_that_spawn(self):
         # One fact in two modules: config's list of CLI adapters is exactly the
         # built-in registry keys whose adapter spawns a process.
-        from ai_jury import adapters
-        from ai_jury.config import CLI_ADAPTERS, KNOWN_VENDORS
+        from ai_jury.config import CLI_ADAPTERS, KNOWN_VENDORS, spawns_process
 
         spawning = {
             key
             for key in KNOWN_VENDORS
-            if adapters.spawns_process(AgentSpec(name="s", vendor=key, command="x"))
+            if spawns_process(AgentSpec(name="s", vendor=key, command="x"))
         }
         self.assertEqual(spawning, set(CLI_ADAPTERS))
