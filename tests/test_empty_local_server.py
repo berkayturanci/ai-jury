@@ -186,7 +186,7 @@ class InitSaysSoWhenItWritesTheSeat(unittest.TestCase):
             with (
                 mock.patch.object(doctor, "local_model_listing", return_value=listing),
                 # `jury init` lists the server too, to pick the seat's model (#864).
-                mock.patch("ai_jury.adapters.list_local_models", return_value=listing),
+                mock.patch("ai_jury.adapters.local_model_listing", return_value=listing),
                 contextlib.redirect_stdout(out),
                 contextlib.redirect_stderr(err),
             ):

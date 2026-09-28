@@ -1102,7 +1102,7 @@ def _run_init(rest: list[str]) -> int:
         )
         return 2
 
-    from .adapters import list_local_models
+    from .adapters import list_local_models, local_model_listing
     from .redaction import redact_url_userinfo
 
     endpoint = ns.local_endpoint or "http://localhost:11434/v1"
@@ -1205,9 +1205,12 @@ def _run_init(rest: list[str]) -> int:
         # A local seat names a model its server lists, as the prompts and the wizard
         # already did (#864); plain init wrote the template's model and then warned
         # about it. Asked only when a local seat is chosen and no model was named.
+        # `local_model_listing`, not `list_local_models`: only a server that answered
+        # with no model gets its seat commented out, and a failed listing (None)
+        # leaves the seat as it was — no evidence is not evidence of a fault (#849).
         local_model = ns.local_model
         if not local_model and any(templates.get(a, {}).get("vendor") == "local" for a in agents):
-            agents, local_model, left_out = seat_local_agents(agents, list_local_models(endpoint))
+            agents, local_model, left_out = seat_local_agents(agents, local_model_listing(endpoint))
             if left_out and ns.chair in left_out:
                 # The operator named this chair. Writing it over a commented seat warns
                 # on every run, and picking another chair overrides them, so neither.
@@ -1221,7 +1224,7 @@ def _run_init(rest: list[str]) -> int:
             if left_out:
                 commented = build_config(left_out, local_endpoint=ns.local_endpoint)["agent"]
                 print(
-                    f"note: no model was found on the local server at {endpoint_disp}, so "
+                    f"note: the local server at {endpoint_disp} lists no model, so "
                     f"{', '.join(repr(a) for a in left_out)} is written commented out; "
                     "pull one and uncomment it, or pass --local-model.",
                     file=sys.stderr,

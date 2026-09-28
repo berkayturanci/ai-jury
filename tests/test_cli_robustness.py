@@ -51,12 +51,21 @@ class PlainInitPicksAListedLocalModel(unittest.TestCase):
         self.d = Path(tempfile.mkdtemp())
 
     def _init(self, agents, listing, *extra):
+        """Run plain init with the server's listing mocked: ``None`` is a failed listing.
+
+        Both listings are mocked — init's own and the one the #849 warning makes after
+        the write — and the HTTP seam under them is a spy, so no test here reaches a
+        real server on loopback, whatever this machine runs.
+        """
         path = self.d / f"{agents.replace(',', '-')}.toml"
         with (
             _NOTHING_AVAILABLE,
-            mock.patch("ai_jury.adapters.list_local_models", return_value=listing) as listed,
+            mock.patch("ai_jury.adapters.local_model_listing", return_value=listing) as listed,
+            mock.patch.object(doctor, "local_model_listing", return_value=listing),
+            mock.patch.object(adapters, "_open") as network,
         ):
             code, _, err = _run(["init", "--agents", agents, "-o", str(path), "--force", *extra])
+        self.assertEqual(network.call_count, 0, "a test reached the network")
         text = path.read_text(encoding="utf-8") if path.exists() else ""
         return code, err, path, text, listed
 
@@ -114,6 +123,29 @@ class PlainInitPicksAListedLocalModel(unittest.TestCase):
         listed.assert_not_called()
         self.assertNotIn("# [[agent]]", text)
 
+    def test_a_failed_listing_keeps_the_seat_on_the_template_model(self):
+        """No evidence is not evidence of a fault (#849): a server that is down, refused,
+        timed out or answered an error says nothing about what is pulled, so the seat
+        stays as `jury init` wrote it before #864, and nothing is said about it."""
+        code, err, path, text, listed = self._init("qwen,claude,codex", None)
+
+        self.assertEqual(code, 0)
+        listed.assert_called_once()
+        data = tomllib.loads(text)
+        self.assertEqual([a["name"] for a in data["agent"]], ["qwen", "claude", "codex"])
+        self.assertEqual(data["agent"][0]["model"], "qwen2.5-coder:7b")
+        self.assertEqual(data["jury"]["chair"], "qwen")
+        self.assertNotIn("# [[agent]]", text)
+        self.assertNotIn("commented out", err)
+        load_config(str(path), validate=True)
+
+    def test_a_failed_listing_keeps_a_named_local_chair(self):
+        code, err, path, _, _ = self._init("claude,qwen", None, "--chair", "qwen")
+
+        self.assertEqual(code, 0)
+        self.assertNotIn("error:", err)
+        self.assertEqual(tomllib.loads(path.read_text("utf-8"))["jury"]["chair"], "qwen")
+
     def test_a_named_chair_on_the_left_out_seat_is_refused_before_writing(self):
         """Neither a chair over a commented seat nor a silently different chair."""
         code, err, path, _, _ = self._init("claude,qwen", [], "--chair", "qwen")
@@ -156,6 +188,12 @@ class SeatLocalAgentsTests(unittest.TestCase):
 
     def test_no_model_and_no_other_seat_keeps_it(self):
         self.assertEqual(scaffold.seat_local_agents(["qwen"], []), (["qwen"], None, []))
+
+    def test_a_failed_listing_seats_everyone_on_the_template(self):
+        self.assertEqual(
+            scaffold.seat_local_agents(["qwen", "claude"], None),
+            (["qwen", "claude"], None, []),
+        )
 
     def test_no_local_seat_is_left_alone(self):
         self.assertEqual(

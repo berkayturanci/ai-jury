@@ -418,7 +418,7 @@ enforces it. A green doctor is not evidence of a cross-vendor panel.
 | `--rounds` | integer | Rounds for the scaffolded config. |
 | `--chair` | agent name | Chair for the scaffolded config. |
 | `--verify` / `--no-verify` | flag | Verification round on/off. |
-| `--local-model` | model id | Model id for a local agent (e.g. `qwen2.5-coder:7b`). Without it, a non-interactive `jury init` seats the model the local server lists (a code model first); when the server lists none, the local seat is written commented out under a hint, unless it is the only seat, and the chair defaults to the first seat left. A `--chair` naming that seat then exits **2** before writing (pass `--local-model` or choose another `--chair`). |
+| `--local-model` | model id | Model id for a local agent (e.g. `qwen2.5-coder:7b`). Without it, a non-interactive `jury init` seats a model the local server lists: the first whose name contains `coder`, `code`, `deepseek` or `qwen`, otherwise the first. When the server answers and lists none, the local seat is written commented out under a hint, unless it is the only seat, and the chair defaults to the first seat left; a `--chair` naming that seat then exits **2** before writing (pass `--local-model` or choose another `--chair`). When the listing fails (server down, timeout, error status, refused endpoint), the seat is written on `qwen2.5-coder:7b` as before. |
 | `--local-endpoint` | URL | OpenAI-compatible base URL for a local agent. |
 | `-o`, `--output` | path | Output path (default `jury.toml`). |
 | `--force` | flag | Overwrite an existing file. |

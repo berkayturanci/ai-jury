@@ -166,28 +166,35 @@ def pick_default_model(models: list[str]) -> str | None:
 
 
 def seat_local_agents(
-    agents: list[str], models: list[str]
+    agents: list[str], models: list[str] | None
 ) -> tuple[list[str], str | None, list[str]]:
     """Fill the local seats in *agents* from the models a server lists (issue #864).
 
     Plain ``jury init`` wrote the local template's model whatever the server had,
-    then warned about its own output. Returns ``(seated, model, left_out)``:
+    then warned about its own output. *models* is ``adapters.local_model_listing``'s
+    answer: a list when the server answered, ``None`` when the listing failed.
+    Returns ``(seated, model, left_out)``:
 
-    * a listed model → every agent stays seated and *model* is the one
+    * the server lists models → every agent stays seated and *model* is the one
       :func:`pick_default_model` prefers;
-    * nothing listed, other seats present → the local seats move to *left_out*,
-      for the caller to write commented out, so the file names no model nobody
-      has pulled and its hash is that of the panel that actually runs;
-    * nothing listed, local seats only → they stay seated on the template's model.
-      A config with no seat is invalid, and the pull hint `jury init` prints for
-      an empty server names that same model, so pulling it completes the file.
+    * the server lists none, other seats present → the local seats move to
+      *left_out*, for the caller to write commented out, so the file names no model
+      nobody has pulled and its hash is that of the panel that actually runs;
+    * the server lists none, local seats only → they stay seated on the template's
+      model. A config with no seat is invalid, and the pull hint `jury init` prints
+      for an empty server names that same model, so pulling it completes the file;
+    * the listing failed (refused, timed out, an error status, an endpoint the SSRF
+      gate refuses) → every agent stays seated on the template's model, as before
+      #864. No evidence is not evidence of a fault — the rule
+      ``doctor._local_model_gap`` follows (#849): a server that is down says
+      nothing about what is pulled on it.
 
     Pure: the caller lists the models, and only when there is a local seat.
     """
     templates = agent_templates()
     local = [a for a in agents if templates.get(a, {}).get("vendor") == "local"]
-    model = pick_default_model(models)
-    if model is not None or not local or set(local) == set(agents):
+    model = pick_default_model(models or [])
+    if models is None or model is not None or not local or set(local) == set(agents):
         return list(agents), model, []
     return [a for a in agents if a not in local], None, list(dict.fromkeys(local))
 
@@ -366,7 +373,7 @@ _MIN_VENDORS_HINT = (
 #: model (issue #864). The block under it is the seat, commented, with the
 #: template's model — the one the pull command below fetches.
 _NO_LOCAL_MODEL_HINT = (
-    "# No model was found on the local server when `jury init` ran, so this seat is",
+    "# The local server listed no model when `jury init` ran, so this seat is",
     "# left out rather than named after a model nobody has pulled. Pull one (for",
     f"# Ollama: `ollama pull {_LOCAL_TEMPLATE['model']}`) and uncomment the block below,",
     "# or rerun `jury init` with `--local-model <id>`.",
