@@ -65,10 +65,17 @@ BANNED = (
 
 
 def _unreleased() -> str:
-    """The CHANGELOG's [Unreleased] section: current wording, not released history."""
+    """The current release notes: [Unreleased] plus the newest released section.
+
+    Older sections are history and may quote what was true then. The newest one is
+    included because a release cut moves every [Unreleased] entry under a version
+    heading on the same commit, and the notes it ships are still current wording.
+    """
     text = _text("CHANGELOG.md")
     head = text.index("## [Unreleased]")
-    return text[head : text.index("\n## [", head + 1)]
+    newest = text.index("\n## [", head + 1)
+    end = text.find("\n## [", newest + 1)
+    return text[head : end if end != -1 else len(text)]
 
 
 def leaks_claim(text: str) -> list[str]:

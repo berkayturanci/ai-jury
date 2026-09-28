@@ -438,7 +438,7 @@ The document is `schema_version: "ai-jury.doctor.v1"`:
 ```json
 {
   "schema_version": "ai-jury.doctor.v1",
-  "tool_version": "1.20.0",
+  "tool_version": "1.20.1",
   "python": "3.12.14",
   "config_path": "/path/to/jury.toml",
   "ready": true,
