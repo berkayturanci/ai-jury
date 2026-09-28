@@ -43,20 +43,21 @@ the relevant `tests/golden/*.md` file. Reviewers can therefore read the new
 report verbatim in the pull request, rather than mentally reconstructing it from
 renderer code.
 
-## The attribution line on posted comments
+## The attribution footer
 
-A comment `jury` posts carries one line the rendered report does not: the
-attribution footer (issue #911), added after the report and before the hidden
-incremental SHA marker, separated from the report by a blank line.
+The report ends with a `---` rule and one `<sub>` footer naming the tool and the
+seats that returned a review (issue #911), built by `ai_jury.report.render_footer`:
 
-```html
-<sub>Reviewed by <a href="https://ai-jury.dev">ai-jury</a> · claude, codex, agy</sub>
+```markdown
+<sub>🏛️ Synthesized by [ai-jury](https://github.com/berkayturanci/ai-jury) · claude, codex, agy — Cross-vendor multi-agent code review · [⭐ Star on GitHub](https://github.com/berkayturanci/ai-jury) · [Add to your repo](https://ai-jury.dev/)</sub>
 ```
 
-It names the seats that returned a review (`ai_jury.report.render_attribution`),
-and is switched off by `[jury.output] attribution = false` or `--no-attribution`.
-Because it is added at posting time, `-o`, stdout and the golden fixtures never
-contain it. See [configuration](configuration.md#posted-comment-attribution-juryoutput).
+`render()` and `render_transcript()` append it by default, so the golden fixtures
+contain it. The CLI renders with `footer=False` and appends it itself once the
+report is complete, so it stays last after the `## CI gate` and patch sections, and
+posting adds only the hidden SHA marker after it. `[jury.output] attribution =
+false` and `--no-attribution` leave it off. See
+[configuration](configuration.md#the-attribution-footer-juryoutput).
 
 ## Regenerating the fixtures
 

@@ -544,8 +544,8 @@ KNOWN_JURY_KEYS = (
     "theater_style",
     # Large-diff handling (issue #31); a nested table, like `ci`/`context`.
     "diff",
-    # What a posted comment carries besides the verdict (issue #911); a nested
-    # table too. Rendering-only: not in `config_hash`.
+    # The report footer (issue #911); a nested table too. Rendering-only:
+    # not in `config_hash`.
     "output",
     # Risk-aware tiered model routing (issue #524) and the static-analysis
     # pre-pass (issue #523). Both are read by `_from_dict` and documented in
@@ -853,7 +853,7 @@ def validate_config(data: dict, strict: bool = False) -> list:
         errors.append(f"jury.routing must be one of {', '.join(KNOWN_ROUTINGS)} (got {routing!r}).")
 
     # The attribution footer (issue #911) is a bool, like `theater`: a string
-    # "false" is truthy, so accepting it would post the line the operator turned off.
+    # "false" is truthy, so accepting it would keep the footer the operator turned off.
     output_cfg = jury.get("output")
     if isinstance(output_cfg, dict):
         attribution = output_cfg.get("attribution")
@@ -1293,13 +1293,11 @@ class DiffConfig:
 
 @dataclass
 class OutputConfig:
-    """What a posted comment carries besides the verdict (issue #911).
+    """The markdown report's footer (issue #911).
 
-    ``attribution`` ends every comment ``jury`` posts (the summary, the issue
-    comment, the last phased comment and the live comment's final body) with one
-    ``<sub>`` line naming the tool and the seats that returned a review. Static
-    text added to a comment the user already chose to post, so it makes no request
-    of its own. Rendering-only, so it is not in ``config_hash``.
+    ``attribution`` keeps the ai-jury footer that ends the markdown report and
+    every comment ``jury`` posts, now naming the seats that returned a review.
+    ``False`` removes it. Rendering-only, so it is not in ``config_hash``.
     """
 
     attribution: bool = True
@@ -1346,7 +1344,7 @@ class JuryConfig:
     ci: CiConfig = field(default_factory=CiConfig)
     context: ContextConfig = field(default_factory=ContextConfig)
     diff: DiffConfig = field(default_factory=DiffConfig)
-    # What a posted comment carries besides the verdict (issue #911).
+    # The markdown report's footer (issue #911).
     output: OutputConfig = field(default_factory=OutputConfig)
     # Optional run seed. Controls the shared run RNG used by randomized
     # orchestration features (see orchestrator.run_jury). LLM output itself
