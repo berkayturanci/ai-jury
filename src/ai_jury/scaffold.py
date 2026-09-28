@@ -226,6 +226,40 @@ def pick_default_model(models: list[str]) -> str | None:
     return models[0]
 
 
+#: Where the zero-config local fallback looks for a model (#863).
+LOCAL_FALLBACK_ENDPOINT = "http://localhost:11434/v1"
+
+
+def zero_config_local_seat(
+    config_named, mock, config_file_present, any_seat_available, list_models
+):
+    """The local seat a run with no config reviews with, or ``None`` (#863).
+
+    The one decision a run's fallback and ``jury --doctor`` share, so the doctor
+    predicts the panel the run forms rather than a copy of the rule that can
+    drift. It fires only in the "fresh user" case: no ``--config``, not
+    ``--mock``, no ``./jury.toml``, no configured seat available, and a local
+    server that lists a model. The I/O is injected and called lazily, in that
+    order: ``any_seat_available()`` only when the flags allow a fallback, and
+    ``list_models()`` only when no seat can run, so neither path asks the local
+    server when it would not use the answer. A probe that raises reads as "do
+    not fall back": availability probing must never crash a run.
+    """
+    from .config import AgentSpec
+
+    if config_named or mock or config_file_present:
+        return None
+    try:
+        if any_seat_available():
+            return None
+    except Exception:  # noqa: BLE001 - availability probing must never crash a run
+        return None
+    model = pick_default_model(list_models())
+    if not model:
+        return None
+    return AgentSpec(name="local", vendor="local", model=model, endpoint=LOCAL_FALLBACK_ENDPOINT)
+
+
 def seat_local_agents(
     agents: list[str], models: list[str] | None
 ) -> tuple[list[str], str | None, list[str]]:

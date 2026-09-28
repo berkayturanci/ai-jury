@@ -69,7 +69,12 @@ from .metadata import build_run_metadata
 #:   bucketed. A consumer switching on the four known values must accept a fifth.
 #:
 #: Every top-level key, and every ``reviewers`` key, keeps its name and shape.
-JSON_SCHEMA_VERSION = "1.4"
+#:
+#: 1.4 (issue #714) embeds metadata schema 7, which added ``metadata.routing``.
+#:
+#: 1.5 (issue #863) embeds metadata schema 8, which adds
+#: ``metadata.panel.zero_config_fallback``. Additive: nothing else changes.
+JSON_SCHEMA_VERSION = "1.5"
 
 #: Canonical SARIF schema URI and version emitted by :func:`to_sarif`.
 SARIF_SCHEMA = "https://json.schemastore.org/sarif-2.1.0.json"
@@ -122,7 +127,15 @@ def _group_dict(g: Any) -> dict[str, Any]:
     }
 
 
-def to_json(outcome: Any, config: Any, *, decision=None, vote=None, mode: str = "code") -> str:
+def to_json(
+    outcome: Any,
+    config: Any,
+    *,
+    decision=None,
+    vote=None,
+    mode: str = "code",
+    zero_config_fallback: bool = False,
+) -> str:
     """Render the jury outcome as a structured, pretty-printed JSON report.
 
     Top-level keys: ``schema_version``, ``metadata`` (from
@@ -135,7 +148,8 @@ def to_json(outcome: Any, config: Any, *, decision=None, vote=None, mode: str = 
     reflects an effective ``--decision vote`` override (issue #248); when omitted
     the metadata falls back to ``config.decision`` as before. ``mode`` selects the
     ballot vocabulary (``code`` → APPROVE/COMMENT/REQUEST_CHANGES, ``issue`` →
-    READY/UNCLEAR/NEEDS_INFO), matching ``--issue``.
+    READY/UNCLEAR/NEEDS_INFO), matching ``--issue``. ``zero_config_fallback`` is
+    passed through to the metadata (#863).
     """
     synthesis = getattr(outcome, "synthesis", None)
     verdict_text = ""
@@ -144,7 +158,14 @@ def to_json(outcome: Any, config: Any, *, decision=None, vote=None, mode: str = 
 
     # Drop the wall-clock timestamp so the report is deterministic for a
     # deterministic run (matching report.py, which omits generated_at too).
-    metadata = build_run_metadata(outcome, config, decision=decision, vote=vote, mode=mode)
+    metadata = build_run_metadata(
+        outcome,
+        config,
+        decision=decision,
+        vote=vote,
+        mode=mode,
+        zero_config_fallback=zero_config_fallback,
+    )
     metadata.pop("generated_at", None)
 
     # Surface the deterministic PR-level classification (issue #7) at the top

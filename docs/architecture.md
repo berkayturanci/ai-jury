@@ -122,7 +122,10 @@ scoped so that trade only lands on runs that made the claim: it applies when two
 or more distinct vendors are enabled, so a deliberate single-agent install is
 untouched. The claim is the CONFIGURATION, not the machine — a config naming
 three vendors on a host with one installed CLI fails, because that run is
-single-vendor however it got there. `--no-min-vendors` (or `min_vendors = 0`) is
+single-vendor however it got there. The built-in seats a run falls back to with
+no config are not a configuration: when none of their CLIs is installed and the
+zero-config fallback seats a local model, the claim is that one seat.
+`--no-min-vendors` (or `min_vendors = 0`) is
 the explicit opt-out, `--strict` turns the missing-CLI half into a startup
 failure instead, and a threshold typed on the command line is enforced as typed.
 

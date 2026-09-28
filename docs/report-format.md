@@ -62,7 +62,7 @@ PYTHONPATH=src python3 -m unittest discover -s tests
 
 ## The routing record (`metadata.routing`)
 
-Every report carries `metadata.routing` (metadata schema 7, JSON report `1.4`):
+Every report carries `metadata.routing` (since metadata schema 7, JSON report `1.4`):
 what decided who sat in round 1. Under `routing = "standard"` it is
 `{"mode": "standard", "panel": [...]}` plus empty fields; under `"tiered"` (#714):
 
@@ -80,6 +80,20 @@ what decided who sat in round 1. Under `routing = "standard"` it is
 The `reviewers` array below lists the seats that **ran**; a benched seat that
 never escalated is absent from it and present in `benched`, so the two together
 account for every enabled seat.
+
+## The zero-config fallback (`metadata.panel.zero_config_fallback`)
+
+Since metadata schema 8 (JSON report `1.5`, [#863]) `metadata.panel` carries
+`zero_config_fallback`, always present. It is `true` when the run had no
+`jury.toml`, no `--config` and no usable agent CLI, so `jury` reviewed with one
+local model the server listed. That panel is single-vendor, and the default
+cross-vendor guard (`min_vendors`) does not fail it; a `--min-vendors N` named on
+the command line is still enforced. The Markdown report's **Run metadata** section
+states it on a line of its own, next to the built-in agents it lists as never run,
+so `--quiet`, which silences the stderr note, does not hide why the run passed.
+Nothing else in either schema changes.
+
+[#863]: https://github.com/berkayturanci/ai-jury/issues/863
 
 ## Per-reviewer ballots (`reviewers`)
 

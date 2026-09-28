@@ -28,7 +28,6 @@ from .adapters import EFFORT_LEVELS, effort_warnings, make_adapter
 from .ci import evaluate_ci, fail_on_error
 from .classification import classify, label_strings
 from .config import (
-    DEFAULT_MIN_VENDORS,
     ConfigError,
     bound_error,
     load_config,
@@ -44,7 +43,12 @@ from .github import (
     pr_context,
     pr_diff,
 )
-from .metadata import build_run_metadata, collapse_reason, distinct_vendors
+from .metadata import (
+    build_run_metadata,
+    claimed_vendors,
+    collapse_reason,
+    resolve_min_vendors,
+)
 from .orchestrator import review_diff, run_jury
 from .policy import PolicyError, load_policy
 from .redaction import redact
@@ -178,23 +182,6 @@ def _read_diff(args) -> tuple[str, str]:
         "error: provide one of --pr, --issue, --diff-file, --commit, --commits "
         "(or --diff-file - for stdin)"
     )
-
-
-def resolve_min_vendors(cli_value, config) -> tuple[int, bool]:
-    """The effective cross-vendor threshold, and whether a person asked for it.
-
-    PURE. ``cli_value`` is ``args.min_vendors``: ``None`` when neither
-    ``--min-vendors`` nor ``--no-min-vendors`` was passed, in which case the
-    value comes from ``[jury.ci] min_vendors`` (shipped as 2, #682).
-
-    The second element says whether the threshold was named on the command line.
-    Only an unnamed (default) threshold is scoped down to runs that actually
-    claimed cross-vendor consensus — someone who types ``--min-vendors 3`` on a
-    two-vendor panel is asking for the failure and gets it.
-    """
-    if cli_value is None:
-        return max(0, int(getattr(config.ci, "min_vendors", DEFAULT_MIN_VENDORS))), False
-    return max(0, int(cli_value)), True
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -832,6 +819,15 @@ def _init_available() -> dict:
     return out
 
 
+def _stdin_is_terminal() -> bool:
+    """Whether ``jury init`` can prompt: stdin exists and is a terminal.
+
+    ``sys.stdin`` is ``None`` when the process has no stdin at all (a detached
+    or daemonised launch), and ``None.isatty()`` is an ``AttributeError`` (#897).
+    """
+    return sys.stdin is not None and sys.stdin.isatty()
+
+
 def _init_interactive(available: dict, input_fn=input, local_endpoint=None, models_fn=None) -> dict:
     """Prompt for jury settings; returns kwargs for scaffold.build_config.
 
@@ -1091,13 +1087,21 @@ def _run_init(rest: list[str]) -> int:
     # agent's shell — its first prompt died as an `EOFError` traceback (#865), so it
     # is refused here, before the availability probes spend anything. The listing
     # flags answer before the wizard would ever ask, so they are left to do so.
-    if (
-        ns.wizard
-        and not (ns.list_models or ns.list_agents)
-        and (sys.stdin is None or not sys.stdin.isatty())
-    ):
+    listing = ns.list_models or ns.list_agents
+    if ns.wizard and not listing and not _stdin_is_terminal():
         print(
             "error: the wizard needs a terminal; use `jury init --preset <name>`",
+            file=sys.stderr,
+        )
+        return 2
+    # `--interactive` is the same promise and died the same way (#897): an
+    # `EOFError` on its first prompt from a pipe, and with no stdin at all an
+    # `AttributeError` from the TTY test below. Refused where it would prompt —
+    # `--agents`/`--preset` answer the questions, so it never asks then.
+    if ns.interactive and not (listing or ns.agents or ns.preset) and not _stdin_is_terminal():
+        print(
+            "error: --interactive needs a terminal; use `jury init --preset <name>` "
+            "or `jury init --agents <list>`",
             file=sys.stderr,
         )
         return 2
@@ -1180,8 +1184,9 @@ def _run_init(rest: list[str]) -> int:
         if ns.local_model:
             kwargs["local_model"] = ns.local_model
     # Interactive only when neither --agents nor --preset was given and we're on a
-    # TTY (or --interactive). Presets/flags are non-interactive by design.
-    elif not ns.agents and not ns.preset and (ns.interactive or sys.stdin.isatty()):
+    # TTY (or --interactive, refused above without one). Presets/flags are
+    # non-interactive by design. With no stdin at all, plain init detects (#897).
+    elif not ns.agents and not ns.preset and (ns.interactive or _stdin_is_terminal()):
         kwargs = _init_interactive(available, local_endpoint=ns.local_endpoint)
         kwargs["local_endpoint"] = ns.local_endpoint
         if ns.local_model:
@@ -2077,40 +2082,52 @@ def _override_bound_error(args) -> str | None:
     return None
 
 
-def _maybe_add_local_fallback(config, args, log) -> None:
+def _maybe_add_local_fallback(config, args, log):
     """Append a local agent when nothing else can run, offline (issue: zero-config).
 
     Only fires in the safe "fresh user" case: no explicit `--config`, no
     `./jury.toml`, not `--mock`, none of the configured agents are available,
     and a local OpenAI-compatible server is reachable with at least one model.
     Mutates ``config`` in place and points the chair at the local agent.
-    """
-    if args.config or args.mock or Path("jury.toml").exists():
-        return
-    from .adapters import list_local_models, make_adapter
-    from .config import AgentSpec
-    from .scaffold import pick_default_model
 
-    try:
-        if any(make_adapter(s).available() for s in config.enabled_agents):
-            return
-    except Exception:  # noqa: BLE001 - availability probing must never crash a run
-        return
-    models = list_local_models()
-    model = pick_default_model(models)
-    if not model:
-        return
-    config.agents.append(
-        AgentSpec(name="local", vendor="local", model=model, endpoint="http://localhost:11434/v1")
+    Returns the seat it added, or ``None``. The built-in seats stay in the config,
+    so the report still lists them as not found, but none of them can review: the
+    panel this run can form is the local seat alone, and the caller scopes the
+    default cross-vendor guard to that (#863). The decision is
+    :func:`scaffold.zero_config_local_seat`, which ``jury --doctor`` also asks.
+    """
+    from .adapters import list_local_models, make_adapter
+    from .scaffold import zero_config_local_seat
+
+    seat = zero_config_local_seat(
+        args.config,
+        args.mock,
+        Path("jury.toml").exists(),
+        lambda: any(make_adapter(s).available() for s in config.enabled_agents),
+        list_local_models,
     )
+    if seat is None:
+        return None
+    model = seat.model
+    config.agents.append(seat)
     config.chair = "local"
-    log(f"no agent CLIs found; using local model '{model}' (offline, $0)")
+    named = getattr(args, "min_vendors", None)
+    if named is None:
+        guard = "so the default cross-vendor guard (min_vendors) does not apply to it"
+    elif named <= 0:
+        guard = "with the cross-vendor guard off (--no-min-vendors)"
+    else:
+        guard = f"held to the --min-vendors {named} you named"
+    log(
+        f"no agent CLIs found; using local model '{model}' (offline, $0) as a single-vendor panel, {guard}"
+    )
     # An agy-only machine lands here too: say why its one CLI sat out.
     from .config import agy_opt_in_hint
 
     hint = agy_opt_in_hint((s.adapter_key for s in config.agents), shutil.which)
     if hint:
         log(f"note: {hint}")
+    return seat
 
 
 def _force_utf8_output() -> None:
@@ -2313,7 +2330,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.doctor:
         # Model discovery costs a probe per agent and only the JSON export
         # renders it; the human report must not pay for a field it never prints.
-        diagnostics = doctor_module.build_diagnostics(args.config, probe_models=args.json)
+        diagnostics = doctor_module.build_diagnostics(
+            args.config, probe_models=args.json, min_vendors=args.min_vendors
+        )
         if args.json:
             # Exactly ONE JSON document on stdout, and nothing else: the export
             # is meant to be piped straight into `jq` / an orchestrator, so any
@@ -2509,7 +2528,7 @@ def main(argv: list[str] | None = None) -> int:
     # local model server reachable, add a local agent so `jury` just works
     # offline out of the box (issue: easier zero-config). Never overrides an
     # explicit config or a working CLI panel.
-    _maybe_add_local_fallback(config, args, log)
+    local_fallback = _maybe_add_local_fallback(config, args, log)
 
     try:
         diff, context = _read_diff(args)
@@ -2784,12 +2803,30 @@ def main(argv: list[str] | None = None) -> int:
     # report renders.
     ballot_mode = "issue" if args.issue else "code"
 
-    metadata = build_run_metadata(outcome, config, decision=decision, vote=vote, mode=ballot_mode)
+    # Whether this run's panel is the zero-config fallback's one local seat (#863):
+    # recorded in the metadata and stated in the report, not only on stderr, which
+    # `--quiet` silences.
+    zero_config = local_fallback is not None
+    metadata = build_run_metadata(
+        outcome,
+        config,
+        decision=decision,
+        vote=vote,
+        mode=ballot_mode,
+        zero_config_fallback=zero_config,
+    )
 
     if args.format == "json":
         from .formats import to_json
 
-        report = to_json(outcome, config, decision=decision, vote=vote, mode=ballot_mode)
+        report = to_json(
+            outcome,
+            config,
+            decision=decision,
+            vote=vote,
+            mode=ballot_mode,
+            zero_config_fallback=zero_config,
+        )
     elif args.format == "sarif":
         from .formats import to_sarif
 
@@ -2853,11 +2890,18 @@ def main(argv: list[str] | None = None) -> int:
     # (`[jury.ci] min_vendors`, shipped as 2) and is scoped to runs that claimed
     # cross-vendor consensus, so a single-vendor install is untouched; exit 3, so
     # it is distinguishable from a findings failure.
+    #
+    # The zero-config local fallback (#863) seats one local reviewer beside the
+    # built-in seats it found missing — it fires only when none of them can run —
+    # so the panel it forms is that seat alone and never claimed cross-vendor
+    # consensus. Counting the missing seats as configured vendors failed the
+    # documented `jury --diff-file -` offline path with exit 3 on every run. A
+    # threshold named on the command line is still enforced as asked.
     required, explicit = resolve_min_vendors(getattr(args, "min_vendors", None), config)
     collapsed = collapse_reason(
         outcome.reviews,
         required,
-        None if explicit else distinct_vendors(config.enabled_agents),
+        None if explicit else claimed_vendors(config.enabled_agents, local_fallback),
     )
     if collapsed:
         log(collapsed)

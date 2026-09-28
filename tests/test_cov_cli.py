@@ -196,6 +196,9 @@ class InitDetectionPaths(unittest.TestCase):
         self.assertIn("generated config is invalid", err)
 
 
+_A_TERMINAL = mock.patch("ai_jury.cli._stdin_is_terminal", return_value=True)
+
+
 class InitInteractive(unittest.TestCase):
     """_init_interactive: default models_fn import (327) + local-model defaulting
     on empty input (365)."""
@@ -221,10 +224,12 @@ class InitInteractive(unittest.TestCase):
     def test_interactive_branch_in_run_init(self):
         # _run_init interactive branch (453-456): force --interactive; the
         # interactive prompting itself is exercised separately, so stub it here
-        # and assert --local-model overrides the returned kwargs.
+        # and assert --local-model overrides the returned kwargs. The prompts need
+        # a terminal (#897), so the run is told it has one.
         d = Path(tempfile.mkdtemp())
         out = d / "i.toml"
         with (
+            _A_TERMINAL,
             mock.patch(
                 "ai_jury.cli._init_available",
                 return_value={"claude": True, "codex": False, "agy": False, "qwen": False},
@@ -252,6 +257,7 @@ class InitInteractive(unittest.TestCase):
         d = Path(tempfile.mkdtemp())
         out = d / "j.toml"
         with (
+            _A_TERMINAL,
             mock.patch(
                 "ai_jury.cli._init_available",
                 return_value={"claude": True, "codex": False, "agy": False, "qwen": False},

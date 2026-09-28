@@ -17,7 +17,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from . import panel
-from .config import normalise_vendor, vendor_identity
+from .config import DEFAULT_MIN_VENDORS, normalise_vendor, vendor_identity
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from .config import JuryConfig
@@ -42,7 +42,13 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 # nothing checkable": naming `src/made/up.py` is a different failure from naming
 # nothing, and the two ask for different fixes. Additive, and the buckets still
 # sum to ``ballots`` — the seats moved between buckets, none was added or lost.
-SCHEMA_VERSION = 7
+# v7 (issue #714) added ``routing``.
+# v8 (issue #863) added, inside ``panel``: ``zero_config_fallback`` — ``true`` when
+# the run had no config and no usable agent CLI, so the panel was the one local
+# seat the zero-config fallback seated. That run is single-vendor, and the default
+# cross-vendor guard does not fail it; this says so where ``--quiet`` cannot hide
+# it. Always present. Additive: every v7 key keeps its name and meaning.
+SCHEMA_VERSION = 8
 
 
 #: What a reviewer slot actually contributed (issue #501). ``clean`` and
@@ -194,6 +200,53 @@ def distinct_vendors(specs) -> int:
     return len({vendor_identity(getattr(s, "vendor", "")) for s in specs or []} - {""})
 
 
+def resolve_min_vendors(cli_value, config) -> tuple[int, bool]:
+    """The effective cross-vendor threshold, and whether a person asked for it.
+
+    PURE. ``cli_value`` is ``args.min_vendors``: ``None`` when neither
+    ``--min-vendors`` nor ``--no-min-vendors`` was passed, in which case the
+    value comes from ``[jury.ci] min_vendors`` (shipped as 2, #682).
+
+    The second element says whether the threshold was named on the command line.
+    Only an unnamed (default) threshold is scoped down to runs that actually
+    claimed cross-vendor consensus — someone who types ``--min-vendors 3`` on a
+    two-vendor panel is asking for the failure and gets it.
+
+    Lives here, beside the gate, so a run and ``jury --doctor`` resolve the same
+    threshold from the same flag (#863).
+    """
+    if cli_value is None:
+        return max(0, int(getattr(config.ci, "min_vendors", DEFAULT_MIN_VENDORS))), False
+    return max(0, int(cli_value)), True
+
+
+def claimed_vendors(enabled_agents, local_fallback=None) -> int:
+    """How many distinct vendors a run claimed, which scopes the default guard (pure).
+
+    The enabled seats, except when the zero-config local fallback seated a model
+    (#863): it does so only when none of the built-in seats can run, so the panel
+    that run can form is that one seat, and the missing seats claimed nothing.
+    The run's gate and ``jury --doctor`` both count through here.
+    """
+    return distinct_vendors([local_fallback] if local_fallback is not None else enabled_agents)
+
+
+def vendor_guard_fails(contributed: int, required: int, configured_vendors: int | None) -> bool:
+    """Whether ``contributed`` vendors fail a threshold of ``required`` (pure).
+
+    ``configured_vendors`` scopes the default: fewer than ``required`` means the
+    run never claimed cross-vendor consensus and is left alone. ``None`` is a
+    threshold named on the command line, enforced as asked. The run passes the
+    vendors that reviewed; ``jury --doctor`` passes the vendors it can reach, a
+    ceiling on that — so the two apply one rule and cannot drift (#863).
+    """
+    if required <= 0:
+        return False
+    if configured_vendors is not None and configured_vendors < required:
+        return False
+    return contributed < required
+
+
 def collapse_reason(reviews, required: int, configured_vendors: int | None = None) -> str | None:
     """Why this run may not stand as cross-vendor consensus, or ``None``.
 
@@ -213,12 +266,8 @@ def collapse_reason(reviews, required: int, configured_vendors: int | None = Non
     failure that does not say how to accept it sends them to the issue tracker
     for a flag the tool already has.
     """
-    if required <= 0:
-        return None
-    if configured_vendors is not None and configured_vendors < required:
-        return None
     contributed = panel_accounting(reviews).get("vendors", 0)
-    if contributed >= required:
+    if not vendor_guard_fails(contributed, required, configured_vendors):
         return None
     return (
         f"panel collapsed: {contributed} vendor(s) contributed a review, "
@@ -331,7 +380,13 @@ def estimate_economics(results: list) -> dict:
 
 
 def build_run_metadata(
-    outcome: JuryOutcome, config: JuryConfig, *, decision=None, vote=None, mode: str = "code"
+    outcome: JuryOutcome,
+    config: JuryConfig,
+    *,
+    decision=None,
+    vote=None,
+    mode: str = "code",
+    zero_config_fallback: bool = False,
 ) -> dict:
     """Return a machine-readable metadata dict for a jury run.
 
@@ -348,6 +403,9 @@ def build_run_metadata(
     round 2), and the ballots are what ``--issue`` changes: the metadata and the
     ``reviewers`` array must be derived under the same mode, or the run's own
     gate would count a different document than the one it printed.
+
+    ``zero_config_fallback`` says the panel is the zero-config fallback's one
+    local seat (#863); the caller knows, because it seated it.
     """
     # The panel is the set of round-1 participants; this is the canonical
     # per-agent view and avoids duplicating the chair across later phases.
@@ -397,11 +455,14 @@ def build_run_metadata(
         "agents": agents,
         # Configured vs effective panel size (issue #501): a slot that returned no
         # review is an abstention, not an approval, and must not inflate the panel.
-        "panel": panel_accounting(
-            outcome.reviews,
-            chair=getattr(outcome, "chair", "") or "",
-            ballots=reviewer_ballots(outcome, config, vote=vote, mode=mode),
-        ),
+        "panel": {
+            **panel_accounting(
+                outcome.reviews,
+                chair=getattr(outcome, "chair", "") or "",
+                ballots=reviewer_ballots(outcome, config, vote=vote, mode=mode),
+            ),
+            "zero_config_fallback": bool(zero_config_fallback),
+        },
         "economics": estimate_economics(all_results),
         "rounds_executed": _rounds_executed(outcome),
         "from_cache": bool(getattr(outcome, "from_cache", False)),
