@@ -114,6 +114,9 @@ RELEASE_SURFACES: tuple[Surface, ...] = (
     Surface(".cursor-plugin/plugin.json", "manifest", _json_version),
     Surface("website/index.html", "site", rf'id="site-version"[^>]*>v{SEMVER}</a>'),
     Surface("website/app.js", "site", rf"rev: v{SEMVER}"),
+    # The docs page reads `docs/` at this tag, so a stale value shows visitors the
+    # previous release's documentation (#876).
+    Surface("website/docs.html", "site", rf'var DOCS_TAG = "v{SEMVER}";'),
     Surface("README.md", "site", rf"rev: v{SEMVER}"),
     Surface("README.md", "site", rf"Active \(v{SEMVER}\)"),
     Surface("docs/cookbook.md", "site", rf"rev: v{SEMVER}"),

@@ -40,7 +40,7 @@ is also run solo**.
 
 - **Diversity lifts detection, robustly.** *Every* single model missed seeded
   bugs: the best (Claude, Qwen) caught **67%**; Codex and Agy **33%**. The
-  four-vendor **panel caught 100%** — so the lift holds *whichever* single model
+  four-vendor **panel caught 100%** (3/3), at lower precision (next point) — so the lift holds *whichever* single model
   you'd otherwise have picked, not just against a weak baseline. This is the
   research-backed lever — **heterogeneity** (see [feasibility](feasibility.md)),
   and it is the reproducible headline here.

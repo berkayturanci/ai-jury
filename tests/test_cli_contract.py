@@ -24,6 +24,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import sys
 import tempfile
 import unittest
@@ -35,6 +36,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from ai_jury import __version__  # noqa: E402
 from ai_jury.cli import build_parser, main  # noqa: E402
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
 GOLDEN_DIR = Path(__file__).resolve().parent / "golden"
 HELP_GOLDEN = GOLDEN_DIR / "help.txt"
 
@@ -47,82 +49,50 @@ SAMPLE_DIFF = (
     "+    return int(x)\n"
 )
 
-# Every flag the CLI documents as part of its public surface. Used for a
-# version-independent structural check on the help text.
-DOCUMENTED_FLAGS = [
-    "--pr",
-    "--issue",
-    "--repo",
-    "--diff-file",
-    "--commit",
-    "--commits",
-    "--config",
-    "--policy",
-    "--context-mode",
-    "--redact",
-    "--no-redact",
-    "--rounds",
-    "--max-rounds",
-    "--early-stop",
-    "--no-early-stop",
-    "--auto",
-    "--no-auto",
-    "--total-timeout",
-    "--phase-timeout",
-    "--retries",
-    "--max-diff-bytes",
-    "--chunk",
-    "--no-chunk",
-    "--exclude",
-    "--include",
-    "--cache",
-    "--clear-cache",
-    "--cache-dir",
-    "--suggest-patches",
-    "--patches-out",
-    "--incremental",
-    "--seed",
-    "--chair",
-    "--mock",
-    "--strict",
-    "--min-vendors",
-    "--no-min-vendors",
-    "--min-reviews",
-    "--verify",
-    "--no-verify",
-    "--doctor",
-    "--json",
-    "--write",
-    "--effort",
-    "--output",
-    "--metadata-json",
-    "--format",
-    "--decision",
-    "--transcript",
-    "--no-transcript",
-    "--verbose",
-    "--live",
-    "--theater",
-    "--no-theater",
-    "--theater-style",
-    "--post-summary",
-    "--post",
-    "--post-inline",
-    "--post-progress",
-    "--post-mode",
-    "--dry-run",
-    "--label",
-    "--ci",
-    "--fail-on",
-    "--quiet",
-    "--config-validate",
-    "--strict-config",
-    "--tiered",
-    "--hints",
-    "--no-hints",
-    "--version",
-    "--help",
-]
+#: The two documents that promise to list every public flag. The README's
+#: "Stable flags" list and the "CLI flags" tables of the parameter reference are
+#: what a user reads; the test below reads the flags out of *them* and compares
+#: each with the parser. It used to compare the parser with a list kept in this
+#: file, which stayed complete while the README lacked six flags and the
+#: parameter reference three (#868).
+README = REPO_ROOT / "README.md"
+PARAMETERS = REPO_ROOT / "docs" / "parameters.md"
+
+#: A long option inside an inline code span: `--effort {low,medium,high}` names
+#: `--effort`, `-o` / `--output` names `--output`.
+_LONG_FLAG = re.compile(r"`(--[a-z][a-z0-9-]*)")
+
+
+def _section(text: str, start: str, end: str) -> str:
+    """The text between the first `start` and the first `end` after it."""
+    head = text.index(start)
+    return text[head : text.index(end, head)]
+
+
+def parser_flags() -> set[str]:
+    """Every long option the real `jury` parser accepts, `--help` included."""
+    return {
+        opt
+        for action in build_parser()._actions
+        for opt in action.option_strings
+        if opt.startswith("--")
+    }
+
+
+def readme_flags() -> set[str]:
+    """The long options the README's "Stable flags" list names."""
+    text = README.read_text(encoding="utf-8")
+    block = _section(text, "**Stable flags**", "**Stable error messages")
+    bullets = "\n".join(line for line in block.splitlines() if line.startswith(("- ", "  ")))
+    return set(_LONG_FLAG.findall(bullets))
+
+
+def parameters_flags() -> set[str]:
+    """The long options the first column of the parameter reference's flag tables names."""
+    text = PARAMETERS.read_text(encoding="utf-8")
+    block = _section(text, "\n## CLI flags\n", "\n## Subcommands\n")
+    first_cells = (line.split("|")[1] for line in block.splitlines() if line.startswith("| `"))
+    return set(_LONG_FLAG.findall("\n".join(first_cells)))
 
 
 def _render_help() -> str:
@@ -167,53 +137,44 @@ class HelpSnapshotTests(unittest.TestCase):
     def test_help_render_is_deterministic(self):
         self.assertEqual(_render_help(), _render_help())
 
-    def test_help_lists_every_documented_flag(self):
+    def test_help_lists_every_parser_flag(self):
         # Version-independent: argparse formatting varies across Python versions, but
         # every public flag must always appear somewhere in the help output.
         help_text = _render_help()
-        for flag in DOCUMENTED_FLAGS:
+        for flag in sorted(parser_flags()):
             self.assertIn(flag, help_text, f"{flag} missing from --help")
         self.assertIn("jury", help_text)
 
-    def test_documented_flags_match_parser_exactly(self):
-        # Version-INDEPENDENT guarantee that the public flag surface is locked.
-        # The exact ``--help`` snapshot below only runs on Python 3.13, so this
-        # bidirectional check is what keeps the contract honest on every
-        # supported version: it proves no documented flag silently disappeared
-        # from the parser AND that DOCUMENTED_FLAGS never drifts out of sync
-        # with the actual parser definition (a new flag added without being
-        # documented here fails the test, forcing a deliberate update).
-        parser = build_parser()
-        parser_flags = {
-            opt
-            for action in parser._actions
-            for opt in action.option_strings
-            if opt.startswith("--")
-        }
-        documented = set(DOCUMENTED_FLAGS)
-        # ``--help`` is auto-added by argparse rather than declared in
-        # build_parser; it is part of the public surface and is asserted
-        # explicitly here so the comparison can be exact (nothing excluded).
-        self.assertIn("--help", parser_flags)
-        self.assertIn("--help", documented)
+    def _assert_documents_the_parser(self, documented: set[str], where: str):
+        # Both directions: a flag the parser accepts that the page leaves out, and a
+        # flag the page names that the parser no longer defines. ``--help`` is
+        # auto-added by argparse and is part of the public surface, so nothing is
+        # excluded and the comparison can be exact.
+        actual = parser_flags()
+        self.assertIn("--help", actual)
+        self.assertEqual(
+            sorted(actual - documented), [], f"the parser accepts flags {where} does not list"
+        )
+        self.assertEqual(
+            sorted(documented - actual), [], f"{where} lists flags the parser does not define"
+        )
 
-        missing_from_docs = parser_flags - documented
-        self.assertFalse(
-            missing_from_docs,
-            f"parser exposes flags not in DOCUMENTED_FLAGS: {sorted(missing_from_docs)}",
-        )
-        stale_in_docs = documented - parser_flags
-        self.assertFalse(
-            stale_in_docs,
-            f"DOCUMENTED_FLAGS lists flags the parser no longer defines: {sorted(stale_in_docs)}",
-        )
-        self.assertEqual(documented, parser_flags)
+    def test_readme_stable_flags_match_the_parser(self):
+        # Version-INDEPENDENT guarantee that the public flag surface is locked. The
+        # exact ``--help`` snapshot below only runs on Python 3.13; this reads the
+        # README's own "Stable flags" list, which is the promise a user reads.
+        self._assert_documents_the_parser(readme_flags(), "README.md's Stable flags")
+
+    def test_parameter_reference_matches_the_parser(self):
+        # docs/parameters.md says it covers every CLI flag; its "CLI flags" tables
+        # are held to that (#868).
+        self._assert_documents_the_parser(parameters_flags(), "docs/parameters.md's CLI flags")
 
     def test_help_matches_golden(self):
         # NOTE: this exact snapshot is pinned to Python 3.13 argparse
         # formatting and self-skips elsewhere. The version-independent
         # guarantee that the public flag surface stays complete and in sync
-        # lives in ``test_documented_flags_match_parser_exactly`` above.
+        # lives in ``test_readme_stable_flags_match_the_parser`` above.
         rendered = _render_help()
         if os.environ.get("UPDATE_GOLDEN") == "1":
             GOLDEN_DIR.mkdir(exist_ok=True)

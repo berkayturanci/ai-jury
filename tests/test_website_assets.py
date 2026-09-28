@@ -262,12 +262,13 @@ async function run(purify, fetchFails) {
   const ctx = {
     window: win, DOMPurify: win.DOMPurify, contentEl, document: { createElement: (t) => node(t.toUpperCase()), title: "" },
     BY_SLUG: { guide: { file: "guide.md", title: "Guide" } }, RAW_DOCS: "https://raw.example/", BLOB_ROOT: "https://blob.example/",
+    DOCS_TAG: "v0.0.0", FALLBACK_REF: "main", MAIN_DOCS: "https://main.example/", MAIN_BLOB_ROOT: "https://main-blob.example/",
     currentSlug: null, buildSidebar() {}, renderHome() {}, rewrite() {}, buildTOC() {}, scrollToAnchor() {},
     marked: { parse: () => "<p>hi</p>" + HOSTILE },
     fetch: () => fetchFails ? Promise.reject(new Error(HOSTILE))
                             : Promise.resolve({ ok: true, text: () => Promise.resolve("# t") }),
   };
-  vm.runInNewContext(extract("renderDoc") + "; renderDoc('guide', null);", ctx);
+  vm.runInNewContext(extract("fetchDoc") + extract("renderDoc") + "; renderDoc('guide', null);", ctx);
   await new Promise((r) => setTimeout(r, 20));
   return { writes, mono: mono.text };
 }

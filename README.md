@@ -178,133 +178,20 @@ registers more.
 Full detail, including what each route actually registers and where files land:
 [`docs/install.md`](docs/install.md).
 
-For development, install the dev extras (linting, build, and coverage tooling):
+### Windows
 
-```bash
-pip install -e ".[dev]"   # or: make install
-```
+CI runs one Windows leg (`windows-latest`, Python 3.13, in
+[`ci.yml`](.github/workflows/ci.yml)). It installs the package with `pip`, runs the
+offline unit suite, and runs a `--mock` review under Git Bash. That is all that is
+tested on Windows:
 
-That resolves `ruff`, `build` and `coverage` fresh. To get the exact versions CI
-uses — the ones pinned in the tracked `uv.lock`, with hashes — install from the
-lock instead. It is also the ruff the `ruff-format` pre-commit hook runs:
-
-```bash
-uv sync --locked --extra dev
-```
-
-## Coverage
-
-Test coverage is measured with [`coverage.py`](https://coverage.readthedocs.io/)
-— a **dev-only** dependency. The runtime stays standard-library-only.
-
-Measure it locally with one command:
-
-```bash
-make coverage          # run the suite under coverage, print the report, write htmlcov/
-# or, without make:
-./scripts/coverage.sh
-```
-
-Either entry point runs:
-
-```bash
-python3 -m coverage run -m unittest discover -s tests
-python3 -m coverage report
-```
-
-**Threshold.** The enforced minimum total coverage is **98%** — one number,
-`fail_under` in `pyproject.toml` under `[tool.coverage.report]`, enforced by a
-dedicated `coverage` job in CI (`.github/workflows/ci.yml`, Ubuntu / Python
-3.13). CI fails if total coverage drops below that floor. The gate runs in a
-single job rather than across the whole test matrix to keep CI cheap and free of
-cross-OS path noise. `tests/test_docs_coverage_gate.py` asserts the percentage in
-this paragraph is still the one `pyproject.toml` sets, because the two were out
-of step for several releases.
-
-**The floor is not the measurement.** The gate is deliberately set below what the
-suite actually reaches, so that an unrelated refactor moving the total by a
-fraction of a point is caught in review rather than by a red CI job, and it is
-raised on purpose as coverage improves. For the current *measured* total see the
-live [coverage badge](https://ai-jury.dev/coverage/), rebuilt from `main` on every
-push, or your own `make coverage` run. Neither this paragraph nor `pyproject.toml`
-records it, because a written figure goes stale.
-
-**Measurement method.** Branch coverage is enabled (`branch = true`) and the
-package is measured by import name (`source = ["ai_jury"]`).
-
-**Exclusions.** Intentionally-untested paths are excluded so the number stays
-honest:
-
-- `src/ai_jury/__main__.py` is omitted (a thin `python -m` entry shim).
-- Lines matching these patterns are excluded from the count: `pragma: no cover`,
-  `if __name__ == "__main__":`, `raise NotImplementedError`, `if TYPE_CHECKING:`,
-  and abstract-method decorators.
-
-Add `# pragma: no cover` to any new line that is genuinely not worth testing.
-
-## Live smoke tests
-
-The default test suite uses **mock adapters only**, so the real native CLIs
-are never invoked — a breakage in argv format, stdin handling, or output
-capture in the concrete adapters would go unnoticed until a live run. The
-optional **live smoke tests** close that gap: they run a tiny, cheap review
-prompt (a two-line diff) through each *installed* real adapter and assert the
-run succeeds (`ok`, non-empty output, `error_code is None`).
-
-They are **opt-in** and skipped entirely unless `JURY_LIVE=1` is set, so
-they never run in `make test` or in CI.
-
-**Requirements** for a meaningful live run:
-
-- The agent CLIs you want to exercise must be installed and on your `PATH`
-  (`claude`, `codex`, `agy`) **and authenticated** for non-interactive use.
-- Any agent whose CLI is not installed is **skipped individually**, so a
-  machine with only `claude` still exercises that one adapter.
-
-**Run them:**
-
-```bash
-make live-smoke
-# equivalent to:
-JURY_LIVE=1 PYTHONPATH=src python3 -m unittest discover -s tests -v
-```
-
-They are **intentionally excluded from the CI matrix** (no CLIs, auth, or
-secrets are available there) and are meant to be run locally before a release
-or when touching the adapter layer.
-
-## Review-quality benchmark
-
-A **small, directional** benchmark (`benchmark/`) measures whether a jury's
-findings line up with hand-authored expectations for a handful of fixture diffs
-(obvious logic bug, subtle boolean-guard bug, missing error handling, a
-false-positive trap, and a docs-only change).
-
-> It is **not a universal quality claim**. The default *offline* mode is
-> deterministic and runs with **no live CLIs**: it scores each fixture's
-> *recorded* sample findings against an expected spec, which validates the
-> scorer and the recorded baselines — it does not measure live review quality.
-> (`--mock` is deliberately not used per fixture: the mock adapter emits a fixed
-> finding regardless of the diff, so it would be fake signal.) Only the opt-in
-> *live* mode (`JURY_BENCH_LIVE=1`) runs real agents and measures quality.
-
-```bash
-make benchmark                                          # offline, deterministic
-JURY_BENCH_LIVE=1 PYTHONPATH=src python3 -m ai_jury.benchmark  # live (opt-in)
-```
-
-**The lift, measured.** A config-sweep (`benchmark/sweep.py`) runs the same
-labeled fixtures with *each model solo* vs the *panel* vs the *full jury* —
-isolating what the panel adds, without the result hinging on which single model
-you'd pick. On a live four-vendor run (v1.1.0): **every** model missed seeded
-bugs run alone (best: Claude/Qwen **67%**; Codex/Agy 33%, all at 100% precision),
-while the four-vendor **panel caught 100%** of them. Vendor **diversity** is the
-robust lever (recall); the precision/verification effect is **within noise at
-N=5** and not claimed. Directional, reproducible — full table + method in
-[**docs/benchmark-results.md**](docs/benchmark-results.md).
-
-See [`benchmark/README.md`](benchmark/README.md) for the fixture list, the
-expected/recorded schema, and the match/scoring rules.
+- That install is `pip install -e .` from the checkout. No installer is tested on
+  Windows: not pipx, not the PyPI wheel, not Homebrew or `curl | sh`.
+  `pipx install ai-jury` or `pip install ai-jury` is the route that matches it.
+- No agent CLI runs in CI on any OS. Whether `claude`, `codex`, `agy` or `gh` works
+  on Windows is up to its vendor. A CLI that is missing is skipped, as on any OS.
+- `jury run-agent` checks a detached run's process on POSIX only, so on Windows a
+  run that crashed stays `running` instead of `lost`.
 
 ## Usage
 
@@ -747,6 +634,43 @@ models loop at 0 and never answer; gpt-oss is one of them. Give such a seat
 `temperature = 1.0`, which is what OpenAI recommends for gpt-oss. See
 [sampling temperature](docs/configuration.md#sampling-temperature-agent-temperature-local-seats).
 
+## What a run costs
+
+ai-jury itself is free (MIT) and has no server. A run costs the model calls its
+seats make, and each call is billed by whoever serves that seat:
+
+| Seat | `vendor` | Who bills the call |
+| --- | --- | --- |
+| Hosted API | `anthropic-api`, `openai-api`, `google-api`, `xai-api`, `openai-compatible` (OpenRouter, DeepSeek, Groq, …) | The provider, at its API prices, on the key you give it |
+| Agent CLI | `anthropic` (`claude`), `openai` (`codex`), `google` (`agy`), and `cli` or `xai` for a CLI you bring (Aider, Cursor, …) | The account the CLI is logged in with: its plan or its API billing |
+| Local model | `local` | Nobody: it runs on your hardware |
+
+`jury --mock` makes no model calls.
+
+**Calls per run.** With the defaults (`rounds = 2`, `verify = true`), a run with N
+seats makes these calls for each diff, or for each chunk when `--chunk` splits one:
+
+- N round-1 reviews;
+- one debate reply per review that came back, when at least two did;
+- one verification call and one synthesis call, both by the chair.
+
+When every review comes back, that is 2N + 2 calls. For a CLI seat a "call" is one
+run of its CLI, which may make several model requests inside the vendor's tool.
+These change the count:
+
+- `--rounds 1` skips the debate, and `--no-verify` skips the verification call.
+- `--early-stop` skips the debate when the round-1 reviews agree, and otherwise
+  runs up to `--max-rounds` − 1 debate rounds, each with the same debaters.
+- `--auto` sets the rounds and verification from the diff's risk: a `low`-risk diff
+  gets one round and no verification.
+- `--tiered` seats fewer frontier seats in round 1 on a `low` or `medium`-risk diff:
+  the economical seats plus one frontier anchor. A `critical` or `major` finding
+  brings the benched seats into the debate.
+- `--retries K` repeats a call that failed transiently, up to K more times.
+- `--cache` reuses the stored result for an unchanged diff and config, with no calls.
+- `--total-timeout` caps the run: once it is spent, the debate, verification and
+  synthesis that have not started are skipped.
+
 ## Repository review policy (optional)
 
 A repository under review may ship an optional, separate **review policy** that
@@ -996,17 +920,18 @@ accidental changes are caught in review.
 - *Input:* `--pr`, `--issue`, `--repo`, `--diff-file`, `--commit`, `--commits`
 - *Depth:* `--rounds`, `--max-rounds`, `--early-stop` / `--no-early-stop`,
   `--auto` / `--no-auto`, `--verify` / `--no-verify`,
-  `--effort {low,medium,high}`
+  `--effort {low,medium,high}`, `--tiered`
 - *Budget / reliability:* `--total-timeout`, `--phase-timeout`, `--retries`
 - *Large diffs:* `--max-diff-bytes`, `--chunk` / `--no-chunk`, `--exclude`,
   `--include`
 - *Context & privacy:* `--context-mode {diff-only,expanded}`,
-  `--redact` / `--no-redact`
+  `--redact` / `--no-redact`, `--hints` / `--no-hints`
 - *Config / policy:* `--config`, `--policy`, `--chair`, `--seed`, `--mock`,
   `--strict`, `--config-validate`, `--strict-config`
 - *Output:* `-o` / `--output`, `--write`, `--metadata-json`,
   `--format {markdown,json,sarif,keel-reviews}`, `--decision {chair,vote}`,
-  `--transcript` / `--no-transcript`, `--verbose`, `--live`, `-q` / `--quiet`
+  `--transcript` / `--no-transcript`, `--verbose`, `--live`,
+  `--theater` / `--no-theater`, `--theater-style {flat,pixel}`, `-q` / `--quiet`
 - *GitHub posting:* `--post-summary` / `--post`, `--post-inline`,
   `--post-progress`, `--post-mode {single,phased}`, `--dry-run`, `--label`
 - *CI gating:* `--ci`, `--fail-on`, `--min-vendors`, `--no-min-vendors`,
@@ -1016,10 +941,11 @@ accidental changes are caught in review.
 - *Patches:* `--suggest-patches`, `--patches-out`
 - *Misc:* `--doctor`, `--json` (with `--doctor`), `--version`, `-h` / `--help`
 
-A version-independent test (`test_documented_flags_match_parser_exactly`)
-asserts the documented flag set and the parser's actual long options stay
-exactly in sync in both directions, so a new flag can't be added without being
-documented and a documented flag can't silently disappear.
+A version-independent test (`test_readme_stable_flags_match_the_parser`) reads
+this list out of the README and compares it with the long options of the real
+argparse parser, in both directions, so a new flag can't be added without being
+listed here and a listed flag can't silently disappear. A second test holds the
+flag tables of [`docs/parameters.md`](docs/parameters.md) to the same parser.
 
 **Stable error messages and exit codes:**
 
@@ -1051,6 +977,187 @@ intentional, regenerate the help snapshot with
 `UPDATE_GOLDEN=1 PYTHONPATH=src python3 -m unittest tests.test_cli_contract`.
 The help-snapshot exact match is pinned to Python 3.13 argparse formatting; the
 flag-presence checks run on all supported versions (3.11–3.14).
+
+## Uninstall
+
+Remove the CLI the way you installed it:
+
+```bash
+brew uninstall ai-jury && brew untap berkayturanci/ai-jury   # Homebrew
+pipx uninstall ai-jury                                       # pipx
+uv tool uninstall ai-jury                                    # uv
+pip uninstall ai-jury                                        # pip
+```
+
+The `curl | sh` installer uses the first of Homebrew, pipx and uv it finds, so one
+of those lines undoes it. When it finds none, it creates a virtual environment and
+a link to it. Remove both (these are the default paths; `AI_JURY_HOME` and
+`AI_JURY_BIN_DIR` move them):
+
+```bash
+rm -rf ~/.local/share/ai-jury
+rm ~/.local/bin/jury
+```
+
+The **GitHub Action** installs ai-jury on the runner for each job, and a
+GitHub-hosted runner is discarded after the job. Delete the
+`uses: berkayturanci/ai-jury@…` step, and the API-key secrets you added for it if
+nothing else uses them.
+
+An **agent plugin** is removed by its agent. These commands come from the `--help`
+of Claude Code 2.1.236, codex-cli 0.155.0 and agy 1.2.12:
+
+```bash
+claude plugin uninstall ai-jury@ai-jury && claude plugin marketplace remove ai-jury
+codex plugin remove ai-jury@ai-jury && codex plugin marketplace remove ai-jury
+agy plugin uninstall ai-jury
+rm -rf ~/.cursor/plugins/local/ai-jury   # Cursor's local checkout
+```
+
+The second command on each of the first two lines removes the marketplace the
+install added.
+
+**Files left behind.** Uninstalling does not remove the two directories the tool
+writes to. Delete them if you want them gone:
+
+- `~/.config/ai-jury/` (`$XDG_CONFIG_HOME/ai-jury/` when that is set), which holds
+  `trusted-configs`: the discovered `jury.toml` files you allowed to run commands.
+- `~/.cache/ai-jury/` (`$XDG_CACHE_HOME/ai-jury/`, or `$JURY_CACHE_DIR`), which holds
+  the `--cache` results and the state of `jury run-agent` runs.
+
+## Development
+
+Working on ai-jury itself. None of this is needed to use it.
+
+Install the dev extras (linting, build, and coverage tooling):
+
+```bash
+pip install -e ".[dev]"   # or: make install
+```
+
+That resolves `ruff`, `build` and `coverage` fresh. To get the exact versions CI
+uses — the ones pinned in the tracked `uv.lock`, with hashes — install from the
+lock instead. It is also the ruff the `ruff-format` pre-commit hook runs:
+
+```bash
+uv sync --locked --extra dev
+```
+
+### Coverage
+
+Test coverage is measured with [`coverage.py`](https://coverage.readthedocs.io/)
+— a **dev-only** dependency. The runtime stays standard-library-only.
+
+Measure it locally with one command:
+
+```bash
+make coverage          # run the suite under coverage, print the report, write htmlcov/
+# or, without make:
+./scripts/coverage.sh
+```
+
+Either entry point runs:
+
+```bash
+python3 -m coverage run -m unittest discover -s tests
+python3 -m coverage report
+```
+
+**Threshold.** The enforced minimum total coverage is **98%** — one number,
+`fail_under` in `pyproject.toml` under `[tool.coverage.report]`, enforced by a
+dedicated `coverage` job in CI (`.github/workflows/ci.yml`, Ubuntu / Python
+3.13). CI fails if total coverage drops below that floor. The gate runs in a
+single job rather than across the whole test matrix to keep CI cheap and free of
+cross-OS path noise. `tests/test_docs_coverage_gate.py` asserts the percentage in
+this paragraph is still the one `pyproject.toml` sets, because the two were out
+of step for several releases.
+
+**The floor is not the measurement.** The gate is deliberately set below what the
+suite actually reaches, so that an unrelated refactor moving the total by a
+fraction of a point is caught in review rather than by a red CI job, and it is
+raised on purpose as coverage improves. For the current *measured* total see the
+live [coverage badge](https://ai-jury.dev/coverage/), rebuilt from `main` on every
+push, or your own `make coverage` run. Neither this paragraph nor `pyproject.toml`
+records it, because a written figure goes stale.
+
+**Measurement method.** Branch coverage is enabled (`branch = true`) and the
+package is measured by import name (`source = ["ai_jury"]`).
+
+**Exclusions.** Intentionally-untested paths are excluded so the number stays
+honest:
+
+- `src/ai_jury/__main__.py` is omitted (a thin `python -m` entry shim).
+- Lines matching these patterns are excluded from the count: `pragma: no cover`,
+  `if __name__ == "__main__":`, `raise NotImplementedError`, `if TYPE_CHECKING:`,
+  and abstract-method decorators.
+
+Add `# pragma: no cover` to any new line that is genuinely not worth testing.
+
+### Live smoke tests
+
+The default test suite uses **mock adapters only**, so the real native CLIs
+are never invoked — a breakage in argv format, stdin handling, or output
+capture in the concrete adapters would go unnoticed until a live run. The
+optional **live smoke tests** close that gap: they run a tiny, cheap review
+prompt (a two-line diff) through each *installed* real adapter and assert the
+run succeeds (`ok`, non-empty output, `error_code is None`).
+
+They are **opt-in** and skipped entirely unless `JURY_LIVE=1` is set, so
+they never run in `make test` or in CI.
+
+**Requirements** for a meaningful live run:
+
+- The agent CLIs you want to exercise must be installed and on your `PATH`
+  (`claude`, `codex`, `agy`) **and authenticated** for non-interactive use.
+- Any agent whose CLI is not installed is **skipped individually**, so a
+  machine with only `claude` still exercises that one adapter.
+
+**Run them:**
+
+```bash
+make live-smoke
+# equivalent to:
+JURY_LIVE=1 PYTHONPATH=src python3 -m unittest discover -s tests -v
+```
+
+They are **intentionally excluded from the CI matrix** (no CLIs, auth, or
+secrets are available there) and are meant to be run locally before a release
+or when touching the adapter layer.
+
+### Review-quality benchmark
+
+A **small, directional** benchmark (`benchmark/`) measures whether a jury's
+findings line up with hand-authored expectations for a handful of fixture diffs
+(obvious logic bug, subtle boolean-guard bug, missing error handling, a
+false-positive trap, and a docs-only change).
+
+> It is **not a universal quality claim**. The default *offline* mode is
+> deterministic and runs with **no live CLIs**: it scores each fixture's
+> *recorded* sample findings against an expected spec, which validates the
+> scorer and the recorded baselines — it does not measure live review quality.
+> (`--mock` is deliberately not used per fixture: the mock adapter emits a fixed
+> finding regardless of the diff, so it would be fake signal.) Only the opt-in
+> *live* mode (`JURY_BENCH_LIVE=1`) runs real agents and measures quality.
+
+```bash
+make benchmark                                          # offline, deterministic
+JURY_BENCH_LIVE=1 PYTHONPATH=src python3 -m ai_jury.benchmark  # live (opt-in)
+```
+
+**The lift, measured.** A config-sweep (`benchmark/sweep.py`) runs the same
+labeled fixtures with *each model solo* vs the *panel* vs the *full jury* —
+isolating what the panel adds, without the result hinging on which single model
+you'd pick. On one live four-vendor run (v1.1.0, 2026-06-05; 5 fixtures, 3 seeded
+bugs, cloud models not pinned), the four-vendor **panel caught 3/3 seeded bugs vs
+2/3 for the best single model** (Claude, Qwen; Codex and Agy 1/3), **at lower
+precision: 0.75**, and 0.60 for the full jury, against 1.00 for every model run
+alone. More reviewers found more bugs and raised more false alarms. Whether the
+verification round wins the precision back is within noise at N=5 and not claimed.
+The run predates the current release and has not been repeated on it. Full table
+and method in [**docs/benchmark-results.md**](docs/benchmark-results.md).
+
+See [`benchmark/README.md`](benchmark/README.md) for the fixture list, the
+expected/recorded schema, and the match/scoring rules.
 
 ## Documentation
 
