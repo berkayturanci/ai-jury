@@ -23,6 +23,17 @@ from ai_jury.scaffold import (  # noqa: E402
 )
 
 
+@contextlib.contextmanager
+def _listing(models):
+    """Mock what the local server lists, for `jury init`'s pick (#864) and for the
+    #849 check it makes after writing, so neither reaches a server on loopback."""
+    with (
+        mock.patch("ai_jury.adapters.local_model_listing", return_value=models),
+        mock.patch("ai_jury.doctor.local_model_listing", return_value=models),
+    ):
+        yield
+
+
 class BuildConfigTest(unittest.TestCase):
     def test_cloud_panel(self):
         cfg = build_config(["claude", "codex"], rounds=2)
@@ -293,7 +304,11 @@ class PresetTest(unittest.TestCase):
     def test_thorough_preset_uses_all_agents(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "jury.toml"
-            self._run(["init", "--preset", "thorough", "-o", str(path)])
+            # A server listing a model, so the local seat is seated (#864): offline,
+            # and independent of whether this machine runs one. Init's listing and the
+            # #849 check after the write are both mocked.
+            with _listing(["qwen2.5-coder:7b"]):
+                self._run(["init", "--preset", "thorough", "-o", str(path)])
             data = tomllib.loads(path.read_text(encoding="utf-8"))
             # Derived, not listed: a hardcoded roster here is a second copy of
             # KNOWN_AGENTS, and two copies drifting apart is what #589 was about.
@@ -366,7 +381,8 @@ class ConfigShowTest(unittest.TestCase):
     def test_config_show_renders_effective_config(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "jury.toml"
-            cli.main(["init", "--agents", "claude,qwen", "--rounds", "1", "-o", str(path)])
+            with _listing(["qwen2.5-coder:7b"]):
+                cli.main(["init", "--agents", "claude,qwen", "--rounds", "1", "-o", str(path)])
             code, out, _ = self._run(["config", "show", "--config", str(path)])
             self.assertEqual(code, 0)
             self.assertIn(f"source: {path}", out)

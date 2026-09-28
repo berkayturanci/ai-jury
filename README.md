@@ -51,7 +51,7 @@ pipx install ai-jury
 Requires Python 3.11+. **Try it instantly, no config:** `jury --mock` runs the full
 offline deliberation on a diff bundled with the package (add `--theater` to watch the
 panel animate). Then scaffold a config with **`jury init`** (it detects your
-installed agents and local models). You need at least one reviewer: an agent CLI
+installed agents, and seats a local reviewer on a model your local server lists). You need at least one reviewer: an agent CLI
 (`claude`, `codex`, `agy`, `aider`), a free local model via Ollama, **or** a hosted-API reviewer
 (Anthropic, OpenAI, Gemini, xAI Grok, OpenRouter, DeepSeek, Groq — or Moonshot Kimi, Mistral or any other
 OpenAI-compatible API through `vendor = "openai-compatible"`) — no CLI install or interactive login needed,
@@ -1003,8 +1003,10 @@ documented and a documented flag can't silently disappear.
 | No input source given | exits non-zero with `error: provide one of --pr, --issue, --diff-file, --commit, --commits (or --diff-file - for stdin)` |
 | More than one input source | exits non-zero with `error: choose one input source, got …`, naming each one given |
 | Empty diff | exits non-zero with `error: empty diff — nothing to review` |
-| `--post-summary` with no postable target (e.g. `--diff-file`; it works with `--pr` **or** `--issue`) | exits non-zero with `error: --post-summary requires --pr` |
-| `--post-inline` without `--pr` (PR-only; also `--post-progress`, `--label`, `--incremental`) | exits non-zero with `error: --post-inline requires --pr` |
+| `--post-summary` with no postable target (e.g. `--diff-file`; it works with `--pr` **or** `--issue`) | exits non-zero with `error: --post-summary requires --pr`, before any reviewer runs |
+| `--post-inline` without `--pr` (PR-only; also `--post-progress`, `--label`, `--incremental`) | exits non-zero with `error: --post-inline requires --pr`, before any reviewer runs |
+| A config that exists but cannot be read (`--config` names a directory, or `./jury.toml` is unreadable) | exits `2` with `error: cannot read config <path>: <reason>` |
+| `jury init --wizard` with no terminal on stdin (CI, a pipe) | exits `2` with ``error: the wizard needs a terminal; use `jury init --preset <name>` `` |
 | Unknown flag / bad arguments | argparse exits with code `2` |
 | `--version` | prints `jury <version>` and exits `0` |
 | Successful review (no `--ci`) | exits `0` |

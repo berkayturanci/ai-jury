@@ -591,6 +591,12 @@ def build_diagnostics(config_path=None, probe_models: bool = False):
         cfg = load_config(config_path, validate=True)
     except FileNotFoundError as exc:
         config_warnings.append(f"config error: {redact(str(exc))[0]}")
+    except OSError as exc:
+        # Present but unreadable — a chmod-0 jury.toml, or --config naming a directory —
+        # is reported like the CLI reports it, not raised through the report (#893).
+        path = exc.filename or config_path or "jury.toml"
+        why = exc.strerror or str(exc)
+        config_warnings.append(redact(f"config error: cannot read config {path}: {why}")[0])
     except tomllib.TOMLDecodeError as exc:
         config_warnings.append(f"config error: invalid TOML: {redact(str(exc))[0]}")
     except ConfigError as exc:
