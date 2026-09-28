@@ -65,17 +65,20 @@ BANNED = (
 
 
 def _unreleased() -> str:
-    """The current release notes: [Unreleased] plus the newest released section.
+    """The current release notes: [Unreleased], or the newest release right after a cut.
 
-    Older sections are history and may quote what was true then. The newest one is
-    included because a release cut moves every [Unreleased] entry under a version
-    heading on the same commit, and the notes it ships are still current wording.
+    Older sections are history and may quote what was true then. A release cut moves
+    every [Unreleased] entry under a version heading on the same commit and leaves
+    [Unreleased] empty; the notes that release ships are still current wording, so an
+    empty [Unreleased] means "read the newest released section instead".
     """
     text = _text("CHANGELOG.md")
     head = text.index("## [Unreleased]")
     newest = text.index("\n## [", head + 1)
+    if text[head:newest].strip() != "## [Unreleased]":
+        return text[head:newest]
     end = text.find("\n## [", newest + 1)
-    return text[head : end if end != -1 else len(text)]
+    return text[newest : end if end != -1 else len(text)]
 
 
 def leaks_claim(text: str) -> list[str]:
@@ -142,9 +145,9 @@ class NothingSaysTheDiffNeverLeaves(unittest.TestCase):
                     self.assertNotIn(phrase.lower(), _text(rel).lower())
 
     def test_the_unreleased_changelog_uses_no_banned_phrasing(self):
-        # Only [Unreleased]: released entries are history and may quote what was
-        # true then. (The leak detector is not applied here: the #860 entry quotes
-        # the old site wording on purpose.)
+        # Only the current notes (see _unreleased): older released entries are
+        # history and may quote what was true then. (The leak detector is not applied
+        # here: the #860 entry quotes the old site wording on purpose.)
         text = re.sub(r"\s+", " ", _unreleased()).lower()
         for phrase in BANNED:
             with self.subTest(phrase=phrase):
@@ -236,9 +239,11 @@ class TheNetworkListNamesEverythingTheToolCalls(unittest.TestCase):
 
     @staticmethod
     def _unreleased_network_bullet() -> str:
-        unreleased = _unreleased()
-        start = unreleased.index("**The network list is complete**")
-        return re.sub(r"\s+", " ", unreleased[start : unreleased.index("\n- ", start)])
+        # The #873 bullet's wording is pinned for good, so it is found wherever it
+        # lives: [Unreleased] before its release, a version section after.
+        text = _text("CHANGELOG.md")
+        start = text.index("**The network list is complete**")
+        return re.sub(r"\s+", " ", text[start : text.index("\n- ", start)])
 
     def test_no_surface_puts_list_models_under_the_every_init_check(self):
         # `_run_init` returns at `--list-models` before `_init_available()`, so the
@@ -246,7 +251,7 @@ class TheNetworkListNamesEverythingTheToolCalls(unittest.TestCase):
         # `jury init`" checks reachability must carve `--list-models` out with
         # "except", not list it among the paths that also list models.
         texts = {rel: _flat(rel) for rel in self.WHEN_SURFACES}
-        texts["CHANGELOG.md [Unreleased]"] = self._unreleased_network_bullet()
+        texts["CHANGELOG.md network bullet"] = self._unreleased_network_bullet()
         carve_out = re.compile(
             r"except `jury init\s+--list-models`, which lists its models instead"
         )
