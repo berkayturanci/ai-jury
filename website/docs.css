@@ -181,6 +181,8 @@
   background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: .2rem .7rem;
 }
 .doc-meta .doc-edit { font-family: var(--font-mono); font-size: .78rem; color: var(--accent-2); }
+/* an audit is a record of its day, and says so beside its source (#876) */
+.doc-meta .doc-record { color: var(--text); border-color: var(--amber); }
 
 /* states */
 .doc-loading, .doc-error { padding: 3rem 1rem; text-align: center; color: var(--muted); }

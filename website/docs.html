@@ -104,7 +104,10 @@
     var MAIN_DOCS = MAIN_RAW_ROOT + "docs/";
     var MAIN_BLOB_ROOT = "https://github.com/" + OWNER + "/" + REPO + "/blob/" + FALLBACK_REF + "/";
 
-    // Registry — grouped docs. slug -> file under docs/
+    // Registry — grouped docs. slug -> file under docs/. Every `docs/*.md` is either
+    // listed here or excluded, with its reason, in `EXCLUDED` in
+    // tests/test_docs_index.py; that test fails on a file that is neither, so a new
+    // document cannot be left out of this page without anyone deciding to (#876).
     var GROUPS = [
       { title: "Reference", items: [
         { slug: "parameters", file: "parameters.md", title: "Parameter reference (start here)" },
@@ -117,9 +120,7 @@
         { slug: "install", file: "install.md", title: "Installing into an agent" },
         { slug: "platforms", file: "platforms.md", title: "Platform support" },
         { slug: "skill", file: "skill.md", title: "Skill packaging" },
-        { slug: "security", file: "security.md", title: "Security" },
-        { slug: "security-scan-2026-06-07", file: "security-scan-2026-06-07.md", title: "Security scan: 2026-06-07 (Codex analysis)" },
-        { slug: "security-audit-2026-06-07-v1.6.0", file: "security-audit-2026-06-07-v1.6.0.md", title: "Security re-audit: v1.6.0 (Claude analysis)" }
+        { slug: "security", file: "security.md", title: "Security" }
       ]},
       { title: "Examples", items: [
         { slug: "example-run", file: "example-run.md", title: "Example run" },
@@ -137,9 +138,36 @@
       ]},
       { title: "Project", items: [
         { slug: "releasing", file: "releasing.md", title: "Releasing" },
-        { slug: "release-checklist", file: "release-checklist.md", title: "Release checklist" }
+        { slug: "release-checklist", file: "release-checklist.md", title: "Release checklist" },
+        { slug: "homebrew-release-chain", file: "homebrew-release-chain.md", title: "The Homebrew release chain" }
+      ]},
+      // Each audit is a record of the day it was run, not a description of the code
+      // today: the findings it lists may since be fixed. `date` and a one-line scope;
+      // the loop below makes the name and the note every place shows. Newest first,
+      // and a day's rounds newest first too.
+      { title: "Security audits", records: true, items: [
+        { slug: "security-audit-2026-06-15", file: "security-audit-2026-06-15.md", date: "2026-06-15", title: "Re-audit of the post-v1.9 theater and site changes" },
+        { slug: "security-audit-2026-06-14-theater", file: "security-audit-2026-06-14-theater.md", date: "2026-06-14", title: "Theater rendering: the --theater scene, its pixel style and the site demo" },
+        { slug: "security-audit-2026-06-13-round9", file: "security-audit-2026-06-13-round9.md", date: "2026-06-13", title: "Round 9: final red-team of the verdict-attach redesign" },
+        { slug: "security-audit-2026-06-13-round8", file: "security-audit-2026-06-13-round8.md", date: "2026-06-13", title: "Round 8: red-team of the round-7 verdict-attach fixes" },
+        { slug: "security-audit-2026-06-13-round7", file: "security-audit-2026-06-13-round7.md", date: "2026-06-13", title: "Round 7: the CI-gate flow and posted-comment integrity" },
+        { slug: "security-audit-2026-06-13-round6", file: "security-audit-2026-06-13-round6.md", date: "2026-06-13", title: "Round 6: CI-gate integrity from verify to verdict to group" },
+        { slug: "security-audit-2026-06-13-round5", file: "security-audit-2026-06-13-round5.md", date: "2026-06-13", title: "Round 5: the deterministic core that feeds the CI gate" },
+        { slug: "security-audit-2026-06-13-round4", file: "security-audit-2026-06-13-round4.md", date: "2026-06-13", title: "Round 4: red-team of the #344 fixes and less-examined modules" },
+        { slug: "security-audit-2026-06-13-round3", file: "security-audit-2026-06-13-round3.md", date: "2026-06-13", title: "Round 3: report and SARIF rendering, GitHub post paths" },
+        { slug: "security-audit-2026-06-13-redteam", file: "security-audit-2026-06-13-redteam.md", date: "2026-06-13", title: "Round 2: red-team of the #342 fixes and a full-surface sweep" },
+        { slug: "security-audit-2026-06-13", file: "security-audit-2026-06-13.md", date: "2026-06-13", title: "Round 1: whole-codebase audit after v1.6.1" },
+        { slug: "security-audit-2026-06-07-v1.6.0", file: "security-audit-2026-06-07-v1.6.0.md", date: "2026-06-07", title: "Whole-codebase re-audit of v1.6.0 (Claude analysis)" },
+        { slug: "security-scan-2026-06-07", file: "security-scan-2026-06-07.md", date: "2026-06-07", title: "Repository-wide scan at a358fdc (Codex analysis)" }
       ]}
     ];
+    // A dated record's name starts with its date, in the sidebar, on its card, in the
+    // tab title and while it loads; its card and its page say what that date means.
+    GROUPS.forEach(function (g) { g.items.forEach(function (it) {
+      if (!it.date) { return; }
+      it.title = it.date + " \u00b7 " + it.title;
+      it.note = "record of " + it.date + "; findings may since be fixed";
+    }); });
     var BY_SLUG = {};
     GROUPS.forEach(function (g) { g.items.forEach(function (it) { BY_SLUG[it.slug] = it; }); });
     // map "docs/<file>" -> slug for link rewriting
@@ -315,9 +343,15 @@
         + '<a class="dh-card" href="' + BLOB_ROOT + 'README.md"><span class="dh-t">README</span><span class="dh-f mono">on GitHub</span></a>'
         + "</div></div>";
       GROUPS.forEach(function (g) {
-        html += '<div class="docs-block"><h2>' + g.title + "</h2><div class=\"dh-grid\">";
+        html += '<div class="docs-block"><h2>' + g.title + "</h2>";
+        if (g.records) {
+          html += "<p>Each audit records what it found in the code of its day, at the commit it names. "
+            + 'Its findings may since be fixed; <a href="#security">Security</a> describes the code as it is.</p>';
+        }
+        html += '<div class="dh-grid">';
         g.items.forEach(function (it) {
-          html += '<a class="dh-card" href="#' + it.slug + '"><span class="dh-t">' + it.title + '</span><span class="dh-f mono">docs/' + it.file + "</span></a>";
+          html += '<a class="dh-card" href="#' + it.slug + '"><span class="dh-t">' + it.title + '</span><span class="dh-f mono">'
+            + (it.note || "docs/" + it.file) + "</span></a>";
         });
         html += "</div></div>";
       });
@@ -390,6 +424,7 @@
           var released = doc.ref === DOCS_TAG;
           meta.innerHTML = '<span class="doc-source">docs/' + item.file + " \u00b7 "
             + (released ? DOCS_TAG : FALLBACK_REF + " (unreleased: not in " + DOCS_TAG + ")") + "</span>"
+            + (item.note ? '<span class="doc-source doc-record">' + item.note + "</span>" : "")
             + '<a class="doc-edit" href="' + (released ? BLOB_ROOT : MAIN_BLOB_ROOT) + "docs/" + item.file + '" target="_blank" rel="noopener">View source on GitHub →</a>';
           currentSlug = slug;
           rewrite(wrap, slug, doc.ref);
