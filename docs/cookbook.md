@@ -752,6 +752,9 @@ and the token. Set `diff-file:` to a path in the workspace and it runs
 `jury --diff-file=<path>` instead, whatever the event; empty (the default) keeps
 the pull request. With `args: --mock` that run needs no network, no token and no key,
 which is how this repository's CI runs the Action on every pull request (#900).
+Because that run passes no `--pr`, it cannot post to the pull request: a posting flag
+in `args` (`--post`, `--post-summary`, `--post-inline`, `--post-progress`, `--label`)
+makes `jury` exit with an error before any seat runs.
 
 **The Action refuses a collapsed panel by default.** `min-vendors` defaults to
 `2`, so a workflow that says nothing still gets the cross-vendor guard — before

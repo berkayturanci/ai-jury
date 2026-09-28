@@ -275,6 +275,17 @@ class TheActionCanReviewAGivenDiff(unittest.TestCase):
     def setUp(self):
         self.text = (REPO_ROOT / "action.yml").read_text(encoding="utf-8")
 
+    def test_both_surfaces_say_a_named_diff_cannot_post(self):
+        """With `diff-file:` the run has no `--pr`, so a posting flag errors (#906 review)."""
+        cookbook = " ".join(
+            (REPO_ROOT / "docs" / "cookbook.md").read_text(encoding="utf-8").split()
+        )
+        action = " ".join(self.text.split())
+        for name, text in (("action.yml", action), ("docs/cookbook.md", cookbook)):
+            with self.subTest(surface=name):
+                self.assertIn("cannot post to the pull request", text)
+                self.assertIn("exit with an error before any seat runs", text)
+
     def test_the_input_is_declared_and_empty_by_default(self):
         self.assertIn("diff-file", declared_inputs())
         entry = self.text.split("\n  diff-file:\n", 1)[1].split("\nruns:", 1)[0]
