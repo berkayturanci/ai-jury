@@ -38,7 +38,18 @@ jury init --agents claude,codex,qwen --rounds 2   # non-interactive / scriptable
 > chair vs. **panel vote**, verification, context mode + secret redaction, and the
 > CI fail-on gate. Every question is skippable (press Enter to keep the built-in
 > default), and only the keys you explicitly choose are written, so the generated
-> file stays minimal. Plain `jury init` is unchanged.
+> file stays minimal. Plain `jury init` is unchanged. The wizard reads its answers
+> from a terminal, so without one (CI, a pipe) it exits `2` and points at
+> `jury init --preset <name>`.
+
+> **Local seat:** plain `jury init` (`--agents …qwen`, or a preset) asks the local
+> server which models it has and seats the one `--list-models` would default to — a
+> code model if there is one. If the server lists none, the local seat is written
+> **commented out** under a hint (pull a model and uncomment it, or rerun with
+> `--local-model <id>`), so the file never names a model you have not pulled. A
+> panel whose only seat is local keeps it on `qwen2.5-coder:7b`, since a config
+> needs a seat; `jury init` warns, with the `ollama pull` line, when the server
+> answers but lists nothing.
 
 > **Cost-aware depth:** add `--auto` (or `[jury] auto_depth = true`) and the jury
 > scales to the diff — a docs-only or few-line change runs shallow (1 round, no

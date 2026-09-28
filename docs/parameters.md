@@ -306,7 +306,9 @@ full transcript to a file; `jury --pr 123 -q` silences the stderr progress logs.
 **Depends on / conflicts:** `--post`/`--post-summary` work with `--pr` **or**
 `--issue` (bare `--pr`/`--issue` only selects the source — it never posts). The
 other flags here — `--post-inline`, `--post-progress`, `--post-mode`, `--label` —
-require `--pr` and are rejected with `--issue`. `--post-mode` requires
+require `--pr` and are rejected with `--issue`. A posting flag without its target
+exits with `error: <flag> requires --pr` before any reviewer runs, so nothing is
+spent on a run that cannot post. `--post-mode` requires
 `--post-summary`/`--post`; `--post-mode` accepts `single` | `phased`.
 `--dry-run` only affects `--post-inline`.
 
@@ -373,8 +375,8 @@ reviews only the new range since the last posted run, then posts.
 
 | Flag | Value | Description |
 | --- | --- | --- |
-| `--config` | path | Path to `jury.toml` (default: `./jury.toml` or built-in). |
-| `--config-validate` | flag | Validate the resolved config and exit (`0` valid, `2` invalid). |
+| `--config` | path | Path to `jury.toml` (default: `./jury.toml` or built-in). A config that exists but cannot be read — a directory, or a file without read permission — exits **2** with `error: cannot read config <path>: <reason>`; so does an unreadable `./jury.toml`. |
+| `--config-validate` | flag | Validate the resolved config and exit (`0` valid, `2` invalid or unreadable). |
 | `--strict-config` | flag | Treat configuration warnings as errors. |
 | `--mock` | flag | Offline demo using deterministic mock agents. |
 | `--doctor` | flag | Print a local readiness diagnostics report and exit (no telemetry). |
@@ -416,12 +418,12 @@ enforces it. A green doctor is not evidence of a cross-vendor panel.
 | `--rounds` | integer | Rounds for the scaffolded config. |
 | `--chair` | agent name | Chair for the scaffolded config. |
 | `--verify` / `--no-verify` | flag | Verification round on/off. |
-| `--local-model` | model id | Model id for a local agent (e.g. `qwen2.5-coder:7b`). |
+| `--local-model` | model id | Model id for a local agent (e.g. `qwen2.5-coder:7b`). Without it, a non-interactive `jury init` seats the model the local server lists (a code model first); when the server lists none, the local seat is written commented out under a hint, unless it is the only seat. |
 | `--local-endpoint` | URL | OpenAI-compatible base URL for a local agent. |
 | `-o`, `--output` | path | Output path (default `jury.toml`). |
 | `--force` | flag | Overwrite an existing file. |
 | `--interactive` | flag | Force interactive prompts. The interactive flow also asks for a reasoning [effort](configuration.md#reasoning-effort-agent-effort----effort) (skippable); a chosen level is written onto each agent whose vendor supports it, and every other effort-capable agent gets a commented `# effort = "medium"` hint. |
-| `--wizard` | flag | Guided, numbered-option setup for the most-used settings (reviewers, depth, decision, verification, context, CI gate). Every question is skippable (Enter keeps the built-in default); only the keys you choose are written, so the file stays minimal. |
+| `--wizard` | flag | Guided, numbered-option setup for the most-used settings (reviewers, depth, decision, verification, context, CI gate). Every question is skippable (Enter keeps the built-in default); only the keys you choose are written, so the file stays minimal. Needs a terminal: without one it exits **2** (``error: the wizard needs a terminal; use `jury init --preset <name>` ``). |
 | `--list-agents` | flag | List known agents + availability and exit. |
 | `--list-models` | flag | List local models on the server and exit. |
 

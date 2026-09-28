@@ -293,7 +293,12 @@ class PresetTest(unittest.TestCase):
     def test_thorough_preset_uses_all_agents(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "jury.toml"
-            self._run(["init", "--preset", "thorough", "-o", str(path)])
+            # A server listing a model, so the local seat is seated (#864): offline,
+            # and independent of whether this machine runs one.
+            with mock.patch(
+                "ai_jury.adapters.list_local_models", return_value=["qwen2.5-coder:7b"]
+            ):
+                self._run(["init", "--preset", "thorough", "-o", str(path)])
             data = tomllib.loads(path.read_text(encoding="utf-8"))
             # Derived, not listed: a hardcoded roster here is a second copy of
             # KNOWN_AGENTS, and two copies drifting apart is what #589 was about.
@@ -366,7 +371,10 @@ class ConfigShowTest(unittest.TestCase):
     def test_config_show_renders_effective_config(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "jury.toml"
-            cli.main(["init", "--agents", "claude,qwen", "--rounds", "1", "-o", str(path)])
+            with mock.patch(
+                "ai_jury.adapters.list_local_models", return_value=["qwen2.5-coder:7b"]
+            ):
+                cli.main(["init", "--agents", "claude,qwen", "--rounds", "1", "-o", str(path)])
             code, out, _ = self._run(["config", "show", "--config", str(path)])
             self.assertEqual(code, 0)
             self.assertIn(f"source: {path}", out)

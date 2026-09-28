@@ -28,6 +28,13 @@ def run(args):
     return code, out.getvalue(), err.getvalue()
 
 
+class _Terminal(io.StringIO):
+    """A stdin that says it is a terminal: `init --wizard` refuses any other (#865)."""
+
+    def isatty(self):
+        return True
+
+
 class InitTests(unittest.TestCase):
     def setUp(self):
         self.d = Path(tempfile.mkdtemp())
@@ -159,6 +166,7 @@ class InitWizardCoverageTests(unittest.TestCase):
                 "_init_available",
                 return_value={"claude": True, "codex": False, "agy": False, "qwen": False},
             ),
+            mock.patch("sys.stdin", _Terminal()),
         ):
             code, _, _ = run(
                 ["init", "--wizard", "--local-model", "m:1b", "-o", str(out), "--force"]
@@ -258,6 +266,7 @@ class InitWizardTests(unittest.TestCase):
         with (
             mock.patch.object(cli, "_init_wizard", return_value=kwargs),
             mock.patch("ai_jury.adapters.list_local_models", return_value=[]),
+            mock.patch("sys.stdin", _Terminal()),
         ):
             code, _, _ = run(["init", "--wizard", "-o", str(out), "--force"])
         self.assertEqual(code, 0)

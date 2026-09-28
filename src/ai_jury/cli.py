@@ -1045,10 +1045,12 @@ def _run_init(rest: list[str]) -> int:
         KNOWN_AGENTS,
         OPT_IN_AGENTS,
         PRESETS,
+        agent_templates,
         agents_needing_remote_opt_in,
         build_config,
         implicit_choices,
         render_toml,
+        seat_local_agents,
     )
 
     sub = argparse.ArgumentParser(prog="jury init")
@@ -1085,6 +1087,21 @@ def _run_init(rest: list[str]) -> int:
     )
     ns = sub.parse_args(rest)
 
+    # The wizard reads every answer from a terminal. With none — CI, a pipe, an
+    # agent's shell — its first prompt died as an `EOFError` traceback (#865), so it
+    # is refused here, before the availability probes spend anything. The listing
+    # flags answer before the wizard would ever ask, so they are left to do so.
+    if (
+        ns.wizard
+        and not (ns.list_models or ns.list_agents)
+        and (sys.stdin is None or not sys.stdin.isatty())
+    ):
+        print(
+            "error: the wizard needs a terminal; use `jury init --preset <name>`",
+            file=sys.stderr,
+        )
+        return 2
+
     from .adapters import list_local_models
     from .redaction import redact_url_userinfo
 
@@ -1117,6 +1134,10 @@ def _run_init(rest: list[str]) -> int:
         return 0
 
     preset = PRESETS.get(ns.preset, {})
+    templates = agent_templates()
+    # Seats `jury init` writes commented out, under a hint (#864). Only plain init
+    # fills it; the prompts and the wizard ask the operator instead.
+    commented: list[dict] = []
 
     def _detected_agents():
         # Never an opt-in-only agent (agy): "detected" is a default, not a choice.
@@ -1151,7 +1172,8 @@ def _run_init(rest: list[str]) -> int:
 
     # Guided wizard (issue #231): opt-in via --wizard. A numbered-option flow
     # where every question is skippable; only explicitly-chosen settings are
-    # written, so the file stays minimal. Runs regardless of TTY (it is explicit).
+    # written, so the file stays minimal. Explicit, so it skips the TTY test the
+    # prompts below use; a missing terminal was refused above instead (#865).
     if ns.wizard:
         kwargs = _init_wizard(available, local_endpoint=ns.local_endpoint)
         kwargs["local_endpoint"] = ns.local_endpoint
@@ -1180,13 +1202,27 @@ def _run_init(rest: list[str]) -> int:
                 if available.get("agy"):
                     print(f"note: {AGY_OPT_IN_NOTE}.", file=sys.stderr)
                 return 2
+        # A local seat names a model its server lists, as the prompts and the wizard
+        # already did (#864); plain init wrote the template's model and then warned
+        # about it. Asked only when a local seat is chosen and no model was named.
+        local_model = ns.local_model
+        if not local_model and any(templates.get(a, {}).get("vendor") == "local" for a in agents):
+            agents, local_model, left_out = seat_local_agents(agents, list_local_models(endpoint))
+            if left_out:
+                commented = build_config(left_out, local_endpoint=ns.local_endpoint)["agent"]
+                print(
+                    f"note: no model was found on the local server at {endpoint_disp}, so "
+                    f"{', '.join(repr(a) for a in left_out)} is written commented out; "
+                    "pull one and uncomment it, or pass --local-model.",
+                    file=sys.stderr,
+                )
         kwargs = {
             "agents": agents,
             "rounds": rounds,
             "chair": ns.chair,
             "verify": verify,
             "early_stop": early_stop,
-            "local_model": ns.local_model,
+            "local_model": local_model,
             "local_endpoint": ns.local_endpoint,
         }
 
@@ -1211,7 +1247,7 @@ def _run_init(rest: list[str]) -> int:
         )
         return 2
 
-    out_path.write_text(render_toml(config), encoding="utf-8")
+    out_path.write_text(render_toml(config, commented_agents=commented), encoding="utf-8")
     # This config is the operator's own deliberate act, so record it as trusted: the
     # ordinary `jury init` → `jury` path then never has to ask (#831).
     configtrust.record_trust(out_path, configtrust.content_digest(out_path.read_bytes()))
@@ -1241,6 +1277,21 @@ def _run_init(rest: list[str]) -> int:
     print(f"Next: jury --config-validate --config {out_path}")
     print("Then: git diff main... | jury --diff-file -")
     return 0
+
+
+def _config_read_error(exc: OSError, config_arg) -> str:
+    """The one line a config that exists but cannot be read is reported with (#893).
+
+    Every config load site catches ``ConfigError`` and ``FileNotFoundError``, but an
+    unreadable ``./jury.toml`` raises ``PermissionError`` and ``--config <directory>``
+    raises ``IsADirectoryError`` (``PermissionError`` on Windows), and both escaped as a
+    traceback. The path comes from the exception, so an auto-discovered ``jury.toml`` is
+    named as well as an explicit one; ``strerror`` is the reason without the errno and
+    path ``str(exc)`` would repeat.
+    """
+    path = exc.filename or config_arg or "jury.toml"
+    reason = exc.strerror or str(exc)
+    return redact(f"error: cannot read config {path}: {reason}")[0]
 
 
 def _config_source(config_arg) -> str:
@@ -1308,6 +1359,9 @@ def _run_config(rest: list[str]) -> int:
         cfg = load_config(ns.config, validate=True)
     except (ConfigError, FileNotFoundError) as exc:
         print(f"error: {redact(str(exc))[0]}", file=sys.stderr)
+        return 2
+    except OSError as exc:
+        print(_config_read_error(exc, ns.config), file=sys.stderr)
         return 2
     print(f"source: {source}")
     print(_render_effective_config(cfg))
@@ -1603,6 +1657,9 @@ def _run_run_agent(rest: list[str], spawn=None, sleep=None, clock=None) -> int:
         config = load_config(ns.config)
     except (ConfigError, FileNotFoundError) as exc:
         print(redact(f"error: {exc}")[0], file=sys.stderr)
+        return 2
+    except OSError as exc:
+        print(_config_read_error(exc, ns.config), file=sys.stderr)
         return 2
 
     # run-agent runs a config-defined command too, and a discovered config can even shadow
@@ -2272,6 +2329,9 @@ def main(argv: list[str] | None = None) -> int:
         except (ConfigError, FileNotFoundError) as exc:
             print(redact(f"Config invalid ({source}): {exc}")[0], file=sys.stderr)
             return 2
+        except OSError as exc:
+            print(_config_read_error(exc, args.config), file=sys.stderr)
+            return 2
         if warnings:
             print(f"Config valid with warnings ({source}):")
             for w in warnings:
@@ -2286,6 +2346,11 @@ def main(argv: list[str] | None = None) -> int:
         # A missing --config path raises FileNotFoundError; the other load sites already catch
         # both, so a bad path prints `Config invalid: …` instead of a traceback (#831).
         print(f"Config invalid: {redact(str(exc))[0]}", file=sys.stderr)
+        return 2
+    except OSError as exc:
+        # It exists but cannot be read: an unreadable ./jury.toml, or --config naming
+        # a directory. Neither is a FileNotFoundError, so both were a traceback (#893).
+        print(_config_read_error(exc, args.config), file=sys.stderr)
         return 2
     # An auto-discovered ./jury.toml that runs local commands must be trusted before those
     # commands run — the checkout may be one this operator did not write (#831).
@@ -2398,6 +2463,18 @@ def main(argv: list[str] | None = None) -> int:
                 raise SystemExit(
                     f"error: {flag} is not supported with --issue (it is a PR/diff concept)"
                 )
+
+    # A posting flag with nowhere to post is a usage error, so it is refused here with
+    # the rest of the argument checks. It used to be refused after the review, when
+    # every seat had already run and been paid for (#866). `--post-summary` also posts
+    # to an issue; the others are PR-only and `--issue` rejected them above.
+    for flag, on, has_target in (
+        ("--post-summary", args.post_summary, args.pr or args.issue),
+        ("--post-inline", args.post_inline, args.pr),
+        ("--label", args.label, args.pr),
+    ):
+        if on and not has_target:
+            raise SystemExit(f"error: {flag} requires --pr")
 
     # Live progress on the PR (issue #125): a single sticky comment updated at
     # each round/chunk milestone. Opt-in and requires --pr.
@@ -2942,8 +3019,6 @@ def main(argv: list[str] | None = None) -> int:
                 return 2
             log(f"posted verdict to issue #{args.issue}")
             return ci_exit
-        if not args.pr:
-            raise SystemExit("error: --post-summary requires --pr")
         # Record the reviewed head SHA as a hidden marker so a later
         # --incremental run can review only the new range (issue #9).
         from .github import pr_head_sha
@@ -3005,23 +3080,18 @@ def main(argv: list[str] | None = None) -> int:
                 return 2
             log(f"posted verdict to PR #{args.pr}")
 
-    if args.post_inline:
-        if not args.pr:
-            raise SystemExit("error: --post-inline requires --pr")
-        if _post(
-            f"post inline comments to PR #{args.pr}",
-            lambda: post_inline_comments(
-                args.pr, outcome.findings, repo=args.repo, dry_run=args.dry_run
-            ),
-            contractual=False,
-        ):
-            log(f"posted inline comments to PR #{args.pr}")
+    if args.post_inline and _post(
+        f"post inline comments to PR #{args.pr}",
+        lambda: post_inline_comments(
+            args.pr, outcome.findings, repo=args.repo, dry_run=args.dry_run
+        ),
+        contractual=False,
+    ):
+        log(f"posted inline comments to PR #{args.pr}")
 
     # Optional GitHub labels (issue #7): OFF by default. Only applied when
     # --label is passed AND a --pr target exists; never automatic.
     if args.label:
-        if not args.pr:
-            raise SystemExit("error: --label requires --pr")
         labels = label_strings(classify(outcome))
         if _post(
             f"apply labels to PR #{args.pr}",
