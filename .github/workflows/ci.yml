@@ -87,6 +87,117 @@ jobs:
           grep -q "AI Jury" report.md
           grep -q "Chair verdict" report.md
 
+  action-self-test:
+    # Runs the composite Action itself, `uses: ./`, from this pull request's own
+    # tree on all three runner OSes (#900). The unit tests read `action.yml` in
+    # pieces; until this job nothing ran it, and #898's install step failed on
+    # every windows-latest run (a `\r` from `print()` reached pip) with the whole
+    # suite green. It asserts three things: the Action's step exits 0, the
+    # package it installs is the version `pyproject.toml` declares, and a hostile
+    # `version:` fails the step before pip is run.
+    #
+    # No secrets and no network for the review: `github-token` is passed empty,
+    # no key input is passed, and `args: --mock` with `diff-file:` reviews
+    # `examples/sample.diff` with the mock agents. So it runs the same on a fork's
+    # pull request as on this repository's own.
+    #
+    # The pin cannot come from PyPI: a pull request that bumps the version pins a
+    # release that does not exist yet. So this tree is installed first, into the
+    # interpreter the Action's own `setup-python` step resolves to (same pinned
+    # action, same `python-version`, which `tests/test_action_self_test.py`
+    # checks against `action.yml`), and the Action then runs its production
+    # install unchanged — the default empty `version:`, pinned from
+    # `$GITHUB_ACTION_PATH/pyproject.toml` — with `PIP_NO_INDEX=1`. pip can only
+    # satisfy that pin from what is installed, so a pin that names any other
+    # version fails the step, and the pip log it writes (`PIP_LOG`) must record
+    # the pinned requirement, so an unpinned `ai-jury` fails too. No test-only
+    # input or install branch exists in `action.yml` for this.
+    name: Action self-test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      # Must name the version action.yml's own `Set up Python` step names, so both
+      # resolve to one interpreter and the install below is the one the Action sees.
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.13"
+      # The one network call in this job: pip fetches the build backend. Bounded
+      # with the same `bounded` as the `test` job, because `timeout(1)` is not on
+      # the macOS runner.
+      - name: Install this tree as the release its pyproject.toml declares
+        shell: bash
+        run: |
+          bounded() { python -c 'import subprocess,sys; sys.tracebacklimit=0; sys.exit(subprocess.run(sys.argv[2:], timeout=float(sys.argv[1])).returncode)' "$@"; }
+          bounded 300 python -m pip install .
+      # Must exit 0: no `continue-on-error`, so any failure here fails the job.
+      - name: Run the Action from this tree (mock, no token, no key)
+        id: action
+        uses: ./
+        env:
+          PIP_NO_INDEX: "1"
+          PIP_LOG: action-self-test-pip.log
+        with:
+          github-token: ""
+          args: "--mock --output action-self-test-report.md"
+          diff-file: examples/sample.diff
+      - name: The Action pinned and installed the version pyproject.toml declares
+        shell: bash
+        run: |
+          expected="$(python -c 'import sys, tomllib; sys.stdout.write(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+          installed="$(jury --version)"
+          installed="${installed%$'\r'}"
+          echo "pyproject.toml declares $expected; jury --version says $installed"
+          if [ "$installed" != "jury $expected" ]; then
+            echo "::error::the Action installed '$installed', expected 'jury $expected'"
+            exit 1
+          fi
+          # The log is also the proof PIP_LOG reached the Action's steps, which
+          # the hostile case below relies on to say pip never ran.
+          if ! grep -qF "ai-jury==$expected in " action-self-test-pip.log; then
+            echo "::error::the Action's pip call did not pin ai-jury==$expected"
+            exit 1
+          fi
+          grep -q "Chair verdict" action-self-test-report.md
+      # Expected to fail, so `continue-on-error` — and the step after it fails the
+      # job unless the outcome really is `failure`.
+      - name: Run the Action with a hostile version input (must fail)
+        id: hostile
+        uses: ./
+        continue-on-error: true
+        env:
+          PIP_LOG: action-self-test-hostile-pip.log
+        with:
+          github-token: ""
+          args: "--mock"
+          diff-file: examples/sample.diff
+          version: '1.0"; echo injected > action-self-test-injected; "'
+      - name: The hostile version failed the step before pip ran
+        shell: bash
+        env:
+          HOSTILE_OUTCOME: ${{ steps.hostile.outcome }}
+        run: |
+          if [ "$HOSTILE_OUTCOME" != "failure" ]; then
+            echo "::error::a hostile version input did not fail the Action (outcome: $HOSTILE_OUTCOME)"
+            exit 1
+          fi
+          if [ -e action-self-test-hostile-pip.log ]; then
+            echo "::error::pip ran with a hostile version input"
+            exit 1
+          fi
+          if [ -e action-self-test-injected ]; then
+            echo "::error::the hostile version input was executed as shell"
+            exit 1
+          fi
+
   lint:
     name: Lint + format (ruff)
     runs-on: ubuntu-latest
