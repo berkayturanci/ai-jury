@@ -2112,11 +2112,12 @@ def _maybe_add_local_fallback(config, args, log):
     config.agents.append(seat)
     config.chair = "local"
     named = getattr(args, "min_vendors", None)
-    guard = (
-        "so the default cross-vendor guard (min_vendors) does not apply to it"
-        if named is None
-        else f"held to the --min-vendors {named} you named"
-    )
+    if named is None:
+        guard = "so the default cross-vendor guard (min_vendors) does not apply to it"
+    elif named <= 0:
+        guard = "with the cross-vendor guard off (--no-min-vendors)"
+    else:
+        guard = f"held to the --min-vendors {named} you named"
     log(
         f"no agent CLIs found; using local model '{model}' (offline, $0) as a single-vendor panel, {guard}"
     )

@@ -477,6 +477,28 @@ def _gate_would_fail(panel, explicit: bool = False) -> bool:
     )
 
 
+def _fallback_ready_reason(panel, explicit: bool) -> str | None:
+    """Why the zero-config fallback's one seat reads `cross-vendor ready: yes` (pure).
+
+    One seat is not a cross-vendor panel, so the text report says which of three
+    things makes the gate pass (#863): the guard is off; the default threshold
+    was scoped away because one seat claims no cross-vendor consensus; or a
+    threshold is met. ``None`` when the gate would fail — there is nothing to
+    explain, and the warning says the rest.
+    """
+    if not panel["multi_vendor_ready"]:
+        return None
+    required = panel["min_vendors"]
+    if required <= 0:
+        return "the gate is off"
+    if not explicit and panel["vendors_configured"] < required:
+        return "the gate would not fail: one seat claims no cross-vendor consensus"
+    return (
+        f"the gate would not fail: {panel['vendors_available']} vendor(s) reachable, "
+        f"{required} required"
+    )
+
+
 def _panel_warning(panel, explicit: bool = False) -> str | None:
     """The one actionable thing offline diagnostics can say about the panel.
 
@@ -638,6 +660,7 @@ def build_diagnostics(config_path=None, probe_models: bool = False, min_vendors=
     # Cleared only on the success path, so a new `except` arm cannot forget it.
     config_error = True
     local_fallback = None
+    ready_reason = None
     listed: list = []
 
     def _list_once():
@@ -691,7 +714,10 @@ def build_diagnostics(config_path=None, probe_models: bool = False, min_vendors=
             _list_once,
         )
         panel = _panel_readiness(cfg, agents, min_vendors, local_fallback)
-        panel_warning = _panel_warning(panel, resolve_min_vendors(min_vendors, cfg)[1])
+        explicit = resolve_min_vendors(min_vendors, cfg)[1]
+        panel_warning = _panel_warning(panel, explicit)
+        if local_fallback is not None:
+            ready_reason = _fallback_ready_reason(panel, explicit)
         if panel_warning:
             config_warnings.append(panel_warning)
         # A bench that cannot reach the consumer's minimum is a shortfall this
@@ -718,6 +744,8 @@ def build_diagnostics(config_path=None, probe_models: bool = False, min_vendors=
         "panel": panel,
         # The model a run with no config would review with alone, or None (#863).
         "local_fallback": local_fallback.model if local_fallback is not None else None,
+        # Why that one seat reads as cross-vendor ready, for the text report.
+        "cross_vendor_ready_reason": ready_reason,
         "recommendations": _recommendations(
             config_path,
             config_summary,
@@ -911,10 +939,10 @@ def render_report(diagnostics) -> str:
     lines.append(f"  vendors reachable: {panel['vendors_available']} (by vendor identity)")
     lines.append(f"  min_vendors gate:  {panel['min_vendors'] or 'off'}")
     ready_text = "yes" if panel["multi_vendor_ready"] else "no"
-    if panel["multi_vendor_ready"] and diagnostics.get("local_fallback"):
+    if diagnostics.get("cross_vendor_ready_reason"):
         # One seat is not a cross-vendor panel: "ready" means the gate would not
-        # fail it, and says why (#863).
-        ready_text = "yes (the gate would not fail: one seat claims no cross-vendor consensus)"
+        # fail it, and the reason says why (#863).
+        ready_text += f" ({diagnostics['cross_vendor_ready_reason']})"
     lines.append(f"  cross-vendor ready: {ready_text}")
     # The number a consumer counts, said in the same breath as readiness (#699).
     # "cross-vendor ready: yes" on a bench that cannot supply the reviews a gate

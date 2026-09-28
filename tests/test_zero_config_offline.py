@@ -174,6 +174,14 @@ class TheReportSaysItWasTheFallback(unittest.TestCase):
         self.assertIn("single-vendor panel, held to the --min-vendors 2 you named", named)
         self.assertNotIn("does not apply", named)
 
+    def test_the_log_line_says_an_opted_out_guard_is_off(self):
+        _, _, off = _jury("--no-min-vendors")
+
+        self.assertIn(
+            "single-vendor panel, with the cross-vendor guard off (--no-min-vendors)", off
+        )
+        self.assertNotIn("--min-vendors 0", off)
+
 
 _GUARD = "a run would fail the cross-vendor guard"
 
@@ -205,6 +213,23 @@ class TheDoctorPredictsTheFallbackRun(unittest.TestCase):
         )
         self.assertIn("ready to run: yes", out)
         self.assertNotIn(_GUARD, out)
+
+    def test_the_ready_reason_is_the_one_that_applies(self):
+        """ "One seat claims no consensus" is the reason only when the default threshold
+        was scoped away; a met or disabled threshold says so instead."""
+        for flags, reason in (
+            ((), "(the gate would not fail: one seat claims no cross-vendor consensus)"),
+            (
+                ("--min-vendors", "1"),
+                "(the gate would not fail: 1 vendor(s) reachable, 1 required)",
+            ),
+            (("--no-min-vendors",), "(the gate is off)"),
+        ):
+            with self.subTest(flags=flags):
+                _, out, _, _ = _main(["--doctor", *flags])
+                self.assertIn(f"cross-vendor ready: yes {reason}", out)
+                if flags:
+                    self.assertNotIn("one seat claims", out)
 
     def test_a_named_threshold_is_predicted_to_fail(self):
         export, _ = _doctor("--min-vendors", "2")

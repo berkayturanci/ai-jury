@@ -23,6 +23,8 @@ import unittest
 from pathlib import Path
 
 from ai_jury.config import KNOWN_CI_KEYS
+from ai_jury.formats import JSON_SCHEMA_VERSION
+from ai_jury.metadata import SCHEMA_VERSION as METADATA_SCHEMA_VERSION
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PYPROJECT = REPO_ROOT / "pyproject.toml"
@@ -152,6 +154,51 @@ class OneDescriptionEverywhere(unittest.TestCase):
                 text = (REPO_ROOT / rel).read_text(encoding="utf-8")
                 self.assertNotIn("once published", text)
                 self.assertNotIn("pipx install git+", text)
+
+
+#: Every public surface that could state which report schema is current.
+_SCHEMA_SURFACES = ("README.md", "action.yml", "llms.txt", "llms-full.txt")
+_SCHEMA_SURFACE_GLOBS = ("docs/**/*.md", "website/**/*.html", "website/**/*.js", "website/*.txt")
+#: "(currently `1.5`)" on a line that names a schema. Historical "since …" lines do
+#: not say "currently" and are left alone: they are true forever.
+_CURRENTLY = re.compile(r"schema[^\n]*?currently\s+`?([0-9][0-9.]*)`?", re.IGNORECASE)
+
+
+def _schema_surfaces():
+    paths = [REPO_ROOT / rel for rel in _SCHEMA_SURFACES]
+    for pattern in _SCHEMA_SURFACE_GLOBS:
+        paths.extend(sorted(REPO_ROOT.glob(pattern)))
+    return [p for p in paths if p.is_file()]
+
+
+class TheCurrentSchemaVersionIsTheCodes(unittest.TestCase):
+    """A page saying which report schema is current reads it off the code (#905).
+
+    The README said `1.4` after the JSON report moved to `1.5`. A dotted version is
+    the JSON report's (`formats.JSON_SCHEMA_VERSION`), a whole number the run
+    metadata's (`metadata.SCHEMA_VERSION`).
+    """
+
+    def test_every_currently_statement_matches(self):
+        found = []
+        for path in _schema_surfaces():
+            text = path.read_text(encoding="utf-8")
+            for match in _CURRENTLY.finditer(text):
+                stated = match.group(1)
+                expected = JSON_SCHEMA_VERSION if "." in stated else str(METADATA_SCHEMA_VERSION)
+                found.append(path)
+                with self.subTest(file=str(path.relative_to(REPO_ROOT)), stated=stated):
+                    self.assertEqual(stated, expected)
+        # The README's statement is the one known to exist; a regex that stops
+        # finding it would pass every file vacuously.
+        self.assertIn(REPO_ROOT / "README.md", found)
+
+    def test_the_readme_states_the_json_schema(self):
+        readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn(
+            f"| `schema_version` | Version of this JSON schema (currently `{JSON_SCHEMA_VERSION}`). |",
+            readme,
+        )
 
 
 if __name__ == "__main__":
