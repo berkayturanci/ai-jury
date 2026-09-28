@@ -114,6 +114,21 @@ class PlainInitPicksAListedLocalModel(unittest.TestCase):
         listed.assert_not_called()
         self.assertNotIn("# [[agent]]", text)
 
+    def test_a_named_chair_on_the_left_out_seat_is_refused_before_writing(self):
+        """Neither a chair over a commented seat nor a silently different chair."""
+        code, err, path, _, _ = self._init("claude,qwen", [], "--chair", "qwen")
+
+        self.assertEqual(code, 2)
+        self.assertIn("error: the chair qwen is the local seat, but the server", err)
+        self.assertIn("pass --local-model <model> or choose another --chair", err)
+        self.assertFalse(path.exists(), "nothing may be written")
+
+    def test_a_named_chair_on_a_seat_that_stays_is_kept(self):
+        code, _, path, _, _ = self._init("qwen,claude,codex", [], "--chair", "codex")
+
+        self.assertEqual(code, 0)
+        self.assertEqual(tomllib.loads(path.read_text("utf-8"))["jury"]["chair"], "codex")
+
     def test_a_local_only_panel_keeps_its_seat(self):
         """A config needs a seat, so the only one stays, on the model the pull hint names."""
         code, _, path, text, _ = self._init("qwen", [])

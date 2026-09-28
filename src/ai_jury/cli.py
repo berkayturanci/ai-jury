@@ -1208,6 +1208,16 @@ def _run_init(rest: list[str]) -> int:
         local_model = ns.local_model
         if not local_model and any(templates.get(a, {}).get("vendor") == "local" for a in agents):
             agents, local_model, left_out = seat_local_agents(agents, list_local_models(endpoint))
+            if left_out and ns.chair in left_out:
+                # The operator named this chair. Writing it over a commented seat warns
+                # on every run, and picking another chair overrides them, so neither.
+                print(
+                    f"error: the chair {ns.chair} is the local seat, but the server at "
+                    f"{endpoint_disp} lists no model; pass --local-model <model> or choose "
+                    "another --chair",
+                    file=sys.stderr,
+                )
+                return 2
             if left_out:
                 commented = build_config(left_out, local_endpoint=ns.local_endpoint)["agent"]
                 print(

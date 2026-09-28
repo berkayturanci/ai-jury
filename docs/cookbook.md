@@ -46,7 +46,8 @@ jury init --agents claude,codex,qwen --rounds 2   # non-interactive / scriptable
 > server which models it has and seats the one `--list-models` would default to — a
 > code model if there is one. If the server lists none, the local seat is written
 > **commented out** under a hint (pull a model and uncomment it, or rerun with
-> `--local-model <id>`), so the file never names a model you have not pulled. A
+> `--local-model <id>`), so the file never names a model you have not pulled. If
+> you named that seat with `--chair`, init exits `2` instead of writing. A
 > panel whose only seat is local keeps it on `qwen2.5-coder:7b`, since a config
 > needs a seat; `jury init` warns, with the `ollama pull` line, when the server
 > answers but lists nothing.
