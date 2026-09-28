@@ -9,6 +9,29 @@
   var qa = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
   var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+  /* ---- Bring-your-own CLI seats (#859) -------------------------------
+     ai-jury knows no sandbox flag for a `vendor = "cli"` seat, so it runs
+     with your permissions and the least-privilege audit warns about it. The
+     samples ask each CLI for its own read-only mode — never `--force`,
+     `--yolo` or aider's default edit-and-commit mode — and every place a
+     seat is shown carries this label. The same argv is in the docs, the
+     example config and `jury init`; tests/test_sample_configs.py pins it. */
+  var UNSANDBOXED_LABEL = "unsandboxed — runs with your permissions";
+  // cursor-agent: `--mode ask` is its read-only mode; `--trust` is what headless
+  // `--print` needs to start in a directory it has not seen before.
+  var CURSOR_READ_ONLY_ARGS = ["--print", "--trust", "--mode", "ask", "--output-format", "text"];
+  // aider: ask mode never edits, `--dry-run` writes no file, no commits of any
+  // kind, no shell suggestions, no lint run, no URL fetches, no .gitignore edit.
+  // `--message` goes last: the prompt is appended after it (prompt_mode = "arg").
+  var AIDER_READ_ONLY_ARGS = [
+    "--chat-mode", "ask", "--dry-run", "--no-auto-commits", "--no-dirty-commits",
+    "--no-suggest-shell-commands", "--no-auto-lint", "--no-detect-urls", "--no-gitignore",
+    "--message"
+  ];
+  function tomlArray(items) {
+    return "[" + items.map(function (s) { return JSON.stringify(s); }).join(", ") + "]";
+  }
+
   /* ---- Theme toggle ------------------------------------------------- */
   (function () {
     var btn = $("theme-toggle");
@@ -397,12 +420,15 @@
       codex:      { vendor: "openai", command: "codex" },
       agy:        { vendor: "google", command: "agy" },
       qwen:       { vendor: "local", model: "qwen2.5-coder:7b", endpoint: "http://localhost:11434/v1" },
-      deepseek:   { vendor: "openai-compatible", endpoint: "https://api.deepseek.com/v1", api_key_env: "DEEPSEEK_API_KEY", model: "deepseek-coder" },
-      openrouter: { vendor: "openai-compatible", endpoint: "https://openrouter.ai/api/v1", api_key_env: "OPENROUTER_API_KEY", model: "anthropic/claude-3.5-sonnet" },
+      deepseek:   { vendor: "openai-compatible", endpoint: "https://api.deepseek.com/v1", api_key_env: "DEEPSEEK_API_KEY", model: "deepseek-v4-pro" },
+      openrouter: { vendor: "openai-compatible", endpoint: "https://openrouter.ai/api/v1", api_key_env: "OPENROUTER_API_KEY", model: "anthropic/claude-opus-5.5" },
       groq:       { vendor: "openai-compatible", endpoint: "https://api.groq.com/openai/v1", api_key_env: "GROQ_API_KEY", model: "llama-3.3-70b-versatile" },
-      grok:       { vendor: "openai-compatible", endpoint: "https://api.x.ai/v1", api_key_env: "XAI_API_KEY", model: "grok-2-latest" },
-      cursor:     { vendor: "cli", command: "cursor-agent", prompt_mode: "arg" },
-      aider:      { vendor: "cli", command: "aider", prompt_mode: "stdin" }
+      grok:       { vendor: "openai-compatible", endpoint: "https://api.x.ai/v1", api_key_env: "XAI_API_KEY", model: "grok-4.7" },
+      // A bring-your-own CLI seat runs with your permissions: ai-jury knows no
+      // sandbox flag for it (privilege.py warns about every one), so the sample
+      // asks the CLI for its own read-only mode and says so on the seat (#859).
+      cursor:     { vendor: "cli", command: "cursor-agent", unsandboxed: true, extra_args: CURSOR_READ_ONLY_ARGS, prompt_mode: "arg" },
+      aider:      { vendor: "cli", command: "aider", unsandboxed: true, extra_args: AIDER_READ_ONLY_ARGS, prompt_mode: "arg" }
     };
     var LABEL = {
       claude: "Claude Code",
@@ -533,6 +559,7 @@
       lines.push("");
       ags.forEach(function (n) {
         var a = AGENTS[n];
+        if (a.unsandboxed) lines.push("# " + UNSANDBOXED_LABEL);
         lines.push("[[agent]]");
         lines.push('name = "' + n + '"');
         lines.push('vendor = "' + a.vendor + '"');
@@ -540,6 +567,7 @@
         if (a.endpoint) lines.push('endpoint = "' + a.endpoint + '"');
         if (a.api_key_env) lines.push('api_key_env = "' + a.api_key_env + '"');
         if (a.model) lines.push('model = "' + a.model + '"');
+        if (a.extra_args) lines.push("extra_args = " + tomlArray(a.extra_args));
         if (a.prompt_mode) lines.push('prompt_mode = "' + a.prompt_mode + '"');
         lines.push("");
       });
@@ -1277,13 +1305,13 @@
         name: "Cursor CLI",
         vendor: "Anysphere",
         cat: "assistants",
-        badge: "Agent CLI",
+        badge: "Unsandboxed",
         badgeType: "",
         iconKey: "cursor",
         logo: "logos/cursor.svg",
         color: "var(--c-cursor)",
-        desc: "Headless CLI agent from the popular AI-native code editor.",
-        config: '[[agent]]\nname = "cursor"\nvendor = "cli"\ncommand = "cursor-agent"\nextra_args = ["--print", "--force"]\nprompt_mode = "arg"',
+        desc: "Headless CLI agent from the AI-native code editor, run in its read-only ask mode. Unsandboxed \u2014 runs with your permissions.",
+        config: "# " + UNSANDBOXED_LABEL + '\n[[agent]]\nname = "cursor"\nvendor = "cli"\ncommand = "cursor-agent"\nextra_args = ' + tomlArray(CURSOR_READ_ONLY_ARGS) + '\nprompt_mode = "arg"',
         command: "jury --pr 123"
       },
       {
@@ -1291,13 +1319,13 @@
         name: "Aider CLI",
         vendor: "Paul Gauthier",
         cat: "assistants",
-        badge: "Terminal Agent",
+        badge: "Unsandboxed",
         badgeType: "",
         iconKey: "aider",
         logo: "logos/aider.svg",
         color: "var(--c-aider)",
-        desc: "Popular terminal pair-programming agent driven in non-interactive review mode.",
-        config: '[[agent]]\nname = "aider"\nvendor = "cli"\ncommand = "aider"\nextra_args = ["--message"]\nprompt_mode = "arg"',
+        desc: "Terminal pair-programming agent, run in ask mode as a dry run with no commits. Unsandboxed \u2014 runs with your permissions.",
+        config: "# " + UNSANDBOXED_LABEL + '\n[[agent]]\nname = "aider"\nvendor = "cli"\ncommand = "aider"\nextra_args = ' + tomlArray(AIDER_READ_ONLY_ARGS) + '\nprompt_mode = "arg"',
         command: "jury --pr 123"
       },
       {
@@ -1310,8 +1338,8 @@
         iconKey: "bot",
         logo: "logos/opencode.svg",
         color: "#10b981",
-        desc: "Wrap any arbitrary coding CLI (Goose, OpenHands, Devin) as an autonomous juror.",
-        config: '[[agent]]\nname = "my-agent"\nvendor = "cli"\ncommand = "my-tool"\nextra_args = ["review"]\nprompt_mode = "arg"',
+        desc: "Wrap any coding CLI (Goose, OpenHands, Devin) as a juror. Unsandboxed \u2014 runs with your permissions, so pass it the CLI's own read-only flags.",
+        config: "# " + UNSANDBOXED_LABEL + '\n[[agent]]\nname = "my-agent"\nvendor = "cli"\ncommand = "my-tool"\nextra_args = ["review"]\nprompt_mode = "arg"',
         command: "jury --pr 123"
       },
 
@@ -1321,27 +1349,27 @@
         name: "Anthropic Claude API",
         vendor: "Anthropic",
         cat: "backends",
-        badge: "Sonnet 3.7",
+        badge: "Opus 5.5",
         badgeType: "accent",
         iconKey: "claude",
         logo: "logos/anthropic.svg",
         color: "var(--c-claude)",
         desc: "Direct Claude Sonnet/Opus API access without installing agent CLIs.",
-        config: '[[agent]]\nname = "claude-api"\nvendor = "anthropic-api"\napi_key_env = "ANTHROPIC_API_KEY"\nmodel = "claude-3-7-sonnet-20250219"',
+        config: '[[agent]]\nname = "claude-api"\nvendor = "anthropic-api"\napi_key_env = "ANTHROPIC_API_KEY"\nmodel = "claude-opus-5-5"',
         command: "ANTHROPIC_API_KEY=... jury --pr 123"
       },
       {
         id: "openai-api",
-        name: "OpenAI GPT-4o / o1",
+        name: "OpenAI API",
         vendor: "OpenAI",
         cat: "backends",
-        badge: "o1 / GPT-4o",
+        badge: "GPT-6 Sol",
         badgeType: "green",
         iconKey: "openai",
         logo: "logos/openai.svg",
         color: "var(--c-codex)",
-        desc: "Direct OpenAI API integration for o1 reasoning and GPT-4o reviews.",
-        config: '[[agent]]\nname = "codex-api"\nvendor = "openai-api"\napi_key_env = "OPENAI_API_KEY"\nmodel = "gpt-4o"',
+        desc: "Direct OpenAI API reviews without installing the Codex CLI.",
+        config: '[[agent]]\nname = "codex-api"\nvendor = "openai-api"\napi_key_env = "OPENAI_API_KEY"\nmodel = "gpt-6-sol"',
         command: "OPENAI_API_KEY=... jury --pr 123"
       },
       {
@@ -1349,13 +1377,13 @@
         name: "Google Gemini API",
         vendor: "Google AI",
         cat: "backends",
-        badge: "2.5 Pro / Flash",
+        badge: "3.8 Flash",
         badgeType: "accent",
         iconKey: "google",
         logo: "logos/googlegemini.svg",
         color: "var(--c-agy)",
-        desc: "Direct Google AI Gemini 2.5 API access with 2M token context window.",
-        config: '[[agent]]\nname = "gemini-api"\nvendor = "google-api"\napi_key_env = "GEMINI_API_KEY"\nmodel = "gemini-2.5-pro"',
+        desc: "Direct Google Gemini API access without installing an agent CLI.",
+        config: '[[agent]]\nname = "gemini-api"\nvendor = "google-api"\napi_key_env = "GEMINI_API_KEY"\nmodel = "gemini-3.8-flash"',
         command: "GEMINI_API_KEY=... jury --pr 123"
       },
       {
@@ -1363,13 +1391,13 @@
         name: "DeepSeek API",
         vendor: "DeepSeek",
         cat: "backends",
-        badge: "$0.27 / 1M",
+        badge: "V4 Pro",
         badgeType: "green",
         iconKey: "deepseek",
         logo: "logos/deepseek.svg",
         color: "var(--c-deepseek)",
-        desc: "DeepSeek-V3 and DeepSeek-R1 reasoning models via official API.",
-        config: '[[agent]]\nname = "deepseek"\nvendor = "openai-compatible"\nendpoint = "https://api.deepseek.com/v1/chat/completions"\napi_key_env = "DEEPSEEK_API_KEY"\nmodel = "deepseek-chat"',
+        desc: "DeepSeek V4 models via the official API.",
+        config: '[[agent]]\nname = "deepseek"\nvendor = "openai-compatible"\nendpoint = "https://api.deepseek.com/v1/chat/completions"\napi_key_env = "DEEPSEEK_API_KEY"\nmodel = "deepseek-v4-pro"',
         command: "JURY_ALLOW_REMOTE_ENDPOINT=1 DEEPSEEK_API_KEY=... jury --pr 123"
       },
       {
@@ -1377,13 +1405,13 @@
         name: "xAI Grok API",
         vendor: "xAI",
         cat: "backends",
-        badge: "Grok-2",
+        badge: "Grok 4.7",
         badgeType: "",
         iconKey: "xai",
         logo: "logos/xai.svg",
         color: "var(--c-grok)",
         desc: "Direct REST API access to Grok reasoning and code models.",
-        config: '[[agent]]\nname = "grok"\nvendor = "openai-compatible"\nendpoint = "https://api.x.ai/v1/chat/completions"\napi_key_env = "XAI_API_KEY"\nmodel = "grok-2-latest"',
+        config: '[[agent]]\nname = "grok"\nvendor = "openai-compatible"\nendpoint = "https://api.x.ai/v1/chat/completions"\napi_key_env = "XAI_API_KEY"\nmodel = "grok-4.7"',
         command: "JURY_ALLOW_REMOTE_ENDPOINT=1 XAI_API_KEY=... jury --pr 123"
       },
       {
@@ -1391,12 +1419,12 @@
         name: "Groq API",
         vendor: "Groq",
         cat: "backends",
-        badge: "300+ tok/s",
+        badge: "LPU Inference",
         badgeType: "accent",
         iconKey: "groq",
         logo: "logos/groq.svg",
         color: "var(--c-groq)",
-        desc: "Ultra high-speed LPU inference engine for near-instant multi-agent debate.",
+        desc: "Groq's LPU inference service for fast multi-agent debate rounds.",
         config: '[[agent]]\nname = "groq"\nvendor = "openai-compatible"\nendpoint = "https://api.groq.com/openai/v1/chat/completions"\napi_key_env = "GROQ_API_KEY"\nmodel = "llama-3.3-70b-versatile"',
         command: "JURY_ALLOW_REMOTE_ENDPOINT=1 GROQ_API_KEY=... jury --pr 123"
       },
@@ -1411,7 +1439,7 @@
         logo: "logos/openrouter.svg",
         color: "var(--c-openrouter)",
         desc: "Unified routing gateway giving instant access to over 200 AI models.",
-        config: '[[agent]]\nname = "openrouter"\nvendor = "openai-compatible"\nendpoint = "https://openrouter.ai/api/v1/chat/completions"\napi_key_env = "OPENROUTER_API_KEY"\nmodel = "anthropic/claude-3.7-sonnet"',
+        config: '[[agent]]\nname = "openrouter"\nvendor = "openai-compatible"\nendpoint = "https://openrouter.ai/api/v1/chat/completions"\napi_key_env = "OPENROUTER_API_KEY"\nmodel = "anthropic/claude-opus-5.5"',
         command: "JURY_ALLOW_REMOTE_ENDPOINT=1 OPENROUTER_API_KEY=... jury --pr 123"
       },
       {
@@ -1455,7 +1483,7 @@
         logo: "logos/vllm.svg",
         color: "#10b981",
         desc: "Compatible with any local OpenAI-compatible HTTP inference server.",
-        config: '[[agent]]\nname = "local-vllm"\nvendor = "local"\nendpoint = "http://localhost:8000/v1/chat/completions"\nmodel = "deepseek-ai/DeepSeek-Coder-V2-Lite"',
+        config: '[[agent]]\nname = "local-vllm"\nvendor = "local"\nendpoint = "http://localhost:8000/v1/chat/completions"\nmodel = "deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct"',
         command: "jury --pr 123"
       },
 

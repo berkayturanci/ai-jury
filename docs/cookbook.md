@@ -565,11 +565,11 @@ rejected. `--repo owner/name` targets another repo.
 Add any of these provider templates to your `jury.toml`:
 
 ```toml
-# OpenRouter API (Access 200+ models like DeepSeek-R1, Llama 3.3)
+# OpenRouter API (one key for many vendors' models)
 [[agent]]
 name = "openrouter"
 vendor = "openai-compatible"
-model = "deepseek/deepseek-r1"
+model = "anthropic/claude-opus-5.5"
 endpoint = "https://openrouter.ai/api/v1/chat/completions"
 api_key_env = "OPENROUTER_API_KEY"
 
@@ -577,7 +577,7 @@ api_key_env = "OPENROUTER_API_KEY"
 [[agent]]
 name = "deepseek"
 vendor = "openai-compatible"
-model = "deepseek-reasoner"
+model = "deepseek-v4-pro"
 endpoint = "https://api.deepseek.com/v1/chat/completions"
 api_key_env = "DEEPSEEK_API_KEY"
 
@@ -593,7 +593,7 @@ api_key_env = "GROQ_API_KEY"
 [[agent]]
 name = "grok"
 vendor = "openai-compatible"
-model = "grok-2-latest"
+model = "grok-4.7"
 endpoint = "https://api.x.ai/v1/chat/completions"
 api_key_env = "XAI_API_KEY"
 
@@ -601,7 +601,7 @@ api_key_env = "XAI_API_KEY"
 [[agent]]
 name = "omni-claude"
 vendor = "openai-compatible"
-model = "anthropic/claude-3-5-sonnet"
+model = "anthropic/claude-opus-5.5"
 endpoint = "http://localhost:8000/v1/chat/completions"
 api_key_env = "OMNIROUTE_API_KEY"
 
@@ -612,20 +612,28 @@ vendor = "local"
 model = "qwen2.5-coder:14b"
 
 # Generic CLI agents (Cursor, Aider, Goose, OpenHands)
+# unsandboxed — runs with your permissions
 [[agent]]
 name = "cursor"
 vendor = "cli"
 command = "cursor-agent"
-extra_args = ["--print", "--trust", "--model", "claude-4.6-sonnet-medium"]
+extra_args = ["--print", "--trust", "--mode", "ask", "--model", "claude-4.6-sonnet-medium", "--output-format", "text"]
 prompt_mode = "arg"
 
+# unsandboxed — runs with your permissions
 [[agent]]
 name = "aider"
 vendor = "cli"
 command = "aider"
-extra_args = ["--message"]
+extra_args = ["--chat-mode", "ask", "--dry-run", "--no-auto-commits", "--no-dirty-commits", "--no-suggest-shell-commands", "--no-auto-lint", "--no-detect-urls", "--no-gitignore", "--message"]
 prompt_mode = "arg"
 ```
+
+The two CLI seats are **unsandboxed — runs with your permissions**: jury knows no sandbox flag for
+them and the least-privilege audit warns about each. They run in each CLI's own
+read-only mode (Cursor's `--mode ask`; aider's ask mode as a dry run with no
+commits) — never add `--force`/`--yolo` or `--yes-always`. The flags are explained
+in [configuration.md](configuration.md#cursor-cli--arbitrary-cli-agent-vendor--cli).
 
 **Outcome:** `jury --config-validate` confirms provider readiness. Run `git diff main... | jury --diff-file -` to deliberate across your choice of hosted HTTP models, coding CLIs, and local models.
 
@@ -920,7 +928,7 @@ name = "deepseek"
 vendor = "openai-compatible"
 endpoint = "https://api.deepseek.com/v1"
 api_key_env = "DEEPSEEK_API_KEY"
-model = "deepseek-coder"
+model = "deepseek-v4-pro"
 
 [[agent]]
 name = "groq"

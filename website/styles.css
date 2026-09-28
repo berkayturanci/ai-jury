@@ -937,6 +937,8 @@ section[id], [id="top"] { scroll-margin-top: 84px; }
 .opt .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
 .opt .tag { margin-left: auto; font-size: .66rem; color: var(--green-2); border: 1px solid var(--green); border-radius: 999px; padding: .02rem .42rem; }
 .opt .tag.opt-hint { color: #fff; background: var(--amber); border-color: var(--amber); font-weight: 700; }
+/* A bring-your-own CLI seat runs with your permissions (#859): said in a colour that does not read as "safe". */
+.opt .tag.unsandboxed { color: #fff; background: #b91c1c; border-color: #b91c1c; font-weight: 600; }
 .opt .tag.accent {
   color: #fff; background: linear-gradient(180deg, var(--accent-2), var(--accent));
   border-color: transparent; white-space: nowrap; font-size: .68rem; font-weight: 600;

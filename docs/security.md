@@ -237,6 +237,14 @@ removes none; the least-privilege audit warns that the seat is not under a
 sandbox it recognizes, and `--strict` fails the run on it. Such a seat also runs
 in the directory `jury` was started from, not in an empty one — see below.
 
+Every sample of one in these docs, the site, `examples/jury.toml` and the config
+`jury init` writes is labelled **unsandboxed — runs with your permissions**, and
+asks the CLI for its own read-only mode instead: `cursor-agent --mode ask` (never
+`--force`/`--yolo`, and not `--print` alone, which can write files), and aider's
+ask mode as a dry run with no commits (never `--yes-always`). That is the CLI's
+promise, not jury's; the flags and what was measured are in
+[configuration.md](configuration.md#cursor-cli--arbitrary-cli-agent-vendor--cli).
+
 ### Where a reviewer runs
 
 Every read-only invocation of `claude`, `codex` and `agy` — the panel's review,

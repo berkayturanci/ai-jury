@@ -88,13 +88,19 @@ CLI that fronts several vendors' models — Cursor's `cursor-agent`, a corporate
 gateway, a local proxy, an `aider`-style front:
 
 ```toml
+# unsandboxed — runs with your permissions
 [[agent]]
 name = "gpt"
 vendor = "openai"        # identity: what the cross-vendor gate counts
 adapter = "cli"          # protocol: pass extra_args through untouched
 command = "cursor-agent"
-extra_args = ["-p", "--model", "gpt-5.3-codex-high", "--force", "--output-format", "text"]
+extra_args = ["-p", "--trust", "--mode", "ask", "--model", "gpt-5.3-codex-high", "--output-format", "text"]
 ```
+
+A `cli`-adapter seat is unsandboxed — runs with your permissions: jury knows no sandbox flag for
+`cursor-agent`, so the argv above is the whole story. It asks for Cursor's
+read-only ask mode (`--mode ask`) and leaves out `--force`/`--yolo`, which approve
+every command — see [Cursor CLI / Arbitrary CLI Agent](#cursor-cli--arbitrary-cli-agent-vendor--cli).
 
 Without `adapter`, `vendor = "openai"` also selected the Codex adapter, which
 runs `<command> exec …` — and `cursor-agent exec` is not a command, so the seat
@@ -692,7 +698,7 @@ sensitive — the same trust level as the diff. It defaults to `$JURY_CACHE_DIR`
 [[agent]]
 name = "openrouter"
 vendor = "openai-compatible"
-model = "deepseek/deepseek-r1"
+model = "anthropic/claude-opus-5.5"
 endpoint = "https://openrouter.ai/api/v1/chat/completions"
 api_key_env = "OPENROUTER_API_KEY"
 
@@ -707,7 +713,7 @@ X-Title = "ai-jury"
 [[agent]]
 name = "deepseek"
 vendor = "openai-compatible"
-model = "deepseek-reasoner"
+model = "deepseek-v4-pro"
 endpoint = "https://api.deepseek.com/v1/chat/completions"
 api_key_env = "DEEPSEEK_API_KEY"
 ```
@@ -730,7 +736,7 @@ api_key_env = "GROQ_API_KEY"
 [[agent]]
 name = "grok"
 vendor = "xai-api"
-model = "grok-2-latest"
+model = "grok-4.7"
 ```
 
 The `openai-compatible` spelling still works and is still supported — xAI serves
@@ -741,7 +747,7 @@ the OpenAI chat-completions shape — but it makes the seat's vendor identity
 [[agent]]
 name = "grok"
 vendor = "openai-compatible"
-model = "grok-2-latest"
+model = "grok-4.7"
 endpoint = "https://api.x.ai/v1/chat/completions"
 api_key_env = "XAI_API_KEY"
 ```
@@ -753,7 +759,7 @@ api_key_env = "XAI_API_KEY"
 [[agent]]
 name = "omni-claude"
 vendor = "openai-compatible"
-model = "anthropic/claude-3-5-sonnet"
+model = "anthropic/claude-opus-5.5"
 endpoint = "http://localhost:8000/v1/chat/completions"
 api_key_env = "OMNIROUTE_API_KEY"
 ```
@@ -788,29 +794,59 @@ temperature = 1.0
 
 ```toml
 # Cursor CLI (using standalone cursor-agent binary & model selection)
+# unsandboxed — runs with your permissions
 [[agent]]
 name = "cursor"
 vendor = "cli"
 command = "cursor-agent"
-extra_args = ["--print", "--trust", "--model", "claude-4.6-sonnet-medium"]
+extra_args = ["--print", "--trust", "--mode", "ask", "--model", "claude-4.6-sonnet-medium", "--output-format", "text"]
 prompt_mode = "arg"
 
 # The same CLI pointed at a Grok model: `vendor = "xai"` so the seat is counted
 # as xAI by the cross-vendor guard rather than as one more generic `cli`.
+# unsandboxed — runs with your permissions
 [[agent]]
 name = "grok-cursor"
 vendor = "xai"
 command = "cursor-agent"
-extra_args = ["-p", "--model", "cursor-grok-4.6-high-fast", "--force", "--output-format", "text"]
+extra_args = ["-p", "--trust", "--mode", "ask", "--model", "cursor-grok-4.6-high-fast", "--output-format", "text"]
 
 # Aider CLI
+# unsandboxed — runs with your permissions
 [[agent]]
 name = "aider"
 vendor = "cli"
 command = "aider"
-extra_args = ["--message"]
+extra_args = ["--chat-mode", "ask", "--dry-run", "--no-auto-commits", "--no-dirty-commits", "--no-suggest-shell-commands", "--no-auto-lint", "--no-detect-urls", "--no-gitignore", "--message"]
 prompt_mode = "arg" # "arg" (appends prompt as last argument) or "stdin" (pipes prompt to stdin)
 ```
+
+Every seat in this block is **unsandboxed — runs with your permissions**. jury knows no sandbox
+flag for a bring-your-own CLI, adds none and removes none, and the
+least-privilege audit warns about each of them (`--strict` fails the run) — see
+[docs/security.md](security.md#bring-your-own-cli-seats). Such a seat also runs in
+the directory `jury` was started from, which on a pull request is the author's
+checkout. What the samples do instead is ask each CLI for its own read-only mode:
+
+- **`cursor-agent`**: `--mode ask` is the mode its `--help` calls "Q&A style …
+  (read-only)". `--print` alone is not read-only: its `--help` says it "has
+  access to all tools, including write and shell". Measured on `cursor-agent`
+  2026.09.26 in an empty directory, asked to create a file and run `touch`:
+  `--print --force` did both; `--print --trust` wrote the file (the shell command
+  was refused); `--print --trust --mode ask` did neither and said ask mode was
+  active. `--trust` is what a headless run needs in a directory it has not seen
+  (without it, or `--force`/`--yolo`, it stops at a workspace-trust prompt).
+  Never add `--force`/`-f`/`--yolo`: each approves every command.
+- **`aider`**: `--message` alone is aider's normal editing mode, and aider
+  commits its edits by default. `--chat-mode ask` ("never make changes"),
+  `--dry-run` (no file is modified), `--no-auto-commits`, `--no-dirty-commits`,
+  `--no-suggest-shell-commands`, `--no-auto-lint`, `--no-detect-urls` and
+  `--no-gitignore` turn off every path to an edit, a commit, a command or a fetch
+  that aider's options reference names. Never add `--yes-always`. `--message`
+  stays last, because `prompt_mode = "arg"` appends the prompt after it.
+
+Both modes are the CLI's own promise, not something jury enforces. Seat either
+only for diffs you would run that CLI on yourself.
 
 `prompt_mode` is part of the config hash when it is written (#746), like
 `adapter`: the two modes are two invocation protocols, so a `--cache` entry made
