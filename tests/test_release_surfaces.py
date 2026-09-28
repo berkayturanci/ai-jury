@@ -74,6 +74,7 @@ FIXTURE_FILES = {
     ".cursor-plugin/plugin.json": '{{"name": "ai-jury", "version": "{v}"}}\n',
     "website/index.html": '<a class="ver" id="site-version" href="/latest">v{v}</a>\n',
     "website/app.js": 'config: "repo: x\\n    rev: v{v}\\n"\n',
+    "website/docs.html": '    var DOCS_TAG = "v{v}";\n',
     "README.md": "    rev: v{v}\n\nActive (v{v}).\n",
     "docs/cookbook.md": "    rev: v{v}\n\n" + UNLISTED_MARKER + "\n",
     "docs/configuration.md": '  "tool_version": "{v}",\n',

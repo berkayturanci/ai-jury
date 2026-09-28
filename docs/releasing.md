@@ -121,6 +121,13 @@ Three guards read that table, and none of them keeps its own copy:
 | `scripts/verify_merge.py --check-surfaces` (`make release-check`) | Does **every** listed surface name what `pyproject.toml` declares? |
 | `tests/test_release_metadata.py` | The same question, in the unit suite, on every pull request. |
 
+The site's docs page is one of them (#876). `website/docs.html` names the release
+as `DOCS_TAG` and reads `docs/` from that tag, so a visitor reads the documentation
+of the version they install rather than whatever is on `main`. Pages deploys when
+the release pull request merges, before the tag exists: until the tag is pushed —
+and for a document added since the release — the page reads `main` instead and
+marks the document "unreleased", so push the tag soon after the merge.
+
 Registering a new surface is one line in that table (#665). It used to be three
 lines in three files, and the surface that was missed is the one that went stale:
 `website/index.html` and `website/app.js` sat at v1.14.4 through two releases
