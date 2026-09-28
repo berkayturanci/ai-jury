@@ -781,8 +781,12 @@ class AFlagSpelledAsAnotherOptionsValueIsNotThatFlag(unittest.TestCase):
         warnings = privilege.audit_agent(
             AgentSpec(name="c", vendor="anthropic", command="claude", extra_args=args)
         )
-        self.assertEqual(len(warnings), 1)
+        # Not read as the flag (no "skips permission checks"), but reported
+        # fail-closed as a token jury cannot vouch for (#908 review).
+        self.assertEqual(len(warnings), 2)
         self.assertNotIn("skips permission checks", warnings[0])
+        self.assertIn("`--dangerously-skip-permissions`", warnings[1])
+        self.assertIn("jury cannot tell", warnings[1])
         self.assertFalse(privilege._claude_flag_present("--mcp-config", ["--name", "--mcp-config"]))
 
     def test_a_variadic_option_takes_its_first_value_whatever_it_spells(self):
@@ -1964,13 +1968,19 @@ class NothingAfterTheOptionTerminatorIsAFlag(unittest.TestCase):
         args = ["--", "--dangerously-skip-permissions"]
         self.assertIsNone(privilege._claude_mode_override(args))
         self.assertIsNone(privilege._claude_permission_bypass(args))
-        self.assertEqual(privilege.audit_agent(self._claude(*args)), [])
+        # The readers do not take it as the flag; the audit still reports it,
+        # fail-closed, rather than vouch that Claude never reads it (#908 review).
+        warnings = privilege.audit_agent(self._claude(*args))
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("jury cannot tell", warnings[0])
+        self.assertNotIn("bypass mode", warnings[0])
         warnings = privilege.audit_agent(
             self._claude("--permission-mode", "plan", "--", "--dangerously-skip-permissions")
         )
-        self.assertEqual(len(warnings), 1)
+        self.assertEqual(len(warnings), 2)
         self.assertIn("`--permission-mode plan`", warnings[0])
         self.assertNotIn("bypass mode", warnings[0])
+        self.assertIn("`--dangerously-skip-permissions`", warnings[1])
 
     def test_the_lockdown_is_injected_before_an_existing_terminator(self):
         for tail in (
@@ -2019,9 +2029,10 @@ class NothingAfterTheOptionTerminatorIsAFlag(unittest.TestCase):
     def test_every_direct_reader_stops_at_the_terminator(self):
         self.assertFalse(privilege._claude_is_locked_down(["--", "--disallowed-tools", DENY]))
         self.assertIsNone(privilege._claude_rejected_mode(["--", "--permission-mode", "bogus"]))
-        self.assertEqual(
-            privilege.audit_agent(self._claude("--", "--permission-mode", "bogus")), []
-        )
+        warnings = privilege.audit_agent(self._claude("--", "--permission-mode", "bogus"))
+        self.assertEqual(len(warnings), 1)
+        self.assertNotIn("rejects", warnings[0])
+        self.assertIn("jury cannot tell", warnings[0])
         said = privilege._claude_skip_overrides(
             [
                 "--dangerously-skip-permissions",
@@ -2059,6 +2070,118 @@ class NothingAfterTheOptionTerminatorIsAFlag(unittest.TestCase):
         )
         argv = adapters.CodexAdapter(spec).build_argv("p")
         self.assertIn("--skip-git-repo-check", argv[: argv.index("--")])
+
+
+class TheAuditFailsClosedOnTokensItCannotPlace(unittest.TestCase):
+    """A risky token the readers skip is reported, not trusted (#908 review, round 4).
+
+    `-pn -- --permission-mode=bypassPermissions`: commander reads `-pn` as `-p -n`,
+    `-n` takes `--` as the session name, and the mode after it is applied. The
+    readers took `--` as the terminator and audited the seat clean. They now model
+    combined short options, and any risky token they still do not read as a flag
+    draws a warning of its own, so `--strict` refuses the seat either way.
+    """
+
+    def _claude(self, *extra_args):
+        return AgentSpec(
+            name="claude", vendor="anthropic", command="claude", extra_args=list(extra_args)
+        )
+
+    def _codex(self, *extra_args):
+        return AgentSpec(
+            name="codex", vendor="openai", command="codex", extra_args=list(extra_args)
+        )
+
+    def test_a_combined_short_option_takes_the_terminator_as_its_value(self):
+        args = ["-pn", "--", "--permission-mode=bypassPermissions"]
+        self.assertEqual(privilege._claude_terminator(args), len(args))
+        self.assertEqual(privilege._claude_effective_mode(args), "bypassPermissions")
+        warnings = privilege.audit_agent(self._claude(*args))
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("`--permission-mode bypassPermissions`", warnings[0])
+        self.assertIn("least-privilege check failed (--strict)", _strict_error(self._claude(*args)))
+
+    def test_a_short_value_option_last_in_a_cluster_takes_the_next_token(self):
+        for token, kind in (
+            ("-n", "required"),
+            ("-pn", "required"),
+            ("-cpn", "required"),
+            ("-pd", "optional"),
+            ("-r", "optional"),
+            ("-np", None),  # `-n` takes `p` inline
+            ("-nfoo", None),
+            ("-pc", None),
+            ("-px", None),  # claude does not know `-x`
+            ("--name", None),
+        ):
+            with self.subTest(token=token):
+                self.assertEqual(privilege._claude_short_cluster(token), kind)
+
+    def test_an_optional_value_takes_only_a_token_that_is_not_an_option(self):
+        self.assertEqual(privilege._claude_value_positions(["-r", "abc", "--x"]), {1})
+        self.assertEqual(privilege._claude_value_positions(["--resume", "--", "x"]), set())
+        self.assertEqual(privilege._claude_terminator(["-d", "--", "x"]), 1)
+        self.assertEqual(privilege._claude_value_positions(["-pd", "api", "--x"]), {1})
+        self.assertEqual(privilege._claude_value_positions(["-pd"]), set())
+        self.assertEqual(privilege._claude_value_positions(["--resume", "abc", "--x"]), {1})
+        self.assertEqual(
+            privilege._claude_terminator(["--worktree", "wt", "--", "--permission-mode=plan"]), 2
+        )
+
+    def test_a_bypass_the_readers_do_not_place_still_warns(self):
+        cases = (
+            ["-np", "--", "--permission-mode=bypassPermissions"],
+            ["-pn", "x", "--", "--permission-mode=bypassPermissions"],
+            ["--", "--permission-mode", "acceptEdits"],
+            ["--model", "--dangerously-skip-permissions"],
+            ["--", "--allow-dangerously-skip-permissions"],
+            ["--settings", '{"permissions": {"defaultMode": "bypassPermissions"}}'],
+            ["--", "--tools", "Read"],
+            ["--append-system-prompt", "--mcp-config=/tmp/servers.json"],
+        )
+        for args in cases:
+            with self.subTest(args=args):
+                warnings = privilege.audit_agent(self._claude(*args))
+                self.assertTrue(any("jury cannot tell" in w for w in warnings), warnings)
+                self.assertIn(
+                    "least-privilege check failed (--strict)", _strict_error(self._claude(*args))
+                )
+
+    def test_a_short_value_option_with_its_value_and_no_risk_audits_clean(self):
+        for args in (["-n", "--"], ["-pn", "review"], ["-n", "x", "--", "just text"]):
+            with self.subTest(args=args):
+                self.assertEqual(privilege.audit_agent(self._claude(*args)), [])
+
+    def test_the_readers_own_findings_are_not_repeated(self):
+        for args in (
+            ["--permission-mode", "bypassPermissions"],
+            ["--permission-mode=plan"],
+            ["--dangerously-skip-permissions"],
+            ["--tools", "Read"],
+            ["--mcp-config", "/tmp/s.json"],
+            ["--permission-mode", "dontAsk"],
+            ["--", "--permission-mode", "dontAsk"],
+            ["--", "--tools", ""],
+        ):
+            with self.subTest(args=args):
+                self.assertEqual(privilege._claude_unread_risks(args), [])
+
+    def test_codex_bypass_tokens_the_readers_do_not_place_warn(self):
+        for args in (
+            ["--", "--yolo"],
+            ["--", "-s", "danger-full-access"],
+            ["-c", 'sandbox_mode="danger-full-access"'],
+            ["--", "--dangerously-bypass-approvals-and-sandbox"],
+        ):
+            with self.subTest(args=args):
+                warnings = privilege.audit_agent(self._codex(*args))
+                self.assertTrue(any("jury cannot tell" in w for w in warnings), warnings)
+
+    def test_codex_tokens_already_reported_are_not_repeated(self):
+        warnings = privilege.audit_agent(self._codex("--full-auto"))
+        self.assertEqual(len(warnings), 1)
+        self.assertNotIn("jury cannot tell", warnings[0])
+        self.assertEqual(privilege.audit_agent(self._codex("--", "-s", "read-only")), [])
 
 
 if __name__ == "__main__":

@@ -190,7 +190,24 @@ content; the least-privilege audit (`--strict` to fail the run) will flag it.
       read only what comes before `--` (a `--` that is another option's value,
       as in `--model --`, is not a terminator), and the lockdown is injected in
       front of it. The same holds for codex's `-s`: one after `--` is not a
-      sandbox, and `-s read-only` is injected before it.
+      sandbox, and `-s read-only` is injected before it. Combined short options
+      are read as Claude Code reads them: `-pn` is `-p -n`, and `-n` takes the
+      next token, even `--`, as its value.
+    - any token jury cannot place: the readers above model Claude Code's
+      parser, and each review round found a corner they missed. So a token that
+      could change the permission mode or tools — any `--permission-mode…`,
+      either skip-permissions flag, `bypassPermissions`, `acceptEdits`, a
+      settings `defaultMode`, `--tools`, `--mcp-config` — that they do not read
+      as a flag (after `--`, as another option's value, or in a spelling they
+      do not model) draws its own warning, and `--strict` fails the run. Prompt
+      text in `extra_args` that only mentions one is warned about too. codex
+      gets the same rule for `danger-full-access`, `workspace-write`,
+      `--full-auto`, `--yolo` and `--dangerously-bypass-approvals-and-sandbox`,
+      including inside a `-c` override. The lockdown itself stays at the front
+      of the argv, the one place Claude Code is sure to read as options:
+      moving `dontAsk` to the end would not beat `--dangerously-skip-permissions`,
+      which overrides any mode in either order, and would silently replace a
+      mode you named.
   - configuration beyond the prompt: `--settings`, `--setting-sources`,
     `--plugin-dir`, `--plugin-url`, `--add-dir`, `--agents`, `--agent`.
     **`--safe-mode` wins over all of these**: measured on Claude Code 2.1.236, a

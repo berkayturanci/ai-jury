@@ -409,6 +409,33 @@ def _codex_options(extra_args: list[str]) -> list[str]:
     return args[: args.index("--")] if "--" in args else args
 
 
+#: Substrings that make a codex token able to widen or remove its sandbox,
+#: wherever it sits (#908 review): the wide sandbox values (also as a ``-c
+#: sandbox_mode=…`` override), the selector and both bypass spellings.
+_CODEX_RISK_MARKS: tuple[str, ...] = (
+    "danger-full-access",
+    "workspace-write",
+    "full-auto",
+    "yolo",
+    "dangerously-bypass-approvals-and-sandbox",
+)
+
+
+def _codex_unread_risks(extra_args: list[str], reported: list[str]) -> list[str]:
+    """codex tokens that could widen its sandbox and are not in *reported*, as written.
+
+    The fail-closed counterpart of :func:`_competing_sandboxes`, which reads only
+    options before ``--`` and only the ``-s``/``--sandbox`` and selector
+    spellings: a mark after ``--``, inside a ``-c`` override, or anywhere else is
+    reported instead of trusted to be inert.
+    """
+    return [
+        a
+        for a in extra_args
+        if any(mark in a for mark in _CODEX_RISK_MARKS) and not any(a in r for r in reported)
+    ]
+
+
 def _is_codex(vendor: str) -> bool:
     """The identity rule :func:`enforce_read_only` uses for the codex branch.
 
@@ -536,6 +563,65 @@ _CLAUDE_VARIADIC_OPTIONS: frozenset[str] = frozenset(
 )
 
 
+#: claude options declared ``[value]``: commander gives one the next token only
+#: when that token does not start with ``-``. From ``claude --help`` of Claude
+#: Code 2.1.236, with the short aliases it lists (``-d``, ``-r``, ``-w``).
+_CLAUDE_OPTIONAL_VALUE_OPTIONS: frozenset[str] = frozenset(
+    {
+        "--cloud",
+        "--debug",
+        "--from-pr",
+        "--prompt-suggestions",
+        "--remote-control",
+        "--resume",
+        "--teleport",
+        "--worktree",
+        "-d",
+        "-r",
+        "-w",
+    }
+)
+
+#: Every short option ``claude --help`` (2.1.236) lists, and whether it takes a
+#: value: ``None`` for a switch, ``"required"`` for ``-n <name>``, ``"optional"``
+#: for ``-d [filter]``, ``-r [value]`` and ``-w [name]``. commander reads a
+#: combined token such as ``-pn`` as ``-p -n`` (#908 review): a switch hands the
+#: rest of the token on as another short option, and a value option takes the
+#: rest of the token as its value, or, when nothing is left, the next token — so
+#: in ``-pn -- --permission-mode=bypassPermissions`` the ``--`` is the session
+#: name, and the mode after it is read.
+_CLAUDE_SHORT_OPTIONS: dict[str, str | None] = {
+    "c": None,
+    "h": None,
+    "p": None,
+    "v": None,
+    "n": "required",
+    "d": "optional",
+    "r": "optional",
+    "w": "optional",
+}
+
+
+def _claude_short_cluster(token: str) -> str | None:
+    """What a single-dash *token* leaves for the next token: its value kind, or None.
+
+    ``"required"`` / ``"optional"`` when the token ends on a value option with no
+    inline value (``-n``, ``-pn``, ``-cd``), ``None`` otherwise — a run of
+    switches, a value written inline (``-nfoo``), or a letter claude does not
+    know (it rejects the argv then, so no value is taken).
+    """
+    if not token.startswith("-") or token.startswith("--") or len(token) < 2:
+        return None
+    for j, letter in enumerate(token[1:], start=1):
+        if letter not in _CLAUDE_SHORT_OPTIONS:
+            return None
+        kind = _CLAUDE_SHORT_OPTIONS[letter]
+        if kind is None:
+            continue
+        return kind if j == len(token) - 1 else None
+    return None
+
+
 def _claude_value_positions(args: list[str]) -> frozenset[int]:
     """Indices of *args* that claude reads as an option's value, not as a flag."""
     values: set[int] = set()
@@ -545,6 +631,18 @@ def _claude_value_positions(args: list[str]) -> frozenset[int]:
         if a in _CLAUDE_VALUE_OPTIONS:
             values.add(i + 1)
             i += 2
+            continue
+        kind = "optional" if a in _CLAUDE_OPTIONAL_VALUE_OPTIONS else _claude_short_cluster(a)
+        if kind == "required":
+            values.add(i + 1)
+            i += 2
+            continue
+        if kind == "optional":
+            if i + 1 < len(args) and not args[i + 1].startswith("-"):
+                values.add(i + 1)
+                i += 2
+                continue
+            i += 1
             continue
         if a in _CLAUDE_VARIADIC_OPTIONS:
             j = i + 1
@@ -574,6 +672,58 @@ def _claude_terminator(args: list[str]) -> int:
         if a == "--" and i not in values:
             return i
     return len(args)
+
+
+#: Substrings that make a claude token able to change the reviewer's permission
+#: mode or tools, wherever it sits (#908 review): a ``--permission-mode…``
+#: spelling, either skip-permissions flag (``--dangerously-skip-permissions`` and
+#: ``--allow-dangerously-skip-permissions``, both in ``claude --help`` 2.1.236),
+#: an approving mode name, a settings ``defaultMode``, and the options that hand
+#: tools back (``--tools``, ``--mcp-config``). The mode words ``auto``,
+#: ``manual``, ``default`` and ``plan`` are not here: each takes effect only as
+#: the value of a ``--permission-mode`` token, which is, and ``auto`` is also an
+#: ordinary ``--autocompact`` value.
+_CLAUDE_RISK_MARKS: tuple[str, ...] = (
+    "permission-mode",
+    "dangerously-skip-permissions",
+    "bypassPermissions",
+    "acceptEdits",
+    "defaultMode",
+    "--tools",
+    "--mcp-config",
+)
+
+
+def _claude_unread_risks(extra_args: list[str]) -> list[str]:
+    """Risky tokens the precise readers here do not read as flags, as written.
+
+    Fail-closed on purpose (#908 review). The readers above model claude's parser
+    — value positions, ``=`` forms, ``--``, combined short options — and each
+    round of review found a corner they missed, every time one where a token
+    they skipped was one Claude applied. So a token carrying one of
+    :data:`_CLAUDE_RISK_MARKS` that those readers do not take as a flag — after
+    ``--``, as another option's value, or anywhere else — is reported rather
+    than trusted to be inert. ``--permission-mode dontAsk`` (in either spelling)
+    and ``--tools ""`` grant nothing and are not reported. Text that only
+    mentions such a token is reported too; that over-warning is the price.
+    """
+    args = list(extra_args)
+    cut = _claude_terminator(args)
+    values = _claude_value_positions(args)
+    read = {i for i in range(cut) if i not in values}
+    # The value of a `--permission-mode` that is read is read with it.
+    read |= {i + 1 for i in read if args[i] == "--permission-mode"}
+    found: list[str] = []
+    for i, a in enumerate(args):
+        if i in read or not any(mark in a for mark in _CLAUDE_RISK_MARKS):
+            continue
+        nxt = args[i + 1] if i + 1 < len(args) else None
+        if a == "--permission-mode=dontAsk" or (a == "--permission-mode" and nxt == "dontAsk"):
+            continue
+        if a == "--tools=" or (a == "--tools" and nxt == ""):
+            continue
+        found.append(a)
+    return found
 
 
 def _claude_options(extra_args: list[str]) -> list[str]:
@@ -1459,6 +1609,20 @@ def audit_agent(spec) -> list[str]:
             warnings.append(_claude_mode_warning(label, override, extra_args))
         # Configuration beyond the prompt. `--safe-mode` keeps it from loading
         # (measured), so this is a surprise to prevent, not a hole to close.
+        # Fail-closed (#908 review): a risky token the readers above did not read
+        # as a flag may still be one Claude applies.
+        unread = _claude_unread_risks(extra_args)
+        if unread:
+            named = ", ".join(f"`{t}`" for t in dict.fromkeys(unread))
+            one = len(set(unread)) == 1
+            warnings.append(
+                f"agent '{label}' (claude) has {named} where jury cannot tell whether "
+                f"Claude reads {'it' if one else 'them'} as {'a flag' if one else 'flags'} "
+                f"(after `--`, as another option's value, or in a spelling jury does not "
+                f"model). If Claude does, the reviewer's permission mode or tools "
+                f"change, and jury has not checked how. Drop "
+                f"{'it' if one else 'them'} — a reviewer only reads its prompt."
+            )
         loaded = _claude_config_options(extra_args)
         if loaded:
             named = ", ".join(f"`{f}`" for f in loaded)
@@ -1528,6 +1692,16 @@ def audit_agent(spec) -> list[str]:
         # generic message below, which would recommend the `-s read-only` that
         # is already there.
         competing = _competing_sandboxes(extra_args, vendor=vendor)
+        if _is_codex(vendor):
+            unread = _codex_unread_risks(extra_args, [token for token, _ in competing])
+            if unread:
+                named = ", ".join(f"`{t}`" for t in dict.fromkeys(unread))
+                warnings.append(
+                    f"agent '{label}' has {named} where jury cannot tell whether codex "
+                    f"reads it as a sandbox setting (after `--`, inside a `-c` "
+                    f"override, or in a spelling jury does not model). If codex does, "
+                    f"the enforced read-only sandbox may be widened or removed. Drop it."
+                )
         if competing:
             named = ", ".join(f"`{token}`" for token, _ in competing)
             one = len(competing) == 1
