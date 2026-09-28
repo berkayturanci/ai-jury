@@ -254,6 +254,7 @@ def _files_at_tag() -> set[str] | None:
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         timeout=60,
         stdin=subprocess.DEVNULL,
     )
@@ -287,6 +288,8 @@ class ThePageShowsEachEntry(unittest.TestCase):
             [shutil.which("node"), str(driver), str(DOCS_PAGE), str(cases_file)],
             capture_output=True,
             text=True,
+            # node writes UTF-8; Windows would decode it as cp1252 (the ` · ` separator)
+            encoding="utf-8",
             timeout=60,
             stdin=subprocess.DEVNULL,
         )
