@@ -192,10 +192,13 @@ class TheActionDoesNotShipAFailSoftPanel(unittest.TestCase):
         block = self.text.split("min-vendors:", 1)[1].split("version:", 1)[0]
         self.assertIn('default: "2"', block)
 
-    def test_the_guard_is_appended_to_both_invocations(self):
-        """PR mode and diff-file mode; missing it on one is missing it."""
+    def test_the_guard_is_appended_to_every_invocation(self):
+        """PR mode, base-diff mode and a given diff; missing it on one is missing it."""
         self.assertIn('jury --pr "$PR_NUM" $INPUT_ARGS $GUARD', self.text)
         self.assertIn("jury --diff-file - $INPUT_ARGS $GUARD", self.text)
+        self.assertIn('jury --diff-file="$INPUT_DIFF_FILE" $INPUT_ARGS $GUARD', self.text)
+        self.assertEqual(self.text.count("\n          jury "), 2)
+        self.assertEqual(self.text.count("| jury "), 1)
 
     def test_an_explicit_caller_choice_is_not_overridden(self):
         """Passing the flag through `args` must not produce it twice.
@@ -258,6 +261,48 @@ class TheActionDoesNotShipAFailSoftPanel(unittest.TestCase):
     def test_it_travels_through_env_like_every_other_input(self):
         """Never as a `${{ }}` inside `run:` — see the sweep above."""
         self.assertIn("INPUT_MIN_VENDORS: ${{ inputs.min-vendors }}", self.text)
+
+
+class TheActionCanReviewAGivenDiff(unittest.TestCase):
+    """#900: the Action could not run offline on a pull request.
+
+    On `pull_request` it always ran `jury --pr N`, which needs `gh`, a token and
+    the network, so even `args: --mock` could not make it hermetic — and CI could
+    not run the Action itself with no secrets. `diff-file:` names a diff to
+    review instead, and wins over the event when given.
+    """
+
+    def setUp(self):
+        self.text = (REPO_ROOT / "action.yml").read_text(encoding="utf-8")
+
+    def test_both_surfaces_say_a_named_diff_cannot_post(self):
+        """With `diff-file:` the run has no `--pr`, so a posting flag errors (#906 review)."""
+        cookbook = " ".join(
+            (REPO_ROOT / "docs" / "cookbook.md").read_text(encoding="utf-8").split()
+        )
+        action = " ".join(self.text.split())
+        for name, text in (("action.yml", action), ("docs/cookbook.md", cookbook)):
+            with self.subTest(surface=name):
+                self.assertIn("cannot post to the pull request", text)
+                self.assertIn("exit with an error before any seat runs", text)
+
+    def test_the_input_is_declared_and_empty_by_default(self):
+        self.assertIn("diff-file", declared_inputs())
+        entry = self.text.split("\n  diff-file:\n", 1)[1].split("\nruns:", 1)[0]
+        self.assertIn("required: false", entry)
+        self.assertIn('default: ""', entry)
+
+    def test_a_given_diff_is_checked_before_the_pull_request(self):
+        given = 'if [ -n "$INPUT_DIFF_FILE" ]; then'
+        self.assertIn(given, self.text)
+        self.assertIn('elif [ -n "$PR_NUM" ] && [ "$PR_NUM" != "null" ]; then', self.text)
+        self.assertLess(self.text.index(given), self.text.index('jury --pr "$PR_NUM"'))
+
+    def test_the_value_cannot_become_a_flag(self):
+        """Joined with `=` and quoted: `diff-file: --post` is a missing file, not a flag."""
+        self.assertIn('--diff-file="$INPUT_DIFF_FILE"', self.text)
+        self.assertNotIn("--diff-file $INPUT_DIFF_FILE", self.text)
+        self.assertNotIn('--diff-file "$INPUT_DIFF_FILE"', self.text)
 
 
 class AnEmptyMinVendorsMeansTheDefault(unittest.TestCase):

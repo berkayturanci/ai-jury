@@ -263,7 +263,9 @@ The repository is **public**, so GitHub-hosted runner minutes are free and
 unlimited. The **authoritative** per-push / per-PR signal is the hosted
 [`ci.yml`](../.github/workflows/ci.yml) matrix: the stdlib-only unit tests and
 the mock smoke test on Python 3.11–3.14 (Linux) and 3.13 (macOS, Windows), plus a
-dedicated coverage gate (`fail_under` in `pyproject.toml`).
+dedicated coverage gate (`fail_under` in `pyproject.toml`). Its `action-self-test`
+job runs the GitHub Action itself, `uses: ./`, on Linux, macOS and Windows, with
+`args: --mock`, a committed `diff-file:` and no secrets (#900).
 
 There is **no self-hosted runner**. An earlier self-hosted macOS runner was
 removed when the repo went public: running untrusted forked-PR code on a
