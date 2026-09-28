@@ -2111,10 +2111,14 @@ def _maybe_add_local_fallback(config, args, log):
     model = seat.model
     config.agents.append(seat)
     config.chair = "local"
+    named = getattr(args, "min_vendors", None)
+    guard = (
+        "so the default cross-vendor guard (min_vendors) does not apply to it"
+        if named is None
+        else f"held to the --min-vendors {named} you named"
+    )
     log(
-        f"no agent CLIs found; using local model '{model}' (offline, $0) as a "
-        f"single-vendor panel, so the default cross-vendor guard (min_vendors) "
-        f"does not apply to it"
+        f"no agent CLIs found; using local model '{model}' (offline, $0) as a single-vendor panel, {guard}"
     )
     # An agy-only machine lands here too: say why its one CLI sat out.
     from .config import agy_opt_in_hint
@@ -2798,12 +2802,30 @@ def main(argv: list[str] | None = None) -> int:
     # report renders.
     ballot_mode = "issue" if args.issue else "code"
 
-    metadata = build_run_metadata(outcome, config, decision=decision, vote=vote, mode=ballot_mode)
+    # Whether this run's panel is the zero-config fallback's one local seat (#863):
+    # recorded in the metadata and stated in the report, not only on stderr, which
+    # `--quiet` silences.
+    zero_config = local_fallback is not None
+    metadata = build_run_metadata(
+        outcome,
+        config,
+        decision=decision,
+        vote=vote,
+        mode=ballot_mode,
+        zero_config_fallback=zero_config,
+    )
 
     if args.format == "json":
         from .formats import to_json
 
-        report = to_json(outcome, config, decision=decision, vote=vote, mode=ballot_mode)
+        report = to_json(
+            outcome,
+            config,
+            decision=decision,
+            vote=vote,
+            mode=ballot_mode,
+            zero_config_fallback=zero_config,
+        )
     elif args.format == "sarif":
         from .formats import to_sarif
 

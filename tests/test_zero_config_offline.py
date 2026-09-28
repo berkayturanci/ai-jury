@@ -120,6 +120,61 @@ class TheDocumentedOfflineCommandPasses(unittest.TestCase):
         self.assertEqual(out, "")
 
 
+_NOTE = "- single local seat (zero-config fallback: no jury.toml and no agent CLI)"
+
+
+class TheReportSaysItWasTheFallback(unittest.TestCase):
+    """The report and the metadata say the panel was the fallback's seat (#863),
+    so `--quiet`, which drops the stderr line, cannot hide why the run passed."""
+
+    def test_the_markdown_report_says_so_under_quiet(self):
+        code, out, err = _jury("--quiet")
+
+        self.assertEqual(code, 0)
+        self.assertEqual(err, "")
+        self.assertIn(_NOTE, out)
+
+    def test_the_json_report_carries_the_field(self):
+        code, out, _ = _jury("--quiet", "--format", "json")
+
+        self.assertEqual(code, 0)
+        doc = json.loads(out)
+        self.assertEqual((doc["schema_version"], doc["metadata"]["schema_version"]), ("1.5", 8))
+        self.assertIs(doc["metadata"]["panel"]["zero_config_fallback"], True)
+
+    def test_the_metadata_file_carries_the_field(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "meta.json"
+            code, _, _ = _jury("--quiet", "--metadata-json", str(path))
+            meta = json.loads(path.read_text(encoding="utf-8"))
+
+        self.assertEqual(code, 0)
+        self.assertIs(meta["panel"]["zero_config_fallback"], True)
+
+    def test_a_configured_panel_is_not_the_fallback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "meta.json"
+            _, out, _ = _jury(
+                "--config",
+                "jury.toml",
+                "--metadata-json",
+                str(path),
+                config_text=_LOCAL_SEAT_TOML,
+            )
+            meta = json.loads(path.read_text(encoding="utf-8"))
+
+        self.assertIs(meta["panel"]["zero_config_fallback"], False)
+        self.assertNotIn(_NOTE, out)
+
+    def test_the_log_line_names_a_threshold_you_named(self):
+        _, _, default = _jury()
+        _, _, named = _jury("--min-vendors", "2")
+
+        self.assertIn("the default cross-vendor guard (min_vendors) does not apply", default)
+        self.assertIn("single-vendor panel, held to the --min-vendors 2 you named", named)
+        self.assertNotIn("does not apply", named)
+
+
 _GUARD = "a run would fail the cross-vendor guard"
 
 
@@ -143,7 +198,11 @@ class TheDoctorPredictsTheFallbackRun(unittest.TestCase):
         _, out, _, _ = _main(["--doctor"])
 
         self.assertIn("panel of a run:    the local model 'qwen2.5-coder:7b' alone", out)
-        self.assertIn("cross-vendor ready: yes", out)
+        self.assertIn(
+            "cross-vendor ready: yes (the gate would not fail: one seat claims no "
+            "cross-vendor consensus)",
+            out,
+        )
         self.assertIn("ready to run: yes", out)
         self.assertNotIn(_GUARD, out)
 

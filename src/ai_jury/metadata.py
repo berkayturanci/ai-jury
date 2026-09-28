@@ -42,7 +42,13 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 # nothing checkable": naming `src/made/up.py` is a different failure from naming
 # nothing, and the two ask for different fixes. Additive, and the buckets still
 # sum to ``ballots`` — the seats moved between buckets, none was added or lost.
-SCHEMA_VERSION = 7
+# v7 (issue #714) added ``routing``.
+# v8 (issue #863) added, inside ``panel``: ``zero_config_fallback`` — ``true`` when
+# the run had no config and no usable agent CLI, so the panel was the one local
+# seat the zero-config fallback seated. That run is single-vendor, and the default
+# cross-vendor guard does not fail it; this says so where ``--quiet`` cannot hide
+# it. Always present. Additive: every v7 key keeps its name and meaning.
+SCHEMA_VERSION = 8
 
 
 #: What a reviewer slot actually contributed (issue #501). ``clean`` and
@@ -374,7 +380,13 @@ def estimate_economics(results: list) -> dict:
 
 
 def build_run_metadata(
-    outcome: JuryOutcome, config: JuryConfig, *, decision=None, vote=None, mode: str = "code"
+    outcome: JuryOutcome,
+    config: JuryConfig,
+    *,
+    decision=None,
+    vote=None,
+    mode: str = "code",
+    zero_config_fallback: bool = False,
 ) -> dict:
     """Return a machine-readable metadata dict for a jury run.
 
@@ -391,6 +403,9 @@ def build_run_metadata(
     round 2), and the ballots are what ``--issue`` changes: the metadata and the
     ``reviewers`` array must be derived under the same mode, or the run's own
     gate would count a different document than the one it printed.
+
+    ``zero_config_fallback`` says the panel is the zero-config fallback's one
+    local seat (#863); the caller knows, because it seated it.
     """
     # The panel is the set of round-1 participants; this is the canonical
     # per-agent view and avoids duplicating the chair across later phases.
@@ -440,11 +455,14 @@ def build_run_metadata(
         "agents": agents,
         # Configured vs effective panel size (issue #501): a slot that returned no
         # review is an abstention, not an approval, and must not inflate the panel.
-        "panel": panel_accounting(
-            outcome.reviews,
-            chair=getattr(outcome, "chair", "") or "",
-            ballots=reviewer_ballots(outcome, config, vote=vote, mode=mode),
-        ),
+        "panel": {
+            **panel_accounting(
+                outcome.reviews,
+                chair=getattr(outcome, "chair", "") or "",
+                ballots=reviewer_ballots(outcome, config, vote=vote, mode=mode),
+            ),
+            "zero_config_fallback": bool(zero_config_fallback),
+        },
         "economics": estimate_economics(all_results),
         "rounds_executed": _rounds_executed(outcome),
         "from_cache": bool(getattr(outcome, "from_cache", False)),

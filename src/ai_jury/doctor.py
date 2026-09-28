@@ -910,7 +910,12 @@ def render_report(diagnostics) -> str:
     lines.append(f"  vendors enabled:   {panel['vendors_configured']} (by vendor identity)")
     lines.append(f"  vendors reachable: {panel['vendors_available']} (by vendor identity)")
     lines.append(f"  min_vendors gate:  {panel['min_vendors'] or 'off'}")
-    lines.append(f"  cross-vendor ready: {'yes' if panel['multi_vendor_ready'] else 'no'}")
+    ready_text = "yes" if panel["multi_vendor_ready"] else "no"
+    if panel["multi_vendor_ready"] and diagnostics.get("local_fallback"):
+        # One seat is not a cross-vendor panel: "ready" means the gate would not
+        # fail it, and says why (#863).
+        ready_text = "yes (the gate would not fail: one seat claims no cross-vendor consensus)"
+    lines.append(f"  cross-vendor ready: {ready_text}")
     # The number a consumer counts, said in the same breath as readiness (#699).
     # "cross-vendor ready: yes" on a bench that cannot supply the reviews a gate
     # requires is a true statement that answers the wrong question.

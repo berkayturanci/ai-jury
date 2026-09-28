@@ -66,8 +66,10 @@ jury init --agents claude,codex,qwen --rounds 2   # non-interactive / scriptable
 > automatically — so `git diff main... | jury --diff-file -` just works offline.
 > The panel is that one local seat, so it is a single-vendor review: the default
 > cross-vendor guard (`min_vendors`) does not apply to it, and the report still
-> lists the built-in agents it could not run. A `--min-vendors N` you name is
-> enforced as asked. For a panel you choose, run `jury init --preset offline`.
+> lists the built-in agents it could not run. The report says it was this fallback
+> (and `--metadata-json` / `--format json` carry `panel.zero_config_fallback: true`),
+> so `--quiet` does not hide it. A `--min-vendors N` you name is enforced as asked.
+> For a panel you choose, run `jury init --preset offline`.
 
 **Outcome:** a validated `jury.toml` using the secure-by-default agent templates
 (Claude with no tools, Codex read-only — see [security.md](security.md#other-agents)

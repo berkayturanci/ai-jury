@@ -137,6 +137,14 @@ def _metadata_block(metadata: dict) -> list[str]:
             [f"{flatten_inline(s['name'])} ({flatten_inline(s['reason'])})" for s in skipped]
         )
         lines.append(f"- skipped agents (never ran): {names}")
+    # The zero-config fallback (#863): said in the report, since `--quiet` drops
+    # the stderr line and the exit code alone does not say why this run passed.
+    if (metadata.get("panel") or {}).get("zero_config_fallback"):
+        lines.append(
+            "- single local seat (zero-config fallback: no jury.toml and no agent CLI): "
+            "a single-vendor panel, so the default cross-vendor guard does not fail it; "
+            "a `--min-vendors N` named on the command line is still enforced"
+        )
     retried = metadata.get("retried") or []
     if retried:
         lines.append(f"- retried agents: {', '.join(retried)}")
