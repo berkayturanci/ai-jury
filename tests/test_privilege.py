@@ -785,7 +785,9 @@ class AFlagSpelledAsAnotherOptionsValueIsNotThatFlag(unittest.TestCase):
         # fail-closed as a token jury cannot vouch for (#908 review).
         self.assertEqual(len(warnings), 2)
         self.assertNotIn("skips permission checks", warnings[0])
-        self.assertIn("`--dangerously-skip-permissions`", warnings[1])
+        self.assertIn(
+            "item 4 of `extra_args` (it mentions `dangerously-skip-permissions`)", warnings[1]
+        )
         self.assertIn("jury cannot tell", warnings[1])
         self.assertFalse(privilege._claude_flag_present("--mcp-config", ["--name", "--mcp-config"]))
 
@@ -891,7 +893,7 @@ class EveryReadOnlyClaudeCallRunsInDontAsk(unittest.TestCase):
         cases = {
             "bogus": (
                 ["--dangerously-skip-permissions", "--permission-mode", "bogus"],
-                "`--permission-mode bogus`",
+                "`--permission-mode <value>`",
             ),
             "missing": (
                 ["--dangerously-skip-permissions", "--permission-mode"],
@@ -917,7 +919,7 @@ class EveryReadOnlyClaudeCallRunsInDontAsk(unittest.TestCase):
     REJECTED_WITH_SKIP = {
         "bogus": (
             ["--dangerously-skip-permissions", "--permission-mode", "bogus"],
-            "`--permission-mode bogus`",
+            "`--permission-mode <value>`",
         ),
         "missing": (
             ["--dangerously-skip-permissions", "--permission-mode"],
@@ -929,11 +931,11 @@ class EveryReadOnlyClaudeCallRunsInDontAsk(unittest.TestCase):
         ),
         "value is the skip flag": (
             ["--permission-mode", "--dangerously-skip-permissions"],
-            "`--permission-mode --dangerously-skip-permissions`",
+            "`--permission-mode <value>`",
         ),
         "= value is the skip flag": (
             ["--permission-mode=--dangerously-skip-permissions"],
-            "`--permission-mode --dangerously-skip-permissions`",
+            "`--permission-mode <value>`",
         ),
     }
 
@@ -1615,7 +1617,7 @@ class TheAuditReportsThePermissionModeClaudeCodeApplies(unittest.TestCase):
             ["--permission-mode", "plan", "--permission-mode", "bogus"],
         ):
             with self.subTest(args=args):
-                self.assertEqual(privilege._claude_mode_override(args), "--permission-mode bogus")
+                self.assertEqual(privilege._claude_mode_override(args), "--permission-mode <value>")
 
     def test_the_write_role_adds_the_skip_flag_once_for_repeated_dont_ask(self):
         argv = privilege.enable_write(
@@ -1868,7 +1870,7 @@ class AnAgySandboxValueCannotSwitchItOff(unittest.TestCase):
         self.assertEqual(len(warnings), 3, warnings)
         self.assertIn("`--sandbox=0`, `--sandbox=F`", warnings[1])
         self.assertIn("jury removes them", warnings[1])
-        self.assertIn("`--sandbox=off`", warnings[2])
+        self.assertIn("`--sandbox=<value>`", warnings[2])
 
     def test_a_true_value_is_only_redundant(self):
         for args in (["--sandbox=true"], ["--sandbox=1"], ["--sandbox", "--sandbox=True"]):
@@ -1980,7 +1982,9 @@ class NothingAfterTheOptionTerminatorIsAFlag(unittest.TestCase):
         self.assertEqual(len(warnings), 2)
         self.assertIn("`--permission-mode plan`", warnings[0])
         self.assertNotIn("bypass mode", warnings[0])
-        self.assertIn("`--dangerously-skip-permissions`", warnings[1])
+        self.assertIn(
+            "item 4 of `extra_args` (it mentions `dangerously-skip-permissions`)", warnings[1]
+        )
 
     def test_the_lockdown_is_injected_before_an_existing_terminator(self):
         for tail in (
@@ -2182,6 +2186,130 @@ class TheAuditFailsClosedOnTokensItCannotPlace(unittest.TestCase):
         self.assertEqual(len(warnings), 1)
         self.assertNotIn("jury cannot tell", warnings[0])
         self.assertEqual(privilege.audit_agent(self._codex("--", "-s", "read-only")), [])
+
+
+#: Secret-shaped test values (#908 review, round 5). The first is the shape the
+#: redaction helper knows; the second is one it does not, so only the audit's
+#: own refusal to repeat argv values keeps it out.
+FAKE_KEY = "sk-ant-api03-FAKEFAKEFAKEFAKEFAKEFAKEFAKE0123456789"
+FAKE_PLAIN = "KEY=hunter2hunter2"
+SETTINGS = (
+    '{"permissions": {"defaultMode": "bypassPermissions"}, '
+    f'"env": {{"ANTHROPIC_API_KEY": "{FAKE_KEY}", "OTHER": "{FAKE_PLAIN}"}}}}'
+)
+
+
+class NoWarningRepeatsAnArgvValue(unittest.TestCase):
+    """A warning names what it found; it never prints the token (#908 review, round 5).
+
+    The fail-closed warning printed a whole `--settings` JSON, API key included,
+    and every other warning printed the argv value it was about.
+    """
+
+    SEATS = {
+        "claude settings JSON": AgentSpec(
+            name="c", vendor="anthropic", command="claude", extra_args=["--settings", SETTINGS]
+        ),
+        "claude token after --": AgentSpec(
+            name="c",
+            vendor="anthropic",
+            command="claude",
+            extra_args=["--", f"--permission-mode={FAKE_PLAIN}{FAKE_KEY}"],
+        ),
+        "claude rejected mode": AgentSpec(
+            name="c",
+            vendor="anthropic",
+            command="claude",
+            extra_args=["--permission-mode", f"{FAKE_PLAIN}{FAKE_KEY}"],
+        ),
+        "claude tool names": AgentSpec(
+            name="c",
+            vendor="anthropic",
+            command="claude",
+            extra_args=["--tools", f"Read,{FAKE_PLAIN},{FAKE_KEY}"],
+        ),
+        "codex -c override": AgentSpec(
+            name="x",
+            vendor="openai",
+            command="codex",
+            extra_args=["-c", f'sandbox_mode="danger-full-access" {FAKE_PLAIN} {FAKE_KEY}'],
+        ),
+        "codex second sandbox value": AgentSpec(
+            name="x",
+            vendor="openai",
+            command="codex",
+            extra_args=["-s", "read-only", "-s", f"{FAKE_PLAIN}{FAKE_KEY}"],
+        ),
+        "codex selector value": AgentSpec(
+            name="x",
+            vendor="openai",
+            command="codex",
+            extra_args=[f"--full-auto={FAKE_PLAIN}{FAKE_KEY}"],
+        ),
+        "agy sandbox value": AgentSpec(
+            name="g",
+            vendor="google",
+            command="agy",
+            extra_args=[f"--sandbox={FAKE_PLAIN}{FAKE_KEY}"],
+        ),
+        "agy codex spellings": AgentSpec(
+            name="g",
+            vendor="google",
+            command="agy",
+            extra_args=["-s", f"{FAKE_PLAIN}{FAKE_KEY}", f"-s={FAKE_PLAIN}{FAKE_KEY}"],
+        ),
+    }
+
+    def _assert_clean(self, text):
+        self.assertNotIn("hunter2", text)
+        self.assertNotIn("FAKEFAKE", text)
+        self.assertNotIn("sk-ant-api03", text)
+
+    def test_no_warning_repeats_a_secret(self):
+        for name, spec in self.SEATS.items():
+            with self.subTest(seat=name):
+                warnings = privilege.audit_agent(spec)
+                self.assertTrue(warnings, "the seat must still be warned about")
+                self._assert_clean("\n".join(warnings))
+
+    def test_the_strict_refusal_repeats_no_secret(self):
+        for name, spec in self.SEATS.items():
+            with self.subTest(seat=name):
+                error = _strict_error(spec)
+                self.assertIn("least-privilege check failed (--strict)", error)
+                self._assert_clean(error)
+
+    def test_the_settings_json_is_named_by_position_and_marker(self):
+        warnings = privilege.audit_agent(self.SEATS["claude settings JSON"])
+        self.assertTrue(
+            any("item 2 of `extra_args` (it mentions `bypassPermissions`)" in w for w in warnings),
+            warnings,
+        )
+
+    def test_known_words_are_still_named(self):
+        spec = AgentSpec(
+            name="x", vendor="openai", command="codex", extra_args=["-s", "danger-full-access"]
+        )
+        self.assertIn("danger-full-access", privilege.audit_agent(spec)[0])
+        self.assertIn(
+            "`--tools Read,<tool>`",
+            privilege.audit_agent(
+                AgentSpec(
+                    name="c",
+                    vendor="anthropic",
+                    command="claude",
+                    extra_args=["--tools", "Read,mcp__x__y"],
+                )
+            )[0],
+        )
+
+    def test_every_warning_is_redacted_as_well(self):
+        # Defence in depth: a secret-shaped seat name is not an argv value the
+        # sentences guard against, and the redaction pass still masks it.
+        spec = AgentSpec(name=FAKE_KEY, vendor="google", command="agy")
+        warnings = privilege.audit_agent(spec)
+        self.assertTrue(warnings)
+        self._assert_clean("\n".join(warnings))
 
 
 if __name__ == "__main__":

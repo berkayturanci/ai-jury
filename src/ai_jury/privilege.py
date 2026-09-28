@@ -57,9 +57,11 @@ Required read-only invocation per adapter (documented here and in docs/security.
 
 from __future__ import annotations
 
+import re
 from pathlib import PureWindowsPath
 
 from .config import GENERIC_CLI_VENDORS, normalise_vendor, spawns_process, spec_adapter
+from .redaction import redact
 
 # Flags that grant broad write/tool/network powers — dangerous for a reviewer.
 _DANGEROUS_FLAGS: tuple[str, ...] = (
@@ -155,6 +157,72 @@ _CODEX_SANDBOX_DISABLERS: tuple[str, ...] = (
     "--yolo",
     "--dangerously-bypass-approvals-and-sandbox",
 )
+
+
+#: The only argv values a warning repeats (#908 review, round 5): words from the
+#: CLIs' own vocabularies. A warning is printed to a terminal and a CI log, and
+#: an argv value can be anything an operator put in ``extra_args`` — a
+#: ``--settings`` JSON with an API key in it was echoed whole — so any other
+#: value is shown as ``<value>``, whatever it looks like.
+_SHOWN_VALUES: frozenset[str] = frozenset(
+    {
+        # claude permission modes, accepted and hidden
+        "acceptEdits",
+        "auto",
+        "bypassPermissions",
+        "default",
+        "dontAsk",
+        "manual",
+        "plan",
+        # codex sandbox values
+        "read-only",
+        "workspace-write",
+        "danger-full-access",
+        # Go's ParseBool spellings (agy's `--sandbox=<value>`)
+        "1",
+        "t",
+        "T",
+        "TRUE",
+        "true",
+        "True",
+        "0",
+        "f",
+        "F",
+        "FALSE",
+        "false",
+        "False",
+    }
+)
+
+#: A tool name a warning may repeat: letters only, as Claude Code's built-in
+#: tools are named (``Read``, ``WebFetch``). Anything else — an MCP tool, a
+#: pattern — is shown as ``<tool>``.
+_SHOWN_TOOL = re.compile(r"[A-Za-z]{1,32}")
+
+
+def _shown_value(value: str) -> str:
+    """*value* if it is in :data:`_SHOWN_VALUES`, else ``<value>``."""
+    return value if value in _SHOWN_VALUES else "<value>"
+
+
+def _shown_flag(token: str) -> str:
+    """A ``--flag`` or ``--flag=value`` token with its value passed through :func:`_shown_value`."""
+    if "=" not in token:
+        return token
+    flag, value = token.split("=", 1)
+    return f"{flag}={_shown_value(value)}"
+
+
+def _shown_positions(found: list[tuple[int, str]], offset: int) -> str:
+    """Unplaced risky tokens, by position in ``extra_args`` and the marker each carries.
+
+    The token itself is never shown (#908 review, round 5): it can hold a whole
+    ``--settings`` JSON. *offset* is how many tokens enforcement put in front of
+    the configured ones, which it only ever prepends.
+    """
+    return ", ".join(
+        f"item {i - offset + 1} of `extra_args` (it mentions `{mark}`)" for i, mark in found
+    )
 
 
 def _disallowed_tools_at(args: list[str], i: int) -> tuple[str, int] | None:
@@ -356,19 +424,21 @@ def _ensure_agy_sandbox(extra_args: list[str]) -> list[str]:
     return ["--sandbox", *kept]
 
 
-def _agy_sandbox_switched_off(extra_args: list[str]) -> list[str]:
+def _agy_sandbox_switched_off(extra_args: list[str]) -> list[tuple[str, bool]]:
     """The ``--sandbox=<value>`` tokens written to turn agy's sandbox off, as written.
 
     A false value (``false``, ``0``, ``f``, ``FALSE`` …) or one Go's
     ``ParseBool`` rejects; a true one only repeats the flag and is not reported.
-    Read from the *declared* args, since enforcement removes them.
+    Read from the *declared* args, since enforcement removes them. Each is
+    ``(shown, is_false)``; a value outside Go's spellings is shown as ``<value>``.
     """
     args = list(extra_args)
-    return [
-        args[i]
-        for i in _agy_sandbox_values(args)
-        if args[i].split("=", 1)[1] not in _GO_TRUE_VALUES
-    ]
+    found: list[tuple[str, bool]] = []
+    for i in _agy_sandbox_values(args):
+        flag, value = args[i].split("=", 1)
+        if value not in _GO_TRUE_VALUES:
+            found.append((f"{flag}={_shown_value(value)}", value in _GO_FALSE_VALUES))
+    return found
 
 
 def _agy_foreign_sandbox_tokens(extra_args: list[str]) -> list[str]:
@@ -386,13 +456,13 @@ def _agy_foreign_sandbox_tokens(extra_args: list[str]) -> list[str]:
     for i in _agy_flag_positions(args):
         a = args[i]
         if a.startswith("-s="):
-            found.append(a)
+            found.append(_shown_flag(a))
             continue
         if a not in ("-s", "--sandbox"):
             continue
         nxt = args[i + 1] if i + 1 < len(args) else ""
         if nxt and not nxt.startswith("-"):
-            found.append(f"{a} {nxt}")
+            found.append(f"{a} {_shown_value(nxt)}")
         elif a == "-s":
             found.append(a)
     return found
@@ -421,19 +491,33 @@ _CODEX_RISK_MARKS: tuple[str, ...] = (
 )
 
 
-def _codex_unread_risks(extra_args: list[str], reported: list[str]) -> list[str]:
-    """codex tokens that could widen its sandbox and are not in *reported*, as written.
+def _codex_unread_risks(extra_args: list[str]) -> list[tuple[int, str]]:
+    """codex tokens that could widen its sandbox and that no other warning names.
 
-    The fail-closed counterpart of :func:`_competing_sandboxes`, which reads only
-    options before ``--`` and only the ``-s``/``--sandbox`` and selector
-    spellings: a mark after ``--``, inside a ``-c`` override, or anywhere else is
-    reported instead of trusted to be inert.
+    ``(index, marker)`` pairs, never the token (#908 review, round 5). The
+    fail-closed counterpart of :func:`_competing_sandboxes`, which reads only
+    options before ``--`` and only the selector, bypass and ``-s``/``--sandbox``
+    spellings: a marker after ``--``, inside a ``-c`` override, or anywhere else
+    is reported instead of trusted to be inert.
     """
-    return [
-        a
-        for a in extra_args
-        if any(mark in a for mark in _CODEX_RISK_MARKS) and not any(a in r for r in reported)
-    ]
+    args = list(extra_args)
+    cut = len(_codex_options(args))
+    flags = (*_CODEX_SANDBOX_SELECTORS, *_CODEX_SANDBOX_DISABLERS)
+    covered: set[int] = set()
+    for i in range(cut):
+        a = args[i]
+        if any(a == f or a.startswith(f + "=") for f in flags) or a.startswith(
+            ("-s=", "--sandbox=")
+        ):
+            covered.add(i)
+        elif a in ("-s", "--sandbox") and i + 1 < cut:
+            covered.add(i + 1)
+    found: list[tuple[int, str]] = []
+    for i, a in enumerate(args):
+        mark = next((m for m in _CODEX_RISK_MARKS if m in a), None)
+        if mark is not None and i not in covered:
+            found.append((i, mark))
+    return found
 
 
 def _is_codex(vendor: str) -> bool:
@@ -489,17 +573,17 @@ def _competing_sandboxes(extra_args: list[str], vendor: str = "") -> list[tuple[
     for flag in _CODEX_SANDBOX_SELECTORS:
         token = _present(flag, args)
         if token:
-            found.append((token, False))
+            found.append((_shown_flag(token), False))
     for flag in _CODEX_SANDBOX_DISABLERS:
         token = _present(flag, args)
         if token:
-            found.append((token, True))
+            found.append((_shown_flag(token), True))
     for i, a in enumerate(args):
         if a.startswith(("-s=", "--sandbox=")):
-            value, shown = a.split("=", 1)[1], a
+            value, shown = a.split("=", 1)[1], _shown_flag(a)
         elif a in ("-s", "--sandbox"):
             value = args[i + 1] if i + 1 < len(args) else ""
-            shown = f"{a} {value}"
+            shown = f"{a} {_shown_value(value)}"
         else:
             continue
         if not value or value.startswith("-"):
@@ -694,8 +778,11 @@ _CLAUDE_RISK_MARKS: tuple[str, ...] = (
 )
 
 
-def _claude_unread_risks(extra_args: list[str]) -> list[str]:
-    """Risky tokens the precise readers here do not read as flags, as written.
+def _claude_unread_risks(extra_args: list[str]) -> list[tuple[int, str]]:
+    """Risky tokens the precise readers here do not read as flags: ``(index, marker)``.
+
+    Never the token itself (#908 review, round 5): a ``--settings`` JSON that
+    names ``defaultMode`` can carry an API key beside it.
 
     Fail-closed on purpose (#908 review). The readers above model claude's parser
     — value positions, ``=`` forms, ``--``, combined short options — and each
@@ -713,16 +800,17 @@ def _claude_unread_risks(extra_args: list[str]) -> list[str]:
     read = {i for i in range(cut) if i not in values}
     # The value of a `--permission-mode` that is read is read with it.
     read |= {i + 1 for i in read if args[i] == "--permission-mode"}
-    found: list[str] = []
+    found: list[tuple[int, str]] = []
     for i, a in enumerate(args):
-        if i in read or not any(mark in a for mark in _CLAUDE_RISK_MARKS):
+        mark = next((m for m in _CLAUDE_RISK_MARKS if m in a), None)
+        if i in read or mark is None:
             continue
         nxt = args[i + 1] if i + 1 < len(args) else None
         if a == "--permission-mode=dontAsk" or (a == "--permission-mode" and nxt == "dontAsk"):
             continue
         if a == "--tools=" or (a == "--tools" and nxt == ""):
             continue
-        found.append(a)
+        found.append((i, mark))
     return found
 
 
@@ -1202,7 +1290,9 @@ def _claude_open_surface(extra_args: list[str]) -> list[str]:
     if tools is None:  # pragma: no cover - enforcement injects `--tools ""`
         surface.append("the CLI's default tool set (no `--tools`)")
     elif tools:
-        surface.append(f"`--tools {','.join(dict.fromkeys(tools))}`")
+        # Letters-only names, as the built-in tools are; others are not repeated.
+        names = [t if _SHOWN_TOOL.fullmatch(t) else "<tool>" for t in dict.fromkeys(tools)]
+        surface.append(f"`--tools {','.join(names)}`")
     if _claude_flag_present("--mcp-config", args):
         surface.append("MCP servers from `--mcp-config`")
     if not _claude_flag_present("--strict-mcp-config", args):  # pragma: no cover - injected
@@ -1230,7 +1320,7 @@ def _claude_rejected_mode(extra_args: list[str]) -> str | None:
         if mode is None or mode[0] in accepted:
             continue
         if mode[0]:
-            return f"--permission-mode {mode[0]}"
+            return f"--permission-mode {_shown_value(mode[0])}"
         return (
             "--permission-mode="
             if args[i].startswith("--permission-mode=")
@@ -1356,7 +1446,7 @@ def _claude_skip_overrides(extra_args: list[str]) -> str:
     )
     if not modes:  # pragma: no cover - enforcement injects `--permission-mode dontAsk`
         return f"overrides any `--permission-mode` ({measured})"
-    named = ", ".join(f"`--permission-mode {m}`" for m in dict.fromkeys(modes))
+    named = ", ".join(f"`--permission-mode {_shown_value(m)}`" for m in dict.fromkeys(modes))
     return f"overrides the {named} beside it ({measured})"
 
 
@@ -1489,7 +1579,17 @@ def _checkout_only_warning(label: str, checkout: str) -> str:
 
 
 def audit_agent(spec) -> list[str]:
-    """Return least-privilege warnings for a single agent spec.
+    """Return least-privilege warnings for a single agent spec, redacted.
+
+    Each sentence is built to repeat no argv value outside :data:`_SHOWN_VALUES`
+    (#908 review, round 5); passing it through :func:`redaction.redact` as well
+    catches any secret-shaped text a future sentence lets through.
+    """
+    return [redact(w)[0] for w in _audit_agent(spec)]
+
+
+def _audit_agent(spec) -> list[str]:
+    """The warnings :func:`audit_agent` returns, before redaction.
 
     The subject is the **effective** argv — what ``adapters._read_only_extra_args``
     will spawn this seat with — not the ``extra_args`` written in the config
@@ -1613,8 +1713,8 @@ def audit_agent(spec) -> list[str]:
         # as a flag may still be one Claude applies.
         unread = _claude_unread_risks(extra_args)
         if unread:
-            named = ", ".join(f"`{t}`" for t in dict.fromkeys(unread))
-            one = len(set(unread)) == 1
+            named = _shown_positions(unread, len(extra_args) - len(declared))
+            one = len(unread) == 1
             warnings.append(
                 f"agent '{label}' (claude) has {named} where jury cannot tell whether "
                 f"Claude reads {'it' if one else 'them'} as {'a flag' if one else 'flags'} "
@@ -1652,8 +1752,8 @@ def audit_agent(spec) -> list[str]:
         # A `--sandbox=<value>` that would switch the sandbox off (#908 review).
         # Enforcement removed it, so it is read from the declared args.
         switched = _agy_sandbox_switched_off(declared)
-        off = [t for t in switched if t.split("=", 1)[1] in _GO_FALSE_VALUES]
-        unread = [t for t in switched if t not in off]
+        off = [shown for shown, is_false in switched if is_false]
+        unread = [shown for shown, is_false in switched if not is_false]
         for tokens, effect in (
             (
                 off,
@@ -1693,9 +1793,9 @@ def audit_agent(spec) -> list[str]:
         # is already there.
         competing = _competing_sandboxes(extra_args, vendor=vendor)
         if _is_codex(vendor):
-            unread = _codex_unread_risks(extra_args, [token for token, _ in competing])
+            unread = _codex_unread_risks(extra_args)
             if unread:
-                named = ", ".join(f"`{t}`" for t in dict.fromkeys(unread))
+                named = _shown_positions(unread, len(extra_args) - len(declared))
                 warnings.append(
                     f"agent '{label}' has {named} where jury cannot tell whether codex "
                     f"reads it as a sandbox setting (after `--`, inside a `-c` "

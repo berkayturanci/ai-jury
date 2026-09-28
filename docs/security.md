@@ -208,6 +208,14 @@ content; the least-privilege audit (`--strict` to fail the run) will flag it.
       moving `dontAsk` to the end would not beat `--dangerously-skip-permissions`,
       which overrides any mode in either order, and would silently replace a
       mode you named.
+
+  No least-privilege warning prints an `extra_args` value. A token jury cannot
+  place is named by its position and the word that flagged it ("item 2 of
+  `extra_args` (it mentions `bypassPermissions`)"), since a `--settings` JSON
+  can carry an API key. Other warnings repeat a value only if it is one of the
+  CLIs' own words (a permission mode, a codex sandbox value, `true`/`false`, a
+  letters-only tool name); anything else is shown as `<value>` or `<tool>`. Every
+  warning also passes through the same secret redaction as the prompt.
   - configuration beyond the prompt: `--settings`, `--setting-sources`,
     `--plugin-dir`, `--plugin-url`, `--add-dir`, `--agents`, `--agent`.
     **`--safe-mode` wins over all of these**: measured on Claude Code 2.1.236, a
