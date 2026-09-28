@@ -77,15 +77,19 @@ _GROQ_TEMPLATE = {
     "api_key_env": "GROQ_API_KEY",
     "model": SAMPLE_MODELS["groq"],
 }
-#: aider in its own read-only configuration (#859). `--read-only` is not an aider
+#: aider with the flags that ask it not to edit (#859). `--read-only` is not an aider
 #: option (its options reference has `--read FILE`), so the template it replaces
 #: wrote a seat aider refuses to start. Ask mode "never make[s] changes",
-#: `--dry-run` modifies no file, and the rest close every other route aider's
-#: options reference names to a commit, a shell command, a lint run, a URL fetch
-#: or a `.gitignore` edit. `--message` is last: with `prompt_mode = "arg"` the
-#: prompt is appended after it. None of this is enforced by jury — there is no
-#: sandbox flag for an arbitrary CLI — so the seat is written under
-#: :data:`UNSANDBOXED_LABEL`, and the least-privilege audit still warns about it.
+#: `--dry-run` stops it applying edits or committing, and the rest turn off its
+#: commits, shell-command suggestions, post-edit lint run, URL fetches and
+#: `.gitignore` edit. `--message` is last: with `prompt_mode = "arg"` the prompt
+#: is appended after it. What no flag controls: aider reads `.aider.conf.yml` and
+#: `.env` from the checkout it runs in, and those can turn on its test, lint or
+#: load commands, which it runs before the message (``--test``/``--lint`` have no
+#: ``--no-`` form, and ``--config``/``--env-file`` add a file rather than replace
+#: the ones it finds). jury adds or checks no sandbox for an arbitrary CLI, so the
+#: seat is written under :data:`UNSANDBOXED_LABEL` and :data:`UNSANDBOXED_HINT`,
+#: and the least-privilege audit still warns about it.
 _GENERIC_CLI_TEMPLATE = {
     "name": "aider",
     "vendor": "cli",
@@ -106,9 +110,17 @@ _GENERIC_CLI_TEMPLATE = {
 }
 
 #: Written above every bring-your-own CLI seat `jury init` scaffolds (#859): jury
-#: knows no sandbox flag for one, so it runs with whatever its own flags allow.
-#: The same words label the seat on the site and in the docs.
+#: adds or checks no sandbox for one, so it runs with whatever its own flags
+#: allow. The same words label the seat on the site and in the docs.
 UNSANDBOXED_LABEL = "unsandboxed \u2014 runs with your permissions"
+
+#: Written under the label: the CLI runs in the checkout jury starts in and obeys
+#: that checkout's own config (aider's `.aider.conf.yml`/`.env`, Cursor's
+#: `.cursor/` hooks), which no flag in the seat turns off.
+UNSANDBOXED_HINT = (
+    "# It reads its own config from the checkout it runs in, which can run commands;",
+    "# seat it only on checkouts you trust. See docs/configuration.md.",
+)
 
 
 def _from_default(name: str) -> dict | None:
@@ -477,6 +489,7 @@ def render_toml(config: dict, *, commented_agents: list[dict] | tuple = ()) -> s
     for agent in config["agent"]:
         if adapter_key(agent.get("vendor", ""), agent.get("adapter")) in GENERIC_CLI_VENDORS:
             lines.append(f"# {UNSANDBOXED_LABEL}")
+            lines.extend(UNSANDBOXED_HINT)
         lines.append("[[agent]]")
         lines.extend(_agent_keys(agent))
         # Only hint at `effort` where the vendor can actually act on it; a hint

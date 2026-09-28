@@ -33,7 +33,8 @@ from urllib.parse import urlsplit
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from ai_jury import scaffold  # noqa: E402
-from ai_jury.config import GENERIC_CLI_VENDORS, adapter_key  # noqa: E402
+from ai_jury.config import GENERIC_CLI_VENDORS, AgentSpec, adapter_key  # noqa: E402
+from ai_jury.privilege import audit_agent  # noqa: E402
 
 ROOT = Path(__file__).parent.parent
 APP_JS = ROOT / "website" / "app.js"
@@ -343,6 +344,9 @@ class CliSeatsAreReadOnlyAndLabelled(unittest.TestCase):
                     a == "--mode" and args[i + 1 : i + 2] == ["ask"] for i, a in enumerate(args)
                 )
                 self.assertTrue(in_ask, f"{seat} runs {args}")
+                # Cursor's own sandbox, asked for explicitly: the user's global
+                # config may have it off, and `--sandbox` "overrides config".
+                self.assertEqual(_value_after(args, "--sandbox"), "enabled", seat)
 
     def test_aider_seats_ask_dry_run_and_never_commit(self):
         aider = [s for s in self.cli if s.data.get("command") == "aider"]
@@ -425,6 +429,109 @@ def _scanned_files():
                 yield f
 
 
+#: Claims the first round made about the CLI seats that their flags do not
+#: support (#859 review): aider's flags do not close "every" route to a command —
+#: its checkout config can turn on test/lint/load — and `--dry-run` gates edits
+#: and commits, not every file write (the chat and input history are written).
+#: "knows no sandbox flag" read as though cursor-agent had none; it has
+#: `--sandbox`, jury just does not add or check one.
+OVERCLAIMS = (
+    "every path to an edit",
+    "close every other route",
+    "no file is modified",
+    "modifies no file",
+    "writes no file",
+    "knows no sandbox flag",
+)
+
+#: Where the CLI seats are described, and so where an overclaim could live.
+WORDING_SURFACES = (
+    "docs/configuration.md",
+    "docs/cookbook.md",
+    "docs/security.md",
+    "examples/jury.toml",
+    "website/app.js",
+    "src/ai_jury/scaffold.py",
+)
+
+
+def _unreleased() -> str:
+    text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    start = text.index("## [Unreleased]")
+    return text[start : text.index("\n## [", start + 1)]
+
+
+class CliSeatWordingIsScoped(unittest.TestCase):
+    """What the CLI seats' flags control is said, and what they do not (#859)."""
+
+    def test_no_surface_overclaims_what_the_flags_do(self):
+        hits = []
+        texts = {rel: (ROOT / rel).read_text(encoding="utf-8") for rel in WORDING_SURFACES}
+        texts["CHANGELOG.md [Unreleased]"] = _unreleased()
+        for where, text in texts.items():
+            flat = " ".join(text.replace("#:", " ").replace("#", " ").split())
+            hits += [f"{where}: {c!r}" for c in OVERCLAIMS if c in flat]
+        self.assertEqual(hits, [])
+
+    def test_every_aider_description_names_the_checkout_config(self):
+        # aider reads .aider.conf.yml and .env from the checkout; those can turn
+        # on test/lint/load commands no flag in the seat turns off.
+        cards = _site_cards(APP_JS.read_text(encoding="utf-8"))
+        texts = {
+            rel: (ROOT / rel).read_text(encoding="utf-8")
+            for rel in (
+                "docs/configuration.md",
+                "docs/cookbook.md",
+                "docs/security.md",
+                "examples/jury.toml",
+                "src/ai_jury/scaffold.py",
+            )
+        }
+        texts["website/app.js aider card"] = cards["aider"]["desc"]
+        texts["CHANGELOG.md [Unreleased]"] = _unreleased()
+        missing = [
+            f"{where}: {needle}"
+            for where, text in texts.items()
+            for needle in (".aider.conf.yml", ".env")
+            if needle not in text
+        ]
+        self.assertEqual(missing, [])
+
+    def test_every_cursor_description_names_the_trusted_workspace_hooks(self):
+        cards = _site_cards(APP_JS.read_text(encoding="utf-8"))
+        texts = {
+            rel: (ROOT / rel).read_text(encoding="utf-8")
+            for rel in ("docs/configuration.md", "docs/cookbook.md", "docs/security.md")
+        }
+        texts["examples/jury.toml"] = (ROOT / "examples/jury.toml").read_text(encoding="utf-8")
+        texts["website/app.js cursor card"] = cards["cursor-cli"]["desc"]
+        self.assertEqual([w for w, t in texts.items() if ".cursor/" not in t], [])
+
+    def test_every_cli_seat_description_says_trusted_checkouts_only(self):
+        cards = _site_cards(APP_JS.read_text(encoding="utf-8"))
+        texts = {
+            rel: (ROOT / rel).read_text(encoding="utf-8")
+            for rel in ("docs/configuration.md", "docs/cookbook.md", "docs/security.md")
+        }
+        texts["examples/jury.toml"] = (ROOT / "examples/jury.toml").read_text(encoding="utf-8")
+        for card_id in ("cursor-cli", "aider"):
+            texts[f"website/app.js {card_id} card"] = cards[card_id]["desc"]
+        texts["jury init"] = scaffold.render_toml(scaffold.build_config(["aider"]))
+        flat = {w: " ".join(t.replace("#", " ").split()) for w, t in texts.items()}
+        self.assertEqual([w for w, t in flat.items() if "checkouts you trust" not in t], [])
+
+    def test_the_audit_names_the_checkout_config_risk(self):
+        aider = AgentSpec(name="aider", vendor="cli", command="aider")
+        cursor = AgentSpec(name="gpt", vendor="openai", adapter="cli", command="/opt/cursor-agent")
+        other = AgentSpec(name="mine", vendor="cli", command="my-tool")
+        self.assertTrue(any(".aider.conf.yml" in w and ".env" in w for w in audit_agent(aider)))
+        self.assertTrue(any(".cursor/hooks.json" in w for w in audit_agent(cursor)))
+        self.assertFalse(any("checkouts you trust" in w for w in audit_agent(other)))
+        # Named by path, on Windows too.
+        windows = AgentSpec(name="aider", vendor="cli", command="C:\\tools\\aider.exe")
+        self.assertTrue(any(".aider.conf.yml" in w for w in audit_agent(windows)))
+
+
 class SampleModelIdsAreCurrent(unittest.TestCase):
     def test_no_surface_names_an_outdated_model_id(self):
         hits = []
@@ -476,6 +583,37 @@ class SampleModelIdsAreCurrent(unittest.TestCase):
             with self.subTest(seat=name):
                 self.assertEqual(agents[name]["model"], f'"{templates[name]["model"]}"')
         self.assertEqual(agents["grok"]["model"], f'"{scaffold.SAMPLE_MODELS["xai"]}"')
+
+    def test_the_site_cli_argv_is_the_one_every_sample_uses(self):
+        # One argv per CLI (#859 review): the site's aider argv is the template
+        # `jury init` writes, and its cursor argv is every cursor sample's argv
+        # once the model choice is taken out — so no copy can drift.
+        src = APP_JS.read_text(encoding="utf-8")
+        agents = _builder_agents(src)
+        self.assertEqual(agents["aider"]["extra_args"], "AIDER_READ_ONLY_ARGS")
+        self.assertEqual(agents["cursor"]["extra_args"], "CURSOR_READ_ONLY_ARGS")
+        aider = _js_array(src, "AIDER_READ_ONLY_ARGS")
+        cursor = _js_array(src, "CURSOR_READ_ONLY_ARGS")
+        self.assertEqual(aider, scaffold.agent_templates()["aider"]["extra_args"])
+
+        def without_model(args: list[str]) -> list[str]:
+            out, skip = [], False
+            for a in args:
+                if skip:
+                    skip = False
+                elif a == "--model":
+                    skip = True
+                else:
+                    out.append("--print" if a == "-p" else a)
+            return out
+
+        drift = []
+        for seat in _all_seats():
+            command = seat.data.get("command")
+            want = {"aider": aider, "cursor-agent": cursor}.get(command)
+            if want is not None and without_model(seat.args) != want:
+                drift.append(f"{seat}: {seat.args}")
+        self.assertEqual(drift, [])
 
     def test_the_site_makes_no_unsourced_or_stale_model_claims(self):
         src = APP_JS.read_text(encoding="utf-8")

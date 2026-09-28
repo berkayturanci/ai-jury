@@ -96,13 +96,17 @@ name = "gpt"
 vendor = "openai"        # identity: what the cross-vendor gate counts
 adapter = "cli"          # protocol: pass extra_args through untouched
 command = "cursor-agent"
-extra_args = ["-p", "--trust", "--mode", "ask", "--model", "gpt-5.3-codex-high", "--output-format", "text"]
+extra_args = ["-p", "--trust", "--mode", "ask", "--sandbox", "enabled", "--model", "gpt-5.3-codex-high", "--output-format", "text"]
 ```
 
-A `cli`-adapter seat is unsandboxed — runs with your permissions: jury knows no sandbox flag for
-`cursor-agent`, so the argv above is the whole story. It asks for Cursor's
-read-only ask mode (`--mode ask`) and leaves out `--force`/`--yolo`, which approve
-every command — see [Cursor CLI / Arbitrary CLI Agent](#cursor-cli--arbitrary-cli-agent-vendor--cli).
+A `cli`-adapter seat is unsandboxed — runs with your permissions: jury passes
+the argv through as written and adds or checks no sandbox of its own, so what
+confines the seat is what `cursor-agent`'s own flags ask for. The sample asks for
+Cursor's read-only ask mode (`--mode ask`) and its own sandbox (`--sandbox
+enabled`), and leaves out `--force`/`--yolo`, which approve every command. It
+still runs in the checkout jury was started from, whose `.cursor/` project
+config a trusted workspace loads — see
+[Cursor CLI / Arbitrary CLI Agent](#cursor-cli--arbitrary-cli-agent-vendor--cli).
 
 Without `adapter`, `vendor = "openai"` also selected the Codex adapter, which
 runs `<command> exec …` — and `cursor-agent exec` is not a command, so the seat
@@ -801,7 +805,7 @@ temperature = 1.0
 name = "cursor"
 vendor = "cli"
 command = "cursor-agent"
-extra_args = ["--print", "--trust", "--mode", "ask", "--model", "claude-4.6-sonnet-medium", "--output-format", "text"]
+extra_args = ["--print", "--trust", "--mode", "ask", "--sandbox", "enabled", "--model", "claude-4.6-sonnet-medium", "--output-format", "text"]
 prompt_mode = "arg"
 
 # The same CLI pointed at a Grok model: `vendor = "xai"` so the seat is counted
@@ -811,7 +815,7 @@ prompt_mode = "arg"
 name = "grok-cursor"
 vendor = "xai"
 command = "cursor-agent"
-extra_args = ["-p", "--trust", "--mode", "ask", "--model", "cursor-grok-4.6-high-fast", "--output-format", "text"]
+extra_args = ["-p", "--trust", "--mode", "ask", "--sandbox", "enabled", "--model", "cursor-grok-4.6-high-fast", "--output-format", "text"]
 
 # Aider CLI
 # unsandboxed — runs with your permissions
@@ -823,32 +827,54 @@ extra_args = ["--chat-mode", "ask", "--dry-run", "--no-auto-commits", "--no-dirt
 prompt_mode = "arg" # "arg" (appends prompt as last argument) or "stdin" (pipes prompt to stdin)
 ```
 
-Every seat in this block is **unsandboxed — runs with your permissions**. jury knows no sandbox
-flag for a bring-your-own CLI, adds none and removes none, and the
-least-privilege audit warns about each of them (`--strict` fails the run) — see
-[docs/security.md](security.md#bring-your-own-cli-seats). Such a seat also runs in
-the directory `jury` was started from, which on a pull request is the author's
-checkout. What the samples do instead is ask each CLI for its own read-only mode:
+Every seat in this block is **unsandboxed — runs with your permissions**. jury
+passes a bring-your-own CLI's argv through as written, adds or checks no sandbox
+of its own, and the least-privilege audit warns about each such seat (`--strict`
+fails the run) — see [docs/security.md](security.md#bring-your-own-cli-seats).
+Such a seat also runs in the directory `jury` was started from, which on a pull
+request is the author's checkout, and both CLIs below read configuration from
+that directory. The flags narrow what each CLI does with its prompt; they do not
+stop it from obeying the checkout's own config. **Seat either only on checkouts
+you trust.**
 
 - **`cursor-agent`**: `--mode ask` is the mode its `--help` calls "Q&A style …
-  (read-only)". `--print` alone is not read-only: its `--help` says it "has
-  access to all tools, including write and shell". Measured on `cursor-agent`
-  2026.09.26 in an empty directory, asked to create a file and run `touch`:
-  `--print --force` did both; `--print --trust` wrote the file (the shell command
-  was refused); `--print --trust --mode ask` did neither and said ask mode was
-  active. `--trust` is what a headless run needs in a directory it has not seen
-  (without it, or `--force`/`--yolo`, it stops at a workspace-trust prompt).
-  Never add `--force`/`-f`/`--yolo`: each approves every command.
+  (read-only)", and `--sandbox enabled` asks for its own sandbox ("overrides
+  config" — measured, it did not change the user's `~/.cursor/cli-config.json`).
+  `--print` alone is not read-only: its `--help` says it "has access to all
+  tools, including write and shell". Measured on `cursor-agent` 2026.09.26 in an
+  empty directory, asked to create a file and run `touch`: `--print --force` did
+  both; `--print --trust` wrote the file (the shell command was refused);
+  `--print --trust --mode ask` and `--print --trust --mode ask --sandbox enabled`
+  did neither. `--trust` is what a headless run needs in a directory it has not
+  seen (without it, or `--force`/`--yolo`, it stops at a workspace-trust prompt),
+  and it trusts that directory's `.cursor/` project config too: Cursor's hooks
+  documentation says project hooks (`.cursor/hooks.json`) "run in any trusted
+  workspace", and lists a `workspaceOpen` hook that "Runs in the Cursor desktop
+  app and CLI"; its CLI MCP page says the CLI "uses the same configuration as the
+  editor", project or global. So an author's checkout can carry commands that run
+  when the seat starts. The docs do not say which other hooks, or which MCP
+  servers without `--approve-mcps`, run in `--print` mode. Never add
+  `--force`/`-f`/`--yolo`: each approves every command.
 - **`aider`**: `--message` alone is aider's normal editing mode, and aider
-  commits its edits by default. `--chat-mode ask` ("never make changes"),
-  `--dry-run` (no file is modified), `--no-auto-commits`, `--no-dirty-commits`,
-  `--no-suggest-shell-commands`, `--no-auto-lint`, `--no-detect-urls` and
-  `--no-gitignore` turn off every path to an edit, a commit, a command or a fetch
-  that aider's options reference names. Never add `--yes-always`. `--message`
-  stays last, because `prompt_mode = "arg"` appends the prompt after it.
+  commits its edits by default. What the flags control: `--chat-mode ask` makes
+  the chat answer without editing ("never make changes"); `--dry-run` stops aider
+  applying edits and committing; `--no-auto-commits`/`--no-dirty-commits` turn off
+  its commits; `--no-suggest-shell-commands`, `--no-auto-lint`, `--no-detect-urls`
+  and `--no-gitignore` turn off shell-command suggestions, the lint run after an
+  edit, fetching URLs named in the prompt, and adding `.aider*` to `.gitignore`.
+  What they do not control: aider reads `.aider.conf.yml` from the directory it
+  runs in and from the git root, and `.env` from both. Those files can set
+  `test: true` with a `test-cmd`, `lint: true` with a `lint-cmd`, or `load:`, and
+  aider runs those commands before it reads `--message`, whatever the argv says —
+  `--test` and `--lint` are switches with no `--no-` form, and no flag stops
+  aider reading those files (`--config` and `--env-file` add a file, they do not
+  replace the ones it finds). It also writes `.aider.chat.history.md` and
+  `.aider.input.history` in the checkout, dry run or not. Checked against aider's
+  source at `main` 5dc9490 (0.86.3.dev) and ConfigArgParse `master` d8ac796.
+  Never add `--yes-always`. `--message` stays last, because `prompt_mode = "arg"`
+  appends the prompt after it.
 
-Both modes are the CLI's own promise, not something jury enforces. Seat either
-only for diffs you would run that CLI on yourself.
+Both modes are the CLI's own promise, not something jury enforces.
 
 `prompt_mode` is part of the config hash when it is written (#746), like
 `adapter`: the two modes are two invocation protocols, so a `--cache` entry made

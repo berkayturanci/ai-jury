@@ -163,24 +163,28 @@ enabled = false
 # 4. Terminal Coding CLI Agents (vendor = "cli")
 # ------------------------------------------------------------------------------
 
-# Both seats below are unsandboxed — runs with your permissions: jury knows no sandbox flag
-# for a bring-your-own CLI, and the least-privilege audit warns about each (`--strict`
-# fails the run on them). They run in the CLI's own read-only mode instead — never
-# add `--force`/`--yolo` (Cursor) or `--yes-always` (aider). See docs/configuration.md.
+# Both seats below are unsandboxed — runs with your permissions: jury adds or checks
+# no sandbox for a bring-your-own CLI, and the least-privilege audit warns about each
+# (`--strict` fails the run on them). Their flags ask the CLI for its own read-only
+# mode — never add `--force`/`--yolo` (Cursor) or `--yes-always` (aider) — but they run
+# in the checkout jury starts in, and read its config: seat them only on checkouts you
+# trust. See docs/configuration.md.
 
 # Cursor CLI Agent (standalone cursor-agent binary with model selection)
-# unsandboxed — runs with your permissions. `--mode ask` is Cursor's read-only mode; `--print`
-# alone can write files. `--trust` lets a headless run start without a trust prompt.
+# unsandboxed — runs with your permissions. `--mode ask` is Cursor's read-only mode and
+# `--sandbox enabled` its sandbox; `--print` alone can write files. `--trust` lets a headless
+# run start without a trust prompt — and trusts the checkout's `.cursor/` hooks too.
 [[agent]]
 name = "cursor"
 vendor = "cli"
 command = "cursor-agent"
-extra_args = ["--print", "--trust", "--mode", "ask", "--model", "claude-4.6-sonnet-medium", "--output-format", "text"]
+extra_args = ["--print", "--trust", "--mode", "ask", "--sandbox", "enabled", "--model", "claude-4.6-sonnet-medium", "--output-format", "text"]
 prompt_mode = "arg"
 
 # Aider CLI Agent
 # unsandboxed — runs with your permissions. Ask mode, as a dry run, with no commits; `--message`
-# stays last because the prompt is appended after it.
+# stays last because the prompt is appended after it. aider still reads `.aider.conf.yml`
+# and `.env` from the checkout, which can turn on its test/lint/load commands.
 [[agent]]
 name = "aider"
 vendor = "cli"

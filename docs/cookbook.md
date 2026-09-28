@@ -631,7 +631,7 @@ model = "qwen2.5-coder:14b"
 name = "cursor"
 vendor = "cli"
 command = "cursor-agent"
-extra_args = ["--print", "--trust", "--mode", "ask", "--model", "claude-4.6-sonnet-medium", "--output-format", "text"]
+extra_args = ["--print", "--trust", "--mode", "ask", "--sandbox", "enabled", "--model", "claude-4.6-sonnet-medium", "--output-format", "text"]
 prompt_mode = "arg"
 
 # unsandboxed — runs with your permissions
@@ -643,10 +643,14 @@ extra_args = ["--chat-mode", "ask", "--dry-run", "--no-auto-commits", "--no-dirt
 prompt_mode = "arg"
 ```
 
-The two CLI seats are **unsandboxed — runs with your permissions**: jury knows no sandbox flag for
-them and the least-privilege audit warns about each. They run in each CLI's own
-read-only mode (Cursor's `--mode ask`; aider's ask mode as a dry run with no
-commits) — never add `--force`/`--yolo` or `--yes-always`. The flags are explained
+The two CLI seats are **unsandboxed — runs with your permissions**: jury adds or
+checks no sandbox for them, and the least-privilege audit warns about each. Their
+flags ask each CLI for its own read-only mode (Cursor's `--mode ask` with its
+`--sandbox enabled`; aider's ask mode as a dry run with no commits) — never add
+`--force`/`--yolo` or `--yes-always`. The flags do not stop either CLI obeying the
+checkout it runs in: aider reads `.aider.conf.yml` and `.env` there, which can turn
+on its test, lint or load commands, and a trusted Cursor workspace runs the
+checkout's `.cursor/hooks.json`. **Seat them only on checkouts you trust.** Details
 in [configuration.md](configuration.md#cursor-cli--arbitrary-cli-agent-vendor--cli).
 
 **Outcome:** `jury --config-validate` confirms provider readiness. Run `git diff main... | jury --diff-file -` to deliberate across your choice of hosted HTTP models, coding CLIs, and local models.

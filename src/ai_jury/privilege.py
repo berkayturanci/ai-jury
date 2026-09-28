@@ -1019,6 +1019,53 @@ def _claude_permission_bypass(extra_args: list[str]) -> str | None:
     return None
 
 
+#: Bring-your-own CLIs that obey configuration in the directory they run in (#859).
+#: A `cli` seat runs in the directory `jury` was started from — on a pull request,
+#: the author's checkout — so that configuration is the author's, and no flag in
+#: the seat turns it off. Keyed by the command's file name.
+#:
+#: - aider reads ``.aider.conf.yml`` from its working directory and git root and
+#:   ``.env`` from both (aider ``main.py``, ``main`` 5dc9490); those can set
+#:   ``test``/``lint`` with a command, or ``load``, which it runs before
+#:   ``--message``. ``--test``/``--lint`` have no ``--no-`` form, and ``--config``
+#:   / ``--env-file`` add a file instead of replacing the ones found
+#:   (ConfigArgParse ``_open_config_files`` always opens the defaults).
+#: - cursor-agent: Cursor documents that project hooks (``.cursor/hooks.json``)
+#:   "run in any trusted workspace", and that its ``workspaceOpen`` hook "Runs in
+#:   the Cursor desktop app and CLI". A headless run starts only in a trusted
+#:   directory (``--trust``, or ``--force``/``--yolo``).
+_CHECKOUT_CONFIG_RISKS: dict[str, str] = {
+    "aider": (
+        "reads .aider.conf.yml and .env from the directory it runs in, which can "
+        "turn on its test, lint or load commands and run them before the review, "
+        "whatever its flags say"
+    ),
+    "cursor-agent": (
+        "runs the hooks in .cursor/hooks.json of the directory it runs in once "
+        "that workspace is trusted (--trust), whatever its flags say"
+    ),
+}
+
+
+def _checkout_config_warning(label: str, command: str) -> str:
+    """The sentence for a CLI that obeys its working directory's config (#859).
+
+    Empty for any other command. Appended to the seat's one warning rather than
+    added beside it, so a seat still gets one warning, and says it once.
+    """
+    name = command.replace("\\", "/").rsplit("/", 1)[-1].lower()
+    if name.endswith(".exe"):
+        name = name[: -len(".exe")]
+    risk = _CHECKOUT_CONFIG_RISKS.get(name)
+    if risk is None:
+        return ""
+    return (
+        f" Also, {name} {risk}. It runs in the directory jury was started from — on "
+        f"a pull request, the author's checkout — so seat '{label}' only on "
+        f"checkouts you trust."
+    )
+
+
 def audit_agent(spec) -> list[str]:
     """Return least-privilege warnings for a single agent spec.
 
@@ -1185,6 +1232,11 @@ def audit_agent(spec) -> list[str]:
                 )
             warnings.append(f"agent '{label}' is configured with {named}, which {effect}; {tail}")
         return warnings
+    # A bring-your-own CLI that obeys its working directory's config is told so,
+    # in whichever warning below says it is not sandboxed (#859).
+    checkout = ""
+    if vendor in GENERIC_CLI_VENDORS:
+        checkout = _checkout_config_warning(label, str(getattr(spec, "command", "") or ""))
     # Not sandboxed. A broad-powers flag gets a specific message…
     for flag in _DANGEROUS_FLAGS:
         if flag in extra_args or flag in args_text:
@@ -1192,7 +1244,7 @@ def audit_agent(spec) -> list[str]:
                 f"agent '{label}' is configured with `{flag}`, granting "
                 f"write/tool/network powers while reviewing untrusted content; "
                 f"prefer a read-only sandbox (e.g. codex `-s read-only` or agy "
-                f"`--sandbox`)."
+                f"`--sandbox`).{checkout}"
             )
             return warnings
     # …otherwise warn that it simply isn't sandboxed. This closes the audit
@@ -1202,7 +1254,7 @@ def audit_agent(spec) -> list[str]:
     warnings.append(
         f"agent '{label}' is not running under a recognized read-only sandbox "
         f"(no `-s read-only` / `--sandbox`); a prompt injection in the diff could "
-        f"reach write/tool/network. Add a sandbox, or run with `--strict` to fail."
+        f"reach write/tool/network. Add a sandbox, or run with `--strict` to fail.{checkout}"
     )
     return warnings
 

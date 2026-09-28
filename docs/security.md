@@ -232,17 +232,24 @@ content; the least-privilege audit (`--strict` to fail the run) will flag it.
 
 A seat with `vendor = "cli"` or `"xai"`, or `adapter = "cli"` (Cursor's
 `cursor-agent`, Aider, …), runs **with whatever permissions its own flags give
-it**. This tool knows no sandbox flag for an arbitrary binary, so it adds none and
-removes none; the least-privilege audit warns that the seat is not under a
-sandbox it recognizes, and `--strict` fails the run on it. Such a seat also runs
+it**. This tool passes that argv through as written: it adds no sandbox flag and
+removes none, and cannot check one (a CLI may have its own, such as
+`cursor-agent --sandbox enabled`, but only its flags ask for it). The
+least-privilege audit warns that the seat is not under a sandbox it recognizes, and `--strict` fails the run on it. Such a seat also runs
 in the directory `jury` was started from, not in an empty one — see below.
 
 Every sample of one in these docs, the site, `examples/jury.toml` and the config
 `jury init` writes is labelled **unsandboxed — runs with your permissions**, and
-asks the CLI for its own read-only mode instead: `cursor-agent --mode ask` (never
-`--force`/`--yolo`, and not `--print` alone, which can write files), and aider's
-ask mode as a dry run with no commits (never `--yes-always`). That is the CLI's
-promise, not jury's; the flags and what was measured are in
+asks the CLI for its own read-only mode instead: `cursor-agent --mode ask
+--sandbox enabled` (never `--force`/`--yolo`, and not `--print` alone, which can
+write files), and aider's ask mode as a dry run with no commits (never
+`--yes-always`). That is the CLI's promise, not jury's, and it covers only what
+the CLI does with its prompt. Both CLIs also obey configuration in the checkout
+they run in: aider reads `.aider.conf.yml` and `.env` there, which can set
+`test`/`lint` commands or a `load` file that aider runs before it reads its
+message, whatever the argv says; and a trusted Cursor workspace runs the
+checkout's `.cursor/hooks.json`. The audit names both. **Seat these CLIs only
+on checkouts you trust.** The flags, sources and measurements are in
 [configuration.md](configuration.md#cursor-cli--arbitrary-cli-agent-vendor--cli).
 
 ### Where a reviewer runs

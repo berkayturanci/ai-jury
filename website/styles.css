@@ -619,6 +619,13 @@ a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visibl
   color: var(--green-2);
   border-color: var(--green);
 }
+/* Same colour as the builder's tag (#859): a bring-your-own CLI seat is not "safe". */
+.int-badge.unsandboxed {
+  background: #b91c1c;
+  color: #fff;
+  border-color: #b91c1c;
+  font-weight: 600;
+}
 
 /* Modal Dialog */
 .int-modal-backdrop {

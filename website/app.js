@@ -10,19 +10,25 @@
   var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   /* ---- Bring-your-own CLI seats (#859) -------------------------------
-     ai-jury knows no sandbox flag for a `vendor = "cli"` seat, so it runs
-     with your permissions and the least-privilege audit warns about it. The
-     samples ask each CLI for its own read-only mode — never `--force`,
-     `--yolo` or aider's default edit-and-commit mode — and every place a
-     seat is shown carries this label. The same argv is in the docs, the
+     ai-jury passes a `vendor = "cli"` seat's argv through as written and adds
+     or checks no sandbox, so it runs with your permissions and the
+     least-privilege audit warns about it. The samples ask each CLI for its own
+     read-only mode — never `--force`, `--yolo` or aider's default
+     edit-and-commit mode — and every place a seat is shown carries this label.
+     The flags cover what the CLI does with its prompt, not the config it reads
+     from the checkout it runs in (aider's .aider.conf.yml/.env, Cursor's
+     .cursor/ hooks), which can run commands. The same argv is in the docs, the
      example config and `jury init`; tests/test_sample_configs.py pins it. */
   var UNSANDBOXED_LABEL = "unsandboxed — runs with your permissions";
-  // cursor-agent: `--mode ask` is its read-only mode; `--trust` is what headless
-  // `--print` needs to start in a directory it has not seen before.
-  var CURSOR_READ_ONLY_ARGS = ["--print", "--trust", "--mode", "ask", "--output-format", "text"];
-  // aider: ask mode never edits, `--dry-run` writes no file, no commits of any
-  // kind, no shell suggestions, no lint run, no URL fetches, no .gitignore edit.
-  // `--message` goes last: the prompt is appended after it (prompt_mode = "arg").
+  // cursor-agent: `--mode ask` is its read-only mode and `--sandbox enabled` its
+  // sandbox; `--trust` is what headless `--print` needs to start in a directory it
+  // has not seen before — and it trusts that directory's `.cursor/` hooks too.
+  var CURSOR_READ_ONLY_ARGS = ["--print", "--trust", "--mode", "ask", "--sandbox", "enabled", "--output-format", "text"];
+  // aider: ask mode answers without editing, `--dry-run` stops it applying edits
+  // or committing, and the rest turn off commits, shell suggestions, the post-edit
+  // lint run, URL fetches and the .gitignore edit. They do not stop aider reading
+  // .aider.conf.yml and .env from the checkout, which can run test/lint/load
+  // commands. `--message` goes last: the prompt is appended after it.
   var AIDER_READ_ONLY_ARGS = [
     "--chat-mode", "ask", "--dry-run", "--no-auto-commits", "--no-dirty-commits",
     "--no-suggest-shell-commands", "--no-auto-lint", "--no-detect-urls", "--no-gitignore",
@@ -1306,11 +1312,11 @@
         vendor: "Anysphere",
         cat: "assistants",
         badge: "Unsandboxed",
-        badgeType: "",
+        badgeType: "unsandboxed",
         iconKey: "cursor",
         logo: "logos/cursor.svg",
         color: "var(--c-cursor)",
-        desc: "Headless CLI agent from the AI-native code editor, run in its read-only ask mode. Unsandboxed \u2014 runs with your permissions.",
+        desc: "Headless CLI agent from the AI-native code editor, in its ask mode and sandbox. Unsandboxed \u2014 runs with your permissions: it trusts the checkout's .cursor/ hooks, so seat it only on checkouts you trust.",
         config: "# " + UNSANDBOXED_LABEL + '\n[[agent]]\nname = "cursor"\nvendor = "cli"\ncommand = "cursor-agent"\nextra_args = ' + tomlArray(CURSOR_READ_ONLY_ARGS) + '\nprompt_mode = "arg"',
         command: "jury --pr 123"
       },
@@ -1320,11 +1326,11 @@
         vendor: "Paul Gauthier",
         cat: "assistants",
         badge: "Unsandboxed",
-        badgeType: "",
+        badgeType: "unsandboxed",
         iconKey: "aider",
         logo: "logos/aider.svg",
         color: "var(--c-aider)",
-        desc: "Terminal pair-programming agent, run in ask mode as a dry run with no commits. Unsandboxed \u2014 runs with your permissions.",
+        desc: "Terminal pair-programming agent in ask mode, as a dry run with no commits. Unsandboxed \u2014 runs with your permissions: it reads .aider.conf.yml and .env from the checkout, which can run commands, so seat it only on checkouts you trust.",
         config: "# " + UNSANDBOXED_LABEL + '\n[[agent]]\nname = "aider"\nvendor = "cli"\ncommand = "aider"\nextra_args = ' + tomlArray(AIDER_READ_ONLY_ARGS) + '\nprompt_mode = "arg"',
         command: "jury --pr 123"
       },
@@ -1333,8 +1339,8 @@
         name: "Custom Agent CLI",
         vendor: "Universal CLI Adapter",
         cat: "assistants",
-        badge: "Universal Adapter",
-        badgeType: "green",
+        badge: "Unsandboxed",
+        badgeType: "unsandboxed",
         iconKey: "bot",
         logo: "logos/opencode.svg",
         color: "#10b981",
@@ -1433,12 +1439,12 @@
         name: "OpenRouter",
         vendor: "OpenRouter",
         cat: "backends",
-        badge: "200+ Models",
+        badge: "Unified Gateway",
         badgeType: "accent",
         iconKey: "openrouter",
         logo: "logos/openrouter.svg",
         color: "var(--c-openrouter)",
-        desc: "Unified routing gateway giving instant access to over 200 AI models.",
+        desc: "Unified routing gateway: one key for many vendors' models.",
         config: '[[agent]]\nname = "openrouter"\nvendor = "openai-compatible"\nendpoint = "https://openrouter.ai/api/v1/chat/completions"\napi_key_env = "OPENROUTER_API_KEY"\nmodel = "anthropic/claude-opus-5.5"',
         command: "JURY_ALLOW_REMOTE_ENDPOINT=1 OPENROUTER_API_KEY=... jury --pr 123"
       },
