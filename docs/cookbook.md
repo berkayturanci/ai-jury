@@ -694,11 +694,44 @@ jobs:
       - uses: actions/checkout@v4
       - uses: berkayturanci/ai-jury@v1
         with:
-          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           args: "--auto --post --ci"
           # min-vendors: "2"   # the default; see below
+          # version: ""        # the default: the release this ref of the Action declares
 ```
+
+The keys alone do not form a panel. Commit a `jury.toml` at the repository root that
+seats one hosted-API reviewer per key — without it the jury seats its built-in agent
+CLIs, which a runner does not have, and the run exits with `no usable agents`:
+
+```toml
+# jury.toml
+[jury]
+chair = "claude-api"
+
+[[agent]]
+name = "claude-api"
+vendor = "anthropic-api"     # reads ANTHROPIC_API_KEY
+model = "claude-opus-5-5"   # any model your key can call
+
+[[agent]]
+name = "codex-api"
+vendor = "openai-api"        # reads OPENAI_API_KEY
+model = "gpt-6-sol"
+```
+
+`gemini-api-key` feeds a `vendor = "google-api"` seat and `xai-api-key` a
+`vendor = "xai-api"` (Grok) seat, in the same way. `tests/test_action_example.py` runs
+this pair — and the README's and the site's copies — through the jury in `--mock` mode
+on every CI run, so the example cannot drift from the Action again.
+
+**The Action installs the ai-jury release its own ref declares.** `@v1` runs the
+release the `v1` alias points at, `@vX.Y.Z` runs X.Y.Z, and a branch or SHA runs the
+version in that tree's `pyproject.toml`. `version: "X.Y.Z"` overrides it, and
+`version: latest` installs the newest release on PyPI (the default before #867).
+A branch or SHA ref installs the version its own tree declares, and fails until that
+release is on PyPI; pass `version: latest` or a released number instead.
 
 **The Action refuses a collapsed panel by default.** `min-vendors` defaults to
 `2`, so a workflow that says nothing still gets the cross-vendor guard — before
