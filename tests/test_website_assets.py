@@ -421,5 +421,54 @@ class SkipToContentLinks(unittest.TestCase):
         self.assertRegex(focused.group(1), r"top:\s*0", "focus does not bring the link on-screen")
 
 
+class FocusRingsKeepTheirShape(unittest.TestCase):
+    """A rounded control keeps its own radius while it has keyboard focus.
+
+    The global rule in ``styles.css`` gives ``a``/``button:focus-visible`` a
+    ``border-radius: 4px``, and that selector outranks a bare class rule, so a
+    control styled only by ``.a-class { border-radius: 8px }`` squares off at the
+    one moment a keyboard user is looking at it (#805, #883). Each one restates
+    its own radius on ``:focus-visible``; these pins keep the two values in step.
+    """
+
+    #: (class, file holding its base rule, file holding its ``:focus-visible`` rule)
+    CASES = (
+        ("hi-copy", "styles.css", "styles.css"),
+        ("code-copy", "styles.css", "styles.css"),
+        ("copy-btn", "styles.css", "styles.css"),
+        ("int-modal-copy-btn", "styles.css", "styles.css"),
+        ("liveref", "styles.css", "styles.css"),
+        ("ds-link", "docs.css", "docs.css"),
+        ("ds-sub", "docs.css", "docs.css"),
+        ("docs-menu-btn", "docs.css", "docs.css"),
+        ("dh-card", "docs.html", "docs.css"),
+    )
+
+    @staticmethod
+    def _radius(path: Path, selector: str):
+        css = re.sub(r"/\*.*?\*/", "", path.read_text(encoding="utf-8"), flags=re.DOTALL)
+        # The innermost `selectors { body }` blocks, which also reaches rules nested in @media.
+        for sels, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css):
+            if selector in (s.strip() for s in sels.split(",")):
+                found = re.search(r"border-radius:\s*([^;]+?)\s*;", body)
+                if found:
+                    return found.group(1)
+        return None
+
+    def test_the_global_ring_still_rounds_to_four_pixels(self):
+        css = (WEBSITE / "styles.css").read_text(encoding="utf-8")
+        ring = re.search(r"a:focus-visible, button:focus-visible[^{]*\{([^}]*)\}", css)
+        self.assertIsNotNone(ring, "the global focus ring moved; re-check these pins")
+        self.assertIn("border-radius: 4px", ring.group(1))
+
+    def test_each_control_restates_its_own_radius_on_focus(self):
+        for cls, base_file, focus_file in self.CASES:
+            with self.subTest(cls=cls):
+                base = self._radius(WEBSITE / base_file, f".{cls}")
+                self.assertIsNotNone(base, f".{cls} has no border-radius in {base_file}")
+                focused = self._radius(WEBSITE / focus_file, f".{cls}:focus-visible")
+                self.assertEqual(base, focused, f".{cls} changes shape under keyboard focus")
+
+
 if __name__ == "__main__":
     unittest.main()

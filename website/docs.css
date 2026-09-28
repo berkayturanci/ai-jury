@@ -45,6 +45,11 @@
   color: var(--accent-2); background: var(--accent-soft); border-left-color: var(--accent-2);
 }
 .ds-sub { font-size: .84rem; padding-left: .8rem; color: var(--faint); }
+/* styles.css's global focus ring sets border-radius: 4px, which would square these
+   off under keyboard focus; each restates its own radius (#805, #883). */
+.ds-link:focus-visible, .ds-sub:focus-visible { border-radius: 8px; }
+.docs-menu-btn:focus-visible { border-radius: 9px; }
+.dh-card:focus-visible { border-radius: 12px; }
 
 /* sidebar group (docs.html) */
 .ds-group > .ds-link { font-weight: 600; color: var(--text); }
