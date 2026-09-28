@@ -275,9 +275,6 @@ class ThePageShowsEachEntry(unittest.TestCase):
         for item in cls.items:
             cases.append({"slug": item["slug"], "statuses": [200]})
             cases.append({"slug": item["slug"], "statuses": [404, 200]})
-            if cls.at_tag is not None:
-                real = [200] if item["file"] in cls.at_tag else [404, 200]
-                cases.append({"slug": item["slug"], "statuses": real, "real": True})
         workdir = tempfile.mkdtemp()
         cls.addClassCleanup(shutil.rmtree, workdir, True)
         driver = Path(workdir) / "index.js"
@@ -330,12 +327,17 @@ class ThePageShowsEachEntry(unittest.TestCase):
                 with self.subTest(file=item["file"], statuses=statuses):
                     self._check(item, statuses)
 
-    def test_every_entry_resolves_as_the_release_tag_has_it(self):
+    def test_every_audit_is_in_the_release_tag(self):
+        # An audit is a dated record, so the page should read it from the release tag;
+        # one that exists only on main would render through the fallback, labelled
+        # unreleased, and pass every rendering check above.
         if self.at_tag is None:
             self.skipTest(f"this checkout has no {TAG} tag")
-        for item in self.items:
-            with self.subTest(file=item["file"], at_tag=item["file"] in self.at_tag):
-                self._check(item, [200] if item["file"] in self.at_tag else [404, 200])
+        audits = [item for item in self.items if item["date"]]
+        self.assertTrue(audits, "no dated audit entries were read from the page")
+        for item in audits:
+            with self.subTest(file=item["file"]):
+                self.assertIn(item["file"], self.at_tag)
 
     def test_the_home_page_shows_audits_as_dated_records(self):
         home = self._ran()["home"]
