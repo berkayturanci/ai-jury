@@ -21,7 +21,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from ai_jury import cache, configtrust  # noqa: E402
-from ai_jury.adapters import MockAdapter  # noqa: E402
+from ai_jury.adapters import AgentResult, MockAdapter  # noqa: E402
 from ai_jury.config import KNOWN_VENDORS, _from_dict  # noqa: E402
 from ai_jury.orchestrator import run_jury  # noqa: E402
 
@@ -93,6 +93,8 @@ class UninstallCoversEveryRoute(unittest.TestCase):
         for command in (
             "claude plugin uninstall ai-jury@ai-jury",
             "codex plugin remove ai-jury@ai-jury",
+            "claude plugin marketplace remove ai-jury",
+            "codex plugin marketplace remove ai-jury",
             "agy plugin uninstall ai-jury",
             "~/.cursor/plugins/local/ai-jury",
         ):
@@ -115,22 +117,46 @@ class UninstallCoversEveryRoute(unittest.TestCase):
 class TheCostNoteCountsTheCalls(unittest.TestCase):
     AGENTS = [("anthropic", "claude"), ("openai", "codex"), ("google", "agy"), ("cli", "aider")]
 
-    def _calls(self, seats: int, **jury) -> int:
+    def _calls(self, seats: int, failing: tuple[str, ...] = (), **jury) -> int:
+        """Adapter calls in a mock run; seats named in `failing` fail their review."""
         agents = [
             {"name": f"seat{i}", "vendor": vendor, "command": command}
             for i, (vendor, command) in enumerate(self.AGENTS[:seats])
         ]
         config = _from_dict({"jury": {"chair": "seat0", **jury}, "agent": agents})
-        with mock.patch.object(
-            MockAdapter, "run", autospec=True, side_effect=MockAdapter.run
-        ) as run:
+        real_run = MockAdapter.run  # taken before the patch replaces it
+
+        def run(adapter, prompt, phase="review", **kwargs):
+            if phase == "review" and adapter.name in failing:
+                return AgentResult(adapter.name, "mock", False, "", 0.0, error="down")
+            return real_run(adapter, prompt, phase=phase, **kwargs)
+
+        with mock.patch.object(MockAdapter, "run", autospec=True, side_effect=run) as spy:
             run_jury(config, SAMPLE_DIFF, mock=True)
-        return run.call_count
+        return spy.call_count
 
     def test_the_default_run_makes_two_n_plus_two_calls(self):
         for seats in (2, 3, 4):
             self.assertEqual(self._calls(seats), 2 * seats + 2, seats)
-        self.assertIn("2N + 2 calls", section("What a run costs"))
+        self.assertIn(
+            "When every review comes back, that is 2N + 2 calls", section("What a run costs")
+        )
+
+    def test_only_the_reviews_that_came_back_debate(self):
+        # Round-1 debaters are the seats whose review succeeded
+        # (`round1_debaters` in the orchestrator), not all N seats.
+        cost = section("What a run costs")
+        self.assertIn("one debate reply per review that came back, when at least two did", cost)
+        # 4 seats, one review fails: 4 reviews + 3 debate replies + verify + synthesis.
+        self.assertEqual(self._calls(4, failing=("seat3",)), 4 + 3 + 2)
+        # 3 seats, two fail: one review came back, so there is no debate.
+        self.assertEqual(self._calls(3, failing=("seat1", "seat2")), 3 + 0 + 2)
+
+    def test_a_cli_call_is_one_run_of_the_cli(self):
+        self.assertIn(
+            'For a CLI seat a "call" is one\nrun of its CLI, which may make several model requests',
+            section("What a run costs"),
+        )
 
     def test_the_named_switches_do_what_the_note_says(self):
         cost = section("What a run costs")
@@ -164,6 +190,10 @@ class TheWindowsNoteIsWhatCiRuns(unittest.TestCase):
         self.assertIn("python -m ai_jury --mock --diff-file", CI)
         windows = section("Windows")
         self.assertIn("offline unit suite", windows)
+        # What the leg installs is the checkout, so no installer reads as tested.
+        self.assertIn("pip install -e .", CI)
+        self.assertIn("`pip install -e .` from the checkout", windows)
+        self.assertIn("No installer is tested on\n  Windows", windows)
         self.assertIn("`--mock` review", windows)
 
 

@@ -100,7 +100,8 @@
     var RAW_ROOT = "https://raw.githubusercontent.com/" + OWNER + "/" + REPO + "/" + DOCS_TAG + "/";
     var RAW_DOCS = RAW_ROOT + "docs/";
     var BLOB_ROOT = "https://github.com/" + OWNER + "/" + REPO + "/blob/" + DOCS_TAG + "/";
-    var MAIN_DOCS = "https://raw.githubusercontent.com/" + OWNER + "/" + REPO + "/" + FALLBACK_REF + "/docs/";
+    var MAIN_RAW_ROOT = "https://raw.githubusercontent.com/" + OWNER + "/" + REPO + "/" + FALLBACK_REF + "/";
+    var MAIN_DOCS = MAIN_RAW_ROOT + "docs/";
     var MAIN_BLOB_ROOT = "https://github.com/" + OWNER + "/" + REPO + "/blob/" + FALLBACK_REF + "/";
 
     // Registry — grouped docs. slug -> file under docs/
@@ -217,7 +218,13 @@
       try { return new URL(href, "https://x/docs/").pathname.replace(/^\//, ""); }
       catch (e) { return href; }
     }
-    function rewrite(container, slug) {
+    // `ref` is where the document itself was read from (see `fetchDoc`): a document
+    // that fell back to `main` links its relative paths and images on `main` too,
+    // since what it points at may not be in the release tag either.
+    function rewrite(container, slug, ref) {
+      var onMain = ref === FALLBACK_REF;
+      var blobRoot = onMain ? MAIN_BLOB_ROOT : BLOB_ROOT;
+      var rawRoot = onMain ? MAIN_RAW_ROOT : RAW_ROOT;
       // links
       Array.prototype.forEach.call(container.querySelectorAll("a[href]"), function (a) {
         var href = a.getAttribute("href");
@@ -245,14 +252,14 @@
         // `route()` splits it back off.
         if (FILE_TO_SLUG[path]) { a.setAttribute("href", "#" + FILE_TO_SLUG[path] + (frag && frag !== "#" ? "--" + frag.slice(1) : "")); a.removeAttribute("target"); return; }
         // other repo file → blob (or raw for assets handled by img)
-        a.setAttribute("href", BLOB_ROOT + path + frag);
+        a.setAttribute("href", blobRoot + path + frag);
         a.target = "_blank"; a.rel = "noopener";
       });
       // images
       Array.prototype.forEach.call(container.querySelectorAll("img[src]"), function (img) {
         var src = img.getAttribute("src");
         if (!src || /^(https?:)?\/\//i.test(src) || /^data:/i.test(src)) return;
-        img.setAttribute("src", RAW_ROOT + resolveRel(src));
+        img.setAttribute("src", rawRoot + resolveRel(src));
         img.loading = "lazy";
       });
       // wrap tables for horizontal scroll
@@ -385,7 +392,7 @@
             + (released ? DOCS_TAG : FALLBACK_REF + " (unreleased: not in " + DOCS_TAG + ")") + "</span>"
             + '<a class="doc-edit" href="' + (released ? BLOB_ROOT : MAIN_BLOB_ROOT) + "docs/" + item.file + '" target="_blank" rel="noopener">View source on GitHub →</a>';
           currentSlug = slug;
-          rewrite(wrap, slug);
+          rewrite(wrap, slug, doc.ref);
           // syntax highlight code blocks
           if (window.hljs) {
             Array.prototype.forEach.call(wrap.querySelectorAll("pre code"), function (block) {

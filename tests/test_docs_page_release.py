@@ -70,16 +70,69 @@ async function run(statuses) {
     return { asked, error: e.message, tag: ctx.DOCS_TAG };
   }
 }
+function linkNode(attr, value) {
+  return { attrs: { [attr]: value },
+    getAttribute(k) { return this.attrs[k]; },
+    setAttribute(k, v) { this.attrs[k] = String(v); },
+    removeAttribute(k) { delete this.attrs[k]; } };
+}
+// The page's own `rewrite` over one relative link and one relative image;
+// `null` hands it the page's own DOCS_TAG.
+function runRewrite(ref) {
+  const a = linkNode("href", "../README.md#install"), img = linkNode("src", "assets/x.png");
+  const container = { querySelectorAll(sel) {
+    return sel.startsWith("a") ? [a] : sel.startsWith("img") ? [img] : []; } };
+  const ctx = { FILE_TO_SLUG: {}, URL, document: {}, container, ref };
+  vm.runInNewContext(constants + ";" + extract("resolveRel") + extract("rewrite")
+    + "; rewrite(container, 'guide', " + (ref === null ? "DOCS_TAG" : "ref") + ");", ctx);
+  return { href: a.attrs.href, src: img.attrs.src };
+}
+// The page's own `renderDoc`, recording the ref it hands to `rewrite`.
+async function runRender(statuses) {
+  const handed = [];
+  function node() {
+    const n = { children: [], className: "", appendChild(c) { this.children.push(c); return c; },
+      querySelectorAll() { return []; } };
+    Object.defineProperty(n, "innerHTML", { set() {}, get() { return ""; } });
+    return n;
+  }
+  const contentEl = node();
+  contentEl.querySelector = () => node();
+  const purify = { sanitize: () => "<p>ok</p>" };
+  let i = 0;
+  const ctx = {
+    window: { scrollTo() {}, DOMPurify: purify }, DOMPurify: purify, contentEl,
+    document: { createElement: () => node(), title: "" },
+    BY_SLUG: { guide: { file: "guide.md", title: "Guide" } }, currentSlug: null,
+    buildSidebar() {}, renderHome() {}, buildTOC() {}, scrollToAnchor() {},
+    rewrite(_c, _slug, ref) { handed.push(ref); },
+    marked: { parse: () => "<p>ok</p>" },
+    fetch() {
+      const status = statuses[i++];
+      return Promise.resolve({ ok: status === 200, status, text: () => Promise.resolve("# t") });
+    },
+  };
+  vm.runInNewContext(constants + ";" + extract("fetchDoc") + extract("renderDoc")
+    + "; renderDoc('guide', null);", ctx);
+  await new Promise((r) => setTimeout(r, 20));
+  return handed;
+}
 (async () => {
   console.log(JSON.stringify({
     released: await run([200]),
     tag_missing: await run([404, 200]),
     tag_error: await run([500]),
+    rewrite_tag: runRewrite(null),
+    rewrite_main: runRewrite("main"),
+    render_released: await runRender([200]),
+    render_fallback: await runRender([404, 200]),
   }));
 })();
 """
 
 TAG = f"v{__version__}"
+RAW = "https://raw.githubusercontent.com/berkayturanci/ai-jury"
+BLOB = "https://github.com/berkayturanci/ai-jury/blob"
 TAG_URL = f"https://raw.githubusercontent.com/berkayturanci/ai-jury/{TAG}/docs/parameters.md"
 MAIN_URL = "https://raw.githubusercontent.com/berkayturanci/ai-jury/main/docs/parameters.md"
 
@@ -122,6 +175,21 @@ class TheDocsPageReadsTheRelease(unittest.TestCase):
         failed = self._ran()["tag_error"]
         self.assertEqual(failed["asked"], [TAG_URL])
         self.assertEqual(failed["error"], "HTTP 500")
+
+    def test_a_fallback_document_links_on_main(self):
+        # A document read from `main` may point at files the tag does not have, so
+        # its relative links and images resolve on `main` as well (#907 review).
+        ran = self._ran()
+        self.assertEqual(ran["render_released"], [TAG])
+        self.assertEqual(ran["render_fallback"], ["main"])
+        main = ran["rewrite_main"]
+        self.assertEqual(main["href"], f"{BLOB}/main/README.md#install")
+        self.assertEqual(main["src"], f"{RAW}/main/docs/assets/x.png")
+
+    def test_a_released_document_links_on_the_tag(self):
+        released = self._ran()["rewrite_tag"]
+        self.assertEqual(released["href"], f"{BLOB}/{TAG}/README.md#install")
+        self.assertEqual(released["src"], f"{RAW}/{TAG}/docs/assets/x.png")
 
 
 class TheDocsPageIsAReleaseSurface(unittest.TestCase):

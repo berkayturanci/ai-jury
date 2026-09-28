@@ -185,8 +185,9 @@ CI runs one Windows leg (`windows-latest`, Python 3.13, in
 offline unit suite, and runs a `--mock` review under Git Bash. That is all that is
 tested on Windows:
 
-- Install with `pipx install ai-jury` or `pip install ai-jury`. CI does not run the
-  Homebrew or `curl | sh` installer on Windows.
+- That install is `pip install -e .` from the checkout. No installer is tested on
+  Windows: not pipx, not the PyPI wheel, not Homebrew or `curl | sh`.
+  `pipx install ai-jury` or `pip install ai-jury` is the route that matches it.
 - No agent CLI runs in CI on any OS. Whether `claude`, `codex`, `agy` or `gh` works
   on Windows is up to its vendor. A CLI that is missing is skipped, as on any OS.
 - `jury run-agent` checks a detached run's process on POSIX only, so on Windows a
@@ -650,14 +651,16 @@ seats make, and each call is billed by whoever serves that seat:
 seats makes these calls for each diff, or for each chunk when `--chunk` splits one:
 
 - N round-1 reviews;
-- N debate replies, when at least two reviews came back;
+- one debate reply per review that came back, when at least two did;
 - one verification call and one synthesis call, both by the chair.
 
-That is 2N + 2 calls. These change it:
+When every review comes back, that is 2N + 2 calls. For a CLI seat a "call" is one
+run of its CLI, which may make several model requests inside the vendor's tool.
+These change the count:
 
 - `--rounds 1` skips the debate, and `--no-verify` skips the verification call.
 - `--early-stop` skips the debate when the round-1 reviews agree, and otherwise
-  runs up to `--max-rounds` − 1 debate rounds of N calls each.
+  runs up to `--max-rounds` − 1 debate rounds, each with the same debaters.
 - `--auto` sets the rounds and verification from the diff's risk: a `low`-risk diff
   gets one round and no verification.
 - `--tiered` seats fewer frontier seats in round 1 on a `low` or `medium`-risk diff:
@@ -1005,11 +1008,14 @@ An **agent plugin** is removed by its agent. These commands come from the `--hel
 of Claude Code 2.1.236, codex-cli 0.155.0 and agy 1.2.12:
 
 ```bash
-claude plugin uninstall ai-jury@ai-jury
-codex plugin remove ai-jury@ai-jury
+claude plugin uninstall ai-jury@ai-jury && claude plugin marketplace remove ai-jury
+codex plugin remove ai-jury@ai-jury && codex plugin marketplace remove ai-jury
 agy plugin uninstall ai-jury
 rm -rf ~/.cursor/plugins/local/ai-jury   # Cursor's local checkout
 ```
+
+The second command on each of the first two lines removes the marketplace the
+install added.
 
 **Files left behind.** Uninstalling does not remove the two directories the tool
 writes to. Delete them if you want them gone:
