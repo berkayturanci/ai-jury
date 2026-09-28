@@ -208,6 +208,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visibl
 .btn:focus-visible { border-radius: 11px; }
 .hi-copy:focus-visible, .code-copy:focus-visible, .copy-btn:focus-visible { border-radius: 8px; }
 .int-modal-copy-btn:focus-visible { border-radius: 6px; }
+.liveref:focus-visible { border-radius: var(--radius); }
 
 .btn {
   display: inline-flex; align-items: center; gap: .5rem;
