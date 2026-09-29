@@ -640,7 +640,9 @@ class SampleModelIdsAreCurrent(unittest.TestCase):
         src = APP_JS.read_text(encoding="utf-8")
         cards = _site_cards(src)
         readme = [s for t in _toml_texts("README.md") for s in _seats_in(t, "README.md")]
-        claude = [s.model for s in readme if s.data.get("vendor") == "anthropic"]
+        # A seat with no model at all is `jury init`'s verbatim output, which pins
+        # none (the CLI's own default runs); only an id the README names is checked.
+        claude = [s.model for s in readme if s.data.get("vendor") == "anthropic" and s.model]
         local = [s.model for s in readme if s.data.get("vendor") == "local"]
         site_claude = _seats_in(cards["anthropic-api"]["config"], "site")[0].model
         site_local = _seats_in(cards["ollama-local"]["config"], "site")[0].model
