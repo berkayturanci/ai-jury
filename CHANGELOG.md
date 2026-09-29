@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Internal
+- **Tests that register an adapter put every registry back, and a leak fails loudly.** `register_adapter` writes three tables in two modules (`adapters._VENDOR_ADAPTERS`, `config._REGISTERED_VENDORS`, `config._REGISTERED_ADAPTER_SPAWNS`), and each test restored the ones it remembered. `test_adapters_paths` restored none, so `python -m unittest tests.test_vendor_vocabulary tests.test_adapters_paths tests.test_adapter_key` failed two vocabulary checks in `test_adapter_key`, an order discovery never runs; seven other tests left the transport table or the vendor table behind. `adapters._registry_state()` and `adapters._restore_registry_state()` snapshot and restore all three in place, beside the function that writes them, and every registering test in `test_vendor_vocabulary`, `test_adapters_paths`, `test_adapter_key`, `test_privilege` and `test_docs_python_snippets` now uses them. `tests/test_adapter_registry_isolation.py` runs every test module that names a registry, the reported order first, compares the tables before and after each test, and names the test that leaked and the keys it left; on the old tests it named all eight. No runtime behaviour changes (#904).
+
 ## [1.21.0] - 2026-09-28
 
 > **Upgrading.** A seat whose adapter runs a CLI (`anthropic`, `openai`, `google`, `cli`, `xai`) can no longer set

@@ -59,11 +59,6 @@ class ConfigurationPythonSnippets(unittest.TestCase):
     def setUp(self):
         self.blocks = _python_blocks(CONFIGURATION.read_text(encoding="utf-8"))
 
-    def _forget(self, vendor: str) -> None:
-        config_module._REGISTERED_VENDORS.discard(vendor)
-        config_module._REGISTERED_ADAPTER_SPAWNS.pop(vendor, None)
-        adapters._VENDOR_ADAPTERS.pop(vendor, None)
-
     def test_there_is_at_least_one_python_snippet(self):
         # Vacuity guard: if the fence or marker is reworded away, the checks below
         # would silently stop running.
@@ -83,7 +78,8 @@ class ConfigurationPythonSnippets(unittest.TestCase):
             1,
             f"expected exactly one ```python block tagged {_EXEC_MARKER!r}",
         )
-        self.addCleanup(self._forget, "company-llm")
+        # Whatever the snippet registers, not only the name it registers today (#904).
+        self.addCleanup(adapters._restore_registry_state, adapters._registry_state())
 
         module = _run_block_as_module(matching[0], "docs_custom_adapter")
 
