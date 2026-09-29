@@ -1503,6 +1503,12 @@ def _run_agent_parser() -> argparse.ArgumentParser:
     sub.add_argument(
         "--mock", action="store_true", help="run the offline mock adapter instead of a real agent"
     )
+    sub.add_argument(
+        "--strict",
+        action="store_true",
+        help="refuse (exit 2) a read-only role whose seat draws a least-privilege "
+        "warning, as a panel run with --strict does",
+    )
     # The detached child re-enters this same command; the flag only tells it to
     # record its result in the run's state file. Hidden: it is not a surface
     # anyone should call directly.
@@ -1541,6 +1547,8 @@ def _child_argv(ns, run_id: str, python: str) -> list[str]:
         argv += ["--cache-dir", str(Path(ns.cache_dir).resolve())]
     if ns.mock:
         argv.append("--mock")
+    if ns.strict:
+        argv.append("--strict")
     return argv
 
 
@@ -1680,8 +1688,12 @@ def _run_run_agent(rest: list[str], spawn=None, sleep=None, clock=None) -> int:
             file=sys.stderr,
         )
 
+    # Validated as the panel validates it (#903): an `endpoint` on a CLI seat, a
+    # `command` path rule, an unknown adapter — each refused here as it is by a
+    # review, `--config-validate`, `jury config` and `--doctor`, rather than
+    # reaching the spawner as a config the rest of the tool rejects.
     try:
-        config = load_config(ns.config)
+        config = load_config(ns.config, validate=True)
     except (ConfigError, FileNotFoundError) as exc:
         print(redact(f"error: {exc}")[0], file=sys.stderr)
         return 2
@@ -1713,6 +1725,25 @@ def _run_run_agent(rest: list[str], spawn=None, sleep=None, clock=None) -> int:
         if warning:
             print(f"warning: {warning}", file=sys.stderr)
 
+    # The panel's least-privilege audit, for this one seat (#903). A read-only
+    # role is spawned with the argv a panel review uses, so it is audited the
+    # same way, and `--strict` refuses it the same way. A write role is not: it
+    # asked for write access with `--allow-write`, and the audit describes the
+    # read-only argv, which is not the one that role runs. Before `--detach`, so a
+    # refused seat never starts a background run.
+    if not policy.write:
+        from .privilege import audit_agent
+
+        privilege_warnings = audit_agent(spec)
+        for w in privilege_warnings:
+            print(f"warning: least-privilege: {w}", file=sys.stderr)
+        if ns.strict and privilege_warnings:
+            print(
+                "error: least-privilege check failed (--strict): " + "; ".join(privilege_warnings),
+                file=sys.stderr,
+            )
+            return 2
+
     if ns.detach:
         return _detach_run_agent(ns, spec, policy, spawn=spawn)
 
@@ -1721,12 +1752,13 @@ def _run_run_agent(rest: list[str], spawn=None, sleep=None, clock=None) -> int:
         print(f"error: {error}", file=sys.stderr)
         return 2
 
-    # `run-agent` loads its config without validation (it drives ONE named seat,
-    # so an unrelated seat's mistake must not stop it), which is why the adapter
-    # name is checked here, where it is used, rather than only at load (#708).
+    # The adapter name is also checked where it is used (#708). Unreachable today:
+    # validation above refuses an unknown adapter (#903), and a built-in agent
+    # names none. Kept so a future path that skips validation fails with the
+    # config error, not a traceback.
     try:
         adapter = make_adapter(spec, mock=ns.mock)
-    except ConfigError as exc:
+    except ConfigError as exc:  # pragma: no cover - see above
         print(redact(f"error: {exc}")[0], file=sys.stderr)
         return 2
     print(

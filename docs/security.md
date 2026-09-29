@@ -177,6 +177,46 @@ content; the least-privilege audit (`--strict` to fail the run) will flag it.
     - any value outside that set, an empty value (`--permission-mode=`) or no
       value: Claude Code 2.1.236 rejects it, so the seat fails before it reviews
       anything.
+    - several `--permission-mode` flags: Claude Code applies the **last** one
+      (measured on 2.1.236: `plan` then `dontAsk` runs as `dontAsk`, and the
+      reverse runs as `plan`), and the warning names that one (#888). A rejected
+      value anywhere still stops the seat, and `--dangerously-skip-permissions`
+      still overrides whichever mode is last, in either order. With a `--tools`
+      list beside a rejected mode, the tools warning says what the tools would
+      allow once the seat can start.
+    - anything after an option terminator `--`: claude reads it as prompt text,
+      so `--permission-mode=bypassPermissions -- --permission-mode=dontAsk` runs
+      in bypass mode and is reported as such. The audit and the injected lockdown
+      read only what comes before `--` (a `--` that is another option's value,
+      as in `--model --`, is not a terminator), and the lockdown is injected in
+      front of it. The same holds for codex's `-s`: one after `--` is not a
+      sandbox, and `-s read-only` is injected before it. Combined short options
+      are read as Claude Code reads them: `-pn` is `-p -n`, and `-n` takes the
+      next token, even `--`, as its value.
+    - any token jury cannot place: the readers above model Claude Code's
+      parser, and each review round found a corner they missed. So a token that
+      could change the permission mode or tools — any `--permission-mode…`,
+      either skip-permissions flag, `bypassPermissions`, `acceptEdits`, a
+      settings `defaultMode`, `--tools`, `--mcp-config` — that they do not read
+      as a flag (after `--`, as another option's value, or in a spelling they
+      do not model) draws its own warning, and `--strict` fails the run. Prompt
+      text in `extra_args` that only mentions one is warned about too. codex
+      gets the same rule for `danger-full-access`, `workspace-write`,
+      `--full-auto`, `--yolo` and `--dangerously-bypass-approvals-and-sandbox`,
+      including inside a `-c` override. The lockdown itself stays at the front
+      of the argv, the one place Claude Code is sure to read as options:
+      moving `dontAsk` to the end would not beat `--dangerously-skip-permissions`,
+      which overrides any mode in either order, and would silently replace a
+      mode you named.
+
+  No least-privilege warning prints an `extra_args` value. A token jury cannot
+  place is named by its position and the word that flagged it ("item 2 of
+  `extra_args` (it mentions `bypassPermissions`)"), since a `--settings` JSON
+  can carry an API key. Other warnings repeat a value only if it is one of the
+  CLIs' own words (a permission mode, a codex sandbox value, `true`/`false`, one
+  of Claude Code's built-in tool names from a fixed list); anything else — an
+  `mcp__…` tool, any other word — is shown as `<value>` or `<tool>`. Every
+  warning also passes through the same secret redaction as the prompt.
   - configuration beyond the prompt: `--settings`, `--setting-sources`,
     `--plugin-dir`, `--plugin-url`, `--add-dir`, `--agents`, `--agent`.
     **`--safe-mode` wins over all of these**: measured on Claude Code 2.1.236, a
@@ -221,8 +261,23 @@ content; the least-privilege audit (`--strict` to fail the run) will flag it.
   instead, but on the same CLI a real review prompt then tried a command, was
   denied, and returned no review at all, twice out of two runs, so the shipped
   seat keeps the flag. Treat an `agy` seat as able to do what your user can do,
-  and seat it only for diffs you trust. A config that omits `--sandbox` has it
-  injected at spawn time, and the audit warns about the seat whatever its flags.
+  and seat it only for diffs you trust. A config without agy's boolean
+  `--sandbox` has it injected at spawn time, and the audit warns about the seat
+  whatever its flags. Codex's `-s read-only` does not count as that flag: `agy
+  --help` (1.2.12) lists `--sandbox` with no value and no `-s` at all, so such a
+  seat used to be spawned with no sandbox (#902). It now gets `--sandbox` beside
+  it, and the audit names `-s …` or a value after `--sandbox` as not agy's
+  sandbox. A `--sandbox` that is another option's value (`--model --sandbox`:
+  agy parses flags by Go's rules, so `--model` takes the next token whatever it
+  is) or that follows a positional does not count either. agy reads
+  `--sandbox=<value>` as true or false and its last `--sandbox` wins, so every
+  `--sandbox=<value>` is **removed** before `--sandbox` is added:
+  `--sandbox=false` would otherwise switch the added flag off. The audit reports
+  a false or unreadable value as removed; `--sandbox=true` only repeats the flag.
+  The same injection covers an unknown vendor, which is spawned as agy when it
+  has no `command`: a seat with `vendor = "acme"` and `-s read-only` now gets
+  `--sandbox` added too, which the operator's own binary may reject. The audit
+  warns about an unknown vendor's seat either way.
 - **`anthropic-api` / `openai-api` / `google-api`** (hosted-API reviewers) are out of
   scope for the sandbox audit entirely, and there is no `--strict` finding to fix here:
   unlike every CLI-backed adapter, a hosted-API call makes a single HTTP request with
@@ -398,7 +453,11 @@ make the reviewers approve a bad change or suppress findings. This is a classic
    spawned with the full no-tool lockdown, and used to be reported as write-capable.
 
    The audit is **advisory by default** (warnings surfaced in `run_jury`);
-   `--strict` promotes these warnings to a hard failure. The default panel
+   `--strict` promotes these warnings to a hard failure. `jury run-agent` runs
+   the same audit on its seat for the read-only roles (`review`, `gate`,
+   `chair`), after validating the config as a review does, and `jury run-agent
+   --strict` refuses a seat it warns about with exit `2` (#903); a write role run
+   with `--allow-write` is not audited, since it asked for write access. The default panel
    (`claude`, `codex`) raises **no** warnings. The audit fires for any enabled
    `agy` seat, and for what enforcement cannot fix — a sandbox you
    widened on purpose (codex `-s danger-full-access`, `-s workspace-write`), a

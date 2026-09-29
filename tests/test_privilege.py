@@ -781,8 +781,14 @@ class AFlagSpelledAsAnotherOptionsValueIsNotThatFlag(unittest.TestCase):
         warnings = privilege.audit_agent(
             AgentSpec(name="c", vendor="anthropic", command="claude", extra_args=args)
         )
-        self.assertEqual(len(warnings), 1)
+        # Not read as the flag (no "skips permission checks"), but reported
+        # fail-closed as a token jury cannot vouch for (#908 review).
+        self.assertEqual(len(warnings), 2)
         self.assertNotIn("skips permission checks", warnings[0])
+        self.assertIn(
+            "item 4 of `extra_args` (it mentions `dangerously-skip-permissions`)", warnings[1]
+        )
+        self.assertIn("jury cannot tell", warnings[1])
         self.assertFalse(privilege._claude_flag_present("--mcp-config", ["--name", "--mcp-config"]))
 
     def test_a_variadic_option_takes_its_first_value_whatever_it_spells(self):
@@ -887,7 +893,7 @@ class EveryReadOnlyClaudeCallRunsInDontAsk(unittest.TestCase):
         cases = {
             "bogus": (
                 ["--dangerously-skip-permissions", "--permission-mode", "bogus"],
-                "`--permission-mode bogus`",
+                "`--permission-mode <value>`",
             ),
             "missing": (
                 ["--dangerously-skip-permissions", "--permission-mode"],
@@ -913,7 +919,7 @@ class EveryReadOnlyClaudeCallRunsInDontAsk(unittest.TestCase):
     REJECTED_WITH_SKIP = {
         "bogus": (
             ["--dangerously-skip-permissions", "--permission-mode", "bogus"],
-            "`--permission-mode bogus`",
+            "`--permission-mode <value>`",
         ),
         "missing": (
             ["--dangerously-skip-permissions", "--permission-mode"],
@@ -925,11 +931,11 @@ class EveryReadOnlyClaudeCallRunsInDontAsk(unittest.TestCase):
         ),
         "value is the skip flag": (
             ["--permission-mode", "--dangerously-skip-permissions"],
-            "`--permission-mode --dangerously-skip-permissions`",
+            "`--permission-mode <value>`",
         ),
         "= value is the skip flag": (
             ["--permission-mode=--dangerously-skip-permissions"],
-            "`--permission-mode --dangerously-skip-permissions`",
+            "`--permission-mode <value>`",
         ),
     }
 
@@ -1364,6 +1370,7 @@ class TheAuditAsksTheAdapterTheSpawnerBuilds(unittest.TestCase):
                 built = adapters.make_adapter(spec)
                 self.assertIs(type(built), adapters.adapter_class(spec))
                 self.assertEqual(spawns_process(spec), not isinstance(built, http))
+                self.assertEqual(spawns_process(spec), built.SPAWNS_PROCESS)
 
     def test_config_answers_as_make_adapter_does_for_every_key_and_fallback(self):
         # `config.spawns_process` answers without importing `adapters` (no import
@@ -1392,6 +1399,7 @@ class TheAuditAsksTheAdapterTheSpawnerBuilds(unittest.TestCase):
             with self.subTest(seat=spec.name):
                 built = adapters.make_adapter(spec)
                 self.assertEqual(spawns_process(spec), not isinstance(built, http))
+                self.assertEqual(spawns_process(spec), built.SPAWNS_PROCESS)
 
     def test_a_registered_adapter_is_answered_by_its_class(self):
         from ai_jury import config as config_module
@@ -1402,9 +1410,19 @@ class TheAuditAsksTheAdapterTheSpawnerBuilds(unittest.TestCase):
         class CliShim(adapters.GenericCLIAdapter):
             pass
 
+        # The documented custom adapter: a direct `Adapter` subclass that calls
+        # its backend over HTTP and says so (#903).
+        class DirectHttpShim(adapters.Adapter):
+            SPAWNS_PROCESS = False
+
         http = (adapters.LocalAdapter, adapters._HostedApiAdapter)
-        # `cli` re-registered with an HTTP class, and a new key with a CLI one.
-        for key, cls in (("cli", HttpShim), ("shim-cli", CliShim)):
+        # `cli` re-registered with an HTTP class, a new key with a CLI one, and a
+        # new key with a direct subclass that opts out of spawning.
+        for key, cls in (
+            ("cli", HttpShim),
+            ("shim-cli", CliShim),
+            ("shim-direct-http", DirectHttpShim),
+        ):
             saved = adapters._VENDOR_ADAPTERS.get(key)
             saved_spawn = config_module._REGISTERED_ADAPTER_SPAWNS.get(key)
             try:
@@ -1412,7 +1430,12 @@ class TheAuditAsksTheAdapterTheSpawnerBuilds(unittest.TestCase):
                 spec = AgentSpec(name="s", vendor=key, command="x", endpoint=_ENDPOINT)
                 with self.subTest(key=key):
                     built = adapters.make_adapter(spec)
-                    self.assertEqual(spawns_process(spec), not isinstance(built, http))
+                    self.assertEqual(spawns_process(spec), built.SPAWNS_PROCESS)
+                    if cls is not DirectHttpShim:
+                        self.assertEqual(spawns_process(spec), not isinstance(built, http))
+                    else:
+                        self.assertFalse(spawns_process(spec))
+                        self.assertEqual(privilege.audit_agent(spec), [])
             finally:
                 if saved is None:
                     adapters._VENDOR_ADAPTERS.pop(key, None)
@@ -1497,6 +1520,823 @@ class TheCheckoutRiskMatchesTheStem(unittest.TestCase):
         spec = AgentSpec(name="s", vendor="openai", command="cursor-agent.cmd")
         self.assertNotEqual(privilege.audit_agent(spec), [])
         self.assertIn("least-privilege check failed (--strict)", _strict_error(spec))
+
+
+class TheAuditReportsThePermissionModeClaudeCodeApplies(unittest.TestCase):
+    """Of several `--permission-mode` flags Claude Code uses the last (#888).
+
+    Measured on Claude Code 2.1.236: `plan` then `dontAsk` runs as `dontAsk`, and
+    `dontAsk` then `plan` runs as `plan`. The audit reported the first mode that
+    was not `dontAsk`, so the first order was warned about as running `plan`.
+    """
+
+    def _seat(self, *extra_args):
+        return AgentSpec(
+            name="claude", vendor="anthropic", command="claude", extra_args=list(extra_args)
+        )
+
+    def test_the_last_accepted_mode_is_the_one_reported(self):
+        cases = {
+            ("plan", "dontAsk"): None,
+            ("dontAsk", "plan"): "--permission-mode plan",
+            ("acceptEdits", "plan"): "--permission-mode plan",
+            ("plan", "default"): "--permission-mode default",
+        }
+        for (first, last), expected in cases.items():
+            for spell in (
+                lambda m: ["--permission-mode", m],
+                lambda m: [f"--permission-mode={m}"],
+            ):
+                args = [*spell(first), *spell(last)]
+                with self.subTest(args=args):
+                    self.assertEqual(privilege._claude_mode_override(args), expected)
+
+    def test_a_seat_whose_last_mode_is_dont_ask_audits_clean(self):
+        self.assertEqual(
+            privilege.audit_agent(
+                self._seat("--permission-mode", "plan", "--permission-mode", "dontAsk")
+            ),
+            [],
+        )
+
+    def test_the_warning_names_the_mode_the_seat_runs_in(self):
+        warnings = privilege.audit_agent(
+            self._seat("--permission-mode", "acceptEdits", "--permission-mode", "plan")
+        )
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("`--permission-mode plan`", warnings[0])
+        self.assertNotIn("acceptEdits", warnings[0])
+
+    def test_an_approving_mode_followed_by_dont_ask_is_not_a_bypass(self):
+        self.assertIsNone(
+            privilege._claude_permission_bypass(
+                ["--permission-mode", "bypassPermissions", "--permission-mode", "dontAsk"]
+            )
+        )
+        self.assertEqual(
+            privilege._claude_permission_bypass(
+                ["--permission-mode", "dontAsk", "--permission-mode", "bypassPermissions"]
+            ),
+            "--permission-mode bypassPermissions",
+        )
+
+    def test_tools_beside_an_overridden_approving_mode_are_not_called_unasked(self):
+        warnings = privilege.audit_agent(
+            self._seat(
+                "--tools",
+                "Read",
+                "--permission-mode",
+                "bypassPermissions",
+                "--permission-mode",
+                "dontAsk",
+            )
+        )
+        self.assertEqual(len(warnings), 1)
+        self.assertNotIn("skips permission checks", warnings[0])
+
+    def test_the_skip_flag_overrides_every_mode_in_either_order(self):
+        for args in (
+            ["--permission-mode", "plan", "--dangerously-skip-permissions"],
+            ["--dangerously-skip-permissions", "--permission-mode", "plan"],
+            [
+                "--permission-mode",
+                "plan",
+                "--permission-mode",
+                "dontAsk",
+                "--dangerously-skip-permissions",
+            ],
+        ):
+            with self.subTest(args=args):
+                self.assertEqual(
+                    privilege._claude_mode_override(args), "--dangerously-skip-permissions"
+                )
+
+    def test_a_rejected_mode_anywhere_still_wins(self):
+        for args in (
+            ["--permission-mode", "bogus", "--permission-mode", "plan"],
+            ["--permission-mode", "plan", "--permission-mode", "bogus"],
+        ):
+            with self.subTest(args=args):
+                self.assertEqual(privilege._claude_mode_override(args), "--permission-mode <value>")
+
+    def test_the_write_role_adds_the_skip_flag_once_for_repeated_dont_ask(self):
+        argv = privilege.enable_write(
+            "anthropic", ["--permission-mode", "dontAsk", "--permission-mode=dontAsk"]
+        )
+        self.assertEqual(argv.count("--dangerously-skip-permissions"), 1)
+        self.assertNotIn("dontAsk", " ".join(argv))
+
+    def test_the_tools_warning_is_conditional_on_a_seat_that_cannot_start(self):
+        """#888 follow-up: a rejected mode means the seat never runs its tools."""
+        warnings = privilege.audit_agent(
+            self._seat("--tools", "Read", "--permission-mode", "bogus")
+        )
+        self.assertEqual(len(warnings), 2)
+        self.assertIn("once the seat can start", warnings[0])
+        self.assertNotIn("runs unasked", warnings[0])
+        self.assertIn("Claude Code 2.1.236 rejects", warnings[1])
+
+
+class AnAgySeatAlwaysGetsItsOwnSandbox(unittest.TestCase):
+    """codex's `-s` is not agy's sandbox (#902).
+
+    `agy --help` (1.2.12) lists one sandbox flag, the boolean `--sandbox`, and no
+    `-s`. Enforcement skipped the injection when any `-s`/`--sandbox=` token was
+    present, so `-s read-only` on an agy seat was spawned without `--sandbox`.
+    """
+
+    def _agy(self, *extra_args):
+        return AgentSpec(name="agy", vendor="google", command="agy", extra_args=list(extra_args))
+
+    def test_the_boolean_sandbox_is_injected_beside_a_codex_spelling(self):
+        for vendor in ("google", "weirdvendor"):
+            for args in (
+                ["-s", "read-only"],
+                ["-s=read-only"],
+                ["--sandbox", "read-only"],
+            ):
+                with self.subTest(vendor=vendor, args=args):
+                    self.assertEqual(
+                        privilege.enforce_read_only(vendor, list(args)), ["--sandbox", *args]
+                    )
+
+    def test_the_boolean_sandbox_is_not_doubled(self):
+        for args in (["--sandbox"], ["--sandbox", "--yolo"], ["--yolo", "--sandbox"]):
+            with self.subTest(args=args):
+                self.assertEqual(privilege.enforce_read_only("google", list(args)), args)
+
+    def test_the_spawned_argv_carries_it(self):
+        self.assertEqual(
+            adapters._read_only_extra_args(self._agy("-s", "read-only")),
+            ["--sandbox", "-s", "read-only"],
+        )
+
+    def test_the_audit_and_the_enforcement_read_the_same_flag(self):
+        for args in (["-s", "read-only"], ["--sandbox="], ["--sandbox", "read-only"]):
+            with self.subTest(args=args):
+                self.assertFalse(privilege._is_sandboxed(args, vendor="google"))
+                self.assertTrue(
+                    privilege._is_sandboxed(
+                        privilege.enforce_read_only("google", list(args)), vendor="google"
+                    )
+                )
+
+    def test_the_codex_spelling_is_reported_as_not_an_agy_flag(self):
+        warnings = privilege.audit_agent(self._agy("-s", "read-only"))
+        self.assertEqual(len(warnings), 2)
+        self.assertEqual(warnings[0], agy_warning("agy"))
+        self.assertIn("`-s read-only`", warnings[1])
+        self.assertIn("not agy's sandbox", warnings[1])
+        self.assertIn("no `-s`", warnings[1])
+
+    def test_every_spelling_agy_does_not_read_is_named_as_written(self):
+        cases = {
+            ("-s=read-only",): ["-s=read-only"],
+            ("-s", "--yolo"): ["-s"],
+            ("--sandbox", "read-only"): ["--sandbox read-only"],
+        }
+        for args, named in cases.items():
+            with self.subTest(args=args):
+                self.assertEqual(
+                    privilege._agy_foreign_sandbox_tokens(
+                        privilege.enforce_read_only("google", list(args))
+                    ),
+                    named,
+                )
+                warnings = privilege.audit_agent(self._agy(*args))
+                self.assertEqual(len(warnings), 2)
+                for token in named:
+                    self.assertIn(f"`{token}`", warnings[1])
+
+    def test_a_valueless_codex_sandbox_token_states_no_second_sandbox(self):
+        self.assertEqual(
+            privilege._competing_sandboxes(
+                ["-s", "read-only", "--sandbox", "--full-auto"], vendor="openai"
+            ),
+            [("--full-auto", False)],
+        )
+
+    def test_a_codex_value_is_not_described_as_a_second_sandbox(self):
+        warnings = privilege.audit_agent(self._agy("-s", "workspace-write"))
+        self.assertTrue(any("not agy's sandbox" in w for w in warnings))
+        self.assertFalse(any("a sandbox of its own" in w for w in warnings), warnings)
+
+    def test_a_plain_boolean_sandbox_draws_only_the_agy_warning(self):
+        self.assertEqual(
+            privilege.audit_agent(self._agy("--sandbox", "--yolo")), [agy_warning("agy")]
+        )
+
+    def test_the_generic_warning_speaks_agys_terms_on_an_agy_seat(self):
+        # A leading bare token leaves the injected `--sandbox` followed by a value,
+        # the one argv the audit still does not accept as sandboxed on agy.
+        warnings = privilege.audit_agent(self._agy("review-this"))
+        generic = [w for w in warnings if "recognized read-only sandbox" in w]
+        self.assertEqual(len(generic), 1)
+        self.assertIn("agy needs its boolean `--sandbox`", generic[0])
+        self.assertNotIn("-s read-only", generic[0])
+
+    def test_the_generic_warning_does_not_deny_an_injected_sandbox(self):
+        spec = AgentSpec(name="x", vendor="acme", command="x")
+        warning = privilege.audit_agent(spec)[0]
+        self.assertIn("the `--sandbox` it adds is agy's", warning)
+        self.assertNotIn("no `-s read-only` / `--sandbox`", warning)
+
+    def test_the_codex_generic_warning_names_codexs_flag(self):
+        spec = AgentSpec(
+            name="codex", vendor="openai", command="codex", extra_args=["-s", "future-mode"]
+        )
+        self.assertIn("codex needs `-s read-only`", privilege.audit_agent(spec)[0])
+
+
+class ACustomHttpAdapterCanSayItSpawnsNothing(unittest.TestCase):
+    """`SPAWNS_PROCESS = False` on a direct `Adapter` subclass (#903).
+
+    `register_adapter` decided by base class, so a custom HTTP adapter written the
+    way docs/configuration.md shows — a direct `Adapter` subclass — was audited as
+    a CLI and failed `--strict`.
+    """
+
+    def _register(self, key, cls):
+        from ai_jury import config as config_module
+
+        adapters.register_adapter(key, cls)
+
+        def forget():
+            adapters._VENDOR_ADAPTERS.pop(key, None)
+            config_module._REGISTERED_VENDORS.discard(key)
+            config_module._REGISTERED_ADAPTER_SPAWNS.pop(key, None)
+
+        self.addCleanup(forget)
+
+    def test_a_direct_subclass_that_opts_out_is_not_audited(self):
+        class DirectHttp(adapters.Adapter):
+            SPAWNS_PROCESS = False
+
+        self._register("direct-http", DirectHttp)
+        spec = AgentSpec(name="d", vendor="direct-http", model="m")
+        built = adapters.make_adapter(spec)
+        self.assertIsInstance(built, DirectHttp)
+        self.assertFalse(spawns_process(spec))
+        self.assertEqual(spawns_process(spec), built.SPAWNS_PROCESS)
+        self.assertEqual(privilege.audit_privilege([spec]), [])
+
+    def test_only_an_explicit_false_opts_out(self):
+        class Unsure(adapters.Adapter):
+            SPAWNS_PROCESS = None
+
+        self._register("unsure", Unsure)
+        spec = AgentSpec(name="u", vendor="unsure", command="x")
+        self.assertTrue(spawns_process(spec))
+        self.assertTrue(privilege.audit_agent(spec))
+
+    def test_a_direct_subclass_that_says_nothing_still_spawns(self):
+        class DirectCli(adapters.Adapter):
+            pass
+
+        self._register("direct-cli", DirectCli)
+        spec = AgentSpec(name="d", vendor="direct-cli", command="x")
+        self.assertTrue(spawns_process(spec))
+        self.assertTrue(privilege.audit_agent(spec))
+
+    def test_every_built_in_adapter_declares_what_it_does(self):
+        http = (adapters.LocalAdapter, adapters._HostedApiAdapter)
+        for key, cls in adapters._VENDOR_ADAPTERS.items():
+            with self.subTest(key=key):
+                self.assertEqual(cls.SPAWNS_PROCESS, not issubclass(cls, http))
+
+
+class AnAgySandboxValueCannotSwitchItOff(unittest.TestCase):
+    """`--sandbox=false` must not undo the injected `--sandbox` (#908 review).
+
+    agy parses `--sandbox` as a Go bool (`--sandbox=` answers `invalid boolean
+    value … strconv.ParseBool` on 1.2.12), and Go flags are last-wins, so
+    `--sandbox --sandbox=false` ran agy with no sandbox while the audit called it
+    sandboxed. Enforcement now removes every `--sandbox=<value>` first.
+    """
+
+    def _agy(self, *extra_args):
+        return AgentSpec(name="agy", vendor="google", command="agy", extra_args=list(extra_args))
+
+    def test_every_valued_spelling_is_removed_and_the_flag_is_injected(self):
+        for vendor in ("google", "weirdvendor"):
+            for args in (
+                ["--sandbox=false"],
+                ["--sandbox=0"],
+                ["--sandbox=FALSE"],
+                ["--sandbox=f"],
+                ["--sandbox=true"],
+                ["--sandbox=read-only"],
+                ["--sandbox="],
+                ["-sandbox=false"],
+                ["--sandbox", "--sandbox=false"],
+                ["--sandbox=false", "--sandbox"],
+            ):
+                with self.subTest(vendor=vendor, args=args):
+                    argv = privilege.enforce_read_only(vendor, list(args))
+                    self.assertEqual(argv, ["--sandbox"])
+
+    def test_the_rest_of_the_argv_is_kept(self):
+        self.assertEqual(
+            privilege.enforce_read_only("google", ["--yolo", "--sandbox=false", "--mode", "plan"]),
+            ["--sandbox", "--yolo", "--mode", "plan"],
+        )
+
+    def test_a_false_value_is_reported_as_turning_the_sandbox_off(self):
+        for args in (
+            ["--sandbox=false"],
+            ["--sandbox=0"],
+            ["--sandbox=FALSE"],
+            ["--sandbox", "--sandbox=false"],
+        ):
+            with self.subTest(args=args):
+                warnings = privilege.audit_agent(self._agy(*args))
+                self.assertEqual(len(warnings), 2, warnings)
+                self.assertEqual(warnings[0], agy_warning("agy"))
+                token = next(a for a in args if "=" in a)
+                self.assertIn(f"`{token}`", warnings[1])
+                self.assertIn("would turn agy's sandbox off", warnings[1])
+                self.assertIn("jury removes it", warnings[1])
+                self.assertNotIn("not agy's sandbox", warnings[1])
+
+    def test_an_unreadable_value_is_reported_as_one(self):
+        for args in (["--sandbox=read-only"], ["--sandbox="]):
+            with self.subTest(args=args):
+                warnings = privilege.audit_agent(self._agy(*args))
+                self.assertEqual(len(warnings), 2, warnings)
+                self.assertIn("not a value agy reads as true or false", warnings[1])
+
+    def test_both_kinds_are_named_in_their_own_sentences(self):
+        warnings = privilege.audit_agent(self._agy("--sandbox=0", "--sandbox=off", "--sandbox=F"))
+        self.assertEqual(len(warnings), 3, warnings)
+        self.assertIn("`--sandbox=0`, `--sandbox=F`", warnings[1])
+        self.assertIn("jury removes them", warnings[1])
+        self.assertIn("`--sandbox=<value>`", warnings[2])
+
+    def test_a_true_value_is_only_redundant(self):
+        for args in (["--sandbox=true"], ["--sandbox=1"], ["--sandbox", "--sandbox=True"]):
+            with self.subTest(args=args):
+                self.assertEqual(privilege.audit_agent(self._agy(*args)), [agy_warning("agy")])
+
+
+class AnAgySandboxThatIsAnotherOptionsValueIsNotTheSandbox(unittest.TestCase):
+    """Go's `flag` gives a string option the next token, whatever it is (#908 review).
+
+    In `--model --sandbox` the `--sandbox` is the model name: nothing was
+    injected, the audit said sandboxed, and agy ran without one. Parsing also
+    stops at the first positional, so a `--sandbox` after one is prompt text.
+    """
+
+    def test_every_value_option_consumes_the_sandbox(self):
+        for option in sorted(privilege._AGY_VALUE_OPTIONS):
+            for dashes in ("--", "-"):
+                args = [f"{dashes}{option}", "--sandbox"]
+                with self.subTest(args=args):
+                    self.assertFalse(privilege._is_sandboxed(args, vendor="google"))
+                    argv = privilege.enforce_read_only("google", list(args))
+                    self.assertEqual(argv, ["--sandbox", *args])
+                    self.assertTrue(privilege._is_sandboxed(argv, vendor="google"))
+
+    def test_the_list_holds_the_value_options_agy_help_names(self):
+        # From `agy --help` 1.2.12; each answered "flag needs an argument" alone.
+        for option in ("model", "log-file", "add-dir", "agent", "project", "conversation"):
+            with self.subTest(option=option):
+                self.assertIn(option, privilege._AGY_VALUE_OPTIONS)
+        for boolean in ("sandbox", "dangerously-skip-permissions", "continue", "c"):
+            with self.subTest(boolean=boolean):
+                self.assertNotIn(boolean, privilege._AGY_VALUE_OPTIONS)
+
+    def test_an_inline_value_consumes_nothing(self):
+        args = ["--model=gemini", "--sandbox"]
+        self.assertEqual(privilege.enforce_read_only("google", list(args)), args)
+
+    def test_a_sandbox_after_a_positional_or_terminator_is_not_a_flag(self):
+        # `---x` and `-=x` are Go's "bad flag syntax": parsing stops there too.
+        for args in (
+            ["review-this", "--sandbox"],
+            ["--", "--sandbox"],
+            ["-", "--sandbox"],
+            ["---x", "--sandbox"],
+            ["-=x", "--sandbox"],
+        ):
+            with self.subTest(args=args):
+                self.assertFalse(privilege._is_sandboxed(args, vendor="google"))
+                self.assertEqual(
+                    privilege.enforce_read_only("google", list(args)), ["--sandbox", *args]
+                )
+
+    def test_a_valued_sandbox_in_a_value_position_is_left_as_the_value(self):
+        args = ["--model", "--sandbox=false"]
+        self.assertEqual(privilege.enforce_read_only("google", list(args)), ["--sandbox", *args])
+        self.assertEqual(
+            privilege.audit_agent(
+                AgentSpec(name="agy", vendor="google", command="agy", extra_args=args)
+            ),
+            [agy_warning("agy")],
+        )
+
+    def test_codex_spellings_in_a_value_position_are_not_reported(self):
+        spec = AgentSpec(name="agy", vendor="google", command="agy", extra_args=["--model", "-s"])
+        self.assertEqual(privilege.audit_agent(spec), [agy_warning("agy")])
+
+
+class NothingAfterTheOptionTerminatorIsAFlag(unittest.TestCase):
+    """`--` ends the options for claude (commander) and codex (clap) (#908 review).
+
+    `--permission-mode=bypassPermissions -- --permission-mode=dontAsk` runs claude
+    in bypass mode: the last token is prompt text. The audit scanned past the
+    terminator, took `dontAsk` as the mode that applies and passed the seat, and
+    `--strict` let it through. Enforcement read flags there too, so a `--tools`,
+    `--disallowed-tools` or `--permission-mode` after `--` stopped the real one
+    being injected in front of it.
+    """
+
+    def _claude(self, *extra_args):
+        return AgentSpec(
+            name="claude", vendor="anthropic", command="claude", extra_args=list(extra_args)
+        )
+
+    def test_a_mode_after_the_terminator_does_not_hide_a_bypass(self):
+        args = ["--permission-mode=bypassPermissions", "--", "--permission-mode=dontAsk"]
+        self.assertEqual(privilege._claude_effective_mode(args), "bypassPermissions")
+        self.assertEqual(
+            privilege._claude_mode_override(args), "--permission-mode bypassPermissions"
+        )
+        warnings = privilege.audit_agent(self._claude(*args))
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("`--permission-mode bypassPermissions`", warnings[0])
+        self.assertIn("least-privilege check failed (--strict)", _strict_error(self._claude(*args)))
+
+    def test_the_skip_flag_after_the_terminator_is_prompt_text(self):
+        args = ["--", "--dangerously-skip-permissions"]
+        self.assertIsNone(privilege._claude_mode_override(args))
+        self.assertIsNone(privilege._claude_permission_bypass(args))
+        # The readers do not take it as the flag; the audit still reports it,
+        # fail-closed, rather than vouch that Claude never reads it (#908 review).
+        warnings = privilege.audit_agent(self._claude(*args))
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("jury cannot tell", warnings[0])
+        self.assertNotIn("bypass mode", warnings[0])
+        warnings = privilege.audit_agent(
+            self._claude("--permission-mode", "plan", "--", "--dangerously-skip-permissions")
+        )
+        self.assertEqual(len(warnings), 2)
+        self.assertIn("`--permission-mode plan`", warnings[0])
+        self.assertNotIn("bypass mode", warnings[0])
+        self.assertIn(
+            "item 4 of `extra_args` (it mentions `dangerously-skip-permissions`)", warnings[1]
+        )
+
+    def test_the_lockdown_is_injected_before_an_existing_terminator(self):
+        for tail in (
+            ["--permission-mode", "plan"],
+            ["--tools", "Read"],
+            ["--disallowed-tools", "Edit"],
+            ["--strict-mcp-config"],
+            ["--safe-mode", "--no-session-persistence"],
+        ):
+            with self.subTest(tail=tail):
+                argv = privilege.enforce_read_only("anthropic", ["--", *tail])
+                cut = argv.index("--")
+                self.assertEqual(argv[cut + 1 :], tail, "text after `--` was rewritten")
+                head = argv[:cut]
+                for flag in LOCKDOWN:
+                    self.assertIn(flag, head)
+                self.assertEqual(head[head.index("--disallowed-tools") + 1], DENY)
+                self.assertTrue(privilege._claude_is_locked_down(argv))
+                self.assertEqual(privilege._claude_tools(argv), [])
+
+    def test_a_terminator_that_is_an_options_value_ends_nothing(self):
+        args = ["--model", "--", "--permission-mode", "plan"]
+        self.assertEqual(privilege._claude_terminator(args), len(args))
+        argv = privilege.enforce_read_only("anthropic", list(args))
+        self.assertNotIn("dontAsk", argv)
+        warnings = privilege.audit_agent(self._claude(*args))
+        self.assertIn("`--permission-mode plan`", warnings[0])
+
+    def test_the_write_role_leaves_text_after_the_terminator_alone(self):
+        self.assertEqual(
+            privilege.enable_write(
+                "anthropic",
+                [
+                    "--permission-mode",
+                    "dontAsk",
+                    "--",
+                    "--tools",
+                    "Read",
+                    "--disallowed-tools",
+                    "X",
+                ],
+            ),
+            ["--dangerously-skip-permissions", "--", "--tools", "Read", "--disallowed-tools", "X"],
+        )
+
+    def test_every_direct_reader_stops_at_the_terminator(self):
+        self.assertFalse(privilege._claude_is_locked_down(["--", "--disallowed-tools", DENY]))
+        self.assertIsNone(privilege._claude_rejected_mode(["--", "--permission-mode", "bogus"]))
+        warnings = privilege.audit_agent(self._claude("--", "--permission-mode", "bogus"))
+        self.assertEqual(len(warnings), 1)
+        self.assertNotIn("rejects", warnings[0])
+        self.assertIn("jury cannot tell", warnings[0])
+        said = privilege._claude_skip_overrides(
+            [
+                "--dangerously-skip-permissions",
+                "--permission-mode",
+                "plan",
+                "--",
+                "--permission-mode",
+                "auto",
+            ]
+        )
+        self.assertIn("`--permission-mode plan`", said)
+        self.assertNotIn("`--permission-mode auto`", said)
+
+    def test_codex_reads_no_sandbox_after_the_terminator(self):
+        self.assertEqual(
+            privilege.enforce_read_only("openai", ["--", "-s", "read-only"]),
+            ["-s", "read-only", "--", "-s", "read-only"],
+        )
+        self.assertFalse(privilege._is_sandboxed(["--", "-s", "read-only"], vendor="openai"))
+        self.assertEqual(
+            privilege._competing_sandboxes(["-s", "read-only", "--", "--full-auto"], "openai"),
+            [],
+        )
+        self.assertEqual(
+            privilege.enable_write("openai", ["-s", "read-only", "--", "-s", "x"]),
+            ["-s", "workspace-write", "--", "-s", "x"],
+        )
+
+    def test_codex_adds_its_own_flags_when_they_are_only_prompt_text(self):
+        spec = AgentSpec(
+            name="codex",
+            vendor="openai",
+            command="codex",
+            extra_args=["--", "--skip-git-repo-check"],
+        )
+        argv = adapters.CodexAdapter(spec).build_argv("p")
+        self.assertIn("--skip-git-repo-check", argv[: argv.index("--")])
+
+
+class TheAuditFailsClosedOnTokensItCannotPlace(unittest.TestCase):
+    """A risky token the readers skip is reported, not trusted (#908 review, round 4).
+
+    `-pn -- --permission-mode=bypassPermissions`: commander reads `-pn` as `-p -n`,
+    `-n` takes `--` as the session name, and the mode after it is applied. The
+    readers took `--` as the terminator and audited the seat clean. They now model
+    combined short options, and any risky token they still do not read as a flag
+    draws a warning of its own, so `--strict` refuses the seat either way.
+    """
+
+    def _claude(self, *extra_args):
+        return AgentSpec(
+            name="claude", vendor="anthropic", command="claude", extra_args=list(extra_args)
+        )
+
+    def _codex(self, *extra_args):
+        return AgentSpec(
+            name="codex", vendor="openai", command="codex", extra_args=list(extra_args)
+        )
+
+    def test_a_combined_short_option_takes_the_terminator_as_its_value(self):
+        args = ["-pn", "--", "--permission-mode=bypassPermissions"]
+        self.assertEqual(privilege._claude_terminator(args), len(args))
+        self.assertEqual(privilege._claude_effective_mode(args), "bypassPermissions")
+        warnings = privilege.audit_agent(self._claude(*args))
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("`--permission-mode bypassPermissions`", warnings[0])
+        self.assertIn("least-privilege check failed (--strict)", _strict_error(self._claude(*args)))
+
+    def test_a_short_value_option_last_in_a_cluster_takes_the_next_token(self):
+        for token, kind in (
+            ("-n", "required"),
+            ("-pn", "required"),
+            ("-cpn", "required"),
+            ("-pd", "optional"),
+            ("-r", "optional"),
+            ("-np", None),  # `-n` takes `p` inline
+            ("-nfoo", None),
+            ("-pc", None),
+            ("-px", None),  # claude does not know `-x`
+            ("--name", None),
+        ):
+            with self.subTest(token=token):
+                self.assertEqual(privilege._claude_short_cluster(token), kind)
+
+    def test_an_optional_value_takes_only_a_token_that_is_not_an_option(self):
+        self.assertEqual(privilege._claude_value_positions(["-r", "abc", "--x"]), {1})
+        self.assertEqual(privilege._claude_value_positions(["--resume", "--", "x"]), set())
+        self.assertEqual(privilege._claude_terminator(["-d", "--", "x"]), 1)
+        self.assertEqual(privilege._claude_value_positions(["-pd", "api", "--x"]), {1})
+        self.assertEqual(privilege._claude_value_positions(["-pd"]), set())
+        self.assertEqual(privilege._claude_value_positions(["--resume", "abc", "--x"]), {1})
+        self.assertEqual(
+            privilege._claude_terminator(["--worktree", "wt", "--", "--permission-mode=plan"]), 2
+        )
+
+    def test_a_bypass_the_readers_do_not_place_still_warns(self):
+        cases = (
+            ["-np", "--", "--permission-mode=bypassPermissions"],
+            ["-pn", "x", "--", "--permission-mode=bypassPermissions"],
+            ["--", "--permission-mode", "acceptEdits"],
+            ["--model", "--dangerously-skip-permissions"],
+            ["--", "--allow-dangerously-skip-permissions"],
+            ["--settings", '{"permissions": {"defaultMode": "bypassPermissions"}}'],
+            ["--", "--tools", "Read"],
+            ["--append-system-prompt", "--mcp-config=/tmp/servers.json"],
+        )
+        for args in cases:
+            with self.subTest(args=args):
+                warnings = privilege.audit_agent(self._claude(*args))
+                self.assertTrue(any("jury cannot tell" in w for w in warnings), warnings)
+                self.assertIn(
+                    "least-privilege check failed (--strict)", _strict_error(self._claude(*args))
+                )
+
+    def test_a_short_value_option_with_its_value_and_no_risk_audits_clean(self):
+        for args in (["-n", "--"], ["-pn", "review"], ["-n", "x", "--", "just text"]):
+            with self.subTest(args=args):
+                self.assertEqual(privilege.audit_agent(self._claude(*args)), [])
+
+    def test_the_readers_own_findings_are_not_repeated(self):
+        for args in (
+            ["--permission-mode", "bypassPermissions"],
+            ["--permission-mode=plan"],
+            ["--dangerously-skip-permissions"],
+            ["--tools", "Read"],
+            ["--mcp-config", "/tmp/s.json"],
+            ["--permission-mode", "dontAsk"],
+            ["--", "--permission-mode", "dontAsk"],
+            ["--", "--tools", ""],
+        ):
+            with self.subTest(args=args):
+                self.assertEqual(privilege._claude_unread_risks(args), [])
+
+    def test_codex_bypass_tokens_the_readers_do_not_place_warn(self):
+        for args in (
+            ["--", "--yolo"],
+            ["--", "-s", "danger-full-access"],
+            ["-c", 'sandbox_mode="danger-full-access"'],
+            ["--", "--dangerously-bypass-approvals-and-sandbox"],
+        ):
+            with self.subTest(args=args):
+                warnings = privilege.audit_agent(self._codex(*args))
+                self.assertTrue(any("jury cannot tell" in w for w in warnings), warnings)
+
+    def test_codex_tokens_already_reported_are_not_repeated(self):
+        warnings = privilege.audit_agent(self._codex("--full-auto"))
+        self.assertEqual(len(warnings), 1)
+        self.assertNotIn("jury cannot tell", warnings[0])
+        self.assertEqual(privilege.audit_agent(self._codex("--", "-s", "read-only")), [])
+
+
+#: Secret-shaped test values (#908 review, round 5). The first is the shape the
+#: redaction helper knows; the second is one it does not, so only the audit's
+#: own refusal to repeat argv values keeps it out.
+FAKE_KEY = "sk-ant-api03-FAKEFAKEFAKEFAKEFAKEFAKEFAKE0123456789"
+FAKE_PLAIN = "KEY=hunter2hunter2"
+SETTINGS = (
+    '{"permissions": {"defaultMode": "bypassPermissions"}, '
+    f'"env": {{"ANTHROPIC_API_KEY": "{FAKE_KEY}", "OTHER": "{FAKE_PLAIN}"}}}}'
+)
+
+
+class NoWarningRepeatsAnArgvValue(unittest.TestCase):
+    """A warning names what it found; it never prints the token (#908 review, round 5).
+
+    The fail-closed warning printed a whole `--settings` JSON, API key included,
+    and every other warning printed the argv value it was about.
+    """
+
+    SEATS = {
+        "claude settings JSON": AgentSpec(
+            name="c", vendor="anthropic", command="claude", extra_args=["--settings", SETTINGS]
+        ),
+        "claude token after --": AgentSpec(
+            name="c",
+            vendor="anthropic",
+            command="claude",
+            extra_args=["--", f"--permission-mode={FAKE_PLAIN}{FAKE_KEY}"],
+        ),
+        "claude rejected mode": AgentSpec(
+            name="c",
+            vendor="anthropic",
+            command="claude",
+            extra_args=["--permission-mode", f"{FAKE_PLAIN}{FAKE_KEY}"],
+        ),
+        "claude tool names": AgentSpec(
+            name="c",
+            vendor="anthropic",
+            command="claude",
+            extra_args=["--tools", f"Read,{FAKE_PLAIN},{FAKE_KEY}"],
+        ),
+        "codex -c override": AgentSpec(
+            name="x",
+            vendor="openai",
+            command="codex",
+            extra_args=["-c", f'sandbox_mode="danger-full-access" {FAKE_PLAIN} {FAKE_KEY}'],
+        ),
+        "codex second sandbox value": AgentSpec(
+            name="x",
+            vendor="openai",
+            command="codex",
+            extra_args=["-s", "read-only", "-s", f"{FAKE_PLAIN}{FAKE_KEY}"],
+        ),
+        "codex selector value": AgentSpec(
+            name="x",
+            vendor="openai",
+            command="codex",
+            extra_args=[f"--full-auto={FAKE_PLAIN}{FAKE_KEY}"],
+        ),
+        "agy sandbox value": AgentSpec(
+            name="g",
+            vendor="google",
+            command="agy",
+            extra_args=[f"--sandbox={FAKE_PLAIN}{FAKE_KEY}"],
+        ),
+        "agy codex spellings": AgentSpec(
+            name="g",
+            vendor="google",
+            command="agy",
+            extra_args=["-s", f"{FAKE_PLAIN}{FAKE_KEY}", f"-s={FAKE_PLAIN}{FAKE_KEY}"],
+        ),
+    }
+
+    def _assert_clean(self, text):
+        self.assertNotIn("hunter2", text)
+        self.assertNotIn("FAKEFAKE", text)
+        self.assertNotIn("sk-ant-api03", text)
+
+    def test_no_warning_repeats_a_secret(self):
+        for name, spec in self.SEATS.items():
+            with self.subTest(seat=name):
+                warnings = privilege.audit_agent(spec)
+                self.assertTrue(warnings, "the seat must still be warned about")
+                self._assert_clean("\n".join(warnings))
+
+    def test_the_strict_refusal_repeats_no_secret(self):
+        for name, spec in self.SEATS.items():
+            with self.subTest(seat=name):
+                error = _strict_error(spec)
+                self.assertIn("least-privilege check failed (--strict)", error)
+                self._assert_clean(error)
+
+    def test_the_settings_json_is_named_by_position_and_marker(self):
+        warnings = privilege.audit_agent(self.SEATS["claude settings JSON"])
+        self.assertTrue(
+            any("item 2 of `extra_args` (it mentions `bypassPermissions`)" in w for w in warnings),
+            warnings,
+        )
+
+    def test_known_words_are_still_named(self):
+        spec = AgentSpec(
+            name="x", vendor="openai", command="codex", extra_args=["-s", "danger-full-access"]
+        )
+        self.assertIn("danger-full-access", privilege.audit_agent(spec)[0])
+        self.assertIn(
+            "`--tools Read,<tool>`",
+            privilege.audit_agent(
+                AgentSpec(
+                    name="c",
+                    vendor="anthropic",
+                    command="claude",
+                    extra_args=["--tools", "Read,mcp__x__y"],
+                )
+            )[0],
+        )
+
+    def test_a_tool_name_outside_the_built_in_list_is_not_repeated(self):
+        # #908 review, round 6: a letters-only rule printed any alphabetic secret,
+        # and redaction does not recognise one.
+        spec = AgentSpec(
+            name="c",
+            vendor="anthropic",
+            command="claude",
+            extra_args=["--tools", "CorrectHorseBatteryStaple,Read,mcp__srv__tool"],
+        )
+        warnings = privilege.audit_agent(spec)
+        self.assertTrue(warnings)
+        text = "\n".join(warnings)
+        self.assertNotIn("CorrectHorseBatteryStaple", text)
+        self.assertNotIn("mcp__srv__tool", text)
+        self.assertIn("`--tools <tool>,Read,<tool>`", text)
+        error = _strict_error(spec)
+        self.assertIn("least-privilege check failed (--strict)", error)
+        self.assertNotIn("CorrectHorseBatteryStaple", error)
+
+    def test_every_built_in_tool_name_is_still_named(self):
+        for name in (*privilege._CLAUDE_DENIED_TOOLS, "TodoWrite", "default"):
+            with self.subTest(name=name):
+                spec = AgentSpec(
+                    name="c", vendor="anthropic", command="claude", extra_args=["--tools", name]
+                )
+                self.assertIn(f"`--tools {name}`", privilege.audit_agent(spec)[0])
+
+    def test_every_warning_is_redacted_as_well(self):
+        # Defence in depth: a secret-shaped seat name is not an argv value the
+        # sentences guard against, and the redaction pass still masks it.
+        spec = AgentSpec(name=FAKE_KEY, vendor="google", command="agy")
+        warnings = privilege.audit_agent(spec)
+        self.assertTrue(warnings)
+        self._assert_clean("\n".join(warnings))
 
 
 if __name__ == "__main__":

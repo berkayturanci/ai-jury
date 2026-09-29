@@ -151,9 +151,10 @@ That error is raised **everywhere the name is read**, not only by
 run does, so it reports the config error as its verdict — `ready to run: no`,
 naming the seat and the adapter, describing no seat — instead of a bench the run
 will refuse. And the adapter lookup itself refuses a name it does not have rather
-than falling through to the generic CLI adapter, which covers the readers that
-deliberately do *not* validate the whole file: `jury run-agent`, which drives one
-named seat, exits `2` with the same message. Falling through was the last place
+than falling through to the generic CLI adapter, which covers a caller that builds
+a seat without validating the file (Python calling `make_adapter` directly).
+`jury run-agent` validates the file as a review does (#903) and exits `2` with the
+same message. Falling through was the last place
 the silent guess survived: `--doctor` used to print three `[available]` rows and
 `cross-vendor ready: yes` for the very file `jury` rejected before its first
 round. (An unknown *vendor* still falls through, because that seat named no
@@ -454,7 +455,7 @@ The document is `schema_version: "ai-jury.doctor.v1"`:
 ```json
 {
   "schema_version": "ai-jury.doctor.v1",
-  "tool_version": "1.20.1",
+  "tool_version": "1.21.0",
   "python": "3.12.14",
   "config_path": "/path/to/jury.toml",
   "ready": true,
@@ -941,6 +942,8 @@ from ai_jury.adapters import Adapter, AgentResult, register_adapter
 
 
 class CustomCompanyAdapter(Adapter):
+    SPAWNS_PROCESS = False  # it calls a backend over the network, no subprocess
+
     def available(self) -> bool:
         return True  # whether your backend is reachable (shown by --doctor)
 
@@ -962,6 +965,8 @@ class CustomCompanyAdapter(Adapter):
 # Teach this build the vendor name so a seat can select it.
 register_adapter("company-llm", CustomCompanyAdapter)
 ```
+
+`SPAWNS_PROCESS = False` tells the least-privilege audit the adapter runs no subprocess, so its seats are not warned about (or failed by `--strict`) as unsandboxed CLIs; leave it out (it defaults to `True`) for an adapter that spawns one.
 
 Reference it from a seat like any built-in vendor (no `command` — your `run()`
 is the invocation):

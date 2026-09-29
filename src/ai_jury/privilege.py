@@ -33,7 +33,12 @@ Required read-only invocation per adapter (documented here and in docs/security.
                 the config names no sandbox at all. A wider sandbox the operator
                 DID name (``workspace-write``/``danger-full-access``) is kept as
                 written and flagged here, so the opt-in is a knowing one.
-- ``agy``/gemini : ``--sandbox`` (the shipped default), injected when absent.
+- ``agy``/gemini : ``--sandbox`` (the shipped default), injected unless the
+                argv already has that boolean flag — codex's ``-s read-only``,
+                which agy does not have, does not count (#902), and neither
+                does a ``--sandbox`` that is another option's value. Every
+                ``--sandbox=<value>`` is removed first, since agy reads
+                ``--sandbox=false`` as switching the flag off (#908 review).
                 ``--dangerously-skip-permissions`` / ``--yolo`` only skip an
                 approval prompt, so the sandbox beside them — whether the
                 operator wrote it or this module injected it — is what settles
@@ -55,6 +60,7 @@ from __future__ import annotations
 from pathlib import PureWindowsPath
 
 from .config import GENERIC_CLI_VENDORS, normalise_vendor, spawns_process, spec_adapter
+from .redaction import redact
 
 # Flags that grant broad write/tool/network powers — dangerous for a reviewer.
 _DANGEROUS_FLAGS: tuple[str, ...] = (
@@ -152,6 +158,76 @@ _CODEX_SANDBOX_DISABLERS: tuple[str, ...] = (
 )
 
 
+#: The only argv values a warning repeats (#908 review, round 5): words from the
+#: CLIs' own vocabularies. A warning is printed to a terminal and a CI log, and
+#: an argv value can be anything an operator put in ``extra_args`` — a
+#: ``--settings`` JSON with an API key in it was echoed whole — so any other
+#: value is shown as ``<value>``, whatever it looks like.
+_SHOWN_VALUES: frozenset[str] = frozenset(
+    {
+        # claude permission modes, accepted and hidden
+        "acceptEdits",
+        "auto",
+        "bypassPermissions",
+        "default",
+        "dontAsk",
+        "manual",
+        "plan",
+        # codex sandbox values
+        "read-only",
+        "workspace-write",
+        "danger-full-access",
+        # Go's ParseBool spellings (agy's `--sandbox=<value>`)
+        "1",
+        "t",
+        "T",
+        "TRUE",
+        "true",
+        "True",
+        "0",
+        "f",
+        "F",
+        "FALSE",
+        "false",
+        "False",
+    }
+)
+
+#: The ``--tools`` names a warning may repeat: a fixed list, never a shape (#908
+#: review, round 6 — a letters-only rule printed ``CorrectHorseBatteryStaple``).
+#: Claude Code's built-in tools as this module already names them in the deny
+#: list (:data:`_CLAUDE_DENIED_TOOLS`, each checked against 2.1.236), plus
+#: ``TodoWrite``, the built-in that only edits the session's todo list, and the
+#: ``default`` keyword ``claude --help`` documents for ``--tools`` ("``default``
+#: to use all tools"). Anything else, an ``mcp__…`` tool included, is ``<tool>``.
+_SHOWN_TOOLS: frozenset[str] = frozenset({*_CLAUDE_DENIED_TOOLS, "TodoWrite", "default"})
+
+
+def _shown_value(value: str) -> str:
+    """*value* if it is in :data:`_SHOWN_VALUES`, else ``<value>``."""
+    return value if value in _SHOWN_VALUES else "<value>"
+
+
+def _shown_flag(token: str) -> str:
+    """A ``--flag`` or ``--flag=value`` token with its value passed through :func:`_shown_value`."""
+    if "=" not in token:
+        return token
+    flag, value = token.split("=", 1)
+    return f"{flag}={_shown_value(value)}"
+
+
+def _shown_positions(found: list[tuple[int, str]], offset: int) -> str:
+    """Unplaced risky tokens, by position in ``extra_args`` and the marker each carries.
+
+    The token itself is never shown (#908 review, round 5): it can hold a whole
+    ``--settings`` JSON. *offset* is how many tokens enforcement put in front of
+    the configured ones, which it only ever prepends.
+    """
+    return ", ".join(
+        f"item {i - offset + 1} of `extra_args` (it mentions `{mark}`)" for i, mark in found
+    )
+
+
 def _disallowed_tools_at(args: list[str], i: int) -> tuple[str, int] | None:
     """Read a ``--disallowed-tools`` flag at *args[i]*, in either spelling.
 
@@ -208,7 +284,7 @@ def _is_sandboxed(extra_args: list[str], vendor: str = "") -> bool:
     vendor = normalise_vendor(vendor)
     is_agy = vendor == "google"
     is_codex = _is_codex(vendor)
-    args = list(extra_args)
+    args = _codex_options(extra_args) if is_codex else list(extra_args)
     for i, a in enumerate(args):
         # Equals form (issue #316/L-6): `-s=read-only` / `--sandbox=read-only`,
         # which `enforce_read_only._ensure_value_sandbox` already recognizes — so
@@ -218,18 +294,233 @@ def _is_sandboxed(extra_args: list[str], vendor: str = "") -> bool:
             value = a.split("=", 1)[1]
             if is_codex and value in _RESTRICTING_SANDBOX_VALUES:
                 return True
-            if a.startswith("--sandbox=") and is_agy and value == "":
-                return True
             continue
         if a in ("-s", "--sandbox"):
             nxt = args[i + 1] if i + 1 < len(args) else ""
             # Codex only: an explicit read-only sandbox value.
             if is_codex and nxt in _RESTRICTING_SANDBOX_VALUES:
                 return True
-            # agy/gemini: bare boolean --sandbox (no value, or another flag next).
-            if a == "--sandbox" and is_agy and (nxt == "" or nxt.startswith("-")):
-                return True
+    # agy/gemini: its boolean --sandbox, read by the same rule enforcement injects
+    # it by (#902), so what counts as confined here is what enforcement produced.
+    return is_agy and _agy_bare_sandbox(args)
+
+
+#: agy options that take a value, from ``agy --help`` (1.2.12): each answered
+#: ``flag needs an argument`` when given alone (``agy --model``, checked by hand;
+#: no prompt, no model call). agy parses its flags with Go's ``flag`` rules, which
+#: hand such an option the next token *whatever it looks like*, so in
+#: ``--model --sandbox`` the ``--sandbox`` is a model name, not the sandbox (#908
+#: review) — the agy counterpart of :data:`_CLAUDE_VALUE_OPTIONS`. Names without
+#: dashes: Go accepts ``-x`` and ``--x`` alike.
+_AGY_VALUE_OPTIONS: frozenset[str] = frozenset(
+    {
+        "add-dir",
+        "agent",
+        "conversation",
+        "effort",
+        "i",
+        "input-format",
+        "json-schema",
+        "log-file",
+        "mode",
+        "model",
+        "output-format",
+        "p",
+        "print",
+        "print-timeout",
+        "project",
+        "prompt",
+        "prompt-interactive",
+    }
+)
+
+#: The values Go's ``strconv.ParseBool`` reads as true. agy 1.2.12 parses
+#: ``--sandbox=<value>`` with it (``--sandbox=`` answers ``invalid boolean value
+#: … strconv.ParseBool``), so ``--sandbox=false``/``0``/``f``/``FALSE`` turn the
+#: sandbox off, and — Go's flags being last-wins — override a ``--sandbox``
+#: before them. Anything outside these and the false spellings is rejected.
+_GO_TRUE_VALUES: tuple[str, ...] = ("1", "t", "T", "TRUE", "true", "True")
+_GO_FALSE_VALUES: tuple[str, ...] = ("0", "f", "F", "FALSE", "false", "False")
+
+
+def _agy_flag_name(token: str) -> str | None:
+    """The name *token* gives agy's Go flag parser (``-x``, ``--x``, ``--x=v``), or None."""
+    if not token.startswith("-") or token in ("-", "--"):
+        return None
+    body = token[2:] if token.startswith("--") else token[1:]
+    if not body or body.startswith(("-", "=")):
+        return None
+    return body.split("=", 1)[0]
+
+
+def _agy_flag_positions(extra_args: list[str]) -> list[int]:
+    """The indices of *extra_args* agy reads as flags, by Go's ``flag`` rules.
+
+    An option in :data:`_AGY_VALUE_OPTIONS` written without ``=`` takes the next
+    token as its value, and parsing stops at the first token that is not a flag
+    (a positional) or after ``--``: a ``--sandbox`` after either is not a flag.
+    The argv the adapter puts before these (``--input-format stream-json
+    --output-format stream-json`` and ``--model <id>``) is flags and values only,
+    so the configured args start where agy is still reading flags.
+    """
+    args = list(extra_args)
+    flags: list[int] = []
+    i = 0
+    while i < len(args):
+        name = _agy_flag_name(args[i])
+        if name is None:
+            break
+        flags.append(i)
+        i += 2 if name in _AGY_VALUE_OPTIONS and "=" not in args[i] else 1
+    return flags
+
+
+def _agy_bare_sandbox(extra_args: list[str]) -> bool:
+    """agy's boolean ``--sandbox`` at a flag position: followed by another flag or nothing.
+
+    The one sandbox agy has. ``agy --help`` (1.2.12) lists ``--sandbox`` with no
+    value and no ``-s`` at all, so codex's ``-s read-only`` is not a sandbox on an
+    agy seat, and neither is a ``--sandbox`` that a value follows (agy reads the
+    value as prompt text), one that is another option's value, or one after a
+    positional (Go stops reading flags there). ``--sandbox=<value>`` is not it
+    either: :func:`enforce_read_only` removes those. Shared by that function,
+    which injects ``--sandbox`` unless this holds, and :func:`_is_sandboxed`,
+    which audits it (#902): the enforcement used to accept any
+    ``-s``/``--sandbox=`` token, so an agy seat with ``-s read-only`` was spawned
+    without its real sandbox.
+    """
+    args = list(extra_args)
+    for i in _agy_flag_positions(args):
+        if args[i] != "--sandbox":
+            continue
+        nxt = args[i + 1] if i + 1 < len(args) else ""
+        if nxt == "" or nxt.startswith("-"):
+            return True
     return False
+
+
+def _agy_sandbox_values(extra_args: list[str]) -> list[int]:
+    """Indices of ``--sandbox=<value>`` / ``-sandbox=<value>`` at agy flag positions."""
+    args = list(extra_args)
+    return [
+        i
+        for i in _agy_flag_positions(args)
+        if _agy_flag_name(args[i]) == "sandbox" and "=" in args[i]
+    ]
+
+
+def _ensure_agy_sandbox(extra_args: list[str]) -> list[str]:
+    """agy's boolean ``--sandbox``, guaranteed; every ``--sandbox=<value>`` removed.
+
+    Removed first, fail-closed (#908 review): agy reads ``--sandbox=false`` as a
+    Go bool and its flags are last-wins, so injecting ``--sandbox`` in front of it
+    gave ``--sandbox --sandbox=false`` — a seat the audit accepted as sandboxed
+    and agy ran without one. A true value only repeats the flag and an
+    unparseable one stops agy starting, so removing every value is safe;
+    :func:`audit_agent` reports the ones that were not true.
+    """
+    args = list(extra_args)
+    drop = set(_agy_sandbox_values(args))
+    kept = [a for i, a in enumerate(args) if i not in drop]
+    if _agy_bare_sandbox(kept):
+        return kept
+    return ["--sandbox", *kept]
+
+
+def _agy_sandbox_switched_off(extra_args: list[str]) -> list[tuple[str, bool]]:
+    """The ``--sandbox=<value>`` tokens written to turn agy's sandbox off, as written.
+
+    A false value (``false``, ``0``, ``f``, ``FALSE`` …) or one Go's
+    ``ParseBool`` rejects; a true one only repeats the flag and is not reported.
+    Read from the *declared* args, since enforcement removes them. Each is
+    ``(shown, is_false)``; a value outside Go's spellings is shown as ``<value>``.
+    """
+    args = list(extra_args)
+    found: list[tuple[str, bool]] = []
+    for i in _agy_sandbox_values(args):
+        flag, value = args[i].split("=", 1)
+        if value not in _GO_TRUE_VALUES:
+            found.append((f"{flag}={_shown_value(value)}", value in _GO_FALSE_VALUES))
+    return found
+
+
+def _agy_foreign_sandbox_tokens(extra_args: list[str]) -> list[str]:
+    """Sandbox-looking tokens agy does not read as its sandbox, as written (#902).
+
+    codex's ``-s`` in either spelling (agy has no ``-s``) and a ``--sandbox`` with
+    a value after it, at flag positions. The boolean ``--sandbox`` is injected
+    beside them, so the seat is sandboxed as far as agy's flag goes; they are
+    reported because they do not do what they look like they do.
+    ``--sandbox=<value>`` is not here: enforcement removes it, and
+    :func:`_agy_sandbox_switched_off` reports it.
+    """
+    args = list(extra_args)
+    found: list[str] = []
+    for i in _agy_flag_positions(args):
+        a = args[i]
+        if a.startswith("-s="):
+            found.append(_shown_flag(a))
+            continue
+        if a not in ("-s", "--sandbox"):
+            continue
+        nxt = args[i + 1] if i + 1 < len(args) else ""
+        if nxt and not nxt.startswith("-"):
+            found.append(f"{a} {_shown_value(nxt)}")
+        elif a == "-s":
+            found.append(a)
+    return found
+
+
+def _codex_options(extra_args: list[str]) -> list[str]:
+    """The part of a codex argv its parser reads options from: up to the first ``--``.
+
+    codex's parser (clap) reads what follows ``--`` as arguments, so a ``-s
+    read-only`` there is prompt text, not a sandbox (#908 review): it must not
+    stop the injection or pass the audit.
+    """
+    args = list(extra_args)
+    return args[: args.index("--")] if "--" in args else args
+
+
+#: Substrings that make a codex token able to widen or remove its sandbox,
+#: wherever it sits (#908 review): the wide sandbox values (also as a ``-c
+#: sandbox_mode=…`` override), the selector and both bypass spellings.
+_CODEX_RISK_MARKS: tuple[str, ...] = (
+    "danger-full-access",
+    "workspace-write",
+    "full-auto",
+    "yolo",
+    "dangerously-bypass-approvals-and-sandbox",
+)
+
+
+def _codex_unread_risks(extra_args: list[str]) -> list[tuple[int, str]]:
+    """codex tokens that could widen its sandbox and that no other warning names.
+
+    ``(index, marker)`` pairs, never the token (#908 review, round 5). The
+    fail-closed counterpart of :func:`_competing_sandboxes`, which reads only
+    options before ``--`` and only the selector, bypass and ``-s``/``--sandbox``
+    spellings: a marker after ``--``, inside a ``-c`` override, or anywhere else
+    is reported instead of trusted to be inert.
+    """
+    args = list(extra_args)
+    cut = len(_codex_options(args))
+    flags = (*_CODEX_SANDBOX_SELECTORS, *_CODEX_SANDBOX_DISABLERS)
+    covered: set[int] = set()
+    for i in range(cut):
+        a = args[i]
+        if any(a == f or a.startswith(f + "=") for f in flags) or a.startswith(
+            ("-s=", "--sandbox=")
+        ):
+            covered.add(i)
+        elif a in ("-s", "--sandbox") and i + 1 < cut:
+            covered.add(i + 1)
+    found: list[tuple[int, str]] = []
+    for i, a in enumerate(args):
+        mark = next((m for m in _CODEX_RISK_MARKS if m in a), None)
+        if mark is not None and i not in covered:
+            found.append((i, mark))
+    return found
 
 
 def _is_codex(vendor: str) -> bool:
@@ -273,26 +564,29 @@ def _competing_sandboxes(extra_args: list[str], vendor: str = "") -> list[tuple[
     nothing, a sandbox token already exists — and which one the CLI honours is its
     own argument precedence, not something this module can read.
 
-    A ``-s``/``--sandbox`` whose next token is another flag, or absent, is agy's
-    boolean sandbox and states nothing.
+    A ``-s``/``--sandbox`` whose next token is another flag, or absent, states
+    no value and so nothing here. Codex only: a value sandbox is codex's syntax,
+    and on an agy seat the same tokens are not a second sandbox but a flag agy
+    does not have — :func:`_agy_foreign_sandbox_tokens` reports those (#902).
     """
-    args = list(extra_args)
+    args = _codex_options(extra_args)
     found: list[tuple[str, bool]] = []
-    if _is_codex(vendor):
-        for flag in _CODEX_SANDBOX_SELECTORS:
-            token = _present(flag, args)
-            if token:
-                found.append((token, False))
-        for flag in _CODEX_SANDBOX_DISABLERS:
-            token = _present(flag, args)
-            if token:
-                found.append((token, True))
+    if not _is_codex(vendor):
+        return found
+    for flag in _CODEX_SANDBOX_SELECTORS:
+        token = _present(flag, args)
+        if token:
+            found.append((_shown_flag(token), False))
+    for flag in _CODEX_SANDBOX_DISABLERS:
+        token = _present(flag, args)
+        if token:
+            found.append((_shown_flag(token), True))
     for i, a in enumerate(args):
         if a.startswith(("-s=", "--sandbox=")):
-            value, shown = a.split("=", 1)[1], a
+            value, shown = a.split("=", 1)[1], _shown_flag(a)
         elif a in ("-s", "--sandbox"):
             value = args[i + 1] if i + 1 < len(args) else ""
-            shown = f"{a} {value}"
+            shown = f"{a} {_shown_value(value)}"
         else:
             continue
         if not value or value.startswith("-"):
@@ -356,6 +650,65 @@ _CLAUDE_VARIADIC_OPTIONS: frozenset[str] = frozenset(
 )
 
 
+#: claude options declared ``[value]``: commander gives one the next token only
+#: when that token does not start with ``-``. From ``claude --help`` of Claude
+#: Code 2.1.236, with the short aliases it lists (``-d``, ``-r``, ``-w``).
+_CLAUDE_OPTIONAL_VALUE_OPTIONS: frozenset[str] = frozenset(
+    {
+        "--cloud",
+        "--debug",
+        "--from-pr",
+        "--prompt-suggestions",
+        "--remote-control",
+        "--resume",
+        "--teleport",
+        "--worktree",
+        "-d",
+        "-r",
+        "-w",
+    }
+)
+
+#: Every short option ``claude --help`` (2.1.236) lists, and whether it takes a
+#: value: ``None`` for a switch, ``"required"`` for ``-n <name>``, ``"optional"``
+#: for ``-d [filter]``, ``-r [value]`` and ``-w [name]``. commander reads a
+#: combined token such as ``-pn`` as ``-p -n`` (#908 review): a switch hands the
+#: rest of the token on as another short option, and a value option takes the
+#: rest of the token as its value, or, when nothing is left, the next token — so
+#: in ``-pn -- --permission-mode=bypassPermissions`` the ``--`` is the session
+#: name, and the mode after it is read.
+_CLAUDE_SHORT_OPTIONS: dict[str, str | None] = {
+    "c": None,
+    "h": None,
+    "p": None,
+    "v": None,
+    "n": "required",
+    "d": "optional",
+    "r": "optional",
+    "w": "optional",
+}
+
+
+def _claude_short_cluster(token: str) -> str | None:
+    """What a single-dash *token* leaves for the next token: its value kind, or None.
+
+    ``"required"`` / ``"optional"`` when the token ends on a value option with no
+    inline value (``-n``, ``-pn``, ``-cd``), ``None`` otherwise — a run of
+    switches, a value written inline (``-nfoo``), or a letter claude does not
+    know (it rejects the argv then, so no value is taken).
+    """
+    if not token.startswith("-") or token.startswith("--") or len(token) < 2:
+        return None
+    for j, letter in enumerate(token[1:], start=1):
+        if letter not in _CLAUDE_SHORT_OPTIONS:
+            return None
+        kind = _CLAUDE_SHORT_OPTIONS[letter]
+        if kind is None:
+            continue
+        return kind if j == len(token) - 1 else None
+    return None
+
+
 def _claude_value_positions(args: list[str]) -> frozenset[int]:
     """Indices of *args* that claude reads as an option's value, not as a flag."""
     values: set[int] = set()
@@ -365,6 +718,18 @@ def _claude_value_positions(args: list[str]) -> frozenset[int]:
         if a in _CLAUDE_VALUE_OPTIONS:
             values.add(i + 1)
             i += 2
+            continue
+        kind = "optional" if a in _CLAUDE_OPTIONAL_VALUE_OPTIONS else _claude_short_cluster(a)
+        if kind == "required":
+            values.add(i + 1)
+            i += 2
+            continue
+        if kind == "optional":
+            if i + 1 < len(args) and not args[i + 1].startswith("-"):
+                values.add(i + 1)
+                i += 2
+                continue
+            i += 1
             continue
         if a in _CLAUDE_VARIADIC_OPTIONS:
             j = i + 1
@@ -380,8 +745,91 @@ def _claude_value_positions(args: list[str]) -> frozenset[int]:
     return frozenset(v for v in values if v < len(args))
 
 
+def _claude_terminator(args: list[str]) -> int:
+    """The index of the ``--`` that ends claude's options, or ``len(args)``.
+
+    claude's parser (commander) reads every token after ``--`` as an argument,
+    not an option: ``--permission-mode=bypassPermissions -- --permission-mode=dontAsk``
+    runs in bypass mode, and the last token is prompt text (#908 review, checked
+    against Claude Code 2.1.236 with help-only probes). A ``--`` that is another
+    option's value (``--model --``) is that value, not the terminator.
+    """
+    values = _claude_value_positions(args)
+    for i, a in enumerate(args):
+        if a == "--" and i not in values:
+            return i
+    return len(args)
+
+
+#: Substrings that make a claude token able to change the reviewer's permission
+#: mode or tools, wherever it sits (#908 review): a ``--permission-mode…``
+#: spelling, either skip-permissions flag (``--dangerously-skip-permissions`` and
+#: ``--allow-dangerously-skip-permissions``, both in ``claude --help`` 2.1.236),
+#: an approving mode name, a settings ``defaultMode``, and the options that hand
+#: tools back (``--tools``, ``--mcp-config``). The mode words ``auto``,
+#: ``manual``, ``default`` and ``plan`` are not here: each takes effect only as
+#: the value of a ``--permission-mode`` token, which is, and ``auto`` is also an
+#: ordinary ``--autocompact`` value.
+_CLAUDE_RISK_MARKS: tuple[str, ...] = (
+    "permission-mode",
+    "dangerously-skip-permissions",
+    "bypassPermissions",
+    "acceptEdits",
+    "defaultMode",
+    "--tools",
+    "--mcp-config",
+)
+
+
+def _claude_unread_risks(extra_args: list[str]) -> list[tuple[int, str]]:
+    """Risky tokens the precise readers here do not read as flags: ``(index, marker)``.
+
+    Never the token itself (#908 review, round 5): a ``--settings`` JSON that
+    names ``defaultMode`` can carry an API key beside it.
+
+    Fail-closed on purpose (#908 review). The readers above model claude's parser
+    — value positions, ``=`` forms, ``--``, combined short options — and each
+    round of review found a corner they missed, every time one where a token
+    they skipped was one Claude applied. So a token carrying one of
+    :data:`_CLAUDE_RISK_MARKS` that those readers do not take as a flag — after
+    ``--``, as another option's value, or anywhere else — is reported rather
+    than trusted to be inert. ``--permission-mode dontAsk`` (in either spelling)
+    and ``--tools ""`` grant nothing and are not reported. Text that only
+    mentions such a token is reported too; that over-warning is the price.
+    """
+    args = list(extra_args)
+    cut = _claude_terminator(args)
+    values = _claude_value_positions(args)
+    read = {i for i in range(cut) if i not in values}
+    # The value of a `--permission-mode` that is read is read with it.
+    read |= {i + 1 for i in read if args[i] == "--permission-mode"}
+    found: list[tuple[int, str]] = []
+    for i, a in enumerate(args):
+        mark = next((m for m in _CLAUDE_RISK_MARKS if m in a), None)
+        if i in read or mark is None:
+            continue
+        nxt = args[i + 1] if i + 1 < len(args) else None
+        if a == "--permission-mode=dontAsk" or (a == "--permission-mode" and nxt == "dontAsk"):
+            continue
+        if a == "--tools=" or (a == "--tools" and nxt == ""):
+            continue
+        found.append((i, mark))
+    return found
+
+
+def _claude_options(extra_args: list[str]) -> list[str]:
+    """The part of a claude argv its parser reads options from: up to the terminator.
+
+    Every claude reader here scans this, not the whole argv, so text after ``--``
+    can neither hide a flag in front of it nor pass for one.
+    """
+    args = list(extra_args)
+    return args[: _claude_terminator(args)]
+
+
 def _claude_flag_present(flag: str, args: list[str]) -> bool:
     """*flag* (bare or ``flag=…``) at a flag position of *args*, not as a value."""
+    args = _claude_options(args)
     values = _claude_value_positions(args)
     return any(
         (a == flag or a.startswith(flag + "=")) and i not in values for i, a in enumerate(args)
@@ -405,7 +853,11 @@ def _ensure_claude_disallowed(extra_args: list[str]) -> list[str]:
                 existing.append(tool)
         return ",".join(existing)
 
-    args = list(extra_args)
+    # Options only (#908 review): a `--disallowed-tools` after `--` is prompt
+    # text, so it is neither merged nor taken as proof the flag is present.
+    everything = list(extra_args)
+    args = _claude_options(everything)
+    rest = everything[len(args) :]
     values = _claude_value_positions(args)
     out: list[str] = []
     i = 0
@@ -436,7 +888,7 @@ def _ensure_claude_disallowed(extra_args: list[str]) -> list[str]:
         i += 1
     if not found:
         out = ["--disallowed-tools", ",".join(_CLAUDE_DENIED_TOOLS), *out]
-    return out
+    return [*out, *rest]
 
 
 def _claude_tools_at(args: list[str], i: int) -> tuple[list[str], int] | None:
@@ -471,6 +923,7 @@ def _claude_tools(args: list[str]) -> list[str] | None:
     variadic option.
     """
     found: list[str] | None = None
+    args = _claude_options(args)
     values = _claude_value_positions(args)
     i = 0
     while i < len(args):
@@ -542,7 +995,11 @@ def _ensure_value_sandbox(extra_args: list[str], default: list[str]) -> list[str
     args = list(extra_args)
     # Recognize both the space form (-s read-only) and the equals form
     # (--sandbox=read-only) so an existing sandbox is never double-specified.
-    if any(a in ("-s", "--sandbox") or a.startswith(("-s=", "--sandbox=")) for a in args):
+    # Options only (#908 review): one after `--` is prompt text, not a sandbox.
+    if any(
+        a in ("-s", "--sandbox") or a.startswith(("-s=", "--sandbox="))
+        for a in _codex_options(args)
+    ):
         return args
     return [*default, *args]
 
@@ -578,7 +1035,9 @@ def _drop_claude_disallowed(extra_args: list[str]) -> list[str]:
     (rather than narrowing its value) restores the CLI's own default tool set,
     which is what an implementer role needs.
     """
-    args = list(extra_args)
+    everything = list(extra_args)
+    args = _claude_options(everything)
+    rest = everything[len(args) :]
     values = _claude_value_positions(args)
     out: list[str] = []
     i = 0
@@ -596,7 +1055,7 @@ def _drop_claude_disallowed(extra_args: list[str]) -> list[str]:
             continue
         out.append(a)
         i += 1
-    return out
+    return [*out, *rest]
 
 
 def _permission_mode_at(args: list[str], i: int) -> tuple[str, int] | None:
@@ -621,7 +1080,9 @@ def _claude_write_args(extra_args: list[str]) -> list[str]:
     both roles until they were split, which keeps the write role's argv what it
     was.
     """
-    args = _drop_claude_disallowed(extra_args)
+    everything = _drop_claude_disallowed(extra_args)
+    args = _claude_options(everything)
+    rest = everything[len(args) :]
     values = _claude_value_positions(args)
     skip_bypass = _claude_flag_present("--dangerously-skip-permissions", args)
     out: list[str] = []
@@ -638,19 +1099,23 @@ def _claude_write_args(extra_args: list[str]) -> list[str]:
             continue
         mode = _permission_mode_at(args, i)
         if mode is not None and mode[0] == _CLAUDE_REVIEW_MODE:
+            # Once: a second `dontAsk` (#888) must not add the flag again.
             if not skip_bypass:
                 out.append("--dangerously-skip-permissions")
+                skip_bypass = True
             i += mode[1]
             continue
         if a not in _CLAUDE_LOCKDOWN_FLAGS:
             out.append(a)
         i += 1
-    return out
+    return [*out, *rest]
 
 
 def _set_value_sandbox(extra_args: list[str], flag: str, value: str) -> list[str]:
     """Replace any existing value sandbox with ``flag value`` (codex form)."""
-    args = list(extra_args)
+    everything = list(extra_args)
+    args = _codex_options(everything)
+    rest = everything[len(args) :]
     out: list[str] = []
     i = 0
     while i < len(args):
@@ -666,7 +1131,7 @@ def _set_value_sandbox(extra_args: list[str], flag: str, value: str) -> list[str
             continue
         out.append(a)
         i += 1
-    return [flag, value, *out]
+    return [flag, value, *out, *rest]
 
 
 def _drop_bare_sandbox(extra_args: list[str]) -> list[str]:
@@ -776,8 +1241,12 @@ def enforce_read_only(vendor: str, extra_args: list[str]) -> list[str]:
     # an unknown vendor routes to the generic AgyAdapter (--print/--sandbox), so
     # inject --sandbox like agy. An agy-compatible CLI then runs sandboxed; an
     # incompatible one fails on the unknown flag rather than running UNSANDBOXED
-    # — fail-closed either way, never fail-open.
-    return _ensure_value_sandbox(extra_args, ["--sandbox"])
+    # — fail-closed either way, never fail-open. Only agy's own boolean
+    # `--sandbox` makes the injection unnecessary (#902): codex's `-s read-only`
+    # used to, and agy has no `-s`, so that seat ran without its sandbox. And a
+    # `--sandbox=<value>` is removed, so `--sandbox=false` cannot switch the
+    # injected flag off again (#908 review).
+    return _ensure_agy_sandbox(extra_args)
 
 
 def _claude_is_locked_down(extra_args: list[str]) -> bool:
@@ -793,7 +1262,7 @@ def _claude_is_locked_down(extra_args: list[str]) -> bool:
     leaves unchanged — in either spelling of the flag.
     """
     disallowed: set[str] = set()
-    args = list(extra_args)
+    args = _claude_options(extra_args)
     values = _claude_value_positions(args)
     i = 0
     while i < len(args):
@@ -824,7 +1293,9 @@ def _claude_open_surface(extra_args: list[str]) -> list[str]:
     if tools is None:  # pragma: no cover - enforcement injects `--tools ""`
         surface.append("the CLI's default tool set (no `--tools`)")
     elif tools:
-        surface.append(f"`--tools {','.join(dict.fromkeys(tools))}`")
+        # Built-in names from a fixed list; others are not repeated.
+        names = [t if t in _SHOWN_TOOLS else "<tool>" for t in dict.fromkeys(tools)]
+        surface.append(f"`--tools {','.join(names)}`")
     if _claude_flag_present("--mcp-config", args):
         surface.append("MCP servers from `--mcp-config`")
     if not _claude_flag_present("--strict-mcp-config", args):  # pragma: no cover - injected
@@ -844,7 +1315,7 @@ def _claude_rejected_mode(extra_args: list[str]) -> str | None:
     such a seat never runs, in bypass mode or any other. An empty value is shown
     as ``--permission-mode=`` and a missing one as ``--permission-mode``.
     """
-    args = list(extra_args)
+    args = _claude_options(extra_args)
     values = _claude_value_positions(args)
     accepted = (*_CLAUDE_KNOWN_MODES, "default")
     for i in range(len(args)):
@@ -852,13 +1323,31 @@ def _claude_rejected_mode(extra_args: list[str]) -> str | None:
         if mode is None or mode[0] in accepted:
             continue
         if mode[0]:
-            return f"--permission-mode {mode[0]}"
+            return f"--permission-mode {_shown_value(mode[0])}"
         return (
             "--permission-mode="
             if args[i].startswith("--permission-mode=")
             else ("--permission-mode")
         )
     return None
+
+
+def _claude_effective_mode(extra_args: list[str]) -> str | None:
+    """The ``--permission-mode`` Claude Code applies, or ``None`` when none is named.
+
+    The **last** one at a flag position (#888). Measured on Claude Code 2.1.236:
+    ``plan`` then ``dontAsk`` runs as ``dontAsk``, and ``dontAsk`` then ``plan``
+    runs as ``plan``. Only meaningful once :func:`_claude_rejected_mode` has
+    answered ``None`` — any rejected value stops the CLI, wherever it sits — and
+    it does not account for ``--dangerously-skip-permissions``, which overrides
+    whichever mode this returns, in either order.
+    """
+    args = _claude_options(extra_args)
+    values = _claude_value_positions(args)
+    named = [
+        m[0] for i in range(len(args)) if i not in values and (m := _permission_mode_at(args, i))
+    ]
+    return named[-1] if named else None
 
 
 def _claude_mode_override(extra_args: list[str]) -> str | None:
@@ -876,20 +1365,21 @@ def _claude_mode_override(extra_args: list[str]) -> str | None:
     the seat fails rather than running in bypass mode, and the warning must say so.
     An empty value is shown as ``--permission-mode=`` and a missing one as
     ``--permission-mode``, so neither renders as a flag with a blank after it.
+
+    Of several accepted modes, the one reported is the one the seat runs in: the
+    last (:func:`_claude_effective_mode`, #888). Reporting the first one that was
+    not ``dontAsk`` told an operator whose ``plan`` was followed by ``dontAsk``
+    that ``plan`` was in use, while the seat ran ``dontAsk``.
     """
     args = list(extra_args)
     rejected = _claude_rejected_mode(args)
     if rejected is not None:
         return rejected
-    values = _claude_value_positions(args)
-    named = [
-        m[0] for i in range(len(args)) if i not in values and (m := _permission_mode_at(args, i))
-    ]
     if _claude_flag_present("--dangerously-skip-permissions", args):
         return "--dangerously-skip-permissions"
-    for mode in named:
-        if mode != _CLAUDE_REVIEW_MODE:
-            return f"--permission-mode {mode}"
+    mode = _claude_effective_mode(args)
+    if mode is not None and mode != _CLAUDE_REVIEW_MODE:
+        return f"--permission-mode {mode}"
     return None
 
 
@@ -900,7 +1390,8 @@ def _claude_mode_override(extra_args: list[str]) -> str | None:
 #: ``--dangerously-skip-permissions`` before or after it let the read through.
 #: The flag also overrides a named ``plan`` or ``auto`` (the seat reports
 #: ``bypassPermissions``). A named ``--permission-mode`` is otherwise kept as
-#: written (nothing is injected beside it), so it is the mode the seat runs in.
+#: written (nothing is injected beside it), so it is the mode the seat runs in —
+#: the last one, when several are named (#888).
 #: ``default`` is not in Claude Code's listed choices but is accepted as an alias
 #: of ``manual``: its init event reports ``"permissionMode":"default"`` for both.
 _CLAUDE_MODE_EFFECTS: dict[str, tuple[str, bool]] = {
@@ -948,7 +1439,7 @@ def _claude_skip_overrides(extra_args: list[str]) -> str:
     beside a named ``plan`` or ``auto`` there is no ``dontAsk`` to override — the
     sentence names the mode that is actually there.
     """
-    args = list(extra_args)
+    args = _claude_options(extra_args)
     values = _claude_value_positions(args)
     modes = [
         m[0] for i in range(len(args)) if i not in values and (m := _permission_mode_at(args, i))
@@ -958,7 +1449,7 @@ def _claude_skip_overrides(extra_args: list[str]) -> str:
     )
     if not modes:  # pragma: no cover - enforcement injects `--permission-mode dontAsk`
         return f"overrides any `--permission-mode` ({measured})"
-    named = ", ".join(f"`--permission-mode {m}`" for m in dict.fromkeys(modes))
+    named = ", ".join(f"`--permission-mode {_shown_value(m)}`" for m in dict.fromkeys(modes))
     return f"overrides the {named} beside it ({measured})"
 
 
@@ -1018,11 +1509,11 @@ def _claude_permission_bypass(extra_args: list[str]) -> str | None:
         return None
     if _claude_flag_present("--dangerously-skip-permissions", args):
         return "--dangerously-skip-permissions"
-    values = _claude_value_positions(args)
-    for i in range(len(args)):
-        mode = None if i in values else _permission_mode_at(args, i)
-        if mode is not None and mode[0] in _CLAUDE_APPROVING_MODES:
-            return f"--permission-mode {mode[0]}"
+    # The mode the seat runs in, not any mode written (#888): an approving mode
+    # followed by `dontAsk` runs as `dontAsk`, and approves nothing.
+    mode = _claude_effective_mode(args)
+    if mode in _CLAUDE_APPROVING_MODES:
+        return f"--permission-mode {mode}"
     return None
 
 
@@ -1091,7 +1582,17 @@ def _checkout_only_warning(label: str, checkout: str) -> str:
 
 
 def audit_agent(spec) -> list[str]:
-    """Return least-privilege warnings for a single agent spec.
+    """Return least-privilege warnings for a single agent spec, redacted.
+
+    Each sentence is built to repeat no argv value outside :data:`_SHOWN_VALUES`
+    (#908 review, round 5); passing it through :func:`redaction.redact` as well
+    catches any secret-shaped text a future sentence lets through.
+    """
+    return [redact(w)[0] for w in _audit_agent(spec)]
+
+
+def _audit_agent(spec) -> list[str]:
+    """The warnings :func:`audit_agent` returns, before redaction.
 
     The subject is the **effective** argv — what ``adapters._read_only_extra_args``
     will spawn this seat with — not the ``extra_args`` written in the config
@@ -1148,7 +1649,8 @@ def audit_agent(spec) -> list[str]:
     # declared args, same function. The seat's name is an input to neither
     # (#758, #768) — which is what stops the auditor and the spawner disagreeing
     # about a seat whose name says one CLI and whose adapter key says another.
-    extra_args = enforce_read_only(vendor, list(getattr(spec, "extra_args", []) or []))
+    declared = list(getattr(spec, "extra_args", []) or [])
+    extra_args = enforce_read_only(vendor, declared)
     args_text = _args_str(extra_args)
     # A CLI that obeys its working directory's config (aider, cursor-agent) is
     # told so on every path below, sandboxed or not (#859, #901): no flag in the
@@ -1185,6 +1687,17 @@ def audit_agent(spec) -> list[str]:
                     f"them unasked — to read files outside the diff or reach the "
                     f"network. Drop them — a reviewer only reads its prompt."
                 )
+            elif _claude_rejected_mode(extra_args) is not None:
+                # The seat never starts: Claude Code rejects its `--permission-mode`
+                # (reported below). Said conditionally, then (#888 follow-up), so
+                # this does not read as a live exposure beside that sentence.
+                warnings.append(
+                    f"agent '{label}' (claude) is given {named} while reviewing "
+                    f"untrusted content; once the seat can start, a prompt injection "
+                    f"in the diff could ask for them, and whatever your Claude "
+                    f"settings pre-approve would run unasked. Drop them — a reviewer "
+                    f"only reads its prompt."
+                )
             else:
                 warnings.append(
                     f"agent '{label}' (claude) is given {named} while reviewing "
@@ -1199,6 +1712,20 @@ def audit_agent(spec) -> list[str]:
             warnings.append(_claude_mode_warning(label, override, extra_args))
         # Configuration beyond the prompt. `--safe-mode` keeps it from loading
         # (measured), so this is a surprise to prevent, not a hole to close.
+        # Fail-closed (#908 review): a risky token the readers above did not read
+        # as a flag may still be one Claude applies.
+        unread = _claude_unread_risks(extra_args)
+        if unread:
+            named = _shown_positions(unread, len(extra_args) - len(declared))
+            one = len(unread) == 1
+            warnings.append(
+                f"agent '{label}' (claude) has {named} where jury cannot tell whether "
+                f"Claude reads {'it' if one else 'them'} as {'a flag' if one else 'flags'} "
+                f"(after `--`, as another option's value, or in a spelling jury does not "
+                f"model). If Claude does, the reviewer's permission mode or tools "
+                f"change, and jury has not checked how. Drop "
+                f"{'it' if one else 'them'} — a reviewer only reads its prompt."
+            )
         loaded = _claude_config_options(extra_args)
         if loaded:
             named = ", ".join(f"`{f}`" for f in loaded)
@@ -1225,6 +1752,39 @@ def audit_agent(spec) -> list[str]:
             f"and writes files and reaches the network; do not use it on untrusted "
             f"diffs."
         )
+        # A `--sandbox=<value>` that would switch the sandbox off (#908 review).
+        # Enforcement removed it, so it is read from the declared args.
+        switched = _agy_sandbox_switched_off(declared)
+        off = [shown for shown, is_false in switched if is_false]
+        unread = [shown for shown, is_false in switched if not is_false]
+        for tokens, effect in (
+            (
+                off,
+                "would turn agy's sandbox off: agy reads a `--sandbox=` value as true "
+                "or false, and the last `--sandbox` it reads wins",
+            ),
+            (unread, "is not a value agy reads as true or false, so agy refuses to start"),
+        ):
+            if tokens:
+                named = ", ".join(f"`{t}`" for t in tokens)
+                one = len(tokens) == 1
+                warnings.append(
+                    f"agent '{label}' (agy) is configured with {named}, which {effect}. "
+                    f"jury removes {'it' if one else 'them'} and spawns the seat with "
+                    f"`--sandbox`. Drop {'it' if one else 'them'}."
+                )
+        # codex's sandbox spelling on an agy seat (#902). Enforcement added agy's
+        # own `--sandbox` beside it; what the operator wrote does nothing agy
+        # documents, and may keep the seat from starting.
+        foreign = _agy_foreign_sandbox_tokens(extra_args)
+        if foreign:
+            named = ", ".join(f"`{t}`" for t in foreign)
+            warnings.append(
+                f"agent '{label}' (agy) is configured with {named}, which is not agy's "
+                f"sandbox: agy 1.2.12 has only a boolean `--sandbox` (jury adds it) "
+                f"and no `-s`, so agy may refuse the argv or read a value as prompt "
+                f"text. Drop {'it' if len(foreign) == 1 else 'them'}."
+            )
 
     # Non-claude agents must run under a restricting sandbox (issue #100) — one
     # the config named, or one enforcement injected above.
@@ -1235,6 +1795,16 @@ def audit_agent(spec) -> list[str]:
         # generic message below, which would recommend the `-s read-only` that
         # is already there.
         competing = _competing_sandboxes(extra_args, vendor=vendor)
+        if _is_codex(vendor):
+            unread = _codex_unread_risks(extra_args)
+            if unread:
+                named = _shown_positions(unread, len(extra_args) - len(declared))
+                warnings.append(
+                    f"agent '{label}' has {named} where jury cannot tell whether codex "
+                    f"reads it as a sandbox setting (after `--`, inside a `-c` "
+                    f"override, or in a spelling jury does not model). If codex does, "
+                    f"the enforced read-only sandbox may be widened or removed. Drop it."
+                )
         if competing:
             named = ", ".join(f"`{token}`" for token, _ in competing)
             one = len(competing) == 1
@@ -1296,10 +1866,27 @@ def audit_agent(spec) -> list[str]:
         return warnings
     warnings.append(
         f"agent '{label}' is not running under a recognized read-only sandbox "
-        f"(no `-s read-only` / `--sandbox`); a prompt injection in the diff could "
+        f"({_missing_sandbox(vendor)}); a prompt injection in the diff could "
         f"reach write/tool/network. Add a sandbox, or run with `--strict` to fail.{checkout}"
     )
     return warnings
+
+
+def _missing_sandbox(vendor: str) -> str:
+    """What the generic warning says is missing, in the spawned CLI's own terms (#902).
+
+    One sentence for every CLI named both codex's and agy's flag, which read
+    wrongly on an agy seat carrying codex's ``-s read-only``, and told a seat
+    whose ``--sandbox`` jury had injected that it had "no ``--sandbox``".
+    """
+    if _is_codex(vendor):
+        return "codex needs `-s read-only`"
+    if normalise_vendor(vendor) == "google":
+        return "agy needs its boolean `--sandbox`, followed by another flag or nothing"
+    return (
+        "jury knows no sandbox flag for this CLI; the `--sandbox` it adds is agy's, "
+        "which this CLI may ignore"
+    )
 
 
 def audit_privilege(specs) -> list[str]:

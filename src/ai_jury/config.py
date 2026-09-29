@@ -353,7 +353,8 @@ def spawns_process(spec) -> bool:
     every built-in key, a registered HTTP and a registered CLI adapter, and each
     fallback shape:
 
-    1. a registered key: whatever the registered class does;
+    1. a registered key: what the registered class declares — its
+       ``SPAWNS_PROCESS`` attribute, ``True`` unless it says otherwise (#903);
     2. a built-in key: HTTP for the commandless ones (``local``, the hosted APIs,
        ``openai-compatible``), a process for :data:`CLI_ADAPTERS`;
     3. no adapter for the key: HTTP when the seat names an ``endpoint``, or an
@@ -628,8 +629,8 @@ class ConfigError(Exception):
 # reject the same shapes and must say the same thing (issue #716, review r1):
 # `validate_config` collects them into its error list, and `_from_dict` raises
 # one directly for a config that reached materialisation unvalidated —
-# `load_config` defaults to `validate=False` and `jury run-agent` deliberately
-# keeps it that way so one seat's mistake cannot stop a single-seat run.
+# `load_config` defaults to `validate=False`, and a Python caller that loads a
+# config without asking for validation reaches `_from_dict` directly.
 #
 # Every message names the AGENT and, where it helps, the header NAME, and none
 # of them quotes the offending VALUE back: a header is exactly where an
@@ -1216,9 +1217,10 @@ class AgentSpec:
         # `adapter = "CLI"` and `adapter = "cli"` name one protocol, so they must
         # be one string before any lookup sees them. A key that is *present* but
         # normalises to nothing — `7`, `"   "` — is refused here rather than read
-        # as "unset": `validate_config` already calls it an unknown adapter, and
-        # `jury run-agent` builds seats without validating, so treating it as a
-        # fallback to the vendor let that one path run what the other two refused.
+        # as "unset": `validate_config` already calls it an unknown adapter, and a
+        # caller of `load_config` (default `validate=False`) or of `make_adapter`
+        # builds seats without validating, so treating it as a fallback to the
+        # vendor let that path run what validation refused.
         if self.adapter is not None:
             key = normalise_vendor(self.adapter)
             if not key:
@@ -1446,10 +1448,10 @@ class JuryConfig:
 
 def _ci_from_dict(data: dict) -> CiConfig:
     # `ConfigError`, not the `AttributeError` a `.get` on a string would raise:
-    # materialisation is reached WITHOUT validation on real paths — `load_config`
-    # defaults to `validate=False` and `jury run-agent` keeps it that way — and
-    # those callers handle `ConfigError` (`run-agent` prints it and exits 2)
-    # where a traceback would just be a crash (issue #729, following #716).
+    # materialisation is reached WITHOUT validation whenever a caller uses
+    # `load_config`'s default `validate=False` (a Python caller; `jury run-agent`
+    # validates since #903), and such a caller can handle `ConfigError` where a
+    # traceback would just be a crash (issue #729, following #716).
     if not isinstance(data, dict):
         raise ConfigError(_nested_table_message("ci"))
     fail_on = data.get("fail_on", ["critical", "major"])
@@ -1560,11 +1562,10 @@ def _from_dict(data: dict) -> JuryConfig:
         #
         # It raises `ConfigError` rather than falling through to an
         # `AttributeError` from `.items()`, because materialisation is reached
-        # WITHOUT validation on real paths (review r1): `load_config` defaults
-        # to `validate=False`, and `jury run-agent` keeps it that way on purpose
-        # so one seat's mistake cannot stop a single-seat run. Those callers
-        # already handle `ConfigError` — `run-agent` prints it and exits 2 —
-        # and an uncaught traceback would be a regression for them, not a fix.
+        # WITHOUT validation whenever a caller uses `load_config`'s default
+        # `validate=False` (review r1) — a Python caller; `jury run-agent`
+        # validates since #903. Such a caller can handle `ConfigError`, and an
+        # uncaught traceback would be a regression for it, not a fix.
         # The messages are the shared builders, so the two paths say the same
         # thing and neither echoes the value.
         #
