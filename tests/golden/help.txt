@@ -14,12 +14,12 @@ usage: jury [-h] [--pr PR] [--issue ISSUE] [--repo REPO]
             [--format {markdown,json,sarif,keel-reviews}]
             [--decision {chair,vote}] [--transcript] [--no-transcript]
             [--verbose] [--live] [--theater] [--no-theater]
-            [--theater-style {flat,pixel}] [--post-summary] [--post-inline]
-            [--post-progress] [--post-mode {single,phased}] [--dry-run]
-            [--label] [--ci] [--fail-on FAIL_ON] [--cache] [--clear-cache]
-            [--cache-dir CACHE_DIR] [--suggest-patches] [--patches-out PATH]
-            [--incremental] [-q] [--config-validate] [--strict-config]
-            [--tiered] [--hints] [--no-hints] [--version]
+            [--theater-style {flat,pixel}] [--post-summary] [--no-attribution]
+            [--post-inline] [--post-progress] [--post-mode {single,phased}]
+            [--dry-run] [--label] [--ci] [--fail-on FAIL_ON] [--cache]
+            [--clear-cache] [--cache-dir CACHE_DIR] [--suggest-patches]
+            [--patches-out PATH] [--incremental] [-q] [--config-validate]
+            [--strict-config] [--tiered] [--hints] [--no-hints] [--version]
 
 Cross-vendor multi-agent PR review jury.
 
@@ -126,6 +126,9 @@ options:
                         ([jury] theater_style)
   --post-summary, --post
                         post the report as a single summary comment on --pr
+  --no-attribution      leave the ai-jury footer naming the seats that
+                        reviewed off the markdown report and posted comments
+                        (default from jury.toml [jury.output] attribution, on)
   --post-inline         post inline review comments for located findings on
                         --pr
   --post-progress       keep a live, sticky status comment on --pr updated per

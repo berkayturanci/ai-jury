@@ -53,7 +53,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from ai_jury import adapters, cli, doctor  # noqa: E402
 from ai_jury.adapters import _VENDOR_ADAPTERS, make_adapter  # noqa: E402
 from ai_jury.config import (  # noqa: E402
-    _REGISTERED_VENDORS,
     KNOWN_VENDORS,
     AgentSpec,
     ConfigError,
@@ -674,15 +673,13 @@ class TheVocabularyIsOneVocabulary(unittest.TestCase):
             pass
 
         registered = "shim-protocol-705"
-        try:
-            adapters.register_adapter(registered, ShimAdapter)
-            self.assertTrue(is_recognised_adapter(registered))
-            spec = AgentSpec(name="s", vendor="openai", adapter=registered, command="shim")
-            with mock.patch.object(adapters.shutil, "which", lambda cmd: f"/bin/{cmd}"):
-                self.assertIsInstance(make_adapter(spec), ShimAdapter)
-        finally:
-            _VENDOR_ADAPTERS.pop(registered, None)
-            _REGISTERED_VENDORS.discard(registered)
+        # All three tables, the transport one included (#904).
+        self.addCleanup(adapters._restore_registry_state, adapters._registry_state())
+        adapters.register_adapter(registered, ShimAdapter)
+        self.assertTrue(is_recognised_adapter(registered))
+        spec = AgentSpec(name="s", vendor="openai", adapter=registered, command="shim")
+        with mock.patch.object(adapters.shutil, "which", lambda cmd: f"/bin/{cmd}"):
+            self.assertIsInstance(make_adapter(spec), ShimAdapter)
 
     def test_the_key_is_normalised_like_the_vendor(self):
         spec = AgentSpec(name="s", vendor="openai", adapter="  CLI  ", command="cursor-agent")

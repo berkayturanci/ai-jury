@@ -376,6 +376,9 @@ class MakeAdapterTests(unittest.TestCase):
         class CustomAdapter(adapters.Adapter):
             pass
 
+        # This registration used to stay behind, and `custom-provider` then failed
+        # `test_adapter_key`'s vocabulary checks when that module ran later (#904).
+        self.addCleanup(adapters._restore_registry_state, adapters._registry_state())
         adapters.register_adapter("custom-provider", CustomAdapter)
         spec = _spec(vendor="custom-provider")
         adapter = adapters.make_adapter(spec)

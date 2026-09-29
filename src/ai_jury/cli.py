@@ -52,7 +52,7 @@ from .metadata import (
 from .orchestrator import review_diff, run_jury
 from .policy import PolicyError, load_policy
 from .redaction import redact
-from .report import render, render_live_step, render_transcript
+from .report import render, render_footer, render_live_step, render_transcript
 
 # Hard ceiling on raw diff ingestion. The per-run ``diff.max_bytes`` budget is
 # only applied *after* the full diff is read and split, so an unbounded
@@ -488,6 +488,15 @@ def build_parser() -> argparse.ArgumentParser:
         dest="post_summary",
         action="store_true",
         help="post the report as a single summary comment on --pr",
+    )
+    p.add_argument(
+        "--no-attribution",
+        dest="attribution",
+        action="store_false",
+        default=None,
+        help="leave the ai-jury footer naming the seats that reviewed off the "
+        "markdown report and posted comments (default from jury.toml "
+        "[jury.output] attribution, on)",
     )
     p.add_argument(
         "--post-inline",
@@ -2848,6 +2857,12 @@ def main(argv: list[str] | None = None) -> int:
         zero_config_fallback=zero_config,
     )
 
+    # The attribution footer (issue #911): on unless `--no-attribution` or
+    # `[jury.output] attribution = false`. Appended below, once the markdown
+    # report is complete; `transcript_mode` picks the transcript's wording.
+    attribution_on = args.attribution if args.attribution is not None else config.output.attribution
+    transcript_mode = False
+
     if args.format == "json":
         from .formats import to_json
 
@@ -2873,7 +2888,8 @@ def main(argv: list[str] | None = None) -> int:
         # chronological play-by-play; otherwise the consensus-first summary.
         # Rendering-only — the orchestration/outcome is identical either way.
         transcript_default = args.transcript if args.transcript is not None else config.transcript
-        if args.verbose or transcript_default:
+        transcript_mode = bool(args.verbose or transcript_default)
+        if transcript_mode:
             report = render_transcript(
                 outcome.reviews,
                 outcome.debate,
@@ -2890,6 +2906,7 @@ def main(argv: list[str] | None = None) -> int:
                 review_scope=review_scope,
                 lead_with_summary=bool(args.verbose),
                 vote=vote,
+                footer=False,
             )
         else:
             report = render(
@@ -2907,6 +2924,7 @@ def main(argv: list[str] | None = None) -> int:
                 metadata=metadata,
                 review_scope=review_scope,
                 vote=vote,
+                footer=False,
             )
 
     if args.metadata_json:
@@ -3017,6 +3035,14 @@ def main(argv: list[str] | None = None) -> int:
             report += "\n\n" + patches_section.rstrip()
         else:
             log("--suggest-patches needs markdown output or --patches-out; skipped")
+
+    # The attribution footer (issue #911) closes the markdown report: the tool and
+    # the seats that returned a review. The renderers were asked to leave it off so
+    # it can go here, AFTER the CI gate and patch sections appended above, and the
+    # report ends with exactly one footer. JSON/SARIF/keel-reviews are machine
+    # documents and never get it. Posting appends the hidden SHA marker after it.
+    if attribution_on and args.format == "markdown":
+        report += "\n" + render_footer(outcome.reviews, transcript=transcript_mode)
 
     # Turn the live progress comment into the final verdict (issue #125).
     if progress is not None:
@@ -3149,8 +3175,13 @@ def main(argv: list[str] | None = None) -> int:
                 verify=outcome.verify,
                 vote=vote,
             )
+            # The sections are markdown whatever `--format` says, so the footer
+            # follows the opt-out alone here.
+            phased_footer = f"\n\n{render_footer(outcome.reviews)}" if attribution_on else ""
             for i, (title, body) in enumerate(sections):
-                tail = marker if i == len(sections) - 1 else ""
+                # The last comment carries the footer (render_sections has none),
+                # then the SHA marker, which must stay last.
+                tail = f"{phased_footer}{marker}" if i == len(sections) - 1 else ""
                 if not _post(
                     f"post phased comment {i + 1} of {len(sections)} to PR #{args.pr}",
                     lambda t=title, b=body, x=tail: post_pr_comment(

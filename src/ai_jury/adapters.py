@@ -2436,6 +2436,40 @@ def register_adapter(vendor: str, adapter_cls: type[Adapter]) -> None:
     _VENDOR_ADAPTERS[name] = adapter_cls
 
 
+def _registry_state() -> tuple[dict[str, type[Adapter]], set[str], dict[str, bool]]:
+    """A copy of every table :func:`register_adapter` writes (#904).
+
+    Three tables in two modules: the adapter classes here, and ``config``'s
+    registered vendor names and transports. Tests that register an adapter must
+    put all three back, and restoring them one dict at a time left the ones each
+    test forgot — a leaked name failed tests in another module, depending on the
+    order the modules ran in. The list of tables lives here, beside the function
+    that writes them, so a fourth table is added to the snapshot in the same place.
+    """
+    return (
+        dict(_VENDOR_ADAPTERS),
+        set(config_module._REGISTERED_VENDORS),
+        dict(config_module._REGISTERED_ADAPTER_SPAWNS),
+    )
+
+
+def _restore_registry_state(state: tuple[dict, set, dict]) -> None:
+    """Put back a :func:`_registry_state` snapshot, in place.
+
+    In place, not by rebinding: other modules hold the tables by reference
+    (``from ai_jury.adapters import _VENDOR_ADAPTERS``), and a rebound name would
+    leave them reading the old object.
+    """
+    adapter_classes, vendors, spawns = state
+    for table, saved in (
+        (_VENDOR_ADAPTERS, adapter_classes),
+        (config_module._REGISTERED_VENDORS, vendors),
+        (config_module._REGISTERED_ADAPTER_SPAWNS, spawns),
+    ):
+        table.clear()
+        table.update(saved)
+
+
 def make_adapter(spec: AgentSpec, mock: bool = False) -> Adapter:
     """The adapter that builds *spec*'s command line.
 

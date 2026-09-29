@@ -1402,8 +1402,6 @@ class TheAuditAsksTheAdapterTheSpawnerBuilds(unittest.TestCase):
                 self.assertEqual(spawns_process(spec), built.SPAWNS_PROCESS)
 
     def test_a_registered_adapter_is_answered_by_its_class(self):
-        from ai_jury import config as config_module
-
         class HttpShim(adapters.GenericOpenAICompatibleAdapter):
             pass
 
@@ -1423,8 +1421,7 @@ class TheAuditAsksTheAdapterTheSpawnerBuilds(unittest.TestCase):
             ("shim-cli", CliShim),
             ("shim-direct-http", DirectHttpShim),
         ):
-            saved = adapters._VENDOR_ADAPTERS.get(key)
-            saved_spawn = config_module._REGISTERED_ADAPTER_SPAWNS.get(key)
+            state = adapters._registry_state()
             try:
                 adapters.register_adapter(key, cls)
                 spec = AgentSpec(name="s", vendor=key, command="x", endpoint=_ENDPOINT)
@@ -1437,15 +1434,9 @@ class TheAuditAsksTheAdapterTheSpawnerBuilds(unittest.TestCase):
                         self.assertFalse(spawns_process(spec))
                         self.assertEqual(privilege.audit_agent(spec), [])
             finally:
-                if saved is None:
-                    adapters._VENDOR_ADAPTERS.pop(key, None)
-                    config_module._REGISTERED_VENDORS.discard(key)
-                else:
-                    adapters._VENDOR_ADAPTERS[key] = saved
-                if saved_spawn is None:
-                    config_module._REGISTERED_ADAPTER_SPAWNS.pop(key, None)
-                else:  # pragma: no cover - no earlier registration of these keys
-                    config_module._REGISTERED_ADAPTER_SPAWNS[key] = saved_spawn
+                # Re-registering `cli` added it to the vendor table, which the
+                # key-by-key restore this replaced left behind (#904).
+                adapters._restore_registry_state(state)
 
 
 class RegisteringATransportIgnoresAnEmptyName(unittest.TestCase):
@@ -1757,16 +1748,8 @@ class ACustomHttpAdapterCanSayItSpawnsNothing(unittest.TestCase):
     """
 
     def _register(self, key, cls):
-        from ai_jury import config as config_module
-
+        self.addCleanup(adapters._restore_registry_state, adapters._registry_state())
         adapters.register_adapter(key, cls)
-
-        def forget():
-            adapters._VENDOR_ADAPTERS.pop(key, None)
-            config_module._REGISTERED_VENDORS.discard(key)
-            config_module._REGISTERED_ADAPTER_SPAWNS.pop(key, None)
-
-        self.addCleanup(forget)
 
     def test_a_direct_subclass_that_opts_out_is_not_audited(self):
         class DirectHttp(adapters.Adapter):
