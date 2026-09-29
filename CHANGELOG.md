@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The Action self-test can tell the Action's own `pyproject.toml` from the caller's** (#909). The `action-self-test` job ran the Action as `uses: ./`, which makes `$GITHUB_ACTION_PATH` the workspace, so an Action that pinned the version from the caller's `pyproject.toml` instead of its own would have passed. The job now checks the Action out into `action/` and runs it as `uses: ./action`, beside a workspace whose own `pyproject.toml` declares `0.0.1`. Only `action/` is installed beforehand, so under `PIP_NO_INDEX=1` only the Action's own version can satisfy the pin: the check reads the expected version from `action/pyproject.toml`, fails if the workspace ever declares the same one, and fails if the pip log names the workspace's pin. The hostile `version:` case also said only that the step failed, which a broken `setup-python` would satisfy too. That run now sends its bash steps' stderr to a log through `BASH_ENV`, and the check requires the validator's own refusal in it. `tests/test_action_self_test.py` pins each new piece, and `tests/test_action_install_spec.py` runs the script with the Action's directory, the working directory and `GITHUB_WORKSPACE` holding three different versions and requires the Action's.
+
 ## [1.21.0] - 2026-09-28
 
 > **Upgrading.** A seat whose adapter runs a CLI (`anthropic`, `openai`, `google`, `cli`, `xai`) can no longer set

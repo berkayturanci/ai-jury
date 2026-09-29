@@ -64,6 +64,36 @@ class TheDefaultIsTheActionsOwnRelease(_Loaded):
         )
         self.assertEqual((done.returncode, done.stdout.strip()), (0, f"ai-jury=={__version__}"))
 
+    def test_the_actions_own_pyproject_wins_over_the_callers(self):
+        """In a caller's workflow the step runs in the caller's workspace, which may
+        have a pyproject.toml of its own (#909). Here the Action's directory, the
+        working directory and `GITHUB_WORKSPACE` are three different trees, each
+        declaring its own version, so only a read of `GITHUB_ACTION_PATH` prints the
+        Action's."""
+        with tempfile.TemporaryDirectory() as root:
+            trees = {}
+            for name, version in (("action", "9.8.7"), ("workspace", "0.0.1"), ("cwd", "0.0.2")):
+                trees[name] = Path(root, name)
+                trees[name].mkdir()
+                (trees[name] / "pyproject.toml").write_text(
+                    f'[project]\nname = "ai-jury"\nversion = "{version}"\n', encoding="utf-8"
+                )
+            env = {k: v for k, v in os.environ.items() if k != "INPUT_VERSION"}
+            env.update(
+                GITHUB_ACTION_PATH=str(trees["action"]),
+                GITHUB_WORKSPACE=str(trees["workspace"]),
+                INPUT_VERSION="",
+            )
+            done = subprocess.run(
+                [sys.executable, str(SCRIPT)],
+                cwd=trees["cwd"],
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        self.assertEqual((done.returncode, done.stdout), (0, "ai-jury==9.8.7"), done.stderr)
+
     def test_no_readable_pyproject_fails_rather_than_installing_the_newest(self):
         """Falling back to `pip install ai-jury` is the bug; say so and stop."""
         with self.assertRaises(self.mod.SpecError):
