@@ -18,6 +18,13 @@ version (2026). Two questions: **does cross-vendor multi-agent code review actua
 
 ## All three vendor CLIs run headless (verified locally, early 2026)
 
+This table is the research snapshot from before the first release, kept as it
+was. It is not the invocation ai-jury ships: every CLI seat now gets its prompt on
+stdin, never in argv (#287), and agy is driven through `--input-format
+stream-json` (#635). The shipped argv is in
+[architecture.md](architecture.md#adapters) and locked in
+`tests/golden/adapter_contracts.json`.
+
 | Vendor | Command | Notes |
 |:--|:--|:--|
 | Claude Code | `claude -p "<prompt>" --output-format text\|json` | `--output-format json` returns a structured object (`result`, `usage`, `total_cost_usd`). In `-p` mode add `--dangerously-skip-permissions` (or restrict tools) so it never blocks on a permission prompt. |
@@ -69,7 +76,7 @@ remote third-party agents.
 ## Parsing: don't parse the prose
 
 Prompt-only "respond in JSON" fails 5–20% of the time (fences, preamble, wrappers). The
-robust pattern (Magpie's, and the one we implement):
+robust pattern this research recommended (Magpie's):
 
 1. Reviewer produces prose (ideally with tool access to read real files, not diff-only).
 2. A separate **structurizer** step converts prose → JSON `{severity, file, line, category}`
@@ -80,6 +87,20 @@ robust pattern (Magpie's, and the one we implement):
    multiplier.*
 4. Aggregate by structured fields (severity+location) into consensus / majority /
    individual tiers — not fuzzy text matching.
+
+What ai-jury ships is a simpler version of that pattern:
+
+1. Each reviewer gets only its prompt, which carries the diff — no tool access (the
+   `claude` seat runs with `--tools ""`).
+2. There is no separate structurizer step. The prompt asks each reviewer to end its
+   prose with one fenced ```json block of findings, and `findings.parse_findings` reads
+   the last such block; a missing or malformed block yields no structured findings
+   (and a warning), never a crash. No CLI's native JSON mode or `--output-schema` is
+   used.
+3. The verify pass (`verify = true`) has the chair judge each candidate finding against
+   **the diff in its prompt** — it does not re-read the code.
+4. Findings are grouped by structured fields into consensus / majority / single-reviewer
+   tiers (`consensus.py`), as recommended.
 
 ## Live-run observations (this environment)
 

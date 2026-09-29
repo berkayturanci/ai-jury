@@ -1,6 +1,15 @@
 # Roadmap
 
-How the work is organized, and how to pick up a session's worth of it.
+> **Historical document.** This is the v0.2–v0.6 plan the project was built
+> from, kept as it was written. As of 2026-09-29 every issue in these milestones
+> is closed (the GitHub milestones are still marked open, with no open issues),
+> and the project has shipped through 1.22.0 — including #43 (local/open-weight
+> adapter) and #12 (benchmark fixtures), the two items the last section asks
+> about. It is not a current plan: open work is tracked as
+> [GitHub issues](https://github.com/berkayturanci/ai-jury/issues), and what
+> shipped is in [CHANGELOG.md](CHANGELOG.md).
+
+How the work was organized, and how a session's worth of it was picked up.
 
 ## Two layers
 

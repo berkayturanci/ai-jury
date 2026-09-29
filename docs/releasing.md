@@ -103,9 +103,14 @@ can't pass silently. `skip-existing` keeps re-runs idempotent.
 ## Which files carry the version
 
 One table, [`scripts/release_surfaces.py`](../scripts/release_surfaces.py), lists
-every file that names the release — package metadata, `uv.lock`, both plugin
-manifests, the website, the README, and the cookbook — together with the pattern
-that reads the version out of each.
+every file that names the release — package metadata (`pyproject.toml`,
+`src/ai_jury/__init__.py`), the newest section of `CHANGELOG.md`, `uv.lock`, the
+three plugin manifests (`.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`,
+`.cursor-plugin/plugin.json`), the website (`website/index.html`,
+`website/app.js`, `website/docs.html`), `README.md`, `docs/cookbook.md` and
+`docs/configuration.md` — together with the pattern that reads the version out of
+each. That table is the source of truth; this list is checked against it by
+`tests/test_docs_audit_claims.py`.
 
 The Homebrew formula is not on that list, and its absence is deliberate: #666
 deleted `Formula/ai-jury.rb` rather than keep repairing a file whose url and
@@ -201,7 +206,7 @@ Every release is automatically published across three primary distribution chann
      release flow does not maintain.
 3. **Homebrew Tap (`berkayturanci/homebrew-ai-jury`)**:
    - No formula is committed to this repository. `publish.yml` queries PyPI for the uploaded sdist's immutable URL and SHA-256 digest, renders `packaging/homebrew/ai-jury.rb.template`, attaches the result to the GitHub Release, and pushes it to `berkayturanci/homebrew-ai-jury` when `HOMEBREW_TAP_TOKEN` is set.
-   - Installable via `brew install berkayturanci/ai-jury/ai-jury` or `brew install ai-jury`.
+   - Installable via `brew install berkayturanci/ai-jury/ai-jury`, or `brew install ai-jury` once the tap is added with `brew tap berkayturanci/ai-jury` (the formula is not in homebrew-core).
 
 ## How to verify a release
 

@@ -38,7 +38,7 @@ Legend: ✅ yes · ➖ partial / optional · ❌ no · — not applicable.
 | API-level model calls | ✅ (hosted-API seats: `anthropic-api`, `openai-api`, `google-api`, `xai-api`, `openai-compatible`) | ❌ | ✅ | ✅ |
 | Multiple vendors / models | ✅ | ✅ | ✅ | ➖ |
 | Consensus / debate rounds | ✅ | ✅ (Magpie, agent-council) | ➖ (`--debate`) | ➖ |
-| Verification pass (re-read code) | ✅ | ➖ | ❌ | ➖ |
+| Verification pass (each finding judged against the diff) | ✅ | ➖ | ❌ | ➖ |
 | Panel voting verdict (tally vs. single chair) | ✅ (`--decision vote`) | ❌ | ❌ | ❌ |
 | Issue-quality review (completeness, not diffs) | ✅ (`--issue`) | ❌ | ❌ | ❌ |
 | Structured findings (severity/file/line) | ✅ | ➖ | ➖ | ✅ |
@@ -84,9 +84,10 @@ configurable or undocumented it is marked ➖. Corrections via PR are welcome.
 
 Honest gaps, and where they now stand:
 
-- **Auto-apply fixes** — by design this tool does not rewrite code. It can emit
-  *inspectable* suggested patches for **verified** findings (`--suggest-patches`), but
-  never applies them automatically.
+- **Auto-apply fixes** — a review never rewrites code. It can emit *inspectable*
+  suggested patches for **verified** findings (`--suggest-patches`), and
+  `jury apply` writes them into your working tree only when you run it and name
+  which ones (it prints the paths and asks first, or takes `--yes`).
 - **Hosted dashboard / website** — a landing/docs site exists under `website/`; there is
   no hosted review SaaS, and that is a deliberate non-goal.
 - **Project-specific policy** — supported via `.jury/policy.toml` (high-risk paths,

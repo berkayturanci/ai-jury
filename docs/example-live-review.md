@@ -10,9 +10,10 @@ reviewed its **own repository** end to end on **v1.1.0 (2026-06-04)**. It's the
 most honest demo we have: a heterogeneous panel, a full codebase, real findings
 (and real false positives the panel caught itself).
 
-> 📄 Want the raw output? The complete, un-edited report is published verbatim at
+> 📄 Want the raw output? The complete report is published at
 > [**Full report (live run)**](live-review-report.md) — every finding,
-> verification, and per-chunk verdict, exactly as the tool wrote it.
+> verification, and per-chunk verdict as the tool wrote it, plus later
+> correction notes that are marked as such (its intro lists them).
 
 ## Setup
 
@@ -95,17 +96,22 @@ across CI/release plumbing, docs contracts, and the orchestrator itself.
   *fastest* panelist (≈253 s vs. 660–850 s for the cloud CLIs) and adds vendor
   diversity at zero marginal cost — diversity, not frontier parity. Mix it with
   cloud CLIs.
-- **No secrets leave the box.** Secret redaction is on by default (this run
-  scrubbed **22** token-shaped strings before sending), the report contains only
-  the agents' review text — never their auth — and run metadata is built to
-  exclude prompt/diff/output/secrets.
+- **Recognized secrets are redacted before anything leaves the box.** Secret
+  redaction is on by default (this run scrubbed **22** token-shaped strings
+  before sending), the report contains only the agents' review text — never their
+  auth — and run metadata is built to exclude prompt/diff/output/secrets.
+  Redaction matches a fixed list of secret shapes (listed in
+  [SECURITY.md](../SECURITY.md#jury-data-flow--redaction)); a secret in any other
+  shape is sent to the agents as written.
 
 ## Reproduce it
 
 ```bash
 # Configure a 4-vendor panel (claude/codex/agy + a local Ollama model — e.g.
-# `ollama pull qwen2.5-coder:7b`), then review the whole repo as one diff with
-# chunking + debate:
+# `ollama pull qwen2.5-coder:7b`). agy is opt-in: name it (`jury init --agents
+# claude,codex,agy,qwen`) or set `enabled = true` on its seat. Its --sandbox does
+# not confine it, so seat it only for a diff you trust, such as your own repo.
+# Then review the whole repo as one diff with chunking + debate:
 EMPTY=$(git hash-object -t tree /dev/null)
 git diff "$EMPTY" HEAD > whole-repo.diff
 jury --diff-file whole-repo.diff --config jury.toml --chunk --rounds 2

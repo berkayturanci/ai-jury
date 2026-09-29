@@ -66,7 +66,10 @@ no single model — local or frontier — caught everything, and the panel did.
 ## Reproduce it
 
 ```bash
-# Enable a local seat (uncomment the qwen agent in jury.toml) for the 4-vendor panel, then:
+# For the 4-vendor panel, edit jury.toml: uncomment the qwen agent (a local seat)
+# and set `enabled = true` on the agy seat, which ships disabled because agy is
+# opt-in (its --sandbox does not confine it; the fixtures are trusted diffs).
+# Uncommenting qwen alone gives claude + codex + qwen, three vendors. Then:
 PYTHONPATH=src python3 benchmark/sweep.py --config jury.toml
 # mechanics only, free:  PYTHONPATH=src python3 benchmark/sweep.py --mock
 ```

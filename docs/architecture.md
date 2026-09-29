@@ -19,9 +19,9 @@ agent* (adapters), so new vendors are a ~20-line addition.
                            │ prompts.py     │               │               │
                     ┌──────▼─────┐  ┌───────▼────┐  ┌────────▼───┐  ┌────────▼─────┐
                     │ClaudeAdapter│ │CodexAdapter│  │ AgyAdapter │  │ LocalAdapter │  (adapters.py)
-                    │  claude -p  │ │ codex exec │  │ agy --print│  │ HTTP /v1 chat│
+                    │  claude -p  │ │ codex exec │  │ agy (stdin)│  │ HTTP /v1 chat│
                     └─────────────┘ └────────────┘  └────────────┘  └──────────────┘
-                       cloud CLIs (subprocess, headless, parallel)   local / open-weight
+                cloud CLIs (subprocess, prompt on stdin, parallel)   local / open-weight
                                                 │
                                   consensus.py → report.py → markdown / json / sarif / keel-reviews
                                                           → stdout / -o / gh comment / CI gate
@@ -72,17 +72,21 @@ end-of-run comment).
 
 Each CLI-backed adapter knows only how to invoke one CLI headlessly; the HTTP-backed
 adapters (`LocalAdapter` and the hosted-API adapters) speak plain HTTP instead. Either
-way, the orchestrator owns prompt content. Verified headless invocations (early 2026):
+way, the orchestrator owns prompt content. The CLI invocations below are the shipped
+defaults, copied from the locked contract in `tests/golden/adapter_contracts.json`
+(`<model>` is the seat's `model`; every CLI seat gets its prompt on **stdin**, never in
+argv, so the redacted diff is not readable in `ps` — #287):
 
 | Vendor | Adapter | Invocation |
 |:--|:--|:--|
-| Anthropic | `ClaudeAdapter` | `claude -p "<prompt>" --output-format text` |
-| OpenAI | `CodexAdapter` | `codex exec` (prompt piped on stdin, not argv) |
-| Google | `AgyAdapter` | `agy --print "<prompt>"` |
-| local / open-weight | `LocalAdapter` | HTTP `POST {endpoint}/v1/chat/completions` (Ollama, llama.cpp, vLLM, LM Studio) — stdlib `urllib`, no subprocess |
+| Anthropic | `ClaudeAdapter` | `claude -p --model <model> --output-format text --tools "" --disallowed-tools Edit,Write,NotebookEdit,Bash,Read,Grep,Glob,WebFetch,WebSearch,Task,Agent --strict-mcp-config --safe-mode --no-session-persistence --permission-mode dontAsk` (prompt on stdin) |
+| OpenAI | `CodexAdapter` | `codex exec -m <model> --skip-git-repo-check --ephemeral -s read-only` (prompt on stdin) |
+| Google (opt-in only) | `AgyAdapter` | `agy --input-format stream-json --output-format stream-json --model <model> --dangerously-skip-permissions --sandbox` (prompt as one NDJSON frame on stdin; never in the default panel — see [security.md](security.md#other-agents)) |
+| local / open-weight | `LocalAdapter` | HTTP `POST {endpoint}/chat/completions`, where `endpoint` is the base URL (default `http://localhost:11434/v1`) (Ollama, llama.cpp, vLLM, LM Studio) — stdlib `urllib`, no subprocess |
 | Anthropic (hosted API) | `AnthropicApiAdapter` | HTTP `POST api.anthropic.com/v1/messages`, keyed by `ANTHROPIC_API_KEY` — stdlib `urllib`, no subprocess, no CLI needed |
 | OpenAI (hosted API) | `OpenAiApiAdapter` | HTTP `POST api.openai.com/v1/chat/completions`, keyed by `OPENAI_API_KEY` — stdlib `urllib`, no subprocess, no CLI needed |
 | Google (hosted API) | `GoogleApiAdapter` | HTTP `POST generativelanguage.googleapis.com/v1beta/models/{model}:generateContent`, keyed by `GEMINI_API_KEY` (header, not the `?key=...` query form) — stdlib `urllib`, no subprocess, no CLI needed |
+| xAI (hosted API) | `XaiApiAdapter` | HTTP `POST api.x.ai/v1/chat/completions`, keyed by `XAI_API_KEY` — stdlib `urllib`, no subprocess, no CLI needed |
 | OpenAI-Compatible (hosted API) | `GenericOpenAICompatibleAdapter` | HTTP `POST {endpoint}/chat/completions` (OpenRouter, DeepSeek, Groq, Mistral, LiteLLM) — stdlib `urllib`, custom `api_key_env` & `headers` |
 | Arbitrary CLI Agents | `GenericCLIAdapter` | Subprocess CLI adapter (Aider, Goose, OpenHands) with `prompt_mode = "stdin"` or `"arg"`, secret redaction & stderr error classification |
 | Custom Registered Vendors | `register_adapter()` | Dynamically registered Python adapter classes via `ai_jury.adapters.register_adapter("my-vendor", MyAdapter)` |
@@ -166,9 +170,9 @@ A `local` agent is a normal `[[agent]]` with `vendor = "local"`, an `endpoint`
 zero marginal cost and enables fully offline reviews.
 
 A **hosted-API agent** is a normal `[[agent]]` with `vendor = "anthropic-api"`,
-`vendor = "openai-api"`, or `vendor = "google-api"` and a `model` — no `command`, no
-CLI install, no interactive login. The API key comes from the environment only
-(`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY`), never from `jury.toml`,
+`vendor = "openai-api"`, `vendor = "google-api"`, or `vendor = "xai-api"` and a `model` — no
+`command`, no CLI install, no interactive login. The API key comes from the environment only
+(`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` / `XAI_API_KEY`), never from `jury.toml`,
 so it can't leak into a checked-in config; the endpoint is a fixed, non-configurable
 constant per vendor (unlike `local`'s user-supplied `endpoint`, so there is no SSRF
 surface to validate — the Gemini adapter's URL depends on `model`, but only to select
@@ -236,6 +240,12 @@ subject to the prompt-injection defences applied to the change under review. The
 policy support is fully project-agnostic and hardcodes no project names; see
 `examples/policy.toml` for a generic example.
 
+"Trusted" is a statement about the file's author, and discovery cannot check it:
+on a checkout of a pull request's own branch, an auto-discovered policy file is
+the PR author's, with no fencing. Unlike an auto-discovered `jury.toml`, it is not
+behind the config-trust gate. Pass `--policy` naming a base-branch file when the
+checkout is not yours (see [security.md](security.md#trust-boundary)).
+
 ## Supported platforms
 
 CI proves the package on a deliberately small matrix (see
@@ -274,11 +284,12 @@ minutes there is no reason to keep it. Security scanning runs per-commit too:
 
 | Workflow | Runner | Trigger |
 |:--|:--|:--|
-| CI (cross-OS matrix + coverage) | GitHub-hosted | push + PR — **authoritative** |
-| CodeQL | GitHub-hosted | push + PR + weekly `schedule` |
-| OpenSSF Scorecard | GitHub-hosted | push to `main` + weekly `schedule` |
-| Deploy website (Pages) | GitHub-hosted | push to `main` (+ manual dispatch) |
-| Publish to PyPI + Release | GitHub-hosted | `v*` tag (OIDC trusted publishing) |
+| CI (`ci.yml`: cross-OS matrix + coverage) | GitHub-hosted | push + PR — **authoritative** |
+| CodeQL (`codeql.yml`) | GitHub-hosted | push + PR + weekly `schedule` |
+| OpenSSF Scorecard (`scorecard.yml`) | GitHub-hosted | push to `main` + weekly `schedule` |
+| Deploy website (`pages.yml`) | GitHub-hosted | push to `main` (+ manual dispatch) |
+| Publish to PyPI + Release (`publish.yml`) | GitHub-hosted | `v*` tag (OIDC trusted publishing) |
+| PR description lint (`pr-lint.yml`: a real description + a linked issue) | GitHub-hosted | pull request opened / edited / reopened / synchronize |
 
 ## Implemented capabilities
 

@@ -29,7 +29,8 @@ already have installed.
   and argues; synthesis produces a single verdict with consensus, disputed, and
   notable single-reviewer findings.
 - **Native CLIs first, APIs too.** A CLI seat runs the vendor's own coding agent
-  (`claude`, `codex`, `agy`) as a subprocess rather than a raw model API call;
+  (`claude`, `codex`, or `agy` when seated by name) as a subprocess rather than a
+  raw model API call;
   hosted-API and local-model seats join the same panel over HTTP, alongside the
   CLIs or instead of them where none is installed.
 - **Stdlib-first.** No third-party Python dependencies — just `subprocess`,
@@ -60,7 +61,11 @@ already have installed.
 - **NOT a general-purpose multi-agent framework.** It does one thing: convene a
   review jury over a diff (review → debate → synthesis). It is not a toolkit
   for building arbitrary agent workflows, orchestration graphs, or autonomous
-  agents. The round structure is deliberately fixed and auditable.
+  agents. The round structure is deliberately fixed and auditable. The one
+  single-agent entry point, `jury run-agent`, runs one agent for one role
+  (review, gate, chair, or — with `--allow-write` — an implementer that edits a
+  worktree) so an orchestrator can call it; composing those calls into a workflow
+  stays the orchestrator's job.
 - **Downstream, project-specific policy does not belong here.** House style,
   required checks, severity gates tuned to one team, org-specific rules — these
   belong in the consuming repository's own policy files (e.g. `jury.toml`,
@@ -77,7 +82,9 @@ already have installed.
 - **Stdlib only.** No external dependencies; the code stays small enough to read
   end to end.
 - **Local-first and fail-soft.** Missing CLIs are skipped, not fatal; the run
-  continues with whoever is available (unless `--strict`).
+  continues with whoever is available (unless `--strict`). Fail-soft is not
+  silent: when the config names two or more vendors and fewer than
+  `min_vendors` (default 2) actually contribute a review, the run exits `3`.
 - **Orchestrator owns the prompts; adapters own invocation.** The round
   structure lives in one file and stays auditable; adding a vendor is a small,
   isolated adapter.
@@ -128,7 +135,8 @@ and `SECURITY.md` for the full reference.
 
 - You want a managed, zero-setup hosted experience with a dashboard, retention,
   and support — use a hosted PR-review product instead.
-- You can't or won't install vendor agent CLIs locally / in CI.
+- You can't or won't install vendor agent CLIs *and* can't use a vendor API key or
+  a local model server either (hosted-API and local seats need no CLI).
 - You need a generic framework to build arbitrary multi-agent systems — this
   isn't one.
 - You need to encode one project's bespoke review policy *inside the tool* —
