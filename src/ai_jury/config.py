@@ -545,6 +545,9 @@ KNOWN_JURY_KEYS = (
     "theater_style",
     # Large-diff handling (issue #31); a nested table, like `ci`/`context`.
     "diff",
+    # The report footer (issue #911); a nested table too. Rendering-only:
+    # not in `config_hash`.
+    "output",
     # Risk-aware tiered model routing (issue #524) and the static-analysis
     # pre-pass (issue #523). Both are read by `_from_dict` and documented in
     # docs/configuration.md, so `--strict-config` must not reject them (#715).
@@ -849,6 +852,14 @@ def validate_config(data: dict, strict: bool = False) -> list:
         not isinstance(routing, str) or routing.strip().lower() not in KNOWN_ROUTINGS
     ):
         errors.append(f"jury.routing must be one of {', '.join(KNOWN_ROUTINGS)} (got {routing!r}).")
+
+    # The attribution footer (issue #911) is a bool, like `theater`: a string
+    # "false" is truthy, so accepting it would keep the footer the operator turned off.
+    output_cfg = jury.get("output")
+    if isinstance(output_cfg, dict):
+        attribution = output_cfg.get("attribution")
+        if attribution is not None and not isinstance(attribution, bool):
+            errors.append(f"jury.output.attribution must be true or false (got {attribution!r}).")
 
     # Adaptive rounds (issue #40): max_rounds >= 1 (hard); early_stop is a bool.
     max_rounds_error = bound_error("max_rounds", jury.get("max_rounds"))
@@ -1282,6 +1293,18 @@ class DiffConfig:
     include: list[str] = field(default_factory=list)
 
 
+@dataclass
+class OutputConfig:
+    """The markdown report's footer (issue #911).
+
+    ``attribution`` keeps the ai-jury footer that ends the markdown report and
+    every comment ``jury`` posts, now naming the seats that returned a review.
+    ``False`` removes it. Rendering-only, so it is not in ``config_hash``.
+    """
+
+    attribution: bool = True
+
+
 #: Known keys inside each nested ``[jury.*]`` table (issue #719).
 #:
 #: Every one is DERIVED from the dataclass the matching ``*_from_dict`` reader
@@ -1298,15 +1321,17 @@ class DiffConfig:
 KNOWN_CI_KEYS = tuple(f.name for f in dataclass_fields(CiConfig))
 KNOWN_CONTEXT_KEYS = tuple(f.name for f in dataclass_fields(ContextConfig))
 KNOWN_DIFF_KEYS = tuple(f.name for f in dataclass_fields(DiffConfig))
+KNOWN_OUTPUT_KEYS = tuple(f.name for f in dataclass_fields(OutputConfig))
 
 #: The nested ``[jury.*]`` tables ``_from_dict`` reads, and the keys each one
-#: knows. ``ci``/``context``/``diff`` are the complete set: every other member of
+#: knows. ``ci``/``context``/``diff``/``output`` are the complete set: every other member of
 #: ``KNOWN_JURY_KEYS`` is a scalar (``theater`` is a bool, ``routing`` a string),
 #: so there is no other sub-table for a typo to disappear into.
 KNOWN_NESTED_JURY_KEYS: dict[str, tuple[str, ...]] = {
     "ci": KNOWN_CI_KEYS,
     "context": KNOWN_CONTEXT_KEYS,
     "diff": KNOWN_DIFF_KEYS,
+    "output": KNOWN_OUTPUT_KEYS,
 }
 
 
@@ -1321,6 +1346,8 @@ class JuryConfig:
     ci: CiConfig = field(default_factory=CiConfig)
     context: ContextConfig = field(default_factory=ContextConfig)
     diff: DiffConfig = field(default_factory=DiffConfig)
+    # The markdown report's footer (issue #911).
+    output: OutputConfig = field(default_factory=OutputConfig)
     # Optional run seed. Controls the shared run RNG used by randomized
     # orchestration features (see orchestrator.run_jury). LLM output itself
     # is never made deterministic by this; only the orchestration around it.
@@ -1446,6 +1473,12 @@ def _context_from_dict(data: dict) -> ContextConfig:
     if mode not in ("diff-only", "expanded"):
         mode = "diff-only"
     return ContextConfig(mode=mode, redact_secrets=bool(data.get("redact_secrets", True)))
+
+
+def _output_from_dict(data: dict) -> OutputConfig:
+    if not isinstance(data, dict):
+        raise ConfigError(_nested_table_message("output"))
+    return OutputConfig(attribution=bool(data.get("attribution", True)))
 
 
 def _str_list(value) -> list[str]:
@@ -1592,6 +1625,7 @@ def _from_dict(data: dict) -> JuryConfig:
         ci=_ci_from_dict(jury.get("ci", {})),
         context=_context_from_dict(jury.get("context", {})),
         diff=_diff_from_dict(jury.get("diff", {})),
+        output=_output_from_dict(jury.get("output", {})),
         seed=_seed_from_dict(jury),
         anonymize_debate=bool(jury.get("anonymize_debate", True)),
         prefer_non_reviewer_chair=bool(jury.get("prefer_non_reviewer_chair", False)),

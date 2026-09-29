@@ -51,4 +51,4 @@ _(no output)_
 
 ---
 
-<sub>🏛️ Synthesized by [ai-jury](https://github.com/berkayturanci/ai-jury) — Cross-vendor multi-agent code review · [⭐ Star on GitHub](https://github.com/berkayturanci/ai-jury) · [Add to your repo](https://ai-jury.dev/)</sub>
+<sub>🏛️ Synthesized by [ai-jury](https://github.com/berkayturanci/ai-jury) · claude, agy — Cross-vendor multi-agent code review · [⭐ Star on GitHub](https://github.com/berkayturanci/ai-jury) · [Add to your repo](https://ai-jury.dev/)</sub>

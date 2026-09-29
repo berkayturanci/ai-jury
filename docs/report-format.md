@@ -43,6 +43,22 @@ the relevant `tests/golden/*.md` file. Reviewers can therefore read the new
 report verbatim in the pull request, rather than mentally reconstructing it from
 renderer code.
 
+## The attribution footer
+
+The report ends with a `---` rule and one `<sub>` footer naming the tool and the
+seats that returned a review (issue #911), built by `ai_jury.report.render_footer`:
+
+```markdown
+<sub>🏛️ Synthesized by [ai-jury](https://github.com/berkayturanci/ai-jury) · claude, codex, agy — Cross-vendor multi-agent code review · [⭐ Star on GitHub](https://github.com/berkayturanci/ai-jury) · [Add to your repo](https://ai-jury.dev/)</sub>
+```
+
+`render()` and `render_transcript()` append it by default, so the golden fixtures
+contain it. The CLI renders with `footer=False` and appends it itself once the
+report is complete, so it stays last after the `## CI gate` and patch sections, and
+posting adds only the hidden SHA marker after it (the `--post-progress` final body carries none). `[jury.output] attribution =
+false` and `--no-attribution` leave it off. See
+[configuration](configuration.md#the-attribution-footer-juryoutput).
+
 ## Regenerating the fixtures
 
 After an intentional change, regenerate the snapshots by setting `UPDATE_GOLDEN=1`:

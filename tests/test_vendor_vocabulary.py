@@ -32,7 +32,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from ai_jury import adapters, cli, doctor  # noqa: E402
-from ai_jury import config as config_module
 from ai_jury.adapters import (  # noqa: E402
     GenericCLIAdapter,
     XaiApiAdapter,
@@ -241,19 +240,19 @@ class RegisteringAnAdapterTeachesTheVocabulary(unittest.TestCase):
     name real, so it updates both registries at once.
     """
 
-    def _forget(self, vendor: str) -> None:
-        config_module._REGISTERED_VENDORS.discard(vendor)
-        adapters._VENDOR_ADAPTERS.pop(vendor, None)
+    def setUp(self):
+        # Every table `register_adapter` writes, not only the ones a test
+        # remembers (#904): forgetting the transport table leaked into the
+        # modules that ran next.
+        self.addCleanup(adapters._restore_registry_state, adapters._registry_state())
 
     def test_a_registered_vendor_keeps_its_own_identity(self):
-        self.addCleanup(self._forget, "company-llm")
         adapters.register_adapter("company-llm", GenericCLIAdapter)
         self.assertTrue(is_recognised_vendor("company-llm"))
         self.assertEqual(vendor_identity("company-llm"), "company-llm")
         self.assertIn("company-llm", recognised_vendors())
 
     def test_a_registered_vendor_stops_warning(self):
-        self.addCleanup(self._forget, "company-llm")
         adapters.register_adapter("company-llm", GenericCLIAdapter)
         warnings = validate_config(
             {
@@ -265,8 +264,6 @@ class RegisteringAnAdapterTeachesTheVocabulary(unittest.TestCase):
         self.assertEqual(warnings, [])
 
     def test_two_registered_vendors_are_two_vendors(self):
-        self.addCleanup(self._forget, "company-llm")
-        self.addCleanup(self._forget, "other-llm")
         adapters.register_adapter("company-llm", GenericCLIAdapter)
         adapters.register_adapter("other-llm", GenericCLIAdapter)
         self.assertEqual(len({vendor_identity("company-llm"), vendor_identity("other-llm")}), 2)
@@ -291,16 +288,12 @@ class RegisteringAnAdapterTeachesTheVocabulary(unittest.TestCase):
                 self.assertEqual(set(recognised_vendors()), before)
 
     def test_a_name_that_normalises_onto_a_shipped_vendor_lands_on_that_key(self):
-        registry = dict(adapters._VENDOR_ADAPTERS)
-        self.addCleanup(adapters._VENDOR_ADAPTERS.update, registry)
-        self.addCleanup(config_module._REGISTERED_VENDORS.discard, "openai")
         adapters.register_adapter("  OpenAI  ", GenericCLIAdapter)
         self.assertIs(adapters._VENDOR_ADAPTERS["openai"], GenericCLIAdapter)
         self.assertNotIn("  OpenAI  ", adapters._VENDOR_ADAPTERS)
         self.assertEqual(list(recognised_vendors()).count("openai"), 1)
 
     def test_the_shipped_names_are_never_duplicated(self):
-        self.addCleanup(config_module._REGISTERED_VENDORS.discard, "cli")
         register_vendor("cli")
         self.assertEqual(list(recognised_vendors()).count("cli"), 1)
 
@@ -713,19 +706,12 @@ class ARecognisedVendorIsRecognisedByEveryRule(unittest.TestCase):
         self.assertEqual(distinct_vendors(config.enabled_agents), 1)
 
     def test_registering_a_padded_name_registers_the_normalised_one(self):
-        registry = dict(adapters._VENDOR_ADAPTERS)
-        registered = set(config_module._REGISTERED_VENDORS)
-        try:
-            adapters.register_adapter("  My-Vendor  ", GenericCLIAdapter)
-            self.assertEqual(vendor_identity("my-vendor"), "my-vendor")
-            spec = AgentSpec(name="x", vendor="MY-VENDOR", command="mine")
-            self.assertIsInstance(make_adapter(spec), GenericCLIAdapter)
-            self.assertIn("my-vendor", recognised_vendors())
-        finally:
-            adapters._VENDOR_ADAPTERS.clear()
-            adapters._VENDOR_ADAPTERS.update(registry)
-            config_module._REGISTERED_VENDORS.clear()
-            config_module._REGISTERED_VENDORS.update(registered)
+        self.addCleanup(adapters._restore_registry_state, adapters._registry_state())
+        adapters.register_adapter("  My-Vendor  ", GenericCLIAdapter)
+        self.assertEqual(vendor_identity("my-vendor"), "my-vendor")
+        spec = AgentSpec(name="x", vendor="MY-VENDOR", command="mine")
+        self.assertIsInstance(make_adapter(spec), GenericCLIAdapter)
+        self.assertIn("my-vendor", recognised_vendors())
 
     def test_a_non_string_vendor_normalises_to_nothing(self):
         """A config mistake to warn about, not a crash."""
