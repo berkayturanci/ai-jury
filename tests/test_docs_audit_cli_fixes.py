@@ -73,7 +73,7 @@ def strict_warnings(test, data):
     try:
         return validate_config(data, strict=True)
     except ConfigError as exc:
-        test.fail(f"config refused: {exc}")
+        raise test.failureException(f"config refused: {exc}") from exc
 
 
 class _TempDirCase(unittest.TestCase):
