@@ -436,7 +436,7 @@
       // A bring-your-own CLI seat runs with your permissions: ai-jury knows no
       // sandbox flag for it (privilege.py warns about every one), so the sample
       // asks the CLI for its own read-only mode and says so on the seat (#859).
-      cursor:     { vendor: "cli", command: "cursor-agent", unsandboxed: true, extra_args: CURSOR_READ_ONLY_ARGS, prompt_mode: "arg" },
+      cursor:     { vendor: "cli", command: "cursor-agent", unsandboxed: true, extra_args: CURSOR_READ_ONLY_ARGS },
       aider:      { vendor: "cli", command: "aider", unsandboxed: true, extra_args: AIDER_READ_ONLY_ARGS, prompt_mode: "arg" }
     };
     var LABEL = {
@@ -1320,7 +1320,7 @@
         logo: "logos/cursor.svg",
         color: "var(--c-cursor)",
         desc: "Headless CLI agent from the AI-native code editor, in its ask mode and sandbox. Unsandboxed \u2014 runs with your permissions: it trusts the checkout's .cursor/ hooks, so seat it only on checkouts you trust.",
-        config: "# " + UNSANDBOXED_LABEL + "\n" + UNSANDBOXED_HINT + '\n[[agent]]\nname = "cursor"\nvendor = "cli"\ncommand = "cursor-agent"\nextra_args = ' + tomlArray(CURSOR_READ_ONLY_ARGS) + '\nprompt_mode = "arg"',
+        config: "# " + UNSANDBOXED_LABEL + "\n" + UNSANDBOXED_HINT + '\n[[agent]]\nname = "cursor"\nvendor = "cli"\ncommand = "cursor-agent"\nextra_args = ' + tomlArray(CURSOR_READ_ONLY_ARGS),
         command: "jury --pr 123"
       },
       {

@@ -645,7 +645,6 @@ name = "cursor"
 vendor = "cli"
 command = "cursor-agent"
 extra_args = ["--print", "--trust", "--mode", "ask", "--sandbox", "enabled", "--model", "claude-4.6-sonnet-medium", "--output-format", "text"]
-prompt_mode = "arg"
 
 # unsandboxed — runs with your permissions
 [[agent]]

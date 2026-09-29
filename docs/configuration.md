@@ -854,7 +854,6 @@ name = "cursor"
 vendor = "cli"
 command = "cursor-agent"
 extra_args = ["--print", "--trust", "--mode", "ask", "--sandbox", "enabled", "--model", "claude-4.6-sonnet-medium", "--output-format", "text"]
-prompt_mode = "arg"
 
 # The same CLI pointed at a Grok model: `vendor = "xai"` so the seat is counted
 # as xAI by the cross-vendor guard rather than as one more generic `cli`.
@@ -923,6 +922,33 @@ you trust.**
   appends the prompt after it.
 
 Both modes are the CLI's own promise, not something jury enforces.
+
+**How the prompt reaches each seat.** Every Cursor seat above takes the prompt on
+stdin: none sets `prompt_mode`, so the default `stdin` applies. With no prompt on
+its command line, `cursor-agent -p` reads one from stdin. Measured on
+`cursor-agent` 2026.09.26: with an empty stdin it stops with `No prompt provided
+for print mode`, and with text on stdin it goes on to the model call, as it does
+with the prompt as an argument. The account's usage limit stopped both runs before
+a reply, so a reply to a stdin prompt was not observed. The aider seat has to use
+`prompt_mode = "arg"`, because `--message` takes the prompt from its command line,
+and `arg` puts the whole prompt into one argument. Linux caps one argument at
+128 KiB: measured in a Linux container, a 131071-byte argument ran and a
+131072-byte one failed with `Argument list too long`. That is below the 200000-byte
+default of `[jury.diff] max_bytes`, and the prompt is the diff plus jury's own
+instructions, so on Linux a large diff fails that seat. macOS caps the whole
+command line at 1 MiB (`getconf ARG_MAX`). Windows caps it at 32767 characters,
+according to Microsoft's `CreateProcess` documentation; this was not measured.
+When a spawn fails this way, the seat's error names the prompt's size and
+`prompt_mode`. On Linux, give an `arg` seat a lower `max_bytes` and
+`chunk_max_bytes`, which apply to the whole panel, or use a CLI that reads stdin.
+
+Cursor's sandbox (`--sandbox enabled`) was measured on macOS only. On Linux,
+Cursor's run-modes documentation says the sandbox needs kernel 6.2 or later with
+Landlock v3 and unprivileged user namespaces, and that without them Cursor "falls
+back to asking for approval before running commands". jury has not measured
+whether a headless `--print` run on such a host then refuses the command or
+stops. On macOS, `--mode ask` alone already kept the seat from writing the file
+or running the command (the measurement above).
 
 `prompt_mode` is part of the config hash when it is written (#746), like
 `adapter`: the two modes are two invocation protocols, so a `--cache` entry made

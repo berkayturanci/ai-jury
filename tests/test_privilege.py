@@ -1910,12 +1910,14 @@ class AnAgySandboxThatIsAnotherOptionsValueIsNotTheSandbox(unittest.TestCase):
     def test_a_valued_sandbox_in_a_value_position_is_left_as_the_value(self):
         args = ["--model", "--sandbox=false"]
         self.assertEqual(privilege.enforce_read_only("google", list(args)), ["--sandbox", *args])
-        self.assertEqual(
-            privilege.audit_agent(
-                AgentSpec(name="agy", vendor="google", command="agy", extra_args=args)
-            ),
-            [agy_warning("agy")],
+        warnings = privilege.audit_agent(
+            AgentSpec(name="agy", vendor="google", command="agy", extra_args=args)
         )
+        self.assertEqual(len(warnings), 2, warnings)
+        self.assertEqual(warnings[0], agy_warning("agy"))
+        # Named as what agy reads it as (#910), and never as a switch-off.
+        self.assertIn("`--sandbox=false` as the value of `--model`", warnings[1])
+        self.assertNotIn("would turn agy's sandbox off", warnings[1])
 
     def test_codex_spellings_in_a_value_position_are_not_reported(self):
         spec = AgentSpec(name="agy", vendor="google", command="agy", extra_args=["--model", "-s"])
@@ -2153,6 +2155,23 @@ class TheAuditFailsClosedOnTokensItCannotPlace(unittest.TestCase):
             with self.subTest(args=args):
                 self.assertEqual(privilege._claude_unread_risks(args), [])
 
+    def test_an_empty_tools_value_with_a_list_after_it_is_reported(self):
+        # `--tools` is variadic: `--tools '' Bash` would give Claude Bash (#910).
+        for args, index in (
+            (["--", "--tools", "", "Bash"], 1),
+            (["--", "--tools", "", "Read", "--x"], 1),
+            (["--model", "--tools", "", "Bash"], 1),
+        ):
+            with self.subTest(args=args):
+                self.assertEqual(privilege._claude_unread_risks(args), [(index, "--tools")])
+                warnings = privilege.audit_agent(self._claude(*args))
+                self.assertTrue(any("jury cannot tell" in w for w in warnings), warnings)
+
+    def test_an_empty_tools_value_that_ends_the_list_is_still_exempt(self):
+        for args in (["--", "--tools", ""], ["--", "--tools", "", "--x"], ["--", "--tools="]):
+            with self.subTest(args=args):
+                self.assertEqual(privilege._claude_unread_risks(args), [])
+
     def test_codex_bypass_tokens_the_readers_do_not_place_warn(self):
         for args in (
             ["--", "--yolo"],
@@ -2241,6 +2260,18 @@ class NoWarningRepeatsAnArgvValue(unittest.TestCase):
             command="agy",
             extra_args=["-s", f"{FAKE_PLAIN}{FAKE_KEY}", f"-s={FAKE_PLAIN}{FAKE_KEY}"],
         ),
+        "agy sandbox as a value": AgentSpec(
+            name="g",
+            vendor="google",
+            command="agy",
+            extra_args=["--log-file", f"--sandbox={FAKE_PLAIN}{FAKE_KEY}"],
+        ),
+        "unknown vendor sandbox value": AgentSpec(
+            name="u",
+            vendor="acme",
+            command="mycli",
+            extra_args=[f"--sandbox={FAKE_PLAIN}{FAKE_KEY}"],
+        ),
     }
 
     def _assert_clean(self, text):
@@ -2320,6 +2351,151 @@ class NoWarningRepeatsAnArgvValue(unittest.TestCase):
         warnings = privilege.audit_agent(spec)
         self.assertTrue(warnings)
         self._assert_clean("\n".join(warnings))
+
+
+class ASingleDashSandboxIsAgysSandbox(unittest.TestCase):
+    """Go reads `-sandbox` as `--sandbox` (#910).
+
+    `_agy_bare_sandbox` counted only `--sandbox`, so a configured `-sandbox` got a
+    second one injected in front of it. agy 1.2.13 parses the pair (measured with
+    `agy --sandbox -sandbox --print-timeout bad`, which fails on the duration, not
+    on the repeat), but the injection was needless and the audit read the argv by
+    a narrower rule than agy does.
+    """
+
+    def _agy(self, *extra_args):
+        return AgentSpec(name="agy", vendor="google", command="agy", extra_args=list(extra_args))
+
+    def test_it_is_not_doubled(self):
+        for vendor in ("google", "weirdvendor"):
+            for args in (["-sandbox"], ["-sandbox", "--yolo"], ["--yolo", "-sandbox"]):
+                with self.subTest(vendor=vendor, args=args):
+                    self.assertEqual(privilege.enforce_read_only(vendor, list(args)), args)
+
+    def test_it_counts_as_the_sandbox(self):
+        self.assertTrue(privilege._is_sandboxed(["-sandbox"], vendor="google"))
+        self.assertEqual(privilege.audit_agent(self._agy("-sandbox")), [agy_warning("agy")])
+
+    def test_one_with_a_value_after_it_is_named_as_not_agys_sandbox(self):
+        warnings = privilege.audit_agent(self._agy("-sandbox", "read-only"))
+        self.assertEqual(len(warnings), 2, warnings)
+        self.assertIn("`-sandbox read-only`", warnings[1])
+        self.assertIn("not agy's sandbox", warnings[1])
+
+
+class TheAuditSaysWhatAnUnreadAgySandboxIs(unittest.TestCase):
+    """A `--sandbox` agy does not read as a flag is named as what it is (#910).
+
+    In `["--log-file", "--sandbox"]` the `--sandbox` is the log file's name. The
+    injection already covered it; the audit said nothing about the configured one.
+    """
+
+    def _audit(self, *extra_args):
+        spec = AgentSpec(name="agy", vendor="google", command="agy", extra_args=list(extra_args))
+        return privilege.audit_agent(spec)
+
+    def test_the_value_of_an_option_is_named_with_the_option(self):
+        cases = {
+            ("--log-file", "--sandbox"): "`--sandbox` as the value of `--log-file`",
+            ("-model", "-sandbox"): "`-sandbox` as the value of `--model`",
+            ("--yolo", "--add-dir", "--sandbox"): "`--sandbox` as the value of `--add-dir`",
+        }
+        for args, named in cases.items():
+            with self.subTest(args=args):
+                warnings = self._audit(*args)
+                self.assertEqual(len(warnings), 2, warnings)
+                self.assertEqual(warnings[0], agy_warning("agy"))
+                self.assertIn(named, warnings[1])
+                self.assertIn("does not read it as its sandbox flag", warnings[1])
+                self.assertIn("which jury adds when there is none", warnings[1])
+
+    def test_one_after_the_flags_end_is_named_as_such(self):
+        for args in (["review", "--sandbox"], ["--", "--sandbox"]):
+            with self.subTest(args=args):
+                warnings = self._audit(*args)
+                self.assertIn(
+                    "`--sandbox` after agy has stopped reading flags", "\n".join(warnings)
+                )
+
+    def test_several_are_named_in_one_sentence(self):
+        warnings = self._audit("--log-file", "--sandbox", "--model", "-sandbox")
+        self.assertEqual(len(warnings), 2, warnings)
+        self.assertIn(
+            "`--sandbox` as the value of `--log-file`, `-sandbox` as the value of `--model`",
+            warnings[1],
+        )
+        self.assertIn("Drop them.", warnings[1])
+
+    def test_a_sandbox_agy_reads_is_not_named(self):
+        for args in (["--sandbox", "--log-file", "x"], ["--log-file=x", "--sandbox"]):
+            with self.subTest(args=args):
+                self.assertEqual(self._audit(*args), [agy_warning("agy")])
+
+
+class AnUnknownVendorsSandboxValueIsRemovedAndSaid(unittest.TestCase):
+    """Every `--sandbox=<value>` leaves an unknown vendor's argv, command or not (#910).
+
+    `vendor = "acme"`, `command = "mycli"`, `extra_args = ["--sandbox=false"]`
+    spawns `mycli --sandbox`. The audit's generic sentence did not say so.
+    """
+
+    def _seat(self, *extra_args, command="mycli", vendor="acme", adapter=None):
+        return AgentSpec(
+            name="u", vendor=vendor, command=command, adapter=adapter, extra_args=list(extra_args)
+        )
+
+    def test_the_value_is_removed_with_or_without_a_command(self):
+        for command in ("mycli", ""):
+            with self.subTest(command=command):
+                spec = self._seat("--sandbox=false", command=command)
+                self.assertEqual(adapters._read_only_extra_args(spec), ["--sandbox"])
+        argv = adapters.make_adapter(self._seat("--sandbox=false")).build_argv("P")
+        self.assertEqual(argv, ["mycli", "--sandbox"])
+
+    def test_the_audit_names_the_removal(self):
+        for command in ("mycli", ""):
+            with self.subTest(command=command):
+                warnings = privilege.audit_agent(self._seat("--sandbox=false", command=command))
+                self.assertEqual(len(warnings), 2, warnings)
+                self.assertIn("`--sandbox=false`, which jury removes", warnings[0])
+                self.assertIn("every `--sandbox=<value>`", warnings[0])
+                self.assertIn('`adapter = "cli"`', warnings[0])
+                self.assertIn("Drop it,", warnings[0])
+
+    def test_every_removed_value_is_named_even_a_true_one(self):
+        warnings = privilege.audit_agent(self._seat("--sandbox=true", "-sandbox=read-only"))
+        self.assertIn("`--sandbox=true`, `-sandbox=read-only`, which jury removes", warnings[0])
+        self.assertIn("Drop them,", warnings[0])
+
+    def test_no_value_no_sentence(self):
+        for args in ([], ["--sandbox"], ["--model", "--sandbox=false"]):
+            with self.subTest(args=args):
+                text = "\n".join(privilege.audit_agent(self._seat(*args)))
+                self.assertNotIn("which jury removes", text)
+
+    def test_only_an_unknown_vendor_gets_it(self):
+        for vendor, adapter, command in (
+            ("google", None, "agy"),
+            ("openai", None, "codex"),
+            ("anthropic", None, "claude"),
+            ("cli", None, "mycli"),
+            ("xai", None, "cursor-agent"),
+            ("acme", "cli", "mycli"),
+        ):
+            with self.subTest(vendor=vendor, adapter=adapter):
+                spec = self._seat(
+                    "--sandbox=false", command=command, vendor=vendor, adapter=adapter
+                )
+                text = "\n".join(privilege.audit_agent(spec))
+                self.assertNotIn("which jury removes:", text)
+
+    def test_the_rule_is_the_enforcements_last_branch(self):
+        for vendor in ("acme", " ACME ", "weirdvendor"):
+            with self.subTest(vendor=vendor):
+                self.assertTrue(privilege._agy_enforced_as_unknown(vendor))
+        for vendor in ("google", "openai", "anthropic", "cli", "xai", "local", "acme-api"):
+            with self.subTest(vendor=vendor):
+                self.assertFalse(privilege._agy_enforced_as_unknown(vendor))
 
 
 if __name__ == "__main__":
