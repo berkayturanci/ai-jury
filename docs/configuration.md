@@ -684,9 +684,10 @@ patch sections.
 Every comment `jury` posts ends with exactly one footer: the single summary comment,
 the issue comment, the last comment of `--post-mode phased`, and the final body of
 the `--post-progress` live comment. The live comment's intermediate states, the
-`--live` per-step comments and inline comments do not carry it. It sits before the
-hidden incremental SHA marker, so `--incremental` still reads the marker from the
-last comment. JSON, SARIF and `keel-reviews` output never get it. It is static text
+`--live` per-step comments and inline comments do not carry it. On the summary, issue
+and last phased comment it sits before the hidden incremental SHA marker, so
+`--incremental` still reads the marker from the last comment. The `--post-progress`
+final body carries no SHA marker (it never has), so it ends with the footer. JSON, SARIF and `keel-reviews` output never get it. It is static text
 in a report you already chose to print or post, so it makes no request of its own.
 
 ```toml

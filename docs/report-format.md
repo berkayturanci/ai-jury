@@ -55,7 +55,7 @@ seats that returned a review (issue #911), built by `ai_jury.report.render_foote
 `render()` and `render_transcript()` append it by default, so the golden fixtures
 contain it. The CLI renders with `footer=False` and appends it itself once the
 report is complete, so it stays last after the `## CI gate` and patch sections, and
-posting adds only the hidden SHA marker after it. `[jury.output] attribution =
+posting adds only the hidden SHA marker after it (the `--post-progress` final body carries none). `[jury.output] attribution =
 false` and `--no-attribution` leave it off. See
 [configuration](configuration.md#the-attribution-footer-juryoutput).
 

@@ -254,6 +254,15 @@ class PostedComments(unittest.TestCase):
         self.assertEqual(0, code)
         final = reporter.return_value.finish.call_args.args[0]
         self.assertEqual(1, final.count(LEAD))
+        # The live comment's final body has never carried the incremental SHA
+        # marker (only the summary, issue and phased paths add it), so it ends
+        # with the footer; the docs say so rather than promising a marker.
+        self.assertIsNone(parse_reviewed_sha([final]))
+        self.assertTrue(final.rstrip().endswith("</sub>"))
+        docs = (Path(__file__).parent.parent / "docs" / "configuration.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("The `--post-progress`\nfinal body carries no SHA marker", docs)
         for call in reporter.return_value.update.call_args_list:
             self.assertNotIn("ai-jury](https", call.args[0])
 
