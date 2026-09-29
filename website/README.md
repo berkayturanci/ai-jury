@@ -1,10 +1,18 @@
 # Website
 
-The static landing site for `ai-jury`. Originated as a Claude Design handoff
-bundle and shipped here verbatim — `index.html`, `docs.html`,
-`coverage.html`, `coverage-report.html`, `404.html`, plus `styles.css`,
-`docs.css`, `app.js`, the favicon set, `site.webmanifest`, and the
-convergence logo + OG banner under `assets/`. No build step.
+The static landing site for `ai-jury`, served at <https://ai-jury.dev/>. It began
+as a Claude Design handoff bundle and has been edited in place since. No build step.
+
+- **Pages:** `index.html`, `docs.html` (renders `docs/*.md` from the release tag),
+  `coverage.html`, `coverage-report.html`, the article `agent-pr-said-one-line.html`,
+  and `404.html`.
+- **Code and style:** `app.js`, `styles.css`, `docs.css`.
+- **For crawlers and agents:** `sitemap.xml`, `robots.txt`, `llms.txt`, and the
+  IndexNow key file (`<key>.txt`, see `pages.yml`).
+- **Images:** the favicon set, `apple-touch-icon.png`, `site.webmanifest`; under
+  `assets/` the convergence logo, the OG banner, the README hero and the two theater
+  GIFs; under `logos/` the integration-card logos.
+- **Domain:** `CNAME` (`ai-jury.dev`, see [Custom domain](#custom-domain)).
 
 ## Preview locally
 
@@ -17,15 +25,18 @@ python3 -m http.server 8000
 ## Deploy
 
 `.github/workflows/pages.yml` publishes this directory to **GitHub Pages** on every push
-to `main` that touches `website/**` (and via manual `workflow_dispatch`). The same
-workflow also writes `website/coverage/` (HTML coverage report) and
-`website/coverage-badge.json` (shields-endpoint badge), which `index.html` links to.
+to `main`, whatever it touches — there is no path filter, so the published coverage
+report stays current with the code — and via manual `workflow_dispatch`. Before the
+upload the same workflow writes `website/coverage/` (HTML coverage report) and
+`website/coverage-badge.json` (shields-endpoint badge), which `index.html` links to,
+and copies the repository's `install.sh` in as `website/install.sh`. After the deploy
+it pings IndexNow with the URLs in `sitemap.xml`.
 
 One-time repository setup (Settings → Pages):
 
 1. Set **Source** to **GitHub Actions**.
 2. Trigger the *Deploy website* workflow (push to `main` or run it manually).
-3. The default URL is `https://ai-jury.dev/`.
+3. The site is served at the custom domain `https://ai-jury.dev/` (see below).
 
 ## Analytics
 
@@ -57,19 +68,11 @@ Favicons and the README hero are regenerated from their SVG sources via
 `apt install librsvg2-bin`). The OG banner (`assets/og-banner.png`) is a
 one-shot designer asset and is **not** rebuilt by `make assets`.
 
-## Custom domain (optional)
+## Custom domain
 
-To serve under a maintainer-owned subdomain such as
-`jury.berkayturanci.com` or `ai-jury.berkayturanci.com`:
-
-1. **DNS** (at your domain provider): add a `CNAME` record for the subdomain pointing to
-   `berkayturanci.github.io` (do not append the repo path).
-2. **GitHub** (Settings → Pages → Custom domain): enter the subdomain and save. GitHub
-   writes a `CNAME` file into the published site and provisions HTTPS.
-3. Keep "Enforce HTTPS" enabled once the certificate is issued.
-
-> A `CNAME` file is intentionally **not** committed here: committing one before DNS is
-> configured would override the working `github.io` URL. Configure the domain in the
-> Pages settings instead, which manages the `CNAME` for you. If you prefer to commit it,
-> add a `website/CNAME` file containing only the bare hostname and update the workflow
-> to include it.
+The site is served at `ai-jury.dev`, and `website/CNAME` holds that bare hostname;
+the workflow uploads the whole directory, so the file ships with every deploy. For a
+Pages site deployed from a GitHub Actions workflow, GitHub's documentation says the
+custom domain is the one set under Settings → Pages → Custom domain and that a
+`CNAME` file in the artifact is not what configures it, so a change of domain is made
+there (and in DNS), with `CNAME` updated to match. Keep "Enforce HTTPS" enabled.

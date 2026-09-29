@@ -76,7 +76,7 @@
       "Universal AI Agent Provider Support (CLIs, Hosted APIs, Local LLMs, Custom Agents)",
       "Adversarial Multi-Agent Cross-Examination and Debate",
       "Chair Verification & Consensus Pass (Filters False Positives)",
-      "Automated Patch Application (`jury apply`)",
+      "Opt-in Patch Application for Verified Findings (`jury apply`)",
       "Risk-Aware Tiered Model Routing (`--tiered`)",
       "Static Analysis Linter Pre-Pass (`--hints`)",
       "100% Free & Offline Local Review via Ollama / llama.cpp",
@@ -94,37 +94,37 @@
       {
         "@type": "Question",
         "name": "Is ai-jury a hosted service or SaaS?",
-        "acceptedAnswer": { "@type": "Answer", "text": "No. ai-jury is a local-first CLI and skill that runs on your machine or in your CI. There is no dashboard and no ai-jury server; your diff goes only to the model endpoints you configure — vendor CLIs and APIs, or your own model server for local seats. A hosted review SaaS is a deliberate non-goal." }
+        "acceptedAnswer": { "@type": "Answer", "text": "No. ai-jury is a local-first CLI and skill that runs on your machine or in your CI. There is no dashboard and no ai-jury server; your diff goes only to the model endpoints you configure — vendor CLIs and APIs, or your own model server for local seats. A landing/docs site exists, but a hosted review SaaS is a deliberate non-goal." }
       },
       {
         "@type": "Question",
         "name": "Does ai-jury edit or auto-apply fixes to my code?",
-        "acceptedAnswer": { "@type": "Answer", "text": "Never automatically. By design it reviews and reports. With --suggest-patches it can emit inspectable suggested patches for verified findings only — you review and apply them yourself." }
+        "acceptedAnswer": { "@type": "Answer", "text": "Never on its own. By design it reviews and reports. With --suggest-patches it can emit inspectable suggested patches for verified findings only; applying one is a separate command you run yourself (jury apply, which asks before it writes)." }
       },
       {
         "@type": "Question",
         "name": "Can ai-jury review issues, not just pull requests?",
-        "acceptedAnswer": { "@type": "Answer", "text": "Yes. jury --issue 42 convenes the same panel on a GitHub issue and judges it for completeness and clarity — reproduction steps, expected vs actual, scope/acceptance criteria, missing context — with a READY / NEEDS-INFO / UNCLEAR verdict instead of the PR's APPROVE / REQUEST-CHANGES / COMMENT. Panel voting (--decision vote), live streaming (--live), and posting the verdict back (--post, via gh issue comment) all work for issues too." }
+        "acceptedAnswer": { "@type": "Answer", "text": "Yes. jury --issue 42 convenes the same panel on a GitHub issue and judges it for completeness & clarity — reproduction steps, expected vs actual, scope/acceptance criteria, missing context — with a READY / NEEDS-INFO / UNCLEAR verdict instead of the PR's APPROVE / REQUEST CHANGES / COMMENT. Panel voting (--decision vote), live streaming (--live), and posting the verdict back (--post, via gh issue comment) all work for issues too." }
       },
       {
         "@type": "Question",
         "name": "Can ai-jury run completely offline and free?",
-        "acceptedAnswer": { "@type": "Answer", "text": "Yes. Add a local open-weight model as a panel seat (vendor = \"local\" via Ollama, llama.cpp, vLLM, or LM Studio) and run with --preset offline for a $0, fully-offline review, or mix one local seat with cloud CLIs for more vendor diversity." }
+        "acceptedAnswer": { "@type": "Answer", "text": "Yes. Add a local open-weight model as a panel seat (vendor = \"local\" via Ollama, llama.cpp, vLLM, or LM Studio): jury init --preset offline scaffolds a local-only panel, and every review then runs on your own hardware at $0 — or mix one local seat with cloud CLIs for more vendor diversity. Only fetching or posting to GitHub (--pr, --post) goes through gh and the network; --diff-file needs neither." }
       },
       {
         "@type": "Question",
         "name": "Are these real API calls to the models?",
-        "acceptedAnswer": { "@type": "Answer", "text": "By default, no — ai-jury drives each vendor's own coding-agent CLI (claude and codex; agy only if you seat it) as a subprocess: a CLI seat runs the vendor's own agent, and the jury hands every seat the diff in its prompt, so no reviewer needs access to your repository. It is orchestration, not a raw model API call. An optional hosted-API adapter (vendor = anthropic-api / openai-api / google-api) replaces the CLI with a zero-install reviewer keyed by just an API key, for CI/container environments where installing an agent CLI isn't practical." }
+        "acceptedAnswer": { "@type": "Answer", "text": "It depends on the seat. By default ai-jury drives each vendor's own coding-agent CLI (claude and codex; agy only if you seat it) as a subprocess: a CLI seat runs the vendor's own agent, and the jury hands every seat the diff in its prompt, so no reviewer needs access to your repository. That is orchestration, not a raw model API call. A hosted-API seat (vendor = \"anthropic-api\", \"openai-api\", \"google-api\" or \"xai-api\", or \"openai-compatible\" for OpenRouter, DeepSeek, Groq and others) is a direct API call keyed by an API key, for CI or containers where installing an agent CLI isn't practical. A local seat (vendor = \"local\") calls your own model server, and vendor = \"cli\" wraps another coding CLI such as Aider or Goose." }
       },
       {
         "@type": "Question",
         "name": "What do I need installed to use ai-jury?",
-        "acceptedAnswer": { "@type": "Answer", "text": "Python 3.11+ and at least one reviewer — an agent CLI (claude, codex, agy), a local model via Ollama, or a hosted-API key (ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY) with no CLI at all. The gh CLI is needed for --pr / --issue and for posting comments. The tool itself is stdlib-only, with no third-party Python dependencies." }
+        "acceptedAnswer": { "@type": "Answer", "text": "Python 3.11+ and at least one reviewer seat: an agent CLI (claude, codex; agy opt-in; cursor-agent or aider as a vendor = \"cli\" seat), a local model via Ollama, or a hosted API. A hosted-API key alone seats nothing: add an [[agent]] seat for it to jury.toml — vendor = \"anthropic-api\" with ANTHROPIC_API_KEY, say, or \"openai-compatible\" with OPENROUTER_API_KEY — and no CLI install is needed. The gh CLI is needed for --pr / --issue and for posting comments. The tool itself is stdlib-only — no third-party Python dependencies." }
       },
       {
         "@type": "Question",
         "name": "How does ai-jury keep secrets and untrusted diffs safe?",
-        "acceptedAnswer": { "@type": "Answer", "text": "Reviewers read attacker-controlled diffs, so they get as little as each CLI allows. The claude seat has no tools at all; the codex seat runs a read-only sandbox but can still read files; agy is opt-in only and not in the default panel, because its sandbox does not confine it. Each native reviewer starts in an empty directory rather than your repository, diff-only context is the default, and secret redaction is on before anything is sent." }
+        "acceptedAnswer": { "@type": "Answer", "text": "Reviewers read attacker-controlled diffs, so they get as little as each CLI allows. The claude seat has no tools at all; the codex seat runs a read-only sandbox but can still read files; agy is opt-in only and not in the default panel, because its sandbox does not confine it. Each native reviewer starts in an empty directory rather than your repository, diff-only context is the default, and secret redaction is on before anything is sent. See the security model." }
       }
     ]
   }
@@ -387,7 +387,7 @@
       <!-- Search Bar -->
       <div class="integration-search-bar reveal">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-        <input type="text" id="int-search" placeholder="Search 22 verified coding agents, model backends, CI tools, or plugins..." aria-label="Search integrations" />
+        <input type="text" id="int-search" placeholder="Search 22 coding agents, model backends, CI tools, or plugins..." aria-label="Search integrations" />
         <kbd class="search-kbd" aria-hidden="true" title="Press / to search">/</kbd>
         <span class="search-hint" id="int-count-badge">Showing 22 integrations</span>
       </div>
@@ -451,7 +451,7 @@
             <legend class="legend">Reviewers (Universal Support)</legend>
             <label class="opt"><input type="checkbox" id="ag-claude" checked /> <span class="dot d-claude"></span> Claude Code</label>
             <label class="opt"><input type="checkbox" id="ag-codex" checked /> <span class="dot d-codex"></span> Codex</label>
-            <label class="opt"><input type="checkbox" id="ag-agy" /> <span class="dot d-agy"></span> Antigravity</label>
+            <label class="opt"><input type="checkbox" id="ag-agy" /> <span class="dot d-agy"></span> Antigravity <span class="tag unsandboxed">opt-in — cannot be confined</span></label>
             <label class="opt"><input type="checkbox" id="ag-qwen" checked /> <span class="dot d-qwen"></span> Local / open-weight <span class="tag">free</span></label>
             <label class="opt"><input type="checkbox" id="ag-deepseek" /> <span class="dot d-deepseek"></span> DeepSeek API <span class="tag accent">new</span></label>
             <label class="opt"><input type="checkbox" id="ag-openrouter" /> <span class="dot d-openrouter"></span> OpenRouter <span class="tag accent">new</span></label>
@@ -574,16 +574,17 @@ jury <span class="k">--issue</span> 42 <span class="k">--decision</span> vote   
 jury <span class="k">--issue</span> 42 <span class="k">--post</span>                <span class="cm"># post the verdict back to the issue thread</span>
 jury <span class="k">--issue</span> 42 <span class="k">--live --post</span>         <span class="cm"># stream + post each step to the issue as it lands</span>
 
-jury <span class="k">--ci --fail-on</span> critical,major    <span class="cm"># gate CI on blocking findings (exit 1)</span>
+jury <span class="k">--pr</span> 123 <span class="k">--ci --fail-on</span> critical,major <span class="cm"># gate CI on blocking findings (exit 1)</span>
 jury <span class="k">--pr</span> 123 <span class="k">--no-min-vendors</span>       <span class="cm"># accept a panel that collapsed to one vendor (else exit 3)</span>
 
 jury run-agent <span class="k">--agent</span> claude <span class="k">--role</span> review <span class="k">--prompt-file</span> p.md
                                       <span class="cm"># one agent, one role, one JSON result (for an orchestrator)</span></code></pre>
       <p class="muted reveal" style="margin-top:1rem">
-        Requires Python 3.11+ and at least one reviewer — an agent CLI (<code class="mono" style="color:var(--accent-2)">claude</code>,
-        <code class="mono" style="color:var(--accent-2)">codex</code>, <code class="mono" style="color:var(--accent-2)">agy</code>),
-        a free local model via Ollama, or a hosted-API key (<code class="mono" style="color:var(--accent-2)">ANTHROPIC_API_KEY</code> /
-        <code class="mono" style="color:var(--accent-2)">OPENAI_API_KEY</code> / <code class="mono" style="color:var(--accent-2)">GEMINI_API_KEY</code>) — no CLI install needed.
+        Requires Python 3.11+ and at least one reviewer seat — an agent CLI (<code class="mono" style="color:var(--accent-2)">claude</code>,
+        <code class="mono" style="color:var(--accent-2)">codex</code>; <code class="mono" style="color:var(--accent-2)">agy</code> opt-in only),
+        a free local model via Ollama, or a hosted API. A hosted-API key (<code class="mono" style="color:var(--accent-2)">ANTHROPIC_API_KEY</code> /
+        <code class="mono" style="color:var(--accent-2)">OPENAI_API_KEY</code> / <code class="mono" style="color:var(--accent-2)">GEMINI_API_KEY</code>) needs no CLI install, but it seats
+        nothing on its own: add an <code class="mono" style="color:var(--accent-2)">[[agent]]</code> seat for it to <code class="mono" style="color:var(--accent-2)">jury.toml</code>.
         <code class="mono" style="color:var(--accent-2)">gh</code> is needed for <code class="mono" style="color:var(--accent-2)">--pr</code> / <code class="mono" style="color:var(--accent-2)">--issue</code> and for posting comments.
       </p>
     </section>
@@ -629,13 +630,13 @@ endpoint = <span class="s">"http://localhost:11434/v1"</span></code></pre>
 
       <div class="cfg-keys reveal">
         <div class="cfg-key"><code>rounds</code><span><code>1</code> = independent review only · <code>2</code> = + a debate round. With <code>early_stop</code> / <code>max_rounds</code>, a unanimous panel stops early.</span></div>
-        <div class="cfg-key"><code>chair</code><span>Which reviewer synthesizes the final verdict and writes the report. Defaults to the first available agent.</span></div>
+        <div class="cfg-key"><code>chair</code><span>Which reviewer verifies the findings and synthesizes the final verdict. Unset, it is <code>claude</code> in the built-in defaults and the first <code>[[agent]]</code> of a <code>jury.toml</code>; when the named chair cannot run, the first usable agent takes over.</span></div>
         <div class="cfg-key"><code>decision</code><span><code>chair</code> (default) lets the chair decide, or <code>vote</code> tallies the panel — majority wins, ties resolve to the stricter stance. The <code>--decision</code> flag. Works for PRs <em>and</em> issues.</span></div>
-        <div class="cfg-key"><code>verify</code><span>The chair re-judges each candidate finding against the code to drop false positives — evidence is kept in the report.</span></div>
+        <div class="cfg-key"><code>verify</code><span>The chair judges each candidate finding against the diff to drop false positives — evidence is kept in the report.</span></div>
         <div class="cfg-key"><code>auto_depth</code><span>Scales rounds &amp; verify to the diff — docs-only → shallow, security-touching → full. The <code>--auto</code> flag.</span></div>
         <div class="cfg-key"><code>[[agent]]</code><span>Per reviewer: <code>vendor</code>, <code>command</code>, <code>extra_args</code>; for a local seat use <code>vendor = "local"</code> + <code>endpoint</code> + <code>model</code>.</span></div>
         <div class="cfg-key"><code>timeout · retries</code><span><code>total_timeout</code> / <code>phase_timeout</code> / <code>retries</code> bound a run; results can be cached and reviews made incremental.</span></div>
-        <div class="cfg-key"><code>[jury.diff]</code><span>Large diffs are filtered + chunked; <code>[jury.context]</code> is <code>diff-only</code> by default with secret redaction on.</span></div>
+        <div class="cfg-key"><code>[jury.diff]</code><span>Lockfiles and generated files are filtered out; a diff still over <code>max_bytes</code> is refused unless you opt in to chunking (<code>chunk = true</code> / <code class="mono">--chunk</code>). <code>[jury.context]</code> is <code>diff-only</code> by default with secret redaction on.</span></div>
         <div class="cfg-key"><code>[jury.ci]</code><span>Four keys: <code>fail_on</code> (severities that fail <code class="mono">--ci</code>), <code>ignore_unverified</code>, <code>min_vendors</code> — the cross-vendor guard — and <code>min_reviews</code>, a panel-size floor that is off at its default <code>0</code>. Report format is a flag (<code class="mono">--format</code>), not a key here.</span></div>
         <div class="cfg-key"><code>min_vendors</code><span>Distinct vendors that must have <em>contributed</em> a review before the run counts as cross-vendor consensus. Ships at <code>2</code>: fewer, and the run exits <code>3</code> — its own code, so a collapsed panel never reads as a clean pass. It only applies once that many vendors are enabled, so a deliberate one-CLI setup is untouched; <code class="mono">--no-min-vendors</code> (or <code>min_vendors = 0</code>) accepts a collapsed panel, <code class="mono">--strict</code> fails at startup on a missing CLI instead.</span></div>
       </div>
@@ -673,7 +674,7 @@ endpoint = <span class="s">"http://localhost:11434/v1"</span></code></pre>
         <div class="feature reveal" data-d="1">
           <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div>
           <h3>Cost-aware</h3>
-          <p><code>--auto</code> scales rounds/verify to the diff (docs-only → shallow; security-touching → full); large diffs are chunked and results cached.</p>
+          <p><code>--auto</code> scales rounds/verify to the diff (docs-only → shallow; security-touching → full); opt in to <code>--chunk</code> for a diff over budget and <code>--cache</code> to reuse results.</p>
         </div>
         <div class="feature reveal" data-d="2">
           <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg></div>
@@ -766,7 +767,7 @@ endpoint = <span class="s">"http://localhost:11434/v1"</span></code></pre>
             <tr><th scope="row">Consensus / debate rounds</th><td class="me"><span class="y">✓</span></td><td><span class="y">✓</span></td><td><span class="p">◐</span></td><td><span class="p">◐</span></td></tr>
             <tr><th scope="row">Review an issue for completeness (not just diffs)</th><td class="me"><span class="y">✓</span></td><td><span class="n">✕</span></td><td><span class="n">✕</span></td><td><span class="n">✕</span></td></tr>
             <tr><th scope="row">Verdict by panel vote or single chair</th><td class="me"><span class="y">✓</span></td><td><span class="n">✕</span></td><td><span class="n">✕</span></td><td><span class="n">✕</span></td></tr>
-            <tr><th scope="row">Verification pass (re-reads code)</th><td class="me"><span class="y">✓</span></td><td><span class="p">◐</span></td><td><span class="n">✕</span></td><td><span class="p">◐</span></td></tr>
+            <tr><th scope="row">Verification pass (judges findings against the diff)</th><td class="me"><span class="y">✓</span></td><td><span class="p">◐</span></td><td><span class="n">✕</span></td><td><span class="p">◐</span></td></tr>
             <tr><th scope="row">CI gating (non-zero on blocking)</th><td class="me"><span class="y">✓</span></td><td><span class="p">◐</span></td><td><span class="n">✕</span></td><td><span class="y">✓</span></td></tr>
             <tr><th scope="row">Risk-aware auto-depth</th><td class="me"><span class="y">✓</span></td><td><span class="n">✕</span></td><td><span class="n">✕</span></td><td><span class="p">◐</span></td></tr>
             <tr><th scope="row">Animated deliberation view (in-terminal)</th><td class="me"><span class="y">✓</span></td><td><span class="n">✕</span></td><td><span class="n">✕</span></td><td><span class="n">✕</span></td></tr>
@@ -803,7 +804,7 @@ endpoint = <span class="s">"http://localhost:11434/v1"</span></code></pre>
       <div class="sec-head wide reveal">
         <p class="sec-kicker">Sample output</p>
         <h2>What lands on your PR</h2>
-        <p class="muted">A trimmed real report from <code class="mono" style="color:var(--accent-2)">jury --mock</code> (deterministic, no live CLIs). A live run uses the same pipeline with the real agent CLIs.</p>
+        <p class="muted">A trimmed real report from <code class="mono" style="color:var(--accent-2)">jury --mock --diff-file examples/sample.diff</code> (deterministic, no live CLIs; its two mock seats are the default panel, <code class="mono">claude</code> and <code class="mono">codex</code>). The full, unedited report is the <a href="docs.html#example-run">example run</a>. A live run uses the same pipeline with the agent CLIs your <code class="mono">jury.toml</code> seats.</p>
       </div>
 
       <div class="report reveal">
@@ -813,7 +814,7 @@ endpoint = <span class="s">"http://localhost:11434/v1"</span></code></pre>
         </div>
         <div class="report-body">
           <h3 class="rh"><img src="assets/logos/mark-convergence.svg" alt="" class="rh-mark" /> AI Jury</h3>
-          <p class="rmeta"><strong>Panel:</strong> <code>claude</code> (anthropic), <code>codex</code> (openai), <code>agy</code> (google) &nbsp;·&nbsp; <strong>Chair:</strong> <code>claude</code></p>
+          <p class="rmeta"><strong>Panel:</strong> <code>claude</code> (anthropic), <code>codex</code> (openai) &nbsp;·&nbsp; <strong>Chair:</strong> <code>claude</code></p>
 
           <div class="gh-verdict v-bad">✕ REQUEST CHANGES</div>
           <p class="rsub">One confirmed major issue.</p>
@@ -821,7 +822,7 @@ endpoint = <span class="s">"http://localhost:11434/v1"</span></code></pre>
           <div class="rgroup">
             <h4>Consensus findings</h4>
             <ul class="gh-findings">
-              <li class="gh-finding"><span class="sev sev-high">major</span> <code>src/example.py:42</code> — unchecked return value may swallow an error <span class="why">raised by all three reviewers</span></li>
+              <li class="gh-finding"><span class="sev sev-high">major</span> <code>src/example.py:42</code> — unchecked return value may swallow an error <span class="why">reviewers: claude, codex</span></li>
             </ul>
           </div>
           <div class="rgroup">
@@ -837,15 +838,15 @@ endpoint = <span class="s">"http://localhost:11434/v1"</span></code></pre>
             <summary>Show round-by-round transcript</summary>
             <div class="rd">
               <p class="rd-h">Round 1 — independent reviews</p>
-              <p class="rd-agent"><span class="dot d-claude"></span> <b>claude</b> · <span class="dot d-codex"></span> <b>codex</b> · <span class="dot d-agy"></span> <b>agy</b></p>
-              <p class="rd-line">All three independently flag <code>src/example.py:42</code> <span class="sev sev-high">major</span> and <code>:7</code> missing docstring <span class="sev sev-low">minor</span>.</p>
+              <p class="rd-agent"><span class="dot d-claude"></span> <b>claude</b> · <span class="dot d-codex"></span> <b>codex</b></p>
+              <p class="rd-line">Both independently flag <code>src/example.py:42</code> <span class="sev sev-high">major</span> and <code>:7</code> missing docstring <span class="sev sev-low">minor</span>.</p>
               <p class="rd-h">Round 2 — cross-examination</p>
               <p class="rd-line"><b class="ok-t">AGREE</b> — confirm the unchecked-return finding at <code>:42</code>.</p>
               <p class="rd-line"><b class="dis-t">DISPUTE</b> — the missing-docstring finding is a nit, not blocking.</p>
               <p class="rd-line"><b class="miss-t">MISSED</b> — no test covers the error branch.</p>
             </div>
           </details>
-          <p class="report-foot">Generated by <a href="https://github.com/berkayturanci/ai-jury">ai-jury</a> — a cross-vendor multi-agent PR review jury.</p>
+          <p class="report-foot">🏛️ Synthesized by <a href="https://github.com/berkayturanci/ai-jury">ai-jury</a> · claude, codex — Cross-vendor multi-agent code review · <a href="https://github.com/berkayturanci/ai-jury">⭐ Star on GitHub</a> · <a href="https://ai-jury.dev/">Add to your repo</a></p>
         </div>
       </div>
 
@@ -881,31 +882,31 @@ endpoint = <span class="s">"http://localhost:11434/v1"</span></code></pre>
       </div>
       <div class="faq reveal">
         <details class="qa">
-          <summary>Is this a hosted service or SaaS?<span class="chev"></span></summary>
-          <div class="qa-body"><p>No. ai-jury is a local-first CLI + skill that runs on your machine or in your CI. There's no dashboard and no ai-jury server; your diff goes only to the model endpoints you configure — vendor CLIs and APIs, or your own model server for local seats. A landing/docs site exists, but a hosted review SaaS is a deliberate non-goal.</p></div>
+          <summary>Is ai-jury a hosted service or SaaS?<span class="chev"></span></summary>
+          <div class="qa-body"><p>No. ai-jury is a local-first CLI and skill that runs on your machine or in your CI. There is no dashboard and no ai-jury server; your diff goes only to the model endpoints you configure — vendor CLIs and APIs, or your own model server for local seats. A landing/docs site exists, but a hosted review SaaS is a deliberate non-goal.</p></div>
         </details>
         <details class="qa">
-          <summary>Does it edit or auto-apply fixes to my code?<span class="chev"></span></summary>
-          <div class="qa-body"><p>Never automatically. By design it reviews and reports. With <code class="mono">--suggest-patches</code> it can emit <em>inspectable</em> suggested patches for <strong>verified</strong> findings only — you review and apply them yourself.</p></div>
+          <summary>Does ai-jury edit or auto-apply fixes to my code?<span class="chev"></span></summary>
+          <div class="qa-body"><p>Never on its own. By design it reviews and reports. With <code class="mono">--suggest-patches</code> it can emit <em>inspectable</em> suggested patches for <strong>verified</strong> findings only; applying one is a separate command you run yourself (<code class="mono">jury apply</code>, which asks before it writes).</p></div>
         </details>
         <details class="qa">
-          <summary>Can it review issues, not just PRs?<span class="chev"></span></summary>
-          <div class="qa-body"><p>Yes. <code class="mono">jury --issue 42</code> convenes the same panel on a GitHub <strong>issue</strong> and judges it for completeness &amp; clarity — reproduction steps, expected vs actual, scope/acceptance criteria, missing context — with a <code class="mono">READY / NEEDS-INFO / UNCLEAR</code> verdict instead of the PR's APPROVE / REQUEST-CHANGES / COMMENT. Panel voting (<code class="mono">--decision vote</code>), live streaming (<code class="mono">--live</code>), and posting the verdict back (<code class="mono">--post</code>, via <code class="mono">gh issue comment</code>) all work for issues too.</p></div>
+          <summary>Can ai-jury review issues, not just pull requests?<span class="chev"></span></summary>
+          <div class="qa-body"><p>Yes. <code class="mono">jury --issue 42</code> convenes the same panel on a GitHub <strong>issue</strong> and judges it for completeness &amp; clarity — reproduction steps, expected vs actual, scope/acceptance criteria, missing context — with a <code class="mono">READY / NEEDS-INFO / UNCLEAR</code> verdict instead of the PR's APPROVE / REQUEST CHANGES / COMMENT. Panel voting (<code class="mono">--decision vote</code>), live streaming (<code class="mono">--live</code>), and posting the verdict back (<code class="mono">--post</code>, via <code class="mono">gh issue comment</code>) all work for issues too.</p></div>
         </details>
         <details class="qa">
-          <summary>Can it run completely offline and free?<span class="chev"></span></summary>
-          <div class="qa-body"><p>Yes. Add a local open-weight model as a panel seat (<code class="mono">vendor = "local"</code> via Ollama, llama.cpp, vLLM, or LM Studio) and run with <code class="mono">--preset offline</code> for a $0, fully-offline review — or mix one local seat with cloud CLIs for more vendor diversity.</p></div>
+          <summary>Can ai-jury run completely offline and free?<span class="chev"></span></summary>
+          <div class="qa-body"><p>Yes. Add a local open-weight model as a panel seat (<code class="mono">vendor = "local"</code> via Ollama, llama.cpp, vLLM, or LM Studio): <code class="mono">jury init --preset offline</code> scaffolds a local-only panel, and every review then runs on your own hardware at $0 — or mix one local seat with cloud CLIs for more vendor diversity. Only fetching or posting to GitHub (<code class="mono">--pr</code>, <code class="mono">--post</code>) goes through <code class="mono">gh</code> and the network; <code class="mono">--diff-file</code> needs neither.</p></div>
         </details>
         <details class="qa">
           <summary>Are these real API calls to the models?<span class="chev"></span></summary>
-          <div class="qa-body"><p>ai-jury supports <strong>universal agent providers</strong>: vendor coding-agent CLIs (<code class="mono">claude</code>, <code class="mono">codex</code>, <code class="mono">agy</code>), hosted API providers (OpenRouter, DeepSeek, Groq, Anthropic, OpenAI, Gemini), local models (Ollama, llama.cpp, vLLM, LM Studio), and arbitrary coding CLI tools (<code class="mono">vendor = "cli"</code> like Aider, Goose, OpenHands).</p></div>
+          <div class="qa-body"><p>It depends on the seat. By default ai-jury drives each vendor's own coding-agent CLI (<code class="mono">claude</code> and <code class="mono">codex</code>; <code class="mono">agy</code> only if you seat it) as a subprocess: a CLI seat runs the vendor's own agent, and the jury hands every seat the diff in its prompt, so no reviewer needs access to your repository. That is orchestration, not a raw model API call. A hosted-API seat (<code class="mono">vendor = "anthropic-api"</code>, <code class="mono">"openai-api"</code>, <code class="mono">"google-api"</code> or <code class="mono">"xai-api"</code>, or <code class="mono">"openai-compatible"</code> for OpenRouter, DeepSeek, Groq and others) is a direct API call keyed by an API key, for CI or containers where installing an agent CLI isn't practical. A local seat (<code class="mono">vendor = "local"</code>) calls your own model server, and <code class="mono">vendor = "cli"</code> wraps another coding CLI such as Aider or Goose.</p></div>
         </details>
         <details class="qa">
-          <summary>What do I need installed?<span class="chev"></span></summary>
-          <div class="qa-body"><p>Python 3.11+ and at least one reviewer — an agent CLI (<code class="mono">claude</code>, <code class="mono">codex</code>, <code class="mono">agy</code>, <code class="mono">cursor</code>, <code class="mono">aider</code>), a local model via Ollama, or a hosted-API key (<code class="mono">OPENROUTER_API_KEY</code> / <code class="mono">DEEPSEEK_API_KEY</code> / <code class="mono">GROQ_API_KEY</code> / <code class="mono">XAI_API_KEY</code> / <code class="mono">MOONSHOT_API_KEY</code> / <code class="mono">ANTHROPIC_API_KEY</code> / <code class="mono">OPENAI_API_KEY</code> / <code class="mono">GEMINI_API_KEY</code>) with no CLI at all. The <code class="mono">gh</code> CLI is needed for <code class="mono">--pr</code> / <code class="mono">--issue</code> and for posting comments. The tool itself is <strong>stdlib-only</strong> — no third-party Python dependencies.</p></div>
+          <summary>What do I need installed to use ai-jury?<span class="chev"></span></summary>
+          <div class="qa-body"><p>Python 3.11+ and at least one reviewer seat: an agent CLI (<code class="mono">claude</code>, <code class="mono">codex</code>; <code class="mono">agy</code> opt-in; <code class="mono">cursor-agent</code> or <code class="mono">aider</code> as a <code class="mono">vendor = "cli"</code> seat), a local model via Ollama, or a hosted API. A hosted-API key alone seats nothing: add an <code class="mono">[[agent]]</code> seat for it to <code class="mono">jury.toml</code> — <code class="mono">vendor = "anthropic-api"</code> with <code class="mono">ANTHROPIC_API_KEY</code>, say, or <code class="mono">"openai-compatible"</code> with <code class="mono">OPENROUTER_API_KEY</code> — and no CLI install is needed. The <code class="mono">gh</code> CLI is needed for <code class="mono">--pr</code> / <code class="mono">--issue</code> and for posting comments. The tool itself is <strong>stdlib-only</strong> — no third-party Python dependencies.</p></div>
         </details>
         <details class="qa">
-          <summary>How does it keep secrets and untrusted diffs safe?<span class="chev"></span></summary>
+          <summary>How does ai-jury keep secrets and untrusted diffs safe?<span class="chev"></span></summary>
           <div class="qa-body"><p>Reviewers read attacker-controlled diffs, so they get as little as each CLI allows. The <code class="mono">claude</code> seat has no tools at all; the <code class="mono">codex</code> seat runs a read-only sandbox but can still read files; <code class="mono">agy</code> is opt-in only and not in the default panel, because its sandbox does not confine it. Each native reviewer starts in an empty directory rather than your repository, <code class="mono">diff-only</code> context is the default, and secret redaction is on before anything is sent. See the <a href="docs.html#security">security model</a>.</p></div>
         </details>
       </div>
@@ -914,7 +915,7 @@ endpoint = <span class="s">"http://localhost:11434/v1"</span></code></pre>
     <!-- ───────────────── Notice ───────────────── -->
     <section>
       <div class="notice reveal">
-        <p><strong>Not a hosted SaaS.</strong> This is a local-first CLI + skill, not a hosted review service or a general multi-agent framework. It reviews and reports; it can emit inspectable suggested patches for verified findings, but never applies them automatically.</p>
+        <p><strong>Not a hosted SaaS.</strong> This is a local-first CLI + skill, not a hosted review service or a general multi-agent framework. It reviews and reports; it can emit inspectable suggested patches for verified findings, but never applies them on its own — <code class="mono">jury apply</code> is a command you run.</p>
       </div>
     </section>
 
