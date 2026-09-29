@@ -19,23 +19,29 @@ orchestration.
 
 | Platform | Status | How you install / invoke | Prerequisites |
 |:--|:--|:--|:--|
-| **Claude Code** (plugin) | supported | `/plugin marketplace add berkayturanci/ai-jury` → `/plugin install ai-jury@ai-jury`, or the CLI equivalents. Updating is **not** a re-install; see [install.md](install.md#claude-code) | `jury`, ≥1 agent CLI, `gh` |
-| **Claude Code** (manual skill) | supported | Copy [`skills/ai-jury/`](../skills/ai-jury/SKILL.md) into a project's `.claude/skills/` | `jury`, ≥1 agent CLI, `gh` |
-| **Any shell / CI** | supported | Run the CLI: `jury --pr <n>` or `jury --ci --fail-on critical,major` | `jury`, ≥1 agent CLI, `gh` (for `--pr`) |
+| **Claude Code** (plugin) | supported | `/plugin marketplace add berkayturanci/ai-jury` → `/plugin install ai-jury@ai-jury`, or the CLI equivalents. Updating is **not** a re-install; see [install.md](install.md#claude-code) | `jury`, a reviewer, `gh` |
+| **Claude Code** (manual skill) | supported | Copy [`skills/ai-jury/`](../skills/ai-jury/SKILL.md) into a project's `.claude/skills/` | `jury`, a reviewer, `gh` |
+| **Any shell / CI** | supported | Run the CLI: `jury --pr <n>` or `jury --pr <n> --ci --fail-on critical,major` | `jury`, a reviewer, `gh` (for `--pr`) |
 | **OpenAI Codex CLI** | supported (plugin) | `codex plugin marketplace add https://github.com/berkayturanci/ai-jury` → `codex plugin add ai-jury@ai-jury`. See [install.md](install.md#codex) | `jury`, `codex`, `gh` |
 | **Google Antigravity / Gemini CLI** | supported (plugin) | `agy plugin install https://github.com/berkayturanci/ai-jury` **then** `agy plugin enable ai-jury` — `install` alone leaves it disabled. agy finds the root `skills/` directory by convention (#775); it reads no manifest path. See [install.md](install.md#antigravity) | `jury`, `agy`, `gh` |
-| **Cursor** | supported (local plugin) | `git clone --depth 1 <repo> ~/.cursor/plugins/local/ai-jury`, restart Cursor. There is **no** `cursor-agent plugin install`; the marketplace route registers more than the local one. See [install.md](install.md#cursor). `.cursor-plugin/plugin.json` carries the fields Cursor's plugin reference documents — `logo`, its listing asset, included — and names the same root `skills/` directory as the other manifests; it changes how the plugin *presents*, not what works, and the GUI listing has not been confirmed from here | `jury`, ≥1 agent CLI |
-| **Other IDE/agent CLIs** | manual | Run the `jury` CLI from the integrated terminal | `jury`, ≥1 agent CLI |
+| **Cursor** | supported (local plugin) | `git clone --depth 1 <repo> ~/.cursor/plugins/local/ai-jury`, restart Cursor. There is **no** `cursor-agent plugin install`; the marketplace route registers more than the local one. See [install.md](install.md#cursor). `.cursor-plugin/plugin.json` carries the fields Cursor's plugin reference documents — `logo`, its listing asset, included — and names the same root `skills/` directory as the other manifests; it changes how the plugin *presents*, not what works, and the GUI listing has not been confirmed from here | `jury`, a reviewer |
+| **Other IDE/agent CLIs** | manual | Run the `jury` CLI from the integrated terminal | `jury`, a reviewer |
 | **Hosted SaaS install** | out of scope | — (this is a local-first tool, not a hosted product) | — |
 
 Prerequisites in detail:
 
-- **`jury`** — `pipx install ai-jury` (entry point on PATH). Run
-  `jury init` to scaffold a `jury.toml`.
-- **A reviewer** — at least one agent CLI (`claude`, `codex`, `agy`) **or** a free,
-  offline **local / open-weight** model via Ollama or any OpenAI-compatible server
-  (configured as a `vendor = "local"` agent). Missing/unreachable agents are skipped
-  unless `--strict`.
+- **`jury`** — `pipx install ai-jury` (entry point on PATH), or any other route in
+  the [README's Install section](../README.md#install). Run `jury init` to scaffold a
+  `jury.toml`.
+- **A reviewer** — at least one agent CLI of the built-in panel (`claude`, `codex`), a
+  free, offline **local / open-weight** model via Ollama or any OpenAI-compatible server
+  (configured as a `vendor = "local"` agent), **or** a hosted-API seat (Anthropic,
+  OpenAI, Gemini, xAI, or an OpenAI-compatible provider) with its API key — no CLI
+  needed, which suits CI and containers. `agy` is opt-in: it runs only when a
+  `jury.toml` seats it by name, because it cannot be confined for untrusted diffs.
+  Missing/unreachable agents are skipped unless `--strict` — and a panel left with
+  fewer vendors than its config names (two for the built-in panel) then exits `3`, so
+  one installed CLI alone needs `--no-min-vendors` or a second vendor.
 - **`gh`** — GitHub CLI, authenticated, for `--pr` input and `--post-*` output.
 
 `jury --doctor` checks these prerequisites and reports what is missing (per-agent
