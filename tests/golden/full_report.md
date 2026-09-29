@@ -167,4 +167,4 @@ _Wall-clock seconds and token counts are approximate cost proxies (no direct bil
 
 ---
 
-<sub>🏛️ Synthesized by [ai-jury](https://github.com/berkayturanci/ai-jury) — Cross-vendor multi-agent code review · [⭐ Star on GitHub](https://github.com/berkayturanci/ai-jury) · [Add to your repo](https://ai-jury.dev/)</sub>
+<sub>🏛️ Synthesized by [ai-jury](https://github.com/berkayturanci/ai-jury) · claude, codex, agy — Cross-vendor multi-agent code review · [⭐ Star on GitHub](https://github.com/berkayturanci/ai-jury) · [Add to your repo](https://ai-jury.dev/)</sub>
