@@ -306,9 +306,12 @@ class TheExitTableNamesTheStartupRefusals(unittest.TestCase):
         from pathlib import Path as _Path
 
         path = _Path(tmp) / "jury.toml"
+        # An absolute path that does not exist, on every OS: "/nonexistent/…" is not
+        # absolute on Windows, where validation refuses it as a relative command. A
+        # TOML literal string ('…') keeps a Windows path's backslashes as written.
+        missing = _Path(tmp).resolve() / "missing" / "claude"
         path.write_text(
-            '[[agent]]\nname = "claude"\nvendor = "anthropic"\n'
-            'command = "/nonexistent/ai-jury-probe/claude"\n',
+            f'[[agent]]\nname = "claude"\nvendor = "anthropic"\ncommand = \'{missing}\'\n',
             encoding="utf-8",
         )
         return str(path)
