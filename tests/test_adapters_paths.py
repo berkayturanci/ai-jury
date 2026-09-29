@@ -3,6 +3,8 @@ Network/subprocess-free (all mocked)."""
 
 from __future__ import annotations
 
+import errno
+import os
 import subprocess
 import sys
 import unittest
@@ -454,6 +456,55 @@ class UniversalAdapterTests(unittest.TestCase):
         argv, stdin = mock_spawn.call_args[0]
         self.assertIn("PROMPT", argv)
         self.assertIsNone(stdin)
+
+    def _too_long(self, prompt_mode, exc):
+        spec = _spec(name="aider", vendor="cli", command="aider", prompt_mode=prompt_mode)
+        with (
+            mock.patch("shutil.which", return_value="/usr/local/bin/aider"),
+            mock.patch("ai_jury.adapters._spawn", side_effect=exc),
+        ):
+            return adapters.GenericCLIAdapter(spec).run("P" * 1000 + "\u00e9")
+
+    def test_a_prompt_too_long_for_argv_is_named(self):
+        # #901: `arg` puts the prompt in one argument, which Linux caps at 128 KiB.
+        res = self._too_long("arg", OSError(errno.E2BIG, "Argument list too long"))
+        self.assertFalse(res.ok)
+        self.assertEqual(res.error_code, adapters.ERR_SPAWN_FAILED)
+        self.assertIn("Argument list too long", res.error)
+        self.assertIn("the prompt (1002 bytes) is one command-line argument", res.error)
+        self.assertIn('prompt_mode = "stdin"', res.error)
+        self.assertIn("[jury.diff] max_bytes", res.error)
+
+    def test_windows_error_206_is_named_too(self):
+        exc = OSError(errno.ENOENT, "The filename or extension is too long")
+        exc.winerror = 206
+        self.assertIn('prompt_mode = "stdin"', self._too_long("arg", exc).error)
+
+    def test_other_spawn_failures_and_stdin_seats_get_no_hint(self):
+        for mode, exc in (
+            ("arg", OSError(errno.ENOENT, "No such file or directory")),
+            ("arg", RuntimeError("boom")),
+            ("stdin", OSError(errno.E2BIG, "Argument list too long")),
+        ):
+            with self.subTest(mode=mode, exc=exc):
+                res = self._too_long(mode, exc)
+                self.assertEqual(res.error_code, adapters.ERR_SPAWN_FAILED)
+                self.assertNotIn("prompt_mode", res.error)
+
+    @unittest.skipUnless(os.name == "posix", "measured on Linux and macOS; Windows is mocked")
+    def test_a_real_oversized_argument_fails_with_the_hint(self):
+        # 2 MiB: over Linux's 128 KiB per argument and macOS's 1 MiB ARG_MAX.
+        spec = _spec(
+            name="big",
+            vendor="cli",
+            command=sys.executable,
+            extra_args=["-c", "pass"],
+            prompt_mode="arg",
+        )
+        res = adapters.GenericCLIAdapter(spec).run("x" * (2 * 1024 * 1024), timeout=30)
+        self.assertFalse(res.ok)
+        self.assertEqual(res.error_code, adapters.ERR_SPAWN_FAILED)
+        self.assertIn("the prompt (2097152 bytes) is one command-line argument", res.error)
 
     def test_generic_openai_adapter_missing_key_reporting(self):
         spec = _spec(

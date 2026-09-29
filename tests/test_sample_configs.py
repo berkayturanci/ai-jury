@@ -348,6 +348,17 @@ class CliSeatsAreReadOnlyAndLabelled(unittest.TestCase):
                 # config may have it off, and `--sandbox` "overrides config".
                 self.assertEqual(_value_after(args, "--sandbox"), "enabled", seat)
 
+    def test_cursor_seats_take_the_prompt_on_stdin(self):
+        # #901: the samples mixed `arg` and stdin. `cursor-agent -p` reads its
+        # prompt from stdin (2026.09.26: empty stdin stops with "No prompt
+        # provided for print mode"; text on stdin reaches the model call), and
+        # stdin has no size cap, while one argument is capped at 128 KiB on Linux.
+        cursor = [s for s in self.cli if s.data.get("command") == "cursor-agent"]
+        self.assertGreaterEqual(len(cursor), 6)
+        for seat in cursor:
+            with self.subTest(seat=seat):
+                self.assertIn(seat.data.get("prompt_mode"), (None, "stdin"), seat)
+
     def test_aider_seats_ask_dry_run_and_never_commit(self):
         aider = [s for s in self.cli if s.data.get("command") == "aider"]
         self.assertTrue(aider)
@@ -371,12 +382,16 @@ class CliSeatsAreReadOnlyAndLabelled(unittest.TestCase):
         self.assertEqual(_js_const(src, "UNSANDBOXED_LABEL"), LABEL)
         self.assertIn("ask", cursor)
         self.assertEqual(aider[-1:], ["--message"])
-        for name, argv in (("cursor", "CURSOR_READ_ONLY_ARGS"), ("aider", "AIDER_READ_ONLY_ARGS")):
+        for name, argv, mode in (
+            ("cursor", "CURSOR_READ_ONLY_ARGS", None),
+            ("aider", "AIDER_READ_ONLY_ARGS", '"arg"'),
+        ):
             with self.subTest(seat=name):
                 seat = agents.get(name, {})
                 self.assertEqual(seat.get("extra_args"), argv)
                 self.assertEqual(seat.get("unsandboxed"), "true")
-                self.assertEqual(seat.get("prompt_mode"), '"arg"')
+                # Cursor reads its prompt from stdin; aider's `--message` needs argv (#901).
+                self.assertEqual(seat.get("prompt_mode"), mode)
         self.assertFalse(AUTO_APPROVE_FLAGS & (set(cursor) | set(aider)))
         # …and the generated TOML writes both the argv and the label.
         self.assertIn(

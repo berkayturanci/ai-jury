@@ -269,15 +269,25 @@ content; the least-privilege audit (`--strict` to fail the run) will flag it.
   it, and the audit names `-s …` or a value after `--sandbox` as not agy's
   sandbox. A `--sandbox` that is another option's value (`--model --sandbox`:
   agy parses flags by Go's rules, so `--model` takes the next token whatever it
-  is) or that follows a positional does not count either. agy reads
-  `--sandbox=<value>` as true or false and its last `--sandbox` wins, so every
-  `--sandbox=<value>` is **removed** before `--sandbox` is added:
-  `--sandbox=false` would otherwise switch the added flag off. The audit reports
-  a false or unreadable value as removed; `--sandbox=true` only repeats the flag.
-  The same injection covers an unknown vendor, which is spawned as agy when it
-  has no `command`: a seat with `vendor = "acme"` and `-s read-only` now gets
-  `--sandbox` added too, which the operator's own binary may reject. The audit
-  warns about an unknown vendor's seat either way.
+  is) or that follows a positional does not count either, and the audit says
+  which it is: `["--log-file", "--sandbox"]` is reported as `--sandbox` being the
+  value of `--log-file`, not a flag (#910). Go reads one dash as two, so a
+  configured `-sandbox` is the sandbox and gets no second `--sandbox` in front of
+  it (#910). agy reads `--sandbox=<value>` as true or false and its last
+  `--sandbox` wins, so every `--sandbox=<value>` is **removed** before
+  `--sandbox` is added: `--sandbox=false` would otherwise switch the added flag
+  off. The audit reports a false or unreadable value as removed; `--sandbox=true`
+  only repeats the flag.
+- **An unknown vendor** (one jury does not know, with no `adapter`) gets the same
+  handling as agy, **with or without a `command`** (#910). Without one it is
+  spawned as agy. With one it is spawned by the generic CLI adapter, and still
+  gets agy's `--sandbox` added and every `--sandbox=<value>` removed: `vendor =
+  "acme"`, `command = "mycli"`, `extra_args = ["--sandbox=false"]` spawns `mycli
+  --sandbox`, whatever `--sandbox=false` meant to `mycli`. A seat with `-s
+  read-only` gets `--sandbox` added too, which the operator's own binary may
+  reject. The audit names each value it removed, and warns about an unknown
+  vendor's seat either way. To pass such a seat's argv through as written, set
+  `adapter = "cli"`.
 - **`anthropic-api` / `openai-api` / `google-api`** (hosted-API reviewers) are out of
   scope for the sandbox audit entirely, and there is no `--strict` finding to fix here:
   unlike every CLI-backed adapter, a hosted-API call makes a single HTTP request with

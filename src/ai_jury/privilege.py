@@ -391,12 +391,22 @@ def _agy_bare_sandbox(extra_args: list[str]) -> bool:
     """
     args = list(extra_args)
     for i in _agy_flag_positions(args):
-        if args[i] != "--sandbox":
+        if not _is_agy_bare_sandbox_token(args[i]):
             continue
         nxt = args[i + 1] if i + 1 < len(args) else ""
         if nxt == "" or nxt.startswith("-"):
             return True
     return False
+
+
+def _is_agy_bare_sandbox_token(token: str) -> bool:
+    """*token* names agy's sandbox with no inline value: ``--sandbox`` or ``-sandbox``.
+
+    Go's ``flag`` reads one dash and two alike, so a configured ``-sandbox`` is
+    the sandbox too (#910): counting only ``--sandbox`` injected a second one in
+    front of it.
+    """
+    return _agy_flag_name(token) == "sandbox" and "=" not in token
 
 
 def _agy_sandbox_values(extra_args: list[str]) -> list[int]:
@@ -461,7 +471,7 @@ def _agy_foreign_sandbox_tokens(extra_args: list[str]) -> list[str]:
         if a.startswith("-s="):
             found.append(_shown_flag(a))
             continue
-        if a not in ("-s", "--sandbox"):
+        if a != "-s" and not _is_agy_bare_sandbox_token(a):
             continue
         nxt = args[i + 1] if i + 1 < len(args) else ""
         if nxt and not nxt.startswith("-"):
@@ -469,6 +479,45 @@ def _agy_foreign_sandbox_tokens(extra_args: list[str]) -> list[str]:
         elif a == "-s":
             found.append(a)
     return found
+
+
+def _agy_sandbox_not_read(extra_args: list[str]) -> list[str]:
+    """Sandbox tokens agy reads as something other than a flag, each with what it is (#910).
+
+    ``["--log-file", "--sandbox"]`` names a log file called ``--sandbox``: Go's
+    ``flag`` hands a value option the next token whatever it looks like. And
+    parsing stops at the first positional or ``--``, so a ``--sandbox`` after one
+    is prompt text. Enforcement injects the real flag when none is read; this
+    says why the configured one did not count. Named in agy's vocabulary only:
+    the token through :func:`_shown_flag`, the option by its name from
+    :data:`_AGY_VALUE_OPTIONS`.
+    """
+    args = list(extra_args)
+    flags = _agy_flag_positions(args)
+    found: list[str] = []
+    for i, a in enumerate(args):
+        if i in flags or _agy_flag_name(a) != "sandbox":
+            continue
+        owner = _agy_flag_name(args[i - 1]) if i - 1 in flags else None
+        if owner in _AGY_VALUE_OPTIONS and "=" not in args[i - 1]:
+            found.append(f"`{_shown_flag(a)}` as the value of `--{owner}`")
+        else:
+            found.append(f"`{_shown_flag(a)}` after agy has stopped reading flags")
+    return found
+
+
+def _agy_enforced_as_unknown(vendor: str) -> bool:
+    """True for a vendor :func:`enforce_read_only` gives agy's handling without being agy.
+
+    The vendor falls through to the last branch there: not claude, codex or
+    agy, and not a vendor that spawns no process or a bring-your-own CLI. With a
+    ``command`` it is spawned by the generic CLI adapter, without one as agy —
+    and either way every ``--sandbox=<value>`` is removed from its argv (#910).
+    """
+    vendor = normalise_vendor(vendor)
+    if vendor in _NO_SANDBOX_VENDORS or vendor.endswith("-api"):
+        return False
+    return vendor not in ("anthropic", "google") and not _is_codex(vendor)
 
 
 def _codex_options(extra_args: list[str]) -> list[str]:
@@ -811,7 +860,10 @@ def _claude_unread_risks(extra_args: list[str]) -> list[tuple[int, str]]:
         nxt = args[i + 1] if i + 1 < len(args) else None
         if a == "--permission-mode=dontAsk" or (a == "--permission-mode" and nxt == "dontAsk"):
             continue
-        if a == "--tools=" or (a == "--tools" and nxt == ""):
+        # An empty `--tools` grants nothing only when no list value follows it:
+        # `--tools` is variadic, so `--tools '' Bash` would give Claude Bash (#910).
+        after = args[i + 2] if i + 2 < len(args) else "-"
+        if a == "--tools=" or (a == "--tools" and nxt == "" and after.startswith("-")):
             continue
         found.append((i, mark))
     return found
@@ -1784,6 +1836,31 @@ def _audit_agent(spec) -> list[str]:
                 f"sandbox: agy 1.2.12 has only a boolean `--sandbox` (jury adds it) "
                 f"and no `-s`, so agy may refuse the argv or read a value as prompt "
                 f"text. Drop {'it' if len(foreign) == 1 else 'them'}."
+            )
+        # A sandbox token agy reads as an option's value or as prompt text (#910).
+        # Enforcement added the real flag unless one was already read.
+        not_read = _agy_sandbox_not_read(declared)
+        if not_read:
+            one = len(not_read) == 1
+            warnings.append(
+                f"agent '{label}' (agy) is configured with {', '.join(not_read)}, so "
+                f"agy does not read {'it' if one else 'them'} as its sandbox flag. The "
+                f"seat's sandbox is a `--sandbox` agy does read, which jury adds when "
+                f"there is none. Drop {'it' if one else 'them'}."
+            )
+    elif _agy_enforced_as_unknown(vendor):
+        # An unknown vendor gets agy's `--sandbox` handling, command or not (#910):
+        # every `--sandbox=<value>` is removed, whatever it means to this CLI.
+        removed = [_shown_flag(declared[i]) for i in _agy_sandbox_values(declared)]
+        if removed:
+            named = ", ".join(f"`{t}`" for t in removed)
+            one = len(removed) == 1
+            warnings.append(
+                f"agent '{label}' is configured with {named}, which jury removes: a "
+                f"vendor jury does not know gets agy's sandbox handling, which drops "
+                f"every `--sandbox=<value>` and adds a bare `--sandbox`, whatever the "
+                f"value means to this CLI. Drop {'it' if one else 'them'}, or set "
+                f'`adapter = "cli"` to pass the argv through as written.'
             )
 
     # Non-claude agents must run under a restricting sandbox (issue #100) — one

@@ -16,6 +16,7 @@ real adapter so it is not exposed in the process list (issue #287):
 from __future__ import annotations
 
 import contextlib
+import errno
 import json
 import os
 import re
@@ -2235,6 +2236,30 @@ class GenericCLIAdapter(Adapter):
     def _stdin_for(self, prompt: str) -> str | None:
         return None if self._prompt_mode() == "arg" else prompt
 
+    def _argv_too_long_hint(self, exc: BaseException, prompt: str) -> str:
+        """Why the spawn failed, when the prompt on argv made the command line too long (#901).
+
+        ``prompt_mode = "arg"`` puts the whole prompt in one argument. Linux caps
+        one argument at 128 KiB (measured: 131071 bytes spawned, 131072 failed
+        with ``E2BIG``), below the 200000-byte ``[jury.diff] max_bytes`` default;
+        macOS caps the whole command line at ``ARG_MAX`` (1 MiB, also ``E2BIG``);
+        Windows at 32767 characters, which ``CreateProcess`` reports as error 206
+        (Microsoft's documentation; not measured here). Said, so the operator is
+        not left with a bare "Argument list too long".
+        """
+        too_long = isinstance(exc, OSError) and (
+            exc.errno == errno.E2BIG or getattr(exc, "winerror", None) == 206
+        )
+        if not too_long or self._prompt_mode() != "arg":
+            return ""
+        size = len(prompt.encode("utf-8"))
+        return (
+            f"; the prompt ({size} bytes) is one command-line argument "
+            f'(prompt_mode = "arg"), longer than this system allows. Use '
+            f'prompt_mode = "stdin" if the CLI reads its prompt from stdin, or lower '
+            f"[jury.diff] max_bytes / chunk_max_bytes."
+        )
+
     def available(self) -> bool:
         command = self.spec.command or ""
         if not command:
@@ -2303,7 +2328,8 @@ class GenericCLIAdapter(Adapter):
                 False,
                 "",
                 duration,
-                f"failed to spawn '{self.spec.command}': {redaction.redact(str(exc))[0]}",
+                f"failed to spawn '{self.spec.command}': {redaction.redact(str(exc))[0]}"
+                f"{self._argv_too_long_hint(exc, prompt)}",
                 error_code=ERR_SPAWN_FAILED,
             )
 
