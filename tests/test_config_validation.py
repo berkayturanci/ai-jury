@@ -950,11 +950,22 @@ class NestedJuryTableUnknownKeys(unittest.TestCase):
         for table, keys in KNOWN_NESTED_JURY_KEYS.items():
             with self.subTest(table=table):
                 # Values that pass the per-key shape rules; only the NAMES matter.
+                # The switches are real booleans and `mode` a real mode since the
+                # docs audit of 2026-09-29 made both shapes hard errors.
                 body = {
                     key: []
                     if key in ("fail_on", "exclude", "include")
+                    else "diff-only"
+                    if key == "mode"
                     else True
-                    if key == "attribution"
+                    if key
+                    in (
+                        "attribution",
+                        "ignore_unverified",
+                        "redact_secrets",
+                        "chunk",
+                        "exclude_generated",
+                    )
                     else 1
                     for key in keys
                 }

@@ -360,13 +360,15 @@ class CacheClearArgv(unittest.TestCase):
         self.assertIn("Cleared 0 cache entries", out)
 
     def test_cache_clear_dir_flag_at_end_no_value(self):
-        # `--cache-dir` is the last token with no value: 642->644 false branch.
+        # `--cache-dir` with no value is a usage error now (docs audit
+        # 2026-09-29): it used to clear the DEFAULT cache, which is not the
+        # directory the operator was about to name. Nothing is cleared.
         with mock.patch("ai_jury.cache.Cache") as cache_cls:
             cache_cls.return_value.clear.return_value = 1
             code, out, _ = run(["cache", "clear", "--cache-dir"])
-        self.assertEqual(code, 0)
-        self.assertIn("Cleared 1 cache entry", out)
-        cache_cls.assert_called_once_with(None)
+        self.assertEqual(code, 2)
+        self.assertNotIn("Cleared", out)
+        cache_cls.assert_not_called()
 
     def test_clear_cache_flag(self):
         # The --clear-cache top-level flag path (670-674).

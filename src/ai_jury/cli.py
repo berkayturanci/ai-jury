@@ -513,7 +513,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--post-mode",
         choices=["single", "phased"],
-        default="single",
+        # None is "not passed" (read as 'single'), so a `--post-mode` with no
+        # summary to shape can be told apart from the default and refused.
+        default=None,
         help="with --post-summary: 'single' (one comment) or 'phased' (separate "
         "Round 1 / debate / decision comments)",
     )
@@ -2089,9 +2091,7 @@ def _is_progress_milestone(msg: str) -> bool:
 #:
 #: The flags NOT here were checked against the same table and belong nowhere
 #: else: `--seed` has no bound to break (a malformed `[jury] seed` is read as
-#: "no seed" on purpose, not as an error); `--min-vendors` / `--min-reviews`
-#: are clamped to >= 0 on both surfaces by `_non_negative_int`, which is
-#: deliberately fail-safe rather than fatal; `--chunk`, `--early-stop`,
+#: "no seed" on purpose, not as an error); `--chunk`, `--early-stop`,
 #: `--verify`, `--redact`, `--auto` and `--hints` are booleans; `--effort`,
 #: `--decision`, `--context-mode` and `--format` are argparse `choices`, which
 #: already refuse a value outside the vocabulary; and `--fail-on` has shared its
@@ -2103,6 +2103,12 @@ _BOUNDED_FLAGS = (
     ("--phase-timeout", "phase_timeout", "phase_timeout"),
     ("--retries", "retries", "retries"),
     ("--max-diff-bytes", "max_diff_bytes", "diff.max_bytes"),
+    # The fail-closed guards (docs audit 2026-09-29): they used to be clamped to
+    # >= 0, so `--min-vendors -5` read as `0` — the documented opt-out — and the
+    # cross-vendor guard was off with exit 0. `--no-min-vendors` writes 0, which
+    # passes.
+    ("--min-vendors", "min_vendors", "ci.min_vendors"),
+    ("--min-reviews", "min_reviews", "ci.min_reviews"),
 )
 
 
@@ -2279,27 +2285,37 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     # Plain-language command overview / walkthrough (#265), argv-intercepts like
-    # the other subcommands so the main flag surface stays flat. Match exactly so
-    # trailing junk (`jury examples foo`) falls through to argparse and errors
-    # rather than being silently ignored.
-    if raw == ["examples"]:
-        print(_EXAMPLES)
-        return 0
-    if raw == ["guide"]:
-        print(_GUIDE)
+    # the other subcommands so the main flag surface stays flat. Each has its own
+    # small parser, so `--help` describes the subcommand the epilogue promises it
+    # does (it printed the main help), and trailing junk (`jury examples foo`)
+    # is an error rather than silently ignored.
+    if raw[:1] in (["examples"], ["guide"]):
+        argparse.ArgumentParser(
+            prog=f"jury {raw[0]}",
+            description=(
+                "Print example commands." if raw[0] == "examples" else "Print a short walkthrough."
+            ),
+        ).parse_args(raw[1:])
+        print(_EXAMPLES if raw[0] == "examples" else _GUIDE)
         return 0
     # Documented `jury cache clear` UX (issue #33): handled before argparse so
-    # the rest of the CLI keeps its flat flag surface (no subcommands).
+    # the rest of the CLI keeps its flat flag surface (no subcommands). Parsed
+    # by its own parser BEFORE anything is deleted: `jury cache clear --help`
+    # used to clear the cache, because every argument but `--cache-dir` was
+    # ignored — the one command here that destroys data took a request for help
+    # as a request to run.
     if raw[:2] == ["cache", "clear"]:
         from .cache import Cache
 
-        # An optional --cache-dir may follow.
-        cache_dir = None
-        if "--cache-dir" in raw:
-            idx = raw.index("--cache-dir")
-            if idx + 1 < len(raw):
-                cache_dir = raw[idx + 1]
-        removed = Cache(cache_dir).clear()
+        sub = argparse.ArgumentParser(
+            prog="jury cache clear",
+            description="Delete every local review-cache entry and rotate the cache key.",
+        )
+        sub.add_argument(
+            "--cache-dir", default=None, help="cache directory (default: the user cache dir)"
+        )
+        ns = sub.parse_args(raw[2:])
+        removed = Cache(ns.cache_dir).clear()
         print(f"Cleared {removed} cache entr{'y' if removed == 1 else 'ies'}.")
         return 0
 
@@ -2369,6 +2385,13 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.doctor:
+        # `--doctor` resolves the cross-vendor threshold from `--min-vendors` too
+        # (#863), so the flag's bound holds here as it does on a run.
+        if args.min_vendors is not None:
+            message = bound_error("ci.min_vendors", args.min_vendors, where="--min-vendors")
+            if message:
+                print(f"error: {message}", file=sys.stderr)
+                return 2
         # Model discovery costs a probe per agent and only the JSON export
         # renders it; the human report must not pay for a field it never prints.
         diagnostics = doctor_module.build_diagnostics(
@@ -2470,12 +2493,26 @@ def main(argv: list[str] | None = None) -> int:
     if args.seed is not None:
         config.seed = args.seed
     if args.chair:
+        # Refused, not silently replaced (docs audit 2026-09-29): an unknown
+        # `--chair` used to exit 0 with the first usable agent chairing, so the
+        # operator's choice of synthesizer was ignored without a word. Checked
+        # against the enabled seats, before anything is fetched or spent.
+        enabled = [a.name for a in config.enabled_agents]
+        if args.chair != "rotate" and args.chair not in enabled:
+            print(
+                f"error: --chair {args.chair!r} is not an enabled agent (enabled: "
+                f"{', '.join(enabled) or 'none'}); name one of them, or 'rotate'.",
+                file=sys.stderr,
+            )
+            return 2
         config.chair = args.chair
     # Applied to the config (rather than resolved late like --min-vendors)
     # because the pre-run half of this gate lives in the orchestrator: it has to
     # be able to refuse a bench that is too small BEFORE the panel is paid for.
     if args.min_reviews is not None:
-        config.ci.min_reviews = max(0, args.min_reviews)
+        # Assigned as written: the bound above refuses a negative (docs audit
+        # 2026-09-29), where a `max(0, …)` clamp here used to turn it into "off".
+        config.ci.min_reviews = args.min_reviews
     # --effort is a whole-panel override: it wins over every [[agent]] effort so
     # one flag raises (or lowers) the depth of the entire run.
     if args.effort is not None:
@@ -2531,6 +2568,9 @@ def main(argv: list[str] | None = None) -> int:
             ("--post-progress", args.post_progress),
             ("--label", args.label),
             ("--incremental", args.incremental),
+            # The issue path posts one summary and never reads the mode (docs
+            # audit 2026-09-29): accepted, `phased` was silently ignored.
+            ("--post-mode", args.post_mode is not None),
         ):
             if on:
                 raise SystemExit(
@@ -2548,6 +2588,11 @@ def main(argv: list[str] | None = None) -> int:
     ):
         if on and not has_target:
             raise SystemExit(f"error: {flag} requires --pr")
+    # `--post-mode` shapes the summary comment, so without one it shapes nothing
+    # (docs audit 2026-09-29): `--post-mode phased` alone exited 0 and posted
+    # nothing, which docs/parameters.md has always said it requires.
+    if args.post_mode is not None and not args.post_summary:
+        raise SystemExit("error: --post-mode requires --post-summary (or --post)")
 
     # Live progress on the PR (issue #125): a single sticky comment updated at
     # each round/chunk milestone. Opt-in and requires --pr.
@@ -2628,7 +2673,7 @@ def main(argv: list[str] | None = None) -> int:
         # The routed panel keeps at least the vendor floor the gate will apply
         # (#714); a `--min-vendors` override has to reach the plan, not only the
         # gate that runs after the panel has been paid for.
-        config.ci.min_vendors = max(0, int(args.min_vendors))
+        config.ci.min_vendors = int(args.min_vendors)
     # ``--hints`` / ``--no-hints`` override ``[jury] hints`` in BOTH directions;
     # the sentinel (None) means "not passed", so the config value stands (#715).
     hints_override = getattr(args, "hints", None)

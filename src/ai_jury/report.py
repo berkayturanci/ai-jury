@@ -8,6 +8,7 @@ from . import classification as _classification
 from . import panel as panel_mod
 from .adapters import AgentResult
 from .findings import SEVERITY_ORDER, Finding, flatten_inline
+from .voting import is_abstention
 
 #: A fenced ``suggestion`` block opener (``` ```suggestion ``` or a longer run, tildes too).
 #: ``jury apply`` parses ``` ```suggestion ``` blocks out of a report's prose to build a patch,
@@ -33,17 +34,20 @@ def _block(title: str, body: str) -> str:
 def _seat_list(reviews) -> str:
     """The seats that RETURNED a review, deduplicated, in seat order (issue #911).
 
-    A seat that failed did not sit, so it is not claimed. Chunked reviews carry
-    one result per chunk per seat, hence the dedupe. The name comes from the
-    operator's config, not from an agent, but the footer is posted as raw HTML,
-    so it is flattened and escaped anyway.
+    A seat that failed did not sit, so it is not claimed; nor is one that
+    abstained — answered with nothing, or refused (``voting.is_abstention``,
+    docs audit 2026-09-29) — because it returned no review either, and naming it
+    credited it with one. Chunked reviews carry one result per chunk per seat,
+    hence the dedupe: a seat that reviewed any chunk is named. The name comes
+    from the operator's config, not from an agent, but the footer is posted as
+    raw HTML, so it is flattened and escaped anyway.
     """
     import html
 
     seats: list[str] = []
     for r in reviews:
         name = html.escape(flatten_inline(r.agent or ""))
-        if r.ok and name and name not in seats:
+        if r.ok and not is_abstention(getattr(r, "output", "")) and name and name not in seats:
             seats.append(name)
     return ", ".join(seats)
 

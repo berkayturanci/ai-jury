@@ -141,15 +141,19 @@ DEFAULT_MIN_VENDORS = 2
 def _non_negative_int(value, default: int) -> int:
     """A non-negative int from raw config data, falling back to ``default``.
 
-    A malformed value falls back to the default rather than raising: the default
-    is the *safe* direction for a fail-closed gate, and a typo in a CI knob must
-    not stop a review from running.
+    ``validate_config`` refuses a malformed or negative value (docs audit
+    2026-09-29), so a run started from ``jury`` never reaches the fallback. It is
+    for a Python caller that materialises without validating: there, a
+    malformed value falls back to the default rather than raising, because the
+    default is the *safe* direction for a fail-closed gate. A negative value
+    falls back too — clamping it to ``0`` used to turn ``min_vendors = -1``
+    into "guard off", the one direction a fail-closed gate must never drift.
     """
     try:
         number = int(value)
     except (TypeError, ValueError):
         return default
-    return max(0, number)
+    return number if number >= 0 else default
 
 
 DEFAULT_CONFIG: dict = {
@@ -724,7 +728,39 @@ _NUMERIC_BOUNDS: dict[str, tuple[int, str, bool]] = {
     # Large-diff handling (issue #31).
     "diff.max_bytes": (1, "a positive integer", True),
     "diff.chunk_max_bytes": (1, "a positive integer", True),
+    # The fail-closed CI guards (docs audit 2026-09-29). Both used to be clamped
+    # rather than checked: `min_vendors = -1` or `--min-vendors -5` became 0,
+    # which is the documented opt-out, so a typo turned the cross-vendor guard
+    # off and nothing said so.
+    "ci.min_vendors": (0, "an integer >= 0", True),
+    "ci.min_reviews": (0, "an integer >= 0", True),
 }
+
+
+#: The boolean `[jury]` settings `validate_config` type-checks, as dotted paths
+#: under `[jury]` (docs audit 2026-09-29). `theater` and `output.attribution`
+#: are checked on their own, above this table's reader, with the same message.
+_BOOL_SETTINGS: tuple[str, ...] = (
+    "parallel",
+    "verify",
+    "anonymize_debate",
+    "prefer_non_reviewer_chair",
+    "demote_local_only",
+    "early_stop",
+    "auto_depth",
+    "transcript",
+    "hints",
+    "ci.ignore_unverified",
+    "context.redact_secrets",
+    "diff.chunk",
+    "diff.exclude_generated",
+)
+
+#: `[jury.context] mode` values; `_context_from_dict` reads anything else as the first.
+KNOWN_CONTEXT_MODES: tuple[str, ...] = ("diff-only", "expanded")
+
+#: `[[agent]] prompt_mode` values, as `GenericCLIAdapter._prompt_mode` reads them.
+KNOWN_PROMPT_MODES: tuple[str, ...] = ("stdin", "arg")
 
 
 def bound_error(setting: str, value, where: str | None = None) -> str | None:
@@ -861,6 +897,29 @@ def validate_config(data: dict, strict: bool = False) -> list:
         if attribution is not None and not isinstance(attribution, bool):
             errors.append(f"jury.output.attribution must be true or false (got {attribution!r}).")
 
+    # Every other boolean switch (hard, docs audit 2026-09-29), for the reason
+    # #911 gave `attribution`: they were read with `bool(...)`, and the string
+    # "false" is truthy, so `verify = "false"` ran verification, passing
+    # `--strict-config`. TOML has real booleans; a quoted one is a mistake.
+    for dotted in _BOOL_SETTINGS:
+        table, _, key = dotted.rpartition(".")
+        holder = jury.get(table) if table else jury
+        value = holder.get(key) if isinstance(holder, dict) else None
+        if value is not None and not isinstance(value, bool):
+            errors.append(f"jury.{dotted} must be true or false (got {value!r}).")
+    # `[jury.context] mode` (hard, same audit): anything else was quietly read as
+    # "diff-only", so `mode = "expand"` reviewed without the context asked for.
+    context_mode = (
+        jury.get("context", {}).get("mode") if isinstance(jury.get("context"), dict) else None
+    )
+    if context_mode is not None and not (
+        isinstance(context_mode, str) and context_mode.strip().lower() in KNOWN_CONTEXT_MODES
+    ):
+        errors.append(
+            f"jury.context.mode must be one of {', '.join(KNOWN_CONTEXT_MODES)} "
+            f"(got {context_mode!r})."
+        )
+
     # Adaptive rounds (issue #40): max_rounds >= 1 (hard); early_stop is a bool.
     max_rounds_error = bound_error("max_rounds", jury.get("max_rounds"))
     if max_rounds_error:
@@ -887,6 +946,16 @@ def validate_config(data: dict, strict: bool = False) -> list:
             message = fail_on_error(
                 fail_on if isinstance(fail_on, list) else [fail_on], "jury.ci.fail_on"
             )
+            if message:
+                errors.append(message)
+        # The fail-closed guards (hard, docs audit 2026-09-29): a negative or
+        # non-integer value used to be clamped or defaulted at load, so
+        # `min_vendors = -1` silently disabled the cross-vendor guard and
+        # `min_reviews = "lots"` silently read as "off", both passing
+        # `--strict-config`. Same table and message as the `--min-vendors` /
+        # `--min-reviews` flags.
+        for key in ("min_vendors", "min_reviews"):
+            message = bound_error(f"ci.{key}", ci_cfg.get(key))
             if message:
                 errors.append(message)
 
@@ -999,7 +1068,13 @@ def validate_config(data: dict, strict: bool = False) -> list:
                 errors.extend(e_errors)
                 warnings.extend(e_warnings)
         elif not command:
-            errors.append(f"agent '{label}' is missing a non-empty 'command'.")
+            # A custom adapter registered with `SPAWNS_PROCESS = False` is its own
+            # invocation — its `run()` calls the backend — so it has no `command`
+            # to be missing (docs audit 2026-09-29). docs/configuration.md has
+            # always shown such a seat without one, and this refused it. A
+            # registered adapter that spawns still needs one, like a built-in CLI.
+            if _REGISTERED_ADAPTER_SPAWNS.get(adapter) is not False:
+                errors.append(f"agent '{label}' is missing a non-empty 'command'.")
         elif _is_relative_path_command(command):
             # A relative path with separators (e.g. ./tools/codex, bin/agy) could
             # resolve a binary from an attacker-influenced location (#293/F-6).
@@ -1016,6 +1091,22 @@ def validate_config(data: dict, strict: bool = False) -> list:
                 f"agent '{label}' command '{command}' is not an absolute path; "
                 f"{_REQUIRE_ABSOLUTE_COMMAND_ENV} requires every agent command to "
                 f"be an absolute path."
+            )
+
+        # `enabled` and `prompt_mode` (hard, docs audit 2026-09-29): `enabled =
+        # "false"` is truthy and seated the agent it meant to bench, and any
+        # `prompt_mode` but "arg" was read as "stdin", so `prompt_mode = "args"`
+        # piped the prompt to a CLI that expected it on argv.
+        enabled_value = agent.get("enabled")
+        if enabled_value is not None and not isinstance(enabled_value, bool):
+            errors.append(f"agent '{label}' enabled must be true or false (got {enabled_value!r}).")
+        prompt_mode = agent.get("prompt_mode")
+        if prompt_mode is not None and not (
+            isinstance(prompt_mode, str) and prompt_mode.lower() in KNOWN_PROMPT_MODES
+        ):
+            errors.append(
+                f"agent '{label}' prompt_mode must be one of "
+                f"{', '.join(KNOWN_PROMPT_MODES)} (got {prompt_mode!r})."
             )
 
         # Per-agent timeout (hard if present and invalid).
@@ -1131,8 +1222,13 @@ def validate_config(data: dict, strict: bool = False) -> list:
 
     # Chair must reference an enabled agent (soft). The literal "rotate" is a
     # valid special value (deterministic per-run rotation) and never warns.
-    chair = jury.get("chair", "claude")
-    if enabled_names and chair != "rotate" and chair not in enabled_names:
+    # Only a chair the operator WROTE is checked (docs audit 2026-09-29): an
+    # absent one is `default_chair`, the first enabled agent, which is enabled
+    # by construction. This used to assume `claude`, so a config with no
+    # `claude` seat and no `chair` failed `--strict-config` over a value the run
+    # never used.
+    chair = jury.get("chair")
+    if chair is not None and enabled_names and chair != "rotate" and chair not in enabled_names:
         warnings.append(
             f"jury.chair '{chair}' is not an enabled agent (enabled: "
             f"{', '.join(sorted(enabled_names)) or 'none'}); the first "
@@ -1446,6 +1542,20 @@ class JuryConfig:
         return [a for a in self.agents if a.enabled]
 
 
+def default_chair(agents) -> str:
+    """The chair a config that names none gets: its first ENABLED agent (pure).
+
+    The one reader of the default (docs audit 2026-09-29), so validation and the
+    run cannot disagree about it. A disabled first seat is skipped because it
+    cannot chair; with no enabled seat the first seat stands (the run then falls
+    back to the first usable agent), and with no seat at all ``claude``.
+    """
+    for agent in agents:
+        if agent.enabled:
+            return agent.name
+    return agents[0].name if agents else "claude"
+
+
 def _ci_from_dict(data: dict) -> CiConfig:
     # `ConfigError`, not the `AttributeError` a `.get` on a string would raise:
     # materialisation is reached WITHOUT validation whenever a caller uses
@@ -1470,8 +1580,8 @@ def _context_from_dict(data: dict) -> ContextConfig:
     if not isinstance(data, dict):
         raise ConfigError(_nested_table_message("context"))
     mode = str(data.get("mode", "diff-only")).strip().lower()
-    if mode not in ("diff-only", "expanded"):
-        mode = "diff-only"
+    if mode not in KNOWN_CONTEXT_MODES:
+        mode = KNOWN_CONTEXT_MODES[0]
     return ContextConfig(mode=mode, redact_secrets=bool(data.get("redact_secrets", True)))
 
 
@@ -1617,7 +1727,7 @@ def _from_dict(data: dict) -> JuryConfig:
         )
     return JuryConfig(
         rounds=int(jury.get("rounds", 2)),
-        chair=jury.get("chair", agents[0].name if agents else "claude"),
+        chair=jury.get("chair", default_chair(agents)),
         timeout=default_timeout,
         parallel=bool(jury.get("parallel", True)),
         verify=bool(jury.get("verify", True)),
