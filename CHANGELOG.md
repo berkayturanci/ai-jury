@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.22.0] - 2026-09-29
+
+> **What changes for you.** Every comment `jury` posts ends with the footer it always had, which now also names
+> the seats that returned a review; `--no-attribution` or `[jury.output] attribution = false` removes it (#911).
+> The sample Cursor seats take their prompt on stdin, and a prompt too long for the OS's argument limit now says so
+> and what to change (#901). The least-privilege audit warns about a few more seat shapes, and `--strict` refuses
+> a seat it warns about: an agy `-sandbox` with a value after it, or a `--tools ''` with a list after it, now
+> draws a warning (#910, see Security). Without `--strict` these are warnings and the run goes on.
+
 ### Added
 - **The report footer names the seats that reviewed, and can be turned off** (#911). A verdict posted by `jury --post` said what the jury decided but not which seats decided it. The footer the markdown report already ended with ("🏛️ Synthesized by ai-jury — Cross-vendor multi-agent code review · …") now names the seats that returned a review, deduplicated and in seat order: `Synthesized by ai-jury · claude, codex, agy — …`; the `--transcript`/`--verbose` footer names them the same way. A seat that failed is not claimed, and with no review the footer is kept without a seat list. No second footer is added. The footer is now appended once the report is complete, so it stays last after the `## CI gate` and suggested-patch sections, which used to follow it. Every posted comment ends with exactly one footer: the summary, the issue comment, the last `--post-mode phased` comment (which had none before) and the final body of the `--post-progress` live comment. On the first three it sits before the hidden incremental SHA marker, so `--incremental` still reads it; the `--post-progress` final body carries no marker, as before. JSON, SARIF and `keel-reviews` output never get it. A new `[jury.output]` table with `attribution = true` by default, and a new `--no-attribution` flag, remove the footer from stdout, `-o` and every posted comment. A non-bool value is a validation error, and a typo in the table warns like the other nested tables. It is rendering-only, so the cache key is unchanged; the report golden fixtures now show the seat list.
 
