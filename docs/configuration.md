@@ -5,6 +5,21 @@ defaults apply if the file is absent. Don't hand-write it the first time — run
 **`jury init`** to scaffold a valid config from your installed agents (and
 discovered local models).
 
+**An auto-discovered `./jury.toml` that runs commands must be trusted first**
+(#831). When the file was picked up from the working directory — not named with
+`--config` — and any enabled or disabled `[[agent]]` in it has a `command` (every
+CLI seat does: `claude`, `codex`, a bring-your-own CLI), a review or `jury
+run-agent` runs its commands only once the file is trusted. Trust is one of:
+`--config jury.toml`, the environment variable `JURY_TRUST_PROJECT_CONFIG` set to
+`1`, `true`, `yes` or `on`, or a `y` answered at the terminal prompt, which is
+recorded in `$XDG_CONFIG_HOME/ai-jury/trusted-configs` (default
+`~/.config/ai-jury/`) against the file's real path **and** a hash of its bytes,
+so an edited file asks again. `jury init` records trust for the file it writes.
+Off a terminal there is no prompt, so a piped `git diff | jury --diff-file -`, a
+CI job or the `/jury` comment workflow is refused with exit `2` and a message
+naming these three ways in. `--mock` runs no command and is not gated, and
+`--config-validate` reads the file without running anything.
+
 > **Every field — type, default, allowed values** — for `[jury]`, `[jury.ci]`,
 > `[jury.context]`, `[jury.diff]`, `[jury.output]` and `[[agent]]`, plus all CLI flags, lives in the
 > single [**parameter reference**](parameters.md). This page explains the
@@ -25,7 +40,10 @@ Exit codes: `0` valid (warnings printed if any), `2` invalid — or unreadable: 
 the config is validated too; pass `--strict-config` to turn warnings into hard
 errors (exit `2`).
 
-- **Hard errors** (always fail): `rounds < 1`, non-positive `timeout` (jury or
+The lists below name the common cases; they are not exhaustive, and the message
+always names the key and the rule it breaks.
+
+- **Hard errors** (always fail) include: `rounds < 1`, non-positive `timeout` (jury or
   per-agent), duplicate agent names, missing/empty agent `name` or `command`, no
   `[[agent]]` entries at all, `decision` other than `"chair"` / `"vote"`,
   an `adapter` this build does not have, an agent `headers` that is not a table
@@ -34,9 +52,26 @@ errors (exit `2`).
   never read `endpoint`; before #901's review it silently skipped the `command`
   checks and the least-privilege audit), a `[jury.output] attribution` that is not
   a bool, malformed tables.
-- **Warnings** (fail only under `--strict-config`): unknown vendor, `chair` not
+  - Also hard: a bound broken on `retries` (`>= 0`), `total_timeout`,
+    `phase_timeout`, `max_rounds` or `[jury.diff] max_bytes` / `chunk_max_bytes`
+    (`>= 1` when set); `theater` that is not a bool; `theater_style` other than
+    `"flat"` / `"pixel"`; an unknown `routing`, `[[agent]] effort` or
+    `[[agent]] tier`; a `temperature` that is not a number from `0` to `2`; a
+    `[jury.ci] fail_on` entry that is not a [severity](parameters.md#severities);
+    a `command` that is a relative path (`./bin/x` — use a bare name or an
+    absolute path), or any non-absolute `command` while
+    `JURY_REQUIRE_ABSOLUTE_COMMAND` is set; and an `endpoint` that is not a
+    string, not a valid URL, not `http`/`https`, or on a non-loopback host
+    without `JURY_ALLOW_REMOTE_ENDPOINT` in the environment.
+- **Warnings** (fail only under `--strict-config`) include: unknown vendor, `chair` not
   matching an enabled agent, unknown top-level/section/agent keys, a non-string
   `headers` value (it is coerced to a string and sent).
+  - Also warnings: a `local`, hosted-API or other HTTP seat with no `model`; an `api_key_env` that
+    is not a valid environment-variable name (the vendor default is used); a
+    `temperature` on a seat whose adapter is not `local` (ignored); and, once
+    `JURY_ALLOW_REMOTE_ENDPOINT` allows it, a non-loopback `endpoint` (plus one
+    more for plaintext `http`) — so `--strict-config` still refuses a remote
+    endpoint.
   - Unknown keys are reported at *every* level, including inside the nested
     `[jury.ci]`, `[jury.context]`, `[jury.diff]` and `[jury.output]` tables, with the dotted path
     that locates them: `unknown key 'jury.ci.min_vendor'`. A key nobody reads is
@@ -66,6 +101,15 @@ configuration mistake, and the failure mode it used to produce was a bench that
 looked diverse and was not. The seat's own `vendor` string is still what the
 report, the ballots and `--metadata-json` carry — provenance is never rewritten,
 only the *gate* collapses.
+
+**An unknown vendor's argv is not passed through as written.** Such a seat runs
+the generic CLI adapter, but the read-only enforcement treats a vendor it does
+not know as agy (#910): it removes every `--sandbox=<value>` from `extra_args` and
+adds a bare `--sandbox` when the argv has none, whatever those flags mean to your
+CLI, and the least-privilege audit warns that it did. `vendor = "acme"`,
+`command = "mycli"`, `extra_args = ["--sandbox=false", "-x"]` runs
+`mycli --sandbox -x`. Name the protocol — `adapter = "cli"` — to have the argv
+passed through untouched.
 
 `register_adapter("my-vendor", MyAdapter)` teaches the vocabulary as well as the
 adapter table, so a genuinely custom vendor keeps its own identity at the gate
@@ -128,7 +172,9 @@ either key.
 
 Everything about *how a seat is invoked* follows the adapter: the argv, the
 read-only sandbox flag the tool guarantees (`--sandbox` is never spliced into a
-CLI that has no such flag), whether a `command` is required at all, how `effort`
+CLI that has no such flag — except on a seat with an unknown vendor and no
+`adapter`, which gets agy's handling, [above](#the-vendor-vocabulary)), whether a
+`command` is required at all, how `effort`
 is expressed, and the transport `--doctor` reports. Everything about *who the
 seat is* follows the vendor: `min_vendors`, `panel.vendors`, the report's vendor
 column, the ballots and `--format keel-reviews`.
@@ -158,7 +204,8 @@ same message. Falling through was the last place
 the silent guess survived: `--doctor` used to print three `[available]` rows and
 `cross-vendor ready: yes` for the very file `jury` rejected before its first
 round. (An unknown *vendor* still falls through, because that seat named no
-protocol — inheriting the generic one is its documented behaviour.)
+protocol — inheriting the generic one is its documented behaviour, with agy's
+`--sandbox` handling applied to its argv, as [above](#the-vendor-vocabulary).)
 
 `--doctor` prints both fields on every seat row, so a Codex seat and a
 GPT-through-Cursor seat are distinguishable at a glance:
@@ -177,7 +224,7 @@ different facts, and every place that shows one says which it is:
 | --- | --- | --- |
 | `--doctor` `panel.vendors_configured` / `vendors_available` | **Identity** | These are the gate's arithmetic. They equal what a run counts for the same config, so doctor cannot call a bench cross-vendor ready that the run then refuses — which is also why the doctor validates the config the way a run does: on a file the run rejects outright, it reports that error and counts nothing. |
 | `--doctor` agent rows (`vendor`, and the text report's `vendor=…`) | **Configured vendor** (normalised spelling), with `vendor_identity` beside it | Provenance, plus the one number that matters next to it. The text report renders `vendor=xa1 -> counts as cli` only when the two differ. |
-| `--doctor` agent rows (`adapter`, and the text report's `adapter=…`) | **Protocol** | Neither of the other two: it is how the seat's command line is built. `vendor=openai, adapter=cli` is a GPT model reached through someone else's CLI. |
+| `--doctor` agent rows (`adapter`, and the text report's `adapter=…`) | **Protocol** | Neither of the other two: it is how the seat's command line is built. `vendor=openai, adapter=cli` is a GPT model reached through someone else's CLI. One exception: a seat whose vendor this build does not know and that names no `adapter` shows that vendor string here (`adapter=acme`), while it runs on the generic CLI adapter with agy's `--sandbox` handling ([above](#the-vendor-vocabulary)). |
 | `--metadata-json` `panel.vendors` | **Identity** | It is the number `min_vendors` is compared against. |
 | `--metadata-json` `agents[].vendor`, the markdown report's `vendor` column, the ballots, `--format keel-reviews` | **Configured vendor** (normalised spelling) | These attribute output to the seat that produced it. Collapsing the gate is not a licence to rewrite provenance — and normalising the spelling does not rewrite it either: the vendor named is the vendor you configured. |
 
@@ -189,7 +236,7 @@ budget, and the time remaining in the total budget — whichever is smallest. Wh
 the total budget is exhausted, the remaining phases (debate/verify/synthesis) are
 skipped and the report states this; the run still returns what completed
 (partial-result policy). `retries` is opt-in and bounded: only failures classed as
-transient (timeout / rate-limit / spawn) are retried, and a retry never overruns
+transient (timeout / rate-limit / spawn / connection error) are retried, and a retry never overruns
 the total budget. `Ctrl-C` cancels cleanly (exit code `130`) instead of dumping a
 traceback. CLI overrides: `--total-timeout`, `--phase-timeout`, `--retries`.
 
@@ -255,8 +302,8 @@ command = "codex"             # frontier too: benched on a routine diff
 
 [[agent]]
 name = "flash"
-vendor = "google"
-command = "agy"
+vendor = "google-api"         # hosted Gemini API, keyed by GEMINI_API_KEY
+model = "gemini-3.8-flash"
 tier = "economical"           # sits on routine diffs in place of the benched seats
 ```
 
@@ -362,7 +409,7 @@ lives in exactly one place (`adapters.effort_args`):
 | `google-api` | `generationConfig.thinkingConfig.thinkingBudget` | `1024` | `8192` | `32768` |
 | `anthropic` (`claude` CLI) | — no headless control | ignored | ignored | ignored |
 | `openai` (`codex` CLI) | — no headless control | ignored | ignored | ignored |
-| `local`, `cli`, custom | — not sent | ignored | ignored | ignored |
+| `local`, `cli`, `xai` (Grok through a CLI), custom | — not sent | ignored | ignored | ignored |
 
 † **`high` is clamped.** Thinking tokens come out of the same allowance as the
 response, so `max_tokens` is lifted above the budget — but per-model `max_tokens`
@@ -499,14 +546,14 @@ The document is `schema_version: "ai-jury.doctor.v1"`:
 | `panel` | Cross-vendor readiness (see below). |
 | `vendor` | The vendor as configured, in its normalised spelling — stripped and lowercased once when the seat is built, so ` XAI-API ` reads back as `xai-api`. Provenance, as distinct from `vendor_identity`. |
 | `vendor_identity` | The vendor this seat counts as at the cross-vendor gate: its own name when recognised, `cli` when it fell back to the generic adapter. This is what `panel` counts. |
-| `adapter` | The protocol that builds this seat's command line — its `[[agent]] adapter`, or its vendor's own adapter when the key is unset. Neither provenance nor identity: `vendor: "openai", adapter: "cli"` is a GPT model reached through a CLI this tool does not otherwise know. |
+| `adapter` | The protocol that builds this seat's command line — its `[[agent]] adapter`, or its vendor's own adapter when the key is unset. Neither provenance nor identity: `vendor: "openai", adapter: "cli"` is a GPT model reached through a CLI this tool does not otherwise know. For a seat whose vendor this build does not know and that names no `adapter`, this is that vendor string (`"acme"`), although the seat runs on the generic CLI adapter with agy's `--sandbox` handling (see [the vendor vocabulary](#the-vendor-vocabulary)). |
 | `transport` | `cli` (a command on PATH), `api` (a hosted vendor API), or `local` (an OpenAI-compatible server you run). |
 | `command` / `endpoint` | Exactly one, named for the transport: a `cli` agent carries `command`, everything else carries the `endpoint` its adapter would actually call. |
 | `reason` | Why an agent is unusable, or `null` when it is available. |
 | `capabilities` | Labels from the version probe: `headless`, `model-selection`. |
 | `models` | Model ids discovered for that agent (`agy models`, or a local server's `/v1/models`), or `null` when nothing could be listed. Discovered **only** for `--json`: it costs a probe per agent, and the text report does not show it. |
 | `effort_supported` / `effort` | Whether the vendor has an effort control, and the level configured for this agent. |
-| `tier` | The seat's cost tier from `[[agent]] tier`: `frontier` (the default) or `economical`. What tiered routing reads once part 2 of #714 lands; reported here already so a bench can be checked before it is routed. |
+| `tier` | The seat's cost tier from `[[agent]] tier`: `frontier` (the default) or `economical`. What [tiered routing](#tiered-routing-routing--tiered--static-hints-hints--true) reads to decide which seats sit on a routine diff and which anchor it, so a bench can be checked before it is routed. |
 | `warnings` | The same config warnings the human report lists. On a config with a **hard** error — an `adapter` this build does not have, no `[[agent]]` at all — this carries that error, `agents` is empty and `ready` is `false`: the doctor validates what a run validates, so it never describes a bench the run refuses. |
 
 ### `panel`: readiness, not contribution
@@ -622,11 +669,13 @@ findings, and it is re-evaluated on every run, cache hits included.
 
 It **fails closed**, and it is scoped on the vendors your config **names**:
 
-- from this release, a config naming two or more distinct vendors exits **3**
+- a config naming two or more distinct vendors exits **3**
   unless at least that many actually contributed a review — **including when a
-  configured CLI is not installed on this machine.** The shipped three-vendor
-  `jury.toml` on a machine with one installed CLI fails, by design: a
-  configuration that promises three vendors and delivers one is the collapse
+  configured CLI is not installed on this machine.** The shipped `jury.toml`
+  enables two vendors (`claude` and `codex`; its `agy` seat is there with
+  `enabled = false`, because agy is opt-in), and on a machine with only one of
+  those CLIs installed it fails, by design: a
+  configuration that promises two vendors and delivers one is the collapse
   this guard exists to catch, and a missing CLI is not an exemption. Install it,
   drop the agent from the config, or opt out explicitly;
 - it applies only when the config claimed that consensus: with fewer distinct
@@ -684,9 +733,11 @@ patch sections.
 Every comment `jury` posts ends with exactly one footer: the single summary comment,
 the issue comment, the last comment of `--post-mode phased`, and the final body of
 the `--post-progress` live comment. The live comment's intermediate states, the
-`--live` per-step comments and inline comments do not carry it. On the summary, issue
+`--live` per-step comments and inline comments do not carry it. On the summary
 and last phased comment it sits before the hidden incremental SHA marker, so
-`--incremental` still reads the marker from the last comment. The `--post-progress`
+`--incremental` still reads the marker from the last comment. The issue comment
+carries no SHA marker (`--incremental` is PR-only), so it ends with the footer.
+The `--post-progress`
 final body carries no SHA marker (it never has), so it ends with the footer. JSON, SARIF and `keel-reviews` output never get it. It is static text
 in a report you already chose to print or post, so it makes no request of its own.
 
@@ -711,8 +762,11 @@ jury cache clear           # delete all cache entries (alias: --clear-cache)
 ```
 
 The cache key covers the diff, the effective config hash, the prompt-template
-version, the package version, the context policy, and the seed — so any change to
-those is a miss (automatic invalidation). A cache hit is marked in the progress
+version, the package version, the context mode and the redaction setting, whether
+the verification round runs, the seed, whether the run is `--mock`, the review
+mode (a diff/PR or an `--issue`), a fingerprint of the repository review policy
+(`--policy`), and the version of the cache-entry format (`cache_schema`) — so any
+change to those is a miss (automatic invalidation). A cache hit is marked in the progress
 log and in the report's "Run metadata" section (`served from local cache`).
 
 It also covers the **context text**, but only where the panel is shown it: under
@@ -730,14 +784,15 @@ run under the default `hints = false` included — keeps its key.
 
 **Privacy.** A cache entry stores the full structured outcome, including agent
 review/debate/synthesis text derived from the diff. Treat the cache directory as
-sensitive — the same trust level as the diff. It defaults to `$JURY_CACHE_DIR` or
-`~/.cache/ai-jury` (override with `--cache-dir`).
+sensitive — the same trust level as the diff. It defaults to `$JURY_CACHE_DIR`,
+else `$XDG_CACHE_HOME/ai-jury`, else `~/.cache/ai-jury` (override with
+`--cache-dir`).
 
 ## Universal Agent Provider Support
 
 `ai-jury` supports **any AI agent provider**:
 
-1. **Vendor Native CLIs**: `claude` (Anthropic Claude Code), `codex` (OpenAI Codex CLI), `agy` (Google Antigravity CLI).
+1. **Vendor Native CLIs**: `claude` (Anthropic Claude Code), `codex` (OpenAI Codex CLI), `agy` (Google Antigravity CLI — opt-in only: its `--sandbox` does not confine it, so it is never in the default panel and is seated only by name).
 2. **Hosted Vendor APIs**: `vendor = "anthropic-api"` / `"openai-api"` / `"google-api"` / `"xai-api"` — no CLI install, keyed by an env-var API key.
 3. **Hosted OpenAI-Compatible APIs**: `vendor = "openai-compatible"` works with OpenRouter, DeepSeek, Groq, Mistral, Anyscale, LiteLLM, or Azure OpenAI proxies. Configurable via `endpoint`, `api_key_env`, and custom `headers`.
 4. **Local / Open-Weight Models**: `vendor = "local"` over Ollama, `llama.cpp`, vLLM, or LM Studio.
@@ -746,9 +801,20 @@ sensitive — the same trust level as the diff. It defaults to `$JURY_CACHE_DIR`
 
 ### Configuration Examples (`jury.toml`)
 
+The OpenRouter, DeepSeek and Groq seats below, and Grok written as
+`openai-compatible`, point `endpoint` at a host that is not this machine. Such an
+endpoint is refused — a hard config error, exit `2`, from `--config-validate` as
+well as from a run — unless `JURY_ALLOW_REMOTE_ENDPOINT` is set in the
+environment (see the [security note](#local-models-ollama-lm-studio-vllm-llamacpp-vendor--local)
+below). Allowed, it is still a warning, so `--strict-config` still refuses it. The
+hosted-API vendors (`anthropic-api`, `openai-api`, `google-api`, `xai-api`) have a
+fixed endpoint and need no opt-in.
+
 #### OpenRouter API (`vendor = "openai-compatible"`)
 
 ```toml
+# needs JURY_ALLOW_REMOTE_ENDPOINT=1 in the environment: without it this
+# non-loopback endpoint is refused and the run (or --config-validate) exits 2
 [[agent]]
 name = "openrouter"
 vendor = "openai-compatible"
@@ -764,6 +830,8 @@ X-Title = "ai-jury"
 #### DeepSeek API (`vendor = "openai-compatible"`)
 
 ```toml
+# needs JURY_ALLOW_REMOTE_ENDPOINT=1 in the environment: without it this
+# non-loopback endpoint is refused and the run (or --config-validate) exits 2
 [[agent]]
 name = "deepseek"
 vendor = "openai-compatible"
@@ -775,6 +843,8 @@ api_key_env = "DEEPSEEK_API_KEY"
 #### Groq API (`vendor = "openai-compatible"`)
 
 ```toml
+# needs JURY_ALLOW_REMOTE_ENDPOINT=1 in the environment: without it this
+# non-loopback endpoint is refused and the run (or --config-validate) exits 2
 [[agent]]
 name = "groq"
 vendor = "openai-compatible"
@@ -798,6 +868,8 @@ the OpenAI chat-completions shape — but it makes the seat's vendor identity
 `openai-compatible`, which is not what a Grok seat is:
 
 ```toml
+# needs JURY_ALLOW_REMOTE_ENDPOINT=1 in the environment: without it this
+# non-loopback endpoint is refused and the run (or --config-validate) exits 2
 [[agent]]
 name = "grok"
 vendor = "openai-compatible"
@@ -842,7 +914,7 @@ model = "gpt-oss:20b"
 temperature = 1.0
 ```
 
-> **Remote Endpoint Security Note:** By default, endpoints for `vendor = "local"` and `openai-compatible` are restricted to loopback interfaces (`localhost`, `127.0.0.1`, `::1`) to guard against unintended SSRF. If pointing to a trusted remote host, set `JURY_ALLOW_REMOTE_ENDPOINT=1` in your environment.
+> **Remote Endpoint Security Note:** By default, endpoints for `vendor = "local"` and `openai-compatible` are restricted to loopback interfaces (`localhost`, `127.0.0.1`, `::1`) to guard against unintended SSRF. If pointing to a trusted remote host, set `JURY_ALLOW_REMOTE_ENDPOINT=1` in your environment (any non-empty value is read as the opt-in, `0` included). The opt-in lives in the environment rather than in `jury.toml` on purpose: a config from a checkout you did not write must not be able to grant it.
 
 #### Cursor CLI / Arbitrary CLI Agent (`vendor = "cli"`)
 

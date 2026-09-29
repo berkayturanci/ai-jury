@@ -20,6 +20,7 @@ Regenerate the golden after an intentional change::
 
 from __future__ import annotations
 
+import argparse
 import contextlib
 import io
 import json
@@ -551,6 +552,184 @@ class EffortCliTests(unittest.TestCase):
         )
         self.assertNotEqual(code, 0)
         self.assertIn("--effort", err)
+
+
+# --------------------------------------------------------------------------- #
+# The rest of the reference: subcommands, `jury.toml` keys, environment,      #
+# and the JSON report's top level (docs audit 2026-09-29)                     #
+# --------------------------------------------------------------------------- #
+
+SRC = REPO_ROOT / "src" / "ai_jury"
+REPORT_FORMAT = REPO_ROOT / "docs" / "report-format.md"
+
+#: A backticked table key in a first cell: `fail_on`, `min_vendors`.
+_TABLE_KEY = re.compile(r"^\| `([a-z_]+)` \|", re.MULTILINE)
+
+#: An environment variable named as a string literal in the package source.
+_ENV_LITERAL = re.compile(r"[\"']((?:JURY|XDG)_[A-Z_]+)[\"']")
+
+
+def _subsections(block: str) -> dict[str, str]:
+    """`### heading` → its body, for every level-3 heading in *block*."""
+    parts = re.split(r"^### ", block, flags=re.MULTILINE)[1:]
+    return {part.split("\n", 1)[0]: part.split("\n", 1)[1] for part in parts}
+
+
+def _first_cells(body: str) -> str:
+    return "\n".join(line.split("|")[1] for line in body.splitlines() if line.startswith("| `"))
+
+
+class _ParserCapturedError(Exception):
+    """Raised instead of parsing, carrying the parser a subcommand built."""
+
+
+def subcommand_parser(argv: list[str]):
+    """The argparse parser `jury <argv>` builds, captured before it parses anything.
+
+    The subcommands are argv-intercepts in `cli.main` that build their parser
+    inline, so the parser is read off the first `parse_args` call instead of
+    being rebuilt here — a copy would agree with the docs and not with `jury`.
+    """
+
+    def capture(parser, *_args, **_kwargs):
+        raise _ParserCapturedError(parser)
+
+    with mock.patch.object(
+        argparse.ArgumentParser, "parse_args", autospec=True, side_effect=capture
+    ):
+        try:
+            main(argv)
+        except _ParserCapturedError as got:
+            return got.args[0]
+    raise AssertionError(f"jury {' '.join(argv)} never parsed its arguments")
+
+
+def _public_long_options(parser) -> set[str]:
+    return {
+        opt
+        for action in parser._actions
+        if action.help != argparse.SUPPRESS
+        for opt in action.option_strings
+        if opt.startswith("--") and opt != "--help"
+    }
+
+
+class SubcommandFlagTablesMatchTheirParsers(unittest.TestCase):
+    """Each `### `jury <name>`` table in the parameter reference lists that parser's flags.
+
+    The page promises "every parameter"; `jury apply` and `jury replay` had no
+    table at all and `jury comment` was one row naming two of its five flags.
+    """
+
+    SUBCOMMANDS = ("init", "run-agent", "apply", "replay", "comment")
+
+    def _documented(self) -> dict[str, set[str]]:
+        text = PARAMETERS.read_text(encoding="utf-8")
+        block = _section(text, "\n## Subcommands\n", "\n## `jury.toml` reference\n")
+        tables = {}
+        for heading, body in _subsections(block).items():
+            match = re.match(r"`jury ([a-z-]+)`", heading)
+            if match:
+                tables[match.group(1)] = set(_LONG_FLAG.findall(_first_cells(body)))
+        return tables
+
+    def test_every_subcommand_has_a_table(self):
+        self.assertEqual(sorted(set(self.SUBCOMMANDS) - set(self._documented())), [])
+
+    def test_each_table_names_exactly_its_parsers_flags(self):
+        documented = self._documented()
+        for name in self.SUBCOMMANDS:
+            with self.subTest(subcommand=name):
+                actual = _public_long_options(subcommand_parser([name]))
+                self.assertTrue(actual, name)
+                self.assertEqual(sorted(actual - documented.get(name, set())), [])
+                self.assertEqual(sorted(documented.get(name, set()) - actual), [])
+
+
+class JuryTomlTablesMatchTheSchema(unittest.TestCase):
+    """The `jury.toml` reference lists exactly the keys the validator knows.
+
+    `[jury.ci]` listed two of its four keys: `min_vendors` and `min_reviews`, the
+    two guards that fail a run, had no row. The expected sets are the ones
+    `validate_config` itself checks unknown keys against.
+    """
+
+    def _tables(self) -> dict[str, set[str]]:
+        text = PARAMETERS.read_text(encoding="utf-8")
+        block = _section(text, "\n## `jury.toml` reference\n", "\n## Enumerations\n")
+        tables = {}
+        for heading, body in _subsections(block).items():
+            name = re.match(r"`(\[\[?[a-z.]+\]\]?)`", heading).group(1)
+            tables[name] = set(_TABLE_KEY.findall(body))
+        return tables
+
+    def test_every_table_lists_exactly_the_known_keys(self):
+        from ai_jury import config
+
+        expected = {
+            "[jury]": set(config.KNOWN_JURY_KEYS) - set(config.KNOWN_NESTED_JURY_KEYS),
+            "[jury.ci]": set(config.KNOWN_CI_KEYS),
+            "[jury.context]": set(config.KNOWN_CONTEXT_KEYS),
+            "[jury.diff]": set(config.KNOWN_DIFF_KEYS),
+            "[jury.output]": set(config.KNOWN_OUTPUT_KEYS),
+            "[[agent]]": set(config.KNOWN_AGENT_KEYS),
+        }
+        tables = self._tables()
+        self.assertEqual(sorted(tables), sorted(expected))
+        for name, keys in expected.items():
+            with self.subTest(table=name):
+                self.assertEqual(sorted(keys - tables[name]), [], "keys missing from the table")
+                self.assertEqual(sorted(tables[name] - keys), [], "rows the schema has no key for")
+
+
+class EnvironmentTableListsWhatTheCodeReads(unittest.TestCase):
+    """Every environment variable the package reads has a row in the reference.
+
+    The table lacked `JURY_TRUST_PROJECT_CONFIG` — the one a non-interactive run
+    needs to get past the config-trust gate — `JURY_REQUIRE_ABSOLUTE_COMMAND` and
+    both `XDG_*` bases.
+    """
+
+    def _documented(self) -> set[str]:
+        text = PARAMETERS.read_text(encoding="utf-8")
+        block = text[text.index("\n## Environment variables\n") :]
+        return set(re.findall(r"^\| `([A-Z_]+)` \|", block, flags=re.MULTILINE))
+
+    def test_every_jury_and_xdg_variable_in_the_source_is_documented(self):
+        read = set()
+        for path in SRC.rglob("*.py"):
+            read |= set(_ENV_LITERAL.findall(path.read_text(encoding="utf-8")))
+        self.assertIn("JURY_TRUST_PROJECT_CONFIG", read)
+        self.assertEqual(sorted(read - self._documented()), [])
+
+    def test_the_api_key_env_row_names_every_adapters_default(self):
+        # `api_key_env` unset falls back to the ADAPTER's own variable; the row
+        # said `OPENAI_API_KEY` for every seat, and only for `openai-compatible`.
+        from ai_jury import adapters
+
+        defaults = {
+            cls._ENV_VAR_NAME
+            for cls in vars(adapters).values()
+            if isinstance(cls, type) and hasattr(cls, "_ENV_VAR_NAME")
+        }
+        self.assertIn("GEMINI_API_KEY", defaults)
+        text = PARAMETERS.read_text(encoding="utf-8")
+        row = re.search(r"^\| `api_key_env` \|.*$", text, flags=re.MULTILINE).group(0)
+        self.assertEqual(sorted(name for name in defaults if f"`{name}`" not in row), [])
+        self.assertEqual(sorted(defaults - self._documented()), [])
+
+
+class JsonReportTopLevelIsDocumented(unittest.TestCase):
+    """`report-format.md` lists the JSON report's top-level keys, in order."""
+
+    def test_the_documented_keys_are_the_documents(self):
+        code, out, _err = _run_cli(["--mock", "--format", "json", "-q"])
+        self.assertEqual(code, 0)
+        text = REPORT_FORMAT.read_text(encoding="utf-8")
+        self.assertIn("\n## The JSON report and SARIF\n", text)
+        start = text.index("\n## The JSON report and SARIF\n") + 1
+        block = text[start : text.index("\n## ", start)]
+        self.assertEqual(_TABLE_KEY.findall(block), list(json.loads(out)))
 
 
 if __name__ == "__main__":
