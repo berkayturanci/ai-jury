@@ -55,7 +55,7 @@ seats that returned a review (issue #911), built by `ai_jury.report.render_foote
 `render()` and `render_transcript()` append it by default, so the golden fixtures
 contain it. The CLI renders with `footer=False` and appends it itself once the
 report is complete, so it stays last after the `## CI gate` and patch sections, and
-posting adds only the hidden SHA marker after it (the `--post-progress` final body carries none). `[jury.output] attribution =
+posting adds only the hidden SHA marker after it (the issue comment and the `--post-progress` final body carry none). `[jury.output] attribution =
 false` and `--no-attribution` leave it off. See
 [configuration](configuration.md#the-attribution-footer-juryoutput).
 
@@ -76,11 +76,35 @@ the env var) asserts the output matches the committed fixtures:
 PYTHONPATH=src python3 -m unittest discover -s tests
 ```
 
+## The JSON report and SARIF
+
+`jury --format json` prints one JSON object (`ai_jury.formats.to_json`) with
+these top-level keys, in this order:
+
+| Key | Contents |
+| --- | --- |
+| `schema_version` | The JSON report schema version (`formats.JSON_SCHEMA_VERSION`). |
+| `metadata` | The run metadata, as `--metadata-json` writes it, without its wall-clock `generated_at`. |
+| `classification` | The PR-level classification (`review_effort`, `risk_level`, `security_sensitive`, `needs_human_attention`) that `--label` applies. |
+| `findings` | Every parsed finding: `severity`, `file`, `line`, `claim`, `evidence`, `suggested_fix`, `confidence`, `reviewer`. |
+| `consensus` | One entry per consensus group: its `representative` finding, `agreement`, `reviewers`, `bucket` and `verification_status`. |
+| `reviewers` | The per-reviewer ballots, then the chair — see [below](#per-reviewer-ballots-reviewers). |
+| `verdicts` | The verification round's verdicts: `file`, `line`, `claim`, `status`, `reasoning`. |
+| `verdict` | The chair's synthesis text, or `""` when there is none. |
+
+`jury --format sarif` prints a SARIF 2.1.0 document (`formats.to_sarif`) for
+code-scanning upload: one run whose tool is `ai-jury`, one rule per severity
+present (`jury/<severity>`), and one result per consensus group representative —
+or per raw finding when there are no groups — at `error` for `critical`/`major`,
+`warning` for `minor` and `note` for `nit`/`info`, located at the finding's file
+and, when it is a positive number, its line.
+
 ## The routing record (`metadata.routing`)
 
 Every report carries `metadata.routing` (since metadata schema 7, JSON report `1.4`):
 what decided who sat in round 1. Under `routing = "standard"` it is
-`{"mode": "standard", "panel": [...]}` plus empty fields; under `"tiered"` (#714):
+`{"mode": "standard", "panel": [...], "reason": "standard routing"}` plus empty
+fields; under `"tiered"` (#714):
 
 | Field | Meaning |
 | --- | --- |
@@ -89,13 +113,14 @@ what decided who sat in round 1. Under `routing = "standard"` it is
 | `panel` | The seats that reviewed in round 1, in config order. |
 | `benched` | The frontier seats held back, in config order; empty when nobody was. |
 | `anchor` | The frontier seat kept on a routed panel, or `null` when the full panel ran. |
-| `reason` | One sentence naming the band, the count of economical seats, the anchor, the bench, and any floor (`min_vendors`, `min_reviews`) that pulled a seat back. |
+| `reason` | Under `tiered`, one sentence naming the band, the count of economical seats, the anchor, the bench, and any floor (`min_vendors`, `min_reviews`) that pulled a seat back; under `standard`, the fixed string `standard routing`. |
 | `escalated` | Whether a `critical`/`major` finding after round 1 brought the benched seats into the debate and a frontier chair. |
 | `escalation_reason` | Why round 1 escalated, and what escalation then did — written after the debate section from what actually ran, so it names the seats that joined the debate or says only the chair was escalated. |
 
-The `reviewers` array below lists the seats that **ran**; a benched seat that
-never escalated is absent from it and present in `benched`, so the two together
-account for every enabled seat.
+The `reviewers` array below lists the seats that **ran in round 1**. A benched
+seat is absent from it and present in `benched` — including one that escalated,
+because escalation seats it in the debate (and may make it the chair), not in
+round 1 — so the two together account for every enabled seat.
 
 ## The zero-config fallback (`metadata.panel.zero_config_fallback`)
 
@@ -121,8 +146,9 @@ produced it) needs exactly that. Since v1.1 of the JSON schema the
 (issue #663).
 
 `reviewers` is **purely additive**. No existing key was removed, renamed or
-reshaped, so a consumer of `findings`/`consensus`/`verdicts`/`verdict`/`metadata`
-reads an identical document; `tests/test_formats.py::BackwardCompatibility` pins
+reshaped, so a consumer of
+`findings`/`consensus`/`verdicts`/`verdict`/`metadata`/`classification` reads an
+identical document; `tests/test_formats.py::BackwardCompatibility` pins
 that field for field. `schema_version` moved `1.0` → `1.1` to signal the addition.
 Markdown and SARIF output are unchanged.
 
@@ -175,11 +201,13 @@ v1.3 ([#709], [#710]) changes no shape and two meanings:
 [#709]: https://github.com/berkayturanci/ai-jury/issues/709
 [#710]: https://github.com/berkayturanci/ai-jury/issues/710
 
-One entry per seat that **ran**, in the stable panel order, then the chair:
+One entry per seat that **ran in round 1**, in the stable panel order, then the chair:
 
 | Field | Meaning |
 | --- | --- |
 | `name` | The agent slot's name, as configured. |
+| `role` | `"panelist"` on every ballot; `"chair"` on the one synthesis record, which is always last. What a consumer splits the array on. |
+| `chaired` | Whether this panelist is also the agent that chaired the run (verification and synthesis). The chairing agent reviews in round 1 like any other seat, so its ballot is an ordinary `panelist` entry with `chaired: true`. |
 | `vendor` | The adapter's vendor (`anthropic`, `openai`, …), **as configured**. A seat on the generic fallback keeps its own string here and counts as `cli` only in `metadata.panel.vendors`. |
 | `model` | The model id actually requested of that agent's CLI, **read back off the invocation that sent it** — the configured id, remapped when the *adapter* encodes reasoning effort in the id, and falling back exactly as the invocation fell back when a live model listing did not offer the mapped id ([#709]). Byte-equal to the id in that seat's built argv. Where no invocation recorded an id, it is **derived** from the run's config instead and `model_source` says `recomputed` — a real id, but this tool's arithmetic over the config rather than a reading of the wire. Where no id was pinned: a statement that the CLI's own default answered and that the CLI does not report which model that was. Never empty for a slot that has an agent. |
 | `model_source` | The same fact as one machine token, so a consumer need not parse English: `requested` (an id was pinned and **sent**, and this is the string that was sent), `recomputed` (no invocation recorded one, so the id in `model` was derived here from the config — see below), `cli_default` (nothing pinned; the CLI chose and does not say), `unknown` (the answering slot has no spec in this run's config), `none` (no agent in the slot at all — an unchaired run). |
@@ -208,8 +236,8 @@ and `reviews_supplied` (how many of the entries above it are).
 Exactly as the panel vote derives its ballots — `ai_jury.voting.tally_votes` is
 *called*, not reimplemented, so the two renderings cannot drift apart. The stance
 comes from the worst-severity finding that reviewer raised which the verifier did
-not reject: critical/major → `REQUEST_CHANGES`, minor/nit → `COMMENT`, none →
-`APPROVE`. Under `--issue` the vocabulary is the issue one: `NEEDS_INFO`,
+not reject: critical/major → `REQUEST_CHANGES`, minor/nit → `COMMENT`, `info`
+only or none → `APPROVE`. Under `--issue` the vocabulary is the issue one: `NEEDS_INFO`,
 `UNCLEAR`, `READY`.
 
 Verdicts are emitted as a single machine token: the markdown report's
@@ -432,7 +460,7 @@ per seat that ran, plus the chair as `reviewer: "chair"`:
 | `verdict` | The ballot verdict above (a single token). |
 | `scope` | One paragraph naming what that panelist read, from four sources, most authoritative first: its own `Checked:` line (which the review prompt asks every reviewer to open with), **resolved against the change** — a token counts only when it names a path or a symbol that is in the diff ([#710]); the distinct files it attached to its structured findings (capped at 8, with a `(+N more)` tail); up to three "checked / examined / inspected / reviewed" clauses from its prose; and — **under `--issue` only** — failing a file, the claims it raised. A reply that yields **none** of those has no scope: the record becomes an `ABSTAIN` whose scope states why. The chair's record additionally names the agent that chaired, says whether that agent's own ballot is one of the counted reviews, states how many reviews the bundle carries and that this record is not one of them; the ballot cast by the chairing agent says so on its own scope too. |
 | `findings` | That panelist's own findings as `{severity, path, line, message}` — ai-jury's `file` → `path`, `claim` → `message`. The chair carries the consensus-group representatives the verifier did **not** reject. |
-| `testing` | The panelist's own `Tested:` line, else the first verification clause in its prose — both lifted verbatim (flattened and capped), because a testing claim carried downstream as evidence must be the reviewer's words and not a paraphrase. With neither, it says plainly that nothing was run. The chair's comes from the verification round. |
+| `testing` | The panelist's own `Tested:` line, prefixed `Tested, as stated by the reviewer: ` so the attribution travels with it, else the first verification clause in its prose — the reviewer's text lifted verbatim (flattened and capped), because a testing claim carried downstream as evidence must be the reviewer's words and not a paraphrase. With neither, it says plainly that nothing was run. The chair's comes from the verification round. |
 | `vendor` | The adapter's vendor, **as configured** — provenance, not the identity the cross-vendor gate collapses to. |
 | `model` | As in the `reviewers` table above: the id the invocation actually sent, an id derived from the config where no invocation recorded one (`model_source: recomputed`), or a statement that the CLI's default answered and the CLI does not report which. |
 | `model_source` | As in the `reviewers` table above. It rides along here too because `model` changed meaning in the same release and this is the shape a machine consumer actually parses — without it, telling a requested id from a CLI default meant reading English ([#700]). |
@@ -490,4 +518,12 @@ checked after — no pre-flight can predict an agent that runs and says nothing.
 
 [#699]: https://github.com/berkayturanci/ai-jury/issues/699
 
-Neither format ever carries diff text, prompt text or secrets.
+Neither format adds the diff or the prompt of its own accord: every field is
+built from the panel's findings, ballots and run metadata. The fields a reviewer
+wrote — a finding's `claim`, `evidence` and `suggested_fix`, a verdict's
+`reasoning`, the chair's `verdict`, a ballot's `scope` and `testing` — are its own
+words, and a reviewer can quote the lines it reviewed in them. Output is not
+redacted a second time: with redaction on (the default) the diff was scrubbed of
+recognised secrets before any reviewer saw it, so what can come back that way is
+only a secret redaction did not recognise, or anything at all under
+`--no-redact`.

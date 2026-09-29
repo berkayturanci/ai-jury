@@ -23,16 +23,22 @@ same string concatenation the browser performs.
 
 from __future__ import annotations
 
+import contextlib
+import io
+import os
 import re
+import shutil
 import sys
+import tempfile
 import tomllib
 import unittest
 from pathlib import Path
+from unittest import mock
 from urllib.parse import urlsplit
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from ai_jury import scaffold  # noqa: E402
+from ai_jury import cli, scaffold  # noqa: E402
 from ai_jury.config import GENERIC_CLI_VENDORS, AgentSpec, adapter_key  # noqa: E402
 from ai_jury.privilege import audit_agent  # noqa: E402
 
@@ -301,6 +307,31 @@ def _slot(seat: Seat) -> str | None:
         "google-api": "google",
         "xai-api": "xai",
     }.get(vendor)
+
+
+def config_validate(text: str, *, allow_remote: bool) -> tuple[int, str]:
+    """Exit status and output of ``jury --config <file> --config-validate`` on *text*.
+
+    ``allow_remote`` sets the documented opt-in, ``JURY_ALLOW_REMOTE_ENDPOINT=1``,
+    which a non-loopback ``endpoint`` needs; without it the variable is unset.
+    """
+    workdir = tempfile.mkdtemp()
+    try:
+        path = Path(workdir) / "jury.toml"
+        path.write_text(text, encoding="utf-8")
+        env = {k: v for k, v in os.environ.items() if k != "JURY_ALLOW_REMOTE_ENDPOINT"}
+        if allow_remote:
+            env["JURY_ALLOW_REMOTE_ENDPOINT"] = "1"
+        out, err = io.StringIO(), io.StringIO()
+        with (
+            mock.patch.dict(os.environ, env, clear=True),
+            contextlib.redirect_stdout(out),
+            contextlib.redirect_stderr(err),
+        ):
+            code = cli.main(["--config", str(path), "--config-validate"])
+    finally:
+        shutil.rmtree(workdir, True)
+    return code, out.getvalue() + err.getvalue()
 
 
 # --------------------------------------------------------------------------- #
@@ -609,7 +640,9 @@ class SampleModelIdsAreCurrent(unittest.TestCase):
         src = APP_JS.read_text(encoding="utf-8")
         cards = _site_cards(src)
         readme = [s for t in _toml_texts("README.md") for s in _seats_in(t, "README.md")]
-        claude = [s.model for s in readme if s.data.get("vendor") == "anthropic"]
+        # A seat with no model at all is `jury init`'s verbatim output, which pins
+        # none (the CLI's own default runs); only an id the README names is checked.
+        claude = [s.model for s in readme if s.data.get("vendor") == "anthropic" and s.model]
         local = [s.model for s in readme if s.data.get("vendor") == "local"]
         site_claude = _seats_in(cards["anthropic-api"]["config"], "site")[0].model
         site_local = _seats_in(cards["ollama-local"]["config"], "site")[0].model
@@ -699,6 +732,40 @@ class SampleModelIdsAreCurrent(unittest.TestCase):
         shown = " ".join(c.get(k, "") for c in cards.values() for k in ("name", "badge", "desc"))
         self.assertEqual([c for c in UNSOURCED_CLAIMS if c in shown], [])
         self.assertEqual([n for n in STALE_MODEL_NAMES if n in shown], [])
+
+
+class TheSiteCardsPassConfigValidate(unittest.TestCase):
+    """Every integration card's ``[[agent]]`` block is a config `jury` accepts (docs audit
+    2026-09-29).
+
+    A card is copied as it stands, so each is held to ``jury --config-validate`` — with
+    ``JURY_ALLOW_REMOTE_ENDPOINT=1`` exactly when the card's own run command sets it, and
+    that opt-in must be one the card needs, not decoration. The Grok card was a remote
+    ``openai-compatible`` seat needing the opt-in; xAI has its own hosted adapter.
+    """
+
+    def test_every_agent_card_validates_as_its_command_runs_it(self):
+        cards = _site_cards(APP_JS.read_text(encoding="utf-8"))
+        checked = 0
+        for card_id, card in cards.items():
+            config = card.get("config", "")
+            if "[[agent]]" not in config or card.get("cat") == "cicd":
+                continue  # the Actions card is YAML + TOML; test_action_example covers it
+            checked += 1
+            remote = "JURY_ALLOW_REMOTE_ENDPOINT=1" in card.get("command", "")
+            with self.subTest(card=card_id):
+                code, out = config_validate(config, allow_remote=remote)
+                self.assertEqual(code, 0, f"{out}\n{config}")
+                if remote:
+                    self.assertEqual(config_validate(config, allow_remote=False)[0], 2, config)
+        self.assertGreaterEqual(checked, 15)
+
+    def test_the_grok_card_is_the_first_class_xai_seat(self):
+        cards = _site_cards(APP_JS.read_text(encoding="utf-8"))
+        seat = _seats_in(cards["xai-grok-api"]["config"], "site")[0]
+        self.assertEqual(seat.data.get("vendor"), "xai-api")
+        self.assertNotIn("endpoint", seat.data)
+        self.assertNotIn("JURY_ALLOW_REMOTE_ENDPOINT", cards["xai-grok-api"]["command"])
 
 
 if __name__ == "__main__":

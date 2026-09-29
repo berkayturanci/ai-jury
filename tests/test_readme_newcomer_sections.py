@@ -196,6 +196,25 @@ class TheWindowsNoteIsWhatCiRuns(unittest.TestCase):
         self.assertIn("No installer is tested on\n  Windows", windows)
         self.assertIn("`--mock` review", windows)
 
+    def test_the_action_self_test_is_the_second_windows_job(self):
+        """The note said "one Windows leg" after #900 put the Action on windows-latest too.
+
+        Read off `ci.yml`: the `action-self-test` job's matrix, what it installs and
+        how it runs the Action, so the note has to name the job for as long as CI
+        runs it on Windows.
+        """
+        job = CI.split("\n  action-self-test:\n", 1)[1].split("\n  lint:\n", 1)[0]
+        matrix = re.search(r"os: \[([^\]]*)\]", job)
+        self.assertIsNotNone(matrix, "action-self-test has no os matrix")
+        self.assertIn("windows-latest", [os.strip() for os in matrix.group(1).split(",")])
+        self.assertIn("pip install ./action", job)
+        self.assertIn("uses: ./action", job)
+        windows = section("Windows")
+        self.assertIn("two Windows jobs", windows)
+        self.assertIn("`uses: ./action`", windows)
+        self.assertIn("`pip install ./action`", windows)
+        self.assertNotIn("one Windows leg", windows)
+
 
 if __name__ == "__main__":
     unittest.main()

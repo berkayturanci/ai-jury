@@ -17,7 +17,7 @@ $ jury --pr 123 --rounds 0
 error: --rounds must be an integer >= 1 (got 0).
 
 $ jury --config-validate          # with rounds = 0 in jury.toml
-Config invalid (jury.toml): invalid configuration:
+Config invalid (jury.toml (or built-in defaults)): invalid configuration:
   - jury.rounds must be an integer >= 1 (got 0).
 ```
 
@@ -62,6 +62,9 @@ jury --issue 42 --live --post
 # Review the current branch against the base, from a piped diff
 git diff origin/HEAD... | jury --diff-file -
 #   → review your local commits without touching GitHub (`-` reads stdin)
+#   → a ./jury.toml with a `command` seat must be trusted first: stdin is the
+#     pipe, so there is no prompt — pass --config jury.toml or set
+#     JURY_TRUST_PROJECT_CONFIG=1 (see configuration.md), or it exits 2
 
 # Single round — review only, no debate (fast, cheap)
 jury --pr 123 --rounds 1
@@ -183,11 +186,18 @@ Gemini `thinkingConfig`); a vendor with no effort control warns once on stderr
 | --- | --- | --- | --- |
 | `--total-timeout` | seconds ≥ 1 | unset | Overall wall-clock budget for the whole run. |
 | `--phase-timeout` | seconds ≥ 1 | unset | Per-phase wall-clock budget. |
-| `--retries` | integer ≥ 0 | `0` | Extra attempts for *transient* failures (timeout / rate-limit / spawn). |
-| `--strict` | flag | off | Fail the run if any configured agent CLI is missing. |
+| `--retries` | integer ≥ 0 | `0` | Extra attempts for *transient* failures (timeout / rate-limit / spawn / connection error). |
+| `--strict` | flag | off | Fail the run (exit **2**, before any agent runs) if any configured agent CLI is missing, or if the least-privilege audit warns about any seat — for example a bring-your-own CLI, which no sandbox of jury's confines. See [security.md](security.md). |
 | `--min-vendors` | integer ≥ 0 | from config (`2`) | Fail (**exit 3**) unless at least N **distinct vendors contributed a review**. `0` disables. |
 | `--no-min-vendors` | flag | off | Explicit opt-out: accept a panel that collapsed to one vendor (same as `--min-vendors 0`). |
 | `--min-reviews` | integer ≥ 0 | from config (`0`) | Require N **reviews** for a downstream consumer — one per agent that answers. The chair's synthesis record is carried beside them and is not one. Checked before the panel runs (exit **2**, nothing is spent) and again on the result (exit **3**). `0` disables. See [`docs/configuration.md`](configuration.md#the-panel-size-guard-min_reviews). |
+
+An agent that answers is not automatically a review for `--min-reviews`: the
+answer has to name what it read — a file, a `path:line` or a symbol that is in
+the change (under `--issue`, the claims it raised) — and must not be an abstention (a refusal, an empty reply, or a
+scope naming only things the change does not contain). Such a ballot is recorded
+and not counted; see
+[what counts as a review](report-format.md#what-counts-as-a-review).
 
 **Example:** `jury --pr 123 --total-timeout 900 --phase-timeout 240 --retries 1`
 caps the whole run at 15 min, each phase at 4 min, and retries transient
@@ -208,11 +218,12 @@ all. Exit **3** is deliberately distinct from the `--ci` findings failure (exit
 never ran", and a collapsed panel outranks the severity gate when both apply.
 
 It fails **closed** by default: the threshold is `2`, from `[jury.ci]
-min_vendors`. It scopes on the vendors your config **names**, so from this
-release a config naming two or more distinct vendors exits 3 unless at least
+min_vendors`. It scopes on the vendors your config **names**, so a config
+naming two or more distinct vendors exits 3 unless at least
 that many actually contributed — **including when a configured CLI is not
-installed**. The shipped three-vendor `jury.toml` on a machine with one CLI
-fails; that is a collapsed panel, not an exemption. Only a config that never
+installed**. The shipped `jury.toml` enables two vendors (`claude` and `codex`;
+its `agy` seat is disabled, because agy is opt-in), and on a machine with only
+one of those CLIs it fails; that is a collapsed panel, not an exemption. Only a config that never
 claimed the consensus — fewer distinct vendors enabled than the threshold, e.g.
 a deliberate single-agent setup — keeps exiting 0, and so does the zero-config
 offline run (no `jury.toml`, no agent CLI, a local model), whose panel is its one
@@ -344,11 +355,13 @@ confirmed critical or major finding remains — the canonical CI gate.
 | Flag | Value | Default | Description |
 | --- | --- | --- | --- |
 | `--cache` | flag | off | Reuse a cached outcome for an unchanged diff+config, else run and store. |
-| `--cache-dir` | path | `$JURY_CACHE_DIR` or `~/.cache/ai-jury` | Override the cache directory. |
+| `--cache-dir` | path | `$JURY_CACHE_DIR`, else `$XDG_CACHE_HOME/ai-jury`, else `~/.cache/ai-jury` | Override the cache directory. |
 | `--clear-cache` | flag | — | Delete all cache entries and exit (alias: `jury cache clear`). |
 
 The cache key covers the diff, effective config, prompt version, package
-version, context policy, and seed — change any and the next run is a miss. Under
+version, context mode and redaction setting, whether verification runs, seed,
+`--mock`, review mode (diff/PR or `--issue`), the repository review policy and
+the cache-entry format — change any and the next run is a miss. Under
 `--context-mode expanded` it also covers the context **text** the panel is shown,
 so editing a PR title/body is a miss (#738); under the default `diff-only` the
 context reaches no reviewer and is not part of the key. Under `--hints` it also
@@ -419,7 +432,7 @@ enforces it. A green doctor is not evidence of a cross-vendor panel.
 | Flag | Value | Description |
 | --- | --- | --- |
 | `--preset` | `offline` \| `fast` \| `balanced` \| `thorough` | One-command setup (see [presets](#presets)). |
-| `--agents` | `claude,codex,agy,qwen,claude-api,codex-api,gemini-api` | Comma-separated panel to scaffold. `claude-api`/`codex-api`/`gemini-api` scaffold a hosted-API agent (`ANTHROPIC_API_KEY`/`OPENAI_API_KEY`/`GEMINI_API_KEY`) instead of a CLI. |
+| `--agents` | comma-separated from `claude`, `codex`, `agy`, `qwen`, `claude-api`, `codex-api`, `gemini-api`, `openrouter`, `deepseek`, `groq`, `aider` | Comma-separated panel to scaffold (`--list-agents` shows each with its availability). `claude-api`/`codex-api`/`gemini-api` scaffold a hosted-API agent (`ANTHROPIC_API_KEY`/`OPENAI_API_KEY`/`GEMINI_API_KEY`) instead of a CLI. `openrouter`/`deepseek`/`groq` scaffold an `openai-compatible` seat on that provider's endpoint (`OPENROUTER_API_KEY`/`DEEPSEEK_API_KEY`/`GROQ_API_KEY`); its host is not loopback, so without `JURY_ALLOW_REMOTE_ENDPOINT` in the environment `jury init` refuses to write it (exit **2**). `aider` scaffolds a bring-your-own CLI seat in aider's read-only flags. `agy` is written only when named: it cannot be confined. |
 | `--rounds` | integer | Rounds for the scaffolded config. |
 | `--chair` | agent name | Chair for the scaffolded config. |
 | `--verify` / `--no-verify` | flag | Verification round on/off. |
@@ -458,7 +471,7 @@ run`) or a CI script. See the [cookbook recipe](cookbook.md#21-run-one-agent-for
 | `--wait-timeout` | seconds | How long `--wait` blocks before giving up (default: the run's own timeout + 60 s, else 3600 s). |
 | `--status` | flag | List every recorded detached run as JSON and exit. A run still marked `running` whose process is gone is reported as `lost`. |
 | `--config` | path | Path to `jury.toml`. |
-| `--cache-dir` | path | Where detached-run state lives (default: `$JURY_CACHE_DIR` or `~/.cache/ai-jury`). |
+| `--cache-dir` | path | Where detached-run state lives (default: `$JURY_CACHE_DIR`, else `$XDG_CACHE_HOME/ai-jury`, else `~/.cache/ai-jury`). |
 | `--mock` | flag | Run the offline mock adapter instead of a real agent. |
 | `--strict` | flag | Refuse (exit `2`) a read-only role whose seat draws a [least-privilege](security.md) warning, as a panel run with `--strict` does. The warnings are printed either way. |
 
@@ -508,14 +521,75 @@ The configured id is reported only when the run recorded no id at all. Exit
 codes: `0` ran and produced output, `1` ran and failed, `2` the request was
 refused.
 
+### `jury apply` — apply suggested patches
+
+Apply suggested patches from a report written with `--suggest-patches` to the
+working tree. It is the only `jury` command that edits your checkout, and it does
+so only when asked: `jury apply INDEX` (a 1-based suggestion number, or `all`) is
+required, and a write is confirmed at the terminal.
+
+| Flag | Value | Description |
+| --- | --- | --- |
+| `INDEX` (positional) | number \| `all` | Which suggestion to apply. Required: without it the command lists the valid range and exits **2**. |
+| `-r`, `--report` | path | The markdown report (or patch file) to read the suggestions from (default: stdin). |
+| `--dry-run` | flag | Print the paths each suggestion would touch, and any it would refuse, and write nothing. |
+| `-y`, `--yes` | flag | Skip the confirmation prompt. Required when stdin is not a terminal; without it such a run writes nothing and exits **2**. |
+
+A report with no suggestions exits **1**.
+
+**Example:** `jury --pr 123 --suggest-patches -o review.md`, then
+`jury apply --dry-run all -r review.md` to preview and `jury apply 1 -r review.md`
+to apply the first suggestion.
+
+### `jury replay` — replay a saved outcome
+
+`jury replay OUTCOME` re-drives a finished run's deliberation from a saved
+outcome — a result-cache entry written under `--cache`, or a serialized outcome
+dict. No agent runs and nothing is fetched. A `--format json` report is not an
+outcome (it lacks the per-agent reviews and debate) and is refused with a message
+saying so. Without `--theater` it prints the run as plain transcript sections.
+
+| Flag | Value | Description |
+| --- | --- | --- |
+| `OUTCOME` (positional) | path | The saved outcome JSON. |
+| `--theater` | flag | Replay in the animated deliberation scene (needs a wide terminal; otherwise plain transcript lines). |
+| `--theater-style` | `flat` \| `pixel` | Scene style, as for the main `--theater-style`. |
+| `--decision` | `chair` \| `vote` | Finale: `chair` shows the stored synthesis verdict (default); `vote` re-tallies the panel's ballots. |
+| `--mode` | `code` \| `issue` | Vote vocabulary for `--decision vote`, which the saved outcome does not record: `code` (default) or `issue`. |
+
+### `jury comment` — run from a PR comment
+
+Parses a PR comment such as `/jury review` into an allowlisted run and dispatches
+it. The comment text is split into words and mapped onto `jury` flags; it never
+reaches a shell. The run it dispatches is an ordinary `jury` run, so an
+auto-discovered `jury.toml` with a `command` seat is refused off a terminal
+unless it is trusted — see [configuration](configuration.md).
+
+| Flag | Value | Description |
+| --- | --- | --- |
+| `--text` | string | **Required.** The comment body to parse. |
+| `--pr` | PR number or URL | The PR to review. With it, the verdict is posted back as a summary comment (`--post-summary`) unless `--no-post` is given. |
+| `--repo` | `owner/name` | Repository for `--pr` (defaults to the current repo). |
+| `--print-args` | flag | Print the resolved `jury` arguments instead of running. |
+| `--no-post` | flag | Do not post the result back. |
+
+The comment grammar is the first line starting with `/jury`, then one action and
+no flag but `--rounds`: `/jury review` (a normal review), `/jury summary` (one
+round unless told otherwise) and `--rounds N` (or `--rounds=N`) with `N` from
+**1** to **3**, e.g.
+`/jury review --rounds 1`. Anything else — another action, another flag, a
+`--rounds` outside that range — is rejected with exit **2**, so a workflow can
+ignore it.
+
 ### Other subcommands
 
 | Command | Description |
 | --- | --- |
-| `jury config show` | Print the effective resolved config and its source. |
-| `jury config path` | Print the resolved config path. |
-| `jury cache clear` | Delete all local cache entries (alias of `--clear-cache`). |
-| `jury comment --text "/jury review" --pr N` | Run from an allowlisted PR comment. Actions: `review`, `summary` (see [comment actions](#comment-actions)). Flags: `--print-args`, `--no-post`. |
+| `jury config show [--config PATH]` | Print a **summary** of the effective resolved config and its source: the main `[jury]` settings, `[jury.ci] fail_on` / `ignore_unverified`, `[jury.context]`, `[jury.diff]` and the agents. It omits the rest (among them `min_vendors`, `min_reviews`, `decision`, `routing`, `hints`, `[jury.output]` and each seat's `extra_args`); read `jury.toml` for those. |
+| `jury config path [--config PATH]` | Print the resolved config path. |
+| `jury cache clear [--cache-dir PATH]` | Delete all local cache entries (alias of `--clear-cache`). |
+| `jury comment` | Run from an allowlisted PR comment — see [below](#jury-comment--run-from-a-pr-comment). |
+| `jury apply` / `jury replay` | See [below](#jury-apply--apply-suggested-patches). |
 | `jury examples` | Print a plain-language list of common example commands. |
 | `jury guide` | Print a short end-to-end walkthrough (install → init → review → post → CI). |
 | `jury run-agent --status` / `--wait <id>` | List or block on detached single-agent runs (see above). |
@@ -554,7 +628,7 @@ fails loudly.
 | `theater_style` | `"flat"` \| `"pixel"` | `"flat"` | Visual aesthetic for terminal animation. |
 | `routing` | `"standard"` \| `"tiered"` | `"standard"` | Risk-aware tiered routing with a frontier anchor (CLI `--tiered`): the round-1 panel follows the diff's risk band and each seat's `tier`; see [tiered routing](configuration.md#tiered-routing-routing--tiered--static-hints-hints--true). An unknown value is a hard config error, like `[[agent]] tier`: nothing but `"tiered"` selects the routed panel, so a typo would quietly buy the standard one. Part of the config hash and cache key. |
 | `hints` | bool | `false` | Run a fast static linter pre-pass over the *changed* files to inject hints into Round 1, under every context mode (CLI `--hints` / `--no-hints`). The flag is part of the config hash, and the **block the linters produced** is part of the cache key whenever there is one — it is a function of the working tree, so it can change while the diff and the config stand still. A run with no block keys as it did before the key existed. |
-| `demote_local_only` | bool | `false` | Demote uncorroborated single-local-model findings to minor advisory status. |
+| `demote_local_only` | bool | `false` | Cap a consensus group at `minor` when **every** reviewer that raised it is a `vendor = "local"` seat — one local model or several — so it cannot fail the CI gate unless a non-local seat raised it too. A group with no reviewers (an injected finding) is left alone. |
 
 **Example:**
 
@@ -576,6 +650,8 @@ transcript = true   # default the markdown report to the full play-by-play
 | --- | --- | --- | --- |
 | `fail_on` | list[str] | `["critical", "major"]` | Severities that fail `--ci`. See [severities](#severities). |
 | `ignore_unverified` | bool | `true` | Skip findings not confirmed by verification. |
+| `min_vendors` | int | `2` | Distinct vendors that must have **contributed a review**, else exit **3** — on every run, not only `--ci`. Applies when the config enables at least this many distinct vendors (a threshold given as `--min-vendors N` applies as given). `0` disables. See [the cross-vendor guard](#the-cross-vendor-guard---min-vendors). |
+| `min_reviews` | int | `0` | Reviews a downstream consumer must receive: checked before the panel runs (exit **2**) and on the result (exit **3**). `0` disables. Not part of the config hash. See [the panel-size guard](configuration.md#the-panel-size-guard-min_reviews). |
 
 ### `[jury.context]`
 
@@ -606,12 +682,12 @@ transcript = true   # default the markdown report to the full play-by-play
 | Key | Type | Default | Allowed / notes |
 | --- | --- | --- | --- |
 | `name` | string | — | **Required**, unique, non-empty. |
-| `vendor` | string | — | `anthropic` \| `openai` \| `google` \| `xai` \| `local` \| `anthropic-api` \| `openai-api` \| `google-api` \| `xai-api` \| `openai-compatible` \| `cli` \| custom registered vendor. An unrecognised value warns and runs on the generic `cli` fallback, where it is counted as vendor `cli` by `min_vendors`. |
+| `vendor` | string | — | `anthropic` \| `openai` \| `google` \| `xai` \| `local` \| `anthropic-api` \| `openai-api` \| `google-api` \| `xai-api` \| `openai-compatible` \| `cli` \| custom registered vendor. An unrecognised value warns and runs on the generic `cli` fallback, where it is counted as vendor `cli` by `min_vendors` — and, with no `adapter` set, its `extra_args` get agy's `--sandbox` handling (every `--sandbox=<value>` removed, a bare `--sandbox` added); set `adapter = "cli"` to pass them through as written (see [the vendor vocabulary](configuration.md#the-vendor-vocabulary)). |
 | `adapter` | string | the vendor's own adapter | The **protocol** used to build this seat's command line, from the same vocabulary as `vendor` (`anthropic` \| `openai` \| `google` \| `xai` \| `local` \| `anthropic-api` \| `openai-api` \| `google-api` \| `xai-api` \| `openai-compatible` \| `cli` \| custom registered name). Unset means the vendor's shipped adapter, so an existing config is unchanged. Set it when a vendor's model is reached through some *other* CLI — `vendor = "openai", adapter = "cli", command = "cursor-agent"` runs Cursor's CLI and still counts as the vendor `openai`. A pair the tool finds surprising is accepted; an adapter name it does not have is a **hard config error**. See [identity vs. protocol](configuration.md#identity-vs-protocol-the-adapter-key). |
 | `command` | string | — | CLI command (not required for HTTP/API vendors, or for an unrecognised vendor with `endpoint` set; required whenever the *adapter* spawns a CLI). |
 | `model` | string | unset | Model identifier. Required for API providers and local models. |
 | `endpoint` | string | `http://localhost:11434/v1` (local) | Base URL for OpenAI-compatible HTTP providers (Ollama, OpenRouter, DeepSeek, Groq, Mistral, LiteLLM). An error on a seat whose adapter runs a CLI (`anthropic`, `openai`, `google`, `cli`, `xai`), which never reads it. |
-| `api_key_env` | string | unset (`OPENAI_API_KEY` default) | Environment variable **name** holding the API key for `openai-compatible` vendors (e.g. `DEEPSEEK_API_KEY`, `OPENROUTER_API_KEY`). Must match `[A-Za-z_][A-Za-z0-9_]*` (max 128 chars); anything else warns and falls back to the vendor default, because this name is echoed into `jury --doctor` and its JSON export. The warning names the agent and the rule but never quotes the rejected value back. The key's **value** is read from the environment and never displayed. |
+| `api_key_env` | string | unset (the adapter's own: `ANTHROPIC_API_KEY` for `anthropic-api`, `OPENAI_API_KEY` for `openai-api` and `openai-compatible`, `GEMINI_API_KEY` for `google-api`, `XAI_API_KEY` for `xai-api`) | Environment variable **name** holding the API key for a hosted-API or `openai-compatible` seat (e.g. `DEEPSEEK_API_KEY`, `OPENROUTER_API_KEY`). Must match `[A-Za-z_][A-Za-z0-9_]*` (max 128 chars); anything else warns and falls back to the vendor default, because this name is echoed into `jury --doctor` and its JSON export. The warning names the agent and the rule but never quotes the rejected value back. The key's **value** is read from the environment and never displayed. |
 | `prompt_mode` | string | `stdin` | Prompt delivery for `vendor = "cli"` (`stdin` \| `arg`). `arg` puts the whole prompt in one argument, which Linux caps at 128 KiB, below the `max_bytes` default (see [how the prompt reaches each seat](configuration.md#cursor-cli--arbitrary-cli-agent-vendor--cli)). Part of the config hash when written, so two seats differing only in it do not share a cache entry — the prompt reaching a seat down a pipe or on argv is two invocation protocols, not one. A config that never names the key hashes exactly as it did before, so no existing cache entry is invalidated. |
 | `headers` | table of strings | `{}` | Custom HTTP headers map for `openai-compatible` API calls. A `headers` that is not a table (a bare string, an array) is a **hard** config error naming the agent, because it cannot become headers at all — as is a non-string header name. A non-string **value** (`X-Retries = 3`) **warns** and is coerced to a string before being sent, like a malformed `api_key_env` that falls back; `--strict-config` makes that fatal. Part of the config hash, so two seats differing only in a routing header do not share a cache entry. No message quotes the offending value back — a header is where a bearer token lives. |
 | `effort` | string | unset | `low` \| `medium` \| `high`. Reasoning effort, mapped per vendor (see [effort](configuration.md#reasoning-effort-agent-effort----effort)). An unknown value is a hard config error; a vendor with no effort control warns once and ignores it. Overridden by `--effort`. |
@@ -653,7 +729,10 @@ LM Studio) · `anthropic-api` · `openai-api` · `google-api` · `xai-api` · `o
 Any other value is a warning, not an error: the seat runs on the generic `cli`
 fallback and is **counted as the vendor `cli`** by the cross-vendor guard, so two
 fallback seats cannot satisfy `min_vendors = 2` between them. The seat's
-configured string is still what the report and the ballots carry.
+configured string is still what the report and the ballots carry. Its argv is
+not passed through as written: with no `adapter` key, jury removes every
+`--sandbox=<value>` from `extra_args` and adds a bare `--sandbox`, as it does for
+agy; `adapter = "cli"` passes the argv through.
 
 ### Presets
 Set with `jury init --preset`.
@@ -663,13 +742,13 @@ Set with `jury init --preset`.
 | `offline` | Local-only ($0), no cloud CLIs. |
 | `fast` | 1 round (review only). |
 | `balanced` | Debate + early-stop. |
-| `thorough` | All **known** agents (installed or not) + debate + verify. On a machine missing some, the panel can collapse below `min_vendors` (exit 3); the scaffolded `[jury.ci]` comment says so. |
+| `thorough` | Every known agent, installed or not, **except** `agy` (opt-in only, seated by name) and — unless `JURY_ALLOW_REMOTE_ENDPOINT` is set — the remote `openrouter`, `deepseek` and `groq` templates, which would make the file invalid; + debate + verify. On a machine missing some, the panel can collapse below `min_vendors` (exit 3); the scaffolded `[jury.ci]` comment says so. |
 
 ### Reasoning effort (`--effort` / `[[agent]] effort`)
 `low` · `medium` · `high`. Supported by `google` (agy), `anthropic-api`,
 `openai-api`, `xai-api`, `openai-compatible` and `google-api`; ignored with a one-line
-warning for `anthropic`/`openai` (the `claude`/`codex` CLIs), `local`, `cli` and
-custom vendors.
+warning for `anthropic`/`openai` (the `claude`/`codex` CLIs), `local`, `cli`,
+`xai` (Grok through a CLI) and custom vendors.
 
 ### Output formats
 `markdown` (default) · `json` · `sarif` · `keel-reviews` — the four `--format`
@@ -699,8 +778,12 @@ Used by `jury comment`: `review` (full review) · `summary` (fast single-round p
 
 | Variable | Purpose |
 | --- | --- |
-| `JURY_CACHE_DIR` | Cache directory (default `~/.cache/ai-jury`); overridden by `--cache-dir`. |
-| `JURY_ALLOW_REMOTE_ENDPOINT` | Set to `1` to allow non-loopback HTTP/HTTPS endpoints for `vendor = "local"` and `openai-compatible`. |
+| `JURY_CACHE_DIR` | Cache directory (default `$XDG_CACHE_HOME/ai-jury`, else `~/.cache/ai-jury`); overridden by `--cache-dir`. |
+| `XDG_CACHE_HOME` | Base of the default cache directory when `JURY_CACHE_DIR` is unset. |
+| `XDG_CONFIG_HOME` | Base of the config-trust store, `$XDG_CONFIG_HOME/ai-jury/trusted-configs` (default `~/.config/ai-jury/trusted-configs`). |
+| `JURY_ALLOW_REMOTE_ENDPOINT` | Allow non-loopback HTTP/HTTPS endpoints for `vendor = "local"` and `openai-compatible` (then a warning, not an error). **Any non-empty value** turns it on — `0` and `false` included; unset it to turn it off. |
+| `JURY_TRUST_PROJECT_CONFIG` | `1`, `true`, `yes` or `on` trusts an auto-discovered `./jury.toml` whose seats run a `command`, so a non-interactive run (a pipe, CI, the `/jury` comment workflow) is not refused. Any other value does not. See [configuration.md](configuration.md). |
+| `JURY_REQUIRE_ABSOLUTE_COMMAND` | Any non-empty value makes every `[[agent]] command` that is not an absolute path a hard config error, so a poisoned `PATH` cannot resolve a shim. |
 | `ANTHROPIC_API_KEY` | API key used by `vendor = "anthropic-api"`. |
 | `OPENAI_API_KEY` | API key used by `vendor = "openai-api"` and default for `openai-compatible`. |
 | `GEMINI_API_KEY` | API key used by `vendor = "google-api"`. |
