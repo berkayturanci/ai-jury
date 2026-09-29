@@ -270,6 +270,8 @@ class ProjectFilesMatchTheTree(unittest.TestCase):
         source = inspect.getsource(cli.main)
         names = set(re.findall(r'raw\[:1\] == \["([\w-]+)"\]', source))
         names |= set(re.findall(r'raw == \["([\w-]+)"\]', source))
+        for group in re.findall(r"raw\[:1\] in \(((?:\[\"[\w-]+\"\],?\s*)+)\)", source):
+            names |= set(re.findall(r'\["([\w-]+)"\]', group))
         names |= {
             " ".join(m) for m in re.findall(r'raw\[:2\] == \["([\w-]+)", "([\w-]+)"\]', source)
         }

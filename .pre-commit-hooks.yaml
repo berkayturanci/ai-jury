@@ -4,8 +4,11 @@
   # Pipe the staged diff into the review; pre-commit otherwise appends the staged
   # filenames as positional args (the review command has none, so it exits 2), and it
   # never feeds a diff on stdin. `language: system` runs the ai-jury already installed in
-  # the environment. `--rounds 1` is the fast single pass.
-  entry: bash -c 'git diff --cached | jury --diff-file - --rounds 1'
+  # the environment. `--rounds 1` is the fast single pass. A hook's `args:` are
+  # appended after the entry, so `"$@"` forwards them to jury (a later flag wins, so
+  # `args: [--rounds, "2"]` overrides the default) and the trailing `--` fills `$0`,
+  # which bash would otherwise take from the first arg and drop.
+  entry: bash -c 'git diff --cached | jury --diff-file - --rounds 1 "$@"' --
   language: system
   types: [text]
   pass_filenames: false

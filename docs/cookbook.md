@@ -735,8 +735,8 @@ repos:
     rev: v1.22.0
     hooks:
       - id: ai-jury
-        # Optional args: e.g. a single round
-        args: [--diff-file, -, --rounds, "1"]
+        # Optional args are appended to the hook's `jury --diff-file - --rounds 1`; a later flag wins
+        args: [--rounds, "2"]
 ```
 
 ---

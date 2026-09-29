@@ -322,7 +322,10 @@ class TheDemoCommentsEndWithTheRealFooter(unittest.TestCase):
 
     @staticmethod
     def _cli_footer(seats: dict[str, bool]) -> str:
-        reviews = [AgentResult(a, "v", ok, "", 0.0) for a, ok in seats.items()]
+        # A seat that returned text, not an empty answer: the CLI footer leaves an
+        # abstention out (voting.is_abstention), and the site demo's seats all review.
+        review = "Reviewed the diff: no findings."
+        reviews = [AgentResult(a, "v", ok, review if ok else "", 0.0) for a, ok in seats.items()]
         return _footer_text(render_footer(reviews).split("\n")[-1])
 
     def test_every_comment_mode_ends_with_the_cli_footer(self):
