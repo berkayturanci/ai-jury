@@ -158,6 +158,12 @@ class TheFailClosedGuardsRefuseBadBounds(_TempDirCase):
         self.assertEqual(code, 2)
         self.assertIn("error: --min-vendors must be an integer >= 0", err)
 
+    def test_doctor_refuses_a_negative_min_reviews_too(self):
+        # codex seat finding on #926: the doctor path checked --min-vendors only.
+        code, _, err = run(["--doctor", "--config", str(self.config), "--min-reviews", "-1"])
+        self.assertEqual(code, 2)
+        self.assertIn("error: --min-reviews must be an integer >= 0", err)
+
     def test_zero_and_the_opt_out_flag_are_still_accepted(self):
         for extra in (["--min-vendors", "0"], ["--no-min-vendors"], ["--min-reviews", "0"]):
             with self.subTest(extra=extra):

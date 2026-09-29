@@ -2386,12 +2386,12 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.doctor:
         # `--doctor` resolves the cross-vendor threshold from `--min-vendors` too
-        # (#863), so the flag's bound holds here as it does on a run.
-        if args.min_vendors is not None:
-            message = bound_error("ci.min_vendors", args.min_vendors, where="--min-vendors")
-            if message:
-                print(f"error: {message}", file=sys.stderr)
-                return 2
+        # (#863), so every bounded flag given here holds as it does on a run —
+        # `--min-reviews` included, not only the one the prediction reads.
+        message = _override_bound_error(args)
+        if message:
+            print(f"error: {message}", file=sys.stderr)
+            return 2
         # Model discovery costs a probe per agent and only the JSON export
         # renders it; the human report must not pay for a field it never prints.
         diagnostics = doctor_module.build_diagnostics(
