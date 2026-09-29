@@ -93,12 +93,17 @@ must have:
   (`pipx install ai-jury`). The skill is inert without it.
 - **`gh`** — required only for GitHub-sourced or GitHub-posted runs (`--pr`,
   `--issue`, `--post-summary` / `--post-inline`). Must be authenticated.
-- **`claude` / `codex` / `agy`** — optional native agent CLIs. At least **one** must be
-  installed for a live review; missing CLIs are skipped automatically (unless `--strict`).
-  The jury runs with whoever is available.
+- **A reviewer** — at least one: a native agent CLI of the built-in panel (`claude`,
+  `codex`), a local model (`vendor = "local"`), or a hosted-API seat with its key. Missing
+  CLIs are skipped automatically (unless `--strict`), and the jury runs with whoever is
+  available — but with no `jury.toml` the built-in panel names two vendors, so a host
+  with only one of `claude`/`codex` installed exits `3` (the cross-vendor guard) unless
+  you pass `--no-min-vendors` or seat a second vendor. `agy` is opt-in: it cannot be
+  confined for untrusted diffs, so it runs only when a `jury.toml` seats it by name
+  (`jury init --agents agy`), and `agy` alone is no reviewer at all.
 
-The same prerequisite detail lives in the [platform matrix](platforms.md); a future
-`jury --doctor` command will check these per host.
+The same prerequisite detail lives in the [platform matrix](platforms.md);
+`jury --doctor` checks these per host.
 
 ## Versioning policy (skill ↔ CLI)
 
@@ -122,7 +127,8 @@ them.
 
 ## Examples
 
-All examples assume `jury` is on `PATH` and at least one agent CLI is installed.
+All examples assume `jury` is on `PATH` and a panel of two vendors can sit — `claude`
+and `codex` installed, or a `jury.toml` seating two vendors — since fewer exits `3`.
 
 ### PR review
 
@@ -186,8 +192,9 @@ A minimal pass to confirm the skill is installed and wired correctly:
       (`.claude/skills/ai-jury/SKILL.md`), or the plugin shows as installed.
 - [ ] Offline dry run produces a report with no live CLIs: `jury --mock`
       (reviews a diff bundled with the package; no checkout needed)
-- [ ] At least one agent CLI is resolvable (`claude`, `codex`, or `agy`), or a live run is
-      not expected.
+- [ ] The reviewers are resolvable — `claude` and `codex`, or the seats your `jury.toml`
+      names (`agy` only if you seated it by name) — or a live run is not expected.
+      `jury --doctor` lists which are available.
 - [ ] For PR runs: `gh auth status` is authenticated.
 - [ ] Invoking the skill by name/trigger ("convene the jury") prompts the host agent to
       run the matching `jury` command and report the verdict + consensus findings.

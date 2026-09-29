@@ -22,8 +22,9 @@ Key facts:
   an empty directory. The default panel is Claude + Codex: Antigravity (`agy`) is
   opt-in only, because its `--sandbox` does not confine it; an agy seat always warns
   and fails `--strict`.
-- Output: markdown / JSON / SARIF report; optional GitHub summary + inline comments;
-  structured findings (severity/file/line); CI gating via exit code.
+- Output: markdown / JSON / SARIF report, or a `keel-reviews` bundle (one review record per
+  panelist plus the chair); optional GitHub summary + inline comments; structured findings
+  (severity/file/line); CI gating via exit code.
 - Privacy: `diff-only` context by default; secret redaction on by default; no telemetry.
   There is no ai-jury server; your diff goes only to the model endpoints you configure — vendor CLIs and APIs, or your own model server for local seats.
 
@@ -40,7 +41,7 @@ Key facts:
 - `jury --pr 123 --incremental` — review only changes since the last jury run.
 - `jury --pr 123 --suggest-patches` — also emit inspectable patches for verified findings.
 - `jury --mock --diff-file examples/sample.diff` — offline demo, no live CLIs.
-- `jury --ci --fail-on critical,major` — gate CI on blocking findings (exit 1).
+- `jury --pr 123 --ci --fail-on critical,major` — gate CI on blocking findings (exit 1).
 - `jury --pr 123 --no-min-vendors` — accept a panel that collapsed to one vendor;
   without it, fewer than `min_vendors` (default 2) contributing vendors exits 3.
 - `jury run-agent --agent claude --role review --prompt-file p.md` — run ONE configured
@@ -61,7 +62,7 @@ Key facts:
 ## Configuration
 
 - File: `jury.toml` (`[jury]`, `[[agent]]`, `[jury.context]`, `[jury.ci]`,
-  `[jury.diff]`); per-run overrides via CLI flags. Scaffold it with `jury init`.
+  `[jury.diff]`, `[jury.output]`); per-run overrides via CLI flags. Scaffold it with `jury init`.
 - Key settings: `rounds` (1=review, 2=+debate), `early_stop`/`max_rounds`, `chair`,
   `timeout`, `total_timeout`/`phase_timeout`/`retries`, `verify`; per-agent
   `vendor`/`command`/`extra_args`, or for a local agent `vendor = "local"` +
@@ -70,6 +71,8 @@ Key facts:
   `min_vendors` — distinct vendors that must have contributed a review before the run
   counts as cross-vendor consensus (default 2; fewer exits 3, `0` disables it). Report
   format is the `--format` flag, not a key in this section.
+- `[jury.output] attribution` (default `true`) keeps the footer that names ai-jury and the
+  seats whose round-1 call succeeded; `false` or `--no-attribution` leaves it off.
 - Optional project review policy: `.jury/policy.toml` (high-risk paths, focus areas,
   severity overrides) — trusted, separate from `jury.toml`.
 

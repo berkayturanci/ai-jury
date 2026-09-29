@@ -52,7 +52,9 @@ Requires Python 3.11+. **Try it instantly, no config:** `jury --mock` runs the f
 offline deliberation on a diff bundled with the package (add `--theater` to watch the
 panel animate). Then scaffold a config with **`jury init`** (it detects your
 installed agents, and seats a local reviewer on a model your local server lists). You need at least one reviewer: an agent CLI
-(`claude`, `codex`, `agy`, `aider`), a free local model via Ollama, **or** a hosted-API reviewer
+(`claude` or `codex`, the built-in panel; `agy` and a bring-your-own CLI such as `aider` only
+when a `jury.toml` seats them by name, and `agy` is opt-in because it cannot be confined), a free
+local model via Ollama, **or** a hosted-API reviewer
 (Anthropic, OpenAI, Gemini, xAI Grok, OpenRouter, DeepSeek, Groq — or Moonshot Kimi, Mistral or any other
 OpenAI-compatible API through `vendor = "openai-compatible"`) — no CLI install or interactive login needed,
 useful for CI and containers; missing/unreachable/unkeyed reviewers are skipped. `gh` is
@@ -180,12 +182,15 @@ Full detail, including what each route actually registers and where files land:
 
 ### Windows
 
-CI runs one Windows leg (`windows-latest`, Python 3.13, in
-[`ci.yml`](.github/workflows/ci.yml)). It installs the package with `pip`, runs the
-offline unit suite, and runs a `--mock` review under Git Bash. That is all that is
-tested on Windows:
+CI runs two Windows jobs in [`ci.yml`](.github/workflows/ci.yml), both on
+`windows-latest` with Python 3.13. The test leg installs the package with `pip`, runs
+the offline unit suite, and runs a `--mock` review under Git Bash. The Action
+self-test runs the GitHub Action itself (`uses: ./action`) on a `--mock` review, after
+`pip install ./action`. That is all that is tested on Windows:
 
-- That install is `pip install -e .` from the checkout. No installer is tested on
+- The test leg's install is `pip install -e .` from the checkout, and the Action
+  self-test's is `pip install ./action` from the checkout, which the Action's own
+  pinned install then finds with the package index switched off. No installer is tested on
   Windows: not pipx, not the PyPI wheel, not Homebrew or `curl | sh`.
   `pipx install ai-jury` or `pip install ai-jury` is the route that matches it.
 - No agent CLI runs in CI on any OS. Whether `claude`, `codex`, `agy` or `gh` works
@@ -263,7 +268,7 @@ need an explicit `--allow-write`. See
 
 ```bash
 jury run-agent --agent claude --role review --prompt-file gate.md
-jury run-agent --agent codex:gpt-5.2 --role implement --allow-write --prompt-file task.md
+jury run-agent --agent codex:gpt-6-sol --role implement --allow-write --prompt-file task.md
 ```
 
 **Pre-commit hook (`.pre-commit-config.yaml`):**
@@ -288,7 +293,7 @@ jobs:
       contents: read
       pull-requests: write   # the default args (--post) write the review to the PR
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: berkayturanci/ai-jury@v1
         with:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -356,22 +361,27 @@ Details: [`docs/theater-design.md`](docs/theater-design.md).
 
 ### Replay a saved run — `jury replay`
 
-Re-watch a finished run without re-spending a single token:
+Re-watch a finished run without re-spending a single token. The file to replay is
+the result-cache entry a `--cache` run stores:
 
 ```bash
-jury replay run.json --theater                 # replay in the deliberation theater
-jury replay run.json --theater --theater-style pixel
-jury replay run.json --decision vote --mode issue   # re-tally the panel-vote finale
+jury --pr 123 --cache                          # stores ~/.cache/ai-jury/<key>.json
+jury replay ~/.cache/ai-jury/<key>.json --theater   # replay in the deliberation theater
+jury replay ~/.cache/ai-jury/<key>.json --theater --theater-style pixel
+jury replay ~/.cache/ai-jury/<key>.json --decision vote --mode issue   # re-tally the panel-vote finale
 ```
 
-`replay` loads a serialized outcome — a bare `outcome_to_dict` dump or a result-cache
-entry (via its `outcome` key) — and re-drives the theater with the exact per-phase event
+`replay` loads a serialized outcome — a result-cache entry (via its `outcome` key) or a
+bare `outcome_to_dict` dump, which the CLI itself never writes — and re-drives the theater with the exact per-phase event
 sequence the live run emitted (review → debate → verify → synthesis, then the vote/chair
 finale). No orchestration, no network, no agents. Off a tty (or without `--theater`) it
 degrades to the plain `--live` step stream. The serialized outcome does not record the run
 mode, so `--mode code|issue` selects the vote vocabulary when you replay with
-`--decision vote`. A `jury --format json` *report* cannot be replayed — it does not carry
-the per-agent deliberation stream — and is rejected with a pointed message.
+`--decision vote`. A report cannot be replayed: `-o run.json` writes the report in the
+`--format` chosen (markdown by default, so `replay` answers `not valid JSON`), and a
+`jury --format json` report does not carry the per-agent deliberation stream, so it is
+rejected with a pointed message. `--cache-dir` (or `$JURY_CACHE_DIR`) moves the cache
+entries.
 
 ## Output formats
 
@@ -394,6 +404,7 @@ A structured report with these top-level keys:
 | --- | --- |
 | `schema_version` | Version of this JSON schema (currently `1.5`). |
 | `metadata` | Run metadata (agents, rounds, context mode, redaction stats, wall-clock proxy). |
+| `classification` | The deterministic PR-level classification: `review_effort`, `risk_level`, `security_sensitive`, `needs_human_attention` (what `--label` applies). |
 | `findings` | All raw findings; each carries `severity`, `file`, `line`, `claim`, `evidence`, `suggested_fix`, `confidence`, `reviewer`. |
 | `consensus` | Per consensus group: `representative` finding, `agreement` count, `reviewers`, `bucket`, `verification_status`. |
 | `reviewers` | One ballot per seat that ran — who said what, what they read (`scope`), what they ran (`testing`), whether it counts as a review (`counts_as_review`), with vendor/model provenance — plus the chair. See [the report-format contract](docs/report-format.md#per-reviewer-ballots-reviewers). |
@@ -406,9 +417,9 @@ only legitimate finding fields — never raw diff or prompt text.
 This JSON drives the **"Load a real run"** panel on the
 [website](https://ai-jury.dev/): drag it on to play the real reviewers, findings,
 and verdict through the in-browser theater (fully client-side — nothing is uploaded).
-For the terminal `jury replay` (above), save the default outcome dump (`-o run.json`,
-**not** `--format json`) instead — the `--format json` report omits the per-agent
-deliberation stream, so `jury replay` rejects it, as noted above.
+For the terminal `jury replay` (above), replay the result-cache entry a `--cache` run
+stores instead — the `--format json` report omits the per-agent deliberation stream, so
+`jury replay` rejects it, as noted above.
 
 ### keel-reviews
 
@@ -440,7 +451,9 @@ anything are all *in* the bundle — the report has to be able to say which agen
 produced what — and none of them is counted, because the consumer would refuse
 it. `--min-reviews` counts the same thing the consumer does.
 
-**And a ballot that did not review says why.** `abstention_cause` carries one of
+**And a ballot that did not review says why.** In a bundle record the reason is in
+its `scope` text; the structured field is on the `--format json` report's `reviewers[]`
+ballots, not in this bundle: `abstention_cause` carries one of
 five — `silent`, `named_nothing`, `not_in_change`, `refused`, `adapter_failed` —
 and every count of the seats that supplied no review is that field tallied, in the
 report line, the `--min-reviews` failure and `--metadata-json`'s `panel` block
@@ -506,11 +519,11 @@ jobs:
   jury:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0   # need the base commit to diff against
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: "3.13"
 
@@ -518,6 +531,9 @@ jobs:
         run: pip install ai-jury   # or: pip install .
 
       - name: Produce SARIF from the PR diff
+        env:   # the hosted-API seats of the jury.toml above read these
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           git diff "origin/${{ github.base_ref }}...HEAD" > pr.diff
           jury --diff-file pr.diff --format sarif -o jury.sarif
@@ -528,10 +544,12 @@ jobs:
           sarif_file: jury.sarif
 ```
 
-This uses a diff file so no agent CLIs or `gh` token are required to *generate*
-the SARIF. To review the PR via `--pr` instead (which shells out to `gh`), set
-`GH_TOKEN: ${{ github.token }}` on that step and ensure the agent CLIs are
-installed and authenticated on the runner.
+This uses a diff file, so no `gh` token is required to *generate* the SARIF. It still
+needs reviewers: a runner has no agent CLIs, so without a `jury.toml` the step exits
+`2` with `error: no usable agents`. Commit the hosted-API `jury.toml` shown with the
+[GitHub Action](#usage) example and pass its keys as above. To review the PR via
+`--pr` instead (which shells out to `gh`), set `GH_TOKEN: ${{ github.token }}` on that
+step.
 
 As a manual alternative, upload an existing SARIF file with `gh`:
 
@@ -559,22 +577,52 @@ It detects which agent CLIs are installed and, for a local agent, **discovers th
 models on your Ollama/OpenAI-compatible server** so you can pick one in the
 interactive prompt (e.g. `gemma:2b`, `deepseek-coder:6.7b`). It uses the
 secure-by-default agent templates and refuses to overwrite an existing file
-without `--force`. The resulting `jury.toml`:
+without `--force`. `jury init --agents claude,codex` writes exactly this:
 
 ```toml
+# Generated by `jury init`. Edit freely — see docs/configuration.md
+# for the full schema (rounds, ci gate, context policy, diff handling).
+
 [jury]
-rounds = 2          # 1 = review only, 2 = review + debate
-chair  = "claude"   # which agent synthesizes the verdict
-timeout = 300       # per-agent wall-clock seconds (a hung CLI is killed at this bound)
-parallel = true
+rounds = 2
+chair = "claude"
+verify = true
+
+[jury.ci]
+# Distinct vendors that must have contributed a review before the run can
+# stand as cross-vendor consensus (exit 3 otherwise). Defaults to 2 and only
+# applies when 2+ vendors are enabled HERE — including when one of their CLIs
+# is not installed; set 0 (or pass --no-min-vendors) to accept a panel that
+# collapsed to one vendor, or --strict to fail at startup on a missing CLI.
+# min_vendors = 2
 
 [[agent]]
 name = "claude"
-vendor = "anthropic"   # anthropic | openai | google | xai
+vendor = "anthropic"
 command = "claude"
-# model = "claude-opus-5-5"
-# The reviewer gets no tools (no file reads, shell, network or MCP servers), loads no
-# CLAUDE.md, hooks, skills or plugins, and keeps no transcript of the diff.
+extra_args = ["--output-format", "text", "--tools", "", "--disallowed-tools", "Edit,Write,NotebookEdit,Bash,Read,Grep,Glob,WebFetch,WebSearch,Task,Agent", "--strict-mcp-config", "--safe-mode", "--no-session-persistence", "--permission-mode", "dontAsk"]
+
+[[agent]]
+name = "codex"
+vendor = "openai"
+command = "codex"
+extra_args = ["-s", "read-only"]
+```
+
+The `claude` seat gets no tools (no file reads, shell, network or MCP servers), loads
+no CLAUDE.md, hooks, skills or plugins, and keeps no transcript of the diff; the
+`codex` seat runs in codex's read-only sandbox. A key the file leaves out keeps its
+default: `timeout = 600` per-agent wall-clock seconds (a hung CLI is killed at this
+bound) and `parallel = true`, among others. `vendor` takes any of the
+[vendors the parameter reference lists](docs/parameters.md#vendors). A seat with no `model` runs its CLI's own
+default model; pin one by adding it to the seat:
+
+```toml
+[[agent]]
+name = "claude"
+vendor = "anthropic"
+command = "claude"
+model = "claude-opus-5-5"
 extra_args = ["--output-format", "text", "--tools", "", "--disallowed-tools", "Edit,Write,NotebookEdit,Bash,Read,Grep,Glob,WebFetch,WebSearch,Task,Agent", "--strict-mcp-config", "--safe-mode", "--no-session-persistence", "--permission-mode", "dontAsk"]
 ```
 
@@ -726,9 +774,9 @@ There is no ai-jury server; your diff goes only to the model endpoints you confi
 
 **Secret redaction** — before anything is sent to an agent, the diff (and any
 context) is passed through a redactor (`src/ai_jury/redaction.py`)
-that masks recognized secrets: PEM private keys, AWS access keys, GitHub/OpenAI
+that masks recognized secrets, including PEM private keys, AWS access keys, GitHub/OpenAI
 tokens, `Bearer` tokens, and generic `api_key`/`secret`/`token` assignments
-(including base64-style values). Each hit becomes `[REDACTED:<kind>]`. Redaction
+(including base64-style values); the full list of shapes is `_PATTERNS` in that module. Each hit becomes `[REDACTED:<kind>]`. Redaction
 is **on by default**.
 
 **Controls:**
@@ -753,6 +801,9 @@ tool never phones home. Network traffic goes to:
 - the **local model endpoints** you configure, which the jury calls itself the same
   way;
 - **`gh`**, for `--pr` and `--issue` (fetching, posting, labelling);
+- with the opt-in `--hints`, the linters it runs in the working directory: `ruff`,
+  and `npx eslint` when a `package.json` is present — `npx` may download `eslint`
+  from the npm registry when the project does not have it installed;
 - and the default local model server on loopback (`http://localhost:11434/v1`),
   to offer a free offline reviewer: every `jury init` checks whether it is reachable
   (a status-only request), except `jury init --list-models`, which lists its models
@@ -770,8 +821,8 @@ Run a local readiness check that surfaces common configuration problems:
 
 ```bash
 jury --doctor                          # print a readable report
-jury --doctor --json                   # the same facts as one JSON document
-jury --doctor --write diagnostics.json # also write the report as JSON
+jury --doctor --json                   # per-agent readiness as one JSON document (ai-jury.doctor.v1)
+jury --doctor --write diagnostics.json # also write the full diagnostics as JSON
 ```
 
 The report covers the tool version, Python version, OS, a config summary
@@ -782,8 +833,10 @@ and the report **never** includes the diff under review or any agent output.
 Diagnostics are built locally and only written to disk when you pass
 `--write PATH`.
 
-`--doctor --json` prints the same facts as **one** JSON document on stdout and
-nothing else, for wizards and orchestrators — per agent: transport
+`--doctor --json` prints **one** JSON document on stdout and nothing else, for
+wizards and orchestrators. It is not the `--write` file: `--write` saves the readable
+report's diagnostics (config summary, warnings, recommendations), while `--json` is a
+provider export — per agent: transport
 (`cli` / `api` / `local`), availability and the reason when unavailable, the
 command or endpoint, resolved binary, version, capabilities, discovered models,
 and effort support. The schema is `ai-jury.doctor.v1`, documented in
@@ -830,9 +883,9 @@ visualizer surfaces the jury on the review step when a run used it.
 | Module | Responsibility |
 |:--|:--|
 | `config.py` | Load `jury.toml` (or built-in default) |
-| `adapters.py` | One adapter per vendor CLI; turns a prompt into a headless subprocess |
-| `orchestrator.py` | Round structure: review → debate → synthesis (agents run in parallel) |
-| `prompts.py` | The three prompt templates |
+| `adapters.py` | One adapter per vendor: a headless subprocess for an agent CLI, an HTTP call for a hosted-API or local seat |
+| `orchestrator.py` | Round structure: review → debate → verify → synthesis (agents run in parallel) |
+| `prompts.py` | The prompt templates: review, debate, verify and synthesis, each for a code review and for an issue review |
 | `report.py` | Render the run as one markdown report |
 | `github.py` | `gh`-based PR diff in / comment out |
 
@@ -891,7 +944,7 @@ issues are tracked under [milestones](https://github.com/berkayturanci/ai-jury/m
 
 ## Security & the Codex sandbox
 
-The jury performs **read-only review orchestration** — it sends a diff to each agent CLI and collects their feedback; it does not apply edits.
+The panel performs **read-only review orchestration** — it sends a diff to each seat and collects their feedback; it applies no edits. Writing is left to separate commands you run: `jury apply` on a patch you pick, and `jury run-agent`'s `implement`/`fix` roles with `--allow-write`.
 
 The Codex adapter pipes the prompt on **stdin** (`codex exec` with no positional prompt) so non-interactive runs never hang waiting for input, and defaults `extra_args` to **`["-s", "read-only"]`** — a secure-by-default sandbox. The diff is fetched by the jury (`gh`), not by codex, so the reviewer only needs to read its prompt and print findings; a prompt injection in the diff can't make it write files, and its shell has no network. The read-only sandbox does not stop it *reading* any file your user can read, by absolute path, and the MCP servers enabled in your own `~/.codex/config.toml` still load (they run outside its sandbox).
 
@@ -900,7 +953,7 @@ What each seat can reach while it reads an attacker-controlled diff. The default
 | Seat | Shipped flags | Writes / shell | Reads files outside the diff | Network |
 | --- | --- | --- | --- | --- |
 | `claude` | `--tools ""`, a deny list naming every write, shell, read, network and subagent tool, `--strict-mcp-config`, `--safe-mode` (no CLAUDE.md, hooks, skills or plugins), `--no-session-persistence`, `--permission-mode dontAsk` | no | no — and with `--safe-mode` not even your own `~/.claude/CLAUDE.md` is loaded into its context | no |
-| `codex` | `-s read-only` | no writes; read-only shell | yes, by absolute path | not from its shell; user MCP servers from `~/.codex/config.toml` still load |
+| `codex` | `-s read-only` (the adapter adds `--skip-git-repo-check --ephemeral`) | no writes; read-only shell | yes, by absolute path | not from its shell; user MCP servers from `~/.codex/config.toml` still load |
 | `agy` (opt-in) | `--sandbox --dangerously-skip-permissions` | yes — `--sandbox` did not stop it writing files | yes | yes |
 | `cli` / `xai` | yours | whatever your flags give it | whatever your flags give it | whatever your flags give it |
 
@@ -956,11 +1009,13 @@ flag tables of [`docs/parameters.md`](docs/parameters.md) to the same parser.
 | More than one input source | exits non-zero with `error: choose one input source, got …`, naming each one given |
 | Empty diff | exits non-zero with `error: empty diff — nothing to review` |
 | `--post-summary` with no postable target (e.g. `--diff-file`; it works with `--pr` **or** `--issue`) | exits non-zero with `error: --post-summary requires --pr`, before any reviewer runs |
-| `--post-inline` without `--pr` (PR-only; also `--post-progress`, `--label`, `--incremental`) | exits non-zero with `error: --post-inline requires --pr`, before any reviewer runs |
+| `--post-inline` without `--pr` (PR-only; also `--post-progress`, `--label`, `--incremental`) | exits non-zero with `error: --post-inline requires --pr`, before any reviewer runs; with `--issue` instead, `error: --post-inline is not supported with --issue (it is a PR/diff concept)` |
 | A config that exists but cannot be read (`--config` names a directory, or `./jury.toml` is unreadable) | exits `2` with `error: cannot read config <path>: <reason>` |
 | `jury init --wizard` with no terminal on stdin (CI, a pipe) | exits `2` with ``error: the wizard needs a terminal; use `jury init --preset <name>` `` |
 | `jury init --interactive` with no terminal on stdin (CI, a pipe, no stdin at all), and no `--agents` or `--preset` | exits `2` with ``error: --interactive needs a terminal; use `jury init --preset <name>` or `jury init --agents <list>` `` |
 | Unknown flag / bad arguments | argparse exits with code `2` |
+| No configured seat can run (no agent CLI on `PATH`, no reachable local model, no hosted-API key) | exits `2` with `error: no usable agents — …`, before any review |
+| `--strict` and a configured agent CLI is missing, or a seat draws a least-privilege warning (an `agy` or bring-your-own `cli` seat) | exits `2` with `error: agent '<name>' CLI not available: <command>` or `error: least-privilege check failed (--strict): …`, before any review |
 | `--version` | prints `jury <version>` and exits `0` |
 | Successful review (no `--ci`) | exits `0` |
 | `--ci` with blocking findings remaining | exits `1` (see `ci.evaluate_ci`) |
@@ -1108,8 +1163,9 @@ they never run in `make test` or in CI.
 
 **Requirements** for a meaningful live run:
 
-- The agent CLIs you want to exercise must be installed and on your `PATH`
-  (`claude`, `codex`, `agy`) **and authenticated** for non-interactive use.
+- The agent CLIs of the built-in panel must be installed and on your `PATH`
+  (`claude`, `codex`) **and authenticated** for non-interactive use. `agy` is
+  opt-in and not in that panel, so these tests do not run it.
 - Any agent whose CLI is not installed is **skipped individually**, so a
   machine with only `claude` still exercises that one adapter.
 

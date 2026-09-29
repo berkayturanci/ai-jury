@@ -10,13 +10,13 @@ links to canonical docs rather than duplicating them.
 ## What it is / is not
 
 - **Is:** a local-first orchestrator that drives universal AI agent providers
-  (`claude`, `codex`, `agy`, `cursor`, `aider`, OpenRouter, DeepSeek, Groq, Ollama) — plus an optional local /
+  (`claude`, `codex`, `agy` (opt-in), `cursor-agent`, `aider`, OpenRouter, DeepSeek, Groq, Ollama) — plus an optional local /
   open-weight reviewer over an OpenAI-compatible HTTP endpoint — through an adversarial
   review + debate + verification pipeline, and renders one report (markdown/JSON/SARIF).
 - **Is not:** a hosted review SaaS, a dashboard product, a general multi-agent
   framework, or an auto-apply patch tool. It can emit *inspectable* suggested patches for
-  verified findings (`--suggest-patches`) but never applies them. Scope stays on review
-  orchestration.
+  verified findings (`--suggest-patches`) and never applies one on its own: `jury apply`
+  applies the one you name. Scope stays on review orchestration.
 
 ## Install & requirements
 
@@ -24,14 +24,17 @@ links to canonical docs rather than duplicating them.
   `concurrent.futures`, `argparse`).
 - `pipx install ai-jury` → `jury` entry point. `pip install -e .` for dev. Run
   `jury init` to scaffold a `jury.toml`.
-- Install at least one agent CLI: `claude` (Claude Code), `codex` (OpenAI Codex CLI),
-  `agy` (Google Antigravity); OR run a free **local / open-weight** model via Ollama (or
-  any OpenAI-compatible server) as a `vendor = "local"` agent. Missing/unreachable agents
-  are skipped unless `--strict`.
+- Install at least one agent CLI of the built-in panel: `claude` (Claude Code) or `codex`
+  (OpenAI Codex CLI); OR run a free **local / open-weight** model via Ollama (or any
+  OpenAI-compatible server) as a `vendor = "local"` agent; OR give a hosted-API seat its
+  key. `agy` (Google Antigravity) alone gives you no reviewer: it is opt-in and runs only
+  when a `jury.toml` seats it by name (`jury init --agents agy`). Missing/unreachable
+  agents are skipped unless `--strict`; a panel left with fewer vendors than its config
+  names then exits `3` (see Exit codes).
 - `gh` (GitHub CLI) is required for `--pr` input and `--post-summary`/`--post-inline`.
 - Supported platforms: see [docs/architecture.md](docs/architecture.md#supported-platforms)
-  (Linux primary; macOS/Windows tested on the latest Python; live CLIs depend on each
-  vendor's own OS support).
+  (Linux primary, on Python 3.11–3.14; macOS and Windows on Python 3.13; live CLIs depend
+  on each vendor's own OS support).
 
 ## Pipeline
 
@@ -42,7 +45,7 @@ links to canonical docs rather than duplicating them.
    With `early_stop = true` this is adaptive: unanimous panels skip it; disagreement runs
    up to `max_rounds`.
 3. **Verification pass (optional, `verify = true`).** The chair re-judges each finding
-   (verified / unsupported / needs-human-decision) to drop false positives before synthesis.
+   (`verified` / `unsupported` / `needs_human_decision`) to drop false positives before synthesis.
 4. **Synthesis.** The `chair` agent consolidates into one verdict (APPROVE / COMMENT /
    REQUEST CHANGES) with consensus, disputed, and single-reviewer findings.
 
@@ -74,7 +77,8 @@ be served from / stored in an optional **cache** (`--cache`). Full detail:
   `ai-jury.run-agent.v1` JSON document (`--format text` prints only the agent's text).
   The integration point for an orchestrator that needs a single agent, not a panel.
   `review`/`gate`/`chair` are always read-only and `--allow-write` on them warns and is
-  ignored; `implement`/`fix` refuse to run (exit 2) without it. `--detach` / `--wait
+  ignored; `implement`/`fix` refuse to run (exit 2) without it. `--strict` refuses (exit 2)
+  a read-only role whose seat draws a least-privilege warning, as a panel run's does. `--detach` / `--wait
   <id>` / `--wait-timeout <s>` / `--status` / `--run-id <id>` manage background runs;
   `--cwd`, `--timeout`, `--effort`, `--config`, `--cache-dir`, `--mock` also apply.
   Exit `0` ran and produced output, `1` ran and failed, `2` the request was refused.
@@ -122,6 +126,9 @@ Input (choose exactly one): `--pr <num/url>`, `--issue <num/url>` (both take an 
   `--theater-style flat|pixel` — the animated deliberation scene (needs a TTY; falls
   back to `--live`).
 - `--post-summary` (alias `--post`), `--post-inline`, `--dry-run`, `--label` — GitHub output.
+- `--no-attribution` — leave off the footer that ends the markdown report and every posted
+  comment, naming ai-jury and the seats whose round-1 call succeeded (#911); overrides
+  `[jury.output] attribution`.
 - `--post-progress` — live sticky PR status comment updated each round/chunk (#125; needs `--pr`).
 - `--post-mode single|phased` — `phased` posts Round 1 / debate / decision as separate comments (#126).
 - `--ci`, `--fail-on <sev,...>` — CI gating on blocking findings (exit `1`).
@@ -131,6 +138,10 @@ Input (choose exactly one): `--pr <num/url>`, `--issue <num/url>` (both take an 
   scoped to runs that enabled that many vendors; an explicit `--min-vendors <n>` is
   enforced as asked. `--strict` is the other half — it fails at *startup* on a missing
   CLI (#682).
+- `--min-reviews <n>` — the panel-size floor: fewer than `n` reviews exits `3`, and a bench
+  that cannot reach `n` exits `2` before the panel runs (default from `[jury.ci]
+  min_reviews`, shipped as `0` = off; #699). A review is a panel ballot that named what it
+  read and voted; the chair's synthesis and an abstention are not.
 - `--doctor` — local readiness report; `--json` makes it the `ai-jury.doctor.v1` document
   and the only thing on stdout; `--write <path>` also writes the diagnostics as JSON (#662).
 - `--mock`, `--strict`, `-q/--quiet`, `--version`.
@@ -138,7 +149,12 @@ Input (choose exactly one): `--pr <num/url>`, `--issue <num/url>` (both take an 
 ### Exit codes
 
 `0` ran and nothing blocked · `1` `--ci` with blocking findings remaining · `2` bad
-arguments / invalid config · `3` the panel collapsed below `min_vendors`.
+arguments / invalid config, no usable agents, `--strict` refusing a missing CLI or a
+least-privilege warning, or a bench too small for `min_reviews` before the panel runs ·
+`3` the panel fell short: fewer than `min_vendors` vendors contributed, every seat that ran
+failed to return a result (#849), or fewer reviews than `min_reviews` after the panel ran.
+Exit `3` outranks the `--ci` exit `1`. A run given no input source exits `1` with
+`error: provide one of --pr, …`.
 
 ## Configuration schema — `jury.toml`
 
@@ -146,7 +162,7 @@ arguments / invalid config · `3` the panel collapsed below `min_vendors`.
 [jury]
 rounds = 2          # 1 = review only, 2 = review + debate
 chair  = "claude"   # which agent synthesizes the verdict
-timeout = 300       # per-agent wall-clock seconds (hung CLI killed at this bound)
+timeout = 600       # per-agent wall-clock seconds (hung CLI killed at this bound)
 parallel = true
 verify = true
 # early_stop = false ; max_rounds = 3            # adaptive rounds (#40)
@@ -170,6 +186,9 @@ redact_secrets = true   # scrub recognized secrets before sending (default on)
 [jury.diff]           # large-diff handling (#31), all optional
 # max_bytes = 200000 ; chunk = false ; exclude_generated = true
 # exclude = ["docs/**"] ; include = []
+
+[jury.output]         # the report footer (#911)
+attribution = true    # false (or --no-attribution) leaves the footer off
 
 [[agent]]
 name = "claude"
@@ -207,7 +226,7 @@ unreachable local endpoint (`connection_error`) becomes a non-fatal
 gets as little as its CLI allows — Claude no tools at all (`--tools ""`, a deny list of
 every write/shell/read/network/subagent tool, `--strict-mcp-config`, `--safe-mode` so
 no CLAUDE.md, hooks, skills or plugins load, `--no-session-persistence`,
-`--permission-mode dontAsk`), Codex `-s read-only --ephemeral` (no writes, no shell
+`--permission-mode dontAsk`), Codex `-s read-only` (no writes, no shell
 network, but it can read files by absolute path, user MCP servers from
 `~/.codex/config.toml` still load, and `~/.codex/AGENTS.md` is in its context). The default panel is Claude + Codex: Antigravity is opt-in only, because
 `--sandbox` does not stop it reading, writing or reaching the network; an agy seat
@@ -215,15 +234,24 @@ always warns and fails `--strict`. Native reviewers start in an empty
 temporary directory, not the repository. `privilege.py` enforces and audits the flags.
 Invocations:
 
-- Anthropic `ClaudeAdapter`: `claude -p "<prompt>" --output-format text`
-- OpenAI `CodexAdapter`: `codex exec` (prompt on stdin), `-s read-only`
-- Google `AgyAdapter`: `agy --print "<prompt>" --sandbox`
-- local `LocalAdapter`: HTTP `POST {endpoint}/v1/chat/completions` (stdlib `urllib`), `temperature` 0 unless the seat sets one
+- Anthropic `ClaudeAdapter`: `claude -p [--model M] <extra_args>` with the prompt on stdin
+  (never in argv, so it is not readable in `ps`; #287)
+- OpenAI `CodexAdapter`: `codex exec [-m M] --skip-git-repo-check --ephemeral -s read-only`
+  with the prompt on stdin
+- Google `AgyAdapter` (opt-in seat): `agy --input-format stream-json --output-format
+  stream-json [--model M] --dangerously-skip-permissions --sandbox`, with the prompt sent
+  as one NDJSON frame on stdin
+- local `LocalAdapter`: HTTP `POST {endpoint}/chat/completions` (stdlib `urllib`), where
+  `endpoint` is the base URL such as `http://localhost:11434/v1`; `temperature` 0 unless
+  the seat sets one
+- hosted APIs (`anthropic-api`, `openai-api`, `google-api`, `xai-api`,
+  `openai-compatible`): HTTPS from the jury itself, keyed by each vendor's API-key variable
 - `MockAdapter`: deterministic, phase-aware output; no subprocess (tests/CI).
 
 ## Output formats
 
-- Report to stdout or `-o <file>` in `--format markdown` (default), `json`, or `sarif`.
+- Report to stdout or `-o <file>` in `--format markdown` (default), `json`, or `sarif`;
+  `--format keel-reviews` writes the per-reviewer bundle instead of a report.
   Samples: mock [docs/example-run.md](docs/example-run.md); a real 4-vendor run
   [docs/example-live-review.md](docs/example-live-review.md).
 - Structured findings keyed by `{severity, file, line, claim}` feed consensus tiers; a
@@ -232,8 +260,9 @@ Invocations:
   (`--post-inline`) via `gh`; opt-in classification labels (`--label`).
 - Suggested patches for verified findings (`--suggest-patches`, `--patches-out`).
 - CI: exit `1` when blocking findings remain (`--ci`, `--fail-on`), and exit `3` when
-  fewer than `min_vendors` distinct vendors contributed a review — a collapsed panel is
-  its own outcome, checked with or without `--ci`.
+  the panel fell short — fewer than `min_vendors` distinct vendors contributed a review,
+  every seat failed, or fewer than `min_reviews` reviews — its own outcome, checked with
+  or without `--ci`.
 
 ## Security / data-flow model
 
@@ -241,8 +270,9 @@ Invocations:
   title/body. The jury reads and sends no source files outside the diff, no repo history,
   no env vars; what an agent CLI can reach on its own depends on its seat (above).
 - **Secret redaction (on by default):** the diff and context pass through
-  `redaction.py`, masking PEM keys, AWS keys, GitHub/OpenAI tokens, `Bearer` tokens, and
-  generic `api_key`/`secret`/`token` assignments → `[REDACTED:<kind>]`.
+  `redaction.py`, masking recognized secrets — PEM keys, AWS keys, GitHub/OpenAI tokens,
+  `Bearer` tokens and generic `api_key`/`secret`/`token` assignments among them (the full
+  list is `_PATTERNS` there) → `[REDACTED:<kind>]`.
 - **Posting** sends the rendered report/comments to the GitHub API; `--dry-run` previews
   the inline payload with no network call.
 - **No ai-jury server:** your diff goes only to the model endpoints you configure — vendor CLIs and APIs, or your own model server for local seats. No telemetry. Network traffic: the agent CLIs you
