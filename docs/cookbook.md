@@ -107,6 +107,17 @@ git diff main... > /tmp/branch.diff
 jury --diff-file /tmp/branch.diff
 ```
 
+> **A checkout's own `jury.toml` has to be trusted first.** When `jury` picks up
+> `./jury.toml` on its own and that file seats any agent with a `command` (every
+> CLI seat, `claude` and `codex` included), it asks before running those commands,
+> and remembers the answer per file content. A piped run has no terminal to ask
+> on — stdin is the diff — so on a file it has not seen confirmed it exits `2`
+> naming the three ways through: pass `--config jury.toml`, set
+> `JURY_TRUST_PROJECT_CONFIG=1`, or run once at a terminal (the file form above)
+> and answer `y`. A `jury.toml` that `jury init` wrote here is already trusted,
+> and a run with no `jury.toml` (the built-in panel) is never asked. See
+> [security.md](security.md#an-auto-discovered-jurytoml-is-trusted-like-code).
+
 **Outcome:** a markdown report on stdout headed `# 🏛️ AI Jury`
 with a recommendation, a Findings section, and the per-agent review rounds. Act
 on the findings before you open the PR. (If the diff is empty, the CLI exits with
@@ -156,7 +167,9 @@ jury --pr 123 --post-inline
 ```
 
 **Preview before posting.** Combine `--post-inline` with `--dry-run` to print the
-exact inline payload without making any GitHub call — nothing is posted:
+exact inline payload instead of posting it. The run is otherwise a real one — the
+diff is still fetched with `gh` and the panel still reviews it — but nothing is
+posted:
 
 ```bash
 jury --pr 123 --post-inline --dry-run
@@ -171,7 +184,8 @@ jury --pr 123 --post-summary -o report.md
 **Outcome:** with `--post-summary`/`--post-inline`, the jury's feedback lands
 on the PR as advisory comments (`--post`/`--post-summary` also post to an
 `--issue`; `--post-inline` is `--pr`-only). With `--dry-run`, you
-see what *would* be posted and the network is never touched. These are advisory
+see what *would* be posted inline and the jury posts nothing (it still fetches the
+PR and calls the agents). These are advisory
 by design — they comment, they don't block a merge; gating is the separate `--ci`
 concern (see recipe 5).
 
@@ -275,6 +289,13 @@ jury --pr "$PR_NUMBER" --ci --fail-on critical,major
 
 `--fail-on` overrides the `[jury.ci] fail_on` severities in `jury.toml`;
 drop the trailing `|| true` to let the stage fail.
+
+In CI there is no terminal to confirm a checkout's `jury.toml`, so one that
+seats a CLI agent (anything with a `command`) is refused with exit `2` — which
+`|| true` would hide — until you trust it explicitly: pass `--config jury.toml`,
+or set `JURY_TRUST_PROJECT_CONFIG=1` on a job that runs only on code you trust
+(not a fork's pull-request branch). Hosted-API and `local` seats run no command
+and are never asked about.
 
 **Outcome:** the advisory form always reports and never blocks; the `--ci` form
 turns the jury into an enforced quality gate. Start advisory, graduate to
@@ -381,18 +402,21 @@ $ jury --doctor
 ...
 Cross-vendor readiness
 ----------------------------------------
-  vendors enabled:   3
-  vendors reachable: 1
+  vendors enabled:   3 (by vendor identity)
+  vendors reachable: 1 (by vendor identity)
   min_vendors gate:  2
   cross-vendor ready: no
-  note: this checks availability, not contribution. A reachable CLI can still
-        return no review (#635) — only a run can prove the panel.
+  reviews for a consumer: at most 1 (1 panel ballot(s); the chairing agent reviews too, so its ballot is one of them, and the chair's synthesis record is not a review)
+  min_reviews gate:  off
+  note: this checks availability, not contribution. A reachable CLI can still return no review (#635) — only a run can prove the panel.
+  note: counted by vendor identity, the same arithmetic min_vendors uses — ...
 ```
 
 ```bash
 jury --doctor --json | jq '.panel'
 # { "vendors_configured": 3, "vendors_available": 1, "min_vendors": 2,
-#   "contributing_vendors": null, "multi_vendor_ready": false }
+#   "contributing_vendors": null, "panelists_available": 1,
+#   "reviews_supplied_max": 1, "min_reviews": 0, "multi_vendor_ready": false }
 ```
 
 `contributing_vendors` is `null` on purpose: doctor runs no review, so it can
@@ -413,12 +437,13 @@ jury --pr 123 --min-vendors 3          # require three vendors (your config must
 jury --pr 123 --no-min-vendors         # accept a collapsed panel (explicit)
 ```
 
-**From this release the gate is on by default, and it scopes on the vendors your
-config NAMES.** A `jury.toml` naming two or more distinct vendors exits **3**
-unless at least that many actually contributed a review. That includes the case
-where a configured CLI is **not installed on this machine**: the shipped
-three-vendor `jury.toml` on a laptop with one CLI now fails, because a
-configuration promising three vendors and delivering one is exactly the collapse
+**The gate is on by default, and it scopes on the vendors your config NAMES.** A
+`jury.toml` naming two or more distinct vendors exits **3** unless at least that
+many actually contributed a review. That includes the case where a configured CLI
+is **not installed on this machine**: a `jury.toml` naming `claude` and `codex`
+(the two vendors enabled in this repository's own `jury.toml`, whose `agy` seat
+ships `enabled = false`) fails on a laptop with only one of those CLIs, because a
+configuration promising two vendors and delivering one is exactly the collapse
 this guard exists to catch. A missing CLI is not an exemption.
 
 Only a config that never claimed cross-vendor consensus is left alone — Option A
@@ -504,7 +529,13 @@ jury comment --text "/jury deploy" --print-args   # rejected
 ```
 
 A minimal, safe workflow recipe (gate on a trusted author association and only
-on PR comments):
+on PR comments). A runner has no agent CLI of its own, so the run needs a
+reviewer it can reach: here the repository's `jury.toml` seats hosted-API
+reviewers (for example `vendor = "anthropic-api"` and `vendor = "openai-api"`,
+see [recipe 20](#20-headless-ci--containerized-reviews-via-hosted-apis)), keyed by
+repository secrets. With no `jury.toml`, the built-in `claude` + `codex` panel
+finds neither CLI on a hosted runner (and no local model server to fall back to),
+and the run exits `2` (`no usable agents`):
 
 ```yaml
 # .github/workflows/jury-comment.yml
@@ -533,10 +564,20 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           COMMENT_BODY: ${{ github.event.comment.body }}
           PR_NUMBER: ${{ github.event.issue.number }}
+          # Keys for the hosted-API seats in jury.toml (read from the env only).
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         # The comment body is passed as an argument value (never via a shell
         # template), and the jury allowlist rejects anything unsupported.
         run: jury comment --text "$COMMENT_BODY" --pr "$PR_NUMBER"
 ```
+
+If your `jury.toml` seats CLI agents instead, install them in an earlier step
+and add `JURY_TRUST_PROJECT_CONFIG: "1"` to `env`: a seat with a `command` in an
+auto-discovered `jury.toml` is refused off a terminal (exit `2`) until it is
+trusted, and `jury comment` has no `--config` flag. That opt-in is safe here
+only because an `issue_comment` run checks out the default branch, which your
+maintainers wrote — not the pull request's branch.
 
 > The `if:` guard restricts *who* can trigger a run; the `jury comment`
 > allowlist restricts *what* can run. Both layers matter — keep the author
@@ -587,9 +628,12 @@ rejected. `--repo owner/name` targets another repo.
 
 ## 13. Configure Universal Agent Providers (OpenRouter, DeepSeek, Groq, Grok, Cursor CLI, Local Models)
 
-**Prerequisites:** an API key for hosted providers (e.g., `export OPENROUTER_API_KEY="sk-or-v1-..."`, `export DEEPSEEK_API_KEY="sk-..."`, or `export XAI_API_KEY="xai-..."`) or installed CLI tools (`cursor`, `aider`).
+**Prerequisites:** an API key for hosted providers (e.g., `export OPENROUTER_API_KEY="sk-or-v1-..."`, `export DEEPSEEK_API_KEY="sk-..."`, or `export XAI_API_KEY="xai-..."`) or installed CLI tools (`cursor-agent`, `aider`).
 
-Add any of these provider templates to your `jury.toml`:
+Add any of these provider templates to your `jury.toml`. The OpenRouter, DeepSeek
+and Groq seats name a remote `endpoint`, which is refused by default (exit `2`,
+from `--config-validate` too) until you opt in for the process with
+`export JURY_ALLOW_REMOTE_ENDPOINT=1`; the xAI and loopback seats need no opt-in:
 
 ```toml
 # OpenRouter API (one key for many vendors' models)
@@ -616,13 +660,11 @@ model = "llama-3.3-70b-versatile"
 endpoint = "https://api.groq.com/openai/v1/chat/completions"
 api_key_env = "GROQ_API_KEY"
 
-# Grok / xAI API
+# Grok / xAI API (first-class adapter: fixed endpoint, keyed by XAI_API_KEY)
 [[agent]]
 name = "grok"
-vendor = "openai-compatible"
+vendor = "xai-api"
 model = "grok-4.7"
-endpoint = "https://api.x.ai/v1/chat/completions"
-api_key_env = "XAI_API_KEY"
 
 # OmniRoute / Unified LLM Gateways (LiteLLM, One API)
 [[agent]]
@@ -665,7 +707,21 @@ on its test, lint or load commands, and a trusted Cursor workspace runs the
 checkout's `.cursor/hooks.json`. **Seat them only on checkouts you trust.** Details
 in [configuration.md](configuration.md#cursor-cli--arbitrary-cli-agent-vendor--cli).
 
-**Outcome:** `jury --config-validate` confirms provider readiness. Run `git diff main... | jury --diff-file -` to deliberate across your choice of hosted HTTP models, coding CLIs, and local models.
+The aider seat uses `prompt_mode = "arg"` because `--message` takes the prompt as
+its value, so the whole prompt — the redacted diff included — is one command-line
+argument: readable in `ps` by other local users, and capped by the OS. Linux
+refuses a single argument of 128 KiB or more, below the 200000-byte
+`[jury.diff] max_bytes` default, so a large diff fails that seat with a hint
+rather than reviewing it. To keep every prompt under the cap, set `[jury.diff]
+chunk = true` with a `chunk_max_bytes` well below 128 KiB (the prompt template
+adds to each chunk); both settings apply to the whole panel, not one seat.
+
+**Outcome:** with `JURY_ALLOW_REMOTE_ENDPOINT=1` set, `jury --config-validate`
+checks the file (it does not call a provider or check a key). Then run
+`git diff main... | jury --config jury.toml --diff-file -` to deliberate across
+your choice of hosted HTTP models, coding CLIs, and local models (`--config`
+names the file, so the CLI seats' commands run without the trust prompt a piped
+run cannot answer).
 
 ---
 
@@ -783,7 +839,9 @@ into the command line.
 **Prerequisites:** [Keel](https://github.com/berkayturanci/keel) driving the
 repository (`.keel/project.yaml`), `jury` on `PATH` wherever `keel ship` runs. Keel
 does not depend on `ai-jury` — if the `jury` CLI is absent, the built-in `jury` gate
-is a fail-soft no-op.
+does not run and is reported `SKIPPED`; beside another gate that is all, but when
+`jury` is the **only** gate planned the skip fails the run, since nothing judged
+the change (keel #1369).
 
 There is no `review:` key in Keel's project schema — `keel validate` rejects
 `review: {…}` with `unknown property 'review'`. The real integration is a built-in
@@ -855,7 +913,8 @@ any code path in `src/keel/*.py`. (Anchors below are keel `main` as of
   so re-runs on the same commit stay idempotent instead of piling up comments.
 - Saves the raw JSON report to `.keel/state/jury/<run-id>.json` by adding
   `--format json -o .keel/state/jury/$RUN_ID.json` to that same jury invocation
-  (`commands/ship.md:711`, s8, "Save the jury artifact for visualizers"). It is
+  (keel's `src/keel/adapters/commands/ship.md`, s8, the "Save the jury artifact
+  for visualizers" step). It is
   untracked state, never committed, and the write is fail-soft — display-only,
   it never gates. `keel-visual` only *reads* the file, to show the jury verdict
   alongside the run on the activity board.
@@ -971,10 +1030,15 @@ command = "codex"           # frontier: benched on routine diffs, back on escala
 
 [[agent]]
 name = "flash"
-vendor = "google"
-command = "agy"
+vendor = "google-api"       # hosted Gemini, keyed by GEMINI_API_KEY
+model = "gemini-3.8-flash"
 tier = "economical"         # the seat routine diffs are reviewed by
 ```
+
+The economical seat here is the hosted Gemini API, not `agy`: an `agy` seat is
+opt-in only, draws a least-privilege warning on every run because `--sandbox`
+does not confine it, and makes `--strict` exit `2` — the wrong property for the
+seat that reviews most diffs.
 
 ```bash
 # Combine fast linter pre-pass and tiered model routing with frontier protection
@@ -1021,6 +1085,13 @@ export JURY_ALLOW_REMOTE_ENDPOINT=1
 jury --pr 123 --ci
 ```
 
+This panel is **one vendor**, not two: both seats are `vendor =
+"openai-compatible"`, and the cross-vendor guard counts vendor identity, not
+endpoints — `jury --doctor` reports `vendors enabled: 1`, so `min_vendors = 2` is
+inert and the run is a single-vendor review. For a cross-vendor panel, add a seat
+with a different vendor identity, for example `vendor = "anthropic-api"` (keyed
+by `ANTHROPIC_API_KEY`) or `vendor = "xai-api"` (keyed by `XAI_API_KEY`).
+
 ---
 
 ## 21. Run one agent for an orchestrator (keel)
@@ -1036,7 +1107,7 @@ one agent, with a JSON result on stdout.
 jury run-agent --agent claude --role review --prompt-file gate.md
 
 # A specific model, with a deliberate wall-clock bound
-jury run-agent --agent codex:gpt-5.2 --role gate --prompt-file gate.md --timeout 900
+jury run-agent --agent codex:gpt-6-sol --role gate --prompt-file gate.md --timeout 900
 
 # An implementer that may edit the tree — write access is explicit, never implied
 jury run-agent --agent agy --role implement --allow-write --cwd ../worktree \
@@ -1054,7 +1125,7 @@ The result document (`schema_version: "ai-jury.run-agent.v1"`):
   "ok": true,
   "agent": "codex",
   "vendor": "openai",
-  "model": "gpt-5.2",
+  "model": "gpt-6-sol",
   "role": "gate",
   "transport": "cli",
   "text": "...the agent's answer...",
@@ -1063,7 +1134,7 @@ The result document (`schema_version: "ai-jury.run-agent.v1"`):
   "timed_out": false,
   "error_code": null,
   "error": null,
-  "attribution": { "vendor": "openai", "model": "gpt-5.2", "label": "agent:openai model:gpt-5" }
+  "attribution": { "vendor": "openai", "model": "gpt-6-sol", "label": "agent:openai model:gpt-6-sol" }
 }
 ```
 
@@ -1081,11 +1152,19 @@ when you need the exact id.
 
 **Roles decide privilege, and the flag cannot override that.** `review`, `gate`
 and `chair` always run under the vendor's read-only invocation — the exact one a
-panel review uses (`claude --tools "" --disallowed-tools … --strict-mcp-config
---safe-mode --no-session-persistence`, `codex -s read-only --ephemeral`, `agy
---sandbox`), and on `claude`, `codex` and `agy` they start in a fresh, empty
-temporary directory rather than `--cwd`, so a checkout's project settings and
-hooks cannot reach them; `--cwd` applies to the write roles only. Passing `--allow-write` to them warns and is ignored: those roles
+panel review uses (`claude -p --tools "" --disallowed-tools … --strict-mcp-config
+--safe-mode --no-session-persistence --permission-mode dontAsk`, `codex exec
+--skip-git-repo-check --ephemeral -s read-only`, `agy --input-format stream-json
+--output-format stream-json --dangerously-skip-permissions --sandbox`). That is
+read-only for `claude` and `codex`; `agy`'s `--sandbox` does **not** stop it
+reading, writing or reaching the network, and `--dangerously-skip-permissions`
+approves every tool call (see [security.md](security.md#other-agents)), so an
+`agy` gate or chair is only as safe as the prompt you hand it. On `claude`,
+`codex` and `agy` these roles start in a fresh, empty temporary directory rather
+than `--cwd`, so a checkout's project settings and hooks cannot reach them, and
+`--cwd` prints a note instead. A bring-your-own `cli`/`xai` seat or a custom
+registered adapter is not moved: it runs in `--cwd` for every role, note or not.
+Passing `--allow-write` to them warns and is ignored: those roles
 read attacker-controlled content, and a flag must not be able to make a reviewer
 write-capable. `implement` and `fix` are the only write-capable roles, and only
 with `--allow-write`; without it the command exits 2 rather than quietly running
@@ -1160,13 +1239,13 @@ closed, and it did not change this. A tier whose `knobs.team.review` names `jury
 dispatches the whole panel once from `s7` with `jury --format json` and reads the
 ballots with `keel review --from-jury`; it does not call `jury run-agent`.
 
-So the invocation below is the shape a caller uses — written with keel's
-environment variable names, since a host agent driving a keel worktree is the
-obvious first one:
+So the invocation below is the shape a caller uses. The angle-bracket values are
+placeholders the caller fills in — keel defines no environment variables for
+them:
 
 ```bash
-jury run-agent --agent "$KEEL_DELEGATE" --role implement --allow-write \
-  --cwd "$KEEL_WORKTREE" --prompt-file "$KEEL_PROMPT" --timeout 3600 --detach
+jury run-agent --agent <agent> --role implement --allow-write \
+  --cwd <worktree> --prompt-file <task.md> --timeout 3600 --detach
 ```
 
 ---

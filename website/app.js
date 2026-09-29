@@ -37,8 +37,29 @@
     "--no-suggest-shell-commands", "--no-auto-lint", "--no-detect-urls", "--no-gitignore",
     "--message"
   ];
+  // agy: the argv `jury init --agents agy` writes (scaffold.agent_templates()).
+  // Without the first flag headless agy denies the first command a review tries
+  // and returns no review; `--sandbox` restricts its terminal but does not
+  // confine it, which is why agy is opt-in only and never in the default panel.
+  var AGY_ARGS = ["--dangerously-skip-permissions", "--sandbox"];
+  var AGY_OPT_IN_NOTE = "# Opt-in only: agy cannot be confined. Even with --sandbox it reads and writes\n# files and reaches the network, so seat it only for diffs you trust: every run\n# warns about this seat, and --strict fails on it.";
+  // A non-loopback `endpoint` is refused by `jury --config-validate` and by a run
+  // unless JURY_ALLOW_REMOTE_ENDPOINT is set (config.py, default-closed).
+  var REMOTE_ENDPOINT_NOTE = "# Remote endpoint: refused unless JURY_ALLOW_REMOTE_ENDPOINT=1 is set when you\n# validate or run (a non-loopback model server is closed by default).";
+  function isLoopbackEndpoint(url) {
+    return /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/|$)/i.test(url);
+  }
   function tomlArray(items) {
     return "[" + items.map(function (s) { return JSON.stringify(s); }).join(", ") + "]";
+  }
+  // The attribution footer a posted report ends with (report.render_footer, #911):
+  // the tool and the seats that returned a review, in seat order. Every argument
+  // is escaped by the caller's `esc`.
+  function attributionFooter(seats, esc) {
+    var by = seats.length ? " · " + seats.map(esc).join(", ") : "";
+    return '<p class="gh-attrib">🏛️ Synthesized by <a href="https://github.com/berkayturanci/ai-jury">ai-jury</a>' + by
+      + ' — Cross-vendor multi-agent code review · <a href="https://github.com/berkayturanci/ai-jury">⭐ Star on GitHub</a>'
+      + ' · <a href="https://ai-jury.dev/">Add to your repo</a></p>';
   }
 
   /* ---- Theme toggle ------------------------------------------------- */
@@ -427,12 +448,15 @@
     var AGENTS = {
       claude:     { vendor: "anthropic", command: "claude" },
       codex:      { vendor: "openai", command: "codex" },
-      agy:        { vendor: "google", command: "agy" },
+      // agy is opt-in only (it cannot be confined): the seat says so (AGY_OPT_IN_NOTE).
+      agy:        { vendor: "google", command: "agy", opt_in: true, extra_args: AGY_ARGS },
       qwen:       { vendor: "local", model: "qwen2.5-coder:7b", endpoint: "http://localhost:11434/v1" },
+      // Remote endpoints: the TOML carries REMOTE_ENDPOINT_NOTE for each.
       deepseek:   { vendor: "openai-compatible", endpoint: "https://api.deepseek.com/v1", api_key_env: "DEEPSEEK_API_KEY", model: "deepseek-v4-pro" },
       openrouter: { vendor: "openai-compatible", endpoint: "https://openrouter.ai/api/v1", api_key_env: "OPENROUTER_API_KEY", model: "anthropic/claude-opus-5.5" },
       groq:       { vendor: "openai-compatible", endpoint: "https://api.groq.com/openai/v1", api_key_env: "GROQ_API_KEY", model: "llama-3.3-70b-versatile" },
-      grok:       { vendor: "openai-compatible", endpoint: "https://api.x.ai/v1", api_key_env: "XAI_API_KEY", model: "grok-4.7" },
+      // xAI has its own first-class hosted adapter (#701): no endpoint, no opt-in.
+      grok:       { vendor: "xai-api", api_key_env: "XAI_API_KEY", model: "grok-4.7" },
       // A bring-your-own CLI seat runs with your permissions: ai-jury knows no
       // sandbox flag for it (privilege.py warns about every one), so the sample
       // asks the CLI for its own read-only mode and says so on the seat (#859).
@@ -458,6 +482,35 @@
     // Severity used for ranking/vote logic: real-run items carry the raw
     // severity in .sev (e.g. "major") plus a bucketed .sevClass ("high").
     function sevClassOf(f) { return f.sevClass || f.sev; }
+
+    // The jury.toml the builder shows, as a pure function of the choices (no DOM),
+    // so tests/test_site_builder.py can run it and hold every output to
+    // `jury --config-validate`. "Panel vote" is `[jury] decision = "vote"`.
+    function builderToml(ags, o) {
+      var lines = ["[jury]", "rounds = " + o.rounds, 'chair = "' + (ags[0] || "claude") + '"', "verify = " + (o.verify ? "true" : "false")];
+      if (o.decision === "vote") lines.push('decision = "vote"');
+      if (o.auto) lines.push("auto_depth = true");
+      if (o.tiered) lines.push('routing = "tiered"');
+      if (o.hints) lines.push("hints = true");
+      lines.push("");
+      ags.forEach(function (n) {
+        var a = AGENTS[n];
+        if (a.unsandboxed) lines.push("# " + UNSANDBOXED_LABEL, UNSANDBOXED_HINT);
+        if (a.opt_in) lines.push(AGY_OPT_IN_NOTE);
+        if (a.endpoint && !isLoopbackEndpoint(a.endpoint)) lines.push(REMOTE_ENDPOINT_NOTE);
+        lines.push("[[agent]]");
+        lines.push('name = "' + n + '"');
+        lines.push('vendor = "' + a.vendor + '"');
+        if (a.command) lines.push('command = "' + a.command + '"');
+        if (a.endpoint) lines.push('endpoint = "' + a.endpoint + '"');
+        if (a.api_key_env) lines.push('api_key_env = "' + a.api_key_env + '"');
+        if (a.model) lines.push('model = "' + a.model + '"');
+        if (a.extra_args) lines.push("extra_args = " + tomlArray(a.extra_args));
+        if (a.prompt_mode) lines.push('prompt_mode = "' + a.prompt_mode + '"');
+        lines.push("");
+      });
+      return lines.join("\n").trim() + "\n";
+    }
 
     function selectedAgents() {
       var all = ["claude", "codex", "agy", "qwen", "deepseek", "openrouter", "groq", "grok", "cursor", "aider"];
@@ -561,26 +614,11 @@
       $("flow-note").textContent = note;
 
       // generate jury.toml
-      var lines = ["[jury]", "rounds = " + r, 'chair = "' + (ags[0] || "claude") + '"', "verify = " + (verify ? "true" : "false")];
-      if (auto) lines.push("auto_depth = true");
-      if ($("opt-tiered") && $("opt-tiered").checked) lines.push('routing = "tiered"');
-      if ($("opt-hints") && $("opt-hints").checked) lines.push("hints = true");
-      lines.push("");
-      ags.forEach(function (n) {
-        var a = AGENTS[n];
-        if (a.unsandboxed) lines.push("# " + UNSANDBOXED_LABEL, UNSANDBOXED_HINT);
-        lines.push("[[agent]]");
-        lines.push('name = "' + n + '"');
-        lines.push('vendor = "' + a.vendor + '"');
-        if (a.command) lines.push('command = "' + a.command + '"');
-        if (a.endpoint) lines.push('endpoint = "' + a.endpoint + '"');
-        if (a.api_key_env) lines.push('api_key_env = "' + a.api_key_env + '"');
-        if (a.model) lines.push('model = "' + a.model + '"');
-        if (a.extra_args) lines.push("extra_args = " + tomlArray(a.extra_args));
-        if (a.prompt_mode) lines.push('prompt_mode = "' + a.prompt_mode + '"');
-        lines.push("");
+      $("toml-out").textContent = builderToml(ags, {
+        rounds: r, verify: verify, auto: auto, decision: vm,
+        tiered: !!($("opt-tiered") && $("opt-tiered").checked),
+        hints: !!($("opt-hints") && $("opt-hints").checked)
       });
-      $("toml-out").textContent = lines.join("\n").trim() + "\n";
 
       var runBtn = $("run-btn");
       if (runBtn) {
@@ -654,9 +692,12 @@
     };
     // rank within each vocabulary (strictest first) for majority tie-breaks
     var VOTE_RANK = { "REQUEST CHANGES": 3, "COMMENT": 2, "APPROVE": 1, "NEEDS-INFO": 3, "UNCLEAR": 2, "READY": 1 };
+    // A loaded run's `info` finding (or a severity the CLI does not know, which it
+    // ranks as info) casts no vote against the change: voting.tally_votes maps
+    // critical/major to blocking, minor/nit to middling, anything else to clear.
     function agentVote(a, items, mode) {
       var v = VOTE_VOCAB[mode];
-      var mine = items.filter(function (f) { return f.by.indexOf(a) !== -1; });
+      var mine = items.filter(function (f) { return f.by.indexOf(a) !== -1 && !f.voteless; });
       if (mine.some(function (f) { return sevClassOf(f) === "high"; })) return v.blocking;
       return mine.length ? v.middling : v.clear;
     }
@@ -802,12 +843,16 @@
     function renderComments(run) {
       var html = "";
       var panel = run.ags.map(function (a) { return labelOf(run, a); }).join(", ");
+      // The posted report ends with the attribution footer, naming the seats that
+      // returned a review by their jury.toml names (a failed seat is left out).
+      var foot = attributionFooter(run.ags.filter(function (a) { return !(run.failed && run.failed[a]); })
+        .map(function (a) { return run.real ? labelOf(run, a) : a; }), esc);
 
       if (run.mode === "issue") {
         var body = verdictBadge(run)
           + (run.gaps.length ? "<ul class='gh-findings'>" + run.gaps.slice().sort(bySev).map(gapRow).join("") + "</ul>"
                              : "<p>Complete — repro, expected/actual, and scope are all present.</p>")
-          + '<div class="gh-foot">issue #42 · panel: ' + esc(panel) + " · rounds: " + (run.auto ? "auto" : run.r) + (run.verifyOn ? " · verified" : "") + (run.vm === "vote" ? " · panel vote" : " · chair decides") + "</div>";
+          + '<div class="gh-foot">issue #42 · panel: ' + esc(panel) + " · rounds: " + (run.auto ? "auto" : run.r) + (run.verifyOn ? " · verified" : "") + (run.vm === "vote" ? " · panel vote" : " · chair decides") + "</div>" + foot;
         html += commentCard(run.ags.length + "-reviewer completeness check", body);
         $("gh-comments").innerHTML = html;
         return;
@@ -824,10 +869,10 @@
         html += commentCard("Round 1 · independent review", r1);
         var dbody = run.debate ? (run.dropped.length ? "Refuted <code>" + esc(run.dropped[0].file) + "</code> as a false positive; agreed on the rest." : "Reviewers cross-examined and agreed on the findings.") : "Skipped (1 round). With debate, the panel cross-examines and filters false positives.";
         html += commentCard("Round 2 · debate", dbody);
-        var dec = verdictBadge(run) + (run.finalF.length ? "<ul class='gh-findings'>" + run.finalF.slice().sort(bySev).map(findingRow).join("") + "</ul>" : "<p>No blocking findings.</p>");
+        var dec = verdictBadge(run) + (run.finalF.length ? "<ul class='gh-findings'>" + run.finalF.slice().sort(bySev).map(findingRow).join("") + "</ul>" : "<p>No blocking findings.</p>") + foot;
         html += commentCard((run.vm === "vote" ? "Panel vote · " : "Decision · ") + panel, dec);
       } else {
-        var pbody = verdictBadge(run) + (run.finalF.length ? "<ul class='gh-findings'>" + run.finalF.slice().sort(bySev).map(findingRow).join("") + "</ul>" : "<p>No blocking findings — looks good.</p>") + '<div class="gh-foot">panel: ' + esc(panel) + " · rounds: " + (run.auto ? "auto" : run.r) + (run.verifyOn ? " · verified" : "") + (run.vm === "vote" ? " · panel vote" : "") + "</div>";
+        var pbody = verdictBadge(run) + (run.finalF.length ? "<ul class='gh-findings'>" + run.finalF.slice().sort(bySev).map(findingRow).join("") + "</ul>" : "<p>No blocking findings — looks good.</p>") + '<div class="gh-foot">panel: ' + esc(panel) + " · rounds: " + (run.auto ? "auto" : run.r) + (run.verifyOn ? " · verified" : "") + (run.vm === "vote" ? " · panel vote" : "") + "</div>" + foot;
         html += commentCard(run.ags.length + "-reviewer jury", pbody);
       }
       $("gh-comments").innerHTML = html;
@@ -978,6 +1023,7 @@
        ================================================================ */
     // Real severities are critical/major/minor/nit/info (findings.py);
     // bucket them onto the site's three sev pills and the vote logic.
+    var VOTING_SEVERITIES = ["critical", "major", "minor", "nit"];
     function sevBucket(sev) {
       var s = String(sev || "").toLowerCase();
       if (s === "critical" || s === "major" || s === "high") return "high";
@@ -1025,6 +1071,7 @@
         if (loc && line !== null && line !== undefined && line !== "") loc += ":" + clip(line, 8);
         return {
           sev: clip(sev, 12) || "info", sevClass: sevBucket(sev),
+          voteless: VOTING_SEVERITIES.indexOf(String(sev || "").toLowerCase()) === -1,
           file: loc || "(no file)", title: clip(title, 300), evidence: clip(evidence, 300),
           by: by, status: typeof status === "string" ? status : ""
         };
@@ -1067,7 +1114,7 @@
       }
 
       var run = {
-        mode: "pr", real: true, ags: ags, labels: labels, chair: chair,
+        mode: "pr", real: true, ags: ags, labels: labels, chair: chair, failed: failed,
         debate: debate, verifyOn: verifyOn, pm: "single", progress: false,
         vm: vm, surfaced: items, dropped: dropped, finalF: finalF,
         verdict: verdict, verdictNote: verdictNote, tally: tally,
@@ -1277,7 +1324,7 @@
         iconKey: "claude",
         logo: "logos/claude.svg",
         color: "var(--c-claude)",
-        desc: "Autonomous agent CLI by Anthropic with direct filesystem, bash, and git tools.",
+        desc: "Anthropic's agent CLI. As a juror it runs with no tools at all (--tools \"\", --disallowed-tools, --strict-mcp-config) and reviews the diff it is handed on stdin.",
         config: '[[agent]]\nname = "claude"\nvendor = "anthropic"\ncommand = "claude"',
         command: "jury --pr 123 --chair claude"
       },
@@ -1300,13 +1347,13 @@
         name: "Google Antigravity",
         vendor: "Google DeepMind",
         cat: "assistants",
-        badge: "Native CLI",
-        badgeType: "accent",
+        badge: "Opt-in only",
+        badgeType: "unsandboxed",
         iconKey: "google",
         logo: "logos/google-antigravity.png",
         color: "var(--c-agy)",
-        desc: "Google DeepMind's autonomous agent framework and review orchestrator.",
-        config: '[[agent]]\nname = "agy"\nvendor = "google"\ncommand = "agy"',
+        desc: "Google's agent CLI. Opt-in only, never in the default panel: it cannot be confined \u2014 even with --sandbox it reads and writes files and reaches the network \u2014 so seat it only for diffs you trust. Every run warns about the seat, and --strict fails on it.",
+        config: AGY_OPT_IN_NOTE + '\n[[agent]]\nname = "agy"\nvendor = "google"\ncommand = "agy"\nextra_args = ' + tomlArray(AGY_ARGS),
         command: "jury --pr 123"
       },
       {
@@ -1419,9 +1466,9 @@
         iconKey: "xai",
         logo: "logos/xai.svg",
         color: "var(--c-grok)",
-        desc: "Direct REST API access to Grok reasoning and code models.",
-        config: '[[agent]]\nname = "grok"\nvendor = "openai-compatible"\nendpoint = "https://api.x.ai/v1/chat/completions"\napi_key_env = "XAI_API_KEY"\nmodel = "grok-4.7"',
-        command: "JURY_ALLOW_REMOTE_ENDPOINT=1 XAI_API_KEY=... jury --pr 123"
+        desc: "Direct xAI API reviews through ai-jury's own hosted adapter (vendor = \"xai-api\"): no CLI, no endpoint to configure.",
+        config: '[[agent]]\nname = "grok"\nvendor = "xai-api"\napi_key_env = "XAI_API_KEY"\nmodel = "grok-4.7"',
+        command: "XAI_API_KEY=... jury --pr 123"
       },
       {
         id: "groq",
@@ -1479,7 +1526,7 @@
         color: "var(--c-qwen)",
         desc: "Run Qwen 2.5 Coder, Llama 3.3, and DeepSeek locally: this seat sends the diff only to your own model server.",
         config: '[[agent]]\nname = "qwen"\nvendor = "local"\nendpoint = "http://localhost:11434/v1/chat/completions"\nmodel = "qwen2.5-coder:7b"',
-        command: "jury --preset offline --pr 123"
+        command: "jury init --preset offline && jury --pr 123"
       },
       {
         id: "vllm-local",
@@ -1535,8 +1582,8 @@
         iconKey: "claude",
         logo: "logos/claude.svg",
         color: "var(--c-claude)",
-        desc: "First-class Claude Code plugin and skill for direct chat reviews. Updating is not a re-install.",
-        config: "# .claude-plugin/plugin.json\n{\n  \"name\": \"ai-jury\",\n  \"description\": \"Multi-agent review jury\"\n}",
+        desc: "The ai-jury skill as a Claude Code plugin, from the repository's own marketplace. The skill shells out to jury, so the CLI is installed either way. Updating is not a re-install: plugin install is a no-op on an installed plugin.",
+        config: "# install\nclaude plugin marketplace add https://github.com/berkayturanci/ai-jury\nclaude plugin install ai-jury@ai-jury\n\n# update\nclaude plugin marketplace update ai-jury\nclaude plugin update ai-jury@ai-jury",
         command: "convene the jury on this PR"
       },
       {
@@ -1549,9 +1596,9 @@
         iconKey: "openai",
         logo: "logos/openai.svg",
         color: "var(--c-codex)",
-        desc: "First-class OpenAI Codex CLI plugin registration.",
-        config: '# .codex-plugin/plugin.json\n{\n  "name": "ai-jury",\n  "command": "jury"\n}',
-        command: "codex plugins run ai-jury"
+        desc: "The ai-jury skill as a Codex plugin: add the repository as a marketplace, then add the plugin from it. The skill shells out to jury, so the CLI is installed either way.",
+        config: "# install\ncodex plugin marketplace add https://github.com/berkayturanci/ai-jury\ncodex plugin add ai-jury@ai-jury\n\n# update\ncodex plugin marketplace upgrade\ncodex plugin add ai-jury@ai-jury",
+        command: "convene the jury on this PR"
       },
       {
         id: "homebrew",

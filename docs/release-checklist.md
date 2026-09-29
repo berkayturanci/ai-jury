@@ -13,6 +13,10 @@ manifests ship in the repository. The boxes sat unticked for fifteen releases
 anyway, which made the whole section unreadable — a reader could not tell an
 outstanding item from a stale one.
 
+The evidence beside each box is as of that re-verification (2026-09-04, release
+1.15.1); later releases through 1.22.0 were not re-walked item by item here, so
+read a named release number as the one that was checked then.
+
 Each box now names *where to re-check it* rather than asking anyone to remember.
 Most are held by a job that runs on every push or every tag, so re-verifying the
 section is reading those jobs, not repeating their work by hand.
@@ -35,8 +39,10 @@ section is reading those jobs, not repeating their work by hand.
       Adding a surface is one line there. The Homebrew formula is not among them —
       see [The Homebrew release chain](homebrew-release-chain.md). (`publish.yml` re-checks the version
       against the tag at release time.) The `version-integrity` job in
-      `.github/workflows/ci.yml` runs the same check on every push, so this box
-      cannot come untucked between releases.
+      `.github/workflows/ci.yml` runs `scripts/verify_merge.py --check-version` on
+      every push — the same surface table plus a check that the version has not
+      gone backwards from the last `v*` tag. It is not one of `main`'s required
+      status checks, so a red run does not block a merge on its own: read it.
 - [x] `pip install -e .` and `python -m build` (sdist + wheel) succeed cleanly —
       the editable install is the first step of every `test` matrix leg
       (`.github/workflows/ci.yml`), and `python -m build --sdist --wheel` is the
@@ -109,7 +115,10 @@ what that audit found stale is fixed in the same change.
 - [x] Skill install instructions verified — `skills/ai-jury/SKILL.md`, linked from
       the README and from `docs/platforms.md`.
 - [x] `SECURITY.md` data-flow/redaction reference matches the code — its
-      "Jury data flow & redaction" section names `redaction.py` and its detectors.
+      "Jury data flow & redaction" section names `redaction.py` and every secret
+      kind in `redaction._PATTERNS`, held by `tests/test_docs_audit_claims.py`.
+      (Before 2026-09-29 the table listed 6 of the 16 kinds while this box was
+      ticked.)
 - [x] No downstream/private project names anywhere (project-agnostic). Keel is
       named in `docs/cookbook.md` §16 and §21, but as a *public* sibling project
       with a public integration — the documented exception, not a leak.
@@ -171,7 +180,10 @@ what that audit found stale is fixed in the same change.
      `packaging/homebrew/ai-jury.rb.template`, and re-downloads the artifact to
      confirm the digest is that artifact's.
    - Creates the GitHub Release with attached assets, the rendered `ai-jury.rb`
-     among them, and pushes the formula to `berkayturanci/homebrew-ai-jury`.
+     among them, and pushes the formula to `berkayturanci/homebrew-ai-jury` — only
+     when the `HOMEBREW_TAP_TOKEN` secret is set. Without it the run warns and the
+     tap keeps serving the previous release until it catches up (see
+     [The Homebrew release chain](homebrew-release-chain.md)).
    - Runs the `verify` job: installs `ai-jury==X.Y.Z` from PyPI into a clean
      virtualenv, requires `jury --version` to equal the tag and `jury --doctor`
      to run, and compares the tap's digest with the published sdist's. On failure

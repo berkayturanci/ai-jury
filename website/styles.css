@@ -1072,6 +1072,8 @@ section[id], [id="top"] { scroll-margin-top: 84px; }
 .sev-low { background: #1e3a8a; color: #bfdbfe; }
 .why { display: block; color: var(--muted); font-size: .77rem; margin-top: .15rem; }
 .gh-foot { color: var(--faint); font-size: .74rem; margin-top: .65rem; border-top: 1px solid var(--border); padding-top: .55rem; font-family: var(--font-mono); }
+.gh-attrib { color: var(--faint); font-size: .72rem; margin: .5rem 0 0; }
+.gh-attrib a { color: inherit; }
 
 /* ---- Quickstart / config -------------------------------------------- */
 .split { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 1rem; align-items: start; }

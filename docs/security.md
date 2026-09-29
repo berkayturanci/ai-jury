@@ -1,17 +1,27 @@
 # Security model
 
-The jury only **orchestrates read-only reviews**: it sends a diff (and
-optional PR context) to each agent CLI, captures their text output, and
-synthesizes a verdict. It does not apply edits or run project build/test
-commands on your behalf. The per-agent `extra_args` defaults reflect that
-read-only posture while keeping non-interactive runs from hanging or failing.
+A review run **orchestrates read-only reviews**: it sends a diff (and
+optional PR context) to each agent, captures their text output, and
+synthesizes a verdict. The review panel itself does not apply edits or run
+project build/test commands on your behalf. The per-agent `extra_args` defaults
+reflect that read-only posture while keeping non-interactive runs from hanging or
+failing.
+
+Three opt-in features do act on the checkout, each only when you ask for it:
+`jury apply` writes suggested patches into your working tree (after printing the
+paths and asking, or with `--yes`); `jury run-agent --role implement|fix
+--allow-write` runs one agent that may edit the `--cwd` worktree; and `--hints`
+runs local linters (`ruff check`, and `npx eslint` when the checkout has a
+`package.json`) on the changed files in the current directory before round 1 —
+`npx` may download ESLint, and the checkout's own linter configuration applies.
 
 For vulnerability reporting, see [SECURITY.md](../SECURITY.md).
 
 ## Security analyses
 
 This project has been reviewed by two independent, model-driven security
-analyses, both recorded under `docs/`:
+analyses, recorded under `docs/`. Each record is dated and describes the code as
+it was on that date:
 
 ### Codex security analysis
 
@@ -19,7 +29,9 @@ A repository-wide **Codex** Security scan on 2026-06-07 (commit `a358fdc`) found
 one reportable medium-severity local-confidentiality issue — the Claude and
 Antigravity/Gemini adapters placed the full review prompt in process arguments
 (tracked as [#287](https://github.com/berkayturanci/ai-jury/issues/287); **fixed
-in v1.3.0** — prompts are now delivered on stdin). Scan note:
+in v1.3.0** — prompts are now delivered on stdin; a bring-your-own `cli` seat
+configured with `prompt_mode = "arg"`, such as the aider sample, still puts its
+prompt in argv, by that configuration's choice). Scan note:
 [Codex Security Scan — 2026-06-07](security-scan-2026-06-07.md).
 
 ### Claude security analysis
@@ -45,19 +57,73 @@ issues **#287–#316** across **v1.3.0 → v1.5.0**:
   redaction missing short/bare-token userinfo, two broken classification keyword
   stems, nested redaction), fixed via #321, #322.
 
-The current Claude analysis is the **re-audit of the released v1.6.0 code**:
-[Security re-audit — v1.6.0](security-audit-2026-06-07-v1.6.0.md). It is the
+The **re-audit of the released v1.6.0 code**
+([Security re-audit — v1.6.0](security-audit-2026-06-07-v1.6.0.md)) was the
 first round with **no Critical, High, or Medium finding**: every #287–#322 fix
-holds in source and only optional, non-attacker-reachable defense-in-depth notes
-remain.
+held in source and only optional, non-attacker-reachable defense-in-depth notes
+remained.
+
+Later rounds, each with its own scope and fixes:
+
+- 2026-06-13, post-v1.6.1: the [security audit](security-audit-2026-06-13.md)
+  and the same day's further passes — the
+  [red-team round](security-audit-2026-06-13-redteam.md) and rounds
+  [3](security-audit-2026-06-13-round3.md), [4](security-audit-2026-06-13-round4.md),
+  [5](security-audit-2026-06-13-round5.md), [6](security-audit-2026-06-13-round6.md),
+  [7](security-audit-2026-06-13-round7.md), [8](security-audit-2026-06-13-round8.md)
+  and [9](security-audit-2026-06-13-round9.md). None found a Critical or High;
+  most found Medium prompt-injection, report-integrity or CI-gate issues, each
+  fixed in its own round (the records say which).
+- 2026-06-14: [theater rendering](security-audit-2026-06-14-theater.md) (terminal
+  control characters in the deliberation scene).
+- 2026-06-15: [post-v1.9 theater/site changes](security-audit-2026-06-15.md) — no
+  Critical, High or Medium finding.
+
+The most recent recorded audit is the 2026-06-15 one. Nothing later is recorded
+here, so none of these describes code added since that date (for example the
+config-trust gate below, #831).
+
+## An auto-discovered `jury.toml` is trusted like code
+
+`jury` reads `./jury.toml` from the directory it runs in when `--config` is not
+given, and a `[[agent]]` there names the `command` it spawns — `command = "sh"`
+with `extra_args = ["-c", "…"]` is arbitrary code the moment a review runs. A
+clone from a link or a fork's pull-request branch can ship that file. So
+(`configtrust.py`, #831), before a review or `jury run-agent` runs, a config that
+was **auto-discovered** and seats **any agent with a `command`** must be trusted.
+Every CLI seat has a command, `claude` and `codex` included; hosted-API and
+`local` seats have none and never trigger it. Trust is, checked in order:
+
+1. `JURY_TRUST_PROJECT_CONFIG` set to `1`, `true`, `yes` or `on` in the
+   environment (outside the config, like the remote-endpoint opt-in);
+2. a recorded entry for this file — its real path **and** the SHA-256 of its
+   bytes, so any edit asks again — in `$XDG_CONFIG_HOME/ai-jury/trusted-configs`
+   (`~/.config/ai-jury/trusted-configs` when `XDG_CONFIG_HOME` is unset);
+3. at a terminal, a `[y/N]` question listing the agents with a command; `y` or `yes`
+   records the entry, anything else refuses.
+
+With none of them — off a terminal, which includes a piped `git diff | jury
+--diff-file -` (stdin is the diff), a CI job and a `/jury` comment workflow — the
+run is refused with exit `2` before any agent starts, and the message names the
+ways through. Not gated: `--config PATH` (you named the file), no `jury.toml`
+at all (the built-in panel), and `--mock` (no agent runs). `jury init` records
+trust for the file it writes, so the usual `jury init` → `jury` flow never asks.
+A relative-path `command` is refused whatever the trust, and
+`JURY_REQUIRE_ABSOLUTE_COMMAND=1` refuses a bare name too.
+
+The gate covers `jury.toml` only. A review policy file is discovered from the
+same directory without it — see [Trust boundary](#trust-boundary).
 
 ## Codex invocation
 
 The Codex adapter runs:
 
 ```
-codex exec <extra_args>     # with the prompt piped on stdin
+codex exec -m <model> --skip-git-repo-check --ephemeral -s read-only   # prompt piped on stdin
 ```
+
+(`-m <model>` only when the seat names a model; this is the shipped argv locked in
+`tests/golden/adapter_contracts.json`.)
 
 Two deliberate choices:
 
@@ -279,8 +345,9 @@ content; the least-privilege audit (`--strict` to fail the run) will flag it.
   off. The audit reports a false or unreadable value as removed; `--sandbox=true`
   only repeats the flag.
 - **An unknown vendor** (one jury does not know, with no `adapter`) gets the same
-  handling as agy, **with or without a `command`** (#910). Without one it is
-  spawned as agy. With one it is spawned by the generic CLI adapter, and still
+  sandbox handling as agy (#910). Without a `command` it is not spawned at all:
+  the config is refused at validation (`agent '…' is missing a non-empty
+  'command'`, exit `2`). With one it is spawned by the generic CLI adapter, and still
   gets agy's `--sandbox` added and every `--sandbox=<value>` removed: `vendor =
   "acme"`, `command = "mycli"`, `extra_args = ["--sandbox=false"]` spawns `mycli
   --sandbox`, whatever `--sandbox=false` meant to `mycli`. A seat with `-s
@@ -288,7 +355,7 @@ content; the least-privilege audit (`--strict` to fail the run) will flag it.
   reject. The audit names each value it removed, and warns about an unknown
   vendor's seat either way. To pass such a seat's argv through as written, set
   `adapter = "cli"`.
-- **`anthropic-api` / `openai-api` / `google-api`** (hosted-API reviewers) are out of
+- **`anthropic-api` / `openai-api` / `google-api` / `xai-api`** (hosted-API reviewers) are out of
   scope for the sandbox audit entirely, and there is no `--strict` finding to fix here:
   unlike every CLI-backed adapter, a hosted-API call makes a single HTTP request with
   no filesystem, shell, or tool access at all — there is no sandbox to widen or narrow.
@@ -353,14 +420,17 @@ whose CLI may need its directory (`cursor-agent` asks for workspace trust,
 Aider for a repository), and `jury run-agent`'s write roles (`implement`/`fix`
 with `--allow-write`), which run where `--cwd` says — an implementer has to edit
 that worktree, and it keeps its CLAUDE.md and hooks. A read-only role reads only
-its prompt file, so it never needed the repository; `--cwd` passed to one now
-prints a note instead of taking effect.
+its prompt file, so it never needed the repository; on a `claude`, `codex` or
+`agy` seat, `--cwd` passed to one prints a note instead of taking effect. On a
+`cli`/`xai` seat or a custom registered adapter the same note is printed, but the
+role still runs in `--cwd`, since those seats are never moved.
 
 ### Hosted-API reviewers (no CLI, no sandbox needed)
 
-`anthropic-api` / `openai-api` / `google-api` (issue #430/#432) trade the native-CLI
-tooling for a zero-install reviewer keyed by `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` /
-`GEMINI_API_KEY` — no `command`, no interactive login, no subprocess. Things worth
+`anthropic-api` / `openai-api` / `google-api` / `xai-api` (issues #430/#432/#701)
+trade the native-CLI tooling for a zero-install reviewer keyed by
+`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` / `XAI_API_KEY` — no
+`command`, no interactive login, no subprocess. Things worth
 knowing:
 
 - The API key is read from the environment only, never from `jury.toml` — so a
@@ -396,9 +466,17 @@ make the reviewers approve a bad change or suppress findings. This is a classic
 | Source | Trust |
 | --- | --- |
 | Prompt templates (`prompts.py`), orchestration code | trusted |
+| Repository review policy (`.jury/policy.toml` / `jury-policy.toml`) | trusted **only if the checkout is** — see below |
 | PR diff | **untrusted** |
 | PR title / body / context (`--pr`) | **untrusted** |
 | Other reviewers' output (may quote untrusted text) | **untrusted (transitively)** |
+
+The review policy is injected *outside* the untrusted fences, as maintainer
+guidance. Without `--policy`, it is discovered from the directory `jury` runs in,
+so on a checkout of the pull request's own branch it is whatever that branch
+contains — written by the PR author, with the same power over the prompt as the
+diff and none of the fencing. Run on a pull-request checkout, pass `--policy`
+naming a file from your base branch, or run from a checkout of the base branch.
 
 ### Mitigations applied (defense in depth, cheapest first)
 
@@ -417,7 +495,7 @@ make the reviewers approve a bad change or suppress findings. This is a classic
    never from a free-text "APPROVE". An injected "APPROVE with no findings"
    cannot create or remove a structured finding, so it cannot flip the gate.
    This is validated by a regression test
-   (`tests/test_orchestrator.py::PromptInjectionHardeningTest`).
+   (`tests/test_injection_regression.py::InjectionRegressionTest.test_injection_does_not_flip_gate`).
 
 3. **Heuristic surfacing (not obeying).** Before any agent runs,
    `injection.scan_inputs` scans the diff and context for suspicious patterns:
