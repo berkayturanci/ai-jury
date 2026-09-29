@@ -46,7 +46,13 @@ implemented as a project-specific wrapper outside this package.
    make test
    make smoke
    make lint
+   ruff format --check .
+   make coverage
    ```
+   CI runs all of these: the test matrix, the mock smoke run, `ruff check` and
+   `ruff format --check` (the `Lint + format (ruff)` job, pinned to the ruff
+   version in `.pre-commit-config.yaml`), and the coverage gate (`fail_under` in
+   `pyproject.toml`).
 4. Update documentation and tests when behavior changes.
 5. Fill in the PR template: a real **Summary** of your own and a **Related issues**
    reference — `Closes #N` (or `Relates to #N`), or write `no issue` if it touches
@@ -107,11 +113,14 @@ This project pins GitHub Actions to commit SHAs and keeps its runtime dependency
 footprint at zero. Updates are proposed automatically and reviewed by hand:
 
 - **Automation.** [Dependabot](.github/dependabot.yml) opens grouped weekly PRs for
-  GitHub Actions (the `github-actions` ecosystem) and for Python tooling declared in
-  `pyproject.toml` (the `pip` ecosystem).
+  GitHub Actions (the `github-actions` ecosystem), for the Python tooling declared in
+  `pyproject.toml` together with `uv.lock` (the `uv` ecosystem, at `/`, so the
+  manifest and the lock move in one commit), and for the hash-locked tool pins in
+  `.github/requirements/` (the `pip` ecosystem).
 - **Review policy.**
   1. Action bumps must keep the `uses:` reference pinned to a full commit SHA with a
-     trailing `# vX.Y.Z (pinned <date>)` comment — never a floating tag.
+     trailing `# vX.Y.Z` comment naming the release it points at — never a floating
+     tag.
   2. CI (test matrix, CodeQL) must be green before merge.
   3. Major-version action or tooling bumps get a changelog/behavior check, not just a
      version-number merge.

@@ -45,14 +45,15 @@ gracefully**.
 ## The honest nuance: chair vs. vote
 
 This graceful handling came from the **chair's judgment** in chair-decision mode.
-In `--decision vote` mode the tally currently maps a reviewer with *no findings*
-to the "clear" stance (`APPROVE` / `READY`) — so a refusal or empty review would
-be counted as an approve vote, indistinguishable from a genuine clean review.
-That gap is real and tracked as
-[#251](https://github.com/berkayturanci/ai-jury/issues/251) (detect abstentions
-and drop them from the tally). The property held *here* because of the chair;
-we're hardening the vote path to match. Surfacing exactly this kind of gap is the
-point of dogfooding.
+At the time of this run (v1.1.0), `--decision vote` mapped a reviewer with *no
+findings* to the "clear" stance (`APPROVE` / `READY`) — so a refusal or empty
+review would have been counted as an approve vote, indistinguishable from a
+genuine clean review. That gap was tracked as
+[#251](https://github.com/berkayturanci/ai-jury/issues/251) and closed in
+v1.1.1: `voting.is_abstention` now marks an empty reply or a short refusal as an
+abstention, and the tally drops it instead of counting it as a vote. The property
+held *here* because of the chair; the vote path now has it too. Surfacing exactly
+this kind of gap is the point of dogfooding.
 
 ## Takeaways
 
@@ -62,6 +63,6 @@ point of dogfooding.
   the jury survive a reviewer that misbehaves — the core argument for a panel over
   a single model.
 - **Dogfooding finds the gaps.** The same run that showed the chair handling this
-  cleanly also surfaced the vote-mode gap (#251).
+  cleanly also surfaced the vote-mode gap (#251, fixed in v1.1.1).
 
 See the full run in [example-live-review.md](example-live-review.md).

@@ -9,9 +9,10 @@ Guidance for working in this repository.
 ## What this is
 
 `ai-jury` is a small, **stdlib-only** Python CLI (`jury`) that
-orchestrates native coding-agent CLIs from different vendors — plus an optional
-local / open-weight model — to review the same diff/PR, debate, verify, and
-synthesize one verdict. Entry point: `ai_jury.cli:main`.
+orchestrates native coding-agent CLIs from different vendors — plus optional
+hosted-API seats (vendor APIs called over HTTP, keyed by an env var) and an
+optional local / open-weight model — to review the same diff/PR, debate, verify,
+and synthesize one verdict. Entry point: `ai_jury.cli:main`.
 
 ## Hard constraints
 
@@ -31,12 +32,15 @@ synthesize one verdict. Entry point: `ai_jury.cli:main`.
 ## Commands
 
 ```bash
-make test        # PYTHONPATH=src python3 -m unittest discover -s tests  (offline, no network)
+make test        # python3 -m unittest discover -s tests -v  (offline, no network; needs `make install`)
 make smoke       # jury --mock --diff-file examples/sample.diff
 make lint        # ruff check .
 make coverage    # coverage gate (fail_under in pyproject.toml [tool.coverage.report])
 ```
 
+`make test` sets no `PYTHONPATH`, so it imports the installed package — run
+`make install` (editable) first, or run the suite from a bare checkout with
+`PYTHONPATH=src python3 -m unittest discover -s tests`.
 Run a single test module: `PYTHONPATH=src python3 -m unittest tests.test_<name>`.
 Live agent tests are opt-in: `JURY_LIVE=1` (CLIs) / `JURY_LOCAL_LIVE=1`
 (local model). Tests must pass offline with no credentials.
@@ -52,8 +56,9 @@ Live agent tests are opt-in: `JURY_LIVE=1` (CLIs) / `JURY_LOCAL_LIVE=1`
 - **Adapters fail soft.** A missing CLI, nonzero exit (even with stdout), timeout,
   or unreachable local endpoint → non-fatal `AgentResult(ok=False, …)` with a
   typed `ERR_*` code. The run continues unless `--strict`.
-- **CLI subcommands are argv-intercepts.** `jury init|config|comment|cache clear`
-  are handled in `cli.main` *before* `argparse`, so the main flag surface stays
+- **CLI subcommands are argv-intercepts.** `jury init|config|comment|apply|run-agent|replay`
+  and `jury cache clear` (plus `jury examples` / `jury guide`, matched only as the
+  whole argv) are handled in `cli.main` *before* `argparse`, so the main flag surface stays
   flat. The public flag set is locked by `tests/test_cli_contract.py`, which
   compares the parser with the README's "Stable flags" list and the flag tables
   of `docs/parameters.md` — list a new top-level flag in both.
@@ -77,14 +82,23 @@ Live agent tests are opt-in: `JURY_LIVE=1` (CLIs) / `JURY_LOCAL_LIVE=1`
 
 ## Module map
 
-`orchestrator` (pipeline + `RunBudget` + `review_diff`/chunk-merge) · `adapters`
-(per-vendor + `LocalAdapter` + error taxonomy) · `config` · `findings`/`consensus`
+`cli` (argv intercepts + the main flag surface) · `orchestrator` (pipeline +
+`RunBudget` + `review_diff`/chunk-merge) · `prompts` (the phase templates) ·
+`adapters` (native CLIs, `LocalAdapter`, the hosted-API adapters —
+`anthropic-api`/`openai-api`/`google-api`/`xai-api`/`openai-compatible` — the
+generic `cli` adapter, and the error taxonomy) · `config` · `configtrust` (the
+trust gate for an auto-discovered `jury.toml`) · `findings`/`consensus`
 (structured findings + tiered grouping) · `convergence` (adaptive early-stop) ·
-`largediff` (filter + chunk) · `cache` · `incremental` · `patches` · `commands`
-(comment parsing) · `scaffold` (`jury init`) · `doctor` · `privilege` ·
-`redaction` · `injection` · `classification` · `metadata` · `report`/`formats`
+`voting` (`decision = "vote"` tally + abstentions) · `panel` (review arithmetic for
+`min_reviews`) · `diffprofile` (risk profile for `--auto`) · `routing` (`--tiered`
+panels) · `hints` (`--hints` linter pre-pass) · `largediff` (filter + chunk) ·
+`cache` · `incremental` · `patches` · `commands` (comment parsing) · `scaffold`
+(`jury init`) · `doctor` · `privilege` · `redaction` · `injection` ·
+`classification` · `metadata` · `report`/`formats`
 (markdown/json/sarif/keel-reviews) · `ballots` (per-reviewer ballots + the
-keel-reviews bundle) · `ci` · `github` · `policy`.
+keel-reviews bundle) · `ci` · `github` · `policy` · `runagent` (`jury run-agent`) ·
+`theater`/`replay` (`--theater` scene, `jury replay`) · `benchmark` (offline
+review-quality benchmark).
 
 ## Git / PR workflow
 

@@ -13,7 +13,10 @@ plain `--live` step stream.
 
 Implementation: `src/ai_jury/theater.py` (`Screen` grid buffer + `Courtroom`
 scene — class name kept for back-compat). Tests: `tests/test_theater.py`. Flag:
-`cli.py` (`--theater`, `--theater-style`).
+`cli.py` (`--theater` / `--no-theater`, `--theater-style`; the `[jury] theater`
+and `theater_style` keys in `jury.toml` set the defaults, and `--no-theater`
+overrides `theater = true`). `jury replay <outcome.json> --theater
+[--theater-style …]` re-drives the scene from a saved outcome with no agents.
 
 ## Scene styles (`--theater-style {flat,pixel}`)
 
@@ -30,9 +33,11 @@ The same deliberation, the same `on_event` flow, two render styles:
   checkerboard floor; the speaker gets a bright halo and an inverted nameplate;
   the table shows the case / verify checklist / decision banner. The per-juror
   vote chips show on the top edge; the full tally is on the banner. It needs a
-  **truecolor + unicode** terminal; without either it transparently falls back
-  to the `flat` scene (and, like `flat`, to the plain `--live` stream off a TTY
-  or when too many jurors won't fit, where it shows the compact roster).
+  **truecolor + unicode** terminal, and nothing detects one: on a terminal
+  without either, the scene is drawn anyway and renders wrongly, so pick `flat`
+  there. Like `flat`, it falls back to the plain `--live` stream off a TTY or on a
+  terminal narrower than 60 columns, and shows the compact roster when too many
+  jurors won't fit.
 
 ## Screen bands (≈90×30, scales 70–98 wide)
 
@@ -60,7 +65,7 @@ brightens with a `▲` caret and their bubble opens in the speech band.
 | event (kind) | scene change |
 |---|---|
 | `review`   | the speaker's figure lights up; their top finding (severity-coloured) types into the bubble; then they settle. |
-| `debate`   | speaker "argues"; the phase strip shows `DEBATE·rN`. If review→verify with no debate, debate is marked *skipped — the jurors agreed*. |
+| `debate`   | speaker "argues"; the phase strip shows `DEBATE·rN`. If review→verify with no debate, the phase strip marks debate done and the transcript reads `no debate - the jurors agreed`. |
 | `verify`   | the table shows a checklist ticking each verdict ✓ verified / ✗ unsupported / ⚖ disputed. |
 | `synthesis`| **chair mode:** the decision lands on the table — `DECISION (chair)` + the verdict banner. |
 | (after run)| **vote mode:** each seat shows its ballot chip; the table reads `DECISION by panel vote` + the verdict and tally. |
