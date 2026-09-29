@@ -473,6 +473,25 @@ def _unreleased() -> str:
     return text[newest : end if end != -1 else len(text)]
 
 
+def _changelog_entry(ref: str) -> str:
+    """The CHANGELOG bullet tagged ``(<ref>)``, whichever section it sits in.
+
+    Its wording is fixed once written, so a claim about what that entry says reads the
+    entry itself. Reading "the current notes" instead broke as soon as any other change
+    added an [Unreleased] bullet, since the entry then sat in a released section.
+    """
+    lines = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8").splitlines()
+    starts = [i for i, line in enumerate(lines) if line.startswith("- **") and f"({ref})" in line]
+    if len(starts) != 1:
+        raise AssertionError(f"expected one CHANGELOG bullet tagged ({ref}), found {len(starts)}")
+    body = [lines[starts[0]]]
+    for line in lines[starts[0] + 1 :]:
+        if line.startswith(("- **", "### ", "## ")) or not line.strip():
+            break
+        body.append(line)
+    return "\n".join(body)
+
+
 class CliSeatWordingIsScoped(unittest.TestCase):
     """What the CLI seats' flags control is said, and what they do not (#859)."""
 
@@ -500,7 +519,7 @@ class CliSeatWordingIsScoped(unittest.TestCase):
             )
         }
         texts["website/app.js aider card"] = cards["aider"]["desc"]
-        texts["CHANGELOG.md [Unreleased]"] = _unreleased()
+        texts["CHANGELOG.md (#859) entry"] = _changelog_entry("#859")
         missing = [
             f"{where}: {needle}"
             for where, text in texts.items()
