@@ -32,8 +32,8 @@ import sys
 import tempfile
 import tomllib
 import unittest
+import unittest.mock
 from pathlib import Path
-from unittest import mock
 from urllib.parse import urlsplit
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -324,7 +324,7 @@ def config_validate(text: str, *, allow_remote: bool) -> tuple[int, str]:
             env["JURY_ALLOW_REMOTE_ENDPOINT"] = "1"
         out, err = io.StringIO(), io.StringIO()
         with (
-            mock.patch.dict(os.environ, env, clear=True),
+            unittest.mock.patch.dict(os.environ, env, clear=True),
             contextlib.redirect_stdout(out),
             contextlib.redirect_stderr(err),
         ):
