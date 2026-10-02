@@ -92,8 +92,11 @@ class TheBundleIsACopyOfTheRoot(unittest.TestCase):
         pointed out of the folder."""
         checked = 0
         for page in sorted(BUNDLE.rglob("*.md")):
-            text = re.sub(r"```.*?```", "", page.read_text(encoding="utf-8"), flags=re.DOTALL)
-            for target in re.findall(r"(?<!!)\]\(([^)#\s]+)", text):
+            text = page.read_text(encoding="utf-8")
+            text = re.sub(r"(```|~~~).*?\1", "", text, flags=re.DOTALL)
+            inline = re.findall(r"\]\(([^)#\s]+)", text)  # links and images
+            refdefs = re.findall(r"^[ \t]{0,3}\[[^\]^]+\]:[ \t]+([^\s#]+)", text, flags=re.M)
+            for target in inline + refdefs:
                 if re.match(r"[a-zA-Z][a-zA-Z0-9+.\-]*:|//", target):
                     continue
                 checked += 1
@@ -116,6 +119,15 @@ class TheBundleIsACopyOfTheRoot(unittest.TestCase):
             "[web](https://x.dev) [here](#anchor) ![img](logo.png)\n"
             "```\n[fenced](configuration.md)\n```\n",
             plugin_bundle.relink(text, "docs/parameters.md", "docs/parameters.md"),
+        )
+
+    def test_relink_leaves_an_authored_only_name_to_github(self):
+        """`../README.md` from a copied doc is the project README, not the bundle's own."""
+        self.assertEqual(
+            "[readme](https://github.com/berkayturanci/ai-jury/blob/main/README.md)",
+            plugin_bundle.relink(
+                "[readme](../README.md)", "docs/parameters.md", "docs/parameters.md"
+            ),
         )
 
     def test_relink_leaves_a_page_that_links_only_inside_the_folder_untouched(self):
@@ -376,10 +388,19 @@ class TheUploadZipIsDeterministic(unittest.TestCase):
             with zipfile.ZipFile(first) as zf:
                 names = zf.namelist()
                 self.assertEqual(sorted(names), names)
-                self.assertIn("plugin.json", names)
-                self.assertIn("skills/ai-jury/SKILL.md", names)
-                self.assertIn("assets/logo.svg", names)
-                self.assertFalse([n for n in names if n.startswith(".claude-plugin/")])
+                # The exact set, not a sample: dropping `docs/` would leave the skill's one
+                # relative link pointing at nothing, and README/LICENSE are required.
+                self.assertEqual(
+                    [
+                        "LICENSE",
+                        "README.md",
+                        "assets/logo.svg",
+                        "docs/parameters.md",
+                        "plugin.json",
+                        "skills/ai-jury/SKILL.md",
+                    ],
+                    names,
+                )
                 self.assertEqual(zf.read("plugin.json"), (BUNDLE / "plugin.json").read_bytes())
 
     def test_the_zip_lands_in_an_ignored_directory(self):

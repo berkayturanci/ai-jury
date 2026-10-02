@@ -154,7 +154,10 @@ def portable_manifest_text(root: Path = REPO_ROOT) -> str:
 
 def _in_bundle(rel: str) -> bool:
     """Is *rel* (a normalised bundle path) a file or directory the bundle will hold?"""
-    shipped = {*COPIES, PORTABLE_MANIFEST, *AUTHORED}
+    # Generated files only: an authored-only name such as README.md would otherwise
+    # capture a copied doc's `../README.md` and point it at the plugin's disclosure
+    # README instead of the project's.
+    shipped = {*COPIES, PORTABLE_MANIFEST}
     return rel in shipped or any(path.startswith(rel.rstrip("/") + "/") for path in shipped)
 
 
@@ -165,6 +168,10 @@ def relink(text: str, bundle_rel: str, source_rel: str) -> str:
     at the root. A target the bundle also holds keeps its relative form (the skill's
     `../../docs/parameters.md`), so a copy that links only inside the folder stays
     byte-identical. Fenced code blocks are left alone.
+
+    Inline links only: a reference-style definition (`[c]: configuration.md`) or an
+    image target would pass through unchanged. The copied pages use neither today, and
+    the bundle's link test fails if one appears.
     """
 
     def swap(match: re.Match[str]) -> str:
@@ -265,7 +272,7 @@ def build_zip(destination: Path, root: Path = REPO_ROOT) -> Path:
     """Write the upload ZIP: sorted entries, fixed timestamps and modes, no directories."""
     destination.parent.mkdir(parents=True, exist_ok=True)
     bundle = root / BUNDLE_DIR
-    with zipfile.ZipFile(destination, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
+    with zipfile.ZipFile(destination, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         for rel in zip_members(root):
             info = zipfile.ZipInfo(rel, date_time=_ZIP_EPOCH)
             info.compress_type = zipfile.ZIP_DEFLATED
