@@ -11,7 +11,6 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
@@ -151,7 +150,7 @@ class TheWriterNeverTakesTheRunDown(unittest.TestCase):
 
     def _writer(self, fh):
         errors: list[str] = []
-        with mock.patch.object(Path, "open", return_value=fh):
+        with unittest.mock.patch.object(Path, "open", return_value=fh):
             w = events.EventsWriter("/watched/ev.ndjson", clock=lambda: 1.0, on_error=errors.append)
         return w, errors
 
@@ -181,7 +180,7 @@ class TheWriterNeverTakesTheRunDown(unittest.TestCase):
 
     def test_without_a_reporter_a_failure_is_still_swallowed(self):
         fh = self._Breaks(after=1)
-        with mock.patch.object(Path, "open", return_value=fh):
+        with unittest.mock.patch.object(Path, "open", return_value=fh):
             w = events.EventsWriter("/watched/ev.ndjson")
         w.write({"event": "start"})
         self.assertTrue(w.failed)
@@ -226,7 +225,7 @@ class TheCli(unittest.TestCase):
         steps = [r for r in recs if r["event"] == "step"]
         self.assertTrue(steps)
         self.assertEqual(steps[0]["phase"], "review")
-        self.assertTrue({r["phase"] for r in steps} <= set(events.PHASES))
+        self.assertLessEqual({r["phase"] for r in steps}, set(events.PHASES))
         end = recs[-1]
         self.assertEqual(end["event"], "end")
         self.assertEqual(end["status"], "done")
@@ -293,7 +292,7 @@ class TheCli(unittest.TestCase):
 
         err = io.StringIO()
         with (
-            mock.patch.object(events.EventsWriter, "write", flaky),
+            unittest.mock.patch.object(events.EventsWriter, "write", flaky),
             contextlib.redirect_stdout(io.StringIO()),
             contextlib.redirect_stderr(err),
         ):
@@ -312,7 +311,7 @@ class TheCli(unittest.TestCase):
                 ]
             )
         self.assertEqual(code, 0)
-        self.assertTrue(json.loads(report.read_text(encoding="utf-8"))["findings"] is not None)
+        self.assertIsNotNone(json.loads(report.read_text(encoding="utf-8"))["findings"])
         self.assertEqual(err.getvalue().count("progress events stopped"), 1)
         self.assertEqual([r["event"] for r in _read(self.ev)], ["start"])
 
@@ -348,7 +347,7 @@ class TheCli(unittest.TestCase):
 
         err = io.StringIO()
         with (
-            mock.patch.object(events.EventsWriter, "write", flaky),
+            unittest.mock.patch.object(events.EventsWriter, "write", flaky),
             contextlib.redirect_stdout(io.StringIO()),
             contextlib.redirect_stderr(err),
         ):
@@ -383,7 +382,7 @@ class TheCli(unittest.TestCase):
         self.assertNotIn("codex", seated)
 
     def test_an_interrupted_run_ends_cancelled(self):
-        with mock.patch("ai_jury.cli.review_diff", side_effect=KeyboardInterrupt()):
+        with unittest.mock.patch("ai_jury.cli.review_diff", side_effect=KeyboardInterrupt()):
             code = _run(["--mock", "--diff-file", str(self.diff), "--events-file", str(self.ev)])
         self.assertEqual(code, 130)
         recs = _read(self.ev)
@@ -391,7 +390,9 @@ class TheCli(unittest.TestCase):
         self.assertEqual(recs[-1]["status"], "cancelled")
 
     def test_a_failed_run_ends_error(self):
-        with mock.patch("ai_jury.cli.review_diff", side_effect=RuntimeError("no usable agents")):
+        with unittest.mock.patch(
+            "ai_jury.cli.review_diff", side_effect=RuntimeError("no usable agents")
+        ):
             code = _run(["--mock", "--diff-file", str(self.diff), "--events-file", str(self.ev)])
         self.assertEqual(code, 2)
         self.assertEqual(_read(self.ev)[-1]["status"], "error")
@@ -402,7 +403,7 @@ class RunTarget(unittest.TestCase):
         def ns(**kw):
             base = {"pr": None, "issue": None, "commit": None, "commits": None}
             base.update(kw)
-            return mock.Mock(**base)
+            return unittest.mock.Mock(**base)
 
         self.assertEqual(cli._run_target(ns(pr=5)), "PR #5")
         self.assertEqual(cli._run_target(ns(issue=9)), "issue #9")
