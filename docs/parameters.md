@@ -278,6 +278,7 @@ sends the PR description/context alongside the diff and applies a repo policy.
 | `--theater-style` | `flat` \| `pixel` | from config (`theater_style = "flat"`) | Scene style for `--theater`: `flat` is an ANSI line scene; `pixel` is a pixel-art room that needs a truecolor + unicode terminal and falls back to `flat` without one. See [theater-design.md](theater-design.md). |
 | `-o`, `--output` | path | stdout | Write the report to a file. If the path cannot be written the report is printed to **stdout** instead and `jury` exits **2** — see below. |
 | `--metadata-json` | path | — | Write machine-readable run metadata (durations, status, rounds) as JSON. |
+| `--events-file` | path | — | Write the run's progress to the path as NDJSON while it runs, for a watcher in another process (a Claude Code mod, keel's progress view): a `start` record with the seated panel, one `step` record per phase result (agent, vendor, phase, round, ok, duration, finding count, error code), and an `end` record (`done`, `cancelled` or `error`, with the finding count and the verdict token). Metadata only: no reviewer output, diff or finding text. The file is truncated at the start of each run. Schema `ai-jury.events.v1`. |
 | `-q`, `--quiet` | flag | off | Suppress progress logs on stderr. |
 
 **An unwritable `--output` never costs you the run.** The report is written at

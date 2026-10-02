@@ -97,7 +97,8 @@ panels) · `hints` (`--hints` linter pre-pass) · `largediff` (filter + chunk) �
 `classification` · `metadata` · `report`/`formats`
 (markdown/json/sarif/keel-reviews) · `ballots` (per-reviewer ballots + the
 keel-reviews bundle) · `ci` · `github` · `policy` · `runagent` (`jury run-agent`) ·
-`theater`/`replay` (`--theater` scene, `jury replay`) · `benchmark` (offline
+`theater`/`replay` (`--theater` scene, `jury replay`) · `events` (`--events-file`
+NDJSON progress for an outside watcher) · `benchmark` (offline
 review-quality benchmark).
 
 ## Git / PR workflow
