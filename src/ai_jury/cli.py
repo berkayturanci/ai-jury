@@ -417,6 +417,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="write machine-readable run metadata (durations, status, rounds) as JSON",
     )
     p.add_argument(
+        "--events-file",
+        metavar="PATH",
+        help="write the run's progress (panel, each phase result, the end) to PATH as "
+        "NDJSON while it happens, for an observer in another process; metadata only, "
+        "no reviewer output",
+    )
+    p.add_argument(
         "--format",
         choices=["markdown", "json", "sarif", "keel-reviews"],
         default="markdown",
@@ -2270,6 +2277,19 @@ See `jury examples` for more, or `jury --help` for every option.
 Docs: https://github.com/berkayturanci/ai-jury"""
 
 
+def _run_target(args: argparse.Namespace) -> str:
+    """What this run reviews, as the theater's case title and the events file name it."""
+    if args.pr:
+        return f"PR #{args.pr}"
+    if args.issue:
+        return f"issue #{args.issue}"
+    if getattr(args, "commit", None):
+        return f"commit {args.commit}"
+    if getattr(args, "commits", None):
+        return f"range {args.commits}"
+    return "local diff"
+
+
 def main(argv: list[str] | None = None) -> int:
     _force_utf8_output()
     raw = list(sys.argv[1:] if argv is None else argv)
@@ -2767,34 +2787,44 @@ def main(argv: list[str] | None = None) -> int:
                 if config.chair and config.chair != "rotate"
                 else (config.agents[0].name if config.agents else "chair")
             )
-            case = (
-                f"PR #{args.pr}"
-                if args.pr
-                else f"issue #{args.issue}"
-                if args.issue
-                else f"commit {args.commit}"
-                if getattr(args, "commit", None)
-                else f"range {args.commits}"
-                if getattr(args, "commits", None)
-                else "local diff"
-            )
             court = _theater.Courtroom(
                 [(a.name, a.vendor) for a in config.agents],
                 chair_name,
-                case=case,
+                case=_run_target(args),
                 mode=("issue" if args.issue else "code"),
                 decision=(args.decision or config.decision),
                 style=theater_style,
             )
             court.open()
 
+    # Progress events for an observer in another process (--events-file): the same
+    # on_event stream as --live, written as metadata-only NDJSON. A side channel like
+    # the theater: the outcome, report and CI gate never read it.
+    events = None
+    if args.events_file:
+        from . import events as _events
+
+        events = _events.EventsWriter(args.events_file)
+        events.write(
+            _events.start_record(
+                [(a.name, a.vendor) for a in config.agents],
+                chair=config.chair if config.chair and config.chair != "rotate" else None,
+                target=_run_target(args),
+                mode=("issue" if args.issue else "code"),
+                decision=(args.decision or config.decision),
+                cached=outcome is not None,
+            )
+        )
+
     on_event = None
-    if args.live or theater_on:
+    if args.live or theater_on or events is not None:
 
         def on_event(kind, result, round_no=None):
+            if events is not None:
+                events.write(_events.step_record(kind, result, round_no))
             if court is not None:
                 court.step(kind, result, round_no)
-            else:
+            elif args.live or theater_on:
                 # plain step stream (--live, or --theater fallback off a TTY)
                 title, body = render_live_step(kind, result, round_no)
                 print(f"## {title}\n\n{body}\n", flush=True)
@@ -2846,11 +2876,17 @@ def main(argv: list[str] | None = None) -> int:
             # rendered here because the orchestrator returns atomically; we just
             # report the cancellation.
             print("\n[jury] cancelled (interrupted) — no report produced", file=sys.stderr)
+            if events is not None:
+                events.write(_events.end_record("cancelled"))
+                events.close()
             return 130
         except RuntimeError as exc:
             # Large-diff "too large / nothing to review" (issue #31) and "no
             # usable agents" are actionable user errors, not crashes.
             print(f"error: {redact(str(exc))[0]}", file=sys.stderr)
+            if events is not None:
+                events.write(_events.end_record("error"))
+                events.close()
             return 2
         if cache is not None and cache_k is not None:
             cache.store(cache_k, outcome)
@@ -2881,6 +2917,16 @@ def main(argv: list[str] | None = None) -> int:
         if vote is not None:
             court.set_vote(vote)
         court.close()
+
+    if events is not None:
+        from .ballots import chair_verdict
+
+        events.write(
+            _events.end_record(
+                "done", findings=len(outcome.findings), verdict=chair_verdict(outcome, vote)
+            )
+        )
+        events.close()
 
     # Ballot vocabulary follows the review mode, exactly as the vote tally does:
     # an issue review votes on completeness (READY/UNCLEAR/NEEDS_INFO), not on a

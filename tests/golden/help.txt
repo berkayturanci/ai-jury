@@ -10,7 +10,7 @@ usage: jury [-h] [--pr PR] [--issue ISSUE] [--repo REPO]
             [--chair CHAIR] [--mock] [--strict] [--min-vendors N]
             [--no-min-vendors] [--min-reviews N] [--verify] [--no-verify]
             [--doctor] [--json] [--write WRITE] [--effort {low,medium,high}]
-            [-o OUTPUT] [--metadata-json PATH]
+            [-o OUTPUT] [--metadata-json PATH] [--events-file PATH]
             [--format {markdown,json,sarif,keel-reviews}]
             [--decision {chair,vote}] [--transcript] [--no-transcript]
             [--verbose] [--live] [--theater] [--no-theater]
@@ -95,6 +95,10 @@ options:
   -o, --output OUTPUT   write the report to a file instead of stdout
   --metadata-json PATH  write machine-readable run metadata (durations,
                         status, rounds) as JSON
+  --events-file PATH    write the run's progress (panel, each phase result,
+                        the end) to PATH as NDJSON while it happens, for an
+                        observer in another process; metadata only, no
+                        reviewer output
   --format {markdown,json,sarif,keel-reviews}
                         output format for stdout/--output (default: markdown);
                         'keel-reviews' emits one review record per panelist
