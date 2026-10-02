@@ -2804,7 +2804,17 @@ def main(argv: list[str] | None = None) -> int:
     if args.events_file:
         from . import events as _events
 
-        events = _events.EventsWriter(args.events_file)
+        try:
+            events = _events.EventsWriter(
+                args.events_file,
+                on_error=lambda msg: print(f"warning: {msg}", file=sys.stderr),
+            )
+        except OSError as exc:
+            # An unwritable path is a user error, reported before the panel is paid for.
+            print(f"error: cannot write --events-file {args.events_file}: {exc}", file=sys.stderr)
+            if court is not None:
+                court.close()
+            return 2
         events.write(
             _events.start_record(
                 [(a.name, a.vendor) for a in config.agents],

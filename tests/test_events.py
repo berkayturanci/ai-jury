@@ -126,6 +126,67 @@ class TheWriter(unittest.TestCase):
             )
 
 
+class TheWriterNeverTakesTheRunDown(unittest.TestCase):
+    """A write that fails mid-run stops the side channel, not the review."""
+
+    class _Breaks:
+        """A file object whose writes fail from the ``after``-th on."""
+
+        def __init__(self, after: int, *, close_fails: bool = False):
+            self.after, self.calls, self.close_fails, self.closed = after, 0, close_fails, False
+
+        def write(self, text):
+            self.calls += 1
+            if self.calls >= self.after:
+                raise OSError(28, "No space left on device")
+            return len(text)
+
+        def flush(self):
+            return None
+
+        def close(self):
+            self.closed = True
+            if self.close_fails:
+                raise OSError(5, "I/O error")
+
+    def _writer(self, fh):
+        errors: list[str] = []
+        with mock.patch.object(Path, "open", return_value=fh):
+            w = events.EventsWriter("/watched/ev.ndjson", clock=lambda: 1.0, on_error=errors.append)
+        return w, errors
+
+    def test_a_failed_write_reports_once_and_goes_quiet(self):
+        fh = self._Breaks(after=2)
+        w, errors = self._writer(fh)
+        w.write({"event": "start"})
+        self.assertFalse(w.failed)
+        w.write({"event": "step"})
+        w.write({"event": "step"})
+        w.close()
+        self.assertTrue(w.failed)
+        self.assertEqual(fh.calls, 2)
+        self.assertTrue(fh.closed)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("No space left on device", errors[0])
+        self.assertIn("the review continues", errors[0])
+
+    def test_a_failed_close_is_reported_not_raised(self):
+        fh = self._Breaks(after=99, close_fails=True)
+        w, errors = self._writer(fh)
+        w.write({"event": "end"})
+        w.close()
+        w.close()
+        self.assertEqual(len(errors), 1)
+        self.assertIn("I/O error", errors[0])
+
+    def test_without_a_reporter_a_failure_is_still_swallowed(self):
+        fh = self._Breaks(after=1)
+        with mock.patch.object(Path, "open", return_value=fh):
+            w = events.EventsWriter("/watched/ev.ndjson")
+        w.write({"event": "start"})
+        self.assertTrue(w.failed)
+
+
 class TheCli(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -201,6 +262,59 @@ class TheCli(unittest.TestCase):
             )
         json.loads(out.getvalue())
         self.assertTrue(self.ev.exists())
+
+    def test_an_unwritable_path_is_a_clean_user_error(self):
+        err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            code = cli.main(
+                [
+                    "--mock",
+                    "--diff-file",
+                    str(self.diff),
+                    "--events-file",
+                    str(self.d / "no" / "ev"),
+                ]
+            )
+        self.assertEqual(code, 2)
+        self.assertIn("error: cannot write --events-file", err.getvalue())
+        self.assertNotIn("Traceback", err.getvalue())
+
+    def test_a_write_that_fails_mid_run_leaves_the_review_and_its_report_intact(self):
+        report = self.d / "report.json"
+        real_write = events.EventsWriter.write
+        calls = {"n": 0}
+
+        def flaky(writer, record):
+            calls["n"] += 1
+            if calls["n"] == 2:
+                writer._stop(OSError(28, "No space left on device"))
+                return
+            real_write(writer, record)
+
+        err = io.StringIO()
+        with (
+            mock.patch.object(events.EventsWriter, "write", flaky),
+            contextlib.redirect_stdout(io.StringIO()),
+            contextlib.redirect_stderr(err),
+        ):
+            code = cli.main(
+                [
+                    "--mock",
+                    "--diff-file",
+                    str(self.diff),
+                    "-q",
+                    "--format",
+                    "json",
+                    "-o",
+                    str(report),
+                    "--events-file",
+                    str(self.ev),
+                ]
+            )
+        self.assertEqual(code, 0)
+        self.assertTrue(json.loads(report.read_text(encoding="utf-8"))["findings"] is not None)
+        self.assertEqual(err.getvalue().count("progress events stopped"), 1)
+        self.assertEqual([r["event"] for r in _read(self.ev)], ["start"])
 
     def test_an_interrupted_run_ends_cancelled(self):
         with mock.patch("ai_jury.cli.review_diff", side_effect=KeyboardInterrupt()):

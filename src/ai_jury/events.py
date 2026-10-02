@@ -17,6 +17,7 @@ the only place that reads the wall clock.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import time
 from collections.abc import Callable, Iterable
@@ -84,18 +85,63 @@ class EventsWriter:
 
     The file is truncated when the writer opens, so it always describes one run.
     Each record gets the schema, a sequence number and a timestamp in seconds.
+
+    Opening is the caller's to fail on (an unwritable path is a user error, reported
+    before the run). A write that fails mid-run must not take the review down with it:
+    the file is a side channel someone is watching, not the outcome. The first failure
+    is reported once through ``on_error`` and the writer goes quiet; the run, its report
+    and its CI gate carry on.
     """
 
-    def __init__(self, path: str, *, clock: Callable[[], float] = time.time) -> None:
-        self._fh: TextIO = Path(path).open("w", encoding="utf-8")  # noqa: SIM115 - closed in close()
+    def __init__(
+        self,
+        path: str,
+        *,
+        clock: Callable[[], float] = time.time,
+        on_error: Callable[[str], None] | None = None,
+    ) -> None:
+        self._path = path
+        self._fh: TextIO | None = Path(path).open("w", encoding="utf-8")  # noqa: SIM115 - closed in close()
         self._clock = clock
         self._seq = 0
+        self._on_error = on_error
+
+    @property
+    def failed(self) -> bool:
+        """Whether a write failed and the writer stopped."""
+        return self._fh is None
 
     def write(self, record: dict[str, Any]) -> None:
+        if self._fh is None:
+            return
         self._seq += 1
         line = {"schema": SCHEMA, "seq": self._seq, "ts": round(self._clock(), 3), **record}
-        self._fh.write(json.dumps(line, sort_keys=True) + "\n")
-        self._fh.flush()
+        try:
+            self._fh.write(json.dumps(line, sort_keys=True) + "\n")
+            self._fh.flush()
+        except OSError as exc:
+            self._stop(exc)
 
     def close(self) -> None:
-        self._fh.close()
+        if self._fh is None:
+            return
+        try:
+            self._fh.close()
+        except OSError as exc:
+            self._fh = None
+            self._report(exc)
+        else:
+            self._fh = None
+
+    def _stop(self, exc: OSError) -> None:
+        fh, self._fh = self._fh, None
+        with contextlib.suppress(OSError):
+            if fh is not None:
+                fh.close()
+        self._report(exc)
+
+    def _report(self, exc: OSError) -> None:
+        if self._on_error is not None:
+            self._on_error(
+                f"--events-file {self._path}: {exc}; progress events stopped, the review continues"
+            )
