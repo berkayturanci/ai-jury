@@ -30,6 +30,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import posixpath
+import re
 import sys
 import zipfile
 from pathlib import Path
@@ -37,8 +39,11 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 BUNDLE_DIR = "plugin"
 
-#: Bundle path -> root source, copied byte for byte. `docs/parameters.md` rides along
-#: because the skill links to it as `../../docs/parameters.md`, which resolves to
+#: Bundle path -> root source, copied byte for byte — except that a relative Markdown
+#: link in a copied `.md` whose target is not itself in the bundle is rewritten to its
+#: absolute GitHub URL (`relink`), since an installer gets only `plugin/` and the
+#: relative form would be dead there. `docs/parameters.md` rides along because the
+#: skill links to it as `../../docs/parameters.md`, which resolves to
 #: `plugin/docs/parameters.md` inside the folder exactly as it resolves at the root.
 COPIES: dict[str, str] = {
     ".claude-plugin/plugin.json": ".claude-plugin/plugin.json",
@@ -82,6 +87,33 @@ OPENAI_INTERFACE: dict[str, object] = {
     "composerIcon": "./assets/logo.svg",
 }
 
+#: Every top-level property the agent-plugins 1.0.0 plugin schema defines. The schema is
+#: `additionalProperties: false`, so a key outside this set fails the upload; the
+#: tempting one is the root manifest's own `skills`, which the portable format omits
+#: because it discovers `skills/` by convention. Offline copy of PORTABLE_SCHEMA.
+PORTABLE_SCHEMA_PROPERTIES = frozenset(
+    {
+        "$schema",
+        "name",
+        "version",
+        "description",
+        "author",
+        "homepage",
+        "repository",
+        "license",
+        "keywords",
+        "extensions",
+    }
+)
+
+#: Where a relative link that leaves the bundle is sent instead.
+_BLOB = "https://github.com/berkayturanci/ai-jury/blob/main/"
+_TREE = "https://github.com/berkayturanci/ai-jury/tree/main/"
+#: A Markdown link (not an image) whose target has no scheme, is not protocol-relative
+#: and is not a same-page anchor.
+_MD_LINK = re.compile(r"(?<!!)\[([^\]]*)\]\((?![a-zA-Z][a-zA-Z0-9+.\-]*:|//|#)([^)\s]+)\)")
+_FENCE = re.compile(r"^[ \t]*(`{3,}|~{3,})")
+
 #: Root-manifest keys the portable manifest carries over, in this order.
 _PORTABLE_KEYS = (
     "name",
@@ -120,18 +152,66 @@ def portable_manifest_text(root: Path = REPO_ROOT) -> str:
     return json.dumps(manifest, indent=2, ensure_ascii=False) + "\n"
 
 
+def _in_bundle(rel: str) -> bool:
+    """Is *rel* (a normalised bundle path) a file or directory the bundle will hold?"""
+    shipped = {*COPIES, PORTABLE_MANIFEST, *AUTHORED}
+    return rel in shipped or any(path.startswith(rel.rstrip("/") + "/") for path in shipped)
+
+
+def relink(text: str, bundle_rel: str, source_rel: str) -> str:
+    """Point every relative link that would leave the bundle at its GitHub URL instead.
+
+    *bundle_rel* is where the copy lands in `plugin/`, *source_rel* where it comes from
+    at the root. A target the bundle also holds keeps its relative form (the skill's
+    `../../docs/parameters.md`), so a copy that links only inside the folder stays
+    byte-identical. Fenced code blocks are left alone.
+    """
+
+    def swap(match: re.Match[str]) -> str:
+        label, target = match.group(1), match.group(2)
+        path, hash_, anchor = target.partition("#")
+        inside = posixpath.normpath(posixpath.join(posixpath.dirname(bundle_rel), path))
+        if not inside.startswith("../") and _in_bundle(inside):
+            return match.group(0)
+        at_root = posixpath.normpath(posixpath.join(posixpath.dirname(source_rel), path))
+        host = _TREE if path.endswith("/") else _BLOB
+        return f"[{label}]({host}{at_root}{'/' if path.endswith('/') else ''}{hash_}{anchor})"
+
+    out, fence = [], None
+    for line in text.splitlines(keepends=True):
+        boundary = _FENCE.match(line)
+        if boundary is not None:
+            marker = boundary.group(1)
+            if fence is None:
+                fence = marker
+            elif marker[0] == fence[0] and len(marker) >= len(fence):
+                fence = None
+            out.append(line)
+            continue
+        out.append(line if fence is not None else _MD_LINK.sub(swap, line))
+    return "".join(out)
+
+
 def expected_files(root: Path = REPO_ROOT) -> dict[str, bytes]:
     """Every generated bundle file and the bytes it must hold."""
-    files = {rel: (root / src).read_bytes() for rel, src in COPIES.items()}
+    files = {}
+    for rel, src in COPIES.items():
+        data = (root / src).read_bytes()
+        if rel.endswith(".md"):
+            data = relink(data.decode("utf-8"), rel, src).encode("utf-8")
+        files[rel] = data
     files[PORTABLE_MANIFEST] = portable_manifest_text(root).encode("utf-8")
     return files
 
 
 def drift(root: Path = REPO_ROOT) -> list[str]:
-    """Bundle files that are missing or differ from what the root would generate."""
+    """Bundle files that are missing, differ from what the root would generate, or that
+    nothing generates — an orphan ships in the ZIP, and a stray `skills/<name>/SKILL.md`
+    would be discovered as a real skill."""
     bundle = root / BUNDLE_DIR
+    expected = expected_files(root)
     problems = []
-    for rel, data in sorted(expected_files(root).items()):
+    for rel, data in sorted(expected.items()):
         path = bundle / rel
         if path.is_symlink():
             problems.append(f"{BUNDLE_DIR}/{rel} is a symlink; the directories need a real file")
@@ -142,6 +222,10 @@ def drift(root: Path = REPO_ROOT) -> list[str]:
     for rel in AUTHORED:
         if not (bundle / rel).is_file():
             problems.append(f"{BUNDLE_DIR}/{rel} is missing (hand-written, not generated)")
+    if bundle.is_dir():
+        for rel in bundle_files(root):
+            if rel not in expected and rel not in AUTHORED:
+                problems.append(f"{BUNDLE_DIR}/{rel} is not generated by this script; remove it")
     return problems
 
 
@@ -237,7 +321,14 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     changed = write()
-    print("\n".join(f"updated {c}" for c in changed) if changed else "plugin/ already in sync")
+    print("\n".join(f"updated {c}" for c in changed) if changed else "plugin/ copies up to date")
+    # `write` regenerates copies only; a missing hand-written file or an orphan is still
+    # wrong, and the command a maintainer actually runs must not report success on it.
+    problems = drift()
+    if problems:
+        print("plugin/ still needs attention:", file=sys.stderr)
+        print("\n".join(f"  {p}" for p in problems), file=sys.stderr)
+        return 1
     return 0
 
 
