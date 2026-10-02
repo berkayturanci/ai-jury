@@ -981,7 +981,7 @@ accidental changes are caught in review.
   `--redact` / `--no-redact`, `--hints` / `--no-hints`
 - *Config / policy:* `--config`, `--policy`, `--chair`, `--seed`, `--mock`,
   `--strict`, `--config-validate`, `--strict-config`
-- *Output:* `-o` / `--output`, `--write`, `--metadata-json`,
+- *Output:* `-o` / `--output`, `--write`, `--metadata-json`, `--events-file`,
   `--format {markdown,json,sarif,keel-reviews}`, `--decision {chair,vote}`,
   `--transcript` / `--no-transcript`, `--verbose`, `--live`,
   `--theater` / `--no-theater`, `--theater-style {flat,pixel}`, `-q` / `--quiet`
