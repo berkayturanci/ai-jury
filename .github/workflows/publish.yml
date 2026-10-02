@@ -99,7 +99,13 @@ jobs:
           versions = {
               "pyproject.toml": tomllib.load(open("pyproject.toml", "rb"))["project"]["version"]
           }
-          manifests = sorted(glob.glob(".*/plugin.json"))
+          # Root dot-directory manifests, plus the plugin/ folder the Claude and
+          # OpenAI plugin directories install (its portable root plugin.json too).
+          manifests = sorted(
+              set(glob.glob(".*/plugin.json"))
+              | set(glob.glob("plugin/plugin.json"))
+              | set(glob.glob("plugin/.*/plugin.json"))
+          )
           if not manifests:
               sys.exit("::error::No plugin manifests found — the discovery glob is wrong.")
           for path in manifests:

@@ -1,0 +1,41 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "ai-jury",
+  "version": "1.22.0",
+  "description": "Convene a cross-vendor multi-agent review jury (Claude Code + Codex by default; hosted model APIs, free local models and an opt-in Antigravity seat when configured) on a diff, PR, or issue: independent review, cross-examination, verification, and one verdict — a chair's synthesis or a panel vote.",
+  "author": {
+    "name": "Berkay Turancı",
+    "url": "https://github.com/berkayturanci"
+  },
+  "homepage": "https://github.com/berkayturanci/ai-jury",
+  "repository": "https://github.com/berkayturanci/ai-jury",
+  "license": "MIT",
+  "keywords": [
+    "code-review",
+    "multi-agent",
+    "claude-code",
+    "codex",
+    "antigravity",
+    "orchestration"
+  ],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "AI Jury",
+        "shortDescription": "Cross-vendor code review jury",
+        "longDescription": "AI Jury convenes a panel of reviewers from different vendors on the same diff, pull request or issue. Each reviewer works independently, they cross-examine each other's findings, a verification round checks them against the diff, and the run ends in one verdict: a chair's synthesis or a panel vote.\n\nUse it to get a second, third and fourth opinion on a change before merging, to gate a CI job on blocking findings, or to check an issue for completeness.\n\nLimitations: the skill drives the separately installed `jury` command-line tool (pipx install ai-jury), which needs at least one reviewer available - the Claude Code or Codex CLI, a hosted model API key, or a local model server. The diff is sent to every reviewer you configure. It reviews; it does not edit your code.",
+        "developerName": "Berkay Turancı",
+        "category": "Developer Tools",
+        "capabilities": [],
+        "defaultPrompt": [
+          "Convene the review jury on my current branch",
+          "Run a cross-vendor review of pull request #123",
+          "Check whether issue #45 is ready to implement"
+        ],
+        "brandColor": "#4F46E5",
+        "logo": "./assets/logo.svg",
+        "composerIcon": "./assets/logo.svg"
+      }
+    }
+  }
+}

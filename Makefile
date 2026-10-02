@@ -1,4 +1,4 @@
-.PHONY: help install test live-smoke smoke benchmark lint format coverage release-check build assets clean
+.PHONY: help install test live-smoke smoke benchmark lint format coverage release-check plugin-bundle plugin-bundle-check plugin-zip build assets clean
 
 help:
 	@echo "Available commands:"
@@ -11,6 +11,9 @@ help:
 	@echo "  make format     - Format Python code with Ruff"
 	@echo "  make coverage   - Measure test coverage and enforce the minimum gate"
 	@echo "  make release-check - Check every file that names the version (scripts/release_surfaces.py)"
+	@echo "  make plugin-bundle - Regenerate plugin/ (the plugin-directory folder) from the root"
+	@echo "  make plugin-bundle-check - Fail if plugin/ has drifted from the root"
+	@echo "  make plugin-zip - Write dist/ai-jury-plugin-<version>.zip for the OpenAI plugin directory"
 	@echo "  make build      - Build sdist and wheel packages"
 	@echo "  make assets     - Re-render website/docs PNGs from their SVG sources (needs rsvg-convert)"
 	@echo "  make clean      - Remove build artifacts and Python caches"
@@ -60,6 +63,18 @@ coverage:
 # remember eight filenames (#646).
 release-check:
 	python3 scripts/verify_merge.py --check-surfaces
+
+# `plugin/` is the self-contained folder the Claude and OpenAI plugin directories
+# install. Everything in it but README.md is a copy of a root file, regenerated here;
+# `tests/test_plugin_bundle.py` fails on drift. See docs/releasing.md#plugin-directories.
+plugin-bundle:
+	python3 scripts/plugin_bundle.py
+
+plugin-bundle-check:
+	python3 scripts/plugin_bundle.py --check
+
+plugin-zip:
+	python3 scripts/plugin_bundle.py zip
 
 build:
 	python3 -m build --sdist --wheel --outdir dist/

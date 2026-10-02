@@ -73,6 +73,12 @@ plugin. That command, and the other three agents, are in
 The plugin only bundles the ai-jury skill; it does not register hooks, MCP
 servers, or unrelated commands.
 
+For the plugin directories, which install one folder rather than a repository, the
+same skill is also packaged as the self-contained [`plugin/`](../plugin) folder — a
+Claude manifest, a portable `plugin.json` for OpenAI's ChatGPT and Codex directory, and
+a README that discloses what the plugin runs and sends. How to submit it to each
+directory is in [releasing.md](releasing.md#plugin-directories).
+
 ## Codex CLI
 
 Codex has a plugin marketplace now, and `.codex-plugin/plugin.json` is this
