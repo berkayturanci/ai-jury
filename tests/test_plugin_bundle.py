@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import tomllib
@@ -103,6 +104,29 @@ class TheBundleIsACopyOfTheRoot(unittest.TestCase):
             )
             self.assertEqual(["plugin/skills/ai-jury/SKILL.md"], plugin_bundle.write(root))
             self.assertEqual([], plugin_bundle.drift(root))
+
+    @unittest.skipUnless(
+        shutil.which("git") and (REPO_ROOT / ".git").exists(), "needs a git checkout"
+    )
+    def test_every_compared_file_is_checked_out_with_lf(self):
+        """Windows CI checks text out with CRLF (core.autocrlf). A byte copy survives that
+        because its source converts too, but the generated `plugin.json` is written with
+        "\n" and its committed copy did not — the first Windows run failed on exactly that.
+        `.gitattributes` pins `eol=lf` on both sides, which also keeps the upload ZIP the
+        same bytes on every OS; a new copy added to `COPIES` must be covered as well."""
+        paths = sorted(
+            {*(f"{plugin_bundle.BUNDLE_DIR}/{rel}" for rel in plugin_bundle.expected_files())}
+            | set(plugin_bundle.COPIES.values())
+        )
+        out = subprocess.run(
+            ["git", "check-attr", "eol", "--", *paths],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        unpinned = [line for line in out.splitlines() if not line.endswith(": eol: lf")]
+        self.assertEqual([], unpinned, "add these to .gitattributes with `text eol=lf`")
 
     def test_the_check_command_exits_nonzero_on_drift(self):
         with (

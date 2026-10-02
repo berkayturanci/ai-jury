@@ -1,0 +1,12 @@
+# The plugin-directory folder and the root files it copies are compared byte for
+# byte (scripts/plugin_bundle.py --check, tests/test_plugin_bundle.py), and the
+# upload ZIP is built from them. Pin them to LF so a Windows checkout with
+# core.autocrlf=true neither breaks that comparison — the generated plugin.json is
+# written with "\n" while git would check the committed copy out with CRLF — nor
+# produces a different ZIP than macOS and Linux do.
+plugin/**                   text eol=lf
+.claude-plugin/plugin.json  text eol=lf
+skills/**                   text eol=lf
+docs/parameters.md          text eol=lf
+LICENSE                     text eol=lf
+website/favicon.svg         text eol=lf
