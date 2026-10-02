@@ -2807,17 +2807,21 @@ def main(argv: list[str] | None = None) -> int:
         try:
             events = _events.EventsWriter(
                 args.events_file,
-                on_error=lambda msg: print(f"warning: {msg}", file=sys.stderr),
+                # The path is operator text and the OSError repeats it: both are
+                # redacted, as every other path this CLI prints is.
+                on_error=lambda msg: print(f"warning: {redact(msg)[0]}", file=sys.stderr),
             )
         except OSError as exc:
             # An unwritable path is a user error, reported before the panel is paid for.
-            print(f"error: cannot write --events-file {args.events_file}: {exc}", file=sys.stderr)
+            message = f"cannot write --events-file {args.events_file}: {exc}"
+            print(f"error: {redact(message)[0]}", file=sys.stderr)
             if court is not None:
                 court.close()
             return 2
         events.write(
             _events.start_record(
-                [(a.name, a.vendor) for a in config.agents],
+                # The seats that will speak: a disabled agent is never run.
+                [(a.name, a.vendor) for a in config.enabled_agents],
                 chair=config.chair if config.chair and config.chair != "rotate" else None,
                 target=_run_target(args),
                 mode=("issue" if args.issue else "code"),

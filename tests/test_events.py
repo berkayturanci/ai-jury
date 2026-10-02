@@ -316,6 +316,72 @@ class TheCli(unittest.TestCase):
         self.assertEqual(err.getvalue().count("progress events stopped"), 1)
         self.assertEqual([r["event"] for r in _read(self.ev)], ["start"])
 
+    def test_a_secret_in_an_unwritable_path_is_redacted(self):
+        token = "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij"
+        err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            code = cli.main(
+                [
+                    "--mock",
+                    "--diff-file",
+                    str(self.diff),
+                    "--events-file",
+                    str(self.d / token / "ev"),
+                ]
+            )
+        self.assertEqual(code, 2)
+        self.assertNotIn(token, err.getvalue())
+        self.assertIn("[REDACTED:github_token]", err.getvalue())
+
+    def test_a_secret_in_the_path_is_redacted_in_the_mid_run_warning(self):
+        token = "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij"
+        ev = self.d / f"{token}.ndjson"
+        real_write = events.EventsWriter.write
+        calls = {"n": 0}
+
+        def flaky(writer, record):
+            calls["n"] += 1
+            if calls["n"] == 2:
+                writer._stop(OSError(28, f"No space left on device: '{ev}'"))
+                return
+            real_write(writer, record)
+
+        err = io.StringIO()
+        with (
+            mock.patch.object(events.EventsWriter, "write", flaky),
+            contextlib.redirect_stdout(io.StringIO()),
+            contextlib.redirect_stderr(err),
+        ):
+            code = cli.main(["--mock", "--diff-file", str(self.diff), "--events-file", str(ev)])
+        self.assertEqual(code, 0)
+        self.assertIn("progress events stopped", err.getvalue())
+        self.assertNotIn(token, err.getvalue())
+        self.assertIn("[REDACTED:github_token]", err.getvalue())
+
+    def test_the_start_record_seats_only_enabled_agents(self):
+        cfg = self.d / "jury.toml"
+        cfg.write_text(
+            '[[agent]]\nname = "claude"\nvendor = "anthropic"\ncommand = "claude"\n'
+            '[[agent]]\nname = "codex"\nvendor = "openai"\ncommand = "codex"\nenabled = false\n',
+            encoding="utf-8",
+        )
+        code = _run(
+            [
+                "--mock",
+                "--config",
+                str(cfg),
+                "--diff-file",
+                str(self.diff),
+                "-q",
+                "--events-file",
+                str(self.ev),
+            ]
+        )
+        self.assertEqual(code, 0)
+        seated = [p["agent"] for p in _read(self.ev)[0]["panel"]]
+        self.assertIn("claude", seated)
+        self.assertNotIn("codex", seated)
+
     def test_an_interrupted_run_ends_cancelled(self):
         with mock.patch("ai_jury.cli.review_diff", side_effect=KeyboardInterrupt()):
             code = _run(["--mock", "--diff-file", str(self.diff), "--events-file", str(self.ev)])
