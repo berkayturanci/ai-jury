@@ -72,6 +72,8 @@ FIXTURE_FILES = {
     ".claude-plugin/plugin.json": '{{"name": "ai-jury", "version": "{v}"}}\n',
     ".codex-plugin/plugin.json": '{{"name": "ai-jury", "version": "{v}"}}\n',
     ".cursor-plugin/plugin.json": '{{"name": "ai-jury", "version": "{v}"}}\n',
+    "plugin/.claude-plugin/plugin.json": '{{"name": "ai-jury", "version": "{v}"}}\n',
+    "plugin/plugin.json": '{{"name": "ai-jury", "version": "{v}"}}\n',
     "website/index.html": '<a class="ver" id="site-version" href="/latest">v{v}</a>\n',
     "website/app.js": 'config: "repo: x\\n    rev: v{v}\\n"\n',
     "website/docs.html": '    var DOCS_TAG = "v{v}";\n',
@@ -406,14 +408,20 @@ class EveryPluginManifestIsARegisteredSurface(unittest.TestCase):
     """
 
     #: A per-agent plugin manifest, by the convention every one of these ecosystems uses:
-    #: a dot-directory at the repository root holding `plugin.json`.
-    _MANIFEST_GLOB = ".*/plugin.json"
+    #: a dot-directory at the repository root holding `plugin.json` — plus the same two
+    #: shapes inside `plugin/`, the self-contained folder the Claude and OpenAI plugin
+    #: directories install (`plugin/plugin.json` is the portable manifest at its root).
+    #: `.github/workflows/publish.yml` discovers with these same globs.
+    _MANIFEST_GLOBS = (".*/plugin.json", "plugin/plugin.json", "plugin/.*/plugin.json")
 
     def _manifests(self) -> list[str]:
         found = sorted(
-            path.relative_to(REPO_ROOT).as_posix()
-            for path in REPO_ROOT.glob(self._MANIFEST_GLOB)
-            if ".git/" not in path.as_posix()
+            {
+                path.relative_to(REPO_ROOT).as_posix()
+                for glob in self._MANIFEST_GLOBS
+                for path in REPO_ROOT.glob(glob)
+                if ".git/" not in path.as_posix()
+            }
         )
         self.assertTrue(found, "no plugin manifests found — the glob no longer matches")
         return found
@@ -425,7 +433,13 @@ class EveryPluginManifestIsARegisteredSurface(unittest.TestCase):
         the registration one, with a message that says what to do.
         """
         self.assertLessEqual(
-            {".claude-plugin/plugin.json", ".codex-plugin/plugin.json"}, set(self._manifests())
+            {
+                ".claude-plugin/plugin.json",
+                ".codex-plugin/plugin.json",
+                "plugin/.claude-plugin/plugin.json",
+                "plugin/plugin.json",
+            },
+            set(self._manifests()),
         )
 
     def test_every_manifest_in_the_tree_is_registered(self):
