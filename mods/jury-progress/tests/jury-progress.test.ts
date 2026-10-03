@@ -570,4 +570,5 @@ test('capture off with a marker that cannot be written still registers the comma
   await $.command.run({ command: 'jury-progress', args: '' })
   const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect(await pane.find({ type: 'Text', text: /Progress events are off/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /^cannot turn the \.watched marker off: / })).toBeDefined()
 })

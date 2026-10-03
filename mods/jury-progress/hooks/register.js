@@ -239,6 +239,7 @@ function selectRun($, name) {
 // someone watches. With capture off, a marker this mod left is turned to `off` (a mod cannot
 // delete a file).
 async function chooseDir($) {
+  markerError = null
   home = (await $.env.get('HOME')) ?? null
   const asked = await $.env.get('JURY_EVENTS_DIR')
   if (asked !== undefined) {
@@ -265,7 +266,6 @@ async function chooseDir($) {
     return
   }
   dir = cacheDir
-  markerError = null
   try {
     // Not atomic (truncate, then write): a jury starting in that instant reads an empty marker
     // and runs without events, which fails closed.
@@ -355,6 +355,8 @@ export function register(on, options = {}) {
     if (dir === null) {
       line({ text: 'Progress events are off: $JURY_EVENTS_DIR is set to off, or the capture setting is off.', tone: 'dim' })
       line({ text: 'Turn capture on in /config (jury-progress), or set JURY_EVENTS_DIR to a directory.', tone: 'dim' })
+      // A marker that could not be turned off still reads on: every jury keeps writing events.
+      if (markerError !== null) line({ text: markerError, tone: 'bad' })
     } else {
       const live = all.filter((r) => r.state === 'live')
       const listed = [...live, ...all.filter((r) => r.state !== 'live')].slice(0, PANE_MAX)
