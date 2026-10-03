@@ -1,0 +1,43 @@
+{
+  "name": "jury-progress",
+  "version": "0.1.0",
+  "description": "Shows the live ai-jury runs inside Claude Code: one line per run above the prompt, each seat's state, and a /jury-progress pane, read from the metadata-only events ai-jury writes to $JURY_EVENTS_DIR. Read-only; it never runs jury.",
+  "author": {
+    "name": "Berkay Turancı",
+    "url": "https://github.com/berkayturanci"
+  },
+  "homepage": "https://github.com/berkayturanci/ai-jury/tree/main/mods/jury-progress",
+  "repository": "https://github.com/berkayturanci/ai-jury",
+  "license": "MIT",
+  "keywords": ["ai-jury", "progress", "mod", "claude-code"],
+  "userConfig": {
+    "capture": {
+      "type": "boolean",
+      "title": "Capture this session's jury runs",
+      "description": "When the session has no JURY_EVENTS_DIR, set one (ai-jury's cache directory, /events) so every jury this session starts writes its progress there. Off: only a JURY_EVENTS_DIR you set yourself is read.",
+      "default": true
+    },
+    "poll_seconds": {
+      "type": "number",
+      "title": "Refresh every (seconds)",
+      "description": "How often to read the events while a run is live. With no live run it reads five times less often.",
+      "default": 2,
+      "min": 1,
+      "max": 30
+    },
+    "band_rows": {
+      "type": "number",
+      "title": "Runs above the prompt",
+      "description": "How many runs the band shows before '+N more'.",
+      "default": 3,
+      "min": 1,
+      "max": 9
+    },
+    "notify": {
+      "type": "boolean",
+      "title": "Notifications",
+      "description": "Show a toast when a run ends (its verdict and findings) or stops without finishing.",
+      "default": true
+    }
+  }
+}

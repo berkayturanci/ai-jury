@@ -359,6 +359,14 @@ fallback), and degrades to the plain `--live` step stream on a non-interactive
 terminal (or, for `pixel`, to the flat scene without truecolor/unicode).
 Details: [`docs/theater-design.md`](docs/theater-design.md).
 
+### Watch runs inside Claude Code — `jury-progress`
+
+The optional [`jury-progress`](mods/jury-progress/README.md) mod shows every live jury run above
+the Claude Code prompt (target, phase, each seat's ✓/…/✗) and in a `/jury-progress` pane, from the
+metadata-only events jury writes to `$JURY_EVENTS_DIR`. It sets that variable for the session, so
+the runs an agent or keel starts there show without a flag. Install it with
+`claude plugin install jury-progress@ai-jury`; the CLI and the other hosts are unaffected.
+
 ### Replay a saved run — `jury replay`
 
 Re-watch a finished run without re-spending a single token. The file to replay is
