@@ -140,7 +140,7 @@ async function scan($) {
   // record always wins: it is the run's own word that it finished.
   const next = read.map((r) => ({
     ...r,
-    state: alive === null && r.run.end === null && previous?.get(r.name) === 'stopped' ? 'stopped' : runLiveness(r.run, alive),
+    state: r.run.end === null && alive === null && previous?.get(r.name) === 'stopped' ? 'stopped' : runLiveness(r.run, alive),
   }))
   announce($, next, now)
   all = next
