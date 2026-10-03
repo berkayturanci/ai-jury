@@ -136,10 +136,11 @@ async function scan($) {
   const unended = read.filter((r) => r.run.end === null && Number.isInteger(r.run.start.pid))
   const alive = await alivePids($, [...new Set(unended.map((r) => r.run.start.pid))], now)
   // Without an answer from ps a run counts as live, except one already found stopped: it keeps
-  // that state, so a flaky ps cannot bring it back and have it announced as stopped again.
+  // that state, so a flaky ps cannot bring it back and have it announced as stopped again. An end
+  // record always wins: it is the run's own word that it finished.
   const next = read.map((r) => ({
     ...r,
-    state: alive === null && previous?.get(r.name) === 'stopped' ? 'stopped' : runLiveness(r.run, alive),
+    state: r.run.end === null && alive === null && previous?.get(r.name) === 'stopped' ? 'stopped' : runLiveness(r.run, alive),
   }))
   announce($, next, now)
   all = next
@@ -157,7 +158,9 @@ function announce($, next, now) {
   if (previous !== null) {
     for (const r of next) {
       const was = previous.get(r.name)
-      if (was !== 'live' && was !== undefined) continue
+      // A run already announced over is not announced again, except a stopped one that turns
+      // out to have finished after all: its end record and verdict are news.
+      if (was === 'ended' || (was === 'stopped' && r.state !== 'ended')) continue
       if (was === undefined && r.state !== 'live' && !(r.run.start.ts * 1000 >= firstScanAt)) continue
       if (r.state === 'ended') notify($, `jury ${targetOf(r.run)}: ${endText(r.run.end)}`)
       else if (r.state === 'stopped') notify($, `jury ${targetOf(r.run)} stopped without an end record`)

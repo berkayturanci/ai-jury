@@ -527,3 +527,31 @@ test('a run found stopped stays stopped when ps later fails, with no second toas
   await clock.advance(10_000)
   expect(calls.toasts).toEqual(['jury PR #7 stopped without an end record'])
 })
+
+test('an end record beats a stopped state even when ps has no answer', async ($, on) => {
+  const clock = mock.clock(on)
+  let alive: number[] | null = [100, 200]
+  let recs = [start()]
+  let mtime = 0
+  // A second live run keeps ps in play, so the read where ps fails really has no answer.
+  const other = { name: '20261003T110001.000Z-200.ndjson', recs: () => [start({ pid: 200, target: 'PR #9' })] }
+  const calls = stubEngine(on, { files: () => [{ name: RUN, recs: () => recs, mtime: () => mtime }, other], alive: () => alive })
+  await begin($)
+  await clock.settle()
+  alive = [200]
+  await clock.advance(2_000)
+  expect(calls.toasts).toEqual(['jury PR #7 stopped without an end record'])
+  const psBefore = calls.ps
+  alive = null
+  recs = [start(), end({ verdict: 'APPROVE', findings: 0 })]
+  mtime = 20_000
+  await clock.advance(2_000)
+  expect(calls.ps).toBeGreaterThan(psBefore)
+  expect(calls.toasts).toEqual(['jury PR #7 stopped without an end record', 'jury PR #7: APPROVE · 0 findings'])
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await band.find({ type: 'Text', text: '✓ APPROVE · 0 findings' })).toBeDefined()
+  await band.unmount()
+  // Announced once: later reads of the ended run say nothing more.
+  await clock.advance(20_000)
+  expect(calls.toasts.length).toBe(2)
+})
