@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="838" height="132" viewBox="0 0 838 132" role="img" aria-label="jury-progress — above the prompt">
+<rect width="100%" height="100%" rx="8" fill="#1e1e1e"/>
+<rect width="100%" height="30" rx="8" fill="#2d2d2d"/><rect y="22" width="100%" height="8" fill="#2d2d2d"/>
+<circle cx="18" cy="15" r="5.5" fill="#ff5f57"/><circle cx="36" cy="15" r="5.5" fill="#febc2e"/><circle cx="54" cy="15" r="5.5" fill="#28c840"/>
+<text x="419" y="19" fill="#9d9d9d" font-family="-apple-system,Segoe UI,sans-serif" font-size="12" text-anchor="middle">jury-progress — above the prompt</text>
+<g font-family="SF Mono,Menlo,Consolas,DejaVu Sans Mono,monospace" font-size="14" xml:space="preserve">
+<text x="16.0" y="58" fill="#949494" textLength="58.8" lengthAdjust="spacingAndGlyphs">ai-jury</text>
+<text x="83.2" y="58" fill="#d4d4d4" font-weight="bold" textLength="33.6" lengthAdjust="spacingAndGlyphs">jury</text>
+<text x="125.2" y="58" fill="#d4d4d4" textLength="58.8" lengthAdjust="spacingAndGlyphs">PR #935</text>
+<text x="192.4" y="58" fill="#00afd7" textLength="33.6" lengthAdjust="spacingAndGlyphs">▰▶▱▱</text>
+<text x="234.4" y="58" fill="#d4d4d4" textLength="75.6" lengthAdjust="spacingAndGlyphs">debate r1</text>
+<text x="318.4" y="58" fill="#949494" textLength="8.4" lengthAdjust="spacingAndGlyphs">·</text>
+<text x="335.2" y="58" fill="#5faf87" textLength="58.8" lengthAdjust="spacingAndGlyphs">✓claude</text>
+<text x="402.4" y="58" fill="#949494" textLength="50.4" lengthAdjust="spacingAndGlyphs">…codex</text>
+<text x="461.2" y="58" fill="#d75f87" textLength="58.8" lengthAdjust="spacingAndGlyphs">✗gemini</text>
+<text x="528.4" y="58" fill="#949494" textLength="42.0" lengthAdjust="spacingAndGlyphs">· 17m</text>
+<text x="16.0" y="77" fill="#949494" textLength="33.6" lengthAdjust="spacingAndGlyphs">keel</text>
+<text x="58.0" y="77" fill="#d4d4d4" font-weight="bold" textLength="33.6" lengthAdjust="spacingAndGlyphs">jury</text>
+<text x="100.0" y="77" fill="#d4d4d4" textLength="67.2" lengthAdjust="spacingAndGlyphs">PR #1466</text>
+<text x="175.6" y="77" fill="#5faf87" textLength="176.4" lengthAdjust="spacingAndGlyphs">✓ APPROVE · 1 finding</text>
+<text x="16.0" y="96" fill="#808080" textLength="806.4" lengthAdjust="spacingAndGlyphs">────────────────────────────────────────────────────────────────────────────────────────────────</text>
+<text x="16.0" y="115" fill="#d4d4d4" textLength="336.0" lengthAdjust="spacingAndGlyphs">❯ Try &quot;create a util logging.py that...&quot;</text>
+</g></svg>

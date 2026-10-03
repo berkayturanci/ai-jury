@@ -7,9 +7,7 @@ panel deliberates. It only reads: it never runs `jury`, and it sees nothing but 
 
 One line per live run:
 
-```
-jury PR #7 ▰▶▱▱ debate r2 · ✓claude ✗codex …gemini · 3m
-```
+![A live jury run above the Claude Code prompt, in its debate round, and a finished one with its verdict](docs/band.svg)
 
 - the target (a button: click it to open the pane on that run; no digit hotkey, so the band never
   takes the first key of a prompt)
@@ -22,6 +20,8 @@ minute with its verdict (`✓ REQUEST_CHANGES · 4 findings`), then leaves. With
 the band's rows, `+N more` points to the pane.
 
 ## The `/jury-progress` pane
+
+![The /jury-progress pane: the run's checkout, target and panel, every phase seat by seat, and the other runs](docs/pane.svg)
 
 The run you picked (or the newest) in full: its target, review mode, decision and chair, when
 it started and its pid, then every phase seat by seat: who answered, in how many seconds, how
@@ -68,6 +68,13 @@ In `/config`, under jury-progress:
 | Refresh every (seconds) | 2 | How often the events are read while a run is live; five times less often otherwise. A `jury` command also refreshes at once. |
 | Runs above the prompt | 3 | How many runs the band shows before `+N more`. |
 | Notifications | on | The toast when a run ends or stops. |
+
+Next to keel's own mod, keel-progress, the band shows both: the jury runs and the keel runs
+that drive them.
+
+![jury-progress and keel-progress in one band: two jury runs above three parallel keel runs](docs/with-keel-progress.svg)
+
+The images are captures of Claude Code 2.1.288 running the mods over demo runs, rendered as SVG.
 
 ## Install
 

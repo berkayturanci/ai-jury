@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="738" height="284" viewBox="0 0 738 284" role="img" aria-label="/jury-progress">
+<rect width="100%" height="100%" rx="8" fill="#1e1e1e"/>
+<rect width="100%" height="30" rx="8" fill="#2d2d2d"/><rect y="22" width="100%" height="8" fill="#2d2d2d"/>
+<circle cx="18" cy="15" r="5.5" fill="#ff5f57"/><circle cx="36" cy="15" r="5.5" fill="#febc2e"/><circle cx="54" cy="15" r="5.5" fill="#28c840"/>
+<text x="369" y="19" fill="#9d9d9d" font-family="-apple-system,Segoe UI,sans-serif" font-size="12" text-anchor="middle">/jury-progress</text>
+<g font-family="SF Mono,Menlo,Consolas,DejaVu Sans Mono,monospace" font-size="14" xml:space="preserve">
+<text x="16.0" y="58" fill="#d4d4d4" font-weight="bold" textLength="638.4" lengthAdjust="spacingAndGlyphs">1 live jury run(s) · events in /tmp/jury-demo/events (from $JURY_EVENTS_DIR)</text>
+<text x="713.2" y="58" fill="#949494" textLength="8.4" lengthAdjust="spacingAndGlyphs">✕</text>
+<text x="16.0" y="96" fill="#949494" textLength="310.8" lengthAdjust="spacingAndGlyphs">running · started 17m ago · pid 19774</text>
+<text x="16.0" y="115" fill="#949494" textLength="176.4" lengthAdjust="spacingAndGlyphs">/home/dev/src/ai-jury</text>
+<text x="16.0" y="134" fill="#d4d4d4" font-weight="bold" textLength="453.6" lengthAdjust="spacingAndGlyphs">PR #935 · code review · decision: chair · chair claude</text>
+<text x="16.0" y="153" fill="#d4d4d4" textLength="655.2" lengthAdjust="spacingAndGlyphs">review: ✓ claude 71.2s 3 found · ✓ codex 94s 2 found · ✓ gemini 120.4s 4 found</text>
+<text x="16.0" y="172" fill="#ffd700" textLength="478.8" lengthAdjust="spacingAndGlyphs">debate r1: ✓ claude 62.1s 3 found · ✗ gemini 120s timeout</text>
+<text x="16.0" y="191" fill="#949494" textLength="142.8" lengthAdjust="spacingAndGlyphs">waiting on: codex</text>
+<text x="16.0" y="229" fill="#949494" textLength="92.4" lengthAdjust="spacingAndGlyphs">Other runs:</text>
+<text x="16.0" y="248" fill="#d4d4d4" textLength="310.8" lengthAdjust="spacingAndGlyphs">keel · PR #1466 · APPROVE · 1 finding</text>
+<text x="16.0" y="267" fill="#d4d4d4" font-weight="bold" textLength="92.4" lengthAdjust="spacingAndGlyphs">[ Refresh ]</text>
+<text x="125.2" y="267" fill="#d4d4d4" font-weight="bold" textLength="75.6" lengthAdjust="spacingAndGlyphs">[ Close ]</text>
+</g></svg>
