@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.24.0] - 2026-10-03
+
+> **What changes for you.** jury-progress now actually shows your jury runs. In 1.23.0 the mod set
+> `JURY_EVENTS_DIR`, which never reached the commands Claude Code runs, so the band stayed empty. Now the mod
+> leaves a `.watched` marker in jury's cache, and every jury on the machine (by hand, through an agent or keel,
+> in another terminal) writes its metadata-only progress there while the marker reads `on` (#940). Update the
+> mod to 0.2.0. Without the marker or the variable, jury still writes nothing.
+
 ### Added
 - **A watcher can ask for events without an environment variable** (#940). Checked end to end on Claude Code 2.1.288: a mod's `$.env.set` never reaches the commands its session runs, so jury-progress's `JURY_EVENTS_DIR` never got to jury and the band stayed empty. Now, with `$JURY_EVENTS_DIR` unset, a non-mock run writes its events to `<cache dir>/events` (`$JURY_CACHE_DIR`, else the XDG default) when a `.watched` file there reads `on`. jury-progress keeps that file. `$JURY_EVENTS_DIR`, `off` included, still decides when set. With no marker, nothing is written, as before. A marker that is missing, unreadable, over 64 bytes or says anything else asks for nothing.
 - **jury-progress 0.2.0 watches with the `.watched` marker** (#940). The mod no longer sets `JURY_EVENTS_DIR`, which never reached the session's commands. It leaves `<cache dir>/events/.watched` reading `on`, so every jury on the machine (1.24.0+: by hand, by an agent, through keel, in another terminal) writes where it reads. With watching off it turns a marker it left to `off`. A `JURY_EVENTS_DIR` the user set is still read as is.
