@@ -135,7 +135,12 @@ async function scan($) {
   cache = nextCache
   const unended = read.filter((r) => r.run.end === null && Number.isInteger(r.run.start.pid))
   const alive = await alivePids($, [...new Set(unended.map((r) => r.run.start.pid))], now)
-  const next = read.map((r) => ({ ...r, state: runLiveness(r.run, alive) }))
+  // Without an answer from ps a run counts as live, except one already found stopped: it keeps
+  // that state, so a flaky ps cannot bring it back and have it announced as stopped again.
+  const next = read.map((r) => ({
+    ...r,
+    state: alive === null && previous?.get(r.name) === 'stopped' ? 'stopped' : runLiveness(r.run, alive),
+  }))
   announce($, next, now)
   all = next
 }

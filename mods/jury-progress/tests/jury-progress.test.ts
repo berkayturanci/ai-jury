@@ -512,3 +512,18 @@ test('a file whose size changed is read again even when its mtime did not', asyn
   expect(calls.reads).toBe(2)
   expect(calls.toasts).toEqual(['jury PR #7: REQUEST_CHANGES · 4 findings'])
 })
+
+test('a run found stopped stays stopped when ps later fails, with no second toast', async ($, on) => {
+  const clock = mock.clock(on)
+  let alive: number[] | null = [100]
+  const calls = stubEngine(on, { files: [{ name: RUN, recs: () => [start()] }], alive: () => alive })
+  await begin($)
+  await clock.settle()
+  alive = []
+  await clock.advance(10_000)
+  alive = null
+  await clock.advance(10_000)
+  alive = []
+  await clock.advance(10_000)
+  expect(calls.toasts).toEqual(['jury PR #7 stopped without an end record'])
+})
