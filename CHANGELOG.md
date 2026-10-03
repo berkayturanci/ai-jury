@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.23.0] - 2026-10-03
+
+> **What changes for you.** You can watch a jury deliberate from another process. `--events-file PATH` writes the
+> run's progress as metadata-only NDJSON. With `$JURY_EVENTS_DIR` set, every run writes a file of its own there,
+> so a watcher finds runs that an agent or keel started (#931). The new optional Claude Code mod `jury-progress`
+> (`claude plugin install jury-progress@ai-jury`) uses it to show each live run above the prompt: its phase, each
+> seat's ✓/…/✗, and the verdict when it ends (#933). A `plugin/` folder packages the skill for the Claude and
+> OpenAI plugin directories, and a round of docs-audit fixes makes the docs and several CLI edges match the code.
+
 ### Added
 - **`--events-file PATH`: follow a run from another process.** The `on_event` stream that drives `--live` and `--theater` can now also be written as NDJSON (`ai-jury.events.v1`). The file holds a `start` record with the seated panel, one `step` record per phase result, and an `end` record whose verdict is the same token as the report's chair verdict (`ballots.chair_verdict`). It is metadata only, with no reviewer output, diff or finding text. It is a side channel, like the theater: the outcome, report and CI gate never read it, and without the flag nothing changes. It lets a Claude Code mod or keel's progress view show the deliberation live. A path that cannot be opened is a clean `error:` (exit 2) before the panel runs; a write that fails mid-run warns once and stops the events, never the review. Both messages pass the path through `redact()`, as every operator path this CLI prints does, and the `start` record seats only enabled agents.
 - **`jury-progress`: the live jury runs inside Claude Code** (#933). An optional Claude Code mod, published as a second plugin in the ai-jury marketplace (`mods/jury-progress`). Above the prompt it draws one line per live run: the target, a review › debate › verify › synthesis bar, and each seat's state in the current phase (`✓claude ✗codex …gemini`). A finished run stays for a minute with its verdict and finding count. The `/jury-progress` pane lists every phase seat by seat (seconds, findings, error code, who it still waits on) and the recent runs. A toast marks a run that ends or stops without an end record (its pid is gone, or held by a newer process). The run's target is a button that opens the pane on it. It has no digit hotkey, so the band never takes the first key of a prompt. When the session has no `JURY_EVENTS_DIR`, the mod sets one under ai-jury's cache directory, so every jury that session starts writes there. A variable you set is read, never replaced, and `off` keeps the events off. It only reads the events files and `ps`; it never runs jury. Settings in `/config`: capture, refresh interval, band rows, notifications.
