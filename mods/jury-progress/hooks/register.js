@@ -158,7 +158,9 @@ function announce($, next, now) {
   if (previous !== null) {
     for (const r of next) {
       const was = previous.get(r.name)
-      if (was !== 'live' && was !== undefined) continue
+      // A run already announced over is not announced again, except a stopped one that turns
+      // out to have finished after all: its end record and verdict are news.
+      if (was === 'ended' || (was === 'stopped' && r.state !== 'ended')) continue
       if (was === undefined && r.state !== 'live' && !(r.run.start.ts * 1000 >= firstScanAt)) continue
       if (r.state === 'ended') notify($, `jury ${targetOf(r.run)}: ${endText(r.run.end)}`)
       else if (r.state === 'stopped') notify($, `jury ${targetOf(r.run)} stopped without an end record`)

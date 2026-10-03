@@ -543,6 +543,10 @@ test('an end record beats a stopped state even when ps has no answer', async ($,
   recs = [start(), end({ verdict: 'APPROVE', findings: 0 })]
   mtime = 20_000
   await clock.advance(10_000)
+  expect(calls.toasts).toEqual(['jury PR #7 stopped without an end record', 'jury PR #7: APPROVE · 0 findings'])
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect(await band.find({ type: 'Text', text: '✓ APPROVE · 0 findings' })).toBeDefined()
+  // Announced once: later reads of the ended run say nothing more.
+  await clock.advance(20_000)
+  expect(calls.toasts.length).toBe(2)
 })
