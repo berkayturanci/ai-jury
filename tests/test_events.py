@@ -429,12 +429,13 @@ class TheEventsDirectory(unittest.TestCase):
         self.assertEqual(events.events_dir(" /tmp/ev "), Path("/tmp/ev"))
         self.assertEqual(events.events_dir("~/ev"), Path.home() / "ev")
 
-    def test_run_files_are_named_by_utc_start_and_pid(self):
-        self.assertEqual(events.run_file_name(0, 7), "19700101T000000Z-7.ndjson")
+    def test_run_files_are_named_by_utc_start_to_the_ms_and_pid(self):
+        self.assertEqual(events.run_file_name(0, 7), "19700101T000000.000Z-7.ndjson")
+        self.assertEqual(events.run_file_name(1.25, 7, 2), "19700101T000001.250Z-7-2.ndjson")
 
     def test_only_run_files_past_the_newest_keep_are_stale(self):
-        runs = [f"2026100{d}T000000Z-1.ndjson" for d in range(1, 6)]
-        names = [*reversed(runs), "notes.txt", "ev.ndjson", "20261001T000000Z-x.ndjson"]
+        runs = [f"2026100{d}T000000.000Z-1.ndjson" for d in range(1, 6)]
+        names = [*reversed(runs), "notes.txt", "ev.ndjson", "20261001T000000.000Z-x.ndjson"]
         self.assertEqual(events.stale_run_files(names, keep=2), runs[:3])
         self.assertEqual(events.stale_run_files(names, keep=10), [])
         self.assertEqual(events.stale_run_files(names, keep=0), runs)
@@ -443,7 +444,7 @@ class TheEventsDirectory(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d) / "a" / "b"
             root.mkdir(parents=True)
-            old = [root / f"2026100{i}T000000Z-1.ndjson" for i in range(1, 4)]
+            old = [root / f"2026100{i}T000000.000Z-1.ndjson" for i in range(1, 4)]
             for f in old:
                 f.write_text("{}\n", encoding="utf-8")
             (root / "keep-me.txt").write_text("x", encoding="utf-8")
@@ -454,7 +455,31 @@ class TheEventsDirectory(unittest.TestCase):
             w.close()
             left = sorted(p.name for p in root.iterdir())
             # KEEP runs with this one: the newest old run stays, the foreign file too.
-            self.assertEqual(left, ["19700101T000000Z-9.ndjson", old[2].name, "keep-me.txt"])
+            self.assertEqual(left, ["19700101T000000.000Z-9.ndjson", old[2].name, "keep-me.txt"])
+            # The run's own file: created for the owner alone.
+            self.assertEqual((root / left[0]).stat().st_mode & 0o777, 0o600)
+
+    def test_a_name_already_taken_gets_the_next_attempt_and_a_symlink_is_never_followed(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            target = root / "elsewhere.txt"
+            target.write_text("precious", encoding="utf-8")
+            (root / events.run_file_name(0, 9)).symlink_to(target)
+            w = events.open_dir_writer(root, clock=lambda: 0.0, pid=9)
+            w.write({"event": "start"})
+            w.close()
+            self.assertEqual(target.read_text(encoding="utf-8"), "precious")
+            self.assertTrue((root / events.run_file_name(0, 9, 1)).exists())
+
+    def test_a_failure_mid_run_names_the_variable_not_the_flag(self):
+        with tempfile.TemporaryDirectory() as d:
+            msgs: list[str] = []
+            w = events.open_dir_writer(Path(d), clock=lambda: 0.0, pid=9, on_error=msgs.append)
+            w._fh.close()
+            w._fh = TheWriterNeverTakesTheRunDown._Breaks(after=1)  # the next write fails
+            w.write({"event": "step"})
+            self.assertEqual(len(msgs), 1)
+            self.assertTrue(msgs[0].startswith("$JURY_EVENTS_DIR "), msgs[0])
 
     def test_a_directory_that_cannot_be_made_warns_once_and_returns_none(self):
         with tempfile.TemporaryDirectory() as d:
@@ -476,10 +501,19 @@ class TheCliWithAnEventsDirectory(unittest.TestCase):
         self.diff.write_text(DIFF, encoding="utf-8")
         self.dir = self.d / "events"
 
-    def _run_with(self, value: str, *extra: str) -> tuple[int, str]:
+    def _run_with(self, value: str, *extra: str, mock_writes: bool = True) -> tuple[int, str]:
+        """A --mock run with the variable set. The suite has no live panel, so the
+        tests let the mock run use the directory, as a real review would; a real
+        --mock run stays out of it (see the test that says so)."""
         err = io.StringIO()
+        writes = unittest.mock.patch.object(
+            cli,
+            "_events_dir_for",
+            lambda _args: events.events_dir(os.environ.get(events.ENV_DIR)),
+        )
         with (
             unittest.mock.patch.dict("os.environ", {events.ENV_DIR: value}),
+            writes if mock_writes else contextlib.nullcontext(),
             contextlib.redirect_stdout(io.StringIO()),
             contextlib.redirect_stderr(err),
         ):
@@ -504,6 +538,17 @@ class TheCliWithAnEventsDirectory(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertTrue(ev.exists())
         self.assertFalse(self.dir.exists())
+
+    def test_a_mock_run_stays_out_of_the_directory(self):
+        code, _ = self._run_with(str(self.dir), mock_writes=False)
+        self.assertEqual(code, 0)
+        self.assertFalse(self.dir.exists())
+
+    def test_a_removed_working_directory_is_recorded_as_none(self):
+        with unittest.mock.patch.object(cli.Path, "cwd", side_effect=FileNotFoundError):
+            code, _ = self._run_with(str(self.dir))
+        self.assertEqual(code, 0)
+        self.assertIsNone(_read(next(self.dir.iterdir()))[0]["cwd"])
 
     def test_off_writes_nothing(self):
         code, _ = self._run_with("off")

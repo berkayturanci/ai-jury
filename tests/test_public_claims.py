@@ -20,6 +20,7 @@ import html
 import re
 import tomllib
 import unittest
+import unittest.mock
 from pathlib import Path
 
 from ai_jury.config import KNOWN_CI_KEYS
@@ -532,3 +533,16 @@ class TheSarifWorkflowPassesTheKeysItsSeatsRead(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# These runs go through the real CLI path, not --mock: an operator's $JURY_EVENTS_DIR
+# (a Claude Code mod sets it) must not collect them, nor prune the real runs there.
+_EVENTS_ENV = unittest.mock.patch.dict("os.environ", {"JURY_EVENTS_DIR": "off"})
+
+
+def setUpModule():
+    _EVENTS_ENV.start()
+
+
+def tearDownModule():
+    _EVENTS_ENV.stop()

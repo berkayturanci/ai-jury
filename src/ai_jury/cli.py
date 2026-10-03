@@ -2277,6 +2277,28 @@ See `jury examples` for more, or `jury --help` for every option.
 Docs: https://github.com/berkayturanci/ai-jury"""
 
 
+def _events_dir_for(args: argparse.Namespace) -> Path | None:
+    """The ``$JURY_EVENTS_DIR`` this run writes its own events file to, if any.
+
+    A ``--mock`` run (a test, a demo) is no review anyone watches: it stays out of the
+    directory, so a test suite run where the variable is set neither shows up there
+    nor prunes the runs that do.
+    """
+    from . import events as _events
+
+    if args.mock:
+        return None
+    return _events.events_dir(os.environ.get(_events.ENV_DIR))
+
+
+def _cwd_or_none() -> str | None:
+    """The working directory, or ``None`` when it was removed under the run."""
+    try:
+        return str(Path.cwd())
+    except OSError:
+        return None
+
+
 def _run_target(args: argparse.Namespace) -> str:
     """What this run reviews, as the theater's case title and the events file name it."""
     if args.pr:
@@ -2819,7 +2841,7 @@ def main(argv: list[str] | None = None) -> int:
             if court is not None:
                 court.close()
             return 2
-    elif (events_dir := _events.events_dir(os.environ.get(_events.ENV_DIR))) is not None:
+    elif (events_dir := _events_dir_for(args)) is not None:
         # Nobody asked this run for a file by name, so a directory that cannot be
         # written warns and the run goes on without events.
         events = _events.open_dir_writer(
@@ -2837,7 +2859,7 @@ def main(argv: list[str] | None = None) -> int:
                 decision=(args.decision or config.decision),
                 cached=outcome is not None,
                 pid=os.getpid(),
-                cwd=str(Path.cwd()),
+                cwd=_cwd_or_none(),
             )
         )
 

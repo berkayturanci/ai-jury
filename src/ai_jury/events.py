@@ -51,9 +51,12 @@ _OFF = frozenset({"", "off", "0", "false", "no"})
 #: How many run files the directory keeps; older ones go when a new run starts.
 KEEP = 20
 
+#: How many names a run tries before it gives up on writing events.
+_ATTEMPTS = 5
+
 #: The run files this module names, and the only files it ever deletes: a directory
 #: shared with anything else loses nothing else.
-_RUN_NAME = re.compile(r"^\d{8}T\d{6}Z-\d+\.ndjson$")
+_RUN_NAME = re.compile(r"^\d{8}T\d{6}\.\d{3}Z-\d+(?:-\d+)?\.ndjson$")
 
 
 def events_dir(value: str | None) -> Path | None:
@@ -63,9 +66,16 @@ def events_dir(value: str | None) -> Path | None:
     return Path(value.strip()).expanduser()
 
 
-def run_file_name(now: float, pid: int) -> str:
-    """``<UTC stamp>-<pid>.ndjson``: sorts by start time, unique per live process."""
-    return f"{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime(now))}-{pid}.ndjson"
+def run_file_name(now: float, pid: int, attempt: int = 0) -> str:
+    """``<UTC stamp to the ms>-<pid>.ndjson``: sorts by start time.
+
+    ``attempt`` > 0 adds ``-<attempt>``, for a name another run of the same process
+    already took in the same millisecond (the file is created exclusively).
+    """
+    stamp = time.strftime("%Y%m%dT%H%M%S", time.gmtime(now))
+    millis = int(now * 1000) % 1000
+    suffix = f"-{attempt}" if attempt else ""
+    return f"{stamp}.{millis:03d}Z-{pid}{suffix}.ndjson"
 
 
 def stale_run_files(names: Iterable[str], keep: int = KEEP) -> list[str]:
@@ -148,9 +158,19 @@ class EventsWriter:
         *,
         clock: Callable[[], float] = time.time,
         on_error: Callable[[str], None] | None = None,
+        exclusive: bool = False,
+        source: str = "--events-file",
     ) -> None:
         self._path = path
-        self._fh: TextIO | None = Path(path).open("w", encoding="utf-8")  # noqa: SIM115 - closed in close()
+        self._source = source
+        self._fh: TextIO | None
+        if exclusive:
+            # A file of the run's own in a directory others may share: created, never
+            # reused, and never through a symlink someone placed under its name.
+            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+            self._fh = os.fdopen(os.open(path, flags, 0o600), "w", encoding="utf-8")
+        else:
+            self._fh = Path(path).open("w", encoding="utf-8")  # noqa: SIM115 - closed in close()
         self._clock = clock
         self._seq = 0
         self._on_error = on_error
@@ -192,7 +212,7 @@ class EventsWriter:
     def _report(self, exc: OSError) -> None:
         if self._on_error is not None:
             self._on_error(
-                f"--events-file {self._path}: {exc}; progress events stopped, the review continues"
+                f"{self._source} {self._path}: {exc}; progress events stopped, the review continues"
             )
 
 
@@ -211,14 +231,26 @@ def open_dir_writer(
     """
     pid = os.getpid() if pid is None else pid
     try:
-        directory.mkdir(parents=True, exist_ok=True)
-        # Room for this run's own file: the directory holds KEEP runs with it.
+        directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        # Room for this run's own file: the directory holds KEEP runs with it. Pruning
+        # goes by name, so with KEEP runs going at once the oldest live one's file can
+        # go too; that run keeps writing to its open handle, only a watcher loses it.
         for name in stale_run_files((p.name for p in directory.iterdir()), KEEP - 1):
             with contextlib.suppress(OSError):
                 (directory / name).unlink()
-        return EventsWriter(
-            str(directory / run_file_name(clock(), pid)), clock=clock, on_error=on_error
-        )
+        now = clock()
+        for attempt in range(_ATTEMPTS):
+            try:
+                return EventsWriter(
+                    str(directory / run_file_name(now, pid, attempt)),
+                    clock=clock,
+                    on_error=on_error,
+                    exclusive=True,
+                    source=f"${ENV_DIR}",
+                )
+            except FileExistsError:
+                continue
+        raise FileExistsError(f"{_ATTEMPTS} run file names for pid {pid} are taken")
     except OSError as exc:
         if on_error is not None:
             on_error(f"${ENV_DIR} {directory}: {exc}; this run writes no progress events")
