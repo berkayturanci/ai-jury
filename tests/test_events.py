@@ -7,6 +7,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -64,8 +65,23 @@ class TheRecordBuilders(unittest.TestCase):
                 "decision": "vote",
                 "cached": False,
                 "phases": ["review", "debate", "verify", "synthesis"],
+                "pid": None,
+                "cwd": None,
             },
         )
+
+    def test_start_record_carries_the_pid_and_the_checkout(self):
+        rec = events.start_record(
+            [],
+            chair=None,
+            target="PR #7",
+            mode="code",
+            decision="vote",
+            cached=False,
+            pid=4242,
+            cwd="/repo",
+        )
+        self.assertEqual((rec["pid"], rec["cwd"]), (4242, "/repo"))
 
     def test_step_record_carries_metadata_and_never_the_output(self):
         result = AgentResult(
@@ -189,6 +205,11 @@ class TheWriterNeverTakesTheRunDown(unittest.TestCase):
 
 class TheCli(unittest.TestCase):
     def setUp(self):
+        # An operator's own $JURY_EVENTS_DIR must not leak into these runs.
+        env = unittest.mock.patch.dict("os.environ")
+        env.start()
+        self.addCleanup(env.stop)
+        os.environ.pop(events.ENV_DIR, None)
         self._tmp = tempfile.TemporaryDirectory()
         self.d = Path(self._tmp.name)
         self.diff = self.d / "change.diff"
@@ -397,6 +418,105 @@ class TheCli(unittest.TestCase):
             code = _run(["--mock", "--diff-file", str(self.diff), "--events-file", str(self.ev)])
         self.assertEqual(code, 2)
         self.assertEqual(_read(self.ev)[-1]["status"], "error")
+
+
+class TheEventsDirectory(unittest.TestCase):
+    def test_unset_empty_and_off_mean_no_directory(self):
+        for value in (None, "", "  ", "off", "OFF", "0", "false", "no"):
+            self.assertIsNone(events.events_dir(value), value)
+
+    def test_a_path_is_taken_with_the_home_expanded(self):
+        self.assertEqual(events.events_dir(" /tmp/ev "), Path("/tmp/ev"))
+        self.assertEqual(events.events_dir("~/ev"), Path.home() / "ev")
+
+    def test_run_files_are_named_by_utc_start_and_pid(self):
+        self.assertEqual(events.run_file_name(0, 7), "19700101T000000Z-7.ndjson")
+
+    def test_only_run_files_past_the_newest_keep_are_stale(self):
+        runs = [f"2026100{d}T000000Z-1.ndjson" for d in range(1, 6)]
+        names = [*reversed(runs), "notes.txt", "ev.ndjson", "20261001T000000Z-x.ndjson"]
+        self.assertEqual(events.stale_run_files(names, keep=2), runs[:3])
+        self.assertEqual(events.stale_run_files(names, keep=10), [])
+        self.assertEqual(events.stale_run_files(names, keep=0), runs)
+
+    def test_the_writer_makes_the_directory_prunes_and_writes_its_own_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d) / "a" / "b"
+            root.mkdir(parents=True)
+            old = [root / f"2026100{i}T000000Z-1.ndjson" for i in range(1, 4)]
+            for f in old:
+                f.write_text("{}\n", encoding="utf-8")
+            (root / "keep-me.txt").write_text("x", encoding="utf-8")
+            with unittest.mock.patch.object(events, "KEEP", 2):
+                w = events.open_dir_writer(root, clock=lambda: 0.0, pid=9)
+            self.assertIsNotNone(w)
+            w.write({"event": "start"})
+            w.close()
+            left = sorted(p.name for p in root.iterdir())
+            # KEEP runs with this one: the newest old run stays, the foreign file too.
+            self.assertEqual(left, ["19700101T000000Z-9.ndjson", old[2].name, "keep-me.txt"])
+
+    def test_a_directory_that_cannot_be_made_warns_once_and_returns_none(self):
+        with tempfile.TemporaryDirectory() as d:
+            blocker = Path(d) / "file"
+            blocker.write_text("x", encoding="utf-8")
+            msgs: list[str] = []
+            self.assertIsNone(events.open_dir_writer(blocker / "ev", on_error=msgs.append))
+            self.assertEqual(len(msgs), 1)
+            self.assertIn("$JURY_EVENTS_DIR", msgs[0])
+            self.assertIn("no progress events", msgs[0])
+
+
+class TheCliWithAnEventsDirectory(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.d = Path(self._tmp.name)
+        self.diff = self.d / "change.diff"
+        self.diff.write_text(DIFF, encoding="utf-8")
+        self.dir = self.d / "events"
+
+    def _run_with(self, value: str, *extra: str) -> tuple[int, str]:
+        err = io.StringIO()
+        with (
+            unittest.mock.patch.dict("os.environ", {events.ENV_DIR: value}),
+            contextlib.redirect_stdout(io.StringIO()),
+            contextlib.redirect_stderr(err),
+        ):
+            code = cli.main(["--mock", "--diff-file", str(self.diff), "-q", *extra])
+        return code, err.getvalue()
+
+    def test_a_run_writes_its_own_file_with_its_pid_and_checkout(self):
+        code, _ = self._run_with(str(self.dir))
+        self.assertEqual(code, 0)
+        files = list(self.dir.iterdir())
+        self.assertEqual(len(files), 1)
+        self.assertTrue(files[0].name.endswith(f"-{os.getpid()}.ndjson"))
+        recs = _read(files[0])
+        self.assertEqual(recs[0]["event"], "start")
+        self.assertEqual(recs[0]["pid"], os.getpid())
+        self.assertEqual(recs[0]["cwd"], str(Path.cwd()))
+        self.assertEqual((recs[-1]["event"], recs[-1]["status"]), ("end", "done"))
+
+    def test_the_flag_wins_over_the_directory(self):
+        ev = self.d / "ev.ndjson"
+        code, _ = self._run_with(str(self.dir), "--events-file", str(ev))
+        self.assertEqual(code, 0)
+        self.assertTrue(ev.exists())
+        self.assertFalse(self.dir.exists())
+
+    def test_off_writes_nothing(self):
+        code, _ = self._run_with("off")
+        self.assertEqual(code, 0)
+        self.assertFalse(self.dir.exists())
+
+    def test_an_unwritable_directory_warns_and_the_review_still_runs(self):
+        blocker = self.d / "file"
+        blocker.write_text("x", encoding="utf-8")
+        code, err = self._run_with(str(blocker / "ev"))
+        self.assertEqual(code, 0)
+        self.assertIn("warning: $JURY_EVENTS_DIR", err)
+        self.assertNotIn("Traceback", err)
 
 
 class RunTarget(unittest.TestCase):

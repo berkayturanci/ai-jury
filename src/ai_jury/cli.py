@@ -2797,13 +2797,14 @@ def main(argv: list[str] | None = None) -> int:
             )
             court.open()
 
-    # Progress events for an observer in another process (--events-file): the same
-    # on_event stream as --live, written as metadata-only NDJSON. A side channel like
-    # the theater: the outcome, report and CI gate never read it.
+    # Progress events for an observer in another process (--events-file, or a file of
+    # this run's own under $JURY_EVENTS_DIR): the same on_event stream as --live,
+    # written as metadata-only NDJSON. A side channel like the theater: the outcome,
+    # report and CI gate never read it.
+    from . import events as _events
+
     events = None
     if args.events_file:
-        from . import events as _events
-
         try:
             events = _events.EventsWriter(
                 args.events_file,
@@ -2818,6 +2819,14 @@ def main(argv: list[str] | None = None) -> int:
             if court is not None:
                 court.close()
             return 2
+    elif (events_dir := _events.events_dir(os.environ.get(_events.ENV_DIR))) is not None:
+        # Nobody asked this run for a file by name, so a directory that cannot be
+        # written warns and the run goes on without events.
+        events = _events.open_dir_writer(
+            events_dir,
+            on_error=lambda msg: print(f"warning: {redact(msg)[0]}", file=sys.stderr),
+        )
+    if events is not None:
         events.write(
             _events.start_record(
                 # The seats that will speak: a disabled agent is never run.
@@ -2827,6 +2836,8 @@ def main(argv: list[str] | None = None) -> int:
                 mode=("issue" if args.issue else "code"),
                 decision=(args.decision or config.decision),
                 cached=outcome is not None,
+                pid=os.getpid(),
+                cwd=str(Path.cwd()),
             )
         )
 
