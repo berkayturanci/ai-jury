@@ -493,6 +493,93 @@ class TheEventsDirectory(unittest.TestCase):
             self.assertIn("no progress events", msgs[0])
 
 
+class TheWatchMarker(unittest.TestCase):
+    """A watcher asks for events with ``<cache dir>/events/.watched`` reading ``on``."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.cache = Path(self._tmp.name) / "cache"
+        self.dir = self.cache / "events"
+        env = unittest.mock.patch.dict("os.environ", {"JURY_CACHE_DIR": str(self.cache)})
+        env.start()
+        self.addCleanup(env.stop)
+        os.environ.pop(events.ENV_DIR, None)
+
+    def _mark(self, text: str) -> None:
+        self.dir.mkdir(parents=True, exist_ok=True)
+        (self.dir / events.WATCH_MARKER).write_text(text, encoding="utf-8")
+
+    def _for(self, mock: bool = False):
+        import argparse
+
+        return cli._events_dir_for(argparse.Namespace(mock=mock))
+
+    def test_marker_content(self):
+        for text, on in (
+            ("on", True),
+            ("on\n", True),
+            (" ON  watcher=jury-progress\n", True),
+            ("off", False),
+            ("", False),
+            ("onward", False),
+            ("yes", False),
+        ):
+            self.assertEqual(events.marker_says_on(text), on, text)
+
+    def test_no_marker_no_events(self):
+        self.assertIsNone(self._for())
+
+    def test_a_marker_reading_on_opens_the_cache_events_directory(self):
+        self._mark("on\n")
+        self.assertEqual(self._for(), self.dir)
+
+    def test_a_marker_reading_off_asks_for_nothing(self):
+        self._mark("off\n")
+        self.assertIsNone(self._for())
+
+    def test_the_variable_wins_over_the_marker(self):
+        self._mark("on\n")
+        with unittest.mock.patch.dict("os.environ", {events.ENV_DIR: "off"}):
+            self.assertIsNone(self._for())
+        with unittest.mock.patch.dict("os.environ", {events.ENV_DIR: "/elsewhere"}):
+            self.assertEqual(self._for(), Path("/elsewhere"))
+
+    def test_a_mock_run_ignores_the_marker(self):
+        self._mark("on\n")
+        self.assertIsNone(self._for(mock=True))
+
+    def test_an_oversized_or_undecodable_marker_asks_for_nothing(self):
+        self._mark("on" + " " * 100)
+        self.assertIsNone(events.watched_dir(self.dir))
+        (self.dir / events.WATCH_MARKER).write_bytes(b"\xff\xfe")
+        self.assertIsNone(events.watched_dir(self.dir))
+
+    def test_a_directory_named_like_the_marker_asks_for_nothing(self):
+        (self.dir / events.WATCH_MARKER).mkdir(parents=True)
+        self.assertIsNone(events.watched_dir(self.dir))
+
+    def test_a_watched_run_writes_its_file_beside_the_marker(self):
+        self._mark("on\n")
+        diff = Path(self._tmp.name) / "change.diff"
+        diff.write_text(DIFF, encoding="utf-8")
+        real = cli._events_dir_for
+        # The suite has no live panel: let the mock run take the real path's decision.
+        with (
+            unittest.mock.patch.object(
+                cli, "_events_dir_for", lambda args: real(type(args)(mock=False))
+            ),
+            contextlib.redirect_stdout(io.StringIO()),
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            code = cli.main(["--mock", "--diff-file", str(diff), "-q"])
+        self.assertEqual(code, 0)
+        runs = [p for p in self.dir.iterdir() if p.name != events.WATCH_MARKER]
+        self.assertEqual(len(runs), 1)
+        self.assertEqual(_read(runs[0])[-1]["event"], "end")
+        self.assertEqual((self.dir / events.WATCH_MARKER).read_text(encoding="utf-8"), "on\n")
+
+
 class TheCliWithAnEventsDirectory(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()

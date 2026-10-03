@@ -2278,7 +2278,14 @@ Docs: https://github.com/berkayturanci/ai-jury"""
 
 
 def _events_dir_for(args: argparse.Namespace) -> Path | None:
-    """The ``$JURY_EVENTS_DIR`` this run writes its own events file to, if any.
+    """The directory this run writes its own events file to, if any.
+
+    ``$JURY_EVENTS_DIR`` decides when it is set (``off`` included). Unset, the run
+    writes to ``<cache dir>/events`` only if a watcher left its ``.watched`` marker
+    there reading ``on``: the jury-progress mod does, because a mod cannot put a
+    variable into the environment of the commands its session runs. The cache dir is
+    ``$JURY_CACHE_DIR`` or the XDG default, as the watcher computes it, not a per-run
+    ``--cache-dir``.
 
     A ``--mock`` run (a test, a demo) is no review anyone watches: it stays out of the
     directory, so a test suite run where the variable is set neither shows up there
@@ -2288,7 +2295,12 @@ def _events_dir_for(args: argparse.Namespace) -> Path | None:
 
     if args.mock:
         return None
-    return _events.events_dir(os.environ.get(_events.ENV_DIR))
+    value = os.environ.get(_events.ENV_DIR)
+    if value is not None:
+        return _events.events_dir(value)
+    from .cache import default_cache_dir
+
+    return _events.watched_dir(default_cache_dir() / "events")
 
 
 def _cwd_or_none() -> str | None:

@@ -37,26 +37,23 @@ already over when the session opened do not.
 
 ## How it finds the runs
 
-ai-jury writes each run's progress to a file of its own in `$JURY_EVENTS_DIR`
-(`ai-jury.events.v1` NDJSON: the panel, one record per phase result, the end). The records
-carry metadata only: no reviewer output, diff or finding text.
+ai-jury writes each run's progress (`ai-jury.events.v1` NDJSON: the panel, one record per phase
+result, the end) to a file of its own. The records carry metadata only: no reviewer output, diff or
+finding text. The file goes to `$JURY_EVENTS_DIR` when that is set. When it is not set, the file goes
+to ai-jury's cache directory plus `/events` (`$JURY_CACHE_DIR/events`, else
+`$XDG_CACHE_HOME/ai-jury/events`, else `~/.cache/ai-jury/events`), but only while a `.watched` file
+there reads `on`.
 
-When the Claude Code session has no `JURY_EVENTS_DIR`, the mod sets one for the session's own
-process: ai-jury's cache directory plus `/events` (`$JURY_CACHE_DIR/events`, else
-`$XDG_CACHE_HOME/ai-jury/events`, else `~/.cache/ai-jury/events`). It also sets
-`JURY_PROGRESS_SET_DIR` to the same value, so after a reload it knows the directory is its own,
-and turning capture off takes both back. Every `jury` the session
-starts, by hand, by an agent or through keel, inherits it. A `jury` you start in another
-terminal is shown too if that terminal has the same `JURY_EVENTS_DIR`:
+This mod leaves that marker, reading `on`, when a session starts. So every `jury` on the machine
+writes where the mod reads: one you run by hand, one an agent runs, one keel runs, and one in another
+terminal. This needs ai-jury 1.24.0 or newer. A mod cannot set an environment variable for the
+commands its session runs (Claude Code's `$.env.set` does not reach them), which is why the marker
+is a file.
 
-```bash
-export JURY_EVENTS_DIR="$HOME/.cache/ai-jury/events"
-```
-
-A `JURY_EVENTS_DIR` you set yourself is read as it is, never replaced; `off` turns the
-events off. A `--mock` run never writes there. A run counts as live until its end record, or
-until `ps` no longer finds its pid (or finds it held by a newer process). When `ps` cannot
-answer, a run without an end record still counts as live.
+A `JURY_EVENTS_DIR` you set yourself is read as it is, and no marker is written; `off` turns the
+events off. A `--mock` run never writes events. A run counts as live until its end record, or until
+`ps` no longer finds its pid (or finds it held by a newer process). When `ps` cannot answer, a run
+without an end record still counts as live.
 
 ## Settings
 
@@ -64,7 +61,7 @@ In `/config`, under jury-progress:
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| Capture this session's jury runs | on | Set `JURY_EVENTS_DIR` for the session when it has none. Off: only a `JURY_EVENTS_DIR` you set is read. |
+| Watch the jury runs | on | Leave the `.watched` marker in ai-jury's cache so jury writes its events there. Off: the marker is turned to `off`, and only a `JURY_EVENTS_DIR` you set is read. |
 | Refresh every (seconds) | 2 | How often the events are read while a run is live; five times less often otherwise. A `jury` command also refreshes at once. |
 | Runs above the prompt | 3 | How many runs the band shows before `+N more`. |
 | Notifications | on | The toast when a run ends or stops. |
@@ -78,7 +75,7 @@ The images are captures of Claude Code 2.1.288 running the mods over demo runs, 
 
 ## Install
 
-You need ai-jury with `$JURY_EVENTS_DIR` support (installing ai-jury itself: [docs/install.md](../../docs/install.md))
+You need ai-jury 1.24.0 or newer (installing ai-jury itself: [docs/install.md](../../docs/install.md))
 and Claude Code **2.1.287 or newer**, with mods enabled for your account.
 
 ```bash
@@ -100,7 +97,13 @@ claude --plugin-dir .
 
 ## Limits
 
-- Runs started outside Claude Code show only when their shell sets `JURY_EVENTS_DIR`.
+- Turning watching off in one session turns the marker off for every session on the machine;
+  they share ai-jury's cache.
+- The marker outlives the session and the mod. Before `claude plugin uninstall jury-progress`, turn
+  Watch off (or delete `<cache>/events/.watched`), or every jury on the machine keeps writing its
+  metadata-only events there (the newest 20 runs are kept).
+- When the mod creates the events directory first, it gets your umask's mode (usually 0755), not the
+  0700 jury would give it. The run files are always 0600.
 - Only the newest 20 runs are kept in the directory (ai-jury prunes it), and files untouched
   for a day are not read.
 - A run on another machine (CI) is not shown; the pane reads the local directory only.
