@@ -252,8 +252,13 @@ async function chooseDir($) {
     home,
   })
   if (!settings.capture || cacheDir === null) {
-    if (cacheDir !== null && (await $.fs.exists(`${cacheDir}/${WATCH_MARKER}`))) {
-      await $.fs.write(`${cacheDir}/${WATCH_MARKER}`, 'off\n')
+    // Any existing marker is turned off, whoever left it: watching is one switch per cache.
+    try {
+      if (cacheDir !== null && (await $.fs.exists(`${cacheDir}/${WATCH_MARKER}`))) {
+        await $.fs.write(`${cacheDir}/${WATCH_MARKER}`, 'off\n')
+      }
+    } catch (err) {
+      markerError = `cannot turn the ${WATCH_MARKER} marker off: ${String(err?.message ?? err)}`
     }
     dir = null
     dirSource = 'off'
@@ -262,11 +267,13 @@ async function chooseDir($) {
   dir = cacheDir
   markerError = null
   try {
+    // Not atomic (truncate, then write): a jury starting in that instant reads an empty marker
+    // and runs without events, which fails closed.
     await $.fs.write(`${dir}/${WATCH_MARKER}`, 'on\n')
     dirSource = 'mod'
   } catch (err) {
     // Without the marker no jury writes here; the directory is still read, and the pane says why.
-    dirSource = 'mod'
+    dirSource = 'unwatched'
     markerError = `cannot leave the ${WATCH_MARKER} marker, so no jury writes here: ${String(err?.message ?? err)}`
   }
 }
@@ -351,7 +358,7 @@ export function register(on, options = {}) {
     } else {
       const live = all.filter((r) => r.state === 'live')
       const listed = [...live, ...all.filter((r) => r.state !== 'live')].slice(0, PANE_MAX)
-      const from = dirSource === 'mod' ? 'watched by this mod' : 'from $JURY_EVENTS_DIR'
+      const from = dirSource === 'mod' ? 'watched by this mod' : dirSource === 'unwatched' ? 'marker not written' : 'from $JURY_EVENTS_DIR'
       line({ text: `${live.length} live jury run(s) · events in ${dir} (${from})`, tone: 'title' })
       if (listError !== null) line({ text: `cannot read the events directory: ${listError}`, tone: 'bad' })
       if (markerError !== null) line({ text: markerError, tone: 'bad' })

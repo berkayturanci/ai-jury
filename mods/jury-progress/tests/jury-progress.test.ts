@@ -461,6 +461,7 @@ test('a marker that cannot be written is said in the pane, and the directory is 
   await $.command.run({ command: 'jury-progress', args: '' })
   const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect(await pane.find({ type: 'Text', text: /^cannot leave the \.watched marker, so no jury writes here: / })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /\(marker not written\)$/ })).toBeDefined()
 })
 
 test("capture off never touches a JURY_EVENTS_DIR the user set", { options: { capture: false } }, async ($, on) => {
@@ -559,4 +560,14 @@ test('an end record beats a stopped state even when ps has no answer', async ($,
   // Announced once: later reads of the ended run say nothing more.
   await clock.advance(20_000)
   expect(calls.toasts.length).toBe(2)
+})
+
+test('capture off with a marker that cannot be written still registers the command and says why', { options: { capture: false } }, async ($, on) => {
+  const clock = mock.clock(on)
+  stubEngine(on, { markerExists: true, writeFails: 'EISDIR: illegal operation on a directory' })
+  await begin($)
+  await clock.settle()
+  await $.command.run({ command: 'jury-progress', args: '' })
+  const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await pane.find({ type: 'Text', text: /Progress events are off/ })).toBeDefined()
 })

@@ -99,6 +99,11 @@ claude --plugin-dir .
 
 - Turning watching off in one session turns the marker off for every session on the machine;
   they share ai-jury's cache.
+- The marker outlives the session and the mod. Before `claude plugin uninstall jury-progress`, turn
+  Watch off (or delete `<cache>/events/.watched`), or every jury on the machine keeps writing its
+  metadata-only events there (the newest 20 runs are kept).
+- When the mod creates the events directory first, it gets your umask's mode (usually 0755), not the
+  0700 jury would give it. The run files are always 0600.
 - Only the newest 20 runs are kept in the directory (ai-jury prunes it), and files untouched
   for a day are not read.
 - A run on another machine (CI) is not shown; the pane reads the local directory only.
