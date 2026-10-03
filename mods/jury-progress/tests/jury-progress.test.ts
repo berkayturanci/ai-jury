@@ -63,9 +63,11 @@ function stubEngine(
     psStderr?: string
     startedAgoS?: Record<number, number> // pid -> seconds its process has run (default: days)
     listFails?: string
+    markerExists?: boolean
+    writeFails?: string
   } = {},
 ) {
-  const calls = { set: [] as [string, string | undefined][], reads: 0, lists: 0, ps: 0, toasts: [] as string[], opened: [] as string[] }
+  const calls = { writes: [] as [string, string][], set: [] as [string, string | undefined][], reads: 0, lists: 0, ps: 0, toasts: [] as string[], opened: [] as string[] }
   const env: Record<string, string> = { HOME: '/home/u', ...(opts.env ?? {}) }
   on('env.get', ($: unknown, e: { name: string }) => ({ value: env[e.name] }))
   on('env.set', ($: unknown, e: { name: string; value?: string }) => {
@@ -78,7 +80,7 @@ function stubEngine(
   on('fs.list', ($: unknown, e: { path: string }) => {
     calls.lists += 1
     if (opts.listFails) return { deny: opts.listFails }
-    expect(e.path).toBe(env.JURY_EVENTS_DIR?.replace(/^~/, '/home/u'))
+    expect(e.path).toBe(env.JURY_EVENTS_DIR ? env.JURY_EVENTS_DIR.replace(/^~/, '/home/u') : (env.JURY_CACHE_DIR ? `${env.JURY_CACHE_DIR}/events` : DIR))
     return {
       value: [
         ...files().map((f) => ({ name: f.name, kind: 'file', size: (f.raw ?? JSON.stringify(f.recs())).length, mtimeMs: f.mtime ? f.mtime() : 0, isLink: false })),
@@ -112,6 +114,12 @@ function stubEngine(
     }
     return { value: { exitCode: found.length > 0 ? 0 : 1, stdout: found.map((p) => `  ${p} ${etime(p)}\n`).join(''), stderr: '' } }
   })
+  on('fs.write', ($: unknown, e: { path: string; text: string }) => {
+    if (opts.writeFails) return { deny: opts.writeFails }
+    calls.writes.push([e.path, e.text])
+    return { value: undefined }
+  })
+  on('fs.exists', ($: unknown, e: { path: string }) => ({ value: e.path.endsWith('/.watched') ? (opts.markerExists ?? false) : false }))
   on('session.start', () => ({ cwd: '/work' }))
   on('session.cwd', () => ({ value: '/work' }))
   on('command.register', () => ({ value: undefined }))
@@ -135,15 +143,14 @@ async function begin($: any) {
   await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' })
 }
 
-test('with no JURY_EVENTS_DIR the mod sets one under the ai-jury cache, for the jury runs this session starts', async ($, on) => {
+test('with no JURY_EVENTS_DIR the mod watches the ai-jury cache: it leaves the .watched marker and reads there', async ($, on) => {
   const clock = mock.clock(on)
   const calls = stubEngine(on)
   await begin($)
   await clock.settle()
-  expect(calls.set).toEqual([
-    ['JURY_EVENTS_DIR', DIR],
-    ['JURY_PROGRESS_SET_DIR', DIR],
-  ])
+  expect(calls.writes).toEqual([[`${DIR}/.watched`, 'on\n']])
+  // A mod cannot hand a variable to the commands its session runs, so it never tries.
+  expect(calls.set).toEqual([])
   expect(calls.lists).toBe(1)
 })
 
@@ -152,7 +159,7 @@ test('the cache directory follows JURY_CACHE_DIR, then XDG_CACHE_HOME', async ($
   const calls = stubEngine(on, { env: { JURY_CACHE_DIR: '/c', XDG_CACHE_HOME: '/x' } })
   await begin($)
   await clock.settle()
-  expect(calls.set[0]).toEqual(['JURY_EVENTS_DIR', '/c/events'])
+  expect(calls.writes).toEqual([['/c/events/.watched', 'on\n']])
 })
 
 test('XDG_CACHE_HOME is used when JURY_CACHE_DIR is not set', async ($, on) => {
@@ -160,7 +167,7 @@ test('XDG_CACHE_HOME is used when JURY_CACHE_DIR is not set', async ($, on) => {
   const calls = stubEngine(on, { env: { XDG_CACHE_HOME: '/x' } })
   await begin($)
   await clock.settle()
-  expect(calls.set[0]).toEqual(['JURY_EVENTS_DIR', '/x/ai-jury/events'])
+  expect(calls.writes).toEqual([['/x/ai-jury/events/.watched', 'on\n']])
 })
 
 test("the session's own JURY_EVENTS_DIR is read, never replaced", async ($, on) => {
@@ -391,7 +398,7 @@ test("a run's button opens the pane on it, phase by phase, and lists the others"
   await band.press({ key: `jury-progress-open-${RUN}` })
   expect(calls.opened).toEqual(['jury-progress'])
   const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect(await pane.find({ type: 'Text', text: /^1 live jury run\(s\) · events in \/home\/u\/\.cache\/ai-jury\/events \(set by this mod/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /^1 live jury run\(s\) · events in \/home\/u\/\.cache\/ai-jury\/events \(watched by this mod\)$/ })).toBeDefined()
   expect(await pane.find({ type: 'Text', text: 'running · started 30s ago · pid 100' })).toBeDefined()
   expect(await pane.find({ type: 'Text', text: 'PR #7 · code review · decision: chair · chair claude' })).toBeDefined()
   expect(await pane.find({ type: 'Text', text: 'review: ✓ claude 12.5s 2 found · ✗ codex 300s timeout' })).toBeDefined()
@@ -411,7 +418,7 @@ test('the pane before any run says where runs will come from', async ($, on) => 
   await $.command.run({ command: 'jury-progress', args: '' })
   const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect(await pane.find({ type: 'Text', text: /^No jury run yet/ })).toBeDefined()
-  expect(await pane.find({ type: 'Text', text: /another terminal needs JURY_EVENTS_DIR/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /Any jury on this machine \(ai-jury 1\.24\.0 or newer\) writes here/ })).toBeDefined()
 })
 
 test('a cached run says it came from the cache', async ($, on) => {
@@ -436,27 +443,24 @@ test('notifications off: no toast when a run ends', { options: { notify: false }
   expect(calls.toasts).toEqual([])
 })
 
-test('a reload knows the directory it set itself: the pane says so, and capture off takes it back', async ($, on) => {
+test('capture off turns a marker this mod left to off, and reads nothing', { options: { capture: false } }, async ($, on) => {
   const clock = mock.clock(on)
-  const calls = stubEngine(on, { env: { JURY_EVENTS_DIR: DIR, JURY_PROGRESS_SET_DIR: DIR } })
-  await begin($)
-  await clock.settle()
-  expect(calls.set).toEqual([])
-  await $.command.run({ command: 'jury-progress', args: '' })
-  const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect(await pane.find({ type: 'Text', text: /\(set by this mod for this session\)$/ })).toBeDefined()
-})
-
-test('capture turned off after the mod set the directory: it is unset, and nothing is read', { options: { capture: false } }, async ($, on) => {
-  const clock = mock.clock(on)
-  const calls = stubEngine(on, { env: { JURY_EVENTS_DIR: DIR, JURY_PROGRESS_SET_DIR: DIR } })
+  const calls = stubEngine(on, { markerExists: true })
   await begin($)
   await clock.advance(20_000)
-  expect(calls.set).toEqual([
-    ['JURY_EVENTS_DIR', undefined],
-    ['JURY_PROGRESS_SET_DIR', undefined],
-  ])
+  expect(calls.writes).toEqual([[`${DIR}/.watched`, 'off\n']])
   expect(calls.lists).toBe(0)
+})
+
+test('a marker that cannot be written is said in the pane, and the directory is still read', async ($, on) => {
+  const clock = mock.clock(on)
+  const calls = stubEngine(on, { writeFails: 'EACCES: permission denied' })
+  await begin($)
+  await clock.settle()
+  expect(calls.lists).toBe(1)
+  await $.command.run({ command: 'jury-progress', args: '' })
+  const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await pane.find({ type: 'Text', text: /^cannot leave the \.watched marker, so no jury writes here: / })).toBeDefined()
 })
 
 test("capture off never touches a JURY_EVENTS_DIR the user set", { options: { capture: false } }, async ($, on) => {
@@ -465,6 +469,7 @@ test("capture off never touches a JURY_EVENTS_DIR the user set", { options: { ca
   await begin($)
   await clock.settle()
   expect(calls.set).toEqual([])
+  expect(calls.writes).toEqual([])
   expect(calls.lists).toBe(1)
 })
 

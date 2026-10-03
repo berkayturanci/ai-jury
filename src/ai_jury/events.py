@@ -66,6 +66,33 @@ def events_dir(value: str | None) -> Path | None:
     return Path(value.strip()).expanduser()
 
 
+#: The file a watcher (the jury-progress mod) keeps in ``<cache dir>/events`` to ask for
+#: events without an environment variable, which a Claude Code mod cannot hand to the
+#: commands its session runs. It reads ``on`` while someone watches, ``off`` after.
+WATCH_MARKER = ".watched"
+
+
+def marker_says_on(text: str) -> bool:
+    """Whether a watch marker's content asks for events: its first word is ``on``."""
+    words = text.split()
+    return bool(words) and words[0].lower() == "on"
+
+
+def watched_dir(directory: Path) -> Path | None:
+    """``directory`` when its :data:`WATCH_MARKER` reads ``on``, else ``None``.
+
+    A marker that is missing, unreadable, too large to be one, or says anything else
+    asks for nothing: no events are written unless a watcher said so.
+    """
+    marker = directory / WATCH_MARKER
+    try:
+        if not marker.is_file() or marker.stat().st_size > 64:
+            return None
+        return directory if marker_says_on(marker.read_text(encoding="utf-8")) else None
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
 def run_file_name(now: float, pid: int, attempt: int = 0) -> str:
     """``<UTC stamp to the ms>-<pid>.ndjson``: sorts by start time.
 

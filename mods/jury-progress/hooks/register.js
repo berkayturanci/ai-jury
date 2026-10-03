@@ -2,17 +2,19 @@
 //
 // ai-jury writes each run's progress (who spoke, in which phase, whether it worked, how long it
 // took, how many findings) as metadata-only NDJSON to a file of the run's own in
-// $JURY_EVENTS_DIR. When the session has no such variable, this mod sets one (ai-jury's cache
-// directory, `/events`) for the Claude Code process, so every `jury` this session starts (by
-// hand, by an agent, through keel) writes there. It draws:
+// $JURY_EVENTS_DIR, or, when no such variable is set, to ai-jury's cache directory plus /events
+// while a `.watched` marker there reads `on`. This mod leaves that marker, so every `jury` on the
+// machine (by hand, by an agent, through keel) writes where it reads. It draws:
 //   - one line per live run above the prompt: the target, the phase bar, each seat's state
 //   - a `/jury-progress` pane with every phase of a run, seat by seat
 //   - a toast when a run ends (verdict and findings) or stops without finishing
-// It never runs `jury`, and it reads nothing but the events files and `ps`.
+// It never runs `jury`; it reads the events files and `ps`, and writes only the `.watched` marker.
 
 import { ago, baseName, parsePs, runLiveness, defaultEventsDir, endText, eventsDir, isRunFile, paneLines, parseRun, phaseBar, phaseLabel, runState, seatText } from './view.js'
 
 const PANE = 'jury-progress'
+// The file that tells ai-jury (1.24.0+) someone watches its cache's events directory.
+const WATCH_MARKER = '.watched'
 const POLL_MS = 2_000
 // With no live run the timer still ticks every poll but reads only every IDLE_EVERY ticks.
 const IDLE_EVERY = 5
@@ -47,6 +49,7 @@ let previous = null // name -> state at the last scan; null before the first
 let firstScanAt = null // when the first scan ran: a run started after it is this session's to announce
 let scanAt = 0
 let listError = null // why the directory could not be listed, if it could not
+let markerError = null // why the .watched marker could not be left, if it could not
 let inFlight = null
 let again = false
 let idleTicks = 0
@@ -230,45 +233,42 @@ function selectRun($, name) {
 }
 
 // The directory: the session's own $JURY_EVENTS_DIR when it has one (`off` means none), else
-// one this mod sets, so the jury runs this session starts write where it reads.
+// ai-jury's cache directory plus /events, where this mod leaves a `.watched` marker reading
+// `on`. A mod cannot hand a variable to the commands its session runs (`$.env.set` does not
+// reach them), so the marker is how every jury on the machine (ai-jury 1.24.0+) learns that
+// someone watches. With capture off, a marker this mod left is turned to `off` (a mod cannot
+// delete a file).
 async function chooseDir($) {
   home = (await $.env.get('HOME')) ?? null
   const asked = await $.env.get('JURY_EVENTS_DIR')
-  // The value this mod set earlier in this process (a reload runs session.start again), told
-  // apart from one the user set by a marker beside it.
-  const ours = asked !== undefined && asked === (await $.env.get('JURY_PROGRESS_SET_DIR'))
-  if (asked !== undefined && !ours) {
+  if (asked !== undefined) {
     dir = eventsDir(asked, home)
     dirSource = dir === null ? 'off' : 'env'
     return
   }
-  if (!settings.capture) {
-    if (ours) {
-      // Capture was turned off: take back what this mod set, so later jury runs write nothing.
-      await $.env.set('JURY_EVENTS_DIR', undefined)
-      await $.env.set('JURY_PROGRESS_SET_DIR', undefined)
+  const cacheDir = defaultEventsDir({
+    cacheDir: (await $.env.get('JURY_CACHE_DIR')) || null,
+    xdgCache: (await $.env.get('XDG_CACHE_HOME')) || null,
+    home,
+  })
+  if (!settings.capture || cacheDir === null) {
+    if (cacheDir !== null && (await $.fs.exists(`${cacheDir}/${WATCH_MARKER}`))) {
+      await $.fs.write(`${cacheDir}/${WATCH_MARKER}`, 'off\n')
     }
     dir = null
     dirSource = 'off'
     return
   }
-  if (ours) {
-    dir = eventsDir(asked, home)
+  dir = cacheDir
+  markerError = null
+  try {
+    await $.fs.write(`${dir}/${WATCH_MARKER}`, 'on\n')
     dirSource = 'mod'
-    return
+  } catch (err) {
+    // Without the marker no jury writes here; the directory is still read, and the pane says why.
+    dirSource = 'mod'
+    markerError = `cannot leave the ${WATCH_MARKER} marker, so no jury writes here: ${String(err?.message ?? err)}`
   }
-  dir = defaultEventsDir({
-    cacheDir: (await $.env.get('JURY_CACHE_DIR')) || null,
-    xdgCache: (await $.env.get('XDG_CACHE_HOME')) || null,
-    home,
-  })
-  if (dir === null) {
-    dirSource = 'off'
-    return
-  }
-  await $.env.set('JURY_EVENTS_DIR', dir)
-  await $.env.set('JURY_PROGRESS_SET_DIR', dir)
-  dirSource = 'mod'
 }
 
 export function register(on, options = {}) {
@@ -351,14 +351,15 @@ export function register(on, options = {}) {
     } else {
       const live = all.filter((r) => r.state === 'live')
       const listed = [...live, ...all.filter((r) => r.state !== 'live')].slice(0, PANE_MAX)
-      const from = dirSource === 'mod' ? 'set by this mod for this session' : 'from $JURY_EVENTS_DIR'
+      const from = dirSource === 'mod' ? 'watched by this mod' : 'from $JURY_EVENTS_DIR'
       line({ text: `${live.length} live jury run(s) · events in ${dir} (${from})`, tone: 'title' })
       if (listError !== null) line({ text: `cannot read the events directory: ${listError}`, tone: 'bad' })
+      if (markerError !== null) line({ text: markerError, tone: 'bad' })
       const focus = listed.find((r) => r.name === selected) ?? listed[0]
       if (focus === undefined) {
         line({ text: ' ', tone: 'plain' })
         line({ text: 'No jury run yet. Runs started from this session (or by keel) show here as they happen.', tone: 'dim' })
-        if (dirSource === 'mod') line({ text: 'A jury started in another terminal needs JURY_EVENTS_DIR set there too.', tone: 'dim' })
+        if (dirSource === 'mod') line({ text: 'Any jury on this machine (ai-jury 1.24.0 or newer) writes here while the .watched marker says on.', tone: 'dim' })
       } else {
         line({ text: ' ', tone: 'plain' })
         const since = startedAgo(focus)
