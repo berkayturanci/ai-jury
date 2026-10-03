@@ -456,8 +456,9 @@ class TheEventsDirectory(unittest.TestCase):
             left = sorted(p.name for p in root.iterdir())
             # KEEP runs with this one: the newest old run stays, the foreign file too.
             self.assertEqual(left, ["19700101T000000.000Z-9.ndjson", old[2].name, "keep-me.txt"])
-            # The run's own file: created for the owner alone.
-            self.assertEqual((root / left[0]).stat().st_mode & 0o777, 0o600)
+            # The run's own file: created for the owner alone (POSIX modes; Windows has none).
+            if os.name == "posix":
+                self.assertEqual((root / left[0]).stat().st_mode & 0o777, 0o600)
 
     def test_a_name_already_taken_gets_the_next_attempt_and_a_symlink_is_never_followed(self):
         with tempfile.TemporaryDirectory() as d:
