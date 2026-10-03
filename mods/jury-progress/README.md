@@ -66,8 +66,8 @@ In `/config`, under jury-progress:
 
 ## Install
 
-You need ai-jury with `$JURY_EVENTS_DIR` support and Claude Code **2.1.287 or newer**, with mods
-enabled for your account.
+You need ai-jury with `$JURY_EVENTS_DIR` support (installing ai-jury itself: [docs/install.md](../../docs/install.md))
+and Claude Code **2.1.287 or newer**, with mods enabled for your account.
 
 ```bash
 claude plugin marketplace add berkayturanci/ai-jury
