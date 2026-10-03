@@ -11,7 +11,8 @@ One line per live run:
 jury PR #7 ▰▶▱▱ debate r2 · ✓claude ✗codex …gemini · 3m
 ```
 
-- the target (a button: click it, or type its digit into an empty prompt, to open the pane on it)
+- the target (a button: click it to open the pane on that run; no digit hotkey, so the band never
+  takes the first key of a prompt)
 - the phase bar: review, debate, verify, synthesis (`▰` done, `▶` now, `▱` to come)
 - each seat in the current phase: `✓` answered, `✗` failed, `…` still thinking
 - how long the run has been going
@@ -29,9 +30,10 @@ the other live and recent runs, each a button to switch to.
 
 ## Notifications
 
-A toast when a run ends (its verdict and finding count) or stops without finishing (its
-process is gone and it never wrote an end record). Nothing for runs that were already over
-when the session opened.
+A toast when a run ends (its verdict and finding count) or stops without an end record (its
+process is gone, or its pid now belongs to a process that started later). A run that starts
+and ends between two reads (a cache hit, a fast failure) still gets its toast; runs that were
+already over when the session opened do not.
 
 ## How it finds the runs
 
@@ -41,7 +43,9 @@ carry metadata only: no reviewer output, diff or finding text.
 
 When the Claude Code session has no `JURY_EVENTS_DIR`, the mod sets one for the session's own
 process: ai-jury's cache directory plus `/events` (`$JURY_CACHE_DIR/events`, else
-`$XDG_CACHE_HOME/ai-jury/events`, else `~/.cache/ai-jury/events`). Every `jury` the session
+`$XDG_CACHE_HOME/ai-jury/events`, else `~/.cache/ai-jury/events`). It also sets
+`JURY_PROGRESS_SET_DIR` to the same value, so after a reload it knows the directory is its own,
+and turning capture off takes both back. Every `jury` the session
 starts, by hand, by an agent or through keel, inherits it. A `jury` you start in another
 terminal is shown too if that terminal has the same `JURY_EVENTS_DIR`:
 
@@ -51,7 +55,8 @@ export JURY_EVENTS_DIR="$HOME/.cache/ai-jury/events"
 
 A `JURY_EVENTS_DIR` you set yourself is read as it is, never replaced; `off` turns the
 events off. A `--mock` run never writes there. A run counts as live until its end record, or
-until `ps` no longer finds its pid.
+until `ps` no longer finds its pid (or finds it held by a newer process). When `ps` cannot
+answer, a run without an end record still counts as live.
 
 ## Settings
 

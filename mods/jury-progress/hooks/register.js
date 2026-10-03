@@ -10,7 +10,7 @@
 //   - a toast when a run ends (verdict and findings) or stops without finishing
 // It never runs `jury`, and it reads nothing but the events files and `ps`.
 
-import { ago, baseName, defaultEventsDir, endText, eventsDir, isRunFile, paneLines, parseRun, phaseBar, phaseLabel, runState, seatText } from './view.js'
+import { ago, baseName, parsePs, runLiveness, defaultEventsDir, endText, eventsDir, isRunFile, paneLines, parseRun, phaseBar, phaseLabel, runState, seatText } from './view.js'
 
 const PANE = 'jury-progress'
 const POLL_MS = 2_000
@@ -42,8 +42,9 @@ let dirSource = null // 'env' (the session's own $JURY_EVENTS_DIR), 'mod' (set h
 let home = null
 let cwd = null
 let all = [] // [{ name, run, state, mtimeMs }] newest first: state 'live' | 'ended' | 'stopped'
-let cache = new Map() // name -> { mtimeMs, run }: a file is parsed again only when it changed
+let cache = new Map() // name -> { mtimeMs, size, run }: a file is parsed again only when it changed
 let previous = null // name -> state at the last scan; null before the first
+let firstScanAt = null // when the first scan ran: a run started after it is this session's to announce
 let scanAt = 0
 let listError = null // why the directory could not be listed, if it could not
 let inFlight = null
@@ -84,15 +85,16 @@ function refresh($, fresh) {
   return inFlight
 }
 
-// Which of these pids still run. Null when `ps` could not say: then no run is called stopped.
-async function alivePids($, pids) {
-  if (pids.length === 0) return new Set()
+// Which of these pids still run, each with when its process started (ms). Null when `ps` could
+// not say: then no run is called stopped.
+async function alivePids($, pids, now) {
+  if (pids.length === 0) return new Map()
   try {
-    const run = await $.process.run(['ps', '-o', 'pid=', '-p', pids.join(',')], { timeoutMs: PS_TIMEOUT_MS })
-    // ps exits 1 when none of the pids runs, with nothing on stdout: that is an answer too.
-    if (run.exitCode !== 0 && run.stdout.trim() !== '') return null
-    if (run.exitCode !== 0 && run.exitCode !== 1) return null
-    return new Set(run.stdout.split(/\s+/).filter(Boolean).map(Number))
+    const run = await $.process.run(['ps', '-o', 'pid=,etime=', '-p', pids.join(',')], { timeoutMs: PS_TIMEOUT_MS })
+    // ps exits 1, silently, when none of the pids runs: that is an answer too. Anything on
+    // stderr (a ps without -p or etime) is not.
+    if (run.stderr.trim() !== '' || (run.exitCode !== 0 && (run.exitCode !== 1 || run.stdout.trim() !== ''))) return null
+    return parsePs(run.stdout, now)
   } catch {
     return null
   }
@@ -116,30 +118,25 @@ async function scan($) {
   const nextCache = new Map()
   const read = []
   for (const f of files) {
+    // Size as well as mtime: a filesystem with a coarse mtime can append without moving it.
     const known = cache.get(f.name)
-    let run = known && known.mtimeMs === f.mtimeMs ? known.run : undefined
+    let run = known && known.mtimeMs === f.mtimeMs && known.size === f.size ? known.run : undefined
     if (run === undefined) {
       try {
         run = parseRun(await $.fs.read(`${dir}/${f.name}`))
       } catch {
         run = null // pruned between the list and the read, or unreadable: skip it this time
       }
-    }
-    nextCache.set(f.name, { mtimeMs: f.mtimeMs, run })
+      // A file listed before its start record landed parses to nothing: read it again next time.
+      if (run !== null) nextCache.set(f.name, { mtimeMs: f.mtimeMs, size: f.size, run })
+    } else nextCache.set(f.name, known)
     if (run !== null) read.push({ name: f.name, run, mtimeMs: f.mtimeMs })
   }
   cache = nextCache
   const unended = read.filter((r) => r.run.end === null && Number.isInteger(r.run.start.pid))
-  const alive = await alivePids($, [...new Set(unended.map((r) => r.run.start.pid))])
-  const next = read.map((r) => {
-    let state = 'ended'
-    if (r.run.end === null) {
-      const pid = r.run.start.pid
-      state = alive === null || !Number.isInteger(pid) || alive.has(pid) ? 'live' : 'stopped'
-    }
-    return { ...r, state }
-  })
-  announce($, next)
+  const alive = await alivePids($, [...new Set(unended.map((r) => r.run.start.pid))], now)
+  const next = read.map((r) => ({ ...r, state: runLiveness(r.run, alive) }))
+  announce($, next, now)
   all = next
 }
 
@@ -149,16 +146,18 @@ function targetOf(run) {
 
 // Toasts for what changed since the last scan: a run that ended, one that stopped without an
 // end record. Nothing on the first scan, and nothing for a run first seen already over.
-function announce($, next) {
+// A run first seen already over is announced only if it started after the first scan: one that
+// began and ended between two reads (a cache hit, a fast failure) still gets its toast.
+function announce($, next, now) {
   if (previous !== null) {
     for (const r of next) {
       const was = previous.get(r.name)
       if (was !== 'live' && was !== undefined) continue
-      if (was === undefined && r.state !== 'live') continue
+      if (was === undefined && r.state !== 'live' && !(r.run.start.ts * 1000 >= firstScanAt)) continue
       if (r.state === 'ended') notify($, `jury ${targetOf(r.run)}: ${endText(r.run.end)}`)
-      else if (r.state === 'stopped') notify($, `jury ${targetOf(r.run)} stopped without finishing`)
+      else if (r.state === 'stopped') notify($, `jury ${targetOf(r.run)} stopped without an end record`)
     }
-  }
+  } else firstScanAt = now
   previous = new Map(next.map((r) => [r.name, r.state]))
 }
 
@@ -227,14 +226,27 @@ function selectRun($, name) {
 async function chooseDir($) {
   home = (await $.env.get('HOME')) ?? null
   const asked = await $.env.get('JURY_EVENTS_DIR')
-  if (asked !== undefined) {
+  // The value this mod set earlier in this process (a reload runs session.start again), told
+  // apart from one the user set by a marker beside it.
+  const ours = asked !== undefined && asked === (await $.env.get('JURY_PROGRESS_SET_DIR'))
+  if (asked !== undefined && !ours) {
     dir = eventsDir(asked, home)
     dirSource = dir === null ? 'off' : 'env'
     return
   }
   if (!settings.capture) {
+    if (ours) {
+      // Capture was turned off: take back what this mod set, so later jury runs write nothing.
+      await $.env.set('JURY_EVENTS_DIR', undefined)
+      await $.env.set('JURY_PROGRESS_SET_DIR', undefined)
+    }
     dir = null
     dirSource = 'off'
+    return
+  }
+  if (ours) {
+    dir = eventsDir(asked, home)
+    dirSource = 'mod'
     return
   }
   dir = defaultEventsDir({
@@ -247,6 +259,7 @@ async function chooseDir($) {
     return
   }
   await $.env.set('JURY_EVENTS_DIR', dir)
+  await $.env.set('JURY_PROGRESS_SET_DIR', dir)
   dirSource = 'mod'
 }
 
@@ -293,7 +306,7 @@ export function register(on, options = {}) {
     if (shown.length === 0) return next(e)
     const { Box, Text, Button } = $.ui.resolve(e)
     const labelled = shown.length > 1 || shown.some((r) => !own(r))
-    const lines = shown.slice(0, settings.bandMax).map((r, i) =>
+    const lines = shown.slice(0, settings.bandMax).map((r) =>
       Box({
         key: `jury-progress-${r.name}`,
         flexDirection: 'row',
@@ -305,7 +318,7 @@ export function register(on, options = {}) {
             key: `jury-progress-open-${r.name}`,
             label: targetOf(r.run),
             plain: true,
-            ...(i < 9 ? { hotkey: String(i + 1) } : {}),
+            // No digit hotkey: a passive band must not take the first key of a prompt.
             onPress: () => openRun($, r.name),
           }),
           ...bandParts(r).map((part) => Text(textProps(part))),
@@ -341,7 +354,7 @@ export function register(on, options = {}) {
       } else {
         line({ text: ' ', tone: 'plain' })
         const since = startedAgo(focus)
-        const state = focus.state === 'live' ? 'running' : focus.state === 'stopped' ? 'stopped without finishing' : 'finished'
+        const state = focus.state === 'live' ? 'running' : focus.state === 'stopped' ? 'stopped without an end record' : 'finished'
         line({ text: `${state}${since !== null ? ` · started ${since === 'now' ? 'just now' : `${since} ago`}` : ''}${Number.isInteger(focus.run.start.pid) ? ` · pid ${focus.run.start.pid}` : ''}`, tone: focus.state === 'stopped' ? 'bad' : 'dim' })
         if (focus.run.start.cwd) line({ text: focus.run.start.cwd, tone: 'dim' })
         for (const part of paneLines(focus.run)) line(part)
@@ -350,7 +363,8 @@ export function register(on, options = {}) {
           line({ text: ' ', tone: 'plain' })
           line({ text: 'Other runs:', tone: 'dim' })
           for (const r of others) {
-            const tail = r.state === 'live' ? phaseLabel(runState(r.run).phase, runState(r.run).round) : r.state === 'stopped' ? 'stopped' : endText(r.run.end)
+            const at = r.state === 'live' ? runState(r.run) : null
+            const tail = at !== null ? phaseLabel(at.phase, at.round) : r.state === 'stopped' ? 'stopped' : endText(r.run.end)
             children.push(
               Button({
                 key: `jury-progress-pick-${r.name}`,

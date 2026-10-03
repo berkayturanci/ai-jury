@@ -149,3 +149,33 @@ export function defaultEventsDir({ cacheDir, xdgCache, home }) {
   if (xdgCache) return `${xdgCache}/ai-jury/events`
   return home ? `${home}/.cache/ai-jury/events` : null
 }
+
+// `ps -o pid=,etime=` lines: pid -> when that process started (ms), from its elapsed time
+// ([[dd-]hh:]mm:ss) counted back from `now`.
+export function parsePs(stdout, now) {
+  const started = new Map()
+  for (const line of String(stdout ?? '').split('\n')) {
+    const m = line.trim().match(/^(\d+)\s+(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$/)
+    if (!m) continue
+    const [, pid, d, h, mi, se] = m
+    const secs = ((Number(d ?? 0) * 24 + Number(h ?? 0)) * 60 + Number(mi)) * 60 + Number(se)
+    started.set(Number(pid), now - secs * 1000)
+  }
+  return started
+}
+
+// 'ended' with an end record; 'live' while its process runs; 'stopped' when its pid is gone or
+// now belongs to a process that started after the run did (a reused pid). Without an answer
+// from ps (`alive` null) or a pid, a run without an end record counts as live.
+export function runLiveness(run, alive) {
+  if (run.end !== null) return 'ended'
+  const pid = run.start.pid
+  if (alive === null || !Number.isInteger(pid)) return 'live'
+  const startedAt = alive.get(pid)
+  if (startedAt === undefined) return 'stopped'
+  const ts = run.start.ts
+  // A process that started after the run did cannot be the one writing it. (Started before is
+  // the ordinary case: the start record lands after config and diff are read.)
+  if (Number.isFinite(ts) && startedAt > ts * 1000 + 60_000) return 'stopped'
+  return 'live'
+}

@@ -60,6 +60,8 @@ function stubEngine(
     env?: Record<string, string>
     files?: File[] | (() => File[])
     alive?: number[] | null | (() => number[] | null)
+    psStderr?: string
+    startedAgoS?: Record<number, number> // pid -> seconds its process has run (default: days)
     listFails?: string
   } = {},
 ) {
@@ -79,7 +81,7 @@ function stubEngine(
     expect(e.path).toBe(env.JURY_EVENTS_DIR?.replace(/^~/, '/home/u'))
     return {
       value: [
-        ...files().map((f) => ({ name: f.name, kind: 'file', size: 10, mtimeMs: f.mtime ? f.mtime() : 0, isLink: false })),
+        ...files().map((f) => ({ name: f.name, kind: 'file', size: (f.raw ?? JSON.stringify(f.recs())).length, mtimeMs: f.mtime ? f.mtime() : 0, isLink: false })),
         { name: 'notes.txt', kind: 'file', size: 1, mtimeMs: 0, isLink: false },
       ],
     }
@@ -91,13 +93,24 @@ function stubEngine(
     return { value: f.raw ?? f.recs().map((r) => JSON.stringify(r)).join('\n') + '\n' }
   })
   on('process.run', ($: unknown, e: { argv: string[] }) => {
-    expect(e.argv.slice(0, 4)).toEqual(['ps', '-o', 'pid=', '-p'])
+    expect(e.argv.slice(0, 4)).toEqual(['ps', '-o', 'pid=,etime=', '-p'])
     calls.ps += 1
+    if (opts.psStderr) return { value: { exitCode: 1, stdout: '', stderr: opts.psStderr } }
     const alive = typeof opts.alive === 'function' ? opts.alive() : opts.alive === undefined ? [100, 200, 300] : opts.alive
     if (alive === null) return { deny: 'spawn ps ENOENT' }
     const asked = e.argv[4].split(',').map(Number)
     const found = asked.filter((p) => alive.includes(p))
-    return { value: { exitCode: found.length > 0 ? 0 : 1, stdout: found.map((p) => `  ${p}\n`).join(''), stderr: '' } }
+    // Elapsed time as ps prints it: [[dd-]hh:]mm:ss. By default a process running for days,
+    // long before any run in these tests started.
+    const etime = (p: number) => {
+      const s = opts.startedAgoS?.[p]
+      if (s === undefined) return '3-04:05:06'
+      const h = Math.floor(s / 3600)
+      const m = Math.floor((s % 3600) / 60)
+      const pad = (n: number) => String(n).padStart(2, '0')
+      return `${h > 0 ? `${pad(h)}:` : ''}${pad(m)}:${pad(s % 60)}`
+    }
+    return { value: { exitCode: found.length > 0 ? 0 : 1, stdout: found.map((p) => `  ${p} ${etime(p)}\n`).join(''), stderr: '' } }
   })
   on('session.start', () => ({ cwd: '/work' }))
   on('session.cwd', () => ({ value: '/work' }))
@@ -127,7 +140,10 @@ test('with no JURY_EVENTS_DIR the mod sets one under the ai-jury cache, for the 
   const calls = stubEngine(on)
   await begin($)
   await clock.settle()
-  expect(calls.set).toEqual([['JURY_EVENTS_DIR', DIR]])
+  expect(calls.set).toEqual([
+    ['JURY_EVENTS_DIR', DIR],
+    ['JURY_PROGRESS_SET_DIR', DIR],
+  ])
   expect(calls.lists).toBe(1)
 })
 
@@ -136,7 +152,7 @@ test('the cache directory follows JURY_CACHE_DIR, then XDG_CACHE_HOME', async ($
   const calls = stubEngine(on, { env: { JURY_CACHE_DIR: '/c', XDG_CACHE_HOME: '/x' } })
   await begin($)
   await clock.settle()
-  expect(calls.set).toEqual([['JURY_EVENTS_DIR', '/c/events']])
+  expect(calls.set[0]).toEqual(['JURY_EVENTS_DIR', '/c/events'])
 })
 
 test('XDG_CACHE_HOME is used when JURY_CACHE_DIR is not set', async ($, on) => {
@@ -144,7 +160,7 @@ test('XDG_CACHE_HOME is used when JURY_CACHE_DIR is not set', async ($, on) => {
   const calls = stubEngine(on, { env: { XDG_CACHE_HOME: '/x' } })
   await begin($)
   await clock.settle()
-  expect(calls.set).toEqual([['JURY_EVENTS_DIR', '/x/ai-jury/events']])
+  expect(calls.set[0]).toEqual(['JURY_EVENTS_DIR', '/x/ai-jury/events'])
 })
 
 test("the session's own JURY_EVENTS_DIR is read, never replaced", async ($, on) => {
@@ -257,7 +273,7 @@ test('a run whose process is gone without an end record is called stopped, once'
   await clock.settle()
   alive = []
   await clock.advance(2_000)
-  expect(calls.toasts).toEqual(['jury PR #7 stopped without finishing'])
+  expect(calls.toasts).toEqual(['jury PR #7 stopped without an end record'])
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect(await band.find({ type: 'Button', text: 'PR #7' })).toBeUndefined()
   await clock.advance(20_000)
@@ -418,4 +434,81 @@ test('notifications off: no toast when a run ends', { options: { notify: false }
   mtime = 1
   await clock.advance(2_000)
   expect(calls.toasts).toEqual([])
+})
+
+test('a reload knows the directory it set itself: the pane says so, and capture off takes it back', async ($, on) => {
+  const clock = mock.clock(on)
+  const calls = stubEngine(on, { env: { JURY_EVENTS_DIR: DIR, JURY_PROGRESS_SET_DIR: DIR } })
+  await begin($)
+  await clock.settle()
+  expect(calls.set).toEqual([])
+  await $.command.run({ command: 'jury-progress', args: '' })
+  const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await pane.find({ type: 'Text', text: /\(set by this mod for this session\)$/ })).toBeDefined()
+})
+
+test('capture turned off after the mod set the directory: it is unset, and nothing is read', { options: { capture: false } }, async ($, on) => {
+  const clock = mock.clock(on)
+  const calls = stubEngine(on, { env: { JURY_EVENTS_DIR: DIR, JURY_PROGRESS_SET_DIR: DIR } })
+  await begin($)
+  await clock.advance(20_000)
+  expect(calls.set).toEqual([
+    ['JURY_EVENTS_DIR', undefined],
+    ['JURY_PROGRESS_SET_DIR', undefined],
+  ])
+  expect(calls.lists).toBe(0)
+})
+
+test("capture off never touches a JURY_EVENTS_DIR the user set", { options: { capture: false } }, async ($, on) => {
+  const clock = mock.clock(on)
+  const calls = stubEngine(on, { env: { JURY_EVENTS_DIR: DIR }, files: [{ name: RUN, recs: () => [start()] }] })
+  await begin($)
+  await clock.settle()
+  expect(calls.set).toEqual([])
+  expect(calls.lists).toBe(1)
+})
+
+test('a ps that complains on stderr is no answer: no run is called stopped', async ($, on) => {
+  const clock = mock.clock(on)
+  const calls = stubEngine(on, { files: [{ name: RUN, recs: () => [start()] }], psStderr: "ps: unrecognized option: p" })
+  await begin($)
+  await clock.advance(10_000)
+  expect(calls.toasts).toEqual([])
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await band.find({ type: 'Button', text: 'PR #7' })).toBeDefined()
+})
+
+test('a pid now held by a process that started after the run is a stopped run', async ($, on) => {
+  const clock = mock.clock(on, { now: 600_000 })
+  // The run started at t=0 (ts 0); pid 100 now belongs to a process 2 minutes old.
+  stubEngine(on, { files: [{ name: RUN, recs: () => [start()] }], startedAgoS: { 100: 120 } })
+  await begin($)
+  await clock.settle()
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await band.find({ type: 'Button', text: 'PR #7' })).toBeUndefined()
+})
+
+test('a run that started and ended between two reads still gets its toast', async ($, on) => {
+  const clock = mock.clock(on, { now: 100_000 })
+  let files: File[] = []
+  const calls = stubEngine(on, { files: () => files })
+  await begin($)
+  await clock.settle()
+  // Idle: the next read is 10 s away. A cached run comes and goes in between.
+  files = [{ name: RUN, recs: () => [start({ ts: 103, cached: true }), end({ verdict: 'APPROVE', findings: 0 })], mtime: () => 104_000 }]
+  await clock.advance(10_000)
+  expect(calls.toasts).toEqual(['jury PR #7: APPROVE · 0 findings'])
+})
+
+test('a file whose size changed is read again even when its mtime did not', async ($, on) => {
+  const clock = mock.clock(on)
+  let recs = [start()]
+  const calls = stubEngine(on, { files: [{ name: RUN, recs: () => recs }] })
+  await begin($)
+  await clock.settle()
+  expect(calls.reads).toBe(1)
+  recs = [start(), end()]
+  await clock.advance(2_000)
+  expect(calls.reads).toBe(2)
+  expect(calls.toasts).toEqual(['jury PR #7: REQUEST_CHANGES · 4 findings'])
 })
