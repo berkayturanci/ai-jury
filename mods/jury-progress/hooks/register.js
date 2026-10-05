@@ -131,7 +131,18 @@ async function gitOut($, at, args) {
 }
 
 const REPO_RETRY_MS = 60_000
+const REPO_RETRY_MAX_MS = 30 * 60_000
 const REPO_REFRESH_MS = 5 * 60_000
+
+// A read that failed keeps what an earlier one learned (a worktree keel removed after the merge
+// still shows under its repository's name and link) and is tried again later and later: one
+// minute, then twice that, up to half an hour.
+function mergeInfo(was, got, now) {
+  if (!got.failed) return { ...got, at: now }
+  const retryMs = was?.failed ? Math.min(was.retryMs * 2, REPO_RETRY_MAX_MS) : REPO_RETRY_MS
+  if (was && !was.failed) return { ...was, failed: true, retryMs, at: now }
+  return { ...(was ?? got), failed: true, retryMs, at: now }
+}
 
 async function checkoutInfo($, at) {
   const [remote, branch] = await Promise.all([gitOut($, at, ['remote', 'get-url', 'origin']), gitOut($, at, ['rev-parse', '--abbrev-ref', 'HEAD'])])
@@ -157,8 +168,6 @@ function runLabel(r, shown) {
   const twins = shown.filter((x) => nameOf(x) === name && x.run.start.cwd !== r.run.start.cwd)
   return twins.length > 0 && info?.branch ? `${name} · ${info.branch}` : name
 }
-
-
 
 async function scan($) {
   const now = await $.clock.now()
@@ -207,10 +216,10 @@ async function scan($) {
   const stale = [...new Set(next.map((r) => r.run.start.cwd))].filter((at) => {
     if (typeof at !== 'string' || !at) return false
     const known = repoBases.get(at)
-    return !known || now - known.at > (known.failed ? REPO_RETRY_MS : REPO_REFRESH_MS)
+    return !known || now - known.at > (known.failed ? known.retryMs : REPO_REFRESH_MS)
   })
   const infos = await Promise.all(stale.map((at) => checkoutInfo($, at)))
-  stale.forEach((at, i) => repoBases.set(at, { ...infos[i], at: now }))
+  stale.forEach((at, i) => repoBases.set(at, mergeInfo(repoBases.get(at), infos[i], now)))
   announce($, next, now)
   all = next
 }

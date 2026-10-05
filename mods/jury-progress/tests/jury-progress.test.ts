@@ -799,3 +799,24 @@ test('a failed repository read is tried again after a minute', async ($, on) => 
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect(await band.find({ type: 'Link', text: 'PR #7' })).toBeDefined()
 })
+
+test('a checkout that disappears keeps its repository name and link', async ($, on) => {
+  const clock = mock.clock(on)
+  let remote = 'git@github.com:acme/smartinventory.git'
+  const calls = stubEngine(on, {
+    files: [{ name: RUN, recs: () => [start({ cwd: '/w/wt-2927' })] }, { name: '20261003T110001.000Z-200.ndjson', recs: () => [start({ pid: 200, target: 'PR #9', cwd: '/src/keel' })] }],
+    remotes: { get '/w/wt-2927'() { return remote } } as any,
+  })
+  await begin($)
+  await clock.settle()
+  remote = '' // keel removed the worktree after the merge
+  await clock.advance(6 * 60_000)
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await band.find({ type: 'Text', text: 'smartinventory' })).toBeDefined()
+  expect(await band.find({ type: 'Link', text: 'PR #7' })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: /wt-2927/ })).toBeUndefined()
+  // Retried later and later, not every minute.
+  const reads = calls.remotes.filter((at) => at === '/w/wt-2927').length
+  await clock.advance(90_000)
+  expect(calls.remotes.filter((at) => at === '/w/wt-2927').length).toBeLessThanOrEqual(reads + 1)
+})
