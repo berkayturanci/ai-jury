@@ -130,10 +130,18 @@ async function gitOut($, at, args) {
   }
 }
 
+const REPO_RETRY_MS = 60_000
+const REPO_REFRESH_MS = 5 * 60_000
+
 async function checkoutInfo($, at) {
-  const remote = await gitOut($, at, ['remote', 'get-url', 'origin'])
-  const branch = await gitOut($, at, ['rev-parse', '--abbrev-ref', 'HEAD'])
-  return { base: remote ? githubBase(remote) : null, name: repoName(remote, at), branch: branch && branch !== 'HEAD' ? branch : null }
+  const [remote, branch] = await Promise.all([gitOut($, at, ['remote', 'get-url', 'origin']), gitOut($, at, ['rev-parse', '--abbrev-ref', 'HEAD'])])
+  return {
+    base: remote ? githubBase(remote) : null,
+    name: repoName(remote, at),
+    branch: branch && branch !== 'HEAD' ? branch : null,
+    // No origin read (git failed, or the checkout has none): cheap to ask again in a minute.
+    failed: remote === null,
+  }
 }
 
 function urlOf(r) {
@@ -144,10 +152,13 @@ function urlOf(r) {
 // its branch too, so they can be told apart.
 function runLabel(r, shown) {
   const info = repoBases.get(r.run.start.cwd)
-  const name = info?.name ?? (baseName(r.run.start.cwd) || '?')
-  const twins = shown.filter((x) => (repoBases.get(x.run.start.cwd)?.name ?? baseName(x.run.start.cwd)) === name)
-  return twins.length > 1 && info?.branch ? `${name} · ${info.branch}` : name
+  const nameOf = (x) => repoBases.get(x.run.start.cwd)?.name ?? (baseName(x.run.start.cwd) || '?')
+  const name = nameOf(r)
+  const twins = shown.filter((x) => nameOf(x) === name && x.run.start.cwd !== r.run.start.cwd)
+  return twins.length > 0 && info?.branch ? `${name} · ${info.branch}` : name
 }
+
+
 
 async function scan($) {
   const now = await $.clock.now()
@@ -191,10 +202,15 @@ async function scan($) {
     ...r,
     state: r.run.end === null && alive === null && previous?.get(r.name) === 'stopped' ? 'stopped' : runLiveness(r.run, alive),
   }))
-  for (const r of next) {
-    const at = r.run.start.cwd
-    if (typeof at === 'string' && at && !repoBases.has(at)) repoBases.set(at, await checkoutInfo($, at))
-  }
+  // Each checkout's repository is read once (in parallel); a failed read is tried again after
+  // a minute, and the branch is read again every five, since a checkout can switch branches.
+  const stale = [...new Set(next.map((r) => r.run.start.cwd))].filter((at) => {
+    if (typeof at !== 'string' || !at) return false
+    const known = repoBases.get(at)
+    return !known || now - known.at > (known.failed ? REPO_RETRY_MS : REPO_REFRESH_MS)
+  })
+  const infos = await Promise.all(stale.map((at) => checkoutInfo($, at)))
+  stale.forEach((at, i) => repoBases.set(at, { ...infos[i], at: now }))
   announce($, next, now)
   all = next
 }
@@ -303,7 +319,8 @@ function bandRow(ui, r, compact) {
   if (r.state === 'ended') {
     const parts = [verdictChip(ui, r.run.end), ...(r.run.end.status === 'done' ? [chip(Text, findingsText(r.run.end.findings), 'dim')] : [])]
     // How each seat voted, as a colored dot: who said what at a glance.
-    for (const b of r.run.end.ballots ?? []) parts.push(chip(Text, `● ${b.agent}`, BALLOT_TONE[verdictTone(b.verdict)]))
+    // Not on a narrow band: there the verdict and the finding count need the room.
+    if (!compact) for (const b of r.run.end.ballots ?? []) parts.push(chip(Text, `● ${b.agent}`, BALLOT_TONE[verdictTone(b.verdict)]))
     return parts
   }
   if (r.run.start.cached) return [chip(Text, 'from the cache', 'dim')]
@@ -574,7 +591,7 @@ export function register(on, options = {}) {
             children.push(
               Button({
                 key: `jury-progress-pick-${r.name}`,
-                label: `${repoBases.get(r.run.start.cwd)?.name ?? (baseName(r.run.start.cwd) || '?')} · ${targetOf(r.run)} · ${tail}`,
+                label: `${runLabel(r, listed)} · ${targetOf(r.run)} · ${tail}`,
                 plain: true,
                 onPress: () => selectRun($, r.name),
               }),

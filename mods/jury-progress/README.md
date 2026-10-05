@@ -24,12 +24,12 @@ A rounded card with one row per run (live, or finished in the last minute):
 
 With more than one run (or one from another checkout), each row starts with its repository's
 name, read from the checkout's `origin` (`smartinventory`, not the worktree folder `wt-2927`), and
-with the branch too when one repository has several runs on screen. A finished run stays for a
-minute with its verdict as a chip, then a dot per seat colored by how that seat voted (who said
-what; ai-jury 1.25.0 and newer), and its verdict as a chip, green for an approval, red for a request for changes or a
-failed run, amber otherwise, next to its finding count; markdown around the verdict
-(`**COMMENT**`) is dropped. With more runs than
-the band's rows, `+N more` points to the pane.
+with the branch too when one repository has several runs on screen. Only a github.com remote
+makes the target a link. A finished run stays for a
+minute with its verdict as a chip (green for an approval, red for a request for changes or a
+failed run, amber otherwise; markdown around it, `**COMMENT**`, is dropped), its finding count,
+and then, on a band of 100 columns or more, a dot per seat colored by how that seat voted (who said
+what; ai-jury 1.25.0 and newer).
 
 ## The `/jury-progress` pane
 

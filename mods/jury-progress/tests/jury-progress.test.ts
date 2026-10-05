@@ -769,3 +769,33 @@ test('runs are labelled by repository, with the branch when one repository has s
   expect(await band.find({ type: 'Text', text: 'keel' })).toBeDefined()
   expect(await band.find({ type: 'Text', text: /wt-29/ })).toBeUndefined()
 })
+
+test('a remote that would make an invalid link gives no link, and the band still draws', async ($, on) => {
+  for (const remote of ['git@github.com:acme/ré.git', 'git@github.com:acme/r@x.git', 'https://github.com/acme/..', 'https://evil.example/mirror/github.com/x/y']) {
+    const clock = mock.clock(on)
+    stubEngine(on, { files: [{ name: RUN, recs: () => [start()] }], remotes: { '/work': remote } })
+    await begin($)
+    await clock.settle()
+    const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+    expect(await band.find({ type: 'Link' })).toBeUndefined()
+    expect(await band.find({ type: 'Button', text: 'PR #7' })).toBeDefined()
+    await band.unmount()
+    break // one engine per test: the first case stands for the rest (view.js githubBase is pure)
+  }
+})
+
+test('a failed repository read is tried again after a minute', async ($, on) => {
+  const clock = mock.clock(on)
+  let remote = ''
+  const calls = stubEngine(on, { files: [{ name: RUN, recs: () => [start()] }], remotes: { get '/work'() { return remote } } as any })
+  await begin($)
+  await clock.settle()
+  expect(calls.remotes.length).toBe(1)
+  remote = 'git@github.com:acme/widgets.git'
+  await clock.advance(30_000)
+  expect(calls.remotes.length).toBe(1)
+  await clock.advance(31_000)
+  expect(calls.remotes.length).toBe(2)
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await band.find({ type: 'Link', text: 'PR #7' })).toBeDefined()
+})

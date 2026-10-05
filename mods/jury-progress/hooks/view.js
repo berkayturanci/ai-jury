@@ -176,10 +176,35 @@ export function runLiveness(run, alive) {
   return 'live'
 }
 
-// https://github.com/<owner>/<repo> from a git remote URL (ssh or https), or null.
+// https://github.com/<owner>/<repo> from a git remote URL, or null. Only github.com itself (an
+// ssh host alias such as `github.com-work` included), and only names GitHub allows, so the link
+// built from it is always a valid href.
+const GH_NAME = '[A-Za-z0-9_.-]+'
+const GH_REMOTES = [
+  // git@github.com:owner/repo(.git), git@github.com-alias:owner/repo, ssh://git@github.com/owner/repo
+  new RegExp(`^(?:ssh://)?[A-Za-z0-9_.-]+@github\\.com(?:-[A-Za-z0-9_.-]+)?[:/](${GH_NAME})/(${GH_NAME}?)(?:\\.git)?/?$`),
+  // https://github.com/owner/repo(.git), with or without credentials
+  new RegExp(`^https?://(?:[^@/\\s]+@)?github\\.com/(${GH_NAME})/(${GH_NAME}?)(?:\\.git)?/?$`),
+]
+
 export function githubBase(remote) {
-  const m = String(remote ?? '').trim().match(/(?:^|[@/])github\.com[:/]([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/)
-  return m ? `https://github.com/${m[1]}/${m[2]}` : null
+  const text = String(remote ?? '').trim()
+  for (const re of GH_REMOTES) {
+    const m = text.match(re)
+    if (m && !['.', '..'].includes(m[1]) && !['.', '..', ''].includes(m[2])) return `https://github.com/${m[1]}/${m[2]}`
+  }
+  return null
+}
+
+// An href the mod API accepts: https, printable ASCII, no '@', spelled exactly as URL spells it.
+// Anything else would make the engine refuse the whole tree the Link is in.
+export function safeHref(h) {
+  if (typeof h !== 'string' || !/^https:\/\/[\x21-\x7e]+$/.test(h) || h.includes('@')) return null
+  try {
+    return typeof URL === 'function' && new URL(h).href === h ? h : null
+  } catch {
+    return null
+  }
 }
 
 // Where a run's target lives on GitHub: `PR #N` and `issue #N` link there; a local diff, a
@@ -187,9 +212,9 @@ export function githubBase(remote) {
 export function targetUrl(base, target) {
   if (!base) return null
   const pr = String(target ?? '').match(/^PR #(\d+)$/)
-  if (pr) return `${base}/pull/${pr[1]}`
+  if (pr) return safeHref(`${base}/pull/${pr[1]}`)
   const issue = String(target ?? '').match(/^issue #(\d+)$/)
-  return issue ? `${base}/issues/${issue[1]}` : null
+  return issue ? safeHref(`${base}/issues/${issue[1]}`) : null
 }
 
 const SEVERITY_ORDER = ['critical', 'major', 'minor', 'nit', 'info']
