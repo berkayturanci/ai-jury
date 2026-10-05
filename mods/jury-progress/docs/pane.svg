@@ -1,8 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="628" height="398" viewBox="0 0 628 398" role="img" aria-label="/jury-progress">
+<svg xmlns="http://www.w3.org/2000/svg" width="628" height="398" viewBox="0 0 628 398" role="img" aria-label="/jury-progress — who said what">
 <rect width="100%" height="100%" rx="8" fill="#1e1e1e"/>
 <rect width="100%" height="30" rx="8" fill="#2d2d2d"/><rect y="22" width="100%" height="8" fill="#2d2d2d"/>
 <circle cx="18" cy="15" r="5.5" fill="#ff5f57"/><circle cx="36" cy="15" r="5.5" fill="#febc2e"/><circle cx="54" cy="15" r="5.5" fill="#28c840"/>
-<text x="314" y="19" fill="#9d9d9d" font-family="-apple-system,Segoe UI,sans-serif" font-size="12" text-anchor="middle">/jury-progress</text>
+<text x="314" y="19" fill="#9d9d9d" font-family="-apple-system,Segoe UI,sans-serif" font-size="12" text-anchor="middle">/jury-progress — who said what</text>
 <rect x="16.0" y="44" width="596.4" height="19" fill="#262626"/>
 <rect x="16.0" y="63" width="596.4" height="19" fill="#262626"/>
 <rect x="16.0" y="82" width="596.4" height="19" fill="#262626"/>
@@ -11,54 +11,73 @@
 <rect x="16.0" y="139" width="596.4" height="19" fill="#262626"/>
 <rect x="16.0" y="158" width="596.4" height="19" fill="#262626"/>
 <rect x="16.0" y="177" width="16.8" height="19" fill="#262626"/>
-<rect x="32.8" y="177" width="67.2" height="19" fill="#5f875f"/>
-<rect x="100.0" y="177" width="92.4" height="19" fill="#5f87ff"/>
-<rect x="192.4" y="177" width="159.6" height="19" fill="#8787af"/>
-<rect x="352.0" y="177" width="260.4" height="19" fill="#262626"/>
+<rect x="32.8" y="177" width="294.0" height="19" fill="#5f875f"/>
+<rect x="326.8" y="177" width="285.6" height="19" fill="#262626"/>
 <rect x="16.0" y="196" width="596.4" height="19" fill="#262626"/>
 <rect x="16.0" y="215" width="596.4" height="19" fill="#262626"/>
 <rect x="16.0" y="234" width="596.4" height="19" fill="#262626"/>
 <rect x="16.0" y="253" width="596.4" height="19" fill="#262626"/>
-<rect x="16.0" y="272" width="596.4" height="19" fill="#262626"/>
-<rect x="16.0" y="291" width="596.4" height="19" fill="#262626"/>
-<rect x="16.0" y="310" width="596.4" height="19" fill="#262626"/>
+<rect x="16.0" y="272" width="67.2" height="19" fill="#262626"/>
+<rect x="83.2" y="272" width="142.8" height="19" fill="#d75f5f"/>
+<rect x="226.0" y="272" width="386.4" height="19" fill="#262626"/>
+<rect x="16.0" y="291" width="126.0" height="19" fill="#262626"/>
+<rect x="142.0" y="291" width="142.8" height="19" fill="#d75f5f"/>
+<rect x="284.8" y="291" width="327.6" height="19" fill="#262626"/>
+<rect x="16.0" y="310" width="126.0" height="19" fill="#262626"/>
+<rect x="142.0" y="310" width="75.6" height="19" fill="#5f875f"/>
+<rect x="217.6" y="310" width="394.8" height="19" fill="#262626"/>
 <rect x="16.0" y="329" width="596.4" height="19" fill="#262626"/>
 <rect x="16.0" y="348" width="596.4" height="19" fill="#262626"/>
 <rect x="16.0" y="367" width="596.4" height="19" fill="#262626"/>
 <g font-family="SF Mono,Menlo,Consolas,DejaVu Sans Mono,monospace" font-size="14" xml:space="preserve">
 <text x="595.6" y="58" fill="#949494" textLength="8.4" lengthAdjust="spacingAndGlyphs">✕</text>
-<text x="16.0" y="77" fill="#d4d4d4" font-weight="bold" textLength="596.4" lengthAdjust="spacingAndGlyphs">1 live jury run(s) · events in /tmp/jury-demo2/events (from $JURY_EVEN…</text>
-<text x="16.0" y="115" fill="#949494" textLength="310.8" lengthAdjust="spacingAndGlyphs">running · started 21m ago · pid 56118</text>
-<text x="16.0" y="134" fill="#949494" textLength="176.4" lengthAdjust="spacingAndGlyphs">/home/dev/src/ai-jury</text>
-<text x="16.0" y="153" fill="#8787af" textLength="596.4" lengthAdjust="spacingAndGlyphs">╭─────────────────────────────────────────────────────────────────────╮</text>
+<text x="16.0" y="77" fill="#d4d4d4" font-weight="bold" textLength="596.4" lengthAdjust="spacingAndGlyphs">0 live jury run(s) · events in /tmp/jury-e2e/cache2/events (watched by…</text>
+<text x="16.0" y="115" fill="#949494" textLength="310.8" lengthAdjust="spacingAndGlyphs">finished · started 1m ago · pid 22220</text>
+<text x="16.0" y="134" fill="#8787af" textLength="596.4" lengthAdjust="spacingAndGlyphs">╭─────────────────────────────────────────────────────────────────────╮</text>
+<text x="16.0" y="153" fill="#8787af" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="32.8" y="153" fill="#d4d4d4" textLength="58.8" lengthAdjust="spacingAndGlyphs">PR #935</text>
+<text x="100.0" y="153" fill="#949494" textLength="344.4" lengthAdjust="spacingAndGlyphs">code review · decision vote · chair alpha</text>
+<text x="604.0" y="153" fill="#8787af" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
 <text x="16.0" y="172" fill="#8787af" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
-<text x="32.8" y="172" fill="#d4d4d4" font-weight="bold" textLength="58.8" lengthAdjust="spacingAndGlyphs">PR #935</text>
-<text x="100.0" y="172" fill="#949494" textLength="361.2" lengthAdjust="spacingAndGlyphs">code review · decision chair · chair claude</text>
+<text x="32.8" y="172" fill="#949494" textLength="436.8" lengthAdjust="spacingAndGlyphs">panel: alpha · gpt-5.3-codex  beta · claude-opus-5-5</text>
 <text x="604.0" y="172" fill="#8787af" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
 <text x="16.0" y="191" fill="#8787af" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
-<text x="41.2" y="191" fill="#ffffff" textLength="50.4" lengthAdjust="spacingAndGlyphs">review</text>
-<text x="108.4" y="191" fill="#ffffff" font-weight="bold" textLength="75.6" lengthAdjust="spacingAndGlyphs">debate r2</text>
-<text x="200.8" y="191" fill="#ffffff" textLength="142.8" lengthAdjust="spacingAndGlyphs">verify  synthesis</text>
+<text x="41.2" y="191" fill="#ffffff" textLength="277.2" lengthAdjust="spacingAndGlyphs">review  debate  verify  synthesis</text>
 <text x="604.0" y="191" fill="#8787af" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
 <text x="16.0" y="210" fill="#8787af" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
 <text x="32.8" y="210" fill="#949494" textLength="50.4" lengthAdjust="spacingAndGlyphs">review</text>
-<text x="133.6" y="210" fill="#5faf87" textLength="201.6" lengthAdjust="spacingAndGlyphs">● claude 71.2s · 3 found</text>
-<text x="352.0" y="210" fill="#5faf87" textLength="176.4" lengthAdjust="spacingAndGlyphs">● codex 94s · 2 found</text>
+<text x="133.6" y="210" fill="#5faf87" textLength="252.0" lengthAdjust="spacingAndGlyphs">● alpha 7s · 1 found (1 major)</text>
+<text x="402.4" y="210" fill="#5faf87" textLength="75.6" lengthAdjust="spacingAndGlyphs">● beta 7s</text>
 <text x="604.0" y="210" fill="#8787af" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
 <text x="16.0" y="229" fill="#8787af" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
-<text x="133.6" y="229" fill="#5faf87" textLength="210.0" lengthAdjust="spacingAndGlyphs">● gemini 120.4s · 4 found</text>
+<text x="32.8" y="229" fill="#949494" textLength="75.6" lengthAdjust="spacingAndGlyphs">debate r2</text>
+<text x="133.6" y="229" fill="#5faf87" textLength="84.0" lengthAdjust="spacingAndGlyphs">● alpha 7s</text>
+<text x="234.4" y="229" fill="#5faf87" textLength="75.6" lengthAdjust="spacingAndGlyphs">● beta 7s</text>
 <text x="604.0" y="229" fill="#8787af" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
 <text x="16.0" y="248" fill="#8787af" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
-<text x="32.8" y="248" fill="#949494" textLength="75.6" lengthAdjust="spacingAndGlyphs">debate r2</text>
-<text x="133.6" y="248" fill="#5faf87" textLength="201.6" lengthAdjust="spacingAndGlyphs">● claude 62.1s · 3 found</text>
-<text x="352.0" y="248" fill="#d75f87" textLength="193.2" lengthAdjust="spacingAndGlyphs">✗ gemini 120s · timeout</text>
+<text x="32.8" y="248" fill="#949494" textLength="50.4" lengthAdjust="spacingAndGlyphs">verify</text>
+<text x="133.6" y="248" fill="#5faf87" textLength="84.0" lengthAdjust="spacingAndGlyphs">● alpha 7s</text>
 <text x="604.0" y="248" fill="#8787af" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
 <text x="16.0" y="267" fill="#8787af" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
-<text x="32.8" y="267" fill="#ffd700" textLength="151.2" lengthAdjust="spacingAndGlyphs">◌ waiting on codex</text>
+<text x="32.8" y="267" fill="#949494" textLength="75.6" lengthAdjust="spacingAndGlyphs">synthesis</text>
+<text x="133.6" y="267" fill="#5faf87" textLength="84.0" lengthAdjust="spacingAndGlyphs">● alpha 7s</text>
 <text x="604.0" y="267" fill="#8787af" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
-<text x="16.0" y="286" fill="#8787af" textLength="596.4" lengthAdjust="spacingAndGlyphs">╰─────────────────────────────────────────────────────────────────────╯</text>
-<text x="16.0" y="324" fill="#949494" textLength="92.4" lengthAdjust="spacingAndGlyphs">Other runs:</text>
-<text x="16.0" y="343" fill="#d4d4d4" textLength="310.8" lengthAdjust="spacingAndGlyphs">keel · PR #1466 · APPROVE · 1 finding</text>
+<text x="16.0" y="286" fill="#8787af" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="32.8" y="286" fill="#949494" textLength="42.0" lengthAdjust="spacingAndGlyphs">ended</text>
+<text x="91.6" y="286" fill="#ffffff" font-weight="bold" textLength="126.0" lengthAdjust="spacingAndGlyphs">REQUEST_CHANGES</text>
+<text x="234.4" y="286" fill="#949494" textLength="75.6" lengthAdjust="spacingAndGlyphs">1 finding</text>
+<text x="604.0" y="286" fill="#8787af" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="16.0" y="305" fill="#8787af" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="150.4" y="305" fill="#ffffff" font-weight="bold" textLength="126.0" lengthAdjust="spacingAndGlyphs">REQUEST_CHANGES</text>
+<text x="293.2" y="305" fill="#d4d4d4" font-weight="bold" textLength="176.4" lengthAdjust="spacingAndGlyphs">alpha · gpt-5.3-codex</text>
+<text x="478.0" y="305" fill="#949494" textLength="75.6" lengthAdjust="spacingAndGlyphs">1 finding</text>
+<text x="604.0" y="305" fill="#8787af" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="16.0" y="324" fill="#8787af" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="150.4" y="324" fill="#ffffff" font-weight="bold" textLength="58.8" lengthAdjust="spacingAndGlyphs">APPROVE</text>
+<text x="226.0" y="324" fill="#d4d4d4" font-weight="bold" textLength="184.8" lengthAdjust="spacingAndGlyphs">beta · claude-opus-5-5</text>
+<text x="419.2" y="324" fill="#949494" textLength="84.0" lengthAdjust="spacingAndGlyphs">0 findings</text>
+<text x="604.0" y="324" fill="#8787af" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="16.0" y="343" fill="#8787af" textLength="596.4" lengthAdjust="spacingAndGlyphs">╰─────────────────────────────────────────────────────────────────────╯</text>
 <text x="16.0" y="362" fill="#d4d4d4" font-weight="bold" textLength="92.4" lengthAdjust="spacingAndGlyphs">[ Refresh ]</text>
 <text x="125.2" y="362" fill="#d4d4d4" font-weight="bold" textLength="75.6" lengthAdjust="spacingAndGlyphs">[ Close ]</text>
 </g></svg>

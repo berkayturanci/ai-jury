@@ -112,7 +112,7 @@ def stale_run_files(names: Iterable[str], keep: int = KEEP) -> list[str]:
 
 
 def start_record(
-    agents: Iterable[tuple[str, str]],
+    agents: Iterable[tuple[str, ...]],
     *,
     chair: str | None,
     target: str,
@@ -124,12 +124,21 @@ def start_record(
 ) -> dict[str, Any]:
     """The first record: the seated panel, so an observer can draw pending seats.
 
-    ``pid`` lets a watcher tell a run still going from one that died without an
-    ``end`` record; ``cwd`` tells it which checkout the run reviews from.
+    Each seat is ``(name, vendor)`` or ``(name, vendor, model)``; ``model`` is the
+    id the seat will be asked for, or ``None`` when its CLI chooses. ``pid`` lets a
+    watcher tell a run still going from one that died without an ``end`` record;
+    ``cwd`` tells it which checkout the run reviews from.
     """
     return {
         "event": "start",
-        "panel": [{"agent": name, "vendor": vendor} for name, vendor in agents],
+        "panel": [
+            {
+                "agent": seat[0],
+                "vendor": seat[1],
+                "model": (seat[2] or None) if len(seat) > 2 else None,
+            }
+            for seat in agents
+        ],
         "chair": chair,
         "target": target,
         "mode": mode,
@@ -153,7 +162,46 @@ def step_record(kind: str, result: AgentResult, round_no: int | None = None) -> 
         "duration_s": round(result.duration_s, 1),
         "findings": len(result.findings),
         "error_code": result.error_code,
+        # The id this invocation sent (None when the CLI chose), and what it raised by
+        # severity: counts only, never a finding's text.
+        "model": getattr(result, "model", "") or None,
+        "severity": severity_counts(result.findings),
     }
+
+
+def severity_counts(findings: Iterable[Any]) -> dict[str, int]:
+    """``{severity: count}`` over findings, in no particular order; empty for none."""
+    counts: dict[str, int] = {}
+    for f in findings:
+        sev = getattr(f, "severity", None)
+        if isinstance(sev, str) and sev:
+            counts[sev] = counts.get(sev, 0) + 1
+    return counts
+
+
+def ballot_entries(reviewers: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The panelists of a report's ``reviewers`` array, cut to what a watcher shows.
+
+    ``agent``, ``model``, ``verdict``, ``findings`` (how many) and ``review``
+    (whether the ballot counts as a review): no scope or testing prose, so the
+    record stays metadata. The chair's consensus entry is left out; the run's
+    verdict is the ``end`` record's own.
+    """
+    out: list[dict[str, Any]] = []
+    for r in reviewers:
+        if r.get("role") == "chair":
+            continue
+        found = r.get("findings")
+        out.append(
+            {
+                "agent": r.get("name"),
+                "model": r.get("model") or None,
+                "verdict": r.get("verdict"),
+                "findings": len(found) if isinstance(found, list) else 0,
+                "review": bool(r.get("counts_as_review")),
+            }
+        )
+    return out
 
 
 def end_record(
@@ -161,9 +209,21 @@ def end_record(
     *,
     findings: int | None = None,
     verdict: str | None = None,
+    ballots: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """The last record. ``status`` is ``done``, ``cancelled`` or ``error``."""
-    return {"event": "end", "status": status, "findings": findings, "verdict": verdict}
+    """The last record. ``status`` is ``done``, ``cancelled`` or ``error``.
+
+    ``ballots`` (a done run's, from :func:`ballot_entries`) says how each seat voted.
+    """
+    rec: dict[str, Any] = {
+        "event": "end",
+        "status": status,
+        "findings": findings,
+        "verdict": verdict,
+    }
+    if ballots is not None:
+        rec["ballots"] = ballots
+    return rec
 
 
 class EventsWriter:

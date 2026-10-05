@@ -1,6 +1,6 @@
 {
   "name": "jury-progress",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Shows the live ai-jury runs inside Claude Code: one line per run above the prompt, each seat's state, and a /jury-progress pane, read from the metadata-only events ai-jury (1.24.0+) writes while this mod's .watched marker is on, or to $JURY_EVENTS_DIR. Read-only; it never runs jury.",
   "author": {
     "name": "Berkay Turancı",
@@ -20,8 +20,8 @@
     "poll_seconds": {
       "type": "number",
       "title": "Refresh every (seconds)",
-      "description": "How often to read the events while a run is live. With no live run it reads five times less often.",
-      "default": 2,
+      "description": "How often to read the events while a run is live; with no live run it reads half as often. A read is a directory listing, so one second costs nothing.",
+      "default": 1,
       "min": 1,
       "max": 30
     },

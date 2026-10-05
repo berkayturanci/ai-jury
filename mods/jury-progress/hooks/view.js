@@ -175,3 +175,42 @@ export function runLiveness(run, alive) {
   if (Number.isFinite(ts) && startedAt > ts * 1000 + 60_000) return 'stopped'
   return 'live'
 }
+
+// https://github.com/<owner>/<repo> from a git remote URL (ssh or https), or null.
+export function githubBase(remote) {
+  const m = String(remote ?? '').trim().match(/(?:^|[@/])github\.com[:/]([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/)
+  return m ? `https://github.com/${m[1]}/${m[2]}` : null
+}
+
+// Where a run's target lives on GitHub: `PR #N` and `issue #N` link there; a local diff, a
+// commit or a range has no page of its own.
+export function targetUrl(base, target) {
+  if (!base) return null
+  const pr = String(target ?? '').match(/^PR #(\d+)$/)
+  if (pr) return `${base}/pull/${pr[1]}`
+  const issue = String(target ?? '').match(/^issue #(\d+)$/)
+  return issue ? `${base}/issues/${issue[1]}` : null
+}
+
+const SEVERITY_ORDER = ['critical', 'major', 'minor', 'nit', 'info']
+
+// "1 major, 2 minor" from a step's severity counts; empty when it has none.
+export function severityText(counts) {
+  if (!counts || typeof counts !== 'object') return ''
+  const known = SEVERITY_ORDER.filter((k) => counts[k] > 0).map((k) => `${counts[k]} ${k}`)
+  const other = Object.keys(counts).filter((k) => !SEVERITY_ORDER.includes(k) && counts[k] > 0).map((k) => `${counts[k]} ${k}`)
+  return [...known, ...other].join(', ')
+}
+
+// A seat's model: what its step says it sent, else what the panel says it was asked for.
+export function seatModel(run, agent, step) {
+  if (step?.model) return step.model
+  return (run.start.panel ?? []).find((p) => p.agent === agent)?.model ?? null
+}
+
+// A repository's name from its remote URL (`git@host:owner/name.git`, `https://host/owner/name`),
+// else the checkout folder's own name.
+export function repoName(remote, cwd) {
+  const m = String(remote ?? '').trim().match(/([^/:\s]+?)(?:\.git)?\/?$/)
+  return m ? m[1] : baseName(cwd) || null
+}
