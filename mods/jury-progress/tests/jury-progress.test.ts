@@ -3,6 +3,13 @@ import { expect, mock, test } from 'claude-code/testing'
 const DIR = '/home/u/.cache/ai-jury/events'
 const SCHEMA = 'ai-jury.events.v1'
 
+// `find` matches type, key and text only (ElementQuery); this also holds the element's props to
+// what the test names, so a color or border assertion really checks the color or border.
+async function styled(view: any, query: { type: string; text?: string | RegExp }, props: Record<string, unknown>): Promise<any> {
+  const hits = await view.findAll(query)
+  return hits.find((el: any) => Object.entries(props).every(([k, v]) => el.props?.[k] === v))
+}
+
 const BAND = {
   plugin: 'jury-progress',
   component: 'AbovePrompt',
@@ -210,12 +217,12 @@ test('a live run draws its target, the phase bar and each seat above the prompt'
     const band = await $.ui.mount({ ...BAND, surface })
     expect(await band.find({ type: 'Button', text: 'PR #7' })).toBeDefined()
     // A rounded card, headed by the jury mark, with the phases as a segmented bar of chips.
-    expect(await band.find({ type: 'Box', props: { borderStyle: 'round' } })).toBeDefined()
+    expect(await styled(band, { type: 'Box' }, { borderStyle: 'round' })).toBeDefined()
     expect(await band.find({ type: 'Text', text: '◆ jury' })).toBeDefined()
-    expect(await band.find({ type: 'Text', text: ' review ', props: { backgroundColor: '#1F6FEB' } })).toBeDefined()
-    expect(await band.find({ type: 'Text', text: ' debate ', props: { backgroundColor: '#6E7681' } })).toBeDefined()
-    expect(await band.find({ type: 'Text', text: '● claude', props: { color: 'green' } })).toBeDefined()
-    expect(await band.find({ type: 'Text', text: '◌ codex', props: { color: 'yellow' } })).toBeDefined()
+    expect(await styled(band, { type: 'Text', text: ' review ' }, { backgroundColor: '#1F6FEB' })).toBeDefined()
+    expect(await styled(band, { type: 'Text', text: ' debate ' }, { backgroundColor: '#6E7681' })).toBeDefined()
+    expect(await styled(band, { type: 'Text', text: '● claude' }, { color: 'green' })).toBeDefined()
+    expect(await styled(band, { type: 'Text', text: '◌ codex' }, { color: 'yellow' })).toBeDefined()
     expect(await band.find({ type: 'Text', text: '1m' })).toBeDefined()
     // A run from the session's own checkout carries no repository label.
     expect(await band.find({ type: 'Text', text: 'work' })).toBeUndefined()
@@ -238,9 +245,9 @@ test('a debate round and a failed seat are drawn as such', async ($, on) => {
   await begin($)
   await clock.settle()
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect(await band.find({ type: 'Text', text: ' review ', props: { backgroundColor: '#2D7D46' } })).toBeDefined()
-  expect(await band.find({ type: 'Text', text: ' debate r2 ', props: { backgroundColor: '#1F6FEB' } })).toBeDefined()
-  expect(await band.find({ type: 'Text', text: '✗ codex', props: { color: 'red' } })).toBeDefined()
+  expect(await styled(band, { type: 'Text', text: ' review ' }, { backgroundColor: '#2D7D46' })).toBeDefined()
+  expect(await styled(band, { type: 'Text', text: ' debate r2 ' }, { backgroundColor: '#1F6FEB' })).toBeDefined()
+  expect(await styled(band, { type: 'Text', text: '✗ codex' }, { color: 'red' })).toBeDefined()
   expect(await band.find({ type: 'Text', text: '◌ claude' })).toBeDefined()
 })
 
@@ -258,7 +265,7 @@ test('a run that ends shows its verdict for a minute, with one toast, then leave
   await clock.advance(2_000)
   expect(calls.toasts).toEqual(['jury PR #7: REQUEST_CHANGES · 4 findings'])
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect(await band.find({ type: 'Text', text: ' REQUEST_CHANGES ', props: { backgroundColor: '#B62324' } })).toBeDefined()
+  expect(await styled(band, { type: 'Text', text: ' REQUEST_CHANGES ' }, { backgroundColor: '#B62324' })).toBeDefined()
   expect(await band.find({ type: 'Text', text: '4 findings' })).toBeDefined()
   await band.unmount()
 
@@ -406,14 +413,14 @@ test("a run's button opens the pane on it, phase by phase, and lists the others"
   expect(await pane.find({ type: 'Text', text: 'running · started 30s ago · pid 100' })).toBeDefined()
   expect(await pane.find({ type: 'Text', text: 'PR #7' })).toBeDefined()
   expect(await pane.find({ type: 'Text', text: 'code review · decision chair · chair claude' })).toBeDefined()
-  expect(await pane.find({ type: 'Text', text: '● claude 12.5s · 2 found', props: { color: 'green' } })).toBeDefined()
-  expect(await pane.find({ type: 'Text', text: '✗ codex 300s · timeout', props: { color: 'red' } })).toBeDefined()
+  expect(await styled(pane, { type: 'Text', text: '● claude 12.5s · 2 found' }, { color: 'green' })).toBeDefined()
+  expect(await styled(pane, { type: 'Text', text: '✗ codex 300s · timeout' }, { color: 'red' })).toBeDefined()
   expect(await pane.find({ type: 'Button', text: 'keel · PR #9 · APPROVE · 0 findings' })).toBeDefined()
 
   await pane.press({ key: 'jury-progress-pick-20261003T110001.000Z-200.ndjson' })
   await pane.unmount()
   const again = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect(await again.find({ type: 'Text', text: ' APPROVE ', props: { backgroundColor: '#2D7D46' } })).toBeDefined()
+  expect(await styled(again, { type: 'Text', text: ' APPROVE ' }, { backgroundColor: '#2D7D46' })).toBeDefined()
   expect(await again.find({ type: 'Text', text: '0 findings' })).toBeDefined()
 })
 
@@ -593,13 +600,13 @@ test('a verdict is shown without markdown emphasis, colored by which way it lean
   await $.command.run({ command: 'jury-progress', args: '' })
   const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
   // The newest run is in focus: it failed, so its chip says so in red.
-  expect(await pane.find({ type: 'Text', text: ' failed ', props: { backgroundColor: '#B62324' } })).toBeDefined()
+  expect(await styled(pane, { type: 'Text', text: ' failed ' }, { backgroundColor: '#B62324' })).toBeDefined()
   // The other one is listed, its verdict a plain word.
   expect(await pane.find({ type: 'Button', text: 'work · PR #7 · COMMENT · 3 findings' })).toBeDefined()
   await pane.press({ key: `jury-progress-pick-${RUN}` })
   await pane.unmount()
   const again = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect(await again.find({ type: 'Text', text: ' COMMENT ', props: { backgroundColor: '#9A6700' } })).toBeDefined()
+  expect(await styled(again, { type: 'Text', text: ' COMMENT ' }, { backgroundColor: '#9A6700' })).toBeDefined()
   expect(await again.find({ text: /\*\*/ })).toBeUndefined()
 })
 
@@ -609,7 +616,7 @@ test('a narrow band shows only the current phase, how far along it is, and the t
   await begin($)
   await clock.settle()
   const band = await $.ui.mount({ ...BAND, surface: 'terminal', props: { ...BAND.props, bodyColumns: 70 } })
-  expect(await band.find({ type: 'Text', text: ' debate r2 ', props: { backgroundColor: '#1F6FEB' } })).toBeDefined()
+  expect(await styled(band, { type: 'Text', text: ' debate r2 ' }, { backgroundColor: '#1F6FEB' })).toBeDefined()
   expect(await band.find({ type: 'Text', text: '2/4' })).toBeDefined()
   expect(await band.find({ type: 'Text', text: ' verify ' })).toBeUndefined()
   expect(await band.find({ type: 'Button', text: 'PR #7' })).toBeDefined()
@@ -623,5 +630,38 @@ test('a verdict written with a space leans the same way as with an underscore', 
   await clock.settle()
   await $.command.run({ command: 'jury-progress', args: '' })
   const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect(await pane.find({ type: 'Text', text: ' Request changes ', props: { backgroundColor: '#B62324' } })).toBeDefined()
+  expect(await styled(pane, { type: 'Text', text: ' Request changes ' }, { backgroundColor: '#B62324' })).toBeDefined()
+})
+
+test('a phase the mod does not know never takes the band down, even on a narrow band', async ($, on) => {
+  const clock = mock.clock(on)
+  stubEngine(on, { files: [{ name: RUN, recs: () => [start(), step('appeal', 'claude')] }] })
+  await begin($)
+  await clock.settle()
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal', props: { ...BAND.props, bodyColumns: 60 } })
+  expect(await band.find({ type: 'Button', text: 'PR #7' })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: ' review ' })).toBeDefined()
+})
+
+test('an ended run shows no phase as current: done throughout, or red where it failed', async ($, on) => {
+  const clock = mock.clock(on)
+  stubEngine(on, {
+    files: [
+      { name: RUN, recs: () => [start(), step('review', 'claude'), step('synthesis', 'claude'), end({ verdict: 'APPROVE', findings: 0 })] },
+      { name: '20261003T110001.000Z-200.ndjson', recs: () => [start({ pid: 200, target: 'PR #9' }), step('review', 'codex', { ok: false, error_code: 'timeout' }), { schema: SCHEMA, event: 'end', status: 'error', findings: null, verdict: null }] },
+    ],
+  })
+  await begin($)
+  await clock.settle()
+  await $.command.run({ command: 'jury-progress', args: '' })
+  const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  // In focus: the newest, which failed in review.
+  expect(await styled(pane, { type: 'Text', text: ' review ' }, { backgroundColor: '#B62324' })).toBeDefined()
+  expect(await styled(pane, { type: 'Text' }, { backgroundColor: '#1F6FEB' })).toBeUndefined()
+  await pane.press({ key: `jury-progress-pick-${RUN}` })
+  await pane.unmount()
+  const done = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  for (const name of [' review ', ' debate ', ' verify ', ' synthesis ']) {
+    expect(await styled(done, { type: 'Text', text: name }, { backgroundColor: '#2D7D46' })).toBeDefined()
+  }
 })

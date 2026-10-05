@@ -78,7 +78,6 @@ export function baseName(path) {
   return parts[parts.length - 1] ?? ''
 }
 
-// The finished line: verdict and findings, or how the run ended otherwise.
 // The chair's verdict token as a word: markdown emphasis around it (`**COMMENT**`) dropped.
 export function cleanVerdict(verdict) {
   return String(verdict ?? '').trim().replace(/^[*_`\s]+|[*_`\s]+$/g, '')
@@ -97,6 +96,7 @@ export function findingsText(n) {
   return `${k} finding${k === 1 ? '' : 's'}`
 }
 
+// The finished line: verdict and findings, or how the run ended otherwise.
 export function endText(end) {
   if (end.status === 'done') return `${cleanVerdict(end.verdict) || 'done'} · ${findingsText(end.findings)}`
   return end.status === 'cancelled' ? 'cancelled' : 'failed'
@@ -107,9 +107,13 @@ export function endText(end) {
 export function phaseChips(run) {
   const { phase, round } = runState(run)
   const at = PHASES.indexOf(phase)
+  // An ended run has no current phase: a finished one is done throughout; one that failed or was
+  // cancelled is done up to the phase it stopped in, which is marked failed.
+  const ended = run.end ?? null
+  const here = ended === null ? 'current' : ended.status === 'done' ? 'done' : 'failed'
   return PHASES.map((name, i) => ({
     text: i === at ? phaseLabel(name, round) : name,
-    state: i < at ? 'done' : i === at ? 'current' : 'todo',
+    state: i < at ? 'done' : i === at ? here : ended?.status === 'done' ? 'done' : 'todo',
   }))
 }
 

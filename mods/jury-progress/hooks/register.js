@@ -224,8 +224,9 @@ const WIDE_BAND_COLUMNS = 100
 function phaseBar(ui, run, compact = false) {
   const { Box, Text } = ui
   const chips = phaseChips(run)
-  if (compact) {
-    const at = chips.findIndex((c) => c.state === 'current')
+  const at = chips.findIndex((c) => c.state === 'current')
+  // A phase this mod does not know (a newer ai-jury) has no chip to show alone: draw the whole bar.
+  if (compact && at >= 0) {
     return Box({
       flexDirection: 'row',
       flexShrink: 0,
@@ -236,7 +237,7 @@ function phaseBar(ui, run, compact = false) {
   return Box({
     flexDirection: 'row',
     flexShrink: 0,
-    children: chips.map((c) => chip(Text, ` ${c.text} `, c.state)),
+    children: chips.map((c) => chip(Text, ` ${c.text} `, c.state === 'failed' ? 'block' : c.state)),
   })
 }
 
