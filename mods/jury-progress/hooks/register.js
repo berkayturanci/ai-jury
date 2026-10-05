@@ -52,12 +52,13 @@ const SEAT_TONE = { ok: 'ok', failed: 'bad', pending: 'wait' }
 const VERDICT_TONE = { good: 'good', bad: 'block', warn: 'warn' }
 const BALLOT_TONE = { good: 'ok', bad: 'bad', warn: 'wait' }
 
-const settings = { pollMs: POLL_MS, bandMax: BAND_MAX, notify: true, capture: true }
+const settings = { pollMs: POLL_MS, bandMax: BAND_MAX, notify: true, capture: true, allSessions: false }
 
 let dir = null // the events directory read, or null
 let dirSource = null // 'env' (the session's own $JURY_EVENTS_DIR), 'mod' (set here), 'off'
 let home = null
 let cwd = null
+let cwdReal = null // the session's folder with symlinks resolved (/tmp is /private/tmp on macOS)
 let all = [] // [{ name, run, state, mtimeMs }] newest first: state 'live' | 'ended' | 'stopped'
 let cache = new Map() // name -> { mtimeMs, size, run }: a file is parsed again only when it changed
 let previous = null // name -> state at the last scan; null before the first
@@ -202,6 +203,9 @@ async function scan($) {
     if (run !== null) read.push({ name: f.name, run, mtimeMs: f.mtimeMs })
   }
   cache = nextCache
+  // A session shows its own runs; other sessions' are left out (and cost nothing) unless the user
+  // asked to see every session's.
+  if (!settings.allSessions) read.splice(0, read.length, ...read.filter(own))
   const unended = read.filter((r) => r.run.end === null && Number.isInteger(r.run.start.pid))
   const alive = await alivePids($, [...new Set(unended.map((r) => r.run.start.pid))], now)
   // Without an answer from ps a run counts as live, except one already found stopped: it keeps
@@ -261,9 +265,13 @@ function bandRuns() {
   return all.filter((r) => r.state === 'live' || (r.state === 'ended' && scanAt - r.mtimeMs < RECENT_MS))
 }
 
+// Whether a run is this session's: started in its folder or below it (keel puts a run's worktree
+// inside the session's checkout, and the jury it starts runs there). jury records its real path, so
+// the session's is compared both as given and resolved.
 function own(r) {
   const at = r.run.start.cwd
-  return typeof at === 'string' && cwd !== null && (at === cwd || at.startsWith(`${cwd}/`))
+  if (typeof at !== 'string') return false
+  return [cwd, cwdReal].some((c) => c !== null && (at === c || at.startsWith(`${c}/`)))
 }
 
 function textProps(part) {
@@ -484,9 +492,15 @@ export function register(on, options = {}) {
   if (Number.isFinite(options.band_rows)) settings.bandMax = Math.max(1, Math.min(9, options.band_rows))
   if (typeof options.notify === 'boolean') settings.notify = options.notify
   if (typeof options.capture === 'boolean') settings.capture = options.capture
+  if (typeof options.all_sessions === 'boolean') settings.allSessions = options.all_sessions
 
   on('session.start', async ($, e, next) => {
     cwd = (await $.session.cwd()) ?? null
+    try {
+      cwdReal = cwd === null ? null : ((await $.fs.stat(cwd, { resolve: true })).realPath ?? null)
+    } catch {
+      cwdReal = null
+    }
     await chooseDir($)
     if (dir !== null) {
       $.clock.after(0, () => refresh($, true))
