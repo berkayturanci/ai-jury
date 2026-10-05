@@ -10,14 +10,16 @@
 //   - a toast when a run ends (verdict and findings) or stops without finishing
 // It never runs `jury`; it reads the events files and `ps`, and writes only the `.watched` marker.
 
-import { PHASES, ago, baseName, cleanVerdict, defaultEventsDir, endText, eventsDir, findingsText, isRunFile, parsePs, parseRun, phaseChips, phaseLabel, runLiveness, runState, seatChip, verdictTone } from './view.js'
+import { PHASES, ago, baseName, cleanVerdict, defaultEventsDir, endText, eventsDir, findingsText, githubBase, isRunFile, parsePs, parseRun, phaseChips, phaseLabel, repoName, runLiveness, runState, seatChip, seatModel, severityText, targetUrl, verdictTone } from './view.js'
 
 const PANE = 'jury-progress'
 // The file that tells ai-jury (1.24.0+) someone watches its cache's events directory.
 const WATCH_MARKER = '.watched'
-const POLL_MS = 2_000
+// A scan is a directory listing and the files that changed (ps only while a run has no end
+// record): cheap enough to run every second, so a new run or step shows within about one.
+const POLL_MS = 1_000
 // With no live run the timer still ticks every poll but reads only every IDLE_EVERY ticks.
-const IDLE_EVERY = 5
+const IDLE_EVERY = 2
 // A run file untouched this long is not read at all.
 const FRESH_MS = 24 * 60 * 60 * 1000
 // A finished run stays in the band this long, so its verdict is seen.
@@ -48,6 +50,7 @@ const TONES = {
 const BORDER = '#6E7681'
 const SEAT_TONE = { ok: 'ok', failed: 'bad', pending: 'wait' }
 const VERDICT_TONE = { good: 'good', bad: 'block', warn: 'warn' }
+const BALLOT_TONE = { good: 'ok', bad: 'bad', warn: 'wait' }
 
 const settings = { pollMs: POLL_MS, bandMax: BAND_MAX, notify: true, capture: true }
 
@@ -67,6 +70,9 @@ let again = false
 let idleTicks = 0
 let poller = null
 let selected = null // the run (file name) the pane shows in full
+// A run's checkout -> { base: its GitHub URL or null, name: the repository's name, branch }, read
+// once with git: the band labels a run by its repository, not the worktree folder's name.
+const repoBases = new Map()
 
 function tick($) {
   if (!all.some((r) => r.state === 'live')) {
@@ -115,6 +121,54 @@ async function alivePids($, pids, now) {
   }
 }
 
+async function gitOut($, at, args) {
+  try {
+    const run = await $.process.run(['git', ...args], { cwd: at, timeoutMs: PS_TIMEOUT_MS })
+    return run.exitCode === 0 ? run.stdout.trim() : null
+  } catch {
+    return null // no git, or the checkout is gone
+  }
+}
+
+const REPO_RETRY_MS = 60_000
+const REPO_RETRY_MAX_MS = 30 * 60_000
+const REPO_REFRESH_MS = 5 * 60_000
+
+// A read that failed keeps what an earlier one learned (a worktree keel removed after the merge
+// still shows under its repository's name and link) and is tried again later and later: one
+// minute, then twice that, up to half an hour.
+function mergeInfo(was, got, now) {
+  if (!got.failed) return { ...got, at: now }
+  const retryMs = was?.failed ? Math.min(was.retryMs * 2, REPO_RETRY_MAX_MS) : REPO_RETRY_MS
+  if (was && !was.failed) return { ...was, failed: true, retryMs, at: now }
+  return { ...(was ?? got), failed: true, retryMs, at: now }
+}
+
+async function checkoutInfo($, at) {
+  const [remote, branch] = await Promise.all([gitOut($, at, ['remote', 'get-url', 'origin']), gitOut($, at, ['rev-parse', '--abbrev-ref', 'HEAD'])])
+  return {
+    base: remote ? githubBase(remote) : null,
+    name: repoName(remote, at),
+    branch: branch && branch !== 'HEAD' ? branch : null,
+    // No origin read (git failed, or the checkout has none): cheap to ask again in a minute.
+    failed: remote === null,
+  }
+}
+
+function urlOf(r) {
+  return targetUrl(repoBases.get(r.run.start.cwd)?.base ?? null, r.run.start.target)
+}
+
+// How a run is named in the band: its repository; with several runs of one repository on screen,
+// its branch too, so they can be told apart.
+function runLabel(r, shown) {
+  const info = repoBases.get(r.run.start.cwd)
+  const nameOf = (x) => repoBases.get(x.run.start.cwd)?.name ?? (baseName(x.run.start.cwd) || '?')
+  const name = nameOf(r)
+  const twins = shown.filter((x) => nameOf(x) === name && x.run.start.cwd !== r.run.start.cwd)
+  return twins.length > 0 && info?.branch ? `${name} · ${info.branch}` : name
+}
+
 async function scan($) {
   const now = await $.clock.now()
   scanAt = now
@@ -157,6 +211,15 @@ async function scan($) {
     ...r,
     state: r.run.end === null && alive === null && previous?.get(r.name) === 'stopped' ? 'stopped' : runLiveness(r.run, alive),
   }))
+  // Each checkout's repository is read once (in parallel); a failed read is tried again after
+  // a minute, and the branch is read again every five, since a checkout can switch branches.
+  const stale = [...new Set(next.map((r) => r.run.start.cwd))].filter((at) => {
+    if (typeof at !== 'string' || !at) return false
+    const known = repoBases.get(at)
+    return !known || now - known.at > (known.failed ? known.retryMs : REPO_REFRESH_MS)
+  })
+  const infos = await Promise.all(stale.map((at) => checkoutInfo($, at)))
+  stale.forEach((at, i) => repoBases.set(at, mergeInfo(repoBases.get(at), infos[i], now)))
   announce($, next, now)
   all = next
 }
@@ -262,7 +325,13 @@ function verdictChip(ui, end) {
 // What a band row shows after the target button.
 function bandRow(ui, r, compact) {
   const { Text } = ui
-  if (r.state === 'ended') return [verdictChip(ui, r.run.end), ...(r.run.end.status === 'done' ? [chip(Text, findingsText(r.run.end.findings), 'dim')] : [])]
+  if (r.state === 'ended') {
+    const parts = [verdictChip(ui, r.run.end), ...(r.run.end.status === 'done' ? [chip(Text, findingsText(r.run.end.findings), 'dim')] : [])]
+    // How each seat voted, as a colored dot: who said what at a glance.
+    // Not on a narrow band: there the verdict and the finding count need the room.
+    if (!compact) for (const b of r.run.end.ballots ?? []) parts.push(chip(Text, `● ${b.agent}`, BALLOT_TONE[verdictTone(b.verdict)]))
+    return parts
+  }
   if (r.run.start.cached) return [chip(Text, 'from the cache', 'dim')]
   const parts = [phaseBar(ui, r.run, compact)]
   if (runState(r.run).seats.length > 0) parts.push(seatRow(ui, r.run))
@@ -339,11 +408,16 @@ function runCard(ui, r) {
       flexDirection: 'row',
       columnGap: 1,
       children: [
-        chip(Text, s.target ?? 'jury run', 'title'),
+        urlOf(r) ? ui.Link({ href: urlOf(r), label: s.target }) : chip(Text, s.target ?? 'jury run', 'title'),
         chip(Text, `${s.mode ?? 'code'} review · decision ${s.decision ?? '?'}${s.chair ? ` · chair ${s.chair}` : ''}`, 'dim'),
       ],
     }),
   )
+  // The panel with each seat's model, when jury named one (ai-jury 1.25.0 and newer).
+  const seats = (s.panel ?? []).filter((p) => p.agent)
+  if (seats.some((p) => p.model)) {
+    rows.push(chip(Text, `panel: ${seats.map((p) => (p.model ? `${p.agent} · ${p.model}` : p.agent)).join('  ')}`, 'dim'))
+  }
   if (s.cached) rows.push(chip(Text, 'answered from the cache: no agent ran', 'dim'))
   else rows.push(phaseBar(ui, r.run))
   for (const phase of PHASES) {
@@ -364,7 +438,8 @@ function runCard(ui, r) {
               columnGap: 2,
               children: these.map((x) => {
                 const secs = Number.isFinite(x.duration_s) ? ` ${x.duration_s}s` : ''
-                const tail = x.ok ? (x.findings ? ` · ${x.findings} found` : '') : ` · ${x.error_code ?? 'failed'}`
+                const sev = severityText(x.severity)
+                const tail = x.ok ? (x.findings ? ` · ${x.findings} found${sev ? ` (${sev})` : ''}` : '') : ` · ${x.error_code ?? 'failed'}`
                 return chip(Text, `${x.ok ? '●' : '✗'} ${x.agent}${secs}${tail}`, x.ok ? 'ok' : 'bad')
               }),
             }),
@@ -384,6 +459,22 @@ function runCard(ui, r) {
         children: [chip(Text, 'ended', 'dim'), verdictChip(ui, r.run.end), ...(r.run.end.status === 'done' ? [chip(Text, findingsText(r.run.end.findings), 'dim')] : [])],
       }),
     )
+    // Who said what: each seat's own verdict, its model and how much it raised.
+    for (const b of r.run.end.ballots ?? []) {
+      const model = b.model ?? seatModel(r.run, b.agent, null)
+      rows.push(
+        Box({
+          flexDirection: 'row',
+          columnGap: 1,
+          children: [
+            Box({ width: 12, flexShrink: 0, children: [chip(Text, '', 'dim')] }),
+            chip(Text, ` ${cleanVerdict(b.verdict) || '?'} `, VERDICT_TONE[verdictTone(b.verdict)]),
+            chip(Text, `${b.agent}${model ? ` · ${model}` : ''}`, 'title'),
+            chip(Text, `${findingsText(b.findings)}${b.review ? '' : ' · not counted as a review'}`, 'dim'),
+          ],
+        }),
+      )
+    }
   }
   return Box({ flexDirection: 'column', borderStyle: 'round', borderColor: BORDER, paddingX: 1, children: rows })
 }
@@ -443,18 +534,19 @@ export function register(on, options = {}) {
         children: [
           // The jury mark heads the first row (no header row of its own: the card is short).
           chip(Text, i === 0 ? '◆ jury' : '      ', 'title'),
-          ...(labelled ? [chip(Text, baseName(r.run.start.cwd) || '?', own(r) ? 'title' : 'dim')] : []),
+          ...(labelled ? [chip(Text, runLabel(r, shown), own(r) ? 'title' : 'dim')] : []),
+          // The target opens on GitHub when it is a PR or an issue there; the button beside it
+          // (or the target itself, when it has no page) opens the pane on this run. No digit
+          // hotkey: a passive band must not take the first key of a prompt.
           Box({
             flexShrink: 0,
-            children: [
-              Button({
-                key: `jury-progress-open-${r.name}`,
-                label: targetOf(r.run),
-                plain: true,
-                // No digit hotkey: a passive band must not take the first key of a prompt.
-                onPress: () => openRun($, r.name),
-              }),
-            ],
+            flexDirection: 'row',
+            children: urlOf(r)
+              ? [
+                  ui.Link({ href: urlOf(r), label: targetOf(r.run) }),
+                  Button({ key: `jury-progress-open-${r.name}`, label: ' ›', plain: true, onPress: () => openRun($, r.name) }),
+                ]
+              : [Button({ key: `jury-progress-open-${r.name}`, label: targetOf(r.run), plain: true, onPress: () => openRun($, r.name) })],
           }),
           ...bandRow(ui, r, compact),
         ],
@@ -508,7 +600,7 @@ export function register(on, options = {}) {
             children.push(
               Button({
                 key: `jury-progress-pick-${r.name}`,
-                label: `${baseName(r.run.start.cwd) || '?'} · ${targetOf(r.run)} · ${tail}`,
+                label: `${runLabel(r, listed)} · ${targetOf(r.run)} · ${tail}`,
                 plain: true,
                 onPress: () => selectRun($, r.name),
               }),

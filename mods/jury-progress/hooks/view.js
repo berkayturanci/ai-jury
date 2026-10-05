@@ -175,3 +175,67 @@ export function runLiveness(run, alive) {
   if (Number.isFinite(ts) && startedAt > ts * 1000 + 60_000) return 'stopped'
   return 'live'
 }
+
+// https://github.com/<owner>/<repo> from a git remote URL, or null. Only github.com itself (an
+// ssh host alias such as `github.com-work` included), and only names GitHub allows, so the link
+// built from it is always a valid href.
+const GH_NAME = '[A-Za-z0-9_.-]+'
+const GH_REMOTES = [
+  // git@github.com:owner/repo(.git), git@github.com-alias:owner/repo, ssh://git@github.com/owner/repo
+  new RegExp(`^(?:ssh://)?[A-Za-z0-9_.-]+@github\\.com(?:-[A-Za-z0-9_.-]+)?[:/](${GH_NAME})/(${GH_NAME}?)(?:\\.git)?/?$`),
+  // https://github.com/owner/repo(.git), with or without credentials
+  new RegExp(`^https?://(?:[^@/\\s]+@)?github\\.com/(${GH_NAME})/(${GH_NAME}?)(?:\\.git)?/?$`),
+]
+
+export function githubBase(remote) {
+  const text = String(remote ?? '').trim()
+  for (const re of GH_REMOTES) {
+    const m = text.match(re)
+    if (m && !['.', '..'].includes(m[1]) && !['.', '..', ''].includes(m[2])) return `https://github.com/${m[1]}/${m[2]}`
+  }
+  return null
+}
+
+// An href the mod API accepts: https, printable ASCII, no '@', spelled exactly as URL spells it.
+// Anything else would make the engine refuse the whole tree the Link is in.
+export function safeHref(h) {
+  if (typeof h !== 'string' || !/^https:\/\/[\x21-\x7e]+$/.test(h) || h.includes('@')) return null
+  try {
+    return typeof URL === 'function' && new URL(h).href === h ? h : null
+  } catch {
+    return null
+  }
+}
+
+// Where a run's target lives on GitHub: `PR #N` and `issue #N` link there; a local diff, a
+// commit or a range has no page of its own.
+export function targetUrl(base, target) {
+  if (!base) return null
+  const pr = String(target ?? '').match(/^PR #(\d+)$/)
+  if (pr) return safeHref(`${base}/pull/${pr[1]}`)
+  const issue = String(target ?? '').match(/^issue #(\d+)$/)
+  return issue ? safeHref(`${base}/issues/${issue[1]}`) : null
+}
+
+const SEVERITY_ORDER = ['critical', 'major', 'minor', 'nit', 'info']
+
+// "1 major, 2 minor" from a step's severity counts; empty when it has none.
+export function severityText(counts) {
+  if (!counts || typeof counts !== 'object') return ''
+  const known = SEVERITY_ORDER.filter((k) => counts[k] > 0).map((k) => `${counts[k]} ${k}`)
+  const other = Object.keys(counts).filter((k) => !SEVERITY_ORDER.includes(k) && counts[k] > 0).map((k) => `${counts[k]} ${k}`)
+  return [...known, ...other].join(', ')
+}
+
+// A seat's model: what its step says it sent, else what the panel says it was asked for.
+export function seatModel(run, agent, step) {
+  if (step?.model) return step.model
+  return (run.start.panel ?? []).find((p) => p.agent === agent)?.model ?? null
+}
+
+// A repository's name from its remote URL (`git@host:owner/name.git`, `https://host/owner/name`),
+// else the checkout folder's own name.
+export function repoName(remote, cwd) {
+  const m = String(remote ?? '').trim().match(/([^/:\s]+?)(?:\.git)?\/?$/)
+  return m ? m[1] : baseName(cwd) || null
+}

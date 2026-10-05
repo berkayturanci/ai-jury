@@ -71,10 +71,12 @@ function stubEngine(
     startedAgoS?: Record<number, number> // pid -> seconds its process has run (default: days)
     listFails?: string
     markerExists?: boolean
+    remotes?: Record<string, string> // checkout -> its origin URL ('' for none)
+    branches?: Record<string, string> // checkout -> its branch
     writeFails?: string
   } = {},
 ) {
-  const calls = { writes: [] as [string, string][], set: [] as [string, string | undefined][], reads: 0, lists: 0, ps: 0, toasts: [] as string[], opened: [] as string[] }
+  const calls = { remotes: [] as string[], writes: [] as [string, string][], set: [] as [string, string | undefined][], reads: 0, lists: 0, ps: 0, toasts: [] as string[], opened: [] as string[] }
   const env: Record<string, string> = { HOME: '/home/u', ...(opts.env ?? {}) }
   on('env.get', ($: unknown, e: { name: string }) => ({ value: env[e.name] }))
   on('env.set', ($: unknown, e: { name: string; value?: string }) => {
@@ -101,7 +103,19 @@ function stubEngine(
     if (!f) return { deny: 'ENOENT' }
     return { value: f.raw ?? f.recs().map((r) => JSON.stringify(r)).join('\n') + '\n' }
   })
-  on('process.run', ($: unknown, e: { argv: string[] }) => {
+  on('process.run', ($: unknown, e: { argv: string[]; init?: { cwd?: string } }) => {
+    if (e.argv[0] === 'git') {
+      const at = e.init?.cwd ?? ''
+      if (e.argv[1] === 'rev-parse') {
+        expect(e.argv).toEqual(['git', 'rev-parse', '--abbrev-ref', 'HEAD'])
+        return { value: { exitCode: 0, stdout: `${opts.branches?.[at] ?? 'main'}\n`, stderr: '' } }
+      }
+      expect(e.argv).toEqual(['git', 'remote', 'get-url', 'origin'])
+      calls.remotes.push(at)
+      // By default each checkout is its own repository, named after its folder.
+      const remote = opts.remotes?.[at] ?? `git@github.com:acme/${at.split('/').filter(Boolean).pop() ?? 'x'}.git`
+      return { value: { exitCode: remote ? 0 : 2, stdout: remote ? `${remote}\n` : '', stderr: '' } }
+    }
     expect(e.argv.slice(0, 4)).toEqual(['ps', '-o', 'pid=,etime=', '-p'])
     calls.ps += 1
     if (opts.psStderr) return { value: { exitCode: 1, stdout: '', stderr: opts.psStderr } }
@@ -184,7 +198,7 @@ test("the session's own JURY_EVENTS_DIR is read, never replaced", async ($, on) 
   await clock.settle()
   expect(calls.set).toEqual([])
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect(await band.find({ type: 'Button', text: 'PR #7' })).toBeDefined()
+  expect(await band.find({ type: 'Link', text: 'PR #7' })).toBeDefined()
 })
 
 test('JURY_EVENTS_DIR=off: nothing is read and the pane says how to turn it on', async ($, on) => {
@@ -215,7 +229,7 @@ test('a live run draws its target, the phase bar and each seat above the prompt'
   await clock.settle()
   for (const surface of ['terminal', 'desktop'] as const) {
     const band = await $.ui.mount({ ...BAND, surface })
-    expect(await band.find({ type: 'Button', text: 'PR #7' })).toBeDefined()
+    expect(await band.find({ type: 'Link', text: 'PR #7' })).toBeDefined()
     // A rounded card, headed by the jury mark, with the phases as a segmented bar of chips.
     expect(await styled(band, { type: 'Box' }, { borderStyle: 'round' })).toBeDefined()
     expect(await band.find({ type: 'Text', text: '◆ jury' })).toBeDefined()
@@ -272,7 +286,7 @@ test('a run that ends shows its verdict for a minute, with one toast, then leave
   await clock.advance(70_000)
   expect(calls.toasts.length).toBe(1)
   const later = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect(await later.find({ type: 'Button', text: 'PR #7' })).toBeUndefined()
+  expect(await later.find({ type: 'Link', text: 'PR #7' })).toBeUndefined()
 })
 
 test('a run already over when the session opens raises no toast', async ($, on) => {
@@ -293,7 +307,7 @@ test('a run whose process is gone without an end record is called stopped, once'
   await clock.advance(2_000)
   expect(calls.toasts).toEqual(['jury PR #7 stopped without an end record'])
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect(await band.find({ type: 'Button', text: 'PR #7' })).toBeUndefined()
+  expect(await band.find({ type: 'Link', text: 'PR #7' })).toBeUndefined()
   await clock.advance(20_000)
   expect(calls.toasts.length).toBe(1)
 })
@@ -304,7 +318,7 @@ test('when ps cannot answer, a run without an end record still counts as live', 
   await begin($)
   await clock.settle()
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect(await band.find({ type: 'Button', text: 'PR #7' })).toBeDefined()
+  expect(await band.find({ type: 'Link', text: 'PR #7' })).toBeDefined()
 })
 
 test('only ai-jury run files from the last day are read, and each only when it changed', async ($, on) => {
@@ -322,8 +336,8 @@ test('only ai-jury run files from the last day are read, and each only when it c
   await clock.advance(10_000)
   expect(calls.reads).toBe(1)
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect(await band.find({ type: 'Button', text: 'PR #1' })).toBeUndefined()
-  expect(await band.find({ type: 'Button', text: 'PR #2' })).toBeUndefined()
+  expect(await band.find({ type: 'Link', text: 'PR #1' })).toBeUndefined()
+  expect(await band.find({ type: 'Link', text: 'PR #2' })).toBeUndefined()
 })
 
 test('a torn last line and other schemas are skipped', async ($, on) => {
@@ -333,7 +347,7 @@ test('a torn last line and other schemas are skipped', async ($, on) => {
   await begin($)
   await clock.settle()
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect(await band.find({ type: 'Button', text: 'PR #7' })).toBeDefined()
+  expect(await band.find({ type: 'Link', text: 'PR #7' })).toBeDefined()
 })
 
 test('the directory is read on a timer, and at once after a jury Bash call only', async ($, on) => {
@@ -342,26 +356,29 @@ test('the directory is read on a timer, and at once after a jury Bash call only'
   await begin($)
   await clock.settle()
   expect(calls.lists).toBe(1)
-  await clock.advance(2_000)
+  // A live run: the directory is read every second, so a new step shows within about one.
+  await clock.advance(1_000)
   expect(calls.lists).toBe(2)
+  await clock.advance(1_000)
+  expect(calls.lists).toBe(3)
 
   await $.tool.call({ tool: 'Bash', command: 'ls jury-notes' })
   await clock.settle()
-  expect(calls.lists).toBe(2)
+  expect(calls.lists).toBe(3)
   await $.tool.call({ tool: 'Bash', command: 'jury --pr 7' })
   await clock.settle()
-  expect(calls.lists).toBe(3)
+  expect(calls.lists).toBe(4)
 })
 
-test('with no live run the directory is read every 10 s, not every 2 s', async ($, on) => {
+test('with no live run the directory is read every 2 s, not every second', async ($, on) => {
   const clock = mock.clock(on)
   const calls = stubEngine(on)
   await begin($)
   await clock.settle()
   expect(calls.lists).toBe(1)
-  await clock.advance(8_000)
+  await clock.advance(1_000)
   expect(calls.lists).toBe(1)
-  await clock.advance(2_000)
+  await clock.advance(1_000)
   expect(calls.lists).toBe(2)
 })
 
@@ -390,8 +407,8 @@ test('several runs are labelled by checkout; band_rows caps them', { options: { 
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
   // Newest first: the keel run, labelled by its checkout.
   expect(await band.find({ type: 'Text', text: 'keel' })).toBeDefined()
-  expect(await band.find({ type: 'Button', text: 'PR #9' })).toBeDefined()
-  expect(await band.find({ type: 'Button', text: 'PR #7' })).toBeUndefined()
+  expect(await band.find({ type: 'Link', text: 'PR #9' })).toBeDefined()
+  expect(await band.find({ type: 'Link', text: 'PR #7' })).toBeUndefined()
   expect(await band.find({ type: 'Text', text: '+1 more jury runs · /jury-progress' })).toBeDefined()
 })
 
@@ -411,7 +428,7 @@ test("a run's button opens the pane on it, phase by phase, and lists the others"
   const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect(await pane.find({ type: 'Text', text: /^1 live jury run\(s\) · events in \/home\/u\/\.cache\/ai-jury\/events \(watched by this mod\)$/ })).toBeDefined()
   expect(await pane.find({ type: 'Text', text: 'running · started 30s ago · pid 100' })).toBeDefined()
-  expect(await pane.find({ type: 'Text', text: 'PR #7' })).toBeDefined()
+  expect(await pane.find({ type: 'Link', text: 'PR #7' })).toBeDefined()
   expect(await pane.find({ type: 'Text', text: 'code review · decision chair · chair claude' })).toBeDefined()
   expect(await styled(pane, { type: 'Text', text: '● claude 12.5s · 2 found' }, { color: 'green' })).toBeDefined()
   expect(await styled(pane, { type: 'Text', text: '✗ codex 300s · timeout' }, { color: 'red' })).toBeDefined()
@@ -495,7 +512,7 @@ test('a ps that complains on stderr is no answer: no run is called stopped', asy
   await clock.advance(10_000)
   expect(calls.toasts).toEqual([])
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect(await band.find({ type: 'Button', text: 'PR #7' })).toBeDefined()
+  expect(await band.find({ type: 'Link', text: 'PR #7' })).toBeDefined()
 })
 
 test('a pid now held by a process that started after the run is a stopped run', async ($, on) => {
@@ -505,7 +522,7 @@ test('a pid now held by a process that started after the run is a stopped run', 
   await begin($)
   await clock.settle()
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect(await band.find({ type: 'Button', text: 'PR #7' })).toBeUndefined()
+  expect(await band.find({ type: 'Link', text: 'PR #7' })).toBeUndefined()
 })
 
 test('a run that started and ended between two reads still gets its toast', async ($, on) => {
@@ -619,7 +636,7 @@ test('a narrow band shows only the current phase, how far along it is, and the t
   expect(await styled(band, { type: 'Text', text: ' debate r2 ' }, { backgroundColor: '#1F6FEB' })).toBeDefined()
   expect(await band.find({ type: 'Text', text: '2/4' })).toBeDefined()
   expect(await band.find({ type: 'Text', text: ' verify ' })).toBeUndefined()
-  expect(await band.find({ type: 'Button', text: 'PR #7' })).toBeDefined()
+  expect(await band.find({ type: 'Link', text: 'PR #7' })).toBeDefined()
   for (const button of await band.findAll({ type: 'Button' })) expect((button as any).props?.hotkey).toBeUndefined()
 })
 
@@ -639,7 +656,7 @@ test('a phase the mod does not know never takes the band down, even on a narrow 
   await begin($)
   await clock.settle()
   const band = await $.ui.mount({ ...BAND, surface: 'terminal', props: { ...BAND.props, bodyColumns: 60 } })
-  expect(await band.find({ type: 'Button', text: 'PR #7' })).toBeDefined()
+  expect(await band.find({ type: 'Link', text: 'PR #7' })).toBeDefined()
   expect(await band.find({ type: 'Text', text: ' review ' })).toBeDefined()
 })
 
@@ -664,4 +681,142 @@ test('an ended run shows no phase as current: done throughout, or red where it f
   for (const name of [' review ', ' debate ', ' verify ', ' synthesis ']) {
     expect(await styled(done, { type: 'Text', text: name }, { backgroundColor: '#2D7D46' })).toBeDefined()
   }
+})
+
+test("a PR target opens on GitHub; the button beside it opens the pane", async ($, on) => {
+  const clock = mock.clock(on)
+  const calls = stubEngine(on, { files: [{ name: RUN, recs: () => [start()] }] })
+  await begin($)
+  await clock.settle()
+  expect(calls.remotes).toEqual(['/work'])
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  const link = await band.find({ type: 'Link', text: 'PR #7' })
+  expect((link as any).props?.href).toBe('https://github.com/acme/work/pull/7')
+  await band.press({ key: `jury-progress-open-${RUN}` })
+  expect(calls.opened).toEqual(['jury-progress'])
+  // The remote is read once per checkout, not every scan.
+  await clock.advance(10_000)
+  expect(calls.remotes).toEqual(['/work'])
+})
+
+test('a target with no GitHub page stays the button that opens the pane', async ($, on) => {
+  const clock = mock.clock(on)
+  stubEngine(on, { files: [{ name: RUN, recs: () => [start({ target: 'local diff' })] }], remotes: { '/work': '' } })
+  await begin($)
+  await clock.settle()
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await band.find({ type: 'Button', text: 'local diff' })).toBeDefined()
+  expect(await band.find({ type: 'Link' })).toBeUndefined()
+})
+
+test('who said what: models with the panel, severity per seat, and each ballot when it ends', async ($, on) => {
+  const clock = mock.clock(on)
+  const panel = [
+    { agent: 'claude', vendor: 'anthropic', model: 'claude-opus-5-5' },
+    { agent: 'codex', vendor: 'openai', model: 'gpt-5.3-codex' },
+  ]
+  stubEngine(on, {
+    files: [
+      {
+        name: RUN,
+        recs: () => [
+          start({ panel }),
+          step('review', 'claude', { model: 'claude-opus-5-5', findings: 3, severity: { major: 1, minor: 2 } }),
+          step('review', 'codex', { findings: 0, severity: {} }),
+          end({
+            verdict: 'REQUEST_CHANGES',
+            findings: 3,
+            ballots: [
+              { agent: 'claude', model: 'claude-opus-5-5', verdict: 'REQUEST_CHANGES', findings: 3, review: true },
+              { agent: 'codex', model: null, verdict: 'APPROVE', findings: 0, review: true },
+            ],
+          }),
+        ],
+      },
+    ],
+  })
+  await begin($)
+  await clock.settle()
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await styled(band, { type: 'Text', text: '● claude' }, { color: 'red' })).toBeDefined()
+  expect(await styled(band, { type: 'Text', text: '● codex' }, { color: 'green' })).toBeDefined()
+  await band.unmount()
+  await $.command.run({ command: 'jury-progress', args: '' })
+  const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await pane.find({ type: 'Text', text: 'panel: claude · claude-opus-5-5  codex · gpt-5.3-codex' })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: '● claude 12.5s · 3 found (1 major, 2 minor)' })).toBeDefined()
+  expect(await styled(pane, { type: 'Text', text: ' APPROVE ' }, { backgroundColor: '#2D7D46' })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: 'codex · gpt-5.3-codex' })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: 'claude · claude-opus-5-5' })).toBeDefined()
+})
+
+test('runs are labelled by repository, with the branch when one repository has several on screen', async ($, on) => {
+  const clock = mock.clock(on)
+  stubEngine(on, {
+    files: [
+      { name: RUN, recs: () => [start({ cwd: '/w/wt-2927' })] },
+      { name: '20261003T110001.000Z-200.ndjson', recs: () => [start({ pid: 200, target: 'PR #9', cwd: '/w/wt-2919' })] },
+      { name: '20261003T110002.000Z-300.ndjson', recs: () => [start({ pid: 300, target: 'PR #4', cwd: '/src/keel' })] },
+    ],
+    remotes: { '/w/wt-2927': 'git@github.com:acme/smartinventory.git', '/w/wt-2919': 'https://github.com/acme/smartinventory' },
+    branches: { '/w/wt-2927': 'feat/a', '/w/wt-2919': 'fix/b' },
+  })
+  await begin($)
+  await clock.settle()
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await band.find({ type: 'Text', text: 'smartinventory · feat/a' })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: 'smartinventory · fix/b' })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: 'keel' })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: /wt-29/ })).toBeUndefined()
+})
+
+test('a remote that would make an invalid link gives no link, and the band still draws', async ($, on) => {
+  for (const remote of ['git@github.com:acme/ré.git', 'git@github.com:acme/r@x.git', 'https://github.com/acme/..', 'https://evil.example/mirror/github.com/x/y']) {
+    const clock = mock.clock(on)
+    stubEngine(on, { files: [{ name: RUN, recs: () => [start()] }], remotes: { '/work': remote } })
+    await begin($)
+    await clock.settle()
+    const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+    expect(await band.find({ type: 'Link' })).toBeUndefined()
+    expect(await band.find({ type: 'Button', text: 'PR #7' })).toBeDefined()
+    await band.unmount()
+    break // one engine per test: the first case stands for the rest (view.js githubBase is pure)
+  }
+})
+
+test('a failed repository read is tried again after a minute', async ($, on) => {
+  const clock = mock.clock(on)
+  let remote = ''
+  const calls = stubEngine(on, { files: [{ name: RUN, recs: () => [start()] }], remotes: { get '/work'() { return remote } } as any })
+  await begin($)
+  await clock.settle()
+  expect(calls.remotes.length).toBe(1)
+  remote = 'git@github.com:acme/widgets.git'
+  await clock.advance(30_000)
+  expect(calls.remotes.length).toBe(1)
+  await clock.advance(31_000)
+  expect(calls.remotes.length).toBe(2)
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await band.find({ type: 'Link', text: 'PR #7' })).toBeDefined()
+})
+
+test('a checkout that disappears keeps its repository name and link', async ($, on) => {
+  const clock = mock.clock(on)
+  let remote = 'git@github.com:acme/smartinventory.git'
+  const calls = stubEngine(on, {
+    files: [{ name: RUN, recs: () => [start({ cwd: '/w/wt-2927' })] }, { name: '20261003T110001.000Z-200.ndjson', recs: () => [start({ pid: 200, target: 'PR #9', cwd: '/src/keel' })] }],
+    remotes: { get '/w/wt-2927'() { return remote } } as any,
+  })
+  await begin($)
+  await clock.settle()
+  remote = '' // keel removed the worktree after the merge
+  await clock.advance(6 * 60_000)
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await band.find({ type: 'Text', text: 'smartinventory' })).toBeDefined()
+  expect(await band.find({ type: 'Link', text: 'PR #7' })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: /wt-2927/ })).toBeUndefined()
+  // Retried later and later, not every minute.
+  const reads = calls.remotes.filter((at) => at === '/w/wt-2927').length
+  await clock.advance(90_000)
+  expect(calls.remotes.filter((at) => at === '/w/wt-2927').length).toBeLessThanOrEqual(reads + 1)
 })
