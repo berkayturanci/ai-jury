@@ -5,16 +5,18 @@ panel deliberates. It only reads: it never runs `jury`, and it sees nothing but 
 
 ## Above the prompt
 
-A rounded card with one row per live run:
+A rounded card with one row per run (live, or finished in the last minute):
 
 ![A jury card above the Claude Code prompt: a run in its debate round, its seats colored by state, and a finished run with its APPROVE chip](docs/band.svg)
 
 - the target (a button: click it to open the pane on that run; no digit hotkey, so the band never
   takes the first key of a prompt)
 - the phases as one segmented bar of chips: review, debate (with its round), verify, synthesis;
-  done in green, the current one in blue, the rest still grey
+  done in green, the current one in blue, the rest grey. On a band narrower than 100 columns only
+  the current phase shows, with how far along it is (`2/4`), and seats that do not fit wrap
+  to the next line
 - each seat in the current phase as a colored dot: `●` answered (green), `✗` failed (red),
-  `◌` still thinking (amber)
+  `◌` still thinking (yellow), in your terminal's own colors
 - how long the run has been going
 
 A run from another checkout carries that checkout's name in front. A finished run stays for a

@@ -86,7 +86,7 @@ export function cleanVerdict(verdict) {
 
 // Which way a verdict leans, for its color: approve, block, or anything else.
 export function verdictTone(verdict) {
-  const v = cleanVerdict(verdict).toUpperCase()
+  const v = cleanVerdict(verdict).toUpperCase().replace(/[\s-]+/g, '_')
   if (/^(APPROVE|APPROVED|LGTM|PASS|READY)$/.test(v)) return 'good'
   if (/^(REQUEST_CHANGES|BLOCK|BLOCKED|REJECT|FAIL|NEEDS_INFO)$/.test(v)) return 'bad'
   return 'warn'

@@ -27,18 +27,19 @@ const PANE_MAX = 10
 const BAND_MAX = 3
 const PS_TIMEOUT_MS = 5_000
 
-// Colors that read on a dark and a light background alike.
+// Text colors are the terminal's own (they follow its theme); a chip is white on a saturated
+// background, which reads on a dark and a light theme alike.
 const TONES = {
   title: { bold: true },
-  ok: { color: '#3FB950' },
-  bad: { color: '#F85149' },
-  wait: { color: '#D29922' },
+  ok: { color: 'green' },
+  bad: { color: 'red' },
+  wait: { color: 'yellow' },
   dim: { dimColor: true },
   plain: {},
   // phase chips: a segmented bar, done green, current blue, to come dim
   done: { backgroundColor: '#2D7D46', color: '#FFFFFF' },
   current: { backgroundColor: '#1F6FEB', color: '#FFFFFF', bold: true },
-  todo: { backgroundColor: '#30363D', color: '#8B949E' },
+  todo: { backgroundColor: '#6E7681', color: '#FFFFFF' },
   // verdict chips
   good: { backgroundColor: '#2D7D46', color: '#FFFFFF', bold: true },
   block: { backgroundColor: '#B62324', color: '#FFFFFF', bold: true },
@@ -211,16 +212,31 @@ function startedAgo(r) {
   return Number.isFinite(ts) && scanAt > 0 ? ago(scanAt - ts * 1000) : null
 }
 
-function chip(Text, text, tone, key) {
-  return Text({ ...(key ? { key } : {}), ...TONES[tone], wrap: 'truncate', children: [text] })
+function chip(Text, text, tone) {
+  return Text({ ...TONES[tone], wrap: 'truncate', children: [text] })
 }
 
+// Below this many columns the band shows only the current phase (and how far along it is), not
+// the whole bar, so the target and the seats keep their room.
+const WIDE_BAND_COLUMNS = 100
+
 // The phases of a live run as one segmented bar: each phase a chip, side by side.
-function phaseBar(ui, run) {
+function phaseBar(ui, run, compact = false) {
   const { Box, Text } = ui
+  const chips = phaseChips(run)
+  if (compact) {
+    const at = chips.findIndex((c) => c.state === 'current')
+    return Box({
+      flexDirection: 'row',
+      flexShrink: 0,
+      columnGap: 1,
+      children: [chip(Text, ` ${chips[at].text} `, 'current'), chip(Text, `${at + 1}/${chips.length}`, 'dim')],
+    })
+  }
   return Box({
     flexDirection: 'row',
-    children: phaseChips(run).map((c) => chip(Text, ` ${c.text} `, c.state)),
+    flexShrink: 0,
+    children: chips.map((c) => chip(Text, ` ${c.text} `, c.state)),
   })
 }
 
@@ -243,11 +259,11 @@ function verdictChip(ui, end) {
 }
 
 // What a band row shows after the target button.
-function bandRow(ui, r) {
+function bandRow(ui, r, compact) {
   const { Text } = ui
   if (r.state === 'ended') return [verdictChip(ui, r.run.end), ...(r.run.end.status === 'done' ? [chip(Text, findingsText(r.run.end.findings), 'dim')] : [])]
   if (r.run.start.cached) return [chip(Text, 'from the cache', 'dim')]
-  const parts = [phaseBar(ui, r.run)]
+  const parts = [phaseBar(ui, r.run, compact)]
   if (runState(r.run).seats.length > 0) parts.push(seatRow(ui, r.run))
   const since = startedAgo(r)
   if (since !== null) parts.push(chip(Text, since, 'dim'))
@@ -415,34 +431,38 @@ export function register(on, options = {}) {
     const ui = $.ui.resolve(e)
     const { Box, Text, Button } = ui
     const labelled = shown.length > 1 || shown.some((r) => !own(r))
-    const live = shown.filter((r) => r.state === 'live').length
-    const header = Box({
-      flexDirection: 'row',
-      columnGap: 1,
-      children: [chip(Text, '◆ jury', 'title'), chip(Text, live > 0 ? `${live} deliberating` : 'finished', 'dim')],
-    })
-    const rows = shown.slice(0, settings.bandMax).map((r) =>
+    const compact = (e.props.bodyColumns ?? 0) < WIDE_BAND_COLUMNS
+    const rows = shown.slice(0, settings.bandMax).map((r, i) =>
       Box({
         key: `jury-progress-${r.name}`,
         flexDirection: 'row',
+        // Seats that do not fit go to the next line rather than being cut.
+        flexWrap: 'wrap',
         columnGap: 1,
         children: [
+          // The jury mark heads the first row (no header row of its own: the card is short).
+          chip(Text, i === 0 ? '◆ jury' : '      ', 'title'),
           ...(labelled ? [chip(Text, baseName(r.run.start.cwd) || '?', own(r) ? 'title' : 'dim')] : []),
-          Button({
-            key: `jury-progress-open-${r.name}`,
-            label: targetOf(r.run),
-            plain: true,
-            // No digit hotkey: a passive band must not take the first key of a prompt.
-            onPress: () => openRun($, r.name),
+          Box({
+            flexShrink: 0,
+            children: [
+              Button({
+                key: `jury-progress-open-${r.name}`,
+                label: targetOf(r.run),
+                plain: true,
+                // No digit hotkey: a passive band must not take the first key of a prompt.
+                onPress: () => openRun($, r.name),
+              }),
+            ],
           }),
-          ...bandRow(ui, r),
+          ...bandRow(ui, r, compact),
         ],
       }),
     )
     if (shown.length > settings.bandMax) {
       rows.push(chip(Text, `+${shown.length - settings.bandMax} more jury runs · /jury-progress`, 'dim'))
     }
-    const card = Box({ flexDirection: 'column', borderStyle: 'round', borderColor: BORDER, paddingX: 1, children: [header, ...rows] })
+    const card = Box({ flexDirection: 'column', borderStyle: 'round', borderColor: BORDER, paddingX: 1, children: rows })
     const theirs = await next(e)
     return Box({ flexDirection: 'column', children: theirs ? [card, theirs] : [card] })
   })
