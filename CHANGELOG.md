@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **jury-progress 0.3.0 draws cards** (#949). The band is a rounded card with one row per run. The phases are a segmented bar of chips (done green, current blue, to come grey), each seat is a colored dot (`●` answered, `✗` failed, `◌` thinking), and a finished run's verdict is a chip colored by which way it leans. The `/jury-progress` pane shows the run as a card, with a row per phase and debate round and a chip per seat (seconds, findings or error code). The verdict is shown without markdown emphasis, so `**COMMENT**` reads `COMMENT` (#944, on the mod's side).
+
 ## [1.24.0] - 2026-10-03
 
 > **What changes for you.** jury-progress now actually shows your jury runs. In 1.23.0 the mod set

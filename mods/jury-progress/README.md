@@ -5,27 +5,32 @@ panel deliberates. It only reads: it never runs `jury`, and it sees nothing but 
 
 ## Above the prompt
 
-One line per live run:
+A rounded card with one row per live run:
 
-![A live jury run above the Claude Code prompt, in its debate round, and a finished one with its verdict](docs/band.svg)
+![A jury card above the Claude Code prompt: a run in its debate round, its seats colored by state, and a finished run with its APPROVE chip](docs/band.svg)
 
 - the target (a button: click it to open the pane on that run; no digit hotkey, so the band never
   takes the first key of a prompt)
-- the phase bar: review, debate, verify, synthesis (`▰` done, `▶` now, `▱` to come)
-- each seat in the current phase: `✓` answered, `✗` failed, `…` still thinking
+- the phases as one segmented bar of chips: review, debate (with its round), verify, synthesis;
+  done in green, the current one in blue, the rest still grey
+- each seat in the current phase as a colored dot: `●` answered (green), `✗` failed (red),
+  `◌` still thinking (amber)
 - how long the run has been going
 
 A run from another checkout carries that checkout's name in front. A finished run stays for a
-minute with its verdict (`✓ REQUEST_CHANGES · 4 findings`), then leaves. With more runs than
+minute with its verdict as a chip, green for an approval, red for a request for changes or a
+failed run, amber otherwise, next to its finding count; markdown around the verdict
+(`**COMMENT**`) is dropped. With more runs than
 the band's rows, `+N more` points to the pane.
 
 ## The `/jury-progress` pane
 
 ![The /jury-progress pane: the run's checkout, target and panel, every phase seat by seat, and the other runs](docs/pane.svg)
 
-The run you picked (or the newest) in full: its target, review mode, decision and chair, when
-it started and its pid, then every phase seat by seat: who answered, in how many seconds, how
-many findings, or the error code of a seat that failed, and who it still waits on. Below it,
+The run you picked (or the newest) in full, as a card: its target, review mode, decision and
+chair, the phase bar, then one row per phase (and debate round) with a chip per seat: who
+answered, in how many seconds, how many findings, or the error code of a seat that failed; then
+who it still waits on, or how it ended. Above the card, when it started and its pid. Below it,
 the other live and recent runs, each a button to switch to.
 
 ## Notifications
