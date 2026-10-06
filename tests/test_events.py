@@ -548,6 +548,76 @@ class TheEventsDirectory(unittest.TestCase):
         self.assertEqual(events.stale_run_files(names, keep=10), [])
         self.assertEqual(events.stale_run_files(names, keep=0), runs)
 
+    def test_a_retry_name_is_newer_than_its_base_name(self):
+        base = "20261001T000000.000Z-7.ndjson"
+        retry = "20261001T000000.000Z-7-1.ndjson"
+        self.assertLess(retry, base)  # plain string order is the trap
+        self.assertEqual(events.stale_run_files([retry, base], keep=1), [base])
+        later = "20261001T000000.001Z-7.ndjson"
+        self.assertEqual(events.stale_run_files([later, retry, base], keep=1), [base, retry])
+
+    def test_no_descriptor_leaks_or_double_closes_when_the_text_layer_fails(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = str(Path(d) / events.run_file_name(0, 9))
+            opened: list[int] = []
+            real_open = os.open
+
+            def spy_open(*a, **k):
+                fd = real_open(*a, **k)
+                opened.append(fd)
+                return fd
+
+            with (
+                unittest.mock.patch.object(os, "open", side_effect=spy_open),
+                # An unknown encoding fails in the text layer, after the raw file opened.
+                unittest.mock.patch.object(
+                    events,
+                    "open",
+                    lambda p, m, opener, **_k: io.open(  # noqa: UP020
+                        p, m, encoding="no-such-codec", opener=opener
+                    ),
+                    create=True,
+                ),
+                self.assertRaises(LookupError),
+            ):
+                events.EventsWriter(path, exclusive=True)
+            self.assertEqual(len(opened), 1)
+            with self.assertRaises(OSError):  # closed exactly once, by open()
+                os.fstat(opened[0])
+
+    def test_the_exclusive_file_is_never_reused_and_is_private(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / events.run_file_name(0, 9)
+            events.EventsWriter(str(path), exclusive=True).close()
+            if os.name == "posix":
+                self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            with self.assertRaises(FileExistsError):
+                events.EventsWriter(str(path), exclusive=True)
+
+    def test_a_retry_number_orders_numerically(self):
+        n9 = "20261001T000000.000Z-7-9.ndjson"
+        n10 = "20261001T000000.000Z-7-10.ndjson"
+        self.assertLess(n10, n9)  # lexical order is wrong here
+        self.assertEqual(events.stale_run_files([n10, n9], keep=1), [n9])
+
+    @unittest.skipUnless(os.name == "posix", "POSIX modes")
+    def test_an_existing_group_writable_directory_warns_once_and_a_private_one_does_not(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d) / "shared"
+            root.mkdir()
+            root.chmod(0o770)
+            msgs: list[str] = []
+            w = events.open_dir_writer(root, clock=lambda: 0.0, pid=9, on_error=msgs.append)
+            self.assertIsNotNone(w)
+            w.close()
+            self.assertEqual(len(msgs), 1)
+            self.assertIn("group/world-writable", msgs[0])
+            self.assertEqual(root.stat().st_mode & 0o777, 0o770)  # left as is
+            root.chmod(0o700)
+            msgs.clear()
+            events.open_dir_writer(root, clock=lambda: 0.0, pid=10, on_error=msgs.append).close()
+            self.assertEqual(msgs, [])
+
     def test_the_writer_makes_the_directory_prunes_and_writes_its_own_file(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d) / "a" / "b"
