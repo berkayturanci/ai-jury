@@ -205,6 +205,22 @@ class SeatModelsSeverityAndBallots(unittest.TestCase):
         )
         self.assertNotIn("SECRET", json.dumps(events.ballot_entries(reviewers)))
 
+    def test_the_end_record_verdict_is_the_bare_token(self):
+        # #944: the chair's markdown must not reach the contract.
+        for raw, want in [
+            ("**COMMENT**", "COMMENT"),
+            ("`REQUEST_CHANGES`", "REQUEST_CHANGES"),
+            (" _APPROVE_ \n", "APPROVE"),
+            ("***COMMENT***", "COMMENT"),
+            ("COMMENT", "COMMENT"),
+            (None, None),
+        ]:
+            self.assertEqual(events.end_record("done", verdict=raw)["verdict"], want)
+
+    def test_ballot_verdicts_are_the_bare_token(self):
+        out = events.ballot_entries([{"name": "a", "verdict": "**APPROVE**"}])
+        self.assertEqual(out[0]["verdict"], "APPROVE")
+
     def test_the_end_record_carries_ballots_only_when_given(self):
         self.assertNotIn("ballots", events.end_record("cancelled"))
         rec = events.end_record("done", findings=1, verdict="APPROVE", ballots=[{"agent": "a"}])
