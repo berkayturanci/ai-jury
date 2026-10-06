@@ -5,6 +5,14 @@ panel deliberates. It only reads: it never runs `jury`, and it sees nothing but 
 
 ## Above the prompt
 
+A session shows its own jury runs: the ones started in its folder or below it, which includes
+those keel starts in the worktrees it makes inside the session's checkout. Other sessions' runs
+are not shown and raise no toast; turn on "Show other sessions' runs" in `/config` to see every
+jury run on the machine.
+A jury the session starts outside its folder (`cd ../other-checkout && jury …`) counts as that
+folder's, not the session's. The folder test ignores case and trailing slashes, and also matches
+the session's resolved path (`/tmp` is `/private/tmp` on macOS).
+
 A rounded card with one row per run (live, or finished in the last minute):
 
 ![A live jury run above the Claude Code prompt: its repository, the PR as a link, the phases as chips and each seat's state](docs/band.svg)
@@ -23,7 +31,7 @@ A rounded card with one row per run (live, or finished in the last minute):
 - how long the run has been going
 
 With more than one run (or one from another checkout), each row starts with its repository's
-name, read from the checkout's `origin` (`smartinventory`, not the worktree folder `wt-2927`), and
+name, read from the checkout's `origin` (`widgets`, not the worktree folder `wt-2927`), and
 with the branch too when one repository has several runs on screen. Only a github.com remote
 makes the target a link. A finished run stays for a
 minute with its verdict as a chip (green for an approval, red for a request for changes or a
@@ -78,6 +86,7 @@ In `/config`, under jury-progress:
 | Watch the jury runs | on | Leave the `.watched` marker in ai-jury's cache so jury writes its events there. Off: the marker is turned to `off`, and only a `JURY_EVENTS_DIR` you set is read. |
 | Refresh every (seconds) | 1 | How often the events directory is read while a run is live (a listing, so it costs nothing); half as often otherwise. A `jury` command also refreshes at once. |
 | Runs above the prompt | 3 | How many runs the band shows before `+N more`. |
+| Show other sessions' runs | off | Every jury run on the machine, not only this session's own. |
 | Notifications | on | The toast when a run ends or stops. |
 
 Next to keel's own mod, keel-progress, the band shows both: the jury runs and the keel runs

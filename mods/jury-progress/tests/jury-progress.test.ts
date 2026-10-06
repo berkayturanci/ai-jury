@@ -73,6 +73,7 @@ function stubEngine(
     markerExists?: boolean
     remotes?: Record<string, string> // checkout -> its origin URL ('' for none)
     branches?: Record<string, string> // checkout -> its branch
+    realPath?: string // the session folder resolved (symlinks)
     writeFails?: string
   } = {},
 ) {
@@ -141,6 +142,7 @@ function stubEngine(
     return { value: undefined }
   })
   on('fs.exists', ($: unknown, e: { path: string }) => ({ value: e.path.endsWith('/.watched') ? (opts.markerExists ?? false) : false }))
+  on('fs.stat', ($: unknown, e: { path: string; resolve?: boolean }) => ({ value: { kind: 'dir', size: 0, mtimeMs: 0, isLink: false, realPath: opts.realPath ?? e.path } }))
   on('session.start', () => ({ cwd: '/work' }))
   on('session.cwd', () => ({ value: '/work' }))
   on('command.register', () => ({ value: undefined }))
@@ -394,7 +396,7 @@ test('no directory yet is quiet; another listing error shows in the pane', async
   expect(await pane.find({ type: 'Text', text: /^cannot read the events directory: / })).toBeDefined()
 })
 
-test('several runs are labelled by checkout; band_rows caps them', { options: { band_rows: 1 } }, async ($, on) => {
+test('several runs are labelled by checkout; band_rows caps them', { options: { band_rows: 1, all_sessions: true } }, async ($, on) => {
   const clock = mock.clock(on)
   stubEngine(on, {
     files: [
@@ -412,7 +414,7 @@ test('several runs are labelled by checkout; band_rows caps them', { options: { 
   expect(await band.find({ type: 'Text', text: '+1 more jury runs · /jury-progress' })).toBeDefined()
 })
 
-test("a run's button opens the pane on it, phase by phase, and lists the others", async ($, on) => {
+test("a run's button opens the pane on it, phase by phase, and lists the others", { options: { all_sessions: true } }, async ($, on) => {
   const clock = mock.clock(on, { now: 30_000 })
   const calls = stubEngine(on, {
     files: [
@@ -750,7 +752,7 @@ test('who said what: models with the panel, severity per seat, and each ballot w
   expect(await pane.find({ type: 'Text', text: 'claude · claude-opus-5-5' })).toBeDefined()
 })
 
-test('runs are labelled by repository, with the branch when one repository has several on screen', async ($, on) => {
+test('runs are labelled by repository, with the branch when one repository has several on screen', { options: { all_sessions: true } }, async ($, on) => {
   const clock = mock.clock(on)
   stubEngine(on, {
     files: [
@@ -758,14 +760,14 @@ test('runs are labelled by repository, with the branch when one repository has s
       { name: '20261003T110001.000Z-200.ndjson', recs: () => [start({ pid: 200, target: 'PR #9', cwd: '/w/wt-2919' })] },
       { name: '20261003T110002.000Z-300.ndjson', recs: () => [start({ pid: 300, target: 'PR #4', cwd: '/src/keel' })] },
     ],
-    remotes: { '/w/wt-2927': 'git@github.com:acme/smartinventory.git', '/w/wt-2919': 'https://github.com/acme/smartinventory' },
+    remotes: { '/w/wt-2927': 'git@github.com:acme/widgets.git', '/w/wt-2919': 'https://github.com/acme/widgets' },
     branches: { '/w/wt-2927': 'feat/a', '/w/wt-2919': 'fix/b' },
   })
   await begin($)
   await clock.settle()
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect(await band.find({ type: 'Text', text: 'smartinventory · feat/a' })).toBeDefined()
-  expect(await band.find({ type: 'Text', text: 'smartinventory · fix/b' })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: 'widgets · feat/a' })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: 'widgets · fix/b' })).toBeDefined()
   expect(await band.find({ type: 'Text', text: 'keel' })).toBeDefined()
   expect(await band.find({ type: 'Text', text: /wt-29/ })).toBeUndefined()
 })
@@ -800,9 +802,9 @@ test('a failed repository read is tried again after a minute', async ($, on) => 
   expect(await band.find({ type: 'Link', text: 'PR #7' })).toBeDefined()
 })
 
-test('a checkout that disappears keeps its repository name and link', async ($, on) => {
+test('a checkout that disappears keeps its repository name and link', { options: { all_sessions: true } }, async ($, on) => {
   const clock = mock.clock(on)
-  let remote = 'git@github.com:acme/smartinventory.git'
+  let remote = 'git@github.com:acme/widgets.git'
   const calls = stubEngine(on, {
     files: [{ name: RUN, recs: () => [start({ cwd: '/w/wt-2927' })] }, { name: '20261003T110001.000Z-200.ndjson', recs: () => [start({ pid: 200, target: 'PR #9', cwd: '/src/keel' })] }],
     remotes: { get '/w/wt-2927'() { return remote } } as any,
@@ -812,11 +814,59 @@ test('a checkout that disappears keeps its repository name and link', async ($, 
   remote = '' // keel removed the worktree after the merge
   await clock.advance(6 * 60_000)
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect(await band.find({ type: 'Text', text: 'smartinventory' })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: 'widgets' })).toBeDefined()
   expect(await band.find({ type: 'Link', text: 'PR #7' })).toBeDefined()
   expect(await band.find({ type: 'Text', text: /wt-2927/ })).toBeUndefined()
   // Retried later and later, not every minute.
   const reads = calls.remotes.filter((at) => at === '/w/wt-2927').length
   await clock.advance(90_000)
   expect(calls.remotes.filter((at) => at === '/w/wt-2927').length).toBeLessThanOrEqual(reads + 1)
+})
+
+test("a session shows its own jury runs only: in its folder, or in a worktree keel made under it", async ($, on) => {
+  const clock = mock.clock(on)
+  const calls = stubEngine(on, {
+    files: [
+      { name: RUN, recs: () => [start({ cwd: '/work/worktrees/pr-11', target: 'PR #11' })] },
+      { name: '20261003T110001.000Z-200.ndjson', recs: () => [start({ pid: 200, target: 'PR #22', cwd: '/elsewhere/other-session' })] },
+      { name: '20261003T110002.000Z-300.ndjson', recs: () => [start({ pid: 300, target: 'PR #33', cwd: '/work' })] },
+    ],
+  })
+  await begin($)
+  await clock.settle()
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await band.find({ type: 'Link', text: 'PR #11' })).toBeDefined()
+  expect(await band.find({ type: 'Link', text: 'PR #33' })).toBeDefined()
+  expect(await band.find({ text: /PR #22/ })).toBeUndefined()
+  // Another session's run costs nothing: its repository is never read.
+  expect(calls.remotes).not.toContain('/elsewhere/other-session')
+})
+
+test("another session's run raises no toast", async ($, on) => {
+  const clock = mock.clock(on)
+  let recs = [start({ cwd: '/elsewhere/other-session' })]
+  let mtime = 0
+  const calls = stubEngine(on, { files: [{ name: RUN, recs: () => recs, mtime: () => mtime }] })
+  await begin($)
+  await clock.settle()
+  recs = [...recs, end()]
+  mtime = 1
+  await clock.advance(2_000)
+  expect(calls.toasts).toEqual([])
+})
+
+test("a run recorded under the session's resolved path is its own; a neighbour folder sharing the prefix is not", async ($, on) => {
+  const clock = mock.clock(on)
+  stubEngine(on, {
+    realPath: '/private/work',
+    files: [
+      { name: RUN, recs: () => [start({ cwd: '/private/work/wt', target: 'PR #11' })] },
+      { name: '20261003T110001.000Z-200.ndjson', recs: () => [start({ pid: 200, target: 'PR #22', cwd: '/work-other' })] },
+    ],
+  })
+  await begin($)
+  await clock.settle()
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await band.find({ type: 'Link', text: 'PR #11' })).toBeDefined()
+  expect(await band.find({ text: /PR #22/ })).toBeUndefined()
 })
