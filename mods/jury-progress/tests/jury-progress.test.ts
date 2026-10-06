@@ -760,14 +760,14 @@ test('runs are labelled by repository, with the branch when one repository has s
       { name: '20261003T110001.000Z-200.ndjson', recs: () => [start({ pid: 200, target: 'PR #9', cwd: '/w/wt-2919' })] },
       { name: '20261003T110002.000Z-300.ndjson', recs: () => [start({ pid: 300, target: 'PR #4', cwd: '/src/keel' })] },
     ],
-    remotes: { '/w/wt-2927': 'git@github.com:acme/smartinventory.git', '/w/wt-2919': 'https://github.com/acme/smartinventory' },
+    remotes: { '/w/wt-2927': 'git@github.com:acme/widgets.git', '/w/wt-2919': 'https://github.com/acme/widgets' },
     branches: { '/w/wt-2927': 'feat/a', '/w/wt-2919': 'fix/b' },
   })
   await begin($)
   await clock.settle()
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect(await band.find({ type: 'Text', text: 'smartinventory · feat/a' })).toBeDefined()
-  expect(await band.find({ type: 'Text', text: 'smartinventory · fix/b' })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: 'widgets · feat/a' })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: 'widgets · fix/b' })).toBeDefined()
   expect(await band.find({ type: 'Text', text: 'keel' })).toBeDefined()
   expect(await band.find({ type: 'Text', text: /wt-29/ })).toBeUndefined()
 })
@@ -804,7 +804,7 @@ test('a failed repository read is tried again after a minute', async ($, on) => 
 
 test('a checkout that disappears keeps its repository name and link', { options: { all_sessions: true } }, async ($, on) => {
   const clock = mock.clock(on)
-  let remote = 'git@github.com:acme/smartinventory.git'
+  let remote = 'git@github.com:acme/widgets.git'
   const calls = stubEngine(on, {
     files: [{ name: RUN, recs: () => [start({ cwd: '/w/wt-2927' })] }, { name: '20261003T110001.000Z-200.ndjson', recs: () => [start({ pid: 200, target: 'PR #9', cwd: '/src/keel' })] }],
     remotes: { get '/w/wt-2927'() { return remote } } as any,
@@ -814,7 +814,7 @@ test('a checkout that disappears keeps its repository name and link', { options:
   remote = '' // keel removed the worktree after the merge
   await clock.advance(6 * 60_000)
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect(await band.find({ type: 'Text', text: 'smartinventory' })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: 'widgets' })).toBeDefined()
   expect(await band.find({ type: 'Link', text: 'PR #7' })).toBeDefined()
   expect(await band.find({ type: 'Text', text: /wt-2927/ })).toBeUndefined()
   // Retried later and later, not every minute.
