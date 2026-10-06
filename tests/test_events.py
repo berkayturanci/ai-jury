@@ -532,6 +532,47 @@ class TheEventsDirectory(unittest.TestCase):
         self.assertEqual(events.stale_run_files(names, keep=10), [])
         self.assertEqual(events.stale_run_files(names, keep=0), runs)
 
+    def test_a_retry_name_is_newer_than_its_base_name(self):
+        base = "20261001T000000.000Z-7.ndjson"
+        retry = "20261001T000000.000Z-7-1.ndjson"
+        self.assertLess(retry, base)  # plain string order is the trap
+        self.assertEqual(events.stale_run_files([retry, base], keep=1), [base])
+        later = "20261001T000000.001Z-7.ndjson"
+        self.assertEqual(events.stale_run_files([later, retry, base], keep=1), [base, retry])
+
+    def test_the_descriptor_is_closed_when_fdopen_fails(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = str(Path(d) / events.run_file_name(0, 9))
+            closed: list[int] = []
+            real_close = os.close
+            with (
+                unittest.mock.patch.object(os, "fdopen", side_effect=MemoryError),
+                unittest.mock.patch.object(
+                    os, "close", side_effect=lambda fd: (closed.append(fd), real_close(fd))
+                ),
+                self.assertRaises(MemoryError),
+            ):
+                events.EventsWriter(path, exclusive=True)
+            self.assertEqual(len(closed), 1)
+
+    @unittest.skipUnless(os.name == "posix", "POSIX modes")
+    def test_an_existing_group_writable_directory_warns_once_and_a_private_one_does_not(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d) / "shared"
+            root.mkdir()
+            root.chmod(0o770)
+            msgs: list[str] = []
+            w = events.open_dir_writer(root, clock=lambda: 0.0, pid=9, on_error=msgs.append)
+            self.assertIsNotNone(w)
+            w.close()
+            self.assertEqual(len(msgs), 1)
+            self.assertIn("group/world-writable", msgs[0])
+            self.assertEqual(root.stat().st_mode & 0o777, 0o770)  # left as is
+            root.chmod(0o700)
+            msgs.clear()
+            events.open_dir_writer(root, clock=lambda: 0.0, pid=10, on_error=msgs.append).close()
+            self.assertEqual(msgs, [])
+
     def test_the_writer_makes_the_directory_prunes_and_writes_its_own_file(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d) / "a" / "b"

@@ -105,9 +105,19 @@ def run_file_name(now: float, pid: int, attempt: int = 0) -> str:
     return f"{stamp}.{millis:03d}Z-{pid}{suffix}.ndjson"
 
 
+def _run_order(name: str) -> tuple[str, int]:
+    """Sort key: a retry name (``...-<pid>-1.ndjson``) is newer than its base name.
+
+    Plain string order puts ``-`` before ``.``, so a retry would sort as older.
+    """
+    stamp, _, rest = name[: -len(".ndjson")].partition("Z-")
+    pid, _, attempt = rest.partition("-")
+    return (f"{stamp}Z-{pid}", int(attempt) if attempt else 0)
+
+
 def stale_run_files(names: Iterable[str], keep: int = KEEP) -> list[str]:
     """The run files past the newest ``keep``, oldest first; other names are never listed."""
-    runs = sorted(n for n in names if _RUN_NAME.match(n))
+    runs = sorted((n for n in names if _RUN_NAME.match(n)), key=_run_order)
     return runs[: max(0, len(runs) - keep)]
 
 
@@ -255,7 +265,12 @@ class EventsWriter:
             # A file of the run's own in a directory others may share: created, never
             # reused, and never through a symlink someone placed under its name.
             flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
-            self._fh = os.fdopen(os.open(path, flags, 0o600), "w", encoding="utf-8")
+            fd = os.open(path, flags, 0o600)
+            try:
+                self._fh = os.fdopen(fd, "w", encoding="utf-8")
+            except BaseException:
+                os.close(fd)
+                raise
         else:
             self._fh = Path(path).open("w", encoding="utf-8")  # noqa: SIM115 - closed in close()
         self._clock = clock
@@ -318,7 +333,12 @@ def open_dir_writer(
     """
     pid = os.getpid() if pid is None else pid
     try:
+        existed = directory.is_dir()
         directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if existed and on_error is not None and directory.stat().st_mode & 0o022:
+            # 0700 only applies to a directory jury creates; say so once when one that
+            # already exists lets others write to it (the files stay 0600, O_EXCL).
+            on_error(f"${ENV_DIR} {directory} is group/world-writable; its mode was left as is")
         # Room for this run's own file: the directory holds KEEP runs with it. Pruning
         # goes by name, so with KEEP runs going at once the oldest live one's file can
         # go too; that run keeps writing to its open handle, only a watcher loses it.
