@@ -189,6 +189,17 @@ def severity_counts(findings: Iterable[Any]) -> dict[str, int]:
     return counts
 
 
+def clean_verdict(verdict: Any) -> Any:
+    """A verdict token without the markdown the chair wrapped it in (``**COMMENT**``).
+
+    Strips surrounding ``*``, ``_``, backticks and whitespace; anything that is not
+    a string, or that strips to nothing, is returned as it came.
+    """
+    if not isinstance(verdict, str):
+        return verdict
+    return verdict.strip().strip("*_` \t\r\n").strip() or verdict
+
+
 def ballot_entries(reviewers: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     """The panelists of a report's ``reviewers`` array, cut to what a watcher shows.
 
@@ -206,7 +217,7 @@ def ballot_entries(reviewers: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
             {
                 "agent": r.get("name"),
                 "model": r.get("model") or None,
-                "verdict": r.get("verdict"),
+                "verdict": clean_verdict(r.get("verdict")),
                 "findings": len(found) if isinstance(found, list) else 0,
                 "review": bool(r.get("counts_as_review")),
             }
@@ -229,7 +240,7 @@ def end_record(
         "event": "end",
         "status": status,
         "findings": findings,
-        "verdict": verdict,
+        "verdict": clean_verdict(verdict),
     }
     if ballots is not None:
         rec["ballots"] = ballots
