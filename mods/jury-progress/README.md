@@ -23,7 +23,7 @@ A rounded card with one row per run (live, or finished in the last minute):
 - how long the run has been going
 
 With more than one run (or one from another checkout), each row starts with its repository's
-name, read from the checkout's `origin` (`smartinventory`, not the worktree folder `wt-2927`), and
+name, read from the checkout's `origin` (`widgets`, not the worktree folder `wt-2927`), and
 with the branch too when one repository has several runs on screen. Only a github.com remote
 makes the target a link. A finished run stays for a
 minute with its verdict as a chip (green for an approval, red for a request for changes or a
