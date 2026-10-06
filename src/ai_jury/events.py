@@ -265,12 +265,11 @@ class EventsWriter:
             # A file of the run's own in a directory others may share: created, never
             # reused, and never through a symlink someone placed under its name.
             flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
-            fd = os.open(path, flags, 0o600)
-            try:
-                self._fh = os.fdopen(fd, "w", encoding="utf-8")
-            except BaseException:
-                os.close(fd)
-                raise
+            # open() owns the descriptor from os.open on: it closes it itself if the
+            # text layer fails, so nothing here may close it a second time.
+            self._fh = open(  # noqa: SIM115 - closed in close()
+                path, "w", encoding="utf-8", opener=lambda p, _f: os.open(p, flags, 0o600)
+            )
         else:
             self._fh = Path(path).open("w", encoding="utf-8")  # noqa: SIM115 - closed in close()
         self._clock = clock
@@ -335,7 +334,12 @@ def open_dir_writer(
     try:
         existed = directory.is_dir()
         directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-        if existed and on_error is not None and directory.stat().st_mode & 0o022:
+        if (
+            existed
+            and on_error is not None
+            and os.name == "posix"
+            and directory.stat().st_mode & 0o022
+        ):
             # 0700 only applies to a directory jury creates; say so once when one that
             # already exists lets others write to it (the files stay 0600, O_EXCL).
             on_error(f"${ENV_DIR} {directory} is group/world-writable; its mode was left as is")
