@@ -55,18 +55,6 @@ export function runState(run) {
   return { phase, round, seats }
 }
 
-const MARK = { ok: '✓', failed: '✗', pending: '…' }
-
-export function seatText(seat) {
-  return `${MARK[seat.state]}${seat.agent}`
-}
-
-// The four phases as a bar: done ▰, current ▶, still to come ▱.
-export function phaseBar(phase) {
-  const at = PHASES.indexOf(phase)
-  return PHASES.map((_, i) => (i < at ? '▰' : i === at ? '▶' : '▱')).join('')
-}
-
 export function phaseLabel(phase, round) {
   return round != null && phase === 'debate' ? `${phase} r${round}` : phase
 }
@@ -90,44 +78,52 @@ export function baseName(path) {
   return parts[parts.length - 1] ?? ''
 }
 
+// The chair's verdict token as a word: markdown emphasis around it (`**COMMENT**`) dropped.
+export function cleanVerdict(verdict) {
+  return String(verdict ?? '').trim().replace(/^[*_`\s]+|[*_`\s]+$/g, '')
+}
+
+// Which way a verdict leans, for its color: approve, block, or anything else.
+export function verdictTone(verdict) {
+  const v = cleanVerdict(verdict).toUpperCase().replace(/[\s-]+/g, '_')
+  if (/^(APPROVE|APPROVED|LGTM|PASS|READY)$/.test(v)) return 'good'
+  if (/^(REQUEST_CHANGES|BLOCK|BLOCKED|REJECT|FAIL|NEEDS_INFO)$/.test(v)) return 'bad'
+  return 'warn'
+}
+
+export function findingsText(n) {
+  const k = n ?? 0
+  return `${k} finding${k === 1 ? '' : 's'}`
+}
+
 // The finished line: verdict and findings, or how the run ended otherwise.
 export function endText(end) {
-  if (end.status === 'done') {
-    const n = end.findings ?? 0
-    return `${end.verdict ?? 'done'} · ${n} finding${n === 1 ? '' : 's'}`
-  }
+  if (end.status === 'done') return `${cleanVerdict(end.verdict) || 'done'} · ${findingsText(end.findings)}`
   return end.status === 'cancelled' ? 'cancelled' : 'failed'
 }
 
-function seconds(step) {
-  return Number.isFinite(step.duration_s) ? `${step.duration_s}s` : ''
+// The four phases as chips for a live run: each is done, the current one, or still to come.
+// The current one carries its debate round.
+export function phaseChips(run) {
+  const { phase, round } = runState(run)
+  const at = PHASES.indexOf(phase)
+  // An ended run has no current phase: a finished one is done throughout; one that failed or was
+  // cancelled is done up to the phase it stopped in, which is marked failed.
+  const ended = run.end ?? null
+  const here = ended === null ? 'current' : ended.status === 'done' ? 'done' : 'failed'
+  return PHASES.map((name, i) => ({
+    text: i === at ? phaseLabel(name, round) : name,
+    state: i < at ? 'done' : i === at ? here : ended?.status === 'done' ? 'done' : 'todo',
+  }))
 }
 
-// The pane's lines for one run, phase by phase: who answered, how long it took, what it found.
-export function paneLines(run) {
-  const lines = []
-  const s = run.start
-  lines.push({ text: `${s.target ?? 'jury run'} · ${s.mode ?? 'code'} review · decision: ${s.decision ?? '?'}${s.chair ? ` · chair ${s.chair}` : ''}`, tone: 'title' })
-  if (s.cached) lines.push({ text: 'answered from the cache: no agent ran', tone: 'dim' })
-  for (const phase of PHASES) {
-    const steps = run.steps.filter((x) => x.phase === phase)
-    if (steps.length === 0) continue
-    const rounds = [...new Set(steps.map((x) => x.round ?? null))]
-    for (const round of rounds) {
-      const parts = steps
-        .filter((x) => (x.round ?? null) === round)
-        .map((x) => {
-          const found = x.ok ? (x.findings ? ` ${x.findings} found` : '') : x.error_code ? ` ${x.error_code}` : ' failed'
-          return `${x.ok ? '✓' : '✗'} ${x.agent} ${seconds(x)}${found}`.replace(/\s+$/, '')
-        })
-      lines.push({ text: `${phaseLabel(phase, round)}: ${parts.join(' · ')}`, tone: steps.some((x) => !x.ok) ? 'wait' : 'plain' })
-    }
-  }
-  const pending = run.end ? [] : runState(run).seats.filter((seat) => seat.state === 'pending')
-  if (pending.length > 0) lines.push({ text: `waiting on: ${pending.map((seat) => seat.agent).join(', ')}`, tone: 'dim' })
-  if (run.end) lines.push({ text: `ended: ${endText(run.end)}`, tone: run.end.status === 'done' ? 'title' : 'bad' })
-  return lines
+// A seat as its state mark and name: ● answered, ✗ failed, ◌ still thinking.
+const SEAT_MARK = { ok: '●', failed: '✗', pending: '◌' }
+
+export function seatChip(seat) {
+  return { text: `${SEAT_MARK[seat.state]} ${seat.agent}`, state: seat.state }
 }
+
 
 // What `$JURY_EVENTS_DIR` asks for, as ai-jury reads it (events.events_dir): null when unset or
 // off, the path otherwise with a leading `~` expanded against `home`.
@@ -178,4 +174,79 @@ export function runLiveness(run, alive) {
   // the ordinary case: the start record lands after config and diff are read.)
   if (Number.isFinite(ts) && startedAt > ts * 1000 + 60_000) return 'stopped'
   return 'live'
+}
+
+// https://github.com/<owner>/<repo> from a git remote URL, or null. Only github.com itself (an
+// ssh host alias such as `github.com-work` included), and only names GitHub allows, so the link
+// built from it is always a valid href.
+const GH_NAME = '[A-Za-z0-9_.-]+'
+const GH_REMOTES = [
+  // git@github.com:owner/repo(.git), git@github.com-alias:owner/repo, ssh://git@github.com/owner/repo
+  new RegExp(`^(?:ssh://)?[A-Za-z0-9_.-]+@github\\.com(?:-[A-Za-z0-9_.-]+)?[:/](${GH_NAME})/(${GH_NAME}?)(?:\\.git)?/?$`),
+  // https://github.com/owner/repo(.git), with or without credentials
+  new RegExp(`^https?://(?:[^@/\\s]+@)?github\\.com/(${GH_NAME})/(${GH_NAME}?)(?:\\.git)?/?$`),
+]
+
+export function githubBase(remote) {
+  const text = String(remote ?? '').trim()
+  for (const re of GH_REMOTES) {
+    const m = text.match(re)
+    if (m && !['.', '..'].includes(m[1]) && !['.', '..', ''].includes(m[2])) return `https://github.com/${m[1]}/${m[2]}`
+  }
+  return null
+}
+
+// An href the mod API accepts: https, printable ASCII, no '@', spelled exactly as URL spells it.
+// Anything else would make the engine refuse the whole tree the Link is in.
+export function safeHref(h) {
+  if (typeof h !== 'string' || !/^https:\/\/[\x21-\x7e]+$/.test(h) || h.includes('@')) return null
+  try {
+    return typeof URL === 'function' && new URL(h).href === h ? h : null
+  } catch {
+    return null
+  }
+}
+
+// Where a run's target lives on GitHub: `PR #N` and `issue #N` link there; a local diff, a
+// commit or a range has no page of its own.
+export function targetUrl(base, target) {
+  if (!base) return null
+  const pr = String(target ?? '').match(/^PR #(\d+)$/)
+  if (pr) return safeHref(`${base}/pull/${pr[1]}`)
+  const issue = String(target ?? '').match(/^issue #(\d+)$/)
+  return issue ? safeHref(`${base}/issues/${issue[1]}`) : null
+}
+
+const SEVERITY_ORDER = ['critical', 'major', 'minor', 'nit', 'info']
+
+// "1 major, 2 minor" from a step's severity counts; empty when it has none.
+export function severityText(counts) {
+  if (!counts || typeof counts !== 'object') return ''
+  const known = SEVERITY_ORDER.filter((k) => counts[k] > 0).map((k) => `${counts[k]} ${k}`)
+  const other = Object.keys(counts).filter((k) => !SEVERITY_ORDER.includes(k) && counts[k] > 0).map((k) => `${counts[k]} ${k}`)
+  return [...known, ...other].join(', ')
+}
+
+// A seat's model: what its step says it sent, else what the panel says it was asked for.
+export function seatModel(run, agent, step) {
+  if (step?.model) return step.model
+  return (run.start.panel ?? []).find((p) => p.agent === agent)?.model ?? null
+}
+
+// A repository's name from its remote URL (`git@host:owner/name.git`, `https://host/owner/name`),
+// else the checkout folder's own name.
+export function repoName(remote, cwd) {
+  const m = String(remote ?? '').trim().match(/([^/:\s]+?)(?:\.git)?\/?$/)
+  return m ? m[1] : baseName(cwd) || null
+}
+
+// Whether path `at` is folder `dir` or inside it. A trailing slash on either side does not
+// matter, the root folder holds everything, and the comparison ignores case, as macOS's and
+// Windows' file systems do by default (two checkouts differing only in case are not a real case).
+export function withinFolder(at, dir) {
+  const trim = (p) => String(p).replace(/\/+$/, '').toLowerCase()
+  const a = trim(at)
+  const d = trim(dir)
+  if (d === '') return true // the root folder
+  return a === d || a.startsWith(`${d}/`)
 }

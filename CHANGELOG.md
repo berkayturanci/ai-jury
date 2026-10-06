@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.25.0] - 2026-10-06
+
+> **What changes for you.** You can see who said what. jury's events now name each seat's model, count each
+> seat's findings by severity, and give a finished run's ballots (agent, model, verdict, finding count), still
+> metadata only. jury-progress 0.5.0 shows them: the models with the panel, a colored dot per ballot, and a
+> `PR #N` target you can click to open on GitHub. Runs are labelled by repository name instead of worktree folder,
+> and the band refreshes every second while a run is live (#951). The band and pane are drawn as cards with
+> colored phase and verdict chips (#949), and each Claude Code session shows only the runs started in its own folder
+> (#953). Update the mod with `claude plugin update jury-progress@ai-jury`.
+
+### Added
+- **Events say who said what** (#951). Each seat in the `start` record names its requested model. Each `step` names the model it sent and counts what it raised by severity (`{"major": 1, "minor": 2}`). A done run's `end` record carries `ballots`, each panelist's agent, model, verdict token, finding count and whether it counts as a review, taken from the JSON report's reviewers array. All of this is metadata, never a finding's or a reviewer's text, and it is additive, so the schema stays `ai-jury.events.v1`. Ballots that cannot be built are left out, and the run never fails for them. jury-progress 0.4.0 shows the models with the panel and each seat's severity counts, a finished run's ballots as colored dots in the band and as rows in the pane, and makes a `PR #N` or `issue #N` target a link to GitHub (read from the checkout's `origin`); a `›` beside it opens the pane. A run is labelled by its repository's name (from `origin`), with the branch when one repository has several runs on screen, not by its worktree folder. The events directory is read every second while a run is live (every two otherwise), so a step shows within about a second.
+
+### Changed
+- **jury-progress 0.5.0 shows a session its own runs** (#953). Every session showed every jury run on the machine. A session now shows, and toasts about, only the runs started in its folder or below it, which covers the ones keel starts in the worktrees it makes inside the checkout. "Show other sessions' runs" in `/config` brings back the machine-wide view.
+- **jury-progress 0.3.0 draws cards** (#949). The band is a rounded card with one row per run (live, or finished in the last minute), headed by the jury mark on its first row. Below 100 columns only the current phase shows, with how far along it is (`2/4`), and seats wrap rather than being cut. Text uses the terminal's own colors, and chips are white on saturated backgrounds. The phases are a segmented bar of chips (done green, current blue, to come grey), each seat is a colored dot (`●` answered, `✗` failed, `◌` thinking), and a finished run's verdict is a chip colored by which way it leans. The `/jury-progress` pane shows the run as a card, with a row per phase and debate round and a chip per seat (seconds, findings or error code). The verdict is shown without markdown emphasis, so `**COMMENT**` reads `COMMENT` (#944, on the mod's side).
+
 ## [1.24.0] - 2026-10-03
 
 > **What changes for you.** jury-progress now actually shows your jury runs. In 1.23.0 the mod set
