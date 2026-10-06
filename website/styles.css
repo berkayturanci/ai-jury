@@ -1192,6 +1192,25 @@ footer { border-top: 1px solid var(--border); padding: 2.4rem 0; color: var(--fa
   .theater-note { margin-left: 0; }
 }
 
+/* ---- jury-progress (Claude Code mod) -------------------------------- */
+.jp { display: grid; gap: 1.4rem; }
+.jp-stages { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.2rem; align-items: start; }
+.jp-stage {
+  margin: 0; border-radius: var(--radius); overflow: hidden;
+  border: 1px solid var(--border); background: var(--surface-2);
+  box-shadow: 0 24px 60px -34px rgba(0,0,0,.6);
+}
+.jp-wide { grid-column: 1 / -1; }
+.jp-pane { grid-column: 1 / -1; max-width: 566px; justify-self: center; }
+.jp-stage img { display: block; width: 100%; height: auto; }
+.jp-stage figcaption {
+  padding: .7rem 1rem; font-size: .84rem; color: var(--muted);
+  border-top: 1px solid var(--border-soft); background: var(--surface);
+}
+.jp-install { display: grid; gap: .6rem; }
+.jp-install .theater-run > code { overflow-wrap: anywhere; font-size: .9rem; }
+.jp-note { font-size: .88rem; margin: .2rem 0 0; }
+
 /* ---- Demo theater (animated deliberation preview) ------------------- */
 .theater-demo {
   margin-bottom: 1rem; padding: 1rem 1.1rem; border-radius: var(--radius);

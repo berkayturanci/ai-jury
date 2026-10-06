@@ -367,6 +367,12 @@ findings) and in a `/jury-progress` side panel, from the metadata-only events ju
 machine writes its events there with no flag or variable (or set `$JURY_EVENTS_DIR` yourself). Install
 it with `claude plugin install jury-progress@ai-jury`; the CLI and the other hosts are unaffected.
 
+![A live jury run above the Claude Code prompt: its repository, the PR as a link, the phases as chips and each seat's state](mods/jury-progress/docs/band.svg)
+
+![The /jury-progress side panel: a live run open in full under its row, and a finished run with its verdict](mods/jury-progress/docs/pane.svg)
+
+Details: [`docs/jury-progress.md`](docs/jury-progress.md).
+
 ### Replay a saved run — `jury replay`
 
 Re-watch a finished run without re-spending a single token. The file to replay is

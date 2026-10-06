@@ -170,6 +170,7 @@
         <a class="nav-link hide-sm" href="#integrations">Integrations</a>
         <a class="nav-link hide-sm" href="#demo">Demo</a>
         <a class="nav-link hide-sm" href="#theater">Theater</a>
+        <a class="nav-link hide-sm" href="#jury-progress">Claude Code</a>
         <a class="nav-link hide-sm" href="#compare">Compare</a>
         <a class="nav-link hide-sm" href="#faq">FAQ</a>
         <a class="nav-link hide-sm" href="docs.html">Docs</a>
@@ -189,6 +190,7 @@
       <a class="nav-mlink" href="#integrations">Integrations</a>
       <a class="nav-mlink" href="#demo">Demo</a>
       <a class="nav-mlink" href="#theater">Theater</a>
+      <a class="nav-mlink" href="#jury-progress">Claude Code</a>
       <a class="nav-mlink" href="#compare">Compare</a>
       <a class="nav-mlink" href="#faq">FAQ</a>
       <a class="nav-mlink" href="docs.html">Docs</a>
@@ -738,6 +740,52 @@ endpoint = <span class="s">"http://localhost:11434/v1"</span></code></pre>
           <span class="prompt mono">$</span>
           <code>jury --pr 123 --theater</code>
           <span class="theater-note muted">also: <code class="mono">--theater-style pixel</code> · <code class="mono">--issue 42 --theater</code> · <code class="mono">--decision vote</code></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────────────── jury-progress (Claude Code mod) ───────────────── -->
+    <section id="jury-progress">
+      <div class="sec-head wide reveal">
+        <p class="sec-kicker">Inside Claude Code</p>
+        <h2>Watch the jury deliberate without leaving Claude Code</h2>
+        <p class="muted">
+          <code class="mono" style="color:var(--accent-2)">jury-progress</code> is an optional Claude Code mod. While a review runs,
+          it shows the phases, each seat with its model, and how each seat voted, in a band above your prompt and in a
+          <code class="mono">/jury-progress</code> side panel. Point at a seat for its model, how long it took and what it found (or that it is still thinking), and at a ballot dot for its verdict, model and finding count.
+          It only reads the metadata-only events jury writes; it never runs <code class="mono">jury</code>.
+        </p>
+      </div>
+
+      <div class="jp reveal">
+        <div class="jp-stages">
+          <figure class="jp-stage jp-wide">
+            <img src="assets/jury-progress/band.svg" width="1376" height="170" loading="lazy" decoding="async"
+                 alt="A live jury run above the Claude Code prompt: the repository, the PR as a link, the phases as chips, and each seat's state as a colored dot." />
+            <figcaption>A live run above the prompt: phases, and each seat answered, failed or still thinking.</figcaption>
+          </figure>
+          <figure class="jp-stage jp-wide">
+            <img src="assets/jury-progress/band-finished.svg" width="1376" height="170" loading="lazy" decoding="async"
+                 alt="The same run finished: a verdict chip, the finding count, and a dot per seat colored by how that seat voted." />
+            <figcaption>The same run finished: the verdict, the finding count and each seat's ballot.</figcaption>
+          </figure>
+          <figure class="jp-stage jp-pane">
+            <img src="assets/jury-progress/pane.svg" width="566" height="406" loading="lazy" decoding="async"
+                 alt="The /jury-progress side panel: a live run opened in full under its row, and a finished run with its verdict." />
+            <figcaption>The <code class="mono">/jury-progress</code> side panel.</figcaption>
+          </figure>
+        </div>
+
+        <div class="jp-install">
+          <div class="theater-run">
+            <span class="prompt mono">$</span>
+            <code>claude plugin marketplace add berkayturanci/ai-jury</code>
+          </div>
+          <div class="theater-run">
+            <span class="prompt mono">$</span>
+            <code>claude plugin install jury-progress@ai-jury</code>
+          </div>
+          <p class="muted jp-note">Needs Claude Code 2.1.287 or newer and ai-jury 1.24.0 or newer (1.25.0 for models and ballots). <a href="docs.html#jury-progress">Read the docs →</a></p>
         </div>
       </div>
     </section>

@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1376" height="170" viewBox="0 0 1376 170" role="img" aria-label="jury-progress — a live run">
+<rect width="100%" height="100%" rx="8" fill="#1e1e1e"/>
+<rect width="100%" height="30" rx="8" fill="#2d2d2d"/><rect y="22" width="100%" height="8" fill="#2d2d2d"/>
+<circle cx="18" cy="15" r="5.5" fill="#ff5f57"/><circle cx="36" cy="15" r="5.5" fill="#febc2e"/><circle cx="54" cy="15" r="5.5" fill="#28c840"/>
+<text x="688" y="19" fill="#9d9d9d" font-family="-apple-system,Segoe UI,sans-serif" font-size="12" text-anchor="middle">jury-progress — a live run</text>
+<rect x="242.8" y="63" width="67.2" height="19" fill="#5f87ff"/>
+<rect x="310.0" y="63" width="226.8" height="19" fill="#8787af"/>
+<g font-family="SF Mono,Menlo,Consolas,DejaVu Sans Mono,monospace" font-size="14" xml:space="preserve">
+<text x="16.0" y="58" fill="#8787af" textLength="1302.0" lengthAdjust="spacingAndGlyphs">╭─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮</text>
+<text x="1326.4" y="58" fill="#949494" textLength="25.2" lengthAdjust="spacingAndGlyphs">[-]</text>
+<text x="16.0" y="77" fill="#8787af" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="32.8" y="77" fill="#d4d4d4" font-weight="bold" textLength="50.4" lengthAdjust="spacingAndGlyphs">◆ jury</text>
+<text x="91.6" y="77" fill="#949494" textLength="58.8" lengthAdjust="spacingAndGlyphs">ai-jury</text>
+<text x="158.8" y="77" fill="#d4d4d4" textLength="75.6" lengthAdjust="spacingAndGlyphs">PR #935 ›</text>
+<text x="251.2" y="77" fill="#ffffff" font-weight="bold" textLength="50.4" lengthAdjust="spacingAndGlyphs">review</text>
+<text x="318.4" y="77" fill="#ffffff" textLength="210.0" lengthAdjust="spacingAndGlyphs">debate  verify  synthesis</text>
+<text x="545.2" y="77" fill="#5faf87" textLength="58.8" lengthAdjust="spacingAndGlyphs">● alpha</text>
+<text x="612.4" y="77" fill="#5faf87" textLength="50.4" lengthAdjust="spacingAndGlyphs">● beta</text>
+<text x="671.2" y="77" fill="#949494" textLength="25.2" lengthAdjust="spacingAndGlyphs">now</text>
+<text x="1309.6" y="77" fill="#8787af" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="16.0" y="96" fill="#8787af" textLength="1302.0" lengthAdjust="spacingAndGlyphs">╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯</text>
+<text x="16.0" y="115" fill="#808080" textLength="1344.0" lengthAdjust="spacingAndGlyphs">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</text>
+<text x="16.0" y="134" fill="#949494" textLength="8.4" lengthAdjust="spacingAndGlyphs">❯</text>
+<text x="16.0" y="153" fill="#808080" textLength="1344.0" lengthAdjust="spacingAndGlyphs">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</text>
+</g></svg>
