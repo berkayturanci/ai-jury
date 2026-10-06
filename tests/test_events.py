@@ -56,8 +56,8 @@ class TheRecordBuilders(unittest.TestCase):
             {
                 "event": "start",
                 "panel": [
-                    {"agent": "claude", "vendor": "anthropic"},
-                    {"agent": "codex", "vendor": "openai"},
+                    {"agent": "claude", "vendor": "anthropic", "model": None},
+                    {"agent": "codex", "vendor": "openai", "model": None},
                 ],
                 "chair": "claude",
                 "target": "PR #7",
@@ -107,6 +107,8 @@ class TheRecordBuilders(unittest.TestCase):
                 "duration_s": 12.3,
                 "findings": 2,
                 "error_code": "timeout",
+                "model": None,
+                "severity": {},
             },
         )
         self.assertNotIn("SECRET", json.dumps(rec))
@@ -121,6 +123,92 @@ class TheRecordBuilders(unittest.TestCase):
             events.end_record("cancelled"),
             {"event": "end", "status": "cancelled", "findings": None, "verdict": None},
         )
+
+
+class SeatModelsSeverityAndBallots(unittest.TestCase):
+    """What a watcher shows per seat: its model, what it raised, how it voted."""
+
+    def test_a_seat_may_name_its_model(self):
+        rec = events.start_record(
+            [("codex", "openai", "gpt-5.3-codex"), ("claude", "anthropic", ""), ("x", "y")],
+            chair=None,
+            target="PR #7",
+            mode="code",
+            decision="vote",
+            cached=False,
+        )
+        self.assertEqual([p["model"] for p in rec["panel"]], ["gpt-5.3-codex", None, None])
+
+    def test_a_step_carries_the_sent_model_and_severity_counts_never_text(self):
+        from ai_jury.findings import Finding
+
+        found = [
+            Finding(severity="major", file="a.py", claim="SECRET claim", evidence="SECRET ev"),
+            Finding(severity="major", file="b.py", claim="x"),
+            Finding(severity="nit", file="c.py", claim="y"),
+        ]
+        result = AgentResult(
+            agent="codex",
+            vendor="openai",
+            ok=True,
+            output="SECRET",
+            duration_s=3.0,
+            findings=found,
+            model="gpt-5.3-codex",
+        )
+        rec = events.step_record("review", result)
+        self.assertEqual(rec["model"], "gpt-5.3-codex")
+        self.assertEqual(rec["severity"], {"major": 2, "nit": 1})
+        self.assertNotIn("SECRET", json.dumps(rec))
+
+    def test_ballots_keep_the_panelists_counts_and_tokens_only(self):
+        reviewers = [
+            {
+                "name": "claude",
+                "role": "panelist",
+                "model": "opus",
+                "verdict": "APPROVE",
+                "findings": [0],
+                "counts_as_review": True,
+                "scope": "SECRET prose",
+                "testing": "SECRET",
+            },
+            {
+                "name": "codex",
+                "role": "panelist",
+                "model": "",
+                "verdict": "ABSTAIN",
+                "findings": [],
+                "counts_as_review": False,
+                "scope": "SECRET",
+            },
+            {"name": "chair", "role": "chair", "verdict": "APPROVE"},
+        ]
+        self.assertEqual(
+            events.ballot_entries(reviewers),
+            [
+                {
+                    "agent": "claude",
+                    "model": "opus",
+                    "verdict": "APPROVE",
+                    "findings": 1,
+                    "review": True,
+                },
+                {
+                    "agent": "codex",
+                    "model": None,
+                    "verdict": "ABSTAIN",
+                    "findings": 0,
+                    "review": False,
+                },
+            ],
+        )
+        self.assertNotIn("SECRET", json.dumps(events.ballot_entries(reviewers)))
+
+    def test_the_end_record_carries_ballots_only_when_given(self):
+        self.assertNotIn("ballots", events.end_record("cancelled"))
+        rec = events.end_record("done", findings=1, verdict="APPROVE", ballots=[{"agent": "a"}])
+        self.assertEqual(rec["ballots"], [{"agent": "a"}])
 
 
 class TheWriter(unittest.TestCase):
@@ -256,6 +344,10 @@ class TheCli(unittest.TestCase):
         self.assertEqual(end["findings"], len(out["findings"]))
         chair = [r for r in out["reviewers"] if r.get("role") == "chair"]
         self.assertEqual(end["verdict"], chair[0]["verdict"])
+        # Each panelist's ballot, as the report's reviewers array has it.
+        panelists = [r for r in out["reviewers"] if r.get("role") != "chair"]
+        self.assertEqual([b["agent"] for b in end["ballots"]], [r["name"] for r in panelists])
+        self.assertEqual([b["verdict"] for b in end["ballots"]], [r["verdict"] for r in panelists])
 
     def test_without_the_flag_no_file_is_written_and_nothing_is_streamed(self):
         out = io.StringIO()

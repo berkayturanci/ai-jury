@@ -2303,6 +2303,16 @@ def _events_dir_for(args: argparse.Namespace) -> Path | None:
     return _events.watched_dir(default_cache_dir() / "events")
 
 
+def _seat_model(spec) -> str | None:
+    """The model id a seat will be asked for, for the events file; None when unknown."""
+    try:
+        from .ballots import requested_model
+
+        return requested_model(spec) or None
+    except Exception:  # noqa: BLE001 - a side channel: the run never fails for it
+        return None
+
+
 def _cwd_or_none() -> str | None:
     """The working directory, or ``None`` when it was removed under the run."""
     try:
@@ -2864,7 +2874,7 @@ def main(argv: list[str] | None = None) -> int:
         events.write(
             _events.start_record(
                 # The seats that will speak: a disabled agent is never run.
-                [(a.name, a.vendor) for a in config.enabled_agents],
+                [(a.name, a.vendor, _seat_model(a)) for a in config.enabled_agents],
                 chair=config.chair if config.chair and config.chair != "rotate" else None,
                 target=_run_target(args),
                 mode=("issue" if args.issue else "code"),
@@ -2978,11 +2988,22 @@ def main(argv: list[str] | None = None) -> int:
         court.close()
 
     if events is not None:
-        from .ballots import chair_verdict
+        from .ballots import chair_verdict, reviewer_ballots
 
+        try:
+            ballots = _events.ballot_entries(
+                reviewer_ballots(
+                    outcome, config, vote=vote, mode=("issue" if args.issue else "code")
+                )
+            )
+        except Exception:  # noqa: BLE001 - a side channel: the run never fails for it
+            ballots = None
         events.write(
             _events.end_record(
-                "done", findings=len(outcome.findings), verdict=chair_verdict(outcome, vote)
+                "done",
+                findings=len(outcome.findings),
+                verdict=chair_verdict(outcome, vote),
+                ballots=ballots,
             )
         )
         events.close()
