@@ -36,6 +36,7 @@ const TONES = {
   ok: { color: 'green' },
   bad: { color: 'red' },
   wait: { color: 'yellow' },
+  live: { color: 'blue' },
   dim: { dimColor: true },
   plain: {},
   // phase chips: a segmented bar, done green, current blue, to come dim
@@ -312,6 +313,35 @@ function phaseBar(ui, run, compact = false) {
   })
 }
 
+// A chip that shows more while the pointer is on it: the detail is drawn hidden in a keyed Box
+// and the surface reveals it on hover. No hook runs, so it costs nothing per pointer move.
+function hoverChip(ui, key, shown, detail) {
+  const { Box, Text } = ui
+  if (!detail) return shown
+  return Box({
+    key,
+    flexDirection: 'row',
+    flexShrink: 0,
+    children: [shown, Box({ display: 'none', hover: { display: 'flex' }, children: [chip(Text, ` ${detail}`, 'dim')] })],
+  })
+}
+
+// What a seat's step says on hover: its model, seconds, findings (by severity) or error.
+function stepDetail(run, agent, step) {
+  const parts = []
+  const model = seatModel(run, agent, step)
+  if (model) parts.push(model)
+  if (step) {
+    if (Number.isFinite(step.duration_s)) parts.push(`${step.duration_s}s`)
+    if (!step.ok) parts.push(step.error_code ?? 'failed')
+    else if (step.findings) {
+      const sev = severityText(step.severity)
+      parts.push(`${step.findings} found${sev ? ` (${sev})` : ''}`)
+    }
+  } else parts.push('thinking')
+  return parts.join(' · ')
+}
+
 function seatRow(ui, run) {
   const { Box, Text } = ui
   return Box({
@@ -319,9 +349,17 @@ function seatRow(ui, run) {
     columnGap: 1,
     children: runState(run).seats.map((seat) => {
       const c = seatChip(seat)
-      return chip(Text, c.text, SEAT_TONE[c.state])
+      return hoverChip(ui, `seat-${seat.agent}`, chip(Text, c.text, SEAT_TONE[c.state]), stepDetail(run, seat.agent, seat.step))
     }),
   })
+}
+
+// A ballot as a colored dot; on hover, its verdict, model and finding count.
+function ballotChip(ui, run, b) {
+  const { Text } = ui
+  const model = b.model ?? seatModel(run, b.agent, null)
+  const detail = [cleanVerdict(b.verdict) || '?', model, findingsText(b.findings)].filter(Boolean).join(' · ')
+  return hoverChip(ui, `ballot-${b.agent}`, chip(Text, `● ${b.agent}`, BALLOT_TONE[verdictTone(b.verdict)]), detail)
 }
 
 function verdictChip(ui, end) {
@@ -337,7 +375,7 @@ function bandRow(ui, r, compact) {
     const parts = [verdictChip(ui, r.run.end), ...(r.run.end.status === 'done' ? [chip(Text, findingsText(r.run.end.findings), 'dim')] : [])]
     // How each seat voted, as a colored dot: who said what at a glance.
     // Not on a narrow band: there the verdict and the finding count need the room.
-    if (!compact) for (const b of r.run.end.ballots ?? []) parts.push(chip(Text, `● ${b.agent}`, BALLOT_TONE[verdictTone(b.verdict)]))
+    if (!compact) for (const b of r.run.end.ballots ?? []) parts.push(ballotChip(ui, r.run, b))
     return parts
   }
   if (r.run.start.cached) return [chip(Text, 'from the cache', 'dim')]
@@ -348,9 +386,85 @@ function bandRow(ui, r, compact) {
   return parts
 }
 
+// The hover group a run's band row and pane row share (1-64 characters: run file names are short).
+function hoverScope(r) {
+  return `run-${r.name}`.slice(0, 64)
+}
+
+// The pane: the side panel's width when it docks beside a fullscreen transcript.
+const PANE_OPEN = { id: PANE, title: 'jury', closeOnEscape: true, columns: 64 }
+
+// A run's color dot: blue while it runs, then the way its verdict leans, red when it failed.
+function runDot(r) {
+  if (r.state === 'live') return 'live'
+  if (r.state === 'stopped' || r.run.end?.status !== 'done') return 'bad'
+  return BALLOT_TONE[verdictTone(r.run.end.verdict)]
+}
+
+// The right-hand side of a pane row: the phase and how long while live, else how it ended.
+function runStatus(ui, r) {
+  const { Text } = ui
+  if (r.state === 'live') {
+    if (r.run.start.cached) return chip(Text, 'from the cache', 'dim')
+    const at = runState(r.run)
+    const since = startedAgo(r)
+    return chip(Text, `◌ ${phaseLabel(at.phase, at.round)}${since !== null ? ` · ${since}` : ''}`, 'current')
+  }
+  if (r.state === 'stopped') return chip(Text, ' stopped ', 'block')
+  return verdictChip(ui, r.run.end)
+}
+
+// The dim line under a pane row: each seat and its state while live, each ballot when ended.
+function runSummary(r) {
+  if (r.state === 'live') {
+    const seats = runState(r.run).seats.map((seat) => {
+      const model = seatModel(r.run, seat.agent, seat.step)
+      return `${seatChip(seat).text}${model ? ` ${model}` : ''}`
+    })
+    return seats.length > 0 ? seats.join('  ') : 'waiting for the panel'
+  }
+  if (r.state === 'stopped') return 'its process ended without an end record'
+  const ballots = (r.run.end.ballots ?? []).map((b) => `${b.agent} ${cleanVerdict(b.verdict) || '?'}`)
+  return [...ballots, r.run.end.status === 'done' ? findingsText(r.run.end.findings) : endText(r.run.end)].join(' · ')
+}
+
+// One run in the side panel, as the agents panel draws an agent: a colored dot, the name in
+// bold (a button that opens the run in full below it), and on the right its phase or verdict;
+// under it, dim, one line of who is doing what.
+function paneRow($, ui, r, listed, open) {
+  const { Box, Text, Button } = ui
+  return Box({
+    key: `jury-progress-row-${r.name}`,
+    flexDirection: 'column',
+    paddingX: 1,
+    hover: { scope: hoverScope(r), backgroundColor: '#30363D' },
+    children: [
+      Box({
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        columnGap: 1,
+        children: [
+          Box({
+            flexDirection: 'row',
+            columnGap: 1,
+            flexShrink: 1,
+            children: [
+              chip(Text, '●', runDot(r)),
+              Button({ key: `jury-progress-pick-${r.name}`, label: `${runLabel(r, listed)} · ${targetOf(r.run)}`, plain: true, onPress: () => selectRun($, r.name) }),
+              chip(Text, open ? '⌄' : '›', 'dim'),
+            ],
+          }),
+          Box({ flexShrink: 0, children: [runStatus(ui, r)] }),
+        ],
+      }),
+      Box({ paddingLeft: 2, children: [chip(Text, runSummary(r), 'dim')] }),
+    ],
+  })
+}
+
 async function openRun($, name) {
   selected = name
-  await $.ui.open({ id: PANE, title: 'jury', closeOnEscape: true })
+  await $.ui.open(PANE_OPEN)
   $.ui.invalidate('ui.render')
 }
 
@@ -408,6 +522,12 @@ async function chooseDir($) {
 // One run in full: its target and how it is decided, the phase bar, then one row per phase
 // and round with each seat's state, seconds and findings (or error), and how it ended.
 function runCard(ui, r) {
+  const { Box } = ui
+  return Box({ flexDirection: 'column', borderStyle: 'round', borderColor: BORDER, paddingX: 1, children: runCardRows(ui, r) })
+}
+
+// The rows of a run's card, one element per line (a card is these plus its two border lines).
+function runCardRows(ui, r) {
   const { Box, Text } = ui
   const s = r.run.start
   const rows = []
@@ -484,7 +604,7 @@ function runCard(ui, r) {
       )
     }
   }
-  return Box({ flexDirection: 'column', borderStyle: 'round', borderColor: BORDER, paddingX: 1, children: rows })
+  return rows
 }
 
 export function register(on, options = {}) {
@@ -524,9 +644,15 @@ export function register(on, options = {}) {
     return result
   })
 
+  // The command toggles the side panel: it opens it, or closes it when it is open.
   on('command.run', { command: 'jury-progress' }, async ($) => {
+    const panes = await $.ui.panes().catch(() => [])
+    if (panes.some((p) => p.id === PANE)) {
+      await $.ui.close({ id: PANE })
+      return {}
+    }
     selected = null
-    await $.ui.open({ id: PANE, title: 'jury', closeOnEscape: true })
+    await $.ui.open(PANE_OPEN)
     $.clock.after(0, () => refresh($, true))
     return {}
   })
@@ -541,6 +667,8 @@ export function register(on, options = {}) {
     const rows = shown.slice(0, settings.bandMax).map((r, i) =>
       Box({
         key: `jury-progress-${r.name}`,
+        // Hovering a run here lights its row in the pane, and the other way round.
+        hover: { scope: hoverScope(r) },
         flexDirection: 'row',
         // Seats that do not fit go to the next line rather than being cut.
         flexWrap: 'wrap',
@@ -580,57 +708,73 @@ export function register(on, options = {}) {
     const { Box, Text, Button } = ui
     const children = []
     const line = (part) => children.push(Text(textProps(part)))
+    // A notice is read in full: it wraps rather than being cut at the panel's edge.
+    const note = (part) => children.push(Text({ ...TONES[part.tone], wrap: 'wrap', children: [part.text] }))
     if (dir === null) {
-      line({ text: 'Progress events are off: $JURY_EVENTS_DIR is set to off, or the capture setting is off.', tone: 'dim' })
-      line({ text: 'Turn capture on in /config (jury-progress), or set JURY_EVENTS_DIR to a directory.', tone: 'dim' })
+      note({ text: 'Progress events are off: $JURY_EVENTS_DIR is set to off, or the capture setting is off.', tone: 'dim' })
+      note({ text: 'Turn capture on in /config (jury-progress), or set JURY_EVENTS_DIR to a directory.', tone: 'dim' })
       // A marker that could not be turned off still reads on: every jury keeps writing events.
-      if (markerError !== null) line({ text: markerError, tone: 'bad' })
+      if (markerError !== null) note({ text: markerError, tone: 'bad' })
     } else {
       const live = all.filter((r) => r.state === 'live')
-      const listed = [...live, ...all.filter((r) => r.state !== 'live')].slice(0, PANE_MAX)
-      const from = dirSource === 'mod' ? 'watched by this mod' : dirSource === 'unwatched' ? 'marker not written' : 'from $JURY_EVENTS_DIR'
-      line({ text: `${live.length} live jury run(s) · events in ${dir} (${from})`, tone: 'title' })
-      if (listError !== null) line({ text: `cannot read the events directory: ${listError}`, tone: 'bad' })
-      if (markerError !== null) line({ text: markerError, tone: 'bad' })
-      const focus = listed.find((r) => r.name === selected) ?? listed[0]
-      if (focus === undefined) {
+      const recent = all.filter((r) => r.state !== 'live')
+      const listed = [...live, ...recent].slice(0, PANE_MAX)
+      // The header, as the agents panel heads its list: what this is, and how many are running.
+      children.push(
+        Box({
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          children: [
+            Box({ flexDirection: 'row', columnGap: 1, children: [chip(Text, '✦ Jury', 'title'), chip(Text, settings.allSessions ? 'on this machine' : 'in this session', 'dim')] }),
+            chip(Text, live.length > 0 ? `◌ ${live.length} running` : 'idle', live.length > 0 ? 'live' : 'dim'),
+          ],
+        }),
+      )
+      if (listError !== null) note({ text: `cannot read the events directory: ${listError}`, tone: 'bad' })
+      if (markerError !== null) note({ text: markerError, tone: 'bad' })
+      // The run picked is open in full; with none picked, the newest is, when its card fits in
+      // the rows the panel shows (the engine owns the scroll, so an overflow would push the
+      // header out of sight).
+      const picked = listed.find((r) => r.name === selected)
+      const listRows = 1 + [live, recent].filter((g) => g.length > 0).length + listed.length * 2 + 3
+      const room = e.props.scroll?.bodyRows ?? Infinity
+      const focus = picked ?? (listed[0] && listRows + runCardRows(ui, listed[0]).length + 2 <= room ? listed[0] : undefined)
+      if (listed.length === 0) {
         line({ text: ' ', tone: 'plain' })
-        line({ text: 'No jury run yet. Runs started from this session (or by keel) show here as they happen.', tone: 'dim' })
-        if (dirSource === 'mod') line({ text: 'Any jury on this machine (ai-jury 1.24.0 or newer) writes here while the .watched marker says on.', tone: 'dim' })
+        note({ text: 'No jury run yet. Runs started from this session (or by keel) show here as they happen.', tone: 'dim' })
+        if (dirSource === 'mod') note({ text: 'Any jury on this machine (ai-jury 1.24.0 or newer) writes here while the .watched marker says on.', tone: 'dim' })
       } else {
-        line({ text: ' ', tone: 'plain' })
-        const since = startedAgo(focus)
-        const state = focus.state === 'live' ? 'running' : focus.state === 'stopped' ? 'stopped without an end record' : 'finished'
-        line({ text: `${state}${since !== null ? ` · started ${since === 'now' ? 'just now' : `${since} ago`}` : ''}${Number.isInteger(focus.run.start.pid) ? ` · pid ${focus.run.start.pid}` : ''}`, tone: focus.state === 'stopped' ? 'bad' : 'dim' })
-        if (focus.run.start.cwd) line({ text: focus.run.start.cwd, tone: 'dim' })
-        children.push(runCard(ui, focus))
-        const others = listed.filter((r) => r !== focus)
-        if (others.length > 0) {
-          line({ text: ' ', tone: 'plain' })
-          line({ text: 'Other runs:', tone: 'dim' })
-          for (const r of others) {
-            const at = r.state === 'live' ? runState(r.run) : null
-            const tail = at !== null ? phaseLabel(at.phase, at.round) : r.state === 'stopped' ? 'stopped' : endText(r.run.end)
-            children.push(
-              Button({
-                key: `jury-progress-pick-${r.name}`,
-                label: `${runLabel(r, listed)} · ${targetOf(r.run)} · ${tail}`,
-                plain: true,
-                onPress: () => selectRun($, r.name),
-              }),
-            )
+        // Each section: its heading and count, then its runs; the open one in full under its row.
+        for (const [title, runs] of [['LIVE', live], ['RECENT', recent]]) {
+          const shown = runs.filter((r) => listed.includes(r))
+          if (shown.length === 0) continue
+          children.push(Box({ flexDirection: 'row', columnGap: 1, children: [chip(Text, title, 'title'), chip(Text, `· ${runs.length}`, 'dim')] }))
+          for (const r of shown) {
+            children.push(paneRow($, ui, r, listed, r === focus))
+            if (r !== focus) continue
+            children.push(Box({ flexDirection: 'column', paddingLeft: 2, children: [runCard(ui, r)] }))
           }
         }
       }
+      const from = dirSource === 'mod' ? 'watched by this mod' : dirSource === 'unwatched' ? 'marker not written' : 'from $JURY_EVENTS_DIR'
+      const shownDir = home && dir.startsWith(`${home}/`) ? `~${dir.slice(home.length)}` : dir
+      line({ text: `events in ${shownDir} (${from})`, tone: 'dim' })
     }
+    // The footer: how to use the panel, and how to put it away.
     children.push(
       Box({
         key: 'jury-progress-actions',
-        flexDirection: 'row',
-        columnGap: 2,
+        flexDirection: 'column',
         children: [
-          Button({ key: 'refresh', label: 'Refresh', onPress: () => refresh($, true) }),
-          Button({ key: 'close', label: 'Close', onPress: () => $.ui.close({ id: PANE }) }),
+          chip(Text, 'click a run for its phases · /jury-progress to hide', 'dim'),
+          Box({
+            flexDirection: 'row',
+            columnGap: 2,
+            children: [
+              Button({ key: 'refresh', label: 'Refresh', onPress: () => refresh($, true) }),
+              Button({ key: 'close', label: 'Close', onPress: () => $.ui.close({ id: PANE }) }),
+            ],
+          }),
         ],
       }),
     )

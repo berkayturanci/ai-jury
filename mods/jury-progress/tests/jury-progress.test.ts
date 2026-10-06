@@ -77,7 +77,7 @@ function stubEngine(
     writeFails?: string
   } = {},
 ) {
-  const calls = { remotes: [] as string[], writes: [] as [string, string][], set: [] as [string, string | undefined][], reads: 0, lists: 0, ps: 0, toasts: [] as string[], opened: [] as string[] }
+  const calls = { remotes: [] as string[], writes: [] as [string, string][], set: [] as [string, string | undefined][], reads: 0, lists: 0, ps: 0, toasts: [] as string[], opened: [] as string[], closed: [] as string[], panes: [] as string[] }
   const env: Record<string, string> = { HOME: '/home/u', ...(opts.env ?? {}) }
   on('env.get', ($: unknown, e: { name: string }) => ({ value: env[e.name] }))
   on('env.set', ($: unknown, e: { name: string; value?: string }) => {
@@ -152,9 +152,15 @@ function stubEngine(
   })
   on('ui.open', ($: unknown, e: { id: string }) => {
     calls.opened.push(e.id)
+    if (!calls.panes.includes(e.id)) calls.panes.push(e.id)
     return { value: { isPlaced: true } }
   })
-  on('ui.close', () => ({ value: undefined }))
+  on('ui.close', ($: unknown, e: { id: string }) => {
+    calls.closed.push(e.id)
+    calls.panes = calls.panes.filter((id) => id !== e.id)
+    return { value: undefined }
+  })
+  on('ui.panes', () => ({ value: calls.panes.map((id) => ({ id, title: 'jury', isShown: true, isPlaced: true })) }))
   on('tool.call', () => ({ result: 'ok' }))
   on('ui.render', () => ({ type: 'Text', props: {}, children: ['drawn by Claude Code'] }))
   return calls
@@ -428,13 +434,28 @@ test("a run's button opens the pane on it, phase by phase, and lists the others"
   await band.press({ key: `jury-progress-open-${RUN}` })
   expect(calls.opened).toEqual(['jury-progress'])
   const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect(await pane.find({ type: 'Text', text: /^1 live jury run\(s\) · events in \/home\/u\/\.cache\/ai-jury\/events \(watched by this mod\)$/ })).toBeDefined()
-  expect(await pane.find({ type: 'Text', text: 'running · started 30s ago · pid 100' })).toBeDefined()
+  // Headed as the agents panel heads its list: what this is, and how many are running.
+  expect(await pane.find({ type: 'Text', text: '✦ Jury' })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: 'on this machine' })).toBeDefined()
+  expect(await styled(pane, { type: 'Text', text: '◌ 1 running' }, { color: 'blue' })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: 'LIVE' })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: 'RECENT' })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: 'events in ~/.cache/ai-jury/events (watched by this mod)' })).toBeDefined()
+  // The live run's row: blue dot, its name a button, its phase and age on the right, and
+  // under it who is doing what; it is open, so it shows in full below.
+  expect(await styled(pane, { type: 'Text', text: '●' }, { color: 'blue' })).toBeDefined()
+  expect(await pane.find({ type: 'Button', text: 'work · PR #7' })).toBeDefined()
+  expect(await styled(pane, { type: 'Text', text: '◌ review · 30s' }, { backgroundColor: '#1F6FEB' })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: '● claude  ✗ codex' })).toBeDefined()
   expect(await pane.find({ type: 'Link', text: 'PR #7' })).toBeDefined()
   expect(await pane.find({ type: 'Text', text: 'code review · decision chair · chair claude' })).toBeDefined()
   expect(await styled(pane, { type: 'Text', text: '● claude 12.5s · 2 found' }, { color: 'green' })).toBeDefined()
   expect(await styled(pane, { type: 'Text', text: '✗ codex 300s · timeout' }, { color: 'red' })).toBeDefined()
-  expect(await pane.find({ type: 'Button', text: 'keel · PR #9 · APPROVE · 0 findings' })).toBeDefined()
+  // The finished run: green dot, its verdict on the right, closed until picked.
+  expect(await pane.find({ type: 'Button', text: 'keel · PR #9' })).toBeDefined()
+  expect(await styled(pane, { type: 'Text', text: '●' }, { color: 'green' })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: '0 findings' })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: 'click a run for its phases · /jury-progress to hide' })).toBeDefined()
 
   await pane.press({ key: 'jury-progress-pick-20261003T110001.000Z-200.ndjson' })
   await pane.unmount()
@@ -621,7 +642,9 @@ test('a verdict is shown without markdown emphasis, colored by which way it lean
   // The newest run is in focus: it failed, so its chip says so in red.
   expect(await styled(pane, { type: 'Text', text: ' failed ' }, { backgroundColor: '#B62324' })).toBeDefined()
   // The other one is listed, its verdict a plain word.
-  expect(await pane.find({ type: 'Button', text: 'work · PR #7 · COMMENT · 3 findings' })).toBeDefined()
+  expect(await pane.find({ type: 'Button', text: 'work · PR #7' })).toBeDefined()
+  expect(await styled(pane, { type: 'Text', text: ' COMMENT ' }, { backgroundColor: '#9A6700' })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: '3 findings' })).toBeDefined()
   await pane.press({ key: `jury-progress-pick-${RUN}` })
   await pane.unmount()
   const again = await $.ui.mount({ ...PANE, surface: 'terminal' })
@@ -869,4 +892,73 @@ test("a run recorded under the session's resolved path is its own; a neighbour f
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect(await band.find({ type: 'Link', text: 'PR #11' })).toBeDefined()
   expect(await band.find({ text: /PR #22/ })).toBeUndefined()
+})
+
+test('hovering a seat reveals its model, seconds and findings; hovering a ballot, its verdict and model', async ($, on) => {
+  const clock = mock.clock(on, { now: 30_000 })
+  stubEngine(on, {
+    files: [
+      {
+        name: RUN,
+        recs: () => [
+          start({ panel: [{ agent: 'claude', vendor: 'anthropic', model: 'opus' }, { agent: 'codex', vendor: 'openai', model: 'gpt-5.5' }] }),
+          step('review', 'claude', { severity: { major: 1, minor: 1 } }),
+        ],
+      },
+      { name: '20261003T110001.000Z-200.ndjson', recs: () => [start({ pid: 200, target: 'PR #9' }), end({ verdict: 'APPROVE', findings: 0, ballots: [{ agent: 'claude', model: 'opus', verdict: 'APPROVE', findings: 0, review: true }] })] },
+    ],
+  })
+  await begin($)
+  await clock.settle()
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  // The detail is drawn hidden in the seat's keyed Box; the surface shows it while hovered.
+  const seat = await band.find({ type: 'Box', key: 'seat-claude' })
+  expect(seat).toBeDefined()
+  // (The test view drops `hover` from props; the reveal itself is checked in a real session.)
+  expect(await styled(band, { type: 'Box' }, { display: 'none' })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: ' opus · 12.5s · 2 found (1 major, 1 minor)' })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: ' gpt-5.5 · thinking' })).toBeDefined()
+  expect(await band.find({ type: 'Box', key: 'ballot-claude' })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: ' APPROVE · opus · 0 findings' })).toBeDefined()
+})
+
+test("a run has a row of its own in the band and in the pane, each keyed by the run", async ($, on) => {
+  const clock = mock.clock(on, { now: 30_000 })
+  stubEngine(on, { files: [{ name: RUN, recs: () => [start(), step('review', 'claude')] }] })
+  await begin($)
+  await clock.settle()
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await band.find({ type: 'Box', key: `jury-progress-${RUN}` })).toBeDefined()
+  await $.command.run({ command: 'jury-progress', args: '' })
+  const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await pane.find({ type: 'Box', key: `jury-progress-row-${RUN}` })).toBeDefined()
+})
+
+test('/jury-progress opens the side panel, docked 64 columns wide, and closes it when it is open', async ($, on) => {
+  const clock = mock.clock(on)
+  const calls = stubEngine(on)
+  await begin($)
+  await clock.settle()
+  await $.command.run({ command: 'jury-progress', args: '' })
+  expect(calls.opened).toEqual(['jury-progress'])
+  await $.command.run({ command: 'jury-progress', args: '' })
+  expect(calls.closed).toEqual(['jury-progress'])
+  await $.command.run({ command: 'jury-progress', args: '' })
+  expect(calls.opened).toEqual(['jury-progress', 'jury-progress'])
+})
+
+test('in a short panel the newest run is not opened by itself, so the header stays in sight; a picked run opens', async ($, on) => {
+  const clock = mock.clock(on, { now: 30_000 })
+  stubEngine(on, { files: [{ name: RUN, recs: () => [start(), step('review', 'claude'), step('review', 'codex')] }] })
+  await begin($)
+  await clock.settle()
+  await $.command.run({ command: 'jury-progress', args: '' })
+  const short = { ...PANE, props: { ...PANE.props, scroll: { offset: 0, bodyRows: 8 } } }
+  const pane = await $.ui.mount({ ...short, surface: 'terminal' })
+  expect(await pane.find({ type: 'Text', text: '✦ Jury' })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: 'code review · decision chair · chair claude' })).toBeUndefined()
+  await pane.press({ key: `jury-progress-pick-${RUN}` })
+  await pane.unmount()
+  const again = await $.ui.mount({ ...short, surface: 'terminal' })
+  expect(await again.find({ type: 'Text', text: 'code review · decision chair · chair claude' })).toBeDefined()
 })

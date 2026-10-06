@@ -39,16 +39,33 @@ failed run, amber otherwise; markdown around it, `**COMMENT**`, is dropped), its
 and then, on a band of 100 columns or more, a dot per seat colored by how that seat voted (who said
 what; ai-jury 1.25.0 and newer).
 
-## The `/jury-progress` pane
+Point at a seat or a ballot dot and it says more, right beside it: a seat its model, how long it
+took and what it found (`opus · 38.5s · 2 found (1 major, 1 minor)`), or that it is still thinking;
+a ballot its verdict, model and finding count. Pointing at a run also lights its row in the side
+panel. The terminal draws this on its own: no hook runs as the pointer moves.
 
-![The /jury-progress pane: the panel with each seat's model, every phase with each seat's time and findings by severity, and who said what at the end](docs/pane.svg)
+![Pointing at codex's ballot dot shows its verdict, model and finding count beside it](docs/band-hover.svg)
 
-The run you picked (or the newest) in full, as a card: its target (a link), review mode, decision
-and chair, the panel with each seat's model, the phase bar, then one row per phase (and debate round) with a chip per seat: who
-answered, in how many seconds, how many findings and of which severity (`3 found (1 major,
-2 minor)`), or the error code of a seat that failed; then who it still waits on, or how it ended:
-the verdict, and each seat's own ballot with its model and finding count. Above the card, when it started and its pid. Below it,
-the other live and recent runs, each a button to switch to.
+## The `/jury-progress` side panel
+
+![The /jury-progress side panel: a live run open in full under its row, and a finished run with its verdict](docs/pane.svg)
+
+`/jury-progress` opens a panel beside the conversation (docked on the right in a wide fullscreen
+terminal, above the prompt otherwise) and closes it when it is open. It is laid out like the
+agents panel from Claude Code's mods video:
+
+- a header: `✦ Jury in this session` and how many runs are running (`◌ 1 running`, or `idle`)
+- **LIVE** and **RECENT**, each with its count, then one row per run: a colored dot (blue while it
+  runs, then green, red or amber by its verdict), the run's name as a button, and on the right its
+  phase and age (`◌ debate r1 · 19s`) or its verdict chip; under it, dim, each seat with its model
+  while it runs, or each seat's ballot and the finding count when it is over
+- the run you click opens in full under its row, as a card: its target (a link), review mode,
+  decision and chair, the panel with each seat's model, the phase bar, then one row per phase (and
+  debate round) with a chip per seat: who answered, in how many seconds, how many findings and of
+  which severity (`2 found (1 major, 1 minor)`), or the error code of a seat that failed; then who it
+  still waits on, or how it ended, with each seat's own ballot. With none picked, the newest opens
+  when its card fits in the panel's rows, so the header stays in sight
+- a footer: where the events are read from, the hint, and Refresh and Close
 
 ## Notifications
 
