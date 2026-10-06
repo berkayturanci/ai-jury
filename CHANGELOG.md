@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **jury-progress 0.6.0: a side panel and hover details** (#958). Modelled on the agents panel from Claude Code's mods video. `/jury-progress` now toggles a side panel (docked beside a wide fullscreen transcript, above the prompt otherwise): a `✦ Jury in this session · ◌ N running` header, then LIVE and RECENT sections with one row per run (a colored dot, its name as a button, its phase and age or its verdict on the right, and under it each seat with its model, or each ballot). The run you click opens in full under its row; with none picked, the newest opens only when it fits, so the header stays in sight, and pressing the open run again closes it. In the band, pointing at a seat shows its model, seconds and findings by severity, and pointing at a ballot dot its verdict, model and finding count; pointing at a run lights its name in the panel and in the band. The detail is drawn in inverse text at the right end of the row, so the band never changes height, and it is drawn by the terminal, so no hook runs as the pointer moves.
+
 ## [1.25.0] - 2026-10-06
 
 > **What changes for you.** You can see who said what. jury's events now name each seat's model, count each

@@ -361,9 +361,9 @@ Details: [`docs/theater-design.md`](docs/theater-design.md).
 
 ### Watch runs inside Claude Code — `jury-progress`
 
-The optional [`jury-progress`](mods/jury-progress/README.md) mod shows every live jury run above
-the Claude Code prompt (target, phase, each seat's ✓/…/✗) and in a `/jury-progress` pane, from the
-metadata-only events jury writes. It leaves a `.watched` marker in jury's cache, so every jury on the
+The optional [`jury-progress`](mods/jury-progress/README.md) mod shows the session's live jury runs
+above the Claude Code prompt (target, phase, each seat's state; point at a seat for its model and
+findings) and in a `/jury-progress` side panel, from the metadata-only events jury writes. It leaves a `.watched` marker in jury's cache, so every jury on the
 machine writes its events there with no flag or variable (or set `$JURY_EVENTS_DIR` yourself). Install
 it with `claude plugin install jury-progress@ai-jury`; the CLI and the other hosts are unaffected.
 
