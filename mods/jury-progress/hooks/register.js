@@ -313,8 +313,6 @@ function phaseBar(ui, run, compact = false) {
   })
 }
 
-// A chip that shows more while the pointer is on it: the detail is drawn hidden in a keyed Box
-// and the surface reveals it on hover. No hook runs, so it costs nothing per pointer move.
 // A chip that says more while the pointer is on it. The chip joins a hover group of its own;
 // the detail is a hidden Box in the same group, drawn by `reveals` as the band row's last child,
 // at the row's right edge (absolute: nothing moves, the band keeps its height). Drawn last, it
