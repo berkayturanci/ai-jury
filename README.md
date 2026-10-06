@@ -275,7 +275,7 @@ jury run-agent --agent codex:gpt-6-sol --role implement --allow-write --prompt-f
 
 ```yaml
 - repo: https://github.com/berkayturanci/ai-jury
-  rev: v1.25.0
+  rev: v1.26.0
   hooks:
     - id: ai-jury
 ```
@@ -936,7 +936,7 @@ it differs from hosted, API-level, and other native-CLI tools, and
 
 ## Status
 
-Active (v1.25.0). The full pipeline runs end-to-end with the real CLIs and the offline
+Active (v1.26.0). The full pipeline runs end-to-end with the real CLIs and the offline
 `--mock` path is covered by tests. **Shipped:** structured findings + tiered consensus
 (consensus / majority / single-reviewer), a verification pass that drops false positives,
 **universal agent provider support** (cloud CLIs, hosted APIs, arbitrary coding-agent CLIs, local models),
