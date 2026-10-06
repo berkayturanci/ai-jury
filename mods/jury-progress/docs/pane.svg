@@ -24,7 +24,7 @@
 <text x="198.8" y="63.0" fill="#949494" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⌄</text>
 <rect x="207.2" y="50.0" width="193.2" height="18" fill="#262626"/>
 <rect x="400.4" y="50.0" width="142.8" height="18" fill="#5f87ff"/>
-<text x="400.4" y="63.0" fill="#ffffff" font-weight="bold" textLength="142.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◌ debate r1 · 19s</text>
+<text x="400.4" y="63.0" fill="#ffffff" font-weight="bold" textLength="142.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◌ debate r1 · 21s</text>
 <rect x="543.2" y="50.0" width="8.4" height="18" fill="#262626"/>
 <rect x="14.0" y="68.0" width="25.2" height="18" fill="#262626"/>
 <rect x="39.2" y="68.0" width="462.0" height="18" fill="#262626"/>
@@ -50,7 +50,7 @@
 <text x="30.8" y="135.0" fill="#8787af" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <rect x="39.2" y="122.0" width="8.4" height="18" fill="#262626"/>
 <rect x="47.6" y="122.0" width="487.2" height="18" fill="#262626"/>
-<text x="47.6" y="135.0" fill="#949494" textLength="487.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">running · started 19s ago · pid 10223 · /private/tmp/keel…</text>
+<text x="47.6" y="135.0" fill="#949494" textLength="487.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">running · started 21s ago · pid 42376 · /private/tmp/keel…</text>
 <rect x="534.8" y="122.0" width="8.4" height="18" fill="#262626"/>
 <rect x="543.2" y="122.0" width="8.4" height="18" fill="#262626"/>
 <text x="543.2" y="135.0" fill="#8787af" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>

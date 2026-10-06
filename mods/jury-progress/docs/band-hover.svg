@@ -16,7 +16,7 @@
 <text x="560.0" y="45.0" fill="#5faf87" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">● claude</text>
 <text x="635.6" y="45.0" fill="#ffd700" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◌ codex</text>
 <text x="702.8" y="45.0" fill="#ffd700" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◌ gemini</text>
-<text x="778.4" y="45.0" fill="#949494" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">19s</text>
+<text x="778.4" y="45.0" fill="#949494" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">21s</text>
 <text x="1097.6" y="45.0" fill="#8787af" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="14.0" y="63.0" fill="#8787af" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="89.6" y="63.0" fill="#E6EDF3" font-weight="bold" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">keel-demo</text>
@@ -27,8 +27,8 @@
 <text x="383.6" y="63.0" fill="#949494" textLength="84.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">3 findings</text>
 <text x="476.0" y="63.0" fill="#5faf87" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">● claude</text>
 <text x="551.6" y="63.0" fill="#d75f87" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">● codex</text>
-<rect x="618.8" y="50.0" width="336.0" height="18" fill="#E6EDF3"/>
-<text x="618.8" y="63.0" fill="#0D1117" textLength="336.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> REQUEST_CHANGES · gpt-5.5 · 3 findings </text>
+<rect x="753.2" y="50.0" width="336.0" height="18" fill="#E6EDF3"/>
+<text x="753.2" y="63.0" fill="#0D1117" textLength="336.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> REQUEST_CHANGES · gpt-5.5 · 3 findings </text>
 <text x="1097.6" y="63.0" fill="#8787af" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="14.0" y="81.0" fill="#8787af" textLength="1092.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯</text>
 </g></svg>

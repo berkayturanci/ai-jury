@@ -315,28 +315,38 @@ function phaseBar(ui, run, compact = false) {
 
 // A chip that shows more while the pointer is on it: the detail is drawn hidden in a keyed Box
 // and the surface reveals it on hover. No hook runs, so it costs nothing per pointer move.
-// The detail is laid over the rest of the row (absolute: nothing moves, the band keeps its
-// height) in inverse text, which reads on a dark and a light theme alike.
-function hoverChip(ui, key, text, tone, detail) {
+// A chip that says more while the pointer is on it. The chip joins a hover group of its own;
+// the detail is a hidden Box in the same group, drawn by `reveals` as the band row's last child,
+// at the row's right edge (absolute: nothing moves, the band keeps its height). Drawn last, it
+// paints over what is under it rather than under the chips after it. Inverse text reads on a
+// dark and a light theme alike. No hook runs as the pointer moves.
+function hoverChip(ui, scope, text, tone, detail) {
+  const { Text } = ui
+  if (!detail) return { el: chip(Text, text, tone), reveal: null }
+  return {
+    el: Text({ ...TONES[tone], wrap: 'truncate', hover: { scope, underline: true }, children: [text] }),
+    reveal: { scope, detail },
+  }
+}
+
+// The hidden details of a band row's chips, each shown while its chip is pointed at.
+function reveals(ui, list) {
   const { Box, Text } = ui
-  const shown = chip(Text, text, tone)
-  if (!detail) return shown
-  return Box({
-    key,
-    flexDirection: 'row',
-    flexShrink: 0,
-    children: [
-      shown,
-      Box({
-        position: 'absolute',
-        top: 0,
-        left: cells(text) + 1,
-        display: 'none',
-        hover: { display: 'flex' },
-        children: [Text({ inverse: true, wrap: 'truncate', children: [` ${detail} `] })],
-      }),
-    ],
-  })
+  return list.filter(Boolean).map((r) =>
+    Box({
+      position: 'absolute',
+      top: 0,
+      right: 0,
+      display: 'none',
+      hover: { scope: r.scope, display: 'flex' },
+      children: [Text({ inverse: true, wrap: 'truncate', children: [` ${r.detail} `] })],
+    }),
+  )
+}
+
+// A hover group name for one chip of one run (1-64 characters; run file names are ~31).
+function chipScope(r, kind, agent) {
+  return `${kind}-${r.name}-${agent}`.slice(0, 64)
 }
 
 // Terminal cells a string takes (one per character; enough for the marks and names drawn here).
@@ -360,24 +370,27 @@ function stepDetail(run, agent, step) {
   return parts.join(' · ')
 }
 
-function seatRow(ui, run) {
-  const { Box, Text } = ui
+function seatRow(ui, r, found) {
+  const { Box } = ui
   return Box({
     flexDirection: 'row',
     columnGap: 1,
-    children: runState(run).seats.map((seat) => {
+    children: runState(r.run).seats.map((seat) => {
       const c = seatChip(seat)
-      return hoverChip(ui, `seat-${seat.agent}`, c.text, SEAT_TONE[c.state], stepDetail(run, seat.agent, seat.step))
+      const h = hoverChip(ui, chipScope(r, 'seat', seat.agent), c.text, SEAT_TONE[c.state], stepDetail(r.run, seat.agent, seat.step))
+      found.push(h.reveal)
+      return h.el
     }),
   })
 }
 
 // A ballot as a colored dot; on hover, its verdict, model and finding count.
-function ballotChip(ui, run, b) {
-  const { Text } = ui
-  const model = b.model ?? seatModel(run, b.agent, null)
+function ballotChip(ui, r, b, found) {
+  const model = b.model ?? seatModel(r.run, b.agent, null)
   const detail = [cleanVerdict(b.verdict) || '?', model, findingsText(b.findings)].filter(Boolean).join(' · ')
-  return hoverChip(ui, `ballot-${b.agent}`, `● ${b.agent}`, BALLOT_TONE[verdictTone(b.verdict)], detail)
+  const h = hoverChip(ui, chipScope(r, 'ballot', b.agent), `● ${b.agent}`, BALLOT_TONE[verdictTone(b.verdict)], detail)
+  found.push(h.reveal)
+  return h.el
 }
 
 function verdictChip(ui, end) {
@@ -387,18 +400,18 @@ function verdictChip(ui, end) {
 }
 
 // What a band row shows after the target button.
-function bandRow(ui, r, compact) {
+function bandRow(ui, r, compact, found = []) {
   const { Text } = ui
   if (r.state === 'ended') {
     const parts = [verdictChip(ui, r.run.end), ...(r.run.end.status === 'done' ? [chip(Text, findingsText(r.run.end.findings), 'dim')] : [])]
     // How each seat voted, as a colored dot: who said what at a glance.
     // Not on a narrow band: there the verdict and the finding count need the room.
-    if (!compact) for (const b of r.run.end.ballots ?? []) parts.push(ballotChip(ui, r.run, b))
+    if (!compact) for (const b of r.run.end.ballots ?? []) parts.push(ballotChip(ui, r, b, found))
     return parts
   }
   if (r.run.start.cached) return [chip(Text, 'from the cache', 'dim')]
   const parts = [phaseBar(ui, r.run, compact)]
-  if (runState(r.run).seats.length > 0) parts.push(seatRow(ui, r.run))
+  if (runState(r.run).seats.length > 0) parts.push(seatRow(ui, r, found))
   const since = startedAgo(r)
   if (since !== null) parts.push(chip(Text, since, 'dim'))
   return parts
@@ -730,8 +743,10 @@ export function register(on, options = {}) {
     const { Box, Text, Button } = ui
     const labelled = shown.length > 1 || shown.some((r) => !own(r))
     const compact = (e.props.bodyColumns ?? 0) < WIDE_BAND_COLUMNS
-    const rows = shown.slice(0, settings.bandMax).map((r, i) =>
-      Box({
+    const rows = shown.slice(0, settings.bandMax).map((r, i) => {
+      const found = []
+      const tail = bandRow(ui, r, compact, found)
+      return Box({
         key: `jury-progress-${r.name}`,
         // Pointing at a run here lights its name in the side panel, and the other way round.
         hover: { scope: hoverScope(r) },
@@ -756,10 +771,12 @@ export function register(on, options = {}) {
                 ]
               : [Button({ key: `jury-progress-open-${r.name}`, label: targetOf(r.run), plain: true, hover: { scope: hoverScope(r), inverse: true }, onPress: () => openRun($, r.name) })],
           }),
-          ...bandRow(ui, r, compact),
+          ...tail,
+          // Last, so each detail paints over the row rather than under the chips after it.
+          ...reveals(ui, found),
         ],
-      }),
-    )
+      })
+    })
     if (shown.length > settings.bandMax) {
       rows.push(chip(Text, `+${shown.length - settings.bandMax} more jury runs · /jury-progress`, 'dim'))
     }
@@ -805,7 +822,7 @@ export function register(on, options = {}) {
       const notices = [listError, markerError].filter((x) => x !== null).length * 2
       const listRows = 1 + notices + [live, recent].filter((g) => g.length > 0).length + listed.length * 2 + 3
       const room = e.props.scroll?.bodyRows ?? Infinity
-      const focus = picked ?? (selected !== COLLAPSED && listed[0] && listRows + cardLines(ui, listed[0], e.props.bodyColumns) + 2 <= room ? listed[0] : undefined)
+      const focus = picked ?? (selected !== COLLAPSED && listed[0] && listRows + cardLines(ui, listed[0], e.props.bodyColumns) <= room ? listed[0] : undefined)
       if (listed.length === 0) {
         line({ text: ' ', tone: 'plain' })
         note({ text: 'No jury run yet. Runs started from this session (or by keel) show here as they happen.', tone: 'dim' })

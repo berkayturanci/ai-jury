@@ -917,14 +917,11 @@ test('hovering a seat reveals its model, seconds and findings; hovering a ballot
   await clock.settle()
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
   // The detail is drawn hidden in the seat's keyed Box; the surface shows it while hovered.
-  const seat = await band.find({ type: 'Box', key: 'seat-claude' })
-  expect(seat).toBeDefined()
   // (The test view drops `hover` from props; the reveal itself is checked in a real session.)
   expect(await styled(band, { type: 'Box' }, { display: 'none' })).toBeDefined()
-  expect(await band.find({ type: 'Text', text: ' opus · 12.5s · 2 found (1 major, 1 minor)' })).toBeDefined()
-  expect(await band.find({ type: 'Text', text: ' gpt-5.5 · thinking' })).toBeDefined()
-  expect(await band.find({ type: 'Box', key: 'ballot-claude' })).toBeDefined()
-  expect(await band.find({ type: 'Text', text: ' APPROVE · opus · 0 findings' })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: ' opus · 12.5s · 2 found (1 major, 1 minor) ' })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: ' gpt-5.5 · thinking ' })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: ' APPROVE · opus · 0 findings ' })).toBeDefined()
 })
 
 test("a run has a row of its own in the band and in the pane, each keyed by the run", async ($, on) => {
@@ -1012,8 +1009,13 @@ test('a card whose seats wrap is counted by its wrapped lines when deciding whet
   await begin($)
   await clock.settle()
   await $.command.run({ command: 'jury-progress', args: '' })
-  // One line per row would fit 18 rows; the five long seat chips wrap in a 40-column panel.
-  const narrow = { ...PANE, props: { ...PANE.props, bodyColumns: 40, scroll: { offset: 0, bodyRows: 18 } } }
+  // One line per row (13) would fit 16 rows; the five long seat chips wrap in a 40-column panel.
+  const narrow = { ...PANE, props: { ...PANE.props, bodyColumns: 40, scroll: { offset: 0, bodyRows: 16 } } }
   const pane = await $.ui.mount({ ...narrow, surface: 'terminal' })
   expect(await pane.find({ type: 'Text', text: 'code review · decision chair · chair claude' })).toBeUndefined()
+  await pane.unmount()
+  // In a wide panel the same seats sit on one line, and the card fits in the same rows.
+  const wide = { ...PANE, props: { ...PANE.props, bodyColumns: 300, scroll: { offset: 0, bodyRows: 16 } } }
+  const roomy = await $.ui.mount({ ...wide, surface: 'terminal' })
+  expect(await roomy.find({ type: 'Text', text: 'code review · decision chair · chair claude' })).toBeDefined()
 })

@@ -39,7 +39,7 @@ failed run, amber otherwise; markdown around it, `**COMMENT**`, is dropped), its
 and then, on a band of 100 columns or more, a dot per seat colored by how that seat voted (who said
 what; ai-jury 1.25.0 and newer).
 
-Point at a seat or a ballot dot and it says more, right beside it: a seat its model, how long it
+Point at a seat or a ballot dot and it says more, at the right end of its row: a seat its model, how long it
 took and what it found (`opus · 38.5s · 2 found (1 major, 1 minor)`), or that it is still thinking;
 a ballot its verdict, model and finding count. Pointing at a run also lights its row in the side
 panel. The terminal draws this on its own: no hook runs as the pointer moves.
