@@ -1,7 +1,7 @@
 # Watch runs inside Claude Code: jury-progress
 
 `jury-progress` is an optional Claude Code mod that shows your jury runs while the panel
-deliberates: the phases, each seat with its model, and who said what. It only reads. It never
+deliberates: the phases, each seat with its model, and how each seat voted. It only reads. It never
 runs `jury`, and it sees nothing but metadata (no reviewer output, diff or finding text).
 The `jury` CLI and the `ai-jury` plugin do not need it, and other hosts (Codex, Cursor,
 Antigravity) are unaffected.
@@ -53,7 +53,7 @@ its own; no hook runs as the pointer moves.
   run: its phase and age, or its verdict, and each seat with its model (or its ballot once the
   run is over).
 - Click a run to open it in full: its target, review mode, decision and chair, the panel, the
-  phase bar, then one row per phase with a chip per seat (who answered, in how many seconds,
+  phase bar, then one row per phase with a line per seat (who answered, in how many seconds,
   how many findings and of which severity, or the error code of a seat that failed).
 - A footer with where the events are read from, and Refresh and Close.
 
@@ -62,8 +62,6 @@ end record.
 
 Next to keel's own mod, keel-progress, the band shows both: the jury runs and the keel runs
 that drive them.
-
-![jury-progress and keel-progress in one band: two jury runs above three parallel keel runs](../mods/jury-progress/docs/with-keel-progress.svg)
 
 ## How it finds runs
 
