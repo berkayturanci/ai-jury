@@ -315,15 +315,33 @@ function phaseBar(ui, run, compact = false) {
 
 // A chip that shows more while the pointer is on it: the detail is drawn hidden in a keyed Box
 // and the surface reveals it on hover. No hook runs, so it costs nothing per pointer move.
-function hoverChip(ui, key, shown, detail) {
+// The detail is laid over the rest of the row (absolute: nothing moves, the band keeps its
+// height) in inverse text, which reads on a dark and a light theme alike.
+function hoverChip(ui, key, text, tone, detail) {
   const { Box, Text } = ui
+  const shown = chip(Text, text, tone)
   if (!detail) return shown
   return Box({
     key,
     flexDirection: 'row',
     flexShrink: 0,
-    children: [shown, Box({ display: 'none', hover: { display: 'flex' }, children: [chip(Text, ` ${detail}`, 'dim')] })],
+    children: [
+      shown,
+      Box({
+        position: 'absolute',
+        top: 0,
+        left: cells(text) + 1,
+        display: 'none',
+        hover: { display: 'flex' },
+        children: [Text({ inverse: true, wrap: 'truncate', children: [` ${detail} `] })],
+      }),
+    ],
   })
+}
+
+// Terminal cells a string takes (one per character; enough for the marks and names drawn here).
+function cells(text) {
+  return [...String(text)].length
 }
 
 // What a seat's step says on hover: its model, seconds, findings (by severity) or error.
@@ -349,7 +367,7 @@ function seatRow(ui, run) {
     columnGap: 1,
     children: runState(run).seats.map((seat) => {
       const c = seatChip(seat)
-      return hoverChip(ui, `seat-${seat.agent}`, chip(Text, c.text, SEAT_TONE[c.state]), stepDetail(run, seat.agent, seat.step))
+      return hoverChip(ui, `seat-${seat.agent}`, c.text, SEAT_TONE[c.state], stepDetail(run, seat.agent, seat.step))
     }),
   })
 }
@@ -359,7 +377,7 @@ function ballotChip(ui, run, b) {
   const { Text } = ui
   const model = b.model ?? seatModel(run, b.agent, null)
   const detail = [cleanVerdict(b.verdict) || '?', model, findingsText(b.findings)].filter(Boolean).join(' · ')
-  return hoverChip(ui, `ballot-${b.agent}`, chip(Text, `● ${b.agent}`, BALLOT_TONE[verdictTone(b.verdict)]), detail)
+  return hoverChip(ui, `ballot-${b.agent}`, `● ${b.agent}`, BALLOT_TONE[verdictTone(b.verdict)], detail)
 }
 
 function verdictChip(ui, end) {
@@ -437,7 +455,7 @@ function paneRow($, ui, r, listed, open) {
     key: `jury-progress-row-${r.name}`,
     flexDirection: 'column',
     paddingX: 1,
-    hover: { scope: hoverScope(r), backgroundColor: '#30363D' },
+    hover: { scope: hoverScope(r) },
     children: [
       Box({
         flexDirection: 'row',
@@ -450,7 +468,14 @@ function paneRow($, ui, r, listed, open) {
             flexShrink: 1,
             children: [
               chip(Text, '●', runDot(r)),
-              Button({ key: `jury-progress-pick-${r.name}`, label: `${runLabel(r, listed)} · ${targetOf(r.run)}`, plain: true, onPress: () => selectRun($, r.name) }),
+              Button({
+                key: `jury-progress-pick-${r.name}`,
+                label: `${runLabel(r, listed)} · ${targetOf(r.run)}`,
+                plain: true,
+                // Lit (inverse) while this run is pointed at, here or in the band.
+                hover: { scope: hoverScope(r), inverse: true },
+                onPress: () => selectRun($, open ? COLLAPSED : r.name),
+              }),
               chip(Text, open ? '⌄' : '›', 'dim'),
             ],
           }),
@@ -467,6 +492,9 @@ async function openRun($, name) {
   await $.ui.open(PANE_OPEN)
   $.ui.invalidate('ui.render')
 }
+
+// What `selected` holds after the open run's row is pressed again: no run open, none opened by itself.
+const COLLAPSED = Symbol('collapsed')
 
 function selectRun($, name) {
   selected = name
@@ -526,6 +554,38 @@ function runCard(ui, r) {
   return Box({ flexDirection: 'column', borderStyle: 'round', borderColor: BORDER, paddingX: 1, children: runCardRows(ui, r) })
 }
 
+// A seat's chip in a run's card: who, in how many seconds, what it found or its error.
+function seatText(x) {
+  const secs = Number.isFinite(x.duration_s) ? ` ${x.duration_s}s` : ''
+  const sev = severityText(x.severity)
+  const tail = x.ok ? (x.findings ? ` · ${x.findings} found${sev ? ` (${sev})` : ''}` : '') : ` · ${x.error_code ?? 'failed'}`
+  return `${x.ok ? '●' : '✗'} ${x.agent}${secs}${tail}`
+}
+
+// How many lines a run's card takes in a panel this wide: its rows, a phase row as many lines as
+// its seat chips wrap to, and the two border lines. An estimate on the safe side.
+function cardLines(ui, r, bodyColumns) {
+  const seatRoom = Math.max(10, (bodyColumns ?? 80) - 2 - 2 - 2 - 12)
+  let lines = runCardRows(ui, r).length + 2
+  for (const phase of PHASES) {
+    const steps = r.run.steps.filter((x) => x.phase === phase)
+    for (const round of [...new Set(steps.map((x) => x.round ?? null))]) {
+      let width = 0
+      let rowLines = 1
+      for (const x of steps.filter((y) => (y.round ?? null) === round)) {
+        const w = cells(seatText(x)) + 2
+        if (width > 0 && width + w > seatRoom) {
+          rowLines += 1
+          width = 0
+        }
+        width += w
+      }
+      lines += rowLines - 1
+    }
+  }
+  return lines
+}
+
 // The rows of a run's card, one element per line (a card is these plus its two border lines).
 function runCardRows(ui, r) {
   const { Box, Text } = ui
@@ -541,6 +601,10 @@ function runCardRows(ui, r) {
       ],
     }),
   )
+  // When it started, its pid and its folder: what tells a stopped run's process apart.
+  const since = startedAgo(r)
+  const state = r.state === 'live' ? 'running' : r.state === 'stopped' ? 'stopped without an end record' : 'finished'
+  rows.push(chip(Text, `${state}${since !== null ? ` · started ${since === 'now' ? 'just now' : `${since} ago`}` : ''}${Number.isInteger(s.pid) ? ` · pid ${s.pid}` : ''}${s.cwd ? ` · ${s.cwd}` : ''}`, r.state === 'stopped' ? 'bad' : 'dim'))
   // The panel with each seat's model, when jury named one (ai-jury 1.25.0 and newer).
   const seats = (s.panel ?? []).filter((p) => p.agent)
   if (seats.some((p) => p.model)) {
@@ -564,12 +628,7 @@ function runCardRows(ui, r) {
               flexWrap: 'wrap',
               flexGrow: 1,
               columnGap: 2,
-              children: these.map((x) => {
-                const secs = Number.isFinite(x.duration_s) ? ` ${x.duration_s}s` : ''
-                const sev = severityText(x.severity)
-                const tail = x.ok ? (x.findings ? ` · ${x.findings} found${sev ? ` (${sev})` : ''}` : '') : ` · ${x.error_code ?? 'failed'}`
-                return chip(Text, `${x.ok ? '●' : '✗'} ${x.agent}${secs}${tail}`, x.ok ? 'ok' : 'bad')
-              }),
+              children: these.map((x) => chip(Text, seatText(x), x.ok ? 'ok' : 'bad')),
             }),
           ],
         }),
@@ -646,8 +705,15 @@ export function register(on, options = {}) {
 
   // The command toggles the side panel: it opens it, or closes it when it is open.
   on('command.run', { command: 'jury-progress' }, async ($) => {
-    const panes = await $.ui.panes().catch(() => [])
-    if (panes.some((p) => p.id === PANE)) {
+    // A panel already shown closes; one behind another tab is brought forward by the open below.
+    let panes = []
+    try {
+      // An engine without panes() throws here too, and the panel just opens.
+      panes = await $.ui.panes()
+    } catch {
+      panes = []
+    }
+    if (panes.some((p) => p.id === PANE && p.isShown)) {
       await $.ui.close({ id: PANE })
       return {}
     }
@@ -667,7 +733,7 @@ export function register(on, options = {}) {
     const rows = shown.slice(0, settings.bandMax).map((r, i) =>
       Box({
         key: `jury-progress-${r.name}`,
-        // Hovering a run here lights its row in the pane, and the other way round.
+        // Pointing at a run here lights its name in the side panel, and the other way round.
         hover: { scope: hoverScope(r) },
         flexDirection: 'row',
         // Seats that do not fit go to the next line rather than being cut.
@@ -686,9 +752,9 @@ export function register(on, options = {}) {
             children: urlOf(r)
               ? [
                   ui.Link({ href: urlOf(r), label: targetOf(r.run) }),
-                  Button({ key: `jury-progress-open-${r.name}`, label: ' ›', plain: true, onPress: () => openRun($, r.name) }),
+                  Button({ key: `jury-progress-open-${r.name}`, label: ' ›', plain: true, hover: { scope: hoverScope(r), inverse: true }, onPress: () => openRun($, r.name) }),
                 ]
-              : [Button({ key: `jury-progress-open-${r.name}`, label: targetOf(r.run), plain: true, onPress: () => openRun($, r.name) })],
+              : [Button({ key: `jury-progress-open-${r.name}`, label: targetOf(r.run), plain: true, hover: { scope: hoverScope(r), inverse: true }, onPress: () => openRun($, r.name) })],
           }),
           ...bandRow(ui, r, compact),
         ],
@@ -736,9 +802,10 @@ export function register(on, options = {}) {
       // the rows the panel shows (the engine owns the scroll, so an overflow would push the
       // header out of sight).
       const picked = listed.find((r) => r.name === selected)
-      const listRows = 1 + [live, recent].filter((g) => g.length > 0).length + listed.length * 2 + 3
+      const notices = [listError, markerError].filter((x) => x !== null).length * 2
+      const listRows = 1 + notices + [live, recent].filter((g) => g.length > 0).length + listed.length * 2 + 3
       const room = e.props.scroll?.bodyRows ?? Infinity
-      const focus = picked ?? (listed[0] && listRows + runCardRows(ui, listed[0]).length + 2 <= room ? listed[0] : undefined)
+      const focus = picked ?? (selected !== COLLAPSED && listed[0] && listRows + cardLines(ui, listed[0], e.props.bodyColumns) + 2 <= room ? listed[0] : undefined)
       if (listed.length === 0) {
         line({ text: ' ', tone: 'plain' })
         note({ text: 'No jury run yet. Runs started from this session (or by keel) show here as they happen.', tone: 'dim' })

@@ -74,10 +74,11 @@ function stubEngine(
     remotes?: Record<string, string> // checkout -> its origin URL ('' for none)
     branches?: Record<string, string> // checkout -> its branch
     realPath?: string // the session folder resolved (symlinks)
+    panes?: 'fail' | 'behind' // panes() rejects, or lists the panel as a tab behind another
     writeFails?: string
   } = {},
 ) {
-  const calls = { remotes: [] as string[], writes: [] as [string, string][], set: [] as [string, string | undefined][], reads: 0, lists: 0, ps: 0, toasts: [] as string[], opened: [] as string[], closed: [] as string[], panes: [] as string[] }
+  const calls = { remotes: [] as string[], writes: [] as [string, string][], set: [] as [string, string | undefined][], reads: 0, lists: 0, ps: 0, toasts: [] as string[], opened: [] as string[], closed: [] as string[], panes: [] as string[], openArgs: [] as Record<string, unknown>[] }
   const env: Record<string, string> = { HOME: '/home/u', ...(opts.env ?? {}) }
   on('env.get', ($: unknown, e: { name: string }) => ({ value: env[e.name] }))
   on('env.set', ($: unknown, e: { name: string; value?: string }) => {
@@ -152,6 +153,7 @@ function stubEngine(
   })
   on('ui.open', ($: unknown, e: { id: string }) => {
     calls.opened.push(e.id)
+    calls.openArgs.push({ ...e })
     if (!calls.panes.includes(e.id)) calls.panes.push(e.id)
     return { value: { isPlaced: true } }
   })
@@ -160,7 +162,10 @@ function stubEngine(
     calls.panes = calls.panes.filter((id) => id !== e.id)
     return { value: undefined }
   })
-  on('ui.panes', () => ({ value: calls.panes.map((id) => ({ id, title: 'jury', isShown: true, isPlaced: true })) }))
+  on('ui.panes', () => {
+    if (opts.panes === 'fail') throw new Error('no panes here')
+    return { value: calls.panes.map((id) => ({ id, title: 'jury', isShown: opts.panes !== 'behind', isPlaced: true })) }
+  })
   on('tool.call', () => ({ result: 'ok' }))
   on('ui.render', () => ({ type: 'Text', props: {}, children: ['drawn by Claude Code'] }))
   return calls
@@ -941,6 +946,7 @@ test('/jury-progress opens the side panel, docked 64 columns wide, and closes it
   await clock.settle()
   await $.command.run({ command: 'jury-progress', args: '' })
   expect(calls.opened).toEqual(['jury-progress'])
+  expect(calls.openArgs[0]).toMatchObject({ id: 'jury-progress', columns: 64, closeOnEscape: true })
   await $.command.run({ command: 'jury-progress', args: '' })
   expect(calls.closed).toEqual(['jury-progress'])
   await $.command.run({ command: 'jury-progress', args: '' })
@@ -961,4 +967,53 @@ test('in a short panel the newest run is not opened by itself, so the header sta
   await pane.unmount()
   const again = await $.ui.mount({ ...short, surface: 'terminal' })
   expect(await again.find({ type: 'Text', text: 'code review · decision chair · chair claude' })).toBeDefined()
+})
+
+test('a panel behind another tab is brought forward, not closed; with no answer from panes() it opens', async ($, on) => {
+  const clock = mock.clock(on)
+  const calls = stubEngine(on, { panes: 'behind' })
+  await begin($)
+  await clock.settle()
+  await $.command.run({ command: 'jury-progress', args: '' })
+  await $.command.run({ command: 'jury-progress', args: '' })
+  expect(calls.opened).toEqual(['jury-progress', 'jury-progress'])
+  expect(calls.closed).toEqual([])
+})
+
+test('panes() failing still opens the panel', async ($, on) => {
+  const clock = mock.clock(on)
+  const calls = stubEngine(on, { panes: 'fail' })
+  await begin($)
+  await clock.settle()
+  await $.command.run({ command: 'jury-progress', args: '' })
+  expect(calls.opened).toEqual(['jury-progress'])
+})
+
+test('pressing the open run again closes it, and no run then opens by itself; the card says when it started, its pid and folder', async ($, on) => {
+  const clock = mock.clock(on, { now: 30_000 })
+  stubEngine(on, { files: [{ name: RUN, recs: () => [start(), step('review', 'claude')] }] })
+  await begin($)
+  await clock.settle()
+  await $.command.run({ command: 'jury-progress', args: '' })
+  const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await pane.find({ type: 'Text', text: 'running · started 30s ago · pid 100 · /work' })).toBeDefined()
+  await pane.press({ key: `jury-progress-pick-${RUN}` })
+  await pane.unmount()
+  const again = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await again.find({ type: 'Text', text: 'running · started 30s ago · pid 100 · /work' })).toBeUndefined()
+  expect(await again.find({ type: 'Text', text: '›' })).toBeDefined()
+})
+
+test('a card whose seats wrap is counted by its wrapped lines when deciding whether it fits', async ($, on) => {
+  const clock = mock.clock(on, { now: 30_000 })
+  const seats = ['claude', 'codex', 'gemini', 'grok', 'qwen'].map((agent) => ({ agent, vendor: 'x' }))
+  const sev = { severity: { major: 3, minor: 9 }, findings: 12 }
+  stubEngine(on, { files: [{ name: RUN, recs: () => [start({ panel: seats }), ...seats.map((p) => step('review', p.agent, sev))] }] })
+  await begin($)
+  await clock.settle()
+  await $.command.run({ command: 'jury-progress', args: '' })
+  // One line per row would fit 18 rows; the five long seat chips wrap in a 40-column panel.
+  const narrow = { ...PANE, props: { ...PANE.props, bodyColumns: 40, scroll: { offset: 0, bodyRows: 18 } } }
+  const pane = await $.ui.mount({ ...narrow, surface: 'terminal' })
+  expect(await pane.find({ type: 'Text', text: 'code review · decision chair · chair claude' })).toBeUndefined()
 })
