@@ -9,6 +9,9 @@ A session shows its own jury runs: the ones started in its folder or below it, w
 those keel starts in the worktrees it makes inside the session's checkout. Other sessions' runs
 are not shown and raise no toast; turn on "Show other sessions' runs" in `/config` to see every
 jury run on the machine.
+A jury the session starts outside its folder (`cd ../other-checkout && jury …`) counts as that
+folder's, not the session's. The folder test ignores case and trailing slashes, and also matches
+the session's resolved path (`/tmp` is `/private/tmp` on macOS).
 
 A rounded card with one row per run (live, or finished in the last minute):
 

@@ -10,7 +10,7 @@
 //   - a toast when a run ends (verdict and findings) or stops without finishing
 // It never runs `jury`; it reads the events files and `ps`, and writes only the `.watched` marker.
 
-import { PHASES, ago, baseName, cleanVerdict, defaultEventsDir, endText, eventsDir, findingsText, githubBase, isRunFile, parsePs, parseRun, phaseChips, phaseLabel, repoName, runLiveness, runState, seatChip, seatModel, severityText, targetUrl, verdictTone } from './view.js'
+import { PHASES, ago, baseName, cleanVerdict, defaultEventsDir, endText, eventsDir, findingsText, githubBase, isRunFile, parsePs, parseRun, phaseChips, phaseLabel, repoName, runLiveness, runState, seatChip, seatModel, severityText, targetUrl, verdictTone, withinFolder } from './view.js'
 
 const PANE = 'jury-progress'
 // The file that tells ai-jury (1.24.0+) someone watches its cache's events directory.
@@ -270,8 +270,8 @@ function bandRuns() {
 // the session's is compared both as given and resolved.
 function own(r) {
   const at = r.run.start.cwd
-  if (typeof at !== 'string') return false
-  return [cwd, cwdReal].some((c) => c !== null && (at === c || at.startsWith(`${c}/`)))
+  if (typeof at !== 'string' || !at) return false
+  return [cwd, cwdReal].some((c) => c !== null && withinFolder(at, c))
 }
 
 function textProps(part) {

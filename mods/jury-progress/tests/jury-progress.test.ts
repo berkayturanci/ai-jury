@@ -73,6 +73,7 @@ function stubEngine(
     markerExists?: boolean
     remotes?: Record<string, string> // checkout -> its origin URL ('' for none)
     branches?: Record<string, string> // checkout -> its branch
+    realPath?: string // the session folder resolved (symlinks)
     writeFails?: string
   } = {},
 ) {
@@ -141,6 +142,7 @@ function stubEngine(
     return { value: undefined }
   })
   on('fs.exists', ($: unknown, e: { path: string }) => ({ value: e.path.endsWith('/.watched') ? (opts.markerExists ?? false) : false }))
+  on('fs.stat', ($: unknown, e: { path: string; resolve?: boolean }) => ({ value: { kind: 'dir', size: 0, mtimeMs: 0, isLink: false, realPath: opts.realPath ?? e.path } }))
   on('session.start', () => ({ cwd: '/work' }))
   on('session.cwd', () => ({ value: '/work' }))
   on('command.register', () => ({ value: undefined }))
@@ -851,4 +853,20 @@ test("another session's run raises no toast", async ($, on) => {
   mtime = 1
   await clock.advance(2_000)
   expect(calls.toasts).toEqual([])
+})
+
+test("a run recorded under the session's resolved path is its own; a neighbour folder sharing the prefix is not", async ($, on) => {
+  const clock = mock.clock(on)
+  stubEngine(on, {
+    realPath: '/private/work',
+    files: [
+      { name: RUN, recs: () => [start({ cwd: '/private/work/wt', target: 'PR #11' })] },
+      { name: '20261003T110001.000Z-200.ndjson', recs: () => [start({ pid: 200, target: 'PR #22', cwd: '/work-other' })] },
+    ],
+  })
+  await begin($)
+  await clock.settle()
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await band.find({ type: 'Link', text: 'PR #11' })).toBeDefined()
+  expect(await band.find({ text: /PR #22/ })).toBeUndefined()
 })
