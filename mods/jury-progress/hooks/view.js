@@ -239,3 +239,14 @@ export function repoName(remote, cwd) {
   const m = String(remote ?? '').trim().match(/([^/:\s]+?)(?:\.git)?\/?$/)
   return m ? m[1] : baseName(cwd) || null
 }
+
+// Whether path `at` is folder `dir` or inside it. A trailing slash on either side does not
+// matter, the root folder holds everything, and the comparison ignores case, as macOS's and
+// Windows' file systems do by default (two checkouts differing only in case are not a real case).
+export function withinFolder(at, dir) {
+  const trim = (p) => String(p).replace(/\/+$/, '').toLowerCase()
+  const a = trim(at)
+  const d = trim(dir)
+  if (d === '') return true // the root folder
+  return a === d || a.startsWith(`${d}/`)
+}
