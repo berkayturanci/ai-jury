@@ -10,8 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.26.0] - 2026-10-07
 
 > **What changes for you.** jury-progress 0.6.0 gives the live jury runs a side panel: `/jury-progress` toggles a
-> panel beside the conversation with the live and recent runs, the one you click open in full; pointing at a seat
-> or a ballot dot in the band shows its model, time and findings or its verdict (#958). The events end record now
+> panel (docked beside a wide fullscreen transcript, above the prompt otherwise) with the live and recent runs, and
+> the run you click opens in full. In the band, pointing at a seat shows its model, seconds and findings by
+> severity, and pointing at a ballot dot its verdict, model and finding count (#958). The events end record now
 > carries a bare verdict token (`COMMENT`, not `**COMMENT**`) (#944), and the events directory got three fixes:
 > retry files prune in the right order, the run file's descriptor can no longer leak or be closed twice, and an
 > existing group- or world-writable `$JURY_EVENTS_DIR` is reported (#934). The website, a new docs page and the
