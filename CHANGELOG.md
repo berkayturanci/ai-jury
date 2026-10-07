@@ -7,11 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.26.0] - 2026-10-07
+
+> **What changes for you.** jury-progress 0.6.0 gives the live jury runs a side panel: `/jury-progress` toggles a
+> panel (docked beside a wide fullscreen transcript, above the prompt otherwise) with the live and recent runs, and
+> the run you click opens in full. In the band, pointing at a seat shows its model, seconds and findings by
+> severity, and pointing at a ballot dot its verdict, model and finding count (#958). The events end record now
+> carries a bare verdict token (`COMMENT`, not `**COMMENT**`) (#944), and the events directory got three fixes:
+> retry files prune in the right order, the run file's descriptor can no longer leak or be closed twice, and an
+> existing group- or world-writable `$JURY_EVENTS_DIR` is reported (#934). The website, a new docs page and the
+> README now introduce jury-progress with real captures (#962).
+
 ### Fixed
 - **The events `end` record carries a bare verdict token** (#944). The chair's verdict could arrive with its markdown on it (`**COMMENT**`) and was written to the record as it was, so a watcher showed the asterisks. `end_record` and each ballot now strip surrounding `*`, `_`, backticks and whitespace, so the record says `COMMENT`. The schema stays `ai-jury.events.v1`.
 - **Events directory nits** (#934). A retry run file (`<ms>Z-<pid>-1.ndjson`) now counts as newer than its base name when the directory is pruned; plain string order put it first. The run file is opened with `open(..., opener=os.open)`, so `open()` owns its descriptor and a failing text layer can neither leak it nor close it twice; the file is still created `O_EXCL`, `0600`, never through a symlink. `docs/parameters.md` already said `0700` is for a directory jury creates; now an existing `$JURY_EVENTS_DIR` that is group- or world-writable also warns once on POSIX (its mode is still left alone).
 
 ### Changed
+- **jury-progress is introduced on the website and in the docs** (#962). The home page has an "Inside Claude Code" section with the live band, the finished band with ballots and the side panel, the install commands and requirements; `docs/jury-progress.md` (Guides) covers the band, the hover details, the side panel, how runs are found, settings and install; the README shows the band and the panel.
 - **jury-progress 0.6.0: a side panel and hover details** (#958). Modelled on the agents panel from Claude Code's mods video. `/jury-progress` now toggles a side panel (docked beside a wide fullscreen transcript, above the prompt otherwise): a `✦ Jury in this session · ◌ N running` header, then LIVE and RECENT sections with one row per run (a colored dot, its name as a button, its phase and age or its verdict on the right, and under it each seat with its model, or each ballot). The run you click opens in full under its row; with none picked, the newest opens only when it fits, so the header stays in sight, and pressing the open run again closes it. In the band, pointing at a seat shows its model, seconds and findings by severity, and pointing at a ballot dot its verdict, model and finding count; pointing at a run lights its name in the panel and in the band. The detail is drawn in inverse text at the right end of the row, so the band never changes height, and it is drawn by the terminal, so no hook runs as the pointer moves.
 
 ## [1.25.0] - 2026-10-06

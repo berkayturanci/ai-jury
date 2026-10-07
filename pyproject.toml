@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai-jury"
-version = "1.25.0"
+version = "1.26.0"
 description = "Convene a cross-vendor multi-agent review jury: coding-agent CLIs, hosted model APIs and local models review the same diff, PR or issue, cross-examine each other, verify the findings, and reach one verdict — a chair's synthesis or a panel vote."
 readme = "README.md"
 requires-python = ">=3.11"
