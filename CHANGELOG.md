@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The generated coverage report pages stay out of search.** Google Search Console showed 37 indexed pages on ai-jury.dev, about 33 of them the per-file pages of the coverage report (`/coverage/z_<hash>_cli_py.html`, `/coverage/function_index.html`, ...). `scripts/noindex_coverage.py` now adds `<meta name="robots" content="noindex, follow">` to every HTML file under `website/coverage/` right after `coverage html` in `pages.yml` (idempotent, stdlib only). `robots.txt` is unchanged on purpose: a crawler barred from `/coverage/` never sees the noindex. The real pages (`/`, `docs.html`, `coverage.html`, `coverage-report.html`, `agent-pr-said-one-line.html`) stay indexable and in the sitemap.
+
 ## [1.26.0] - 2026-10-07
 
 > **What changes for you.** jury-progress 0.6.0 gives the live jury runs a side panel: `/jury-progress` toggles a
