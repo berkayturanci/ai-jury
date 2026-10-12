@@ -619,7 +619,7 @@ class TieredRoutingReachesTheReports(unittest.TestCase):
 
     def test_the_json_report_carries_the_routing_block(self):
         doc = self._json_run([])
-        self.assertEqual(doc["schema_version"], "1.5")
+        self.assertEqual(doc["schema_version"], "1.6")
         self.assertEqual(doc["metadata"]["schema_version"], 8)
         routing_meta = doc["metadata"]["routing"]
         self.assertEqual(routing_meta["mode"], "tiered")

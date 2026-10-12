@@ -136,6 +136,22 @@ Nothing else in either schema changes.
 
 [#863]: https://github.com/berkayturanci/ai-jury/issues/863
 
+## Schema 1.6: why a seat failed (`reviewers[].error`)
+
+JSON report `1.6` ([#975]) is additive. Each `reviewers` entry (and each
+`--format keel-reviews` record) gains `error`, the adapter's short redacted error,
+and a seat that returned nothing because its CLI hit a usage limit
+(`quota_exhausted`) or a rate limit (`rate_limited`) is now
+`abstention_cause: "adapter_failed"` instead of `silent`, with a `scope` that says
+so and quotes the error. `silent` is now "no output and no allowance failure":
+a timeout or no-review seat with an error stays `silent`. No new cause value;
+`metadata.panel.silent` and `adapter_failed` move accordingly. Of the two real
+messages, only codex's "usage limit" was unclassified before; agy's
+`RESOURCE_EXHAUSTED: Quota will reset` already matched the `quota` keyword (and
+was retried as `rate_limited`), but a message with no such word was missed.
+
+[#975]: https://github.com/berkayturanci/ai-jury/issues/975
+
 ## Per-reviewer ballots (`reviewers`)
 
 The consolidated `findings` and `consensus` views say *what the panel found*.
@@ -218,6 +234,7 @@ One entry per seat that **ran in round 1**, in the stable panel order, then the 
 | `abstention_cause` | Why this ballot is not a review, when it is not: `silent` (returned nothing at all), `named_nothing` (answered and named nothing checkable), `not_in_change` (named things, none of them in this change), `refused` (declined rather than reviewed) or `adapter_failed`. Empty string on a ballot that reviewed, and on the `chair` entry, which is a consensus record rather than a seat that failed to review. It is on the record because it cannot be recovered from the record: a seat that fell silent and one that answered without naming anything leave the same `round1_ok`/`scope_substantive` behind. `metadata.panel` counts the seats by this field, which is what makes its five buckets and `reviews_supplied` add up to `ballots`. |
 | `testing` | What that panelist said it ran, or a statement that nothing was run. |
 | `findings` | Indexes into the report's top-level `findings` array. |
+| `error` | Since JSON `1.6` ([#975]): the adapter's short error for a seat that failed, as `[error_code] message` — redacted like the report's seat status line, flattened to one line, at most 200 characters; `""` when the adapter reported none (and on the `chair` entry). A seat whose CLI hit a usage limit (`quota_exhausted`, e.g. codex "You've hit your usage limit ... try again at 3:40 PM", agy/Gemini `RESOURCE_EXHAUSTED ... Resets in 34h`) or a burst rate limit (`rate_limited`) and returned no output is `abstention_cause: "adapter_failed"` rather than `silent`; `silent` means no output **and** no allowance failure: an empty seat that failed any other way (timeout, no review) stays `silent`, with the error still here. `quota_exhausted` is never retried: the reset is hours away. |
 | `round1_ok` | Did the adapter report success? Adapters fail soft, so a slot can carry a review *and* a nonzero exit. |
 | `verified_count` | Consensus groups this reviewer contributed to that the verifier upheld. |
 | `duration_s` | Wall-clock seconds for that slot's round-1 review. |

@@ -416,7 +416,7 @@ A structured report with these top-level keys:
 
 | Key | Description |
 | --- | --- |
-| `schema_version` | Version of this JSON schema (currently `1.5`). |
+| `schema_version` | Version of this JSON schema (currently `1.6`). |
 | `metadata` | Run metadata (agents, rounds, context mode, redaction stats, wall-clock proxy). |
 | `classification` | The deterministic PR-level classification: `review_effort`, `risk_level`, `security_sensitive`, `needs_human_attention` (what `--label` applies). |
 | `findings` | All raw findings; each carries `severity`, `file`, `line`, `claim`, `evidence`, `suggested_fix`, `confidence`, `reviewer`. |

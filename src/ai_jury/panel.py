@@ -135,6 +135,32 @@ def responded(result) -> bool:
     return bool((getattr(result, "output", "") or "").strip())
 
 
+#: Adapter error codes that say *why* a seat produced nothing, in terms an
+#: operator can act on: the account's allowance is spent (#975). A seat that fell
+#: silent on one of these did not fall silent, it was told no. Literal strings
+#: (``adapters.ERR_QUOTA_EXHAUSTED`` / ``ERR_RATE_LIMITED``) because this module
+#: stays free of the adapters; a test pins the two together.
+ALLOWANCE_ERROR_CODES = frozenset({"quota_exhausted", "rate_limited"})
+
+
+def adapter_failure(result) -> bool:
+    """Did the adapter report an allowance failure (usage limit / rate limit)?
+
+    Narrower than "any typed failure" on purpose: a timeout or a no-review banner
+    that left nothing behind is still reported as ``silent`` (the established
+    reading). A usage limit is different: the CLI *said* why, and "silent" hid it
+    from the one consumer that could act on it (#975).
+    """
+    return not getattr(result, "ok", True) and (
+        getattr(result, "error_code", None) in ALLOWANCE_ERROR_CODES
+    )
+
+
+def silent_seat(result) -> bool:
+    """No output at all **and** no allowance failure the adapter reported (#975)."""
+    return not responded(result) and not adapter_failure(result)
+
+
 def ballot_seats(reviews) -> list:
     """The round-1 seats that produce a ballot, in the stable panel order.
 

@@ -139,7 +139,7 @@ class TheReportSaysItWasTheFallback(unittest.TestCase):
 
         self.assertEqual(code, 0)
         doc = json.loads(out)
-        self.assertEqual((doc["schema_version"], doc["metadata"]["schema_version"]), ("1.5", 8))
+        self.assertEqual((doc["schema_version"], doc["metadata"]["schema_version"]), ("1.6", 8))
         self.assertIs(doc["metadata"]["panel"]["zero_config_fallback"], True)
 
     def test_the_metadata_file_carries_the_field(self):

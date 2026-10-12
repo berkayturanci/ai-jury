@@ -387,6 +387,7 @@ class ReviewersArray(unittest.TestCase):
             if entry.get("role") == "chair":
                 continue
             self.assertTrue(entry["round1_ok"])
+            self.assertEqual(entry["error"], "")
             self.assertIsInstance(entry["verified_count"], int)
             self.assertGreaterEqual(entry["verified_count"], 1)
             self.assertIsInstance(entry["duration_s"], float)
