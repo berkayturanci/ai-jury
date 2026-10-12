@@ -94,6 +94,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from . import redaction
 from .findings import flatten_inline
 from .panel import (
     ABSTAIN,
@@ -105,6 +106,7 @@ from .panel import (
     PANELIST_ROLE,
     REFUSED,
     SILENT,
+    adapter_failure,
     ballot_seats,
     bundle_records,
     is_review,
@@ -816,6 +818,27 @@ def _named_only_absent(result: Any, changed: Any) -> bool:
     return not resolved and bool(unresolved)
 
 
+#: Longest adapter error a ballot carries. The full text is in the report's seat
+#: status line; the ballot only needs enough for a consumer to say why.
+BALLOT_ERROR_MAX = 200
+
+
+def _ballot_error(result: Any) -> str:
+    """The adapter's short, redacted, single-line error for the ballot (#975).
+
+    Empty when the adapter reported none. Redacted again here (the adapters
+    already redact stderr; a result built elsewhere may not have been), flattened
+    like every untrusted field that reaches a record, and capped.
+    """
+    err = getattr(result, "error", None)
+    if not err or getattr(result, "ok", False):
+        return ""
+    text = flatten_inline(redaction.redact(str(err))[0])
+    code = getattr(result, "error_code", None)
+    text = f"[{code}] {text}" if code else text
+    return text[:BALLOT_ERROR_MAX]
+
+
 def abstention_cause(result: Any, changed: Any = None) -> str:
     """Which of :data:`ai_jury.panel.ABSTENTION_CAUSES` this seat's ballot records.
 
@@ -831,16 +854,19 @@ def abstention_cause(result: Any, changed: Any = None) -> str:
     from one that named nothing, so the cause degrades to ``named_nothing``
     rather than being guessed.
 
-    Silence is tested **first**, so ``silent`` keeps meaning exactly what
-    :func:`ai_jury.panel.responded` says and the metadata's ``silent`` is the
-    same number whether it is taken from the results or from the ballots. A seat
-    that produced no output at all is silent even when its adapter also reported
-    failure: "nothing came back" is the fact an operator acts on, and the adapter
-    status is on the record beside it.
+    An allowance failure (``quota_exhausted`` / ``rate_limited``) is tested
+    **first** (#975): a seat whose CLI exited on a usage limit produced no output, but
+    "silent" hides the one fact an operator acts on, so it is ``adapter_failed``
+    and the redacted error rides on the ballot's ``error``. ``silent`` therefore
+    means "no output and no failure reported" — exactly
+    :func:`ai_jury.panel.silent_seat` — so the metadata's ``silent`` is the same
+    number whether it is taken from the results or from the ballots.
 
     Only ever asked of a ballot that did not review; a seat that reviewed has no
     cause, and :func:`reviewer_ballots` records an empty string for it.
     """
+    if adapter_failure(result):
+        return ADAPTER_FAILED
     if not responded(result):
         return SILENT
     if not getattr(result, "ok", False):
@@ -1278,6 +1304,7 @@ def reviewer_ballots(
             "testing": describe_testing(r),
             "findings": indexes,
             "round1_ok": bool(getattr(r, "ok", False)),
+            "error": _ballot_error(r),
             "verified_count": _verified_count(outcome, name),
             "duration_s": round(float(getattr(r, "duration_s", 0.0) or 0.0), 3),
         }
@@ -1330,6 +1357,7 @@ def reviewer_ballots(
             # failed to review, it is the record carried alongside the seats, and
             # a key missing here would read as a cause nobody wrote down.
             CAUSE_FIELD: "",
+            "error": "",
             "testing": describe_testing(verify) if verify is not None else NOT_STATED,
         }
     )

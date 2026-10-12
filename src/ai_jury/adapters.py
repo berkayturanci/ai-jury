@@ -155,6 +155,12 @@ ERR_NONZERO_EXIT = "nonzero_exit"
 ERR_EMPTY_OUTPUT = "empty_output"
 ERR_SPAWN_FAILED = "spawn_failed"
 ERR_RATE_LIMITED = "rate_limited"
+# The account's usage / quota allowance is spent (issue #975): codex "You've hit
+# your usage limit ... try again at 3:40 PM", agy/Gemini "RESOURCE_EXHAUSTED ...
+# Resets in 34h". Unlike ERR_RATE_LIMITED (a burst limit that clears in seconds)
+# this clears in hours or days, so it is deliberately NOT in
+# RETRYABLE_ERROR_CODES: a retry only burns the backoff before failing again.
+ERR_QUOTA_EXHAUSTED = "quota_exhausted"
 # Local/HTTP adapter could not reach its server (issue #43): connection refused,
 # DNS failure, or the local model server is not running.
 ERR_CONNECTION = "connection_error"
@@ -188,6 +194,7 @@ ERROR_CODES = frozenset(
         ERR_EMPTY_OUTPUT,
         ERR_SPAWN_FAILED,
         ERR_RATE_LIMITED,
+        ERR_QUOTA_EXHAUSTED,
         ERR_CONNECTION,
         ERR_MISSING_API_KEY,
         ERR_INVALID_API_KEY,
@@ -237,6 +244,17 @@ _AUTH_RE = _keyword_pattern(
     "credential",
     "credentials",
 )
+# Checked BEFORE the rate-limit group (#975): these would otherwise be swallowed
+# by the bare "quota" keyword and retried for a reset that is hours away. A bare
+# "quota exceeded" stays rate_limited (often a per-minute quota).
+_QUOTA_EXHAUSTED_RE = _keyword_pattern(
+    "usage limit",
+    "resource exhausted",
+    "exceeded your current quota",
+    "out of credits",
+    "insufficient quota",
+    "insufficient credits",
+)
 _RATE_LIMIT_RE = _keyword_pattern("rate limit", "429", "quota", "too many requests")
 _PERMISSION_RE = _keyword_pattern(
     "permission",
@@ -260,6 +278,8 @@ def classify_stderr(returncode: int, stderr: str) -> str:
     text = (stderr or "").lower()
     if _AUTH_RE.search(text):
         return ERR_AUTH_REQUIRED
+    if _QUOTA_EXHAUSTED_RE.search(text):
+        return ERR_QUOTA_EXHAUSTED
     if _RATE_LIMIT_RE.search(text):
         return ERR_RATE_LIMITED
     if _PERMISSION_RE.search(text):

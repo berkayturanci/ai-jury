@@ -74,7 +74,13 @@ from .metadata import build_run_metadata
 #:
 #: 1.5 (issue #863) embeds metadata schema 8, which adds
 #: ``metadata.panel.zero_config_fallback``. Additive: nothing else changes.
-JSON_SCHEMA_VERSION = "1.5"
+#:
+#: 1.6 (issue #975) adds ``reviewers[].error``: the adapter's short, redacted,
+#: one-line error (``[code] message``, at most 200 chars), ``""`` when the adapter
+#: reported none. Also a seat that produced no output because its allowance was
+#: spent (``quota_exhausted``, or ``rate_limited``) is now ``abstention_cause:
+#: "adapter_failed"``, not ``"silent"``. Additive; no new cause value.
+JSON_SCHEMA_VERSION = "1.6"
 
 #: Canonical SARIF schema URI and version emitted by :func:`to_sarif`.
 SARIF_SCHEMA = "https://json.schemastore.org/sarif-2.1.0.json"

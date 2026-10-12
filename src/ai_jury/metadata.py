@@ -139,7 +139,7 @@ def panel_accounting(reviews, chair: str = "", ballots=None) -> dict:
     # :func:`ai_jury.ballots.abstention_cause` tests silence first and on the
     # same predicate — the two readings are the same number by construction.
     buckets = panel.abstention_buckets(records) if records is not None else None
-    silent = sum(1 for r in seats if not panel.responded(r))
+    silent = sum(1 for r in seats if panel.silent_seat(r))
 
     # bolt: Consolidate multiple metrics into a single-pass O(N) explicit loop
     effective_count = 0

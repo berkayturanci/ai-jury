@@ -21,6 +21,7 @@ from ai_jury.adapters import (  # noqa: E402
     ERR_MISSING_CLI,
     ERR_NONZERO_EXIT,
     ERR_PERMISSION_PROMPT,
+    ERR_QUOTA_EXHAUSTED,
     ERR_RATE_LIMITED,
     ERR_SPAWN_FAILED,
     ERR_TIMEOUT,
@@ -67,6 +68,21 @@ class ClassifyStderrTest(unittest.TestCase):
     def test_rate_limit_signals(self):
         for s in ("rate limit exceeded", "HTTP 429 Too Many Requests", "quota exceeded"):
             self.assertEqual(classify_stderr(1, s), ERR_RATE_LIMITED, s)
+
+    def test_usage_limit_messages_are_quota_exhausted(self):
+        """#975: the two real messages, neither of which the rate-limit keywords matched."""
+        for s in (
+            "You've hit your usage limit. Upgrade to Pro, or try again at 3:40 PM.",
+            "Error: RESOURCE_EXHAUSTED: Quota will reset. Resets in 34h",
+            "You exceeded your current quota, please check your plan",
+        ):
+            self.assertEqual(classify_stderr(1, s), ERR_QUOTA_EXHAUSTED, s)
+
+    def test_quota_exhausted_is_not_retried(self):
+        """A reset hours away makes a retry pure delay; a burst rate limit stays retryable."""
+        self.assertNotIn(ERR_QUOTA_EXHAUSTED, adapters.RETRYABLE_ERROR_CODES)
+        self.assertIn(ERR_RATE_LIMITED, adapters.RETRYABLE_ERROR_CODES)
+        self.assertIn(ERR_QUOTA_EXHAUSTED, ERROR_CODES)
 
     def test_permission_signals(self):
         for s in (
