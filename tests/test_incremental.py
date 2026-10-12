@@ -14,6 +14,7 @@ from ai_jury.incremental import (  # noqa: E402
     compare_range,
     decide_review,
     parse_reviewed_sha,
+    range_full_reason,
     reviewed_sha_marker,
     scope_note,
 )
@@ -67,6 +68,42 @@ class DecideTest(unittest.TestCase):
     def test_scope_note_labels(self):
         self.assertIn("Incremental", scope_note(MODE_INCREMENTAL, "x"))
         self.assertIn("Full", scope_note(MODE_FULL, "y"))
+
+
+class RangeFullReasonTest(unittest.TestCase):
+    """Issue #974: only a plain fast-forward range is the PR's own delta."""
+
+    def test_plain_fast_forward_is_incremental(self):
+        meta = {"status": "ahead", "total_commits": 2, "parents": [1, 1]}
+        self.assertIsNone(range_full_reason(meta))
+
+    def test_merge_commit_forces_full(self):
+        meta = {"status": "ahead", "total_commits": 3, "parents": [1, 1, 2]}
+        self.assertIn("merged another branch", range_full_reason(meta))
+
+    def test_diverged_forces_full(self):
+        meta = {"status": "diverged", "total_commits": 1, "parents": [1]}
+        self.assertIn("not a fast-forward", range_full_reason(meta))
+
+    def test_truncated_commit_list_forces_full(self):
+        meta = {"status": "ahead", "total_commits": 300, "parents": [1] * 100}
+        self.assertIn("too long", range_full_reason(meta))
+
+    def test_list_at_page_size_forces_full_even_if_total_matches(self):
+        meta = {"status": "ahead", "total_commits": 100, "parents": [1] * 100}
+        self.assertIn("too long", range_full_reason(meta))
+
+    def test_list_at_api_cap_forces_full_even_if_total_matches(self):
+        meta = {"status": "ahead", "total_commits": 250, "parents": [1] * 250}
+        self.assertIn("too long", range_full_reason(meta))
+
+    def test_just_under_page_size_is_incremental(self):
+        meta = {"status": "ahead", "total_commits": 99, "parents": [1] * 99}
+        self.assertIsNone(range_full_reason(meta))
+
+    def test_missing_meta_forces_full(self):
+        self.assertIn("unavailable", range_full_reason(None))
+        self.assertIn("unavailable", range_full_reason({}))
 
 
 if __name__ == "__main__":

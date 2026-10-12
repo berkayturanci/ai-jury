@@ -49,6 +49,10 @@ def run(args, stdin=None):
     return code, out.getvalue(), err.getvalue()
 
 
+# A plain fast-forward from the marker: one commit, one parent (issue #974).
+FAST_FORWARD_META = {"status": "ahead", "total_commits": 1, "parents": [1]}
+
+
 @contextlib.contextmanager
 def gh_mocked(diff=DIFF, head="abc123def456789", comments=None):
     comments = comments or []
@@ -61,6 +65,7 @@ def gh_mocked(diff=DIFF, head="abc123def456789", comments=None):
         mock.patch("ai_jury.github.pr_head_sha", return_value=head),
         mock.patch("ai_jury.github.pr_comment_bodies", return_value=comments),
         mock.patch("ai_jury.github.compare_diff", return_value=diff),
+        mock.patch("ai_jury.github.compare_meta", return_value=FAST_FORWARD_META),
     ):
         yield {"post": ppc, "inline": pic, "labels": al}
 
@@ -425,6 +430,57 @@ class IncrementalAndGuards(unittest.TestCase):
         ):
             code, _, _ = run(["--mock", "--pr", "9", "--incremental", "-q", "--seed", "1"])
         self.assertEqual(code, 0)
+
+    def _incremental_scope(self, meta, narrowed_diff):
+        """Run --incremental with a mocked compare and return (reviewed diff, stderr)."""
+        from ai_jury import incremental as inc
+
+        marker = inc.reviewed_sha_marker("deadbeefcafe1234")
+        seen = {}
+        real = cli.review_diff
+
+        def spy(config, diff, *a, **kw):
+            seen["diff"] = diff
+            return real(config, diff, *a, **kw)
+
+        with (
+            gh_mocked(head="abc123def456789", comments=[marker]),
+            mock.patch("ai_jury.github.compare_diff", return_value=narrowed_diff),
+            mock.patch("ai_jury.github.compare_meta", return_value=meta),
+            mock.patch("ai_jury.cli.review_diff", side_effect=spy),
+        ):
+            code, _, err = run(["--mock", "--pr", "9", "--incremental", "--seed", "1"])
+        self.assertEqual(code, 0)
+        return seen["diff"], err
+
+    def test_incremental_plain_push_reviews_the_range(self):
+        narrowed = DIFF.replace("# added", "# narrowed")
+        diff, err = self._incremental_scope(FAST_FORWARD_META, narrowed)
+        self.assertEqual(diff, narrowed)
+        self.assertIn("incremental: reviewing", err)
+
+    def test_incremental_base_merge_falls_back_to_full_pr_diff(self):
+        # #974: a merge commit in marker..head means the range carries the base
+        # branch's changes; the PR's own full diff is reviewed instead.
+        narrowed = DIFF.replace("# added", "# narrowed")
+        meta = {"status": "ahead", "total_commits": 2, "parents": [1, 2]}
+        diff, err = self._incremental_scope(meta, narrowed)
+        self.assertEqual(diff, DIFF)
+        self.assertIn("merged another branch", err)
+        self.assertIn("full review", err)
+
+    def test_incremental_rebased_history_falls_back_to_full_pr_diff(self):
+        narrowed = DIFF.replace("# added", "# narrowed")
+        meta = {"status": "diverged", "total_commits": 1, "parents": [1]}
+        diff, err = self._incremental_scope(meta, narrowed)
+        self.assertEqual(diff, DIFF)
+        self.assertIn("not a fast-forward", err)
+
+    def test_incremental_unreadable_range_falls_back_to_full_pr_diff(self):
+        narrowed = DIFF.replace("# added", "# narrowed")
+        diff, err = self._incremental_scope(None, narrowed)
+        self.assertEqual(diff, DIFF)
+        self.assertIn("unavailable", err)
 
     def test_label_requires_pr(self):
         # 970: --label without --pr raises SystemExit with the message as code.

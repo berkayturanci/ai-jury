@@ -221,6 +221,33 @@ def compare_diff(base: str, head: str, repo: str | None = None) -> str:
         return ""
 
 
+def compare_meta(base: str, head: str, repo: str | None = None) -> dict | None:
+    """Return a small summary of ``base...head`` from the compare API (issue #974).
+
+    ``{"status", "total_commits", "parents"}`` where ``parents`` lists the parent
+    count of each commit on the first page (up to 100). ``--jq`` filters after
+    ``gh`` downloads the response, so this parses only the fields it needs; it
+    does not make the call lighter. ``None`` on any failure, which callers
+    treat as "cannot prove the range is the PR's own change".
+    """
+    resolved = _resolve_repo(repo)
+    if not resolved:
+        return None
+    jq = "{status, total_commits, parents: [.commits[].parents | length]}"
+    try:
+        out = _gh(
+            "api",
+            "--jq",
+            jq,
+            "--",
+            f"repos/{resolved}/compare/{base}...{head}?per_page=100",
+        )
+        data = json.loads(out)
+    except (RuntimeError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
 def build_label_args(pr: str, labels, repo: str | None = None) -> list[str]:
     """Build the ``gh pr edit`` arg vector for applying labels (pure).
 
