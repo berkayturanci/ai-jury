@@ -60,6 +60,37 @@ def decide_review(prev_sha: str | None, head_sha: str | None) -> tuple[str, str]
     )
 
 
+def range_full_reason(meta: dict | None) -> str | None:
+    """Return why ``marker...head`` is NOT the PR's own delta, or None when it is (#974).
+
+    ``meta`` is the compare summary from ``github.compare_meta``: ``status``,
+    ``total_commits`` and ``parents`` (the parent count of each listed commit).
+    The three-dot range is only the PR's own change when every commit in it is
+    the PR author's work on top of the marker. Three things break that, and each
+    pulls the base branch's changes (other PRs' work) into the diff, so each
+    falls back to a FULL review (``base...head``, which is always the PR's own
+    change):
+
+    * a merge commit in the range (typically ``git merge main`` into the PR);
+    * a history that is not a plain fast-forward from the marker (status other
+      than ``ahead``: a rebase onto a newer base, or a force-push);
+    * a commit list the API truncated, so the merge check cannot see every commit.
+
+    Exact incremental diffs across a base merge are not computable through the
+    API without creating commits, so a full review is the sound choice.
+    """
+    if not meta:
+        return "commit range unavailable"
+    if meta.get("status") != "ahead":
+        return f"history is not a fast-forward from the last review ({meta.get('status')})"
+    parents = meta.get("parents") or []
+    if int(meta.get("total_commits") or 0) > len(parents):
+        return "commit range too long to inspect for a base-branch merge"
+    if any(int(n) > 1 for n in parents):
+        return "the branch merged another branch since the last review"
+    return None
+
+
 def compare_range(prev_sha: str, head_sha: str) -> str:
     """Return the ``base...head`` range spec for the GitHub compare API."""
     return f"{prev_sha}...{head_sha}"

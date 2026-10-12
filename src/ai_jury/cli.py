@@ -2698,11 +2698,17 @@ def main(argv: list[str] | None = None) -> int:
         if not args.pr:
             raise SystemExit("error: --incremental requires --pr")
         from . import incremental as inc
-        from .github import compare_diff, pr_comment_bodies, pr_head_sha
+        from .github import compare_diff, compare_meta, pr_comment_bodies, pr_head_sha
 
         head_sha = pr_head_sha(args.pr, args.repo)
         prev_sha = inc.parse_reviewed_sha(pr_comment_bodies(args.pr, args.repo))
         mode, reason = inc.decide_review(prev_sha, head_sha)
+        if mode == inc.MODE_INCREMENTAL:
+            # #974: marker...head is the PR's own delta only on a plain fast-forward.
+            # A merged base branch (or rebase) would put other PRs' changes in it.
+            full_why = inc.range_full_reason(compare_meta(prev_sha, head_sha, args.repo))
+            if full_why:
+                mode, reason = inc.MODE_FULL, f"{full_why} — full review of the PR's own diff"
         if mode == inc.MODE_INCREMENTAL:
             inc_diff = compare_diff(prev_sha, head_sha, args.repo)
             if inc_diff.strip():
