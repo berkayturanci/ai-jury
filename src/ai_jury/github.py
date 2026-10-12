@@ -225,8 +225,9 @@ def compare_meta(base: str, head: str, repo: str | None = None) -> dict | None:
     """Return a small summary of ``base...head`` from the compare API (issue #974).
 
     ``{"status", "total_commits", "parents"}`` where ``parents`` lists the parent
-    count of each commit on the first page (up to 100). Only these fields are
-    pulled (``--jq``), never the diff. ``None`` on any failure, which callers
+    count of each commit on the first page (up to 100). ``--jq`` filters after
+    ``gh`` downloads the response, so this parses only the fields it needs; it
+    does not make the call lighter. ``None`` on any failure, which callers
     treat as "cannot prove the range is the PR's own change".
     """
     resolved = _resolve_repo(repo)

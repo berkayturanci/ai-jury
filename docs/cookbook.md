@@ -503,7 +503,8 @@ since the last review, was rebased or force-pushed, or the commit range cannot b
 inspected, the range would also contain what the base branch gained, which is other
 PRs' work. The jury then reviews the PR's full diff against its base instead, and
 the scope line says why (for example `Full — the branch merged another branch since
-the last review — full review of the PR's own diff`) (#974).
+the last review — full review of the PR's own diff`) (#974). A squash-merge of the
+base (`git merge --squash`) is a single-parent commit and is not detected.
 
 ## 9. Suggested patches for verified findings
 

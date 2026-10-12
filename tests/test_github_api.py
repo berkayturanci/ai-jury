@@ -74,6 +74,16 @@ class CompareMetaTests(unittest.TestCase):
         self.assertIsNone(github.compare_meta("a", "b", "o/r"))
 
 
+class CompareMetaNonObjectTests(unittest.TestCase):
+    def test_non_object_json_returns_none(self):
+        for body in ("null", "[]", "42"):
+            with (
+                mock.patch("ai_jury.github._resolve_repo", return_value="o/r"),
+                mock.patch("ai_jury.github._gh", return_value=body),
+            ):
+                self.assertIsNone(github.compare_meta("a", "b", "o/r"), body)
+
+
 class LabelTests(unittest.TestCase):
     def test_build_label_args_empty(self):
         self.assertEqual(github.build_label_args("1", [], "o/r"), [])

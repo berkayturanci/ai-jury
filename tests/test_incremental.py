@@ -70,10 +70,6 @@ class DecideTest(unittest.TestCase):
         self.assertIn("Full", scope_note(MODE_FULL, "y"))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class RangeFullReasonTest(unittest.TestCase):
     """Issue #974: only a plain fast-forward range is the PR's own delta."""
 
@@ -93,6 +89,22 @@ class RangeFullReasonTest(unittest.TestCase):
         meta = {"status": "ahead", "total_commits": 300, "parents": [1] * 100}
         self.assertIn("too long", range_full_reason(meta))
 
+    def test_list_at_page_size_forces_full_even_if_total_matches(self):
+        meta = {"status": "ahead", "total_commits": 100, "parents": [1] * 100}
+        self.assertIn("too long", range_full_reason(meta))
+
+    def test_list_at_api_cap_forces_full_even_if_total_matches(self):
+        meta = {"status": "ahead", "total_commits": 250, "parents": [1] * 250}
+        self.assertIn("too long", range_full_reason(meta))
+
+    def test_just_under_page_size_is_incremental(self):
+        meta = {"status": "ahead", "total_commits": 99, "parents": [1] * 99}
+        self.assertIsNone(range_full_reason(meta))
+
     def test_missing_meta_forces_full(self):
         self.assertIn("unavailable", range_full_reason(None))
         self.assertIn("unavailable", range_full_reason({}))
+
+
+if __name__ == "__main__":
+    unittest.main()

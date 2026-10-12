@@ -19,6 +19,9 @@ import re
 # was reviewed, so a later run can compute the incremental range.
 _MARKER_RE = re.compile(r"<!--\s*arc-reviewed-sha:([0-9a-fA-F]{7,40})\s*-->")
 
+# Page size requested from the compare API; a list this long may be capped.
+_COMMIT_PAGE = 100
+
 MODE_FULL = "full"
 MODE_INCREMENTAL = "incremental"
 
@@ -74,17 +77,21 @@ def range_full_reason(meta: dict | None) -> str | None:
     * a merge commit in the range (typically ``git merge main`` into the PR);
     * a history that is not a plain fast-forward from the marker (status other
       than ``ahead``: a rebase onto a newer base, or a force-push);
-    * a commit list the API truncated, so the merge check cannot see every commit.
+    * a commit list the API may have truncated (the compare endpoint caps the
+      list, and ``total_commits`` can equal the returned length at the cap), so
+      the merge check cannot be trusted to have seen every commit.
 
-    Exact incremental diffs across a base merge are not computable through the
-    API without creating commits, so a full review is the sound choice.
+    A full review is the chosen conservative behaviour in each case.
+
+    Limit: a squash-merge of the base (``git merge --squash``) is a single-parent
+    commit, so it cannot be told apart from ordinary work and is NOT detected.
     """
     if not meta:
         return "commit range unavailable"
     if meta.get("status") != "ahead":
         return f"history is not a fast-forward from the last review ({meta.get('status')})"
     parents = meta.get("parents") or []
-    if int(meta.get("total_commits") or 0) > len(parents):
+    if len(parents) >= _COMMIT_PAGE or int(meta.get("total_commits") or 0) > len(parents):
         return "commit range too long to inspect for a base-branch merge"
     if any(int(n) > 1 for n in parents):
         return "the branch merged another branch since the last review"
