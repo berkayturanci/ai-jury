@@ -1155,6 +1155,52 @@ class AUsageLimitIsNotASilentSeat(unittest.TestCase):
         self.assertNotIn("\n", b["error"])
         self.assertLessEqual(len(b["error"]), 200)
 
+    def test_keel_reviews_carries_the_error_and_a_scope_that_says_why(self):
+        from ai_jury.ballots import keel_reviews
+
+        config = _config([{"name": "seat", "vendor": "openai", "command": "codex"}])
+        result = AgentResult(
+            "seat", "openai", False, "", 0.0, self.CODEX, error_code="quota_exhausted"
+        )
+        rec = keel_reviews(_outcome([result]), config)[0]
+        self.assertIn("usage limit", rec["error"])
+        self.assertIn("3:40 PM", rec["error"])
+        self.assertIn("usage allowance", rec["scope"])
+        self.assertIn("usage limit", rec["scope"])
+        self.assertNotIn("what came back named nothing", rec["scope"])
+        self.assertFalse(rec["counts_as_review"])
+        self.assertEqual(keel_reviews(_outcome([result]), config)[-1]["error"], "")
+
+    def test_ballot_error_edge_cases(self):
+        from ai_jury.ballots import _ballot_error
+
+        f = AgentResult
+        self.assertEqual(_ballot_error(f("s", "v", False, "", 0.0, "")), "")
+        self.assertEqual(_ballot_error(f("s", "v", False, "", 0.0, None)), "")
+        self.assertEqual(_ballot_error(f("s", "v", True, "x", 0.0, "warn")), "")
+        self.assertEqual(_ballot_error(f("s", "v", False, "", 0.0, "boom")), "boom")
+        self.assertEqual(
+            _ballot_error(f("s", "v", False, "", 0.0, "boom", error_code="timeout")),
+            "[timeout] boom",
+        )
+
+    def test_run_metadata_counts_silent_and_adapter_failed_together(self):
+        from ai_jury.metadata import build_run_metadata
+
+        config = _config(
+            [
+                {"name": "a", "vendor": "openai", "command": "codex"},
+                {"name": "b", "vendor": "anthropic", "command": "claude"},
+            ]
+        )
+        results = [
+            AgentResult("a", "openai", False, "", 0.0, "usage limit", error_code="quota_exhausted"),
+            AgentResult("b", "anthropic", False, "", 0.0, "timed out", error_code="timeout"),
+        ]
+        outcome = _outcome(results)
+        meta = build_run_metadata(outcome, config)["panel"]
+        self.assertEqual((meta["silent"], meta["adapter_failed"]), (1, 1))
+
     def test_a_clean_review_has_an_empty_error(self):
         b = self._ballot(AgentResult("seat", "openai", True, _reply("src/ai_jury/ballots.py"), 0.0))
         self.assertEqual(b["error"], "")

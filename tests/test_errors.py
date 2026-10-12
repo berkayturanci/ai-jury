@@ -70,11 +70,20 @@ class ClassifyStderrTest(unittest.TestCase):
             self.assertEqual(classify_stderr(1, s), ERR_RATE_LIMITED, s)
 
     def test_usage_limit_messages_are_quota_exhausted(self):
-        """#975: the two real messages, neither of which the rate-limit keywords matched."""
+        """#975: codex's usage limit matched no rate-limit keyword (it was nonzero_exit).
+
+        agy's "RESOURCE_EXHAUSTED: Quota will reset ..." already matched the bare
+        ``quota`` keyword and was retried as rate_limited; the "Resets in 34h"
+        fixture has no "quota" word, so only the new regex can catch it.
+        """
         for s in (
             "You've hit your usage limit. Upgrade to Pro, or try again at 3:40 PM.",
             "Error: RESOURCE_EXHAUSTED: Quota will reset. Resets in 34h",
+            "RESOURCE_EXHAUSTED: Resets in 34h",
             "You exceeded your current quota, please check your plan",
+            "insufficient quota",
+            "Insufficient credits on this account",
+            "You are out of credits",
         ):
             self.assertEqual(classify_stderr(1, s), ERR_QUOTA_EXHAUSTED, s)
 

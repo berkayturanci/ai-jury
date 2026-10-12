@@ -854,8 +854,8 @@ def abstention_cause(result: Any, changed: Any = None) -> str:
     from one that named nothing, so the cause degrades to ``named_nothing``
     rather than being guessed.
 
-    An allowance failure (``quota_exhausted`` / ``rate_limited``) is tested
-    **first** (#975): a seat whose CLI exited on a usage limit produced no output, but
+    An allowance failure (``quota_exhausted`` / ``rate_limited``) with no output
+    is tested **first** (#975): a seat whose CLI exited on a usage limit produced no output, but
     "silent" hides the one fact an operator acts on, so it is ``adapter_failed``
     and the redacted error rides on the ballot's ``error``. ``silent`` therefore
     means "no output and no failure reported" — exactly
@@ -914,6 +914,14 @@ def _no_scope_reason(result: Any, findings: list | None = None, changed: Any = N
     rule.
     """
     cause = abstention_cause(result, changed)
+    if cause == ADAPTER_FAILED and adapter_failure(result) and not responded(result):
+        # Nothing came back because the CLI was refused on its allowance (#975):
+        # say that, and quote the CLI's own short error so a consumer reading
+        # only the scope (keel) sees why. De-anchored like every quoted token.
+        return (
+            "its CLI failed on its usage allowance (usage limit or rate limit) and "
+            f"returned nothing — {_deanchor(_ballot_error(result)).rstrip('.')}"
+        )
     stated = _NO_SCOPE_REASONS.get(cause)
     if stated:
         return stated
@@ -1467,7 +1475,7 @@ def keel_reviews(outcome: Any, config: Any, *, vote: Any = None, mode: str = "co
     """The ``--format keel-reviews`` bundle: one record per seat, plus the chair.
 
     Each record is ``{reviewer, verdict, scope, findings, testing, vendor, model,
-    model_source, counts_as_review}`` where ``findings`` are ``{severity, path,
+    model_source, counts_as_review, error}`` where ``findings`` are ``{severity, path,
     line, message}`` objects — the shape a consumer of head-pinned per-reviewer
     verdicts accepts. Pure: the caller serializes it.
 
@@ -1504,6 +1512,9 @@ def keel_reviews(outcome: Any, config: Any, *, vote: Any = None, mode: str = "co
                 "model": b["model"],
                 "model_source": b["model_source"],
                 "counts_as_review": b["counts_as_review"],
+                # Why a seat that did not review failed (#975): without it the
+                # consumer sees an abstention and not that the CLI hit its limit.
+                "error": b["error"],
             }
         )
     return records
