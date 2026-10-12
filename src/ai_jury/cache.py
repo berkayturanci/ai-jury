@@ -288,6 +288,7 @@ def outcome_from_dict(data: dict) -> JuryOutcome:
         # single cache entry — `routing` and every seat's `tier` are already in
         # `config_hash`, so a plan that would route differently has a different
         # key and cannot hit an old entry at all.
+        excluded_files=[tuple(e) for e in data.get("excluded_files", [])],
         routing=dict(data["routing"])
         if data.get("routing")
         else {

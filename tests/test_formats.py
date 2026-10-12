@@ -435,7 +435,7 @@ class BackwardCompatibility(unittest.TestCase):
 
     def test_only_reviewers_was_added(self):
         doc = json.loads(to_json(*_mock_outcome()))
-        self.assertEqual(set(doc) - set(self.LEGACY_KEYS), {"reviewers"})
+        self.assertEqual(set(doc) - set(self.LEGACY_KEYS), {"reviewers", "excluded_files"})
 
     def test_legacy_sections_are_byte_identical_without_the_new_key(self):
         # The strongest form of "no change": drop ``reviewers`` and the document
@@ -443,6 +443,7 @@ class BackwardCompatibility(unittest.TestCase):
         outcome, config = _mock_outcome()
         doc = json.loads(to_json(outcome, config))
         doc.pop("reviewers")
+        doc.pop("excluded_files")
         legacy = {
             "schema_version": doc["schema_version"],
             "metadata": build_run_metadata(outcome, config),

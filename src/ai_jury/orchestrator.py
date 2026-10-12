@@ -167,6 +167,10 @@ class JuryOutcome:
     changed: largediff.ChangeIndex | None = None
     # What tiered routing decided (#714): the plan's dict, or the standard record.
     routing: dict = field(default_factory=lambda: routing.standard_plan([]).as_dict())
+    # Files the large-diff planner kept out of what the panel saw, as
+    # ``(path, reason)`` pairs (#978); a binary one is named to the reviewers
+    # and in the report so a changed golden image is not invisible.
+    excluded_files: list = field(default_factory=list)
 
 
 def _run_phase(
@@ -350,6 +354,7 @@ def run_jury(
     on_event=None,
     mode: str = "code",
     risk: str | None = None,
+    excluded_files=(),
 ) -> JuryOutcome:
     # Jury mode (issue #221): "code" (default) reviews a diff with the code-review
     # rubric; "issue" reviews a GitHub issue's prose for completeness/clarity.
@@ -524,6 +529,9 @@ def run_jury(
             diff=prompts.neutralize_sentinels(diff),
             policy=policy_section,
             notice=prompts._UNTRUSTED_NOTICE,
+            excluded=prompts.binary_files_section(
+                [p for p, why in excluded_files if why == largediff.EXCLUDE_BINARY]
+            ),
         )
         for a in round1
     }
@@ -799,6 +807,7 @@ def run_jury(
         stop_reason=stop_reason,
         changed=changed,
         routing=plan.as_dict(),
+        excluded_files=[(p, why) for p, why in excluded_files],
     )
 
 
@@ -1350,6 +1359,7 @@ def _merge_chunk_outcomes(outcomes: list[JuryOutcome], config: JuryConfig) -> Ju
         # chunk's plan describes the run; escalation is true when ANY chunk
         # escalated, because the benched seats really did review by then.
         routing=_merged_routing(outcomes, base, debate),
+        excluded_files=list(base.excluded_files),
     )
 
 
@@ -1435,9 +1445,19 @@ def review_diff(
     if plan.mode == largediff.MODE_TOO_LARGE:
         raise RuntimeError(f"diff too large to review: {plan.reason}")
     if not plan.chunks:
+        binaries = [p for p, why in plan.excluded if why == largediff.EXCLUDE_BINARY]
+        listing = ""
+        if binaries:
+            shown = binaries[: prompts.BINARY_LIST_CAP]
+            more = len(binaries) - len(shown)
+            listing = (
+                f"; {len(binaries)} binary file(s) cannot be reviewed as text: "
+                + ", ".join(shown)
+                + (f" (+{more} more)" if more > 0 else "")
+            )
         raise RuntimeError(
             "nothing to review after filters — all files were excluded "
-            "(check [jury.diff] include/exclude patterns)"
+            "(check [jury.diff] include/exclude patterns)" + listing
         )
 
     # One shared budget across all chunks so ``total_timeout`` bounds the WHOLE
@@ -1486,6 +1506,7 @@ def review_diff(
             budget=shared_budget,
             on_event=on_event,
             risk=whole_risk,
+            excluded_files=plan.excluded,
         )
 
     def _finalize(outcome: JuryOutcome) -> JuryOutcome:

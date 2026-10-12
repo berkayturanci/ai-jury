@@ -31,6 +31,25 @@ def _block(title: str, body: str) -> str:
     return f"### {title}\n\n{_defuse_patch_syntax(body).strip() or '_(no output)_'}\n"
 
 
+def _excluded_block(excluded_files) -> list[str]:
+    """The "Not shown to reviewers" line for binary files (#978); ``[]`` when none.
+
+    Only binary exclusions are named: they are the ones a reader cannot infer
+    from the config, and a changed golden image was invisible to the panel.
+    Paths come from the diff, so they are flattened to one line and have their
+    backticks removed before being placed in code spans.
+    """
+    from .prompts import BINARY_LIST_CAP
+
+    paths = [p for p, why in (excluded_files or []) if why == "binary"]
+    if not paths:
+        return []
+    names = [f"`{flatten_inline(p).replace('`', chr(39))}`" for p in paths[:BINARY_LIST_CAP]]
+    more = len(paths) - len(names)
+    tail = f", +{more} more" if more > 0 else ""
+    return [f"> Not shown to reviewers: {len(paths)} binary file(s): {', '.join(names)}{tail}\n"]
+
+
 def _seat_list(reviews) -> str:
     """The seats that RETURNED a review, deduplicated, in seat order (issue #911).
 
@@ -385,6 +404,7 @@ def render(
     review_scope: str | None = None,
     vote=None,
     footer: bool = True,
+    excluded_files=None,
 ) -> str:
     findings = findings or []
     warnings = warnings or []
@@ -424,6 +444,8 @@ def render(
             extra = f" ({redaction_count} redacted)" if redact_secrets else ""
             lines.append(f"- secret redaction: {state}{extra}")
         lines.append("")
+
+    lines.extend(_excluded_block(excluded_files))
 
     if groups:
         lines.extend(_consensus_block(groups))
@@ -613,6 +635,7 @@ def render_transcript(
     lead_with_summary: bool = False,
     vote=None,
     footer: bool = True,
+    excluded_files=None,
 ) -> str:
     """Render the full play-by-play transcript (issue: full transcript / --verbose).
 
@@ -660,6 +683,8 @@ def render_transcript(
             extra = f" ({redaction_count} redacted)" if redact_secrets else ""
             lines.append(f"- secret redaction: {state}{extra}")
         lines.append("")
+
+    lines.extend(_excluded_block(excluded_files))
 
     if lead_with_summary:
         lines.extend(_summary_blocks(findings, warnings, groups, classification, vote=vote))
