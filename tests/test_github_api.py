@@ -46,6 +46,44 @@ class CompareDiffTests(unittest.TestCase):
         self.assertEqual(github.compare_diff("a", "b", "o/r"), "")
 
 
+class CompareMetaTests(unittest.TestCase):
+    @mock.patch("ai_jury.github._resolve_repo", return_value="o/r")
+    @mock.patch(
+        "ai_jury.github._gh",
+        return_value='{"status":"ahead","total_commits":2,"parents":[1,2]}',
+    )
+    def test_success(self, mock_gh, _):
+        self.assertEqual(
+            github.compare_meta("a", "b", "o/r"),
+            {"status": "ahead", "total_commits": 2, "parents": [1, 2]},
+        )
+        self.assertIn("repos/o/r/compare/a...b?per_page=100", mock_gh.call_args.args)
+
+    @mock.patch("ai_jury.github._resolve_repo", return_value="")
+    def test_unresolved_repo(self, _):
+        self.assertIsNone(github.compare_meta("a", "b"))
+
+    @mock.patch("ai_jury.github._resolve_repo", return_value="o/r")
+    @mock.patch("ai_jury.github._gh", side_effect=RuntimeError("boom"))
+    def test_error_returns_none(self, *_):
+        self.assertIsNone(github.compare_meta("a", "b", "o/r"))
+
+    @mock.patch("ai_jury.github._resolve_repo", return_value="o/r")
+    @mock.patch("ai_jury.github._gh", return_value="not json")
+    def test_bad_json_returns_none(self, *_):
+        self.assertIsNone(github.compare_meta("a", "b", "o/r"))
+
+
+class CompareMetaNonObjectTests(unittest.TestCase):
+    def test_non_object_json_returns_none(self):
+        for body in ("null", "[]", "42"):
+            with (
+                mock.patch("ai_jury.github._resolve_repo", return_value="o/r"),
+                mock.patch("ai_jury.github._gh", return_value=body),
+            ):
+                self.assertIsNone(github.compare_meta("a", "b", "o/r"), body)
+
+
 class LabelTests(unittest.TestCase):
     def test_build_label_args_empty(self):
         self.assertEqual(github.build_label_args("1", [], "o/r"), [])

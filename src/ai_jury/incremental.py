@@ -19,6 +19,9 @@ import re
 # was reviewed, so a later run can compute the incremental range.
 _MARKER_RE = re.compile(r"<!--\s*arc-reviewed-sha:([0-9a-fA-F]{7,40})\s*-->")
 
+# Page size requested from the compare API; a list this long may be capped.
+_COMMIT_PAGE = 100
+
 MODE_FULL = "full"
 MODE_INCREMENTAL = "incremental"
 
@@ -58,6 +61,41 @@ def decide_review(prev_sha: str | None, head_sha: str | None) -> tuple[str, str]
         MODE_INCREMENTAL,
         f"incremental: reviewing {prev_sha[:7]}..{head_sha[:7]}",
     )
+
+
+def range_full_reason(meta: dict | None) -> str | None:
+    """Return why ``marker...head`` is NOT the PR's own delta, or None when it is (#974).
+
+    ``meta`` is the compare summary from ``github.compare_meta``: ``status``,
+    ``total_commits`` and ``parents`` (the parent count of each listed commit).
+    The three-dot range is only the PR's own change when every commit in it is
+    the PR author's work on top of the marker. Three things break that, and each
+    pulls the base branch's changes (other PRs' work) into the diff, so each
+    falls back to a FULL review (``base...head``, which is always the PR's own
+    change):
+
+    * a merge commit in the range (typically ``git merge main`` into the PR);
+    * a history that is not a plain fast-forward from the marker (status other
+      than ``ahead``: a rebase onto a newer base, or a force-push);
+    * a commit list the API may have truncated (the compare endpoint caps the
+      list, and ``total_commits`` can equal the returned length at the cap), so
+      the merge check cannot be trusted to have seen every commit.
+
+    A full review is the chosen conservative behaviour in each case.
+
+    Limit: a squash-merge of the base (``git merge --squash``) is a single-parent
+    commit, so it cannot be told apart from ordinary work and is NOT detected.
+    """
+    if not meta:
+        return "commit range unavailable"
+    if meta.get("status") != "ahead":
+        return f"history is not a fast-forward from the last review ({meta.get('status')})"
+    parents = meta.get("parents") or []
+    if len(parents) >= _COMMIT_PAGE or int(meta.get("total_commits") or 0) > len(parents):
+        return "commit range too long to inspect for a base-branch merge"
+    if any(int(n) > 1 for n in parents):
+        return "the branch merged another branch since the last review"
+    return None
 
 
 def compare_range(prev_sha: str, head_sha: str) -> str:

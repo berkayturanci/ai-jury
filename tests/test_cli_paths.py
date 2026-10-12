@@ -44,6 +44,10 @@ def run(args, stdin=None):
     return code, out.getvalue(), err.getvalue()
 
 
+# A plain fast-forward from the marker: one commit, one parent (issue #974).
+FAST_FORWARD_META = {"status": "ahead", "total_commits": 1, "parents": [1]}
+
+
 @contextlib.contextmanager
 def gh_mocked(diff=DIFF, head="abc123def456789", comments=None):
     comments = comments or []
@@ -56,6 +60,7 @@ def gh_mocked(diff=DIFF, head="abc123def456789", comments=None):
         mock.patch("ai_jury.github.pr_head_sha", return_value=head),
         mock.patch("ai_jury.github.pr_comment_bodies", return_value=comments),
         mock.patch("ai_jury.github.compare_diff", return_value=diff),
+        mock.patch("ai_jury.github.compare_meta", return_value=FAST_FORWARD_META),
     ):
         yield {"post": ppc, "inline": pic, "labels": al}
 
