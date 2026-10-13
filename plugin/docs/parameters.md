@@ -142,9 +142,9 @@ as an option) and an empty resolved diff is an error rather than a review of not
 
 Exactly one input source is required. `--repo` modifies `--pr`/`--issue`; all
 posting flags (`--post-summary`/`--post`, `--post-inline`, `--post-progress`,
-`--label`) and `--incremental` require `--pr`. With `--issue`, `--post`/`--post-summary`
+`--post-marker`, `--label`) and `--incremental` require `--pr`. With `--issue`, `--post`/`--post-summary`
 posts the verdict back via `gh issue comment`; the PR/diff-only flags
-(`--post-inline`, `--post-progress`, `--label`, `--incremental`) are rejected.
+(`--post-inline`, `--post-progress`, `--post-marker`, `--label`, `--incremental`) are rejected.
 
 **Example:** `jury --pr 123 --repo octocat/hello` reviews PR #123 in
 `octocat/hello`; `git diff origin/HEAD... | jury --diff-file -` reviews the
@@ -313,6 +313,7 @@ full transcript to a file; `jury --pr 123 -q` silences the stderr progress logs.
 | Flag | Value | Default | Description |
 | --- | --- | --- | --- |
 | `--post-summary`, `--post` | flag | off | Post the report as a single summary comment. Works with **`--pr`** (via `gh pr comment`) **and `--issue`** (via `gh issue comment`). |
+| `--post-marker` | flag | off | After a PR review, post a minimal comment holding only the `arc-reviewed-sha` marker (plus one line saying so), for callers that post their own verdict and would otherwise never get an `--incremental` narrowing. Not needed with `--post-summary`, which carries the marker. The marker names the head read when the review **started**; if the PR moved meanwhile, a notice is printed. **`--pr` only.** |
 | `--post-inline` | flag | off | Post inline review comments on located findings. **`--pr` only.** |
 | `--post-progress` | flag | off | Keep a live, sticky status comment updated per round/chunk. **`--pr` only.** |
 | `--post-mode` | `single` \| `phased` | `single` | With `--post-summary`: one comment, or separate Round 1 / debate / decision comments. **`--pr` only.** |

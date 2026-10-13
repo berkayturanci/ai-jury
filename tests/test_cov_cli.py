@@ -823,7 +823,7 @@ class PostReviewBlockSurvivesAGhFailure(unittest.TestCase):
         self.assertIn("error: could not post phased comment 2", err)
         self.assertEqual(2, len(calls), "posting continued past the failure")
 
-    def test_a_known_head_sha_is_not_read_a_second_time(self):
+    def test_the_start_head_is_read_once_and_rechecked_once_at_post_time(self):
         """A regression guard on behaviour this change must not lose, **not** a new
         behaviour: the pre-existing `marker_sha = head_sha or pr_head_sha(...)`
         already short-circuited. Rewriting it as an explicit if/else is what this
@@ -836,7 +836,9 @@ class PostReviewBlockSurvivesAGhFailure(unittest.TestCase):
             code, _, _ = self._run(["--mock", "--pr", "7", "--post", "--incremental", "-q"])
 
         self.assertEqual(0, code)
-        self.assertEqual(1, asked.call_count, "gh was asked for a head sha it already had")
+        # One read at start, one at post time that only checks whether the head moved
+        # (#977); the marker never takes its SHA from the second.
+        self.assertEqual(2, asked.call_count)
 
     def test_an_unreadable_head_sha_warns_and_still_posts(self):
         """The marker only narrows a later --incremental run; losing it is not worth
@@ -876,6 +878,71 @@ class PostReviewBlockSurvivesAGhFailure(unittest.TestCase):
         self.assertEqual(0, code)
         self.assertNotIn("will not carry an incremental marker", err)
         self.assertIn("c" * 40, posted[0][1], "the reviewed-sha marker is missing")
+
+    # --- #977: --post-marker and the start-SHA pin -------------------------------
+
+    def _posted(self, argv, heads):
+        """Run *argv* with `pr_head_sha` answering *heads* in order (last repeats)."""
+        posted = []
+        seq = list(heads)
+
+        def head(*_a, **_k):
+            return seq.pop(0) if len(seq) > 1 else seq[0]
+
+        with (
+            mock.patch("ai_jury.github.pr_head_sha", side_effect=head),
+            mock.patch(
+                "ai_jury.cli.post_pr_comment", side_effect=lambda *a, **_k: posted.append(a[1])
+            ),
+        ):
+            code, _, err = self._run(argv)
+        return code, posted, err
+
+    def test_post_marker_posts_exactly_the_marker_comment(self):
+        code, posted, err = self._posted(["--mock", "--pr", "7", "--post-marker", "-q"], ["d" * 40])
+        self.assertEqual(0, code)
+        self.assertEqual(1, len(posted))
+        self.assertIn(f"<!-- arc-reviewed-sha:{'d' * 40} -->", posted[0])
+        self.assertLess(len(posted[0]), 300, "the comment carries more than the marker")
+        self.assertNotIn("head moved", err)
+
+    def test_post_marker_is_refused_for_an_issue_and_without_a_pr(self):
+        for argv in (["--mock", "--issue", "7", "--post-marker"], ["--mock", "--post-marker"]):
+            with self.subTest(argv=argv):
+                code, posted, _ = self._posted(argv, ["d" * 40])
+                self.assertNotEqual(0, code)
+                self.assertEqual([], posted)
+
+    def test_post_marker_skips_with_a_warning_when_the_head_is_unreadable(self):
+        code, posted, err = self._posted(["--mock", "--pr", "7", "--post-marker", "-q"], [""])
+        self.assertEqual(0, code)
+        self.assertEqual([], posted)
+        self.assertIn("--post-marker skipped", err)
+
+    def test_the_marker_names_the_start_head_when_the_head_moved(self):
+        code, posted, err = self._posted(
+            ["--mock", "--pr", "7", "--post-marker", "-q"], ["a" * 40, "b" * 40]
+        )
+        self.assertEqual(0, code)
+        self.assertIn("a" * 40, posted[0])
+        self.assertNotIn("b" * 40, posted[0])
+        self.assertIn("head moved", err)
+
+    def test_post_summary_marker_names_the_start_head_when_the_head_moved(self):
+        code, posted, err = self._posted(
+            ["--mock", "--pr", "7", "--post-summary", "-q"], ["a" * 40, "b" * 40]
+        )
+        self.assertEqual(0, code)
+        self.assertIn(f"arc-reviewed-sha:{'a' * 40}", posted[0])
+        self.assertNotIn("b" * 40, posted[0])
+        self.assertIn("head moved", err)
+
+    def test_post_marker_beside_post_summary_posts_only_the_summary(self):
+        code, posted, _ = self._posted(
+            ["--mock", "--pr", "7", "--post-summary", "--post-marker", "-q"], ["a" * 40]
+        )
+        self.assertEqual(0, code)
+        self.assertEqual(1, len(posted))
 
 
 if __name__ == "__main__":

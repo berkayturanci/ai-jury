@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`--post-marker` posts the `arc-reviewed-sha` marker without a summary** (#977). Callers that post their own verdict (`keel review --from-jury`, wrappers) never got the marker, so every later run was a full review. `--post-marker` posts one small comment holding only the marker (and a one-line note) for the reviewed head; PR only (refused with `--issue`, and without `--pr`), skipped with a warning when the head could not be read.
+
+### Fixed
+- **The incremental marker names the head the review started on** (#977). The head SHA is now read once before the reviewers run, also for `--post-summary`, and the marker uses it; a push that lands mid-review is no longer marked as reviewed, and a notice says the head moved.
+
 ## [1.27.0] - 2026-10-12
 
 > **What changes for you.** The incremental review (`--incremental`) no longer reviews other PRs' changes after your

@@ -1000,7 +1000,7 @@ accidental changes are caught in review.
   `--transcript` / `--no-transcript`, `--verbose`, `--live`,
   `--theater` / `--no-theater`, `--theater-style {flat,pixel}`, `-q` / `--quiet`
 - *GitHub posting:* `--post-summary` / `--post`, `--post-inline`,
-  `--post-progress`, `--post-mode {single,phased}`, `--dry-run`, `--label`,
+  `--post-progress`, `--post-mode {single,phased}`, `--post-marker`, `--dry-run`, `--label`,
   `--no-attribution`
 - *CI gating:* `--ci`, `--fail-on`, `--min-vendors`, `--no-min-vendors`,
   `--min-reviews`
@@ -1023,7 +1023,7 @@ flag tables of [`docs/parameters.md`](docs/parameters.md) to the same parser.
 | More than one input source | exits non-zero with `error: choose one input source, got …`, naming each one given |
 | Empty diff | exits non-zero with `error: empty diff — nothing to review` |
 | `--post-summary` with no postable target (e.g. `--diff-file`; it works with `--pr` **or** `--issue`) | exits non-zero with `error: --post-summary requires --pr`, before any reviewer runs |
-| `--post-inline` without `--pr` (PR-only; also `--post-progress`, `--label`, `--incremental`) | exits non-zero with `error: --post-inline requires --pr`, before any reviewer runs; with `--issue` instead, `error: --post-inline is not supported with --issue (it is a PR/diff concept)` |
+| `--post-inline` without `--pr` (PR-only; also `--post-progress`, `--post-marker`, `--label`, `--incremental`) | exits non-zero with `error: --post-inline requires --pr`, before any reviewer runs; with `--issue` instead, `error: --post-inline is not supported with --issue (it is a PR/diff concept)` |
 | A config that exists but cannot be read (`--config` names a directory, or `./jury.toml` is unreadable) | exits `2` with `error: cannot read config <path>: <reason>` |
 | `jury init --wizard` with no terminal on stdin (CI, a pipe) | exits `2` with ``error: the wizard needs a terminal; use `jury init --preset <name>` `` |
 | `jury init --interactive` with no terminal on stdin (CI, a pipe, no stdin at all), and no `--agents` or `--preset` | exits `2` with ``error: --interactive needs a terminal; use `jury init --preset <name>` or `jury init --agents <list>` `` |
