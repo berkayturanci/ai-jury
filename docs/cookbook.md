@@ -494,6 +494,13 @@ jury --pr 123 --post-summary
 jury --pr 123 --incremental --post-summary
 ```
 
+If you post the verdict yourself (a wrapper, `keel review --from-jury`), add
+`--post-marker` instead of `--post-summary`: it posts a small comment that holds
+only the marker, so the next `--incremental` run still narrows. With either flag
+the marker names the head the review **started** on, not the head at post time; if
+the PR was pushed to in between, a notice says so and the new commits are picked up
+by the next incremental run.
+
 The report's header states the scope (`Review scope: Incremental — …` or
 `Full — …`). The marker is a hidden HTML comment, so it is invisible to readers.
 

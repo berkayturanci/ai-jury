@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`--post-marker` posts the `arc-reviewed-sha` marker without a summary** (#977). Callers that post their own verdict (`keel review --from-jury`, wrappers) never got the marker, so every later run was a full review. `--post-marker` posts one small comment holding only the marker (and a one-line note) for the reviewed head; PR only (refused with `--issue`, and without `--pr`), skipped with a warning when the head could not be read.
+
+### Fixed
+- **The incremental marker names the head the review started on** (#977). The head SHA is now read once before the reviewers run, also for `--post-summary`, and the marker uses it; a push that lands mid-review is no longer marked as reviewed, and a notice says the head moved. The old post-time fallback re-read of the head is gone: an unreadable start head now means no marker (a warning), never a marker for whatever the head is at post time. `--post-marker` under `--dry-run` posts nothing.
 - **Reviewers are told which binary files changed** (#978). A binary diff (a golden image, a font) was dropped from what the panel saw and only logged, so a jury flagged a golden-image test PR without knowing the PNGs existed. The review prompt now carries a short fenced section naming the excluded binary paths (path only, no disk reads) in the round-1 review prompt only (the debate, verify and chair prompts do not carry it), with the instruction that a changed golden or snapshot image is judged against the test that consumes it. The Markdown report adds `Not shown to reviewers: N binary file(s)` with the paths (first 20, then `+N more`), the JSON report gains a top-level `excluded_files: [{path, reason}]` (schema `1.6` -> `1.7`, additive), and the "nothing to review after filters" error lists the excluded binaries. `PROMPT_VERSION` goes 8 -> 9, so existing result-cache entries are invalidated and the next run of each diff is reviewed afresh.
 
 ## [1.27.0] - 2026-10-12
