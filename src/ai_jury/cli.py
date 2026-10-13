@@ -497,6 +497,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="post the report as a single summary comment on --pr",
     )
     p.add_argument(
+        "--post-marker",
+        dest="post_marker",
+        action="store_true",
+        help="after a PR review, post a minimal comment carrying only the "
+        "arc-reviewed-sha marker for the head the review started on, so a later "
+        "--incremental run can narrow even when you post the verdict yourself "
+        "(--post-summary already carries the marker). PR only",
+    )
+    p.add_argument(
         "--no-attribution",
         dest="attribution",
         action="store_false",
@@ -2632,6 +2641,7 @@ def main(argv: list[str] | None = None) -> int:
             ("--post-progress", args.post_progress),
             ("--label", args.label),
             ("--incremental", args.incremental),
+            ("--post-marker", args.post_marker),
             # The issue path posts one summary and never reads the mode (docs
             # audit 2026-09-29): accepted, `phased` was silently ignored.
             ("--post-mode", args.post_mode is not None),
@@ -2648,6 +2658,7 @@ def main(argv: list[str] | None = None) -> int:
     for flag, on, has_target in (
         ("--post-summary", args.post_summary, args.pr or args.issue),
         ("--post-inline", args.post_inline, args.pr),
+        ("--post-marker", args.post_marker, args.pr),
         ("--label", args.label, args.pr),
     ):
         if on and not has_target:
@@ -2680,6 +2691,15 @@ def main(argv: list[str] | None = None) -> int:
     # explicit config or a working CLI panel.
     local_fallback = _maybe_add_local_fallback(config, args, log)
 
+    # The head the review STARTS on (#977). Read once, before the diff and the seats, so
+    # the incremental marker names what was actually reviewed: a push landing mid-run
+    # must not get marked as reviewed. Read when anything will use it.
+    head_sha = ""
+    if args.pr and (args.incremental or args.post_summary or args.post_marker):
+        from .github import pr_head_sha
+
+        head_sha = pr_head_sha(args.pr, args.repo)
+
     try:
         diff, context = _read_diff(args)
     except RuntimeError as exc:
@@ -2693,14 +2713,12 @@ def main(argv: list[str] | None = None) -> int:
     # otherwise fall back safely to the full diff. The reviewed head SHA is also
     # recorded on the posted summary so a later run can go incremental.
     review_scope = None
-    head_sha = ""
     if args.incremental:
         if not args.pr:
             raise SystemExit("error: --incremental requires --pr")
         from . import incremental as inc
-        from .github import compare_diff, compare_meta, pr_comment_bodies, pr_head_sha
+        from .github import compare_diff, compare_meta, pr_comment_bodies
 
-        head_sha = pr_head_sha(args.pr, args.repo)
         prev_sha = inc.parse_reviewed_sha(pr_comment_bodies(args.pr, args.repo))
         mode, reason = inc.decide_review(prev_sha, head_sha)
         if mode == inc.MODE_INCREMENTAL:
@@ -3299,6 +3317,27 @@ def main(argv: list[str] | None = None) -> int:
             return False
         return True
 
+    def _reviewed_head() -> str:
+        """The head SHA the review started on, for the incremental marker (#977).
+
+        Always the SHA read at run start, never a fresh read: a push between start and
+        post would otherwise be marked reviewed without a seat ever seeing it. The head
+        is read once more here only to tell the operator it moved.
+        """
+        if not head_sha:
+            return ""
+        from .github import pr_head_sha
+
+        now = pr_head_sha(args.pr, args.repo)
+        if now and now != head_sha:
+            print(
+                f"notice: PR #{args.pr} head moved during the review ({head_sha[:7]} -> "
+                f"{now[:7]}); the marker names the reviewed {head_sha[:7]}, so the next "
+                "--incremental run picks up the new commits",
+                file=sys.stderr,
+            )
+        return head_sha
+
     if args.post_summary:
         if args.issue:
             # Plain issues use `gh issue comment`; phased/SHA-marker posting is
@@ -3313,27 +3352,17 @@ def main(argv: list[str] | None = None) -> int:
             return ci_exit
         # Record the reviewed head SHA as a hidden marker so a later
         # --incremental run can review only the new range (issue #9).
-        from .github import pr_head_sha
         from .incremental import reviewed_sha_marker
 
         # A missing marker costs a later `--incremental` run its narrowing; it is not
         # worth refusing to post the verdict over, so this one degrades rather than exits.
-        # `pr_head_sha` is best-effort: it catches its own `gh` failure and returns
-        # "". An earlier version of this guard wrapped it in `try/except RuntimeError`,
-        # which is unreachable — the warning it promised could never print, and the
-        # test only passed because it mocked `pr_head_sha` itself rather than the `gh`
-        # call underneath. The empty string is the failure signal, so that is what is
-        # checked.
-        if head_sha:
-            marker_sha = head_sha
-        else:
-            marker_sha = pr_head_sha(args.pr, args.repo)
-            if not marker_sha:
-                print(
-                    "warning: could not read the PR head sha, so this review will not "
-                    "carry an incremental marker",
-                    file=sys.stderr,
-                )
+        marker_sha = _reviewed_head()
+        if not marker_sha:
+            print(
+                "warning: could not read the PR head sha, so this review will not "
+                "carry an incremental marker",
+                file=sys.stderr,
+            )
         marker = f"\n\n{reviewed_sha_marker(marker_sha)}" if marker_sha else ""
 
         if args.post_mode == "phased":
@@ -3376,6 +3405,32 @@ def main(argv: list[str] | None = None) -> int:
             ):
                 return 2
             log(f"posted verdict to PR #{args.pr}")
+
+    if args.post_marker and not args.post_summary:
+        # --post-summary's comment already carries the marker; this is for callers that
+        # post their own verdict (#977). Only the marker and one human-readable line.
+        from .incremental import reviewed_sha_marker
+
+        marker_sha = _reviewed_head()
+        if not marker_sha:
+            print(
+                "warning: --post-marker skipped: could not read the PR head sha at the "
+                "start of the review",
+                file=sys.stderr,
+            )
+        elif args.dry_run:
+            log(f"dry-run: would post the review marker for {marker_sha[:7]} to PR #{args.pr}")
+        elif _post(
+            f"post the review marker to PR #{args.pr}",
+            lambda: post_pr_comment(
+                args.pr,
+                f"ai-jury reviewed {marker_sha[:7]} (incremental-review marker; the verdict "
+                f"is posted separately).\n\n{reviewed_sha_marker(marker_sha)}",
+                args.repo,
+            ),
+            contractual=False,
+        ):
+            log(f"posted review marker for {marker_sha[:7]} to PR #{args.pr}")
 
     if args.post_inline and _post(
         f"post inline comments to PR #{args.pr}",
