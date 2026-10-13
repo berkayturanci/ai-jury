@@ -138,12 +138,15 @@ def clean_paths(paths) -> list[str]:
     Paths come from the attacker-controlled diff header. Control characters
     (newline, carriage return, ESC and the rest) become a space, runs of
     whitespace collapse, fence sentinels are neutralized, and a path that is
-    empty afterwards is dropped. The prompt, the report and the error message
+    empty afterwards is dropped. Secrets in a path (a key in a fixture file name)
+    are redacted like the diff's. The prompt, the report and the error message
     all use this one list, so their counts agree.
     """
+    from .redaction import redact
+
     out = []
     for p in paths:
-        one = neutralize_sentinels(" ".join(_CONTROL_RE.sub(" ", str(p)).split()))
+        one = neutralize_sentinels(" ".join(_CONTROL_RE.sub(" ", redact(str(p))[0]).split()))
         if one:
             out.append(one)
     return out
@@ -382,6 +385,9 @@ UNTRUSTED_REVIEW>>>
 # code diff: the issue text arrives in the ``{diff}`` slot, and each "finding"
 # is a GAP in the issue (missing repro, expected/actual, scope, context, …).
 
+# Issue mode has no diff, hence no binary files: REVIEW_ISSUE carries no
+# ``{excluded}`` slot, and str.format ignores the extra keyword the orchestrator
+# passes. (#978)
 REVIEW_ISSUE = """You are "{name}", a senior engineer on a multi-agent jury that triages GitHub issues.
 Independently review the GitHub issue below for COMPLETENESS and CLARITY. You are
 one of several reviewers from different AI vendors; contribute your distinct

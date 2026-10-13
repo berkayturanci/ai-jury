@@ -281,6 +281,9 @@ def outcome_from_dict(data: dict) -> JuryOutcome:
         # by digest, so a restored index describes the same bytes as the run
         # that wrote it; a legacy entry has none and the scope rule falls back.
         changed=_change_index(data.get("changed")),
+        # Files kept out of the review (#978). The key hashes the whole diff, binary
+        # segments included, so an entry always matches the exclusions it stored.
+        excluded_files=[tuple(e) for e in data.get("excluded_files", [])],
         # The routing record rides along like every other field (#714). An
         # entry written before this key existed is restored as the standard
         # record naming the seats it holds, which is what those runs did: the
@@ -288,7 +291,6 @@ def outcome_from_dict(data: dict) -> JuryOutcome:
         # single cache entry — `routing` and every seat's `tier` are already in
         # `config_hash`, so a plan that would route differently has a different
         # key and cannot hit an old entry at all.
-        excluded_files=[tuple(e) for e in data.get("excluded_files", [])],
         routing=dict(data["routing"])
         if data.get("routing")
         else {

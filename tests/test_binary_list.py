@@ -164,6 +164,25 @@ class AllExcludedTest(unittest.TestCase):
         self.assertIn("a/x.png", msg)
         self.assertIn("a/y.png", msg)
 
+    def test_binary_list_leads_and_mixed_case_mentions_the_rest(self):
+        cfg = _from_dict(
+            {
+                "jury": {"rounds": 1, "verify": False, "diff": {"include": ["src/**"]}},
+                "agent": [{"name": "claude", "vendor": "anthropic", "command": "claude"}],
+            }
+        )
+        with self.assertRaises(RuntimeError) as cm:
+            orch.review_diff(cfg, _png("src/p.png") + _text("docs/x.md"), mock=True)
+        msg = str(cm.exception)
+        self.assertIn("1 binary file(s) cannot be reviewed as text: src/p.png", msg)
+        self.assertIn("1 other file(s) were excluded", msg)
+        self.assertLess(msg.index("src/p.png"), msg.index("include/exclude"))
+
+    def test_only_binaries_does_not_blame_the_patterns(self):
+        with self.assertRaises(RuntimeError) as cm:
+            orch.review_diff(_cfg(), _png("a.png"), mock=True)
+        self.assertNotIn("include/exclude", str(cm.exception))
+
     def test_message_unchanged_without_binaries(self):
         cfg = _from_dict(
             {
@@ -174,6 +193,37 @@ class AllExcludedTest(unittest.TestCase):
         with self.assertRaises(RuntimeError) as cm:
             orch.review_diff(cfg, _text("src/a.py"), mock=True)
         self.assertNotIn("binary", str(cm.exception))
+
+
+class RedactionTest(unittest.TestCase):
+    SECRET = "AKIAABCDEFGHIJKLMNOP"
+
+    def test_prompt_outcome_and_json_never_carry_the_secret(self):
+        diff = _text("src/a.py") + _png(f"fixtures/{self.SECRET}.png")
+        prompts_seen = _review_prompts(diff)
+        self.assertNotIn(self.SECRET, prompts_seen[0])
+        self.assertIn("REDACTED", prompts_seen[0])
+        outcome, _ = orch.review_diff(_cfg(), diff, mock=True)
+        self.assertNotIn(self.SECRET, repr(outcome.excluded_files))
+        self.assertNotIn(self.SECRET, to_json(outcome, _cfg()))
+
+    def test_all_excluded_error_redacts(self):
+        with self.assertRaises(RuntimeError) as cm:
+            orch.review_diff(_cfg(), _png(f"{self.SECRET}.png"), mock=True)
+        self.assertNotIn(self.SECRET, str(cm.exception))
+
+
+class CacheKeyTest(unittest.TestCase):
+    def test_adding_or_removing_a_binary_changes_the_key(self):
+        from ai_jury.cache import cache_key
+
+        base = _text("src/a.py")
+        with_bin = base + _png("g.png")
+        k0 = cache_key(_cfg(), base, mock=True)
+        k1 = cache_key(_cfg(), with_bin, mock=True)
+        k2 = cache_key(_cfg(), with_bin + _png("h.png"), mock=True)
+        self.assertEqual(len({k0, k1, k2}), 3)
+        self.assertEqual(k1, cache_key(_cfg(), with_bin, mock=True))
 
 
 class CacheRoundTripTest(unittest.TestCase):
@@ -245,9 +295,21 @@ class CleaningTest(unittest.TestCase):
         self.assertIn("(+2 more)", msg)
 
     def test_report_and_prompt_count_the_same_cleaned_list(self):
-        pairs = [("\n", "binary"), ("a.png", "binary")]
-        md = "".join(__import__("ai_jury.report", fromlist=["x"])._excluded_block(pairs))
-        self.assertIn("1 binary file(s)", md)
+        from ai_jury.report import _excluded_block
+
+        pairs = [("\n", "binary")] + [(f"i/{n}.png", "binary") for n in range(25)]
+        paths = [p for p, _w in pairs]
+        prompt = prompts.binary_files_section(paths)
+        md = "".join(_excluded_block(pairs))
+        # 25 usable paths: the blank one is dropped from both, both cap at 20.
+        self.assertIn("(+5 more)", prompt)
+        self.assertIn("25 binary file(s)", md)
+        self.assertIn("+5 more", md)
+        for n in range(20):
+            self.assertIn(f"i/{n}.png", prompt)
+            self.assertIn(f"i/{n}.png", md)
+        self.assertNotIn("i/20.png", prompt)
+        self.assertNotIn("i/20.png", md)
 
 
 class ReasonVocabularyTest(unittest.TestCase):
@@ -295,16 +357,46 @@ class ReasonVocabularyTest(unittest.TestCase):
         self.assertEqual(doc["excluded_files"], [{"path": "docs/x.md", "reason": "not_included"}])
 
 
-class ThroughMainTest(unittest.TestCase):
-    def _run(self, fmt):
-        import tempfile
+def _run_cli(argv: list[str]) -> tuple[int, str, str]:
+    """`cli.main(argv)` -> (exit code, stdout, stderr), with the user dirs in a temp dir."""
+    import contextlib
+    import io
+    import os
+    import tempfile
 
-        from tests.test_public_claims import _run_cli
+    from ai_jury import cli
+
+    out, err = io.StringIO(), io.StringIO()
+    with tempfile.TemporaryDirectory() as home:
+        env = {"XDG_CONFIG_HOME": f"{home}/config", "XDG_CACHE_HOME": f"{home}/cache"}
+        with (
+            mock.patch.dict(os.environ, env),
+            contextlib.redirect_stdout(out),
+            contextlib.redirect_stderr(err),
+        ):
+            try:
+                code = cli.main(argv)
+            except SystemExit as exc:
+                code = 1 if isinstance(exc.code, str) else (exc.code or 0)
+    return code, out.getvalue(), err.getvalue()
+
+
+class ThroughMainTest(unittest.TestCase):
+    def _run(self, fmt, name="golden/g.png"):
+        import tempfile
 
         with tempfile.TemporaryDirectory() as d:
             f = Path(d) / "x.diff"
-            f.write_text(_text("src/a.py") + _png("golden/g.png"), encoding="utf-8")
+            f.write_text(_text("src/a.py") + _png(name), encoding="utf-8")
             return _run_cli(["--mock", "--diff-file", str(f), "-q", "--format", fmt])
+
+    def test_secret_in_a_path_is_redacted_in_every_output(self):
+        secret = "AKIAABCDEFGHIJKLMNOP"
+        for fmt in ("json", "markdown"):
+            code, out, _err = self._run(fmt, name=f"fixtures/{secret}.png")
+            self.assertEqual(code, 0)
+            self.assertNotIn(secret, out, fmt)
+            self.assertIn("REDACTED", out, fmt)
 
     def test_json_report_through_main(self):
         code, out, _err = self._run("json")

@@ -424,7 +424,7 @@ A structured report with these top-level keys:
 | `reviewers` | One ballot per seat that ran — who said what, what they read (`scope`), what they ran (`testing`), whether it counts as a review (`counts_as_review`), with vendor/model provenance — plus the chair. See [the report-format contract](docs/report-format.md#per-reviewer-ballots-reviewers). |
 | `verdicts` | Verification verdicts (`file`, `line`, `claim`, `status`, `reasoning`). |
 | `verdict` | The chair synthesis text, if any. |
-| `excluded_files` | Files kept out of what the reviewers saw, as `{path, reason}` (binary diffs, generated files, filter misses); `[]` when none. |
+| `excluded_files` | Files kept out of what the reviewers saw, as a list `[{path, reason}]` (binary diffs, generated files, filter misses); `[]` when none. |
 
 The output is deterministic for a deterministic run (e.g. `--mock`) and contains
 only legitimate finding fields — never raw diff or prompt text.

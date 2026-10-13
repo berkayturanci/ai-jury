@@ -807,7 +807,8 @@ def run_jury(
         stop_reason=stop_reason,
         changed=changed,
         routing=plan.as_dict(),
-        excluded_files=[(p, why) for p, why in excluded_files],
+        # Redacted like the diff: the paths reach the prompt, the report and the JSON.
+        excluded_files=[(redact(p)[0], why) for p, why in excluded_files],
     )
 
 
@@ -1439,7 +1440,7 @@ def review_diff(
         f"mode: {plan.mode}"
     )
     if plan.excluded:
-        log("excluded: " + ", ".join(f"{p} [{why}]" for p, why in plan.excluded))
+        log("excluded: " + ", ".join(f"{redact(p)[0]} [{why}]" for p, why in plan.excluded))
     log(plan.reason)
 
     if plan.mode == largediff.MODE_TOO_LARGE:
@@ -1448,19 +1449,24 @@ def review_diff(
         binaries = prompts.clean_paths(
             [p for p, why in plan.excluded if why == largediff.EXCLUDE_BINARY]
         )
-        listing = ""
+        others = len(plan.excluded) - len(
+            [1 for _p, why in plan.excluded if why == largediff.EXCLUDE_BINARY]
+        )
+        hint = "(check [jury.diff] include/exclude patterns)"
         if binaries:
             shown = binaries[: prompts.BINARY_LIST_CAP]
             more = len(binaries) - len(shown)
             listing = (
-                f"; {len(binaries)} binary file(s) cannot be reviewed as text: "
+                f"{len(binaries)} binary file(s) cannot be reviewed as text: "
                 + ", ".join(shown)
                 + (f" (+{more} more)" if more > 0 else "")
             )
-        raise RuntimeError(
-            "nothing to review after filters — all files were excluded "
-            "(check [jury.diff] include/exclude patterns)" + listing
-        )
+            raise RuntimeError(
+                "nothing to review after filters — "
+                + listing
+                + (f"; {others} other file(s) were excluded {hint}" if others else "")
+            )
+        raise RuntimeError(f"nothing to review after filters — all files were excluded {hint}")
 
     # One shared budget across all chunks so ``total_timeout`` bounds the WHOLE
     # review, not each chunk independently (review finding). ``phase_timeout`` and

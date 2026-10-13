@@ -433,7 +433,7 @@ class BackwardCompatibility(unittest.TestCase):
         doc = json.loads(to_json(*_mock_outcome()))
         self.assertEqual([k for k in doc if k in self.LEGACY_KEYS], self.LEGACY_KEYS)
 
-    def test_only_reviewers_was_added(self):
+    def test_only_reviewers_and_excluded_files_were_added(self):
         doc = json.loads(to_json(*_mock_outcome()))
         self.assertEqual(set(doc) - set(self.LEGACY_KEYS), {"reviewers", "excluded_files"})
 
