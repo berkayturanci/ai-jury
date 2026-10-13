@@ -137,6 +137,16 @@ def _group_dict(g: Any) -> dict[str, Any]:
     }
 
 
+#: The documented ``excluded_files[].reason`` vocabulary, keyed by the planner's
+#: constants (#978); a reason this table does not know passes through unchanged.
+_EXCLUDE_REASON = {
+    "binary": "binary",
+    "generated": "generated",
+    "excluded-by-filter": "filtered",
+    "not-in-include-filter": "not_included",
+}
+
+
 def to_json(
     outcome: Any,
     config: Any,
@@ -206,7 +216,8 @@ def to_json(
         # Files kept out of what the reviewers saw (#978, schema 1.7): binary
         # diffs, generated files, filter and include misses. Additive.
         "excluded_files": [
-            {"path": p, "reason": why} for p, why in getattr(outcome, "excluded_files", [])
+            {"path": p, "reason": _EXCLUDE_REASON.get(why, why)}
+            for p, why in getattr(outcome, "excluded_files", [])
         ],
     }
     return json.dumps(doc, indent=2, sort_keys=False, ensure_ascii=False)

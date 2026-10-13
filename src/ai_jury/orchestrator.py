@@ -1445,7 +1445,9 @@ def review_diff(
     if plan.mode == largediff.MODE_TOO_LARGE:
         raise RuntimeError(f"diff too large to review: {plan.reason}")
     if not plan.chunks:
-        binaries = [p for p, why in plan.excluded if why == largediff.EXCLUDE_BINARY]
+        binaries = prompts.clean_paths(
+            [p for p, why in plan.excluded if why == largediff.EXCLUDE_BINARY]
+        )
         listing = ""
         if binaries:
             shown = binaries[: prompts.BINARY_LIST_CAP]

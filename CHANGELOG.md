@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Reviewers are told which binary files changed** (#978). A binary diff (a golden image, a font) was dropped from what the panel saw and only logged, so a jury flagged a golden-image test PR without knowing the PNGs existed. The review prompt now carries a short fenced section naming the excluded binary paths (path only, no disk reads; `PROMPT_VERSION` 8 -> 9) with the instruction that a changed golden or snapshot image is judged against the test that consumes it. The Markdown report adds `Not shown to reviewers: N binary file(s)` with the paths (first 20, then `+N more`), the JSON report gains a top-level `excluded_files: [{path, reason}]` (schema `1.6` -> `1.7`, additive), and the "nothing to review after filters" error lists the excluded binaries.
+- **Reviewers are told which binary files changed** (#978). A binary diff (a golden image, a font) was dropped from what the panel saw and only logged, so a jury flagged a golden-image test PR without knowing the PNGs existed. The review prompt now carries a short fenced section naming the excluded binary paths (path only, no disk reads) with the instruction that a changed golden or snapshot image is judged against the test that consumes it. The Markdown report adds `Not shown to reviewers: N binary file(s)` with the paths (first 20, then `+N more`), the JSON report gains a top-level `excluded_files: [{path, reason}]` (schema `1.6` -> `1.7`, additive), and the "nothing to review after filters" error lists the excluded binaries. `PROMPT_VERSION` goes 8 -> 9, so existing result-cache entries are invalidated and the next run of each diff is reviewed afresh.
 
 ## [1.27.0] - 2026-10-12
 

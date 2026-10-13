@@ -39,12 +39,13 @@ def _excluded_block(excluded_files) -> list[str]:
     Paths come from the diff, so they are flattened to one line and have their
     backticks removed before being placed in code spans.
     """
-    from .prompts import BINARY_LIST_CAP
+    from .largediff import EXCLUDE_BINARY
+    from .prompts import BINARY_LIST_CAP, clean_paths
 
-    paths = [p for p, why in (excluded_files or []) if why == "binary"]
+    paths = clean_paths([p for p, why in (excluded_files or []) if why == EXCLUDE_BINARY])
     if not paths:
         return []
-    names = [f"`{flatten_inline(p).replace('`', chr(39))}`" for p in paths[:BINARY_LIST_CAP]]
+    names = [f"`{p.replace('`', chr(39))}`" for p in paths[:BINARY_LIST_CAP]]
     more = len(paths) - len(names)
     tail = f", +{more} more" if more > 0 else ""
     return [f"> Not shown to reviewers: {len(paths)} binary file(s): {', '.join(names)}{tail}\n"]
