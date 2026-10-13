@@ -5,11 +5,12 @@ Offline: the prompt section is a pure function, the rest runs the mock pipeline.
 
 from __future__ import annotations
 
+import io
 import json
 import sys
 import unittest
+import unittest.mock as mock
 from pathlib import Path
-from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
@@ -383,12 +384,11 @@ def _run_cli(argv: list[str]) -> tuple[int, str, str]:
 
 class ThroughMainTest(unittest.TestCase):
     def _run(self, fmt, name="golden/g.png"):
-        import tempfile
-
-        with tempfile.TemporaryDirectory() as d:
-            f = Path(d) / "x.diff"
-            f.write_text(_text("src/a.py") + _png(name), encoding="utf-8")
-            return _run_cli(["--mock", "--diff-file", str(f), "-q", "--format", fmt])
+        # The diff goes in through stdin, so a fake credential never touches disk.
+        diff = _text("src/a.py") + _png(name)
+        stdin = mock.Mock(buffer=io.BytesIO(diff.encode("utf-8")))
+        with mock.patch.object(sys, "stdin", stdin):
+            return _run_cli(["--mock", "--diff-file", "-", "-q", "--format", fmt])
 
     def test_secret_in_a_path_is_redacted_in_every_output(self):
         secret = "AKIAABCDEFGHIJKLMNOP"
