@@ -1830,7 +1830,10 @@ def config_hash(config: JuryConfig) -> str:
         # in the CHANGELOG, since a user's first run after the bump is a full one.
         "hints": config.hints,
         "routing": config.routing,
-        "pre_existing": config.pre_existing,
+        # `pre_existing` is deliberately omitted from `config_hash` (like
+        # `ci.min_reviews` and `decision`): it changes neither orchestration nor
+        # what the panel finds, only the post-review `evaluate_ci` gate, which
+        # runs on cached outcomes too (#976).
         "ci": {
             "fail_on": list(config.ci.fail_on),
             "ignore_unverified": config.ci.ignore_unverified,

@@ -64,7 +64,11 @@ def evaluate_ci(
     never fail CI. When ``ignore_unverified`` is True, groups that were never
     verified (empty status) do not fail CI; only explicitly verified ones can.
     When ``pre_existing`` is "ignore", groups whose origin is "pre_existing"
-    do not fail CI (treated as non-blocking; issue #976).
+    do not fail CI and are counted in the PASS reason (issue #976). Note that
+    ``origin`` is a trust-the-model label from the reviewers (unanimous across
+    a group's members, which for a single-reviewer group is that one seat);
+    keep ``pre_existing = "report"`` when the gate must be fail-closed against
+    model-manipulated ``origin`` labels.
 
     Raises ``ValueError`` when ``fail_on`` names a severity outside the
     vocabulary. A misspelling matches no group, so treating it as "blocks
@@ -76,14 +80,8 @@ def evaluate_ci(
     if unknown:
         raise ValueError(_vocabulary_error(unknown, "fail_on"))
     blocking = []
+    ignored_pre_existing = 0
     for g in groups_with_status:
-        origin = (
-            getattr(g, "origin", "")
-            or getattr(getattr(g, "representative", None), "origin", "")
-            or ""
-        )
-        if pre_existing == "ignore" and origin == "pre_existing":
-            continue
         severity = getattr(g, "severity", "")
         status = getattr(g, "status", "") or ""
         if severity not in fail_set:
@@ -91,6 +89,9 @@ def evaluate_ci(
         if status == "unsupported":
             continue
         if ignore_unverified and status != "verified":
+            continue
+        if pre_existing == "ignore" and getattr(g, "origin", "") == "pre_existing":
+            ignored_pre_existing += 1
             continue
         blocking.append(g)
 
@@ -115,8 +116,11 @@ def evaluate_ci(
         )
         return 1, reason
 
+    ignored_note = (
+        f"; {ignored_pre_existing} pre-existing finding(s) ignored" if ignored_pre_existing else ""
+    )
     reason = (
         f"PASS: no blocking findings at severities {sorted(fail_set)} "
-        f"(ignore_unverified={ignore_unverified})."
+        f"(ignore_unverified={ignore_unverified}{ignored_note})."
     )
     return 0, reason

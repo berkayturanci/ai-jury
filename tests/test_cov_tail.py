@@ -247,6 +247,15 @@ class ReportTailTests(unittest.TestCase):
         self.assertNotIn("src/a.py:", line)
         self.assertIn("_verification:_ verified", line)
         self.assertNotIn("verified —", line)
+        self.assertNotIn("[unclear]", line)
+
+    def test_origin_tag_rendered_only_for_introduced_and_pre_existing(self):
+        f_unclear = Finding(severity="major", file="src/a.py", line=1, claim="c", origin="unclear")
+        f_intro = Finding(severity="major", file="src/a.py", line=1, claim="c", origin="introduced")
+        f_pre = Finding(severity="major", file="src/a.py", line=1, claim="c", origin="pre_existing")
+        self.assertEqual(report._finding_line(f_unclear), "- [major] src/a.py:1 — c (medium, by )")
+        self.assertIn("- [major] [introduced] src/a.py:1", report._finding_line(f_intro))
+        self.assertIn("- [major] [pre-existing] src/a.py:1", report._finding_line(f_pre))
 
     def test_render_with_explicit_classification(self):
         # report.py 187->189: classification is NOT None -> the in-line

@@ -2118,7 +2118,7 @@ class MockAdapter(Adapter):
                 f'"confidence": "high", "origin": "introduced", "reviewer": "{n}"}},\n'
                 '  {"severity": "minor", "file": "src/example.py", "line": 7, '
                 f'"claim": "{n}: missing docstring", '
-                '"evidence": "the new function parse() has no docstring", '
+                '"evidence": "the existing function parse() has no docstring", '
                 '"suggested_fix": "add a one-line docstring", '
                 f'"confidence": "medium", "origin": "pre_existing", "reviewer": "{n}"}}\n'
                 "]\n"

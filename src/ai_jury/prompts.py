@@ -43,8 +43,9 @@ import re
 # v9 (issue #978): the code-review template can carry a short section naming the
 # binary files that changed but are not shown, so a reviewer is not blind to a
 # golden image or a fixture the diff omits. Absent when nothing was excluded.
-# v10 (issue #976): the review templates ask for `origin: introduced | pre_existing | unclear`
-# on each finding, with a one-line definition distinguishing introduced vs pre-existing.
+# v10 (issue #976): the code-review template asks for `origin: introduced | pre_existing | unclear`
+# on each finding (issue review has no diff and omits it), and the debate prompt asks
+# reviewers to dispute mislabelled origin.
 PROMPT_VERSION = 10
 
 
@@ -274,7 +275,7 @@ Below are the diff, your own review, and the other reviewers' findings.
 
 Critically cross-examine the panel:
 - AGREE: findings from others you confirm are real (cite them).
-- DISPUTE: findings you believe are false positives or overstated, with reasoning.
+- DISPUTE: findings you believe are false positives, overstated, or mislabelled in origin (e.g. marked pre_existing when the diff introduces or widens the problem, or vice versa), with reasoning.
 - MISSED: real issues nobody raised that you now see.
 
 Be concise and intellectually honest — change your mind when the evidence warrants.
@@ -439,7 +440,6 @@ schema and these enum values:
 - "evidence": why the issue text supports this being a gap
 - "suggested_fix": what the author should ADD to close the gap, or "" when none
 - "confidence": one of "high", "medium", "low"
-- "origin": one of "introduced" (the diff adds or widens the problem), "pre_existing" (the problem exists on the base and the diff does not widen it), or "unclear"
 - "reviewer": your agent name
 
 Example:
@@ -449,7 +449,7 @@ Example:
     "claim": "no reproduction steps",
     "evidence": "the issue describes a symptom but never says how to trigger it",
     "suggested_fix": "add numbered steps to reproduce from a clean checkout",
-    "confidence": "high", "origin": "introduced", "reviewer": "{name}"}}
+    "confidence": "high", "reviewer": "{name}"}}
 ]
 ```
 If you found no gaps, emit an empty array: ```json

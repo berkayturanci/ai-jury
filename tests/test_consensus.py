@@ -6,6 +6,7 @@ from ai_jury.consensus import (
     BUCKET_CONSENSUS,
     BUCKET_MAJORITY,
     BUCKET_SINGLE,
+    FindingGroup,
     demote_local_only_groups,
     group_findings,
 )
@@ -257,6 +258,20 @@ class OriginResolutionTests(unittest.TestCase):
             f = Finding("major", "a.py", "c", origin=o, reviewer="claude")
             groups = group_findings([f], reviewer_count=1)
             self.assertEqual(groups[0].origin, o)
+
+    def test_finding_group_post_init_resolves_origin_from_members_or_representative(self):
+        # Direct construction without passing `origin` resolves from `members`
+        # when present, and falls back to `representative.origin` when `members`
+        # is empty.
+        rep_pre = Finding("critical", "a.py", "c", origin="pre_existing", reviewer="claude")
+        from_members = FindingGroup(
+            representative=Finding("critical", "a.py", "c", origin="unclear"),
+            members=[rep_pre],
+        )
+        self.assertEqual(from_members.origin, "pre_existing")
+
+        from_rep = FindingGroup(representative=rep_pre, members=[])
+        self.assertEqual(from_rep.origin, "pre_existing")
 
 
 if __name__ == "__main__":

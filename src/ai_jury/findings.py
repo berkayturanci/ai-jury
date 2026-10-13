@@ -110,9 +110,16 @@ def _normalize_confidence(value: object) -> str:
     return _DEFAULT_CONFIDENCE
 
 
+_ORIGIN_ALIASES: dict[str, str] = {
+    "preexisting": "pre_existing",
+    "pre_exist": "pre_existing",
+}
+
+
 def _normalize_origin(value: object) -> str:
     if isinstance(value, str):
         v = value.strip().lower().replace("-", "_").replace(" ", "_")
+        v = _ORIGIN_ALIASES.get(v, v)
         if v in ORIGINS:
             return v
     return _DEFAULT_ORIGIN

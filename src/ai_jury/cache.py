@@ -228,7 +228,7 @@ def _group(d: dict) -> FindingGroup:
         severity=d.get("severity", "info"),
         members=[_finding(m) for m in d.get("members", [])],
         bucket=d.get("bucket", "single_reviewer"),
-        origin=d.get("origin", "unclear"),
+        origin=d.get("origin", ""),
         status=d.get("status", ""),
         status_reasoning=d.get("status_reasoning", ""),
     )

@@ -625,7 +625,9 @@ vocabulary and exits **2** with the same message.
 
 By default (`[jury] pre_existing = "report"`), any finding whose severity meets `fail_on` can fail the CI gate, regardless of whether it was introduced by the diff or was pre-existing in the base code.
 
-Setting `pre_existing = "ignore"` in `[jury]` treats findings and consensus groups with `origin = "pre_existing"` as non-blocking in `ai_jury.ci.evaluate_ci`: they are still listed in the report and JSON output for visibility, but they do not cause `jury --ci` to fail the build. A finding whose origin is `"introduced"` or `"unclear"` remains blocking if its severity meets `fail_on`.
+Setting `pre_existing = "ignore"` in `[jury]` treats findings and consensus groups with `origin = "pre_existing"` as non-blocking in `ai_jury.ci.evaluate_ci`: they are still listed in the report and JSON output for visibility, and the `PASS` gate line notes how many otherwise-blocking pre-existing findings were ignored (`; N pre-existing finding(s) ignored`), without causing `jury --ci` to fail the build. A finding whose origin is `"introduced"` or `"unclear"` remains blocking if its severity meets `fail_on`.
+
+**Trust note:** `origin` is a reviewer-reported (trust-the-model) label and is not re-verified by the verification round. Although a multi-reviewer group resolves to `"pre_existing"` only when every member says `"pre_existing"`, a single-reviewer group's `origin` is that one seat's label. Keep `pre_existing = "report"` (the default) when the CI gate must remain fail-closed against prompt-injected or hallucinated `origin` labels. Because `pre_existing` is evaluated after cache lookup, it is not part of `config_hash` or the cache key.
 
 ### The panel-size guard (`min_reviews`)
 

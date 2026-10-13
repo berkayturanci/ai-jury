@@ -25,15 +25,15 @@ review effort: 4/5 · risk: high · security-sensitive: no · needs human attent
 ### Rejected (unsupported by verifier)
 
 - [minor] [pre-existing] src/example.py:7 — agy: missing docstring (reviewers: agy)
-  - _evidence:_ the new function parse() has no docstring
+  - _evidence:_ the existing function parse() has no docstring
   - _verification:_ unsupported — a missing docstring is not a defect the diff introduces
   - _fix:_ add a one-line docstring
 - [minor] [pre-existing] src/example.py:7 — claude: missing docstring (reviewers: claude)
-  - _evidence:_ the new function parse() has no docstring
+  - _evidence:_ the existing function parse() has no docstring
   - _verification:_ unsupported — a missing docstring is not a defect the diff introduces
   - _fix:_ add a one-line docstring
 - [minor] [pre-existing] src/example.py:7 — codex: missing docstring (reviewers: codex)
-  - _evidence:_ the new function parse() has no docstring
+  - _evidence:_ the existing function parse() has no docstring
   - _verification:_ unsupported — a missing docstring is not a defect the diff introduces
   - _fix:_ add a one-line docstring
 
@@ -82,7 +82,7 @@ Tested: nothing run (offline mock reviewer)
 ```json
 [
   {"severity": "major", "file": "src/example.py", "line": 42, "claim": "claude: unchecked return value may swallow an error", "evidence": "the added code ignores the return value of int(x)", "suggested_fix": "check the result and raise on failure", "confidence": "high", "origin": "introduced", "reviewer": "claude"},
-  {"severity": "minor", "file": "src/example.py", "line": 7, "claim": "claude: missing docstring", "evidence": "the new function parse() has no docstring", "suggested_fix": "add a one-line docstring", "confidence": "medium", "origin": "pre_existing", "reviewer": "claude"}
+  {"severity": "minor", "file": "src/example.py", "line": 7, "claim": "claude: missing docstring", "evidence": "the existing function parse() has no docstring", "suggested_fix": "add a one-line docstring", "confidence": "medium", "origin": "pre_existing", "reviewer": "claude"}
 ]
 ```
 
@@ -96,7 +96,7 @@ Tested: nothing run (offline mock reviewer)
 ```json
 [
   {"severity": "major", "file": "src/example.py", "line": 42, "claim": "codex: unchecked return value may swallow an error", "evidence": "the added code ignores the return value of int(x)", "suggested_fix": "check the result and raise on failure", "confidence": "high", "origin": "introduced", "reviewer": "codex"},
-  {"severity": "minor", "file": "src/example.py", "line": 7, "claim": "codex: missing docstring", "evidence": "the new function parse() has no docstring", "suggested_fix": "add a one-line docstring", "confidence": "medium", "origin": "pre_existing", "reviewer": "codex"}
+  {"severity": "minor", "file": "src/example.py", "line": 7, "claim": "codex: missing docstring", "evidence": "the existing function parse() has no docstring", "suggested_fix": "add a one-line docstring", "confidence": "medium", "origin": "pre_existing", "reviewer": "codex"}
 ]
 ```
 
@@ -110,7 +110,7 @@ Tested: nothing run (offline mock reviewer)
 ```json
 [
   {"severity": "major", "file": "src/example.py", "line": 42, "claim": "agy: unchecked return value may swallow an error", "evidence": "the added code ignores the return value of int(x)", "suggested_fix": "check the result and raise on failure", "confidence": "high", "origin": "introduced", "reviewer": "agy"},
-  {"severity": "minor", "file": "src/example.py", "line": 7, "claim": "agy: missing docstring", "evidence": "the new function parse() has no docstring", "suggested_fix": "add a one-line docstring", "confidence": "medium", "origin": "pre_existing", "reviewer": "agy"}
+  {"severity": "minor", "file": "src/example.py", "line": 7, "claim": "agy: missing docstring", "evidence": "the existing function parse() has no docstring", "suggested_fix": "add a one-line docstring", "confidence": "medium", "origin": "pre_existing", "reviewer": "agy"}
 ]
 ```
 

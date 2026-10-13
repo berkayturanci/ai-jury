@@ -130,6 +130,13 @@ class ForModeTests(unittest.TestCase):
         prompts.VERIFY_ISSUE.format(diff="d", findings="f", context="c", notice="n")
         prompts.SYNTHESIS_ISSUE.format(diff="d", reviews="r", debate="b", notice="n")
 
+    def test_origin_asked_in_code_review_not_issue_review(self):
+        # Issue triage has no diff, so "origin" (introduced vs pre_existing) is
+        # requested in code review and DEBATE, not in REVIEW_ISSUE (#976).
+        self.assertIn('"origin"', prompts.REVIEW)
+        self.assertIn("mislabelled in origin", prompts.DEBATE)
+        self.assertNotIn('"origin"', prompts.REVIEW_ISSUE)
+
 
 class RunJuryIssueModeTests(unittest.TestCase):
     def test_end_to_end_mock(self):

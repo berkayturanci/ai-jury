@@ -79,6 +79,14 @@ class FindingSchemaTest(unittest.TestCase):
         self.assertEqual(
             Finding("major", "x.py", "c", origin="PRE_EXISTING").origin, "pre_existing"
         )
+        self.assertEqual(
+            Finding("major", "x.py", "c", origin="pre-existing").origin, "pre_existing"
+        )
+        self.assertEqual(
+            Finding("major", "x.py", "c", origin="pre existing").origin, "pre_existing"
+        )
+        self.assertEqual(Finding("major", "x.py", "c", origin="preexisting").origin, "pre_existing")
+        self.assertEqual(Finding("major", "x.py", "c", origin="pre_exist").origin, "pre_existing")
         self.assertEqual(Finding("major", "x.py", "c", origin="invalid_value").origin, "unclear")
         self.assertEqual(Finding("major", "x.py", "c", origin=None).origin, "unclear")
         self.assertEqual(Finding("major", "x.py", "c", origin=123).origin, "unclear")

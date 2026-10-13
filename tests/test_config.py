@@ -165,10 +165,12 @@ class PreExistingConfigTests(unittest.TestCase):
         cfg = _from_dict({"jury": {"pre_existing": "  IGNORE  "}})
         self.assertEqual(cfg.pre_existing, "ignore")
 
-    def test_included_in_config_hash(self):
+    def test_excluded_from_config_hash(self):
+        # Evaluated after cache lookup on every run, so toggling it must not
+        # invalidate cached reviews.
         base = _from_dict({})
         ignore = _from_dict({"jury": {"pre_existing": "ignore"}})
-        self.assertNotEqual(config_hash(base), config_hash(ignore))
+        self.assertEqual(config_hash(base), config_hash(ignore))
 
     def test_validate_rejects_bad_value(self):
         bad = _valid()
