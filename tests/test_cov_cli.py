@@ -824,10 +824,9 @@ class PostReviewBlockSurvivesAGhFailure(unittest.TestCase):
         self.assertEqual(2, len(calls), "posting continued past the failure")
 
     def test_the_start_head_is_read_once_and_rechecked_once_at_post_time(self):
-        """A regression guard on behaviour this change must not lose, **not** a new
-        behaviour: the pre-existing `marker_sha = head_sha or pr_head_sha(...)`
-        already short-circuited. Rewriting it as an explicit if/else is what this
-        test holds — an `or` is easy to turn back into an unconditional call."""
+        """The head is read once at the start of the review; the post block reads it one
+        more time only to tell whether it moved (#977) and takes the marker SHA from the
+        start read, so exactly two reads happen and no third one."""
         with (
             mock.patch("ai_jury.cli.post_pr_comment"),
             mock.patch("ai_jury.github.pr_head_sha", return_value="b" * 40) as asked,
@@ -907,10 +906,17 @@ class PostReviewBlockSurvivesAGhFailure(unittest.TestCase):
         self.assertNotIn("head moved", err)
 
     def test_post_marker_is_refused_for_an_issue_and_without_a_pr(self):
-        for argv in (["--mock", "--issue", "7", "--post-marker"], ["--mock", "--post-marker"]):
+        cases = (
+            (
+                ["--mock", "--issue", "7", "--post-marker"],
+                "--post-marker is not supported with --issue",
+            ),
+            (["--mock", "--diff-file", "-", "--post-marker"], "--post-marker requires --pr"),
+        )
+        for argv, text in cases:
             with self.subTest(argv=argv):
                 code, posted, _ = self._posted(argv, ["d" * 40])
-                self.assertNotEqual(0, code)
+                self.assertIn(text, str(code))
                 self.assertEqual([], posted)
 
     def test_post_marker_skips_with_a_warning_when_the_head_is_unreadable(self):
@@ -943,6 +949,28 @@ class PostReviewBlockSurvivesAGhFailure(unittest.TestCase):
         )
         self.assertEqual(0, code)
         self.assertEqual(1, len(posted))
+        self.assertIn("arc-reviewed-sha:" + "a" * 40, posted[0])
+        self.assertGreater(len(posted[0]), 300, "the one comment is not the summary")
+        self.assertIn("Verdict", posted[0])
+
+    def test_a_failed_marker_post_warns_and_leaves_the_exit_alone(self):
+        with (
+            mock.patch("ai_jury.github.pr_head_sha", return_value="a" * 40),
+            mock.patch("ai_jury.cli.post_pr_comment", side_effect=self._boom),
+        ):
+            code, _, err = self._run(["--mock", "--pr", "7", "--post-marker"])
+        self.assertEqual(0, code)
+        self.assertIn("warning: could not post the review marker", err)
+        self.assertNotIn("posted review marker", err)
+
+    def test_post_marker_under_dry_run_posts_nothing(self):
+        code, posted, err = self._posted(
+            ["--mock", "--pr", "7", "--post-marker", "--dry-run"], ["a" * 40]
+        )
+        self.assertEqual(0, code)
+        self.assertEqual([], posted)
+        self.assertIn("dry-run: would post the review marker", err)
+        self.assertNotIn("posted review marker", err)
 
 
 if __name__ == "__main__":

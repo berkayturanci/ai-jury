@@ -3418,6 +3418,8 @@ def main(argv: list[str] | None = None) -> int:
                 "start of the review",
                 file=sys.stderr,
             )
+        elif args.dry_run:
+            log(f"dry-run: would post the review marker for {marker_sha[:7]} to PR #{args.pr}")
         elif _post(
             f"post the review marker to PR #{args.pr}",
             lambda: post_pr_comment(

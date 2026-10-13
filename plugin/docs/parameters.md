@@ -317,7 +317,7 @@ full transcript to a file; `jury --pr 123 -q` silences the stderr progress logs.
 | `--post-inline` | flag | off | Post inline review comments on located findings. **`--pr` only.** |
 | `--post-progress` | flag | off | Keep a live, sticky status comment updated per round/chunk. **`--pr` only.** |
 | `--post-mode` | `single` \| `phased` | `single` | With `--post-summary`: one comment, or separate Round 1 / debate / decision comments. **`--pr` only.** |
-| `--dry-run` | flag | off | With `--post-inline`, print the payload without calling GitHub. |
+| `--dry-run` | flag | off | With `--post-inline`, print the payload without calling GitHub; with `--post-marker`, skip the marker post. |
 | `--no-attribution` | flag | from config (on) | Leave the ai-jury footer (which names the seats that reviewed) off the markdown report and every posted comment. Overrides `[jury.output] attribution`. |
 | `--label` | flag | off | Apply classification labels (review-effort / risk / security) to the PR. **`--pr` only.** |
 
