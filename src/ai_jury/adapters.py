@@ -2098,9 +2098,9 @@ class MockAdapter(Adapter):
     ) -> AgentResult:
         del timeout, role_policy
         n = self.name
-        is_issue = "triages GitHub issues" in (prompt or "")
-        origin_intro = "" if is_issue else '"origin": "introduced", '
-        origin_pre = "" if is_issue else '"origin": "pre_existing", '
+        emit_origin = "```json" not in (prompt or "") or '"origin"' in (prompt or "")
+        origin_intro = '"origin": "introduced", ' if emit_origin else ""
+        origin_pre = '"origin": "pre_existing", ' if emit_origin else ""
         if phase == "review":
             body = (
                 # The two lines the review prompt asks every reviewer to open

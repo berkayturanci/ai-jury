@@ -76,14 +76,17 @@ class EvaluateCiTests(unittest.TestCase):
         )
         self.assertEqual(code, 0)
         self.assertIn("PASS", reason)
+        self.assertIn("pre_existing=ignore", reason)
         self.assertIn("1 pre-existing finding(s) ignored", reason)
 
-        # Non-blocking severities do not increment the ignored-blocking count.
+        # Non-blocking severities do not increment the ignored-blocking count,
+        # but the gate reason still records `pre_existing=ignore`.
         minor_only = [_group("minor", status="verified", origin="pre_existing")]
         code_minor, reason_minor = evaluate_ci(
             minor_only, ["critical"], ignore_unverified=False, pre_existing="ignore"
         )
         self.assertEqual(code_minor, 0)
+        self.assertIn("pre_existing=ignore", reason_minor)
         self.assertNotIn("pre-existing finding(s) ignored", reason_minor)
 
     def test_pre_existing_blocks_by_default(self):
@@ -93,19 +96,22 @@ class EvaluateCiTests(unittest.TestCase):
         )
         self.assertEqual(code, 1)
         self.assertIn("FAIL", reason)
+        self.assertNotIn("pre_existing=ignore", reason)
 
     def test_pre_existing_ignore_still_blocks_on_introduced_or_unclear(self):
         groups_intro = [_group("critical", status="verified", origin="introduced")]
-        code, _ = evaluate_ci(
+        code, reason_intro = evaluate_ci(
             groups_intro, ["critical"], ignore_unverified=False, pre_existing="ignore"
         )
         self.assertEqual(code, 1)
+        self.assertIn("pre_existing=ignore", reason_intro)
 
         groups_unclear = [_group("critical", status="verified", origin="unclear")]
-        code, _ = evaluate_ci(
+        code, reason_unclear = evaluate_ci(
             groups_unclear, ["critical"], ignore_unverified=False, pre_existing="ignore"
         )
         self.assertEqual(code, 1)
+        self.assertIn("pre_existing=ignore", reason_unclear)
 
         # When both an introduced and a pre_existing finding are present under
         # pre_existing="ignore", the FAIL reason still reports the ignored count.
@@ -118,6 +124,7 @@ class EvaluateCiTests(unittest.TestCase):
         )
         self.assertEqual(code_mixed, 1)
         self.assertIn("FAIL: 1 blocking finding(s)", reason_mixed)
+        self.assertIn("pre_existing=ignore", reason_mixed)
         self.assertIn("1 pre-existing finding(s) ignored", reason_mixed)
 
 

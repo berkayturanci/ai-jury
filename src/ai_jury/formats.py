@@ -125,8 +125,8 @@ def _finding_dict(f: Finding) -> dict[str, Any]:
         "evidence": f.evidence,
         "suggested_fix": f.suggested_fix,
         "confidence": f.confidence,
-        "origin": f.origin,
         "reviewer": f.reviewer,
+        "origin": f.origin,
     }
 
 
@@ -137,8 +137,8 @@ def _group_dict(g: Any) -> dict[str, Any]:
         "agreement": len(g.reviewers),
         "reviewers": list(g.reviewers),
         "bucket": g.bucket,
-        "origin": g.origin,
         "verification_status": g.status or None,
+        "origin": g.origin,
     }
 
 

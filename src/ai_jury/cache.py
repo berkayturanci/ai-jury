@@ -230,7 +230,6 @@ def _group(d: dict) -> FindingGroup:
         bucket=d.get("bucket", "single_reviewer"),
         status=d.get("status", ""),
         status_reasoning=d.get("status_reasoning", ""),
-        origin=d.get("origin", ""),
     )
 
 

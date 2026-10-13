@@ -114,14 +114,18 @@ def evaluate_ci(
             # r7/M). This stays a pure function.
             claim = flatten_inline(getattr(rep, "claim", "")) if rep is not None else ""
             bits.append(f"[{g.severity}] {loc or '(no location)'} {claim}".strip())
+        mode_suffix = (
+            f" (pre_existing=ignore{ignored_note})" if pre_existing == "ignore" else ignored_note
+        )
         reason = (
             f"FAIL: {len(blocking)} blocking finding(s) at severities "
-            f"{sorted(fail_set)}: " + "; ".join(bits) + ignored_note
+            f"{sorted(fail_set)}: " + "; ".join(bits) + mode_suffix
         )
         return 1, reason
 
+    mode_opt = ", pre_existing=ignore" if pre_existing == "ignore" else ""
     reason = (
         f"PASS: no blocking findings at severities {sorted(fail_set)} "
-        f"(ignore_unverified={ignore_unverified}{ignored_note})."
+        f"(ignore_unverified={ignore_unverified}{mode_opt}{ignored_note})."
     )
     return 0, reason
