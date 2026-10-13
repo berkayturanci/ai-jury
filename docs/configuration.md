@@ -55,7 +55,7 @@ always names the key and the rule it breaks.
   - Also hard: a bound broken on `retries` (`>= 0`), `total_timeout`,
     `phase_timeout`, `max_rounds` or `[jury.diff] max_bytes` / `chunk_max_bytes`
     (`>= 1` when set); `theater` that is not a bool; `theater_style` other than
-    `"flat"` / `"pixel"`; an unknown `routing`, `[[agent]] effort` or
+    `"flat"` / `"pixel"`; an unknown `routing`, `pre_existing`, `[[agent]] effort` or
     `[[agent]] tier`; a `temperature` that is not a number from `0` to `2`; a
     `[jury.ci] fail_on` entry that is not a [severity](parameters.md#severities);
     a `command` that is a relative path (`./bin/x` — use a bare name or an
@@ -620,6 +620,12 @@ vocabulary and exits **2** with the same message.
 | --- | --- | --- |
 | `min_vendors` | `2` | Exit **3** unless at least this many *distinct vendors contributed a review*. `0` disables. |
 | `min_reviews` | `0` | Refuse the run unless it can supply this many *reviews* to a downstream consumer — a panel ballot that named what it read and voted. `0` disables. |
+
+### Pre-existing findings (`pre_existing = "report" | "ignore"`)
+
+By default (`[jury] pre_existing = "report"`), any finding whose severity meets `fail_on` can fail the CI gate, regardless of whether it was introduced by the diff or was pre-existing in the base code.
+
+Setting `pre_existing = "ignore"` in `[jury]` treats findings and consensus groups with `origin = "pre_existing"` as non-blocking in `ai_jury.ci.evaluate_ci`: they are still listed in the report and JSON output for visibility, but they do not cause `jury --ci` to fail the build. A finding whose origin is `"introduced"` or `"unclear"` remains blocking if its severity meets `fail_on`.
 
 ### The panel-size guard (`min_reviews`)
 

@@ -416,11 +416,11 @@ A structured report with these top-level keys:
 
 | Key | Description |
 | --- | --- |
-| `schema_version` | Version of this JSON schema (currently `1.7`). |
+| `schema_version` | Version of this JSON schema (currently `1.8`). |
 | `metadata` | Run metadata (agents, rounds, context mode, redaction stats, wall-clock proxy). |
 | `classification` | The deterministic PR-level classification: `review_effort`, `risk_level`, `security_sensitive`, `needs_human_attention` (what `--label` applies). |
-| `findings` | All raw findings; each carries `severity`, `file`, `line`, `claim`, `evidence`, `suggested_fix`, `confidence`, `reviewer`. |
-| `consensus` | Per consensus group: `representative` finding, `agreement` count, `reviewers`, `bucket`, `verification_status`. |
+| `findings` | All raw findings; each carries `severity`, `file`, `line`, `claim`, `evidence`, `suggested_fix`, `confidence`, `reviewer`, `origin`. |
+| `consensus` | Per consensus group: `representative` finding, `agreement` count, `reviewers`, `bucket`, `verification_status`, `origin`. |
 | `reviewers` | One ballot per seat that ran — who said what, what they read (`scope`), what they ran (`testing`), whether it counts as a review (`counts_as_review`), with vendor/model provenance — plus the chair. See [the report-format contract](docs/report-format.md#per-reviewer-ballots-reviewers). |
 | `verdicts` | Verification verdicts (`file`, `line`, `claim`, `status`, `reasoning`). |
 | `verdict` | The chair synthesis text, if any. |

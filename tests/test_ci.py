@@ -8,8 +8,8 @@ from ai_jury.consensus import FindingGroup
 from ai_jury.findings import Finding
 
 
-def _group(severity, status=""):
-    rep = Finding(severity=severity, file="src/a.py", line=1, claim="c")
+def _group(severity, status="", origin="unclear"):
+    rep = Finding(severity=severity, file="src/a.py", line=1, claim="c", origin=origin)
     return FindingGroup(
         representative=rep,
         reviewers=["claude"],
@@ -17,6 +17,7 @@ def _group(severity, status=""):
         members=[rep],
         bucket="consensus",
         status=status,
+        origin=origin,
     )
 
 
@@ -61,6 +62,35 @@ class EvaluateCiTests(unittest.TestCase):
         code_strict, _ = evaluate_ci(groups, ["major"], ignore_unverified=False)
         self.assertEqual(code_ignore, 0)  # not verified -> ignored
         self.assertEqual(code_strict, 1)  # counts when not ignoring unverified
+
+    def test_pre_existing_ignored_when_configured(self):
+        groups = [_group("critical", status="verified", origin="pre_existing")]
+        code, reason = evaluate_ci(
+            groups, ["critical"], ignore_unverified=False, pre_existing="ignore"
+        )
+        self.assertEqual(code, 0)
+        self.assertIn("PASS", reason)
+
+    def test_pre_existing_blocks_by_default(self):
+        groups = [_group("critical", status="verified", origin="pre_existing")]
+        code, reason = evaluate_ci(
+            groups, ["critical"], ignore_unverified=False, pre_existing="report"
+        )
+        self.assertEqual(code, 1)
+        self.assertIn("FAIL", reason)
+
+    def test_pre_existing_ignore_still_blocks_on_introduced_or_unclear(self):
+        groups_intro = [_group("critical", status="verified", origin="introduced")]
+        code, _ = evaluate_ci(
+            groups_intro, ["critical"], ignore_unverified=False, pre_existing="ignore"
+        )
+        self.assertEqual(code, 1)
+
+        groups_unclear = [_group("critical", status="verified", origin="unclear")]
+        code, _ = evaluate_ci(
+            groups_unclear, ["critical"], ignore_unverified=False, pre_existing="ignore"
+        )
+        self.assertEqual(code, 1)
 
 
 class FailOnVocabularyTests(unittest.TestCase):

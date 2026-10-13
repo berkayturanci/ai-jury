@@ -88,6 +88,7 @@ class TestJSON(unittest.TestCase):
                 "suggested_fix",
                 "confidence",
                 "reviewer",
+                "origin",
             ):
                 self.assertIn(key, f)
             self.assertTrue(f["severity"])
@@ -104,6 +105,7 @@ class TestJSON(unittest.TestCase):
             self.assertIn("representative", g)
             self.assertIn("agreement", g)
             self.assertIn("verification_status", g)
+            self.assertIn("origin", g)
             self.assertIsInstance(g["agreement"], int)
 
     def test_deterministic_across_two_runs(self):
@@ -458,6 +460,7 @@ class BackwardCompatibility(unittest.TestCase):
                     "suggested_fix": f.suggested_fix,
                     "confidence": f.confidence,
                     "reviewer": f.reviewer,
+                    "origin": f.origin,
                 }
                 for f in outcome.findings
             ],

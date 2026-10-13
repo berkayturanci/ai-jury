@@ -105,7 +105,7 @@ class CliMockTests(unittest.TestCase):
         self.assertIn(code, (0, 1, 2))
 
     def test_no_input_errors(self):
-        code, _, _ = run([])
+        code, _, _ = run([], stdin="")
         self.assertNotEqual(code, 0)
 
     def test_doctor_runs(self):

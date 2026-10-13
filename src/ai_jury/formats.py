@@ -84,7 +84,10 @@ from .metadata import build_run_metadata
 #: 1.7 (issue #978) adds the top-level ``excluded_files``: ``[{path, reason}]``
 #: for the files the large-diff planner kept out of the review (``binary``,
 #: ``generated``, ``filtered``, ``not_included``). ``[]`` when none. Additive.
-JSON_SCHEMA_VERSION = "1.7"
+#:
+#: 1.8 (issue #976) adds ``origin`` (``"introduced"`` | ``"pre_existing"`` | ``"unclear"``)
+#: to each finding in ``findings`` and each consensus group in ``consensus``. Additive.
+JSON_SCHEMA_VERSION = "1.8"
 
 #: Canonical SARIF schema URI and version emitted by :func:`to_sarif`.
 SARIF_SCHEMA = "https://json.schemastore.org/sarif-2.1.0.json"
@@ -122,6 +125,7 @@ def _finding_dict(f: Finding) -> dict[str, Any]:
         "evidence": f.evidence,
         "suggested_fix": f.suggested_fix,
         "confidence": f.confidence,
+        "origin": f.origin,
         "reviewer": f.reviewer,
     }
 
@@ -133,6 +137,7 @@ def _group_dict(g: Any) -> dict[str, Any]:
         "agreement": len(g.reviewers),
         "reviewers": list(g.reviewers),
         "bucket": g.bucket,
+        "origin": g.origin,
         "verification_status": g.status or None,
     }
 

@@ -48,7 +48,12 @@ def fail_on_error(fail_on, where: str) -> str | None:
     return _vocabulary_error(unknown, where) if unknown else None
 
 
-def evaluate_ci(groups_with_status, fail_on, ignore_unverified: bool) -> tuple[int, str]:
+def evaluate_ci(
+    groups_with_status,
+    fail_on,
+    ignore_unverified: bool,
+    pre_existing: str = "report",
+) -> tuple[int, str]:
     """Decide a CI exit code from consensus groups.
 
     Returns ``(exit_code, reason)``.
@@ -58,6 +63,8 @@ def evaluate_ci(groups_with_status, fail_on, ignore_unverified: bool) -> tuple[i
     any non-"unsupported" status. Findings the verifier marked "unsupported"
     never fail CI. When ``ignore_unverified`` is True, groups that were never
     verified (empty status) do not fail CI; only explicitly verified ones can.
+    When ``pre_existing`` is "ignore", groups whose origin is "pre_existing"
+    do not fail CI (treated as non-blocking; issue #976).
 
     Raises ``ValueError`` when ``fail_on`` names a severity outside the
     vocabulary. A misspelling matches no group, so treating it as "blocks
@@ -70,6 +77,13 @@ def evaluate_ci(groups_with_status, fail_on, ignore_unverified: bool) -> tuple[i
         raise ValueError(_vocabulary_error(unknown, "fail_on"))
     blocking = []
     for g in groups_with_status:
+        origin = (
+            getattr(g, "origin", "")
+            or getattr(getattr(g, "representative", None), "origin", "")
+            or ""
+        )
+        if pre_existing == "ignore" and origin == "pre_existing":
+            continue
         severity = getattr(g, "severity", "")
         status = getattr(g, "status", "") or ""
         if severity not in fail_set:

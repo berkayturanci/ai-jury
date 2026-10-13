@@ -150,5 +150,38 @@ class DemoteLocalOnlyConfigTests(unittest.TestCase):
         self.assertEqual(validate_config(ok), [])
 
 
+class PreExistingConfigTests(unittest.TestCase):
+    """jury.pre_existing (issue #976)."""
+
+    def test_defaults_to_report(self):
+        cfg = _from_dict({})
+        self.assertEqual(cfg.pre_existing, "report")
+
+    def test_parsed_from_jury_table(self):
+        cfg = _from_dict({"jury": {"pre_existing": "ignore"}})
+        self.assertEqual(cfg.pre_existing, "ignore")
+
+    def test_normalised_case_and_whitespace(self):
+        cfg = _from_dict({"jury": {"pre_existing": "  IGNORE  "}})
+        self.assertEqual(cfg.pre_existing, "ignore")
+
+    def test_included_in_config_hash(self):
+        base = _from_dict({})
+        ignore = _from_dict({"jury": {"pre_existing": "ignore"}})
+        self.assertNotEqual(config_hash(base), config_hash(ignore))
+
+    def test_validate_rejects_bad_value(self):
+        bad = _valid()
+        bad["jury"]["pre_existing"] = "skip"
+        with self.assertRaises(ConfigError):
+            validate_config(bad)
+
+    def test_validate_accepts_known_values(self):
+        for val in ("report", "ignore", "REPORT", "IGNORE"):
+            ok = _valid()
+            ok["jury"]["pre_existing"] = val
+            self.assertEqual(validate_config(ok), [])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Findings are labelled as introduced by the diff or pre-existing** (#976). Reviewers are asked to label each finding with `origin: introduced|pre_existing|unclear` (defined as: introduced = the diff adds or widens the problem; pre_existing = the problem exists on the base and the diff does not widen it). Consensus groups resolve origin strictly (a group is `pre_existing` only if every member says so; `introduced` if any says introduced; otherwise `unclear`). Markdown reports prefix findings and groups with an origin tag (`[introduced]`, `[pre-existing]`, `[unclear]`), the JSON report carries `origin` in `findings` and `consensus` (JSON schema `1.7` -> `1.8`, additive), and a new config option `[jury] pre_existing = "report" | "ignore"` (default `"report"`) allows gating CI runs to treat pre-existing findings as non-blocking in `evaluate_ci`. `PROMPT_VERSION` goes 9 -> 10, invalidating cached review entries.
 - **`--post-marker` posts the `arc-reviewed-sha` marker without a summary** (#977). Callers that post their own verdict (`keel review --from-jury`, wrappers) never got the marker, so every later run was a full review. `--post-marker` posts one small comment holding only the marker (and a one-line note) for the reviewed head; PR only (refused with `--issue`, and without `--pr`), skipped with a warning when the head could not be read.
 
 ### Fixed

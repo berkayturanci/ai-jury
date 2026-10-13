@@ -112,7 +112,9 @@ def _finding_line(f: Finding) -> str:
     if f.line is not None:
         loc = f"{loc}:{f.line}"
     claim = flatten_inline(f.claim)
-    return f"- [{f.severity}] {loc} — {claim} ({f.confidence}, by {f.reviewer})"
+    origin = getattr(f, "origin", "unclear") or "unclear"
+    origin_tag = f"[{origin.replace('_', '-')}]"
+    return f"- [{f.severity}] {origin_tag} {loc} — {claim} ({f.confidence}, by {f.reviewer})"
 
 
 _BUCKET_LABELS = {
@@ -137,11 +139,15 @@ def _group_line(g) -> str:
     if f.line is not None:
         loc = f"{loc}:{f.line}"
     reviewers = ", ".join(g.reviewers) if g.reviewers else "(unknown)"
+    origin = getattr(g, "origin", "") or getattr(f, "origin", "") or "unclear"
+    origin_tag = f"[{origin.replace('_', '-')}]"
 
     # Attacker-influenced fields (claim/evidence/fix) are flattened to one line
     # so they cannot forge a heading or open a code fence in the posted report
     # (audit 2026-06-13 r3).
-    parts = [f"- [{g.severity}] {loc} — {flatten_inline(f.claim)} (reviewers: {reviewers})"]
+    parts = [
+        f"- [{g.severity}] {origin_tag} {loc} — {flatten_inline(f.claim)} (reviewers: {reviewers})"
+    ]
 
     # Surface the reviewer's supporting evidence — the "why" behind the claim —
     # so the verdict is auditable, not just asserted (issue: evidence surfacing).

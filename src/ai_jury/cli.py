@@ -3204,7 +3204,12 @@ def main(argv: list[str] | None = None) -> int:
         fail_on = config.ci.fail_on
         if args.fail_on:
             fail_on = [s.strip().lower() for s in args.fail_on.split(",") if s.strip()]
-        gate_exit, ci_reason = evaluate_ci(outcome.groups, fail_on, config.ci.ignore_unverified)
+        gate_exit, ci_reason = evaluate_ci(
+            outcome.groups,
+            fail_on,
+            config.ci.ignore_unverified,
+            pre_existing=config.pre_existing,
+        )
         # A collapsed panel outranks the severity gate: `evaluate_ci` reports on
         # findings the panel did or did not raise, and a panel that never formed
         # is not evidence either way. Before #682 this assignment overwrote the

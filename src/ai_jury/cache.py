@@ -182,6 +182,7 @@ def _finding(d: dict) -> Finding:
         suggested_fix=d.get("suggested_fix", ""),
         confidence=d.get("confidence", "medium"),
         reviewer=d.get("reviewer", ""),
+        origin=d.get("origin", "unclear"),
     )
 
 
@@ -227,6 +228,7 @@ def _group(d: dict) -> FindingGroup:
         severity=d.get("severity", "info"),
         members=[_finding(m) for m in d.get("members", [])],
         bucket=d.get("bucket", "single_reviewer"),
+        origin=d.get("origin", "unclear"),
         status=d.get("status", ""),
         status_reasoning=d.get("status_reasoning", ""),
     )

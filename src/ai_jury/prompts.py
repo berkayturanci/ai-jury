@@ -43,7 +43,9 @@ import re
 # v9 (issue #978): the code-review template can carry a short section naming the
 # binary files that changed but are not shown, so a reviewer is not blind to a
 # golden image or a fixture the diff omits. Absent when nothing was excluded.
-PROMPT_VERSION = 9
+# v10 (issue #976): the review templates ask for `origin: introduced | pre_existing | unclear`
+# on each finding, with a one-line definition distinguishing introduced vs pre-existing.
+PROMPT_VERSION = 10
 
 
 # Neutralize sentinel fences inside untrusted content (issue #301). Every fence
@@ -239,6 +241,7 @@ this schema and these enum values:
 - "evidence": why the diff/code supports the claim
 - "suggested_fix": an actionable fix, or "" when none
 - "confidence": one of "high", "medium", "low"
+- "origin": one of "introduced" (the diff adds or widens the problem), "pre_existing" (the problem exists on the base and the diff does not widen it), or "unclear"
 - "reviewer": your agent name
 
 Example:
@@ -246,7 +249,7 @@ Example:
 [
   {{"severity": "major", "file": "src/foo.py", "line": 42, "claim": "unchecked return value",
     "evidence": "the diff ignores the result of write()", "suggested_fix": "raise on failure",
-    "confidence": "high", "reviewer": "{name}"}}
+    "confidence": "high", "origin": "introduced", "reviewer": "{name}"}}
 ]
 ```
 If you found nothing blocking, emit an empty array: ```json
@@ -436,6 +439,7 @@ schema and these enum values:
 - "evidence": why the issue text supports this being a gap
 - "suggested_fix": what the author should ADD to close the gap, or "" when none
 - "confidence": one of "high", "medium", "low"
+- "origin": one of "introduced" (the diff adds or widens the problem), "pre_existing" (the problem exists on the base and the diff does not widen it), or "unclear"
 - "reviewer": your agent name
 
 Example:
@@ -445,7 +449,7 @@ Example:
     "claim": "no reproduction steps",
     "evidence": "the issue describes a symptom but never says how to trigger it",
     "suggested_fix": "add numbered steps to reproduce from a clean checkout",
-    "confidence": "high", "reviewer": "{name}"}}
+    "confidence": "high", "origin": "introduced", "reviewer": "{name}"}}
 ]
 ```
 If you found no gaps, emit an empty array: ```json

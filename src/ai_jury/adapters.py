@@ -2115,12 +2115,12 @@ class MockAdapter(Adapter):
                 f'"claim": "{n}: unchecked return value may swallow an error", '
                 '"evidence": "the added code ignores the return value of int(x)", '
                 '"suggested_fix": "check the result and raise on failure", '
-                f'"confidence": "high", "reviewer": "{n}"}},\n'
+                f'"confidence": "high", "origin": "introduced", "reviewer": "{n}"}},\n'
                 '  {"severity": "minor", "file": "src/example.py", "line": 7, '
                 f'"claim": "{n}: missing docstring", '
                 '"evidence": "the new function parse() has no docstring", '
                 '"suggested_fix": "add a one-line docstring", '
-                f'"confidence": "medium", "reviewer": "{n}"}}\n'
+                f'"confidence": "medium", "origin": "pre_existing", "reviewer": "{n}"}}\n'
                 "]\n"
                 "```"
             )

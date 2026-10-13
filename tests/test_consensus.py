@@ -209,5 +209,55 @@ class DemoteLocalOnlyGroupsTests(unittest.TestCase):
         self.assertEqual(after.verdict, COMMENT)
 
 
+class OriginResolutionTests(unittest.TestCase):
+    """Consensus group origin resolution rules (issue #976).
+
+    A group is pre_existing only if every member says so;
+    introduced if any says introduced; otherwise unclear.
+    """
+
+    def test_all_pre_existing_resolves_to_pre_existing(self):
+        f1 = Finding("major", "a.py", "c", origin="pre_existing", reviewer="claude")
+        f2 = Finding("major", "a.py", "c", origin="pre_existing", reviewer="codex")
+        groups = group_findings([f1, f2], reviewer_count=2)
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(groups[0].origin, "pre_existing")
+
+    def test_any_introduced_resolves_to_introduced(self):
+        # Even when combined with pre_existing or unclear, introduced wins
+        f1 = Finding("major", "a.py", "c", origin="introduced", reviewer="claude")
+        f2 = Finding("major", "a.py", "c", origin="pre_existing", reviewer="codex")
+        groups = group_findings([f1, f2], reviewer_count=2)
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(groups[0].origin, "introduced")
+
+        f3 = Finding("major", "a.py", "c", origin="introduced", reviewer="claude")
+        f4 = Finding("major", "a.py", "c", origin="unclear", reviewer="codex")
+        groups = group_findings([f3, f4], reviewer_count=2)
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(groups[0].origin, "introduced")
+
+    def test_mixed_pre_existing_and_unclear_resolves_to_unclear(self):
+        # If not all are pre_existing and none is introduced, it is unclear
+        f1 = Finding("major", "a.py", "c", origin="pre_existing", reviewer="claude")
+        f2 = Finding("major", "a.py", "c", origin="unclear", reviewer="codex")
+        groups = group_findings([f1, f2], reviewer_count=2)
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(groups[0].origin, "unclear")
+
+    def test_all_unclear_resolves_to_unclear(self):
+        f1 = Finding("major", "a.py", "c", origin="unclear", reviewer="claude")
+        f2 = Finding("major", "a.py", "c", origin="unclear", reviewer="codex")
+        groups = group_findings([f1, f2], reviewer_count=2)
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(groups[0].origin, "unclear")
+
+    def test_single_finding_preserves_origin(self):
+        for o in ("introduced", "pre_existing", "unclear"):
+            f = Finding("major", "a.py", "c", origin=o, reviewer="claude")
+            groups = group_findings([f], reviewer_count=1)
+            self.assertEqual(groups[0].origin, o)
+
+
 if __name__ == "__main__":
     unittest.main()

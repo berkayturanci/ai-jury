@@ -36,6 +36,7 @@ class FindingGroup:
     severity: str = "info"
     members: list[Finding] = field(default_factory=list)
     bucket: str = BUCKET_SINGLE
+    origin: str = "unclear"
     # Verification status (issue #3); empty until a verdict is attached.
     status: str = ""
     status_reasoning: str = ""
@@ -165,6 +166,21 @@ def demote_local_only_groups(
             group.severity = _DEMOTED_SEVERITY
 
 
+def _resolve_group_origin(members: list[Finding]) -> str:
+    """Resolve origin across group members (issue #976).
+
+    A group is pre_existing only if every member says so; introduced if any says
+    introduced; otherwise unclear.
+    """
+    if not members:
+        return "unclear"
+    if any(m.origin == "introduced" for m in members):
+        return "introduced"
+    if all(m.origin == "pre_existing" for m in members):
+        return "pre_existing"
+    return "unclear"
+
+
 def group_findings(findings, reviewer_count: int) -> list[FindingGroup]:
     """Group findings that describe the same issue.
 
@@ -201,6 +217,7 @@ def group_findings(findings, reviewer_count: int) -> list[FindingGroup]:
         reviewers = sorted({m.reviewer for m in group.members if m.reviewer})
         group.reviewers = reviewers
         group.severity = _max_severity(group.members)
+        group.origin = _resolve_group_origin(group.members)
         # Pick the most severe member as representative for display stability.
         group.representative = min(
             group.members,
