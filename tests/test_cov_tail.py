@@ -257,6 +257,43 @@ class ReportTailTests(unittest.TestCase):
         self.assertIn("- [major] [introduced] src/a.py:1", report._finding_line(f_intro))
         self.assertIn("- [major] [pre-existing] src/a.py:1", report._finding_line(f_pre))
 
+    def test_in_repo_consumers_on_origin_tagged_report(self):
+        from ai_jury.consensus import group_findings
+        from ai_jury.github import build_inline_payload
+        from ai_jury.patches import parse_patch_suggestions, render_patch_suggestions
+
+        f_intro = Finding(
+            severity="major",
+            file="src/a.py",
+            line=1,
+            claim="bug in parse",
+            suggested_fix="return int(x)",
+            origin="introduced",
+            reviewer="claude",
+        )
+        groups = group_findings([f_intro], reviewer_count=1)
+        groups[0].status = "verified"
+        ar = _ar("claude")
+        ar.findings = [f_intro]
+        md = report.render(
+            [ar],
+            [],
+            _ar("claude", output="## Verdict\nREQUEST CHANGES"),
+            chair="claude",
+            findings=[f_intro],
+            groups=groups,
+        )
+        md += "\n" + render_patch_suggestions(groups)
+        self.assertIn("- [major] [introduced] src/a.py:1", md)
+
+        parsed_suggestions = parse_patch_suggestions(md)
+        self.assertEqual(len(parsed_suggestions), 1)
+        self.assertEqual((parsed_suggestions[0].file, parsed_suggestions[0].line), ("src/a.py", 1))
+
+        inline = build_inline_payload([g.representative for g in groups])
+        self.assertEqual(len(inline), 1)
+        self.assertEqual(inline[0]["path"], "src/a.py")
+
     def test_render_with_explicit_classification(self):
         # report.py 187->189: classification is NOT None -> the in-line
         # classify() call is skipped (the explicit dict is used instead).

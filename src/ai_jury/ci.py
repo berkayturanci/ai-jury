@@ -64,11 +64,12 @@ def evaluate_ci(
     never fail CI. When ``ignore_unverified`` is True, groups that were never
     verified (empty status) do not fail CI; only explicitly verified ones can.
     When ``pre_existing`` is "ignore", groups whose origin is "pre_existing"
-    do not fail CI and are counted in the PASS reason (issue #976). Note that
-    ``origin`` is a trust-the-model label from the reviewers (unanimous across
-    a group's members, which for a single-reviewer group is that one seat);
-    keep ``pre_existing = "report"`` when the gate must be fail-closed against
-    model-manipulated ``origin`` labels.
+    do not fail CI and are counted in the gate reason (issue #976). Note that
+    ``origin`` is a trust-the-model label from the reviewers (a group is
+    "pre_existing" only when every member says so, which for a single-reviewer
+    group is that one seat, while any "introduced" member makes the group
+    "introduced"); keep ``pre_existing = "report"`` when the gate must be
+    fail-closed against model-manipulated ``origin`` labels.
 
     Raises ``ValueError`` when ``fail_on`` names a severity outside the
     vocabulary. A misspelling matches no group, so treating it as "blocks
@@ -95,6 +96,9 @@ def evaluate_ci(
             continue
         blocking.append(g)
 
+    ignored_note = (
+        f"; {ignored_pre_existing} pre-existing finding(s) ignored" if ignored_pre_existing else ""
+    )
     if blocking:
         bits = []
         for g in blocking:
@@ -112,13 +116,10 @@ def evaluate_ci(
             bits.append(f"[{g.severity}] {loc or '(no location)'} {claim}".strip())
         reason = (
             f"FAIL: {len(blocking)} blocking finding(s) at severities "
-            f"{sorted(fail_set)}: " + "; ".join(bits)
+            f"{sorted(fail_set)}: " + "; ".join(bits) + ignored_note
         )
         return 1, reason
 
-    ignored_note = (
-        f"; {ignored_pre_existing} pre-existing finding(s) ignored" if ignored_pre_existing else ""
-    )
     reason = (
         f"PASS: no blocking findings at severities {sorted(fail_set)} "
         f"(ignore_unverified={ignore_unverified}{ignored_note})."

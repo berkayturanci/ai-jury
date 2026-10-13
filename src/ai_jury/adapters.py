@@ -2096,8 +2096,11 @@ class MockAdapter(Adapter):
         timeout: int | None = None,
         role_policy=None,
     ) -> AgentResult:
-        del prompt, timeout, role_policy
+        del timeout, role_policy
         n = self.name
+        is_issue = "triages GitHub issues" in (prompt or "")
+        origin_intro = "" if is_issue else '"origin": "introduced", '
+        origin_pre = "" if is_issue else '"origin": "pre_existing", '
         if phase == "review":
             body = (
                 # The two lines the review prompt asks every reviewer to open
@@ -2115,12 +2118,12 @@ class MockAdapter(Adapter):
                 f'"claim": "{n}: unchecked return value may swallow an error", '
                 '"evidence": "the added code ignores the return value of int(x)", '
                 '"suggested_fix": "check the result and raise on failure", '
-                f'"confidence": "high", "origin": "introduced", "reviewer": "{n}"}},\n'
+                f'"confidence": "high", {origin_intro}"reviewer": "{n}"}},\n'
                 '  {"severity": "minor", "file": "src/example.py", "line": 7, '
                 f'"claim": "{n}: missing docstring", '
                 '"evidence": "the existing function parse() has no docstring", '
                 '"suggested_fix": "add a one-line docstring", '
-                f'"confidence": "medium", "origin": "pre_existing", "reviewer": "{n}"}}\n'
+                f'"confidence": "medium", {origin_pre}"reviewer": "{n}"}}\n'
                 "]\n"
                 "```"
             )

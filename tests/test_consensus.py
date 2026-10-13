@@ -273,6 +273,81 @@ class OriginResolutionTests(unittest.TestCase):
         from_rep = FindingGroup(representative=rep_pre, members=[])
         self.assertEqual(from_rep.origin, "pre_existing")
 
+    def test_finding_group_positional_constructor_preserves_status_and_reasoning(self):
+        # Regression test: `origin` is appended after `status` and
+        # `status_reasoning` so positional construction continues to set
+        # `status` and `status_reasoning` rather than storing `"verified"` in
+        # `origin`.
+        from ai_jury.ci import evaluate_ci
+
+        rep = Finding("critical", "a.py", "c", line=1, origin="introduced", reviewer="claude")
+        group = FindingGroup(rep, ["claude"], "critical", [rep], "consensus", "verified", "ok")
+        self.assertEqual(group.status, "verified")
+        self.assertEqual(group.status_reasoning, "ok")
+        self.assertEqual(group.origin, "introduced")
+        code, _ = evaluate_ci([group], ["critical"], ignore_unverified=True)
+        self.assertEqual(code, 1)
+
+    def test_finding_group_reconciles_conflicting_explicit_or_cached_origin_from_members(self):
+        # Non-empty `members` always determine `origin`, even when an explicit
+        # or cached `origin="pre_existing"` is passed.
+        from ai_jury.cache import _group as load_cached_group
+        from ai_jury.ci import evaluate_ci
+
+        intro = Finding("critical", "a.py", "c", line=1, origin="introduced", reviewer="claude")
+        pre = Finding("critical", "a.py", "c", line=1, origin="pre_existing", reviewer="codex")
+        explicit = FindingGroup(
+            representative=intro,
+            reviewers=["claude", "codex"],
+            severity="critical",
+            members=[intro, pre],
+            bucket="consensus",
+            status="verified",
+            origin="pre_existing",
+        )
+        self.assertEqual(explicit.origin, "introduced")
+        code, _ = evaluate_ci(
+            [explicit], ["critical"], ignore_unverified=True, pre_existing="ignore"
+        )
+        self.assertEqual(code, 1)
+
+        cached = load_cached_group(
+            {
+                "representative": {
+                    "severity": "critical",
+                    "file": "a.py",
+                    "line": 1,
+                    "claim": "c",
+                    "origin": "introduced",
+                    "reviewer": "claude",
+                },
+                "reviewers": ["claude", "codex"],
+                "severity": "critical",
+                "members": [
+                    {
+                        "severity": "critical",
+                        "file": "a.py",
+                        "line": 1,
+                        "claim": "c",
+                        "origin": "introduced",
+                        "reviewer": "claude",
+                    },
+                    {
+                        "severity": "critical",
+                        "file": "a.py",
+                        "line": 1,
+                        "claim": "c",
+                        "origin": "pre_existing",
+                        "reviewer": "codex",
+                    },
+                ],
+                "bucket": "consensus",
+                "status": "verified",
+                "origin": "pre_existing",
+            }
+        )
+        self.assertEqual(cached.origin, "introduced")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -565,6 +565,9 @@ def run_jury(
         r.structured = emitted_findings_block(r.output)
         all_findings.extend(found)
         all_warnings.extend(warns)
+    if mode == "issue":
+        for f in all_findings:
+            f.origin = "unclear"
 
     # Stream round-1 reviews as they're now finalized (stable order).
     for r in reviews:

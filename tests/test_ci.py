@@ -2,18 +2,16 @@
 
 import contextlib
 import io
-import sys
+import os
 import tempfile
 import unittest
 import unittest.mock as mock
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from ai_jury.ci import evaluate_ci, fail_on_error, resolve_fail_on  # noqa: E402
-from ai_jury.config import CiConfig, _from_dict  # noqa: E402
-from ai_jury.consensus import FindingGroup  # noqa: E402
-from ai_jury.findings import Finding  # noqa: E402
+from ai_jury.ci import evaluate_ci, fail_on_error, resolve_fail_on
+from ai_jury.config import CiConfig, _from_dict
+from ai_jury.consensus import FindingGroup
+from ai_jury.findings import Finding
 
 
 def _group(severity, status="", origin="unclear"):
@@ -108,6 +106,19 @@ class EvaluateCiTests(unittest.TestCase):
             groups_unclear, ["critical"], ignore_unverified=False, pre_existing="ignore"
         )
         self.assertEqual(code, 1)
+
+        # When both an introduced and a pre_existing finding are present under
+        # pre_existing="ignore", the FAIL reason still reports the ignored count.
+        mixed = [
+            _group("critical", status="verified", origin="introduced"),
+            _group("critical", status="verified", origin="pre_existing"),
+        ]
+        code_mixed, reason_mixed = evaluate_ci(
+            mixed, ["critical"], ignore_unverified=False, pre_existing="ignore"
+        )
+        self.assertEqual(code_mixed, 1)
+        self.assertIn("FAIL: 1 blocking finding(s)", reason_mixed)
+        self.assertIn("1 pre-existing finding(s) ignored", reason_mixed)
 
 
 class FailOnVocabularyTests(unittest.TestCase):
@@ -212,12 +223,14 @@ class CiReasonInjectionTest(unittest.TestCase):
 
 
 class CliPreExistingGateTests(unittest.TestCase):
-    """End-to-end CLI `--ci` wiring for `config.pre_existing` (issue #976).
+    """End-to-end CLI `--ci --cache` wiring for `config.pre_existing` (issue #976).
 
-    Exercises `cli.main([..., "--ci"])` through a multi-round (`rounds = 2`,
-    `verify = true`) mock run that produces a verified `pre_existing` critical
-    finding, proving both that Round 1 `origin` survives debate + verification
-    and that `cli.main` passes `config.pre_existing` to `evaluate_ci`.
+    Runs `cli.main([..., "--ci", "--cache"])` first with `pre_existing = "report"`
+    (populating the on-disk cache and failing CI on a verified `pre_existing`
+    critical finding), then re-runs against the same cache directory with
+    `pre_existing = "ignore"`, proving the second run hits the cache without
+    invoking reviewers, preserves raw/group `origin` across cache serialization,
+    and flips the CI gate exit code from 1 to 0.
     """
 
     DIFF = (
@@ -229,12 +242,17 @@ class CliPreExistingGateTests(unittest.TestCase):
         "+    return int(x)\n"
     )
 
-    def _run_cli_with_pre_existing(self, pre_existing: str) -> tuple[int, str]:
+    def test_cli_ci_cache_roundtrip_switches_report_to_ignore_without_rerunning_reviewers(self):
         from ai_jury import cli
         from ai_jury.adapters import AgentResult, MockAdapter
+        from ai_jury.cache import Cache, cache_key
+        from ai_jury.config import load_config
+
+        calls: list[tuple[str, str]] = []
 
         def fake_run(adapter_self, _prompt: str, phase: str = "review", **_kwargs) -> AgentResult:
             n = adapter_self.name
+            calls.append((n, phase))
             if phase == "review":
                 body = (
                     "Checked: src/example.py\n"
@@ -268,44 +286,74 @@ class CliPreExistingGateTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
+            cache_dir = root / "cache"
             diff_path = root / "sample.diff"
             diff_path.write_text(self.DIFF, encoding="utf-8")
             cfg_path = root / "jury.toml"
-            cfg_path.write_text(
-                f'[jury]\nrounds = 2\nverify = true\npre_existing = "{pre_existing}"\n\n'
-                '[jury.ci]\nfail_on = ["critical"]\nignore_unverified = true\nmin_vendors = 2\n\n'
-                '[[agent]]\nname = "claude"\nvendor = "anthropic"\ncommand = "claude"\n\n'
-                '[[agent]]\nname = "codex"\nvendor = "openai"\ncommand = "codex"\n',
-                encoding="utf-8",
-            )
-            out, err = io.StringIO(), io.StringIO()
-            with (
-                mock.patch.object(MockAdapter, "run", fake_run),
-                contextlib.redirect_stdout(out),
-                contextlib.redirect_stderr(err),
-            ):
-                code = cli.main(
-                    [
-                        "--mock",
-                        "--config",
-                        str(cfg_path),
-                        "--diff-file",
-                        str(diff_path),
-                        "--ci",
-                        "-q",
-                    ]
+
+            def write_cfg(pre_existing: str) -> None:
+                cfg_path.write_text(
+                    f'[jury]\nrounds = 2\nverify = true\npre_existing = "{pre_existing}"\n\n'
+                    '[jury.ci]\nfail_on = ["critical"]\nignore_unverified = true\nmin_vendors = 2\n\n'
+                    '[[agent]]\nname = "claude"\nvendor = "anthropic"\ncommand = "claude"\n\n'
+                    '[[agent]]\nname = "codex"\nvendor = "openai"\ncommand = "codex"\n',
+                    encoding="utf-8",
                 )
-            return code, out.getvalue()
 
-    def test_cli_ci_passes_under_ignore_and_fails_under_report(self):
-        code_ignore, out_ignore = self._run_cli_with_pre_existing("ignore")
-        self.assertEqual(code_ignore, 0)
-        self.assertIn("PASS: no blocking findings", out_ignore)
-        self.assertIn("1 pre-existing finding(s) ignored", out_ignore)
+            argv = [
+                "--mock",
+                "--config",
+                str(cfg_path),
+                "--diff-file",
+                str(diff_path),
+                "--cache",
+                "--ci",
+                "-q",
+            ]
 
-        code_report, out_report = self._run_cli_with_pre_existing("report")
-        self.assertEqual(code_report, 1)
-        self.assertIn("FAIL: 1 blocking finding(s)", out_report)
+            write_cfg("report")
+            out1, err1 = io.StringIO(), io.StringIO()
+            with (
+                mock.patch.dict(os.environ, {"JURY_CACHE_DIR": str(cache_dir)}),
+                mock.patch.object(MockAdapter, "run", fake_run),
+                contextlib.redirect_stdout(out1),
+                contextlib.redirect_stderr(err1),
+            ):
+                code_report = cli.main(argv)
+
+            self.assertEqual(code_report, 1)
+            self.assertIn("FAIL: 1 blocking finding(s)", out1.getvalue())
+            first_run_calls = len(calls)
+            self.assertGreater(first_run_calls, 0)
+
+            # Verify the on-disk cached outcome preserved `origin` on both raw
+            # findings and consensus groups.
+            cfg_loaded = load_config(cfg_path)
+            key = cache_key(cfg_loaded, self.DIFF, mock=True)
+            cached_outcome = Cache(cache_dir).load(key)
+            self.assertIsNotNone(cached_outcome)
+            self.assertTrue(cached_outcome.from_cache)
+            self.assertEqual([f.origin for f in cached_outcome.findings], ["pre_existing"] * 2)
+            self.assertEqual([g.origin for g in cached_outcome.groups], ["pre_existing"])
+
+            # Switch `pre_existing` to "ignore" and re-run with `--cache`: must
+            # hit the cached entry without invoking `MockAdapter.run` again and
+            # flip the exit code to 0.
+            calls.clear()
+            write_cfg("ignore")
+            out2, err2 = io.StringIO(), io.StringIO()
+            with (
+                mock.patch.dict(os.environ, {"JURY_CACHE_DIR": str(cache_dir)}),
+                mock.patch.object(MockAdapter, "run", fake_run),
+                contextlib.redirect_stdout(out2),
+                contextlib.redirect_stderr(err2),
+            ):
+                code_ignore = cli.main(argv)
+
+            self.assertEqual(calls, [])
+            self.assertEqual(code_ignore, 0)
+            self.assertIn("PASS: no blocking findings", out2.getvalue())
+            self.assertIn("1 pre-existing finding(s) ignored", out2.getvalue())
 
 
 if __name__ == "__main__":

@@ -36,17 +36,16 @@ class FindingGroup:
     severity: str = "info"
     members: list[Finding] = field(default_factory=list)
     bucket: str = BUCKET_SINGLE
-    origin: str = ""
     # Verification status (issue #3); empty until a verdict is attached.
     status: str = ""
     status_reasoning: str = ""
+    origin: str = ""
 
     def __post_init__(self) -> None:
-        if not self.origin:
-            if self.members:
-                self.origin = _resolve_group_origin(self.members)
-            else:
-                self.origin = getattr(self.representative, "origin", "") or "unclear"
+        if self.members:
+            self.origin = _resolve_group_origin(self.members)
+        elif not self.origin:
+            self.origin = getattr(self.representative, "origin", "") or "unclear"
 
 
 def _normalize_path(path, *, fold_case: bool = True) -> str:

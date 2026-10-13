@@ -146,6 +146,32 @@ class RunJuryIssueModeTests(unittest.TestCase):
         self.assertTrue(all(r.ok for r in outcome.reviews))
         self.assertIsNotNone(outcome.synthesis)
         self.assertTrue(outcome.synthesis.ok)
+        self.assertTrue(all('"origin"' not in r.output for r in outcome.reviews))
+        self.assertTrue(all(f.origin == "unclear" for f in outcome.findings))
+        self.assertTrue(all(g.origin == "unclear" for g in outcome.groups))
+
+    def test_issue_mode_coerces_hallucinated_origin_to_unclear(self):
+        from ai_jury.adapters import AgentResult, MockAdapter
+
+        def fake_run(adapter_self, _prompt: str, phase: str = "review", **_kwargs) -> AgentResult:
+            n = adapter_self.name
+            if phase == "review":
+                out = (
+                    "Checked: issue #5\nTested: nothing run\n"
+                    "```json\n"
+                    '[{"severity": "major", "file": "", "line": null, '
+                    '"claim": "missing repro", "origin": "introduced"}]\n'
+                    "```"
+                )
+            else:
+                out = "## Verdict\nNEEDS-INFO"
+            return AgentResult(n, adapter_self.spec.vendor, True, out, 0.0)
+
+        with mock.patch.object(MockAdapter, "run", fake_run):
+            outcome = run_jury(_config(), "# Bug\n\nno repro", mock=True, seed=1, mode="issue")
+        self.assertTrue(outcome.findings)
+        self.assertTrue(all(f.origin == "unclear" for f in outcome.findings))
+        self.assertTrue(all(g.origin == "unclear" for g in outcome.groups))
 
     def test_deterministic_with_seed(self):
         body = "# Bug\n\nrepro unclear"
@@ -162,6 +188,8 @@ class CliIssueTests(unittest.TestCase):
             code, out, _ = _run_cli(["--mock", "--issue", "5", "--quiet"])
         self.assertEqual(code, 0)
         self.assertIn("AI Jury", out)
+        self.assertNotIn("[introduced]", out)
+        self.assertNotIn("[pre-existing]", out)
 
     def test_post_uses_post_issue_comment(self):
         with (

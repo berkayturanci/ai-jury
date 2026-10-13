@@ -176,7 +176,7 @@ JSON report `1.8` ([#976]) is additive. Every raw finding in `findings` and ever
 - `"pre_existing"`: the problem exists on the base and the diff does not widen it.
 - `"unclear"`: the origin could not be definitively determined, or was omitted by the reviewer (including all issue-triage runs, where there is no diff).
 
-For consensus groups, origin resolution follows a strict rule: a group is `"pre_existing"` only if every member finding is marked `"pre_existing"`; it is `"introduced"` if any member finding is marked `"introduced"`; otherwise it is `"unclear"`.
+For consensus groups, origin is resolved strictly from Round 1 member findings (Round 2 debate disputes are advisory for the synthesis and human reader and do not mutate structured `origin`): a group is `"pre_existing"` only if every member finding is marked `"pre_existing"`; it is `"introduced"` if any member finding is marked `"introduced"`; otherwise it is `"unclear"`.
 
 **Markdown format change:** In the Markdown report, findings and consensus groups with a resolved origin render an `[introduced]` or `[pre-existing]` badge immediately after `[severity]` (`- [severity] [introduced] file:line — ...`). When `origin` is `"unclear"`, the badge is omitted so lines without origin data keep their `- [severity] file:line — ...` shape. Downstream consumers that parse Markdown finding lines by regex should accept an optional `[introduced]` / `[pre-existing]` token after `[severity]` (`keel review --from-jury` reads `--format keel-reviews` / JSON and is unaffected). Gating runs can treat pre-existing findings as non-blocking using `[jury] pre_existing = "ignore"`, which is a trust-the-model setting (keep `"report"` for a fail-closed gate).
 
