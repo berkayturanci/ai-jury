@@ -91,6 +91,7 @@ these top-level keys, in this order:
 | `reviewers` | The per-reviewer ballots, then the chair — see [below](#per-reviewer-ballots-reviewers). |
 | `verdicts` | The verification round's verdicts: `file`, `line`, `claim`, `status`, `reasoning`. |
 | `verdict` | The chair's synthesis text, or `""` when there is none. |
+| `excluded_files` | Since JSON `1.7` ([#978]): the files kept out of what the reviewers saw, as `[{"path", "reason"}]` (`reason` is `binary`, `generated`, `filtered` or `not_included`); `[]` when none; the list is not capped (the Markdown line shows the first 20). |
 
 `jury --format sarif` prints a SARIF 2.1.0 document (`formats.to_sarif`) for
 code-scanning upload: one run whose tool is `ai-jury`, one rule per severity
@@ -151,6 +152,22 @@ messages, only codex's "usage limit" was unclassified before; agy's
 was retried as `rate_limited`), but a message with no such word was missed.
 
 [#975]: https://github.com/berkayturanci/ai-jury/issues/975
+
+## Schema 1.7: files the reviewers did not see (`excluded_files`)
+
+JSON report `1.7` ([#978]) is additive. A new top-level `excluded_files` lists
+each file the large-diff planner kept out of the review as `{"path", "reason"}`
+(`binary`, `generated`, `filtered`, `not_included`), `[]` when none. A binary
+diff (a golden image, a font) was dropped with only a log line, so a jury could
+flag a test PR without knowing its PNGs existed. Now the review prompt names the
+changed binary paths (path only, never read from disk) and tells the reviewers
+a golden or snapshot image is judged against the test that consumes it (only the round-1 review prompt carries the list, not the debate, verify or chair prompts); the
+Markdown report states `Not shown to reviewers: N binary file(s)` with the
+paths (first 20, then `+N more`). When *every* file is excluded the run still
+stops with "nothing to review after filters", and the message now lists the
+binary files.
+
+[#978]: https://github.com/berkayturanci/ai-jury/issues/978
 
 ## Per-reviewer ballots (`reviewers`)
 

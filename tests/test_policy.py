@@ -176,6 +176,7 @@ class PromptInclusionTest(unittest.TestCase):
             policy=render_policy_section(policy),
             context="the context",
             diff="the diff",
+            excluded="",
         )
 
     def test_policy_text_appears_in_review_prompt(self):

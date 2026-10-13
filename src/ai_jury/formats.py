@@ -80,7 +80,11 @@ from .metadata import build_run_metadata
 #: reported none. Also a seat that produced no output because its allowance was
 #: spent (``quota_exhausted``, or ``rate_limited``) is now ``abstention_cause:
 #: "adapter_failed"``, not ``"silent"``. Additive; no new cause value.
-JSON_SCHEMA_VERSION = "1.6"
+#:
+#: 1.7 (issue #978) adds the top-level ``excluded_files``: ``[{path, reason}]``
+#: for the files the large-diff planner kept out of the review (``binary``,
+#: ``generated``, ``filtered``, ``not_included``). ``[]`` when none. Additive.
+JSON_SCHEMA_VERSION = "1.7"
 
 #: Canonical SARIF schema URI and version emitted by :func:`to_sarif`.
 SARIF_SCHEMA = "https://json.schemastore.org/sarif-2.1.0.json"
@@ -131,6 +135,16 @@ def _group_dict(g: Any) -> dict[str, Any]:
         "bucket": g.bucket,
         "verification_status": g.status or None,
     }
+
+
+#: The documented ``excluded_files[].reason`` vocabulary, keyed by the planner's
+#: constants (#978); a reason this table does not know passes through unchanged.
+_EXCLUDE_REASON = {
+    "binary": "binary",
+    "generated": "generated",
+    "excluded-by-filter": "filtered",
+    "not-in-include-filter": "not_included",
+}
 
 
 def to_json(
@@ -199,6 +213,12 @@ def to_json(
             for v in outcome.verdicts
         ],
         "verdict": verdict_text,
+        # Files kept out of what the reviewers saw (#978, schema 1.7): binary
+        # diffs, generated files, filter and include misses. Additive.
+        "excluded_files": [
+            {"path": p, "reason": _EXCLUDE_REASON.get(why, why)}
+            for p, why in getattr(outcome, "excluded_files", [])
+        ],
     }
     return json.dumps(doc, indent=2, sort_keys=False, ensure_ascii=False)
 
