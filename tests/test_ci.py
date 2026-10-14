@@ -295,7 +295,7 @@ class CliPreExistingGateTests(unittest.TestCase):
             root = Path(tmp)
             cache_dir = root / "cache"
             diff_path = root / "sample.diff"
-            diff_path.write_text(self.DIFF, encoding="utf-8")
+            diff_path.write_text(self.DIFF, encoding="utf-8", newline="\n")
             cfg_path = root / "jury.toml"
 
             def write_cfg(pre_existing: str) -> None:
