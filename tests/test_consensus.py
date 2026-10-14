@@ -6,6 +6,7 @@ from ai_jury.consensus import (
     BUCKET_CONSENSUS,
     BUCKET_MAJORITY,
     BUCKET_SINGLE,
+    FindingGroup,
     demote_local_only_groups,
     group_findings,
 )
@@ -207,6 +208,145 @@ class DemoteLocalOnlyGroupsTests(unittest.TestCase):
         demote_local_only_groups(groups, self.VENDORS)
         after = tally_votes(groups, ["local-model"])
         self.assertEqual(after.verdict, COMMENT)
+
+
+class OriginResolutionTests(unittest.TestCase):
+    """Consensus group origin resolution rules (issue #976).
+
+    A group is pre_existing only if every member says so;
+    introduced if any says introduced; otherwise unclear.
+    """
+
+    def test_all_pre_existing_resolves_to_pre_existing(self):
+        f1 = Finding("major", "a.py", "c", origin="pre_existing", reviewer="claude")
+        f2 = Finding("major", "a.py", "c", origin="pre_existing", reviewer="codex")
+        groups = group_findings([f1, f2], reviewer_count=2)
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(groups[0].origin, "pre_existing")
+
+    def test_any_introduced_resolves_to_introduced(self):
+        # Even when combined with pre_existing or unclear, introduced wins
+        f1 = Finding("major", "a.py", "c", origin="introduced", reviewer="claude")
+        f2 = Finding("major", "a.py", "c", origin="pre_existing", reviewer="codex")
+        groups = group_findings([f1, f2], reviewer_count=2)
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(groups[0].origin, "introduced")
+
+        f3 = Finding("major", "a.py", "c", origin="introduced", reviewer="claude")
+        f4 = Finding("major", "a.py", "c", origin="unclear", reviewer="codex")
+        groups = group_findings([f3, f4], reviewer_count=2)
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(groups[0].origin, "introduced")
+
+    def test_mixed_pre_existing_and_unclear_resolves_to_unclear(self):
+        # If not all are pre_existing and none is introduced, it is unclear
+        f1 = Finding("major", "a.py", "c", origin="pre_existing", reviewer="claude")
+        f2 = Finding("major", "a.py", "c", origin="unclear", reviewer="codex")
+        groups = group_findings([f1, f2], reviewer_count=2)
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(groups[0].origin, "unclear")
+
+    def test_all_unclear_resolves_to_unclear(self):
+        f1 = Finding("major", "a.py", "c", origin="unclear", reviewer="claude")
+        f2 = Finding("major", "a.py", "c", origin="unclear", reviewer="codex")
+        groups = group_findings([f1, f2], reviewer_count=2)
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(groups[0].origin, "unclear")
+
+    def test_single_finding_preserves_origin(self):
+        for o in ("introduced", "pre_existing", "unclear"):
+            f = Finding("major", "a.py", "c", origin=o, reviewer="claude")
+            groups = group_findings([f], reviewer_count=1)
+            self.assertEqual(groups[0].origin, o)
+
+    def test_finding_group_post_init_resolves_origin_from_members_or_representative(self):
+        # Direct construction without passing `origin` resolves from `members`
+        # when present, and falls back to `representative.origin` when `members`
+        # is empty.
+        rep_pre = Finding("critical", "a.py", "c", origin="pre_existing", reviewer="claude")
+        from_members = FindingGroup(
+            representative=Finding("critical", "a.py", "c", origin="unclear"),
+            members=[rep_pre],
+        )
+        self.assertEqual(from_members.origin, "pre_existing")
+
+        from_rep = FindingGroup(representative=rep_pre, members=[])
+        self.assertEqual(from_rep.origin, "pre_existing")
+
+    def test_finding_group_positional_constructor_preserves_status_and_reasoning(self):
+        # Regression test: `origin` is appended after `status` and
+        # `status_reasoning` so positional construction continues to set
+        # `status` and `status_reasoning` rather than storing `"verified"` in
+        # `origin`.
+        from ai_jury.ci import evaluate_ci
+
+        rep = Finding("critical", "a.py", "c", line=1, origin="introduced", reviewer="claude")
+        group = FindingGroup(rep, ["claude"], "critical", [rep], "consensus", "verified", "ok")
+        self.assertEqual(group.status, "verified")
+        self.assertEqual(group.status_reasoning, "ok")
+        self.assertEqual(group.origin, "introduced")
+        code, _ = evaluate_ci([group], ["critical"], ignore_unverified=True)
+        self.assertEqual(code, 1)
+
+    def test_finding_group_reconciles_conflicting_explicit_or_cached_origin_from_members(self):
+        # Non-empty `members` always determine `origin`, even when an explicit
+        # or cached `origin="pre_existing"` is passed.
+        from ai_jury.cache import _group as load_cached_group
+        from ai_jury.ci import evaluate_ci
+
+        intro = Finding("critical", "a.py", "c", line=1, origin="introduced", reviewer="claude")
+        pre = Finding("critical", "a.py", "c", line=1, origin="pre_existing", reviewer="codex")
+        explicit = FindingGroup(
+            representative=intro,
+            reviewers=["claude", "codex"],
+            severity="critical",
+            members=[intro, pre],
+            bucket="consensus",
+            status="verified",
+            origin="pre_existing",
+        )
+        self.assertEqual(explicit.origin, "introduced")
+        code, _ = evaluate_ci(
+            [explicit], ["critical"], ignore_unverified=True, pre_existing="ignore"
+        )
+        self.assertEqual(code, 1)
+
+        cached = load_cached_group(
+            {
+                "representative": {
+                    "severity": "critical",
+                    "file": "a.py",
+                    "line": 1,
+                    "claim": "c",
+                    "origin": "introduced",
+                    "reviewer": "claude",
+                },
+                "reviewers": ["claude", "codex"],
+                "severity": "critical",
+                "members": [
+                    {
+                        "severity": "critical",
+                        "file": "a.py",
+                        "line": 1,
+                        "claim": "c",
+                        "origin": "introduced",
+                        "reviewer": "claude",
+                    },
+                    {
+                        "severity": "critical",
+                        "file": "a.py",
+                        "line": 1,
+                        "claim": "c",
+                        "origin": "pre_existing",
+                        "reviewer": "codex",
+                    },
+                ],
+                "bucket": "consensus",
+                "status": "verified",
+                "origin": "pre_existing",
+            }
+        )
+        self.assertEqual(cached.origin, "introduced")
 
 
 if __name__ == "__main__":

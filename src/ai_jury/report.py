@@ -107,12 +107,19 @@ def _fail_status(r: AgentResult) -> str:
     return f"⚠️ {prefix}{flatten_inline(r.error)}"
 
 
+def _origin_tag(origin: str) -> str:
+    if origin in ("introduced", "pre_existing"):
+        return f" [{origin.replace('_', '-')}]"
+    return ""
+
+
 def _finding_line(f: Finding) -> str:
     loc = flatten_inline(f.file) or "?"
     if f.line is not None:
         loc = f"{loc}:{f.line}"
     claim = flatten_inline(f.claim)
-    return f"- [{f.severity}] {loc} — {claim} ({f.confidence}, by {f.reviewer})"
+    tag = _origin_tag(getattr(f, "origin", ""))
+    return f"- [{f.severity}]{tag} {loc} — {claim} ({f.confidence}, by {f.reviewer})"
 
 
 _BUCKET_LABELS = {
@@ -137,11 +144,12 @@ def _group_line(g) -> str:
     if f.line is not None:
         loc = f"{loc}:{f.line}"
     reviewers = ", ".join(g.reviewers) if g.reviewers else "(unknown)"
+    tag = _origin_tag(getattr(g, "origin", ""))
 
     # Attacker-influenced fields (claim/evidence/fix) are flattened to one line
     # so they cannot forge a heading or open a code fence in the posted report
     # (audit 2026-06-13 r3).
-    parts = [f"- [{g.severity}] {loc} — {flatten_inline(f.claim)} (reviewers: {reviewers})"]
+    parts = [f"- [{g.severity}]{tag} {loc} — {flatten_inline(f.claim)} (reviewers: {reviewers})"]
 
     # Surface the reviewer's supporting evidence — the "why" behind the claim —
     # so the verdict is auditable, not just asserted (issue: evidence surfacing).

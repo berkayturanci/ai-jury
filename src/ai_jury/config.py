@@ -557,6 +557,8 @@ KNOWN_JURY_KEYS = (
     # docs/configuration.md, so `--strict-config` must not reject them (#715).
     "routing",
     "hints",
+    # Pre-existing findings gating option (issue #976): "report" | "ignore".
+    "pre_existing",
 )
 KNOWN_AGENT_KEYS = (
     "name",
@@ -623,6 +625,12 @@ DEFAULT_TIER = "frontier"
 #: silently produces the panel the operator did not ask for.
 KNOWN_ROUTINGS = ("standard", "tiered")
 DEFAULT_ROUTING = "standard"
+
+#: Accepted values for ``[jury] pre_existing`` (issue #976). ``report`` (default)
+#: treats pre-existing findings as normal reportable/blocking findings in the CI gate;
+#: ``ignore`` treats them as non-blocking in ``ai_jury.ci.evaluate_ci``.
+KNOWN_PRE_EXISTINGS = ("report", "ignore")
+DEFAULT_PRE_EXISTING = "report"
 
 
 class ConfigError(Exception):
@@ -888,6 +896,15 @@ def validate_config(data: dict, strict: bool = False) -> list:
         not isinstance(routing, str) or routing.strip().lower() not in KNOWN_ROUTINGS
     ):
         errors.append(f"jury.routing must be one of {', '.join(KNOWN_ROUTINGS)} (got {routing!r}).")
+
+    # Pre-existing findings gating option (hard when present and not known, issue #976).
+    pre_existing = jury.get("pre_existing")
+    if pre_existing is not None and (
+        not isinstance(pre_existing, str) or pre_existing.strip().lower() not in KNOWN_PRE_EXISTINGS
+    ):
+        errors.append(
+            f"jury.pre_existing must be one of {', '.join(KNOWN_PRE_EXISTINGS)} (got {pre_existing!r})."
+        )
 
     # The attribution footer (issue #911) is a bool, like `theater`: a string
     # "false" is truthy, so accepting it would keep the footer the operator turned off.
@@ -1520,6 +1537,8 @@ class JuryConfig:
     routing: str = DEFAULT_ROUTING
     # Pre-pass static analysis hints (issue #523): inject linter hints into prompt context
     hints: bool = False
+    # Pre-existing findings gating option (issue #976): "report" | "ignore".
+    pre_existing: str = DEFAULT_PRE_EXISTING
 
     def __post_init__(self) -> None:
         # The single normalisation point for `routing`, for the reason
@@ -1531,6 +1550,12 @@ class JuryConfig:
         # takes the `standard` path while claiming to be something else.
         routing = str(self.routing).strip().lower() if isinstance(self.routing, str) else ""
         self.routing = routing if routing in KNOWN_ROUTINGS else DEFAULT_ROUTING
+        pre_existing = (
+            str(self.pre_existing).strip().lower() if isinstance(self.pre_existing, str) else ""
+        )
+        self.pre_existing = (
+            pre_existing if pre_existing in KNOWN_PRE_EXISTINGS else DEFAULT_PRE_EXISTING
+        )
 
     @property
     def effective_max_rounds(self) -> int:
@@ -1756,6 +1781,10 @@ def _from_dict(data: dict) -> JuryConfig:
         # in step (#747).
         routing=jury.get("routing", DEFAULT_ROUTING),
         hints=bool(jury.get("hints", False)),
+        pre_existing=(
+            str(jury.get("pre_existing", DEFAULT_PRE_EXISTING)).strip().lower()
+            or DEFAULT_PRE_EXISTING
+        ),
     )
 
 
@@ -1801,6 +1830,10 @@ def config_hash(config: JuryConfig) -> str:
         # in the CHANGELOG, since a user's first run after the bump is a full one.
         "hints": config.hints,
         "routing": config.routing,
+        # `pre_existing` is deliberately omitted from `config_hash` (like
+        # `ci.min_reviews` and `decision`): it changes neither orchestration nor
+        # what the panel finds, only the post-review `evaluate_ci` gate, which
+        # runs on cached outcomes too (#976).
         "ci": {
             "fail_on": list(config.ci.fail_on),
             "ignore_unverified": config.ci.ignore_unverified,

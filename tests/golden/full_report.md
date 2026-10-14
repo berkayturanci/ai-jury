@@ -17,23 +17,23 @@ review effort: 4/5 · risk: high · security-sensitive: no · needs human attent
 
 ### Consensus (all reviewers)
 
-- [major] src/example.py:42 — agy: unchecked return value may swallow an error (reviewers: agy, claude, codex)
+- [major] [introduced] src/example.py:42 — agy: unchecked return value may swallow an error (reviewers: agy, claude, codex)
   - _evidence:_ the added code ignores the return value of int(x)
   - _verification:_ verified — the added code ignores the return value of int(x)
   - _fix:_ check the result and raise on failure
 
 ### Rejected (unsupported by verifier)
 
-- [minor] src/example.py:7 — agy: missing docstring (reviewers: agy)
-  - _evidence:_ the new function parse() has no docstring
+- [minor] [pre-existing] src/example.py:7 — agy: missing docstring (reviewers: agy)
+  - _evidence:_ the existing function parse() has no docstring
   - _verification:_ unsupported — a missing docstring is not a defect the diff introduces
   - _fix:_ add a one-line docstring
-- [minor] src/example.py:7 — claude: missing docstring (reviewers: claude)
-  - _evidence:_ the new function parse() has no docstring
+- [minor] [pre-existing] src/example.py:7 — claude: missing docstring (reviewers: claude)
+  - _evidence:_ the existing function parse() has no docstring
   - _verification:_ unsupported — a missing docstring is not a defect the diff introduces
   - _fix:_ add a one-line docstring
-- [minor] src/example.py:7 — codex: missing docstring (reviewers: codex)
-  - _evidence:_ the new function parse() has no docstring
+- [minor] [pre-existing] src/example.py:7 — codex: missing docstring (reviewers: codex)
+  - _evidence:_ the existing function parse() has no docstring
   - _verification:_ unsupported — a missing docstring is not a defect the diff introduces
   - _fix:_ add a one-line docstring
 
@@ -59,12 +59,12 @@ REQUEST CHANGES — one confirmed major issue.
 
 ## Structured findings
 
-- [major] src/example.py:42 — claude: unchecked return value may swallow an error (high, by claude)
-- [major] src/example.py:42 — codex: unchecked return value may swallow an error (high, by codex)
-- [major] src/example.py:42 — agy: unchecked return value may swallow an error (high, by agy)
-- [minor] src/example.py:7 — claude: missing docstring (medium, by claude)
-- [minor] src/example.py:7 — codex: missing docstring (medium, by codex)
-- [minor] src/example.py:7 — agy: missing docstring (medium, by agy)
+- [major] [introduced] src/example.py:42 — claude: unchecked return value may swallow an error (high, by claude)
+- [major] [introduced] src/example.py:42 — codex: unchecked return value may swallow an error (high, by codex)
+- [major] [introduced] src/example.py:42 — agy: unchecked return value may swallow an error (high, by agy)
+- [minor] [pre-existing] src/example.py:7 — claude: missing docstring (medium, by claude)
+- [minor] [pre-existing] src/example.py:7 — codex: missing docstring (medium, by codex)
+- [minor] [pre-existing] src/example.py:7 — agy: missing docstring (medium, by agy)
 
 > ⚠️ agent output warnings
 
@@ -81,8 +81,8 @@ Tested: nothing run (offline mock reviewer)
 
 ```json
 [
-  {"severity": "major", "file": "src/example.py", "line": 42, "claim": "claude: unchecked return value may swallow an error", "evidence": "the added code ignores the return value of int(x)", "suggested_fix": "check the result and raise on failure", "confidence": "high", "reviewer": "claude"},
-  {"severity": "minor", "file": "src/example.py", "line": 7, "claim": "claude: missing docstring", "evidence": "the new function parse() has no docstring", "suggested_fix": "add a one-line docstring", "confidence": "medium", "reviewer": "claude"}
+  {"severity": "major", "file": "src/example.py", "line": 42, "claim": "claude: unchecked return value may swallow an error", "evidence": "the added code ignores the return value of int(x)", "suggested_fix": "check the result and raise on failure", "confidence": "high", "origin": "introduced", "reviewer": "claude"},
+  {"severity": "minor", "file": "src/example.py", "line": 7, "claim": "claude: missing docstring", "evidence": "the existing function parse() has no docstring", "suggested_fix": "add a one-line docstring", "confidence": "medium", "origin": "pre_existing", "reviewer": "claude"}
 ]
 ```
 
@@ -95,8 +95,8 @@ Tested: nothing run (offline mock reviewer)
 
 ```json
 [
-  {"severity": "major", "file": "src/example.py", "line": 42, "claim": "codex: unchecked return value may swallow an error", "evidence": "the added code ignores the return value of int(x)", "suggested_fix": "check the result and raise on failure", "confidence": "high", "reviewer": "codex"},
-  {"severity": "minor", "file": "src/example.py", "line": 7, "claim": "codex: missing docstring", "evidence": "the new function parse() has no docstring", "suggested_fix": "add a one-line docstring", "confidence": "medium", "reviewer": "codex"}
+  {"severity": "major", "file": "src/example.py", "line": 42, "claim": "codex: unchecked return value may swallow an error", "evidence": "the added code ignores the return value of int(x)", "suggested_fix": "check the result and raise on failure", "confidence": "high", "origin": "introduced", "reviewer": "codex"},
+  {"severity": "minor", "file": "src/example.py", "line": 7, "claim": "codex: missing docstring", "evidence": "the existing function parse() has no docstring", "suggested_fix": "add a one-line docstring", "confidence": "medium", "origin": "pre_existing", "reviewer": "codex"}
 ]
 ```
 
@@ -109,8 +109,8 @@ Tested: nothing run (offline mock reviewer)
 
 ```json
 [
-  {"severity": "major", "file": "src/example.py", "line": 42, "claim": "agy: unchecked return value may swallow an error", "evidence": "the added code ignores the return value of int(x)", "suggested_fix": "check the result and raise on failure", "confidence": "high", "reviewer": "agy"},
-  {"severity": "minor", "file": "src/example.py", "line": 7, "claim": "agy: missing docstring", "evidence": "the new function parse() has no docstring", "suggested_fix": "add a one-line docstring", "confidence": "medium", "reviewer": "agy"}
+  {"severity": "major", "file": "src/example.py", "line": 42, "claim": "agy: unchecked return value may swallow an error", "evidence": "the added code ignores the return value of int(x)", "suggested_fix": "check the result and raise on failure", "confidence": "high", "origin": "introduced", "reviewer": "agy"},
+  {"severity": "minor", "file": "src/example.py", "line": 7, "claim": "agy: missing docstring", "evidence": "the existing function parse() has no docstring", "suggested_fix": "add a one-line docstring", "confidence": "medium", "origin": "pre_existing", "reviewer": "agy"}
 ]
 ```
 
@@ -161,7 +161,7 @@ Tested: nothing run (offline mock reviewer)
 
 ### 💰 Run Economics (estimated)
 
-- total tokens (est): ~7,330 · cost (est): ~$0.0179 USD
+- total tokens (est): ~7,371 · cost (est): ~$0.0179 USD
 
 _Wall-clock seconds and token counts are approximate cost proxies (no direct billing telemetry is extracted from CLIs), not guaranteed dollar costs._
 

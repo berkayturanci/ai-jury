@@ -221,4 +221,5 @@ def hits_to_finding(hits: list[InjectionHit]):
         ),
         confidence="medium",
         reviewer="injection-scanner",
+        origin="introduced",
     )

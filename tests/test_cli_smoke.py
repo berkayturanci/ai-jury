@@ -105,7 +105,9 @@ class CliMockTests(unittest.TestCase):
         self.assertIn(code, (0, 1, 2))
 
     def test_no_input_errors(self):
-        code, _, _ = run([])
+        # Force non-TTY stdin so bare `jury` takes the non-interactive error
+        # path even when the test runner is attached to a PTY.
+        code, _, _ = run([], stdin="")
         self.assertNotEqual(code, 0)
 
     def test_doctor_runs(self):

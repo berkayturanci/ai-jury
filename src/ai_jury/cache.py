@@ -182,6 +182,7 @@ def _finding(d: dict) -> Finding:
         suggested_fix=d.get("suggested_fix", ""),
         confidence=d.get("confidence", "medium"),
         reviewer=d.get("reviewer", ""),
+        origin=d.get("origin", "unclear"),
     )
 
 

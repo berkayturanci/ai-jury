@@ -79,17 +79,20 @@ class TestJSON(unittest.TestCase):
         doc = json.loads(to_json(outcome, config))
         self.assertTrue(doc["findings"])
         for f in doc["findings"]:
-            for key in (
-                "severity",
-                "file",
-                "line",
-                "claim",
-                "evidence",
-                "suggested_fix",
-                "confidence",
-                "reviewer",
-            ):
-                self.assertIn(key, f)
+            self.assertEqual(
+                list(f.keys()),
+                [
+                    "severity",
+                    "file",
+                    "line",
+                    "claim",
+                    "evidence",
+                    "suggested_fix",
+                    "confidence",
+                    "reviewer",
+                    "origin",
+                ],
+            )
             self.assertTrue(f["severity"])
             self.assertTrue(f["file"])
             self.assertTrue(f["claim"])
@@ -101,9 +104,17 @@ class TestJSON(unittest.TestCase):
         self.assertIsInstance(doc["verdicts"], list)
         self.assertTrue(doc["consensus"], "mock pipeline should produce consensus groups")
         for g in doc["consensus"]:
-            self.assertIn("representative", g)
-            self.assertIn("agreement", g)
-            self.assertIn("verification_status", g)
+            self.assertEqual(
+                list(g.keys()),
+                [
+                    "representative",
+                    "agreement",
+                    "reviewers",
+                    "bucket",
+                    "verification_status",
+                    "origin",
+                ],
+            )
             self.assertIsInstance(g["agreement"], int)
 
     def test_deterministic_across_two_runs(self):
@@ -458,6 +469,7 @@ class BackwardCompatibility(unittest.TestCase):
                     "suggested_fix": f.suggested_fix,
                     "confidence": f.confidence,
                     "reviewer": f.reviewer,
+                    "origin": f.origin,
                 }
                 for f in outcome.findings
             ],

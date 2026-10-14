@@ -43,7 +43,10 @@ import re
 # v9 (issue #978): the code-review template can carry a short section naming the
 # binary files that changed but are not shown, so a reviewer is not blind to a
 # golden image or a fixture the diff omits. Absent when nothing was excluded.
-PROMPT_VERSION = 9
+# v10 (issue #976): the code-review template asks for `origin: introduced | pre_existing | unclear`
+# on each finding (issue review has no diff and omits it), and the debate prompt asks
+# reviewers to dispute mislabelled origin.
+PROMPT_VERSION = 10
 
 
 # Neutralize sentinel fences inside untrusted content (issue #301). Every fence
@@ -239,6 +242,7 @@ this schema and these enum values:
 - "evidence": why the diff/code supports the claim
 - "suggested_fix": an actionable fix, or "" when none
 - "confidence": one of "high", "medium", "low"
+- "origin": one of "introduced" (the diff adds or widens the problem), "pre_existing" (the problem exists on the base and the diff does not widen it), or "unclear"
 - "reviewer": your agent name
 
 Example:
@@ -246,7 +250,7 @@ Example:
 [
   {{"severity": "major", "file": "src/foo.py", "line": 42, "claim": "unchecked return value",
     "evidence": "the diff ignores the result of write()", "suggested_fix": "raise on failure",
-    "confidence": "high", "reviewer": "{name}"}}
+    "confidence": "high", "origin": "introduced", "reviewer": "{name}"}}
 ]
 ```
 If you found nothing blocking, emit an empty array: ```json
@@ -271,7 +275,7 @@ Below are the diff, your own review, and the other reviewers' findings.
 
 Critically cross-examine the panel:
 - AGREE: findings from others you confirm are real (cite them).
-- DISPUTE: findings you believe are false positives or overstated, with reasoning.
+- DISPUTE: findings you believe are false positives, overstated, or mislabelled in origin (e.g. marked pre_existing when the diff introduces or widens the problem, or vice versa), with reasoning.
 - MISSED: real issues nobody raised that you now see.
 
 Be concise and intellectually honest — change your mind when the evidence warrants.

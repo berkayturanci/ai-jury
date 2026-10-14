@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from ai_jury.findings import (  # noqa: E402
     CONFIDENCES,
+    ORIGINS,
     SEVERITIES,
     SEVERITY_ORDER,
     Finding,
@@ -59,6 +60,37 @@ class FindingSchemaTest(unittest.TestCase):
         self.assertEqual(f.suggested_fix, "")
         self.assertEqual(f.confidence, "medium")
 
+    def test_origin_constants(self):
+        self.assertEqual(ORIGINS, ("introduced", "pre_existing", "unclear"))
+
+    def test_origin_defaults_to_unclear(self):
+        f = Finding(severity="major", file="x.py", claim="c")
+        self.assertEqual(f.origin, "unclear")
+
+    def test_origin_normalized(self):
+        self.assertEqual(Finding("major", "x.py", "c", origin="introduced").origin, "introduced")
+        self.assertEqual(
+            Finding("major", "x.py", "c", origin="pre_existing").origin, "pre_existing"
+        )
+        self.assertEqual(Finding("major", "x.py", "c", origin="unclear").origin, "unclear")
+        self.assertEqual(
+            Finding("major", "x.py", "c", origin="  INTRODUCED  ").origin, "introduced"
+        )
+        self.assertEqual(
+            Finding("major", "x.py", "c", origin="PRE_EXISTING").origin, "pre_existing"
+        )
+        self.assertEqual(
+            Finding("major", "x.py", "c", origin="pre-existing").origin, "pre_existing"
+        )
+        self.assertEqual(
+            Finding("major", "x.py", "c", origin="pre existing").origin, "pre_existing"
+        )
+        self.assertEqual(Finding("major", "x.py", "c", origin="preexisting").origin, "pre_existing")
+        self.assertEqual(Finding("major", "x.py", "c", origin="pre_exist").origin, "pre_existing")
+        self.assertEqual(Finding("major", "x.py", "c", origin="invalid_value").origin, "unclear")
+        self.assertEqual(Finding("major", "x.py", "c", origin=None).origin, "unclear")
+        self.assertEqual(Finding("major", "x.py", "c", origin=123).origin, "unclear")
+
     def test_line_coercion(self):
         self.assertEqual(Finding("major", "x.py", "c", line="42").line, 42)
         self.assertIsNone(Finding("major", "x.py", "c", line="nope").line)
@@ -78,6 +110,22 @@ class ParseFindingsTest(unittest.TestCase):
         self.assertEqual(f.confidence, "high")
         # reviewer is forced to the passed-in name, not the JSON value.
         self.assertEqual(f.reviewer, "claude")
+        self.assertEqual(f.origin, "unclear")
+
+    def test_origin_parsing(self):
+        text = """```json
+[
+  {"severity": "major", "file": "src/a.py", "claim": "c1", "origin": "introduced"},
+  {"severity": "minor", "file": "src/b.py", "claim": "c2", "origin": "pre_existing"},
+  {"severity": "nit", "file": "src/c.py", "claim": "c3", "origin": "invalid"}
+]
+```"""
+        findings, warnings = parse_findings(text, "claude")
+        self.assertEqual(warnings, [])
+        self.assertEqual(len(findings), 3)
+        self.assertEqual(findings[0].origin, "introduced")
+        self.assertEqual(findings[1].origin, "pre_existing")
+        self.assertEqual(findings[2].origin, "unclear")
 
     def test_malformed_json_returns_warning_no_exception(self):
         text = "```json\n[ {not valid json } ]\n```"

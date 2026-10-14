@@ -323,6 +323,7 @@ def build_config(
     redact_secrets: bool | None = None,
     ci_fail_on: list[str] | None = None,
     effort: str | None = None,
+    pre_existing: str | None = None,
 ) -> dict:
     """Build a jury config dict from selected agent names.
 
@@ -377,6 +378,8 @@ def build_config(
         jury["auto_depth"] = bool(auto_depth)
     if decision is not None:
         jury["decision"] = decision
+    if pre_existing is not None:
+        jury["pre_existing"] = pre_existing
     if context_mode is not None or redact_secrets is not None:
         context: dict = {}
         if context_mode is not None:
@@ -496,7 +499,16 @@ def render_toml(config: dict, *, commented_agents: list[dict] | tuple = ()) -> s
     jury = config["jury"]
     # Scalar [jury] keys in a stable, readable order. ``decision``/``auto_depth``
     # are emitted here only when present (the wizard sets them on a non-default).
-    for key in ("rounds", "chair", "verify", "decision", "auto_depth", "early_stop", "max_rounds"):
+    for key in (
+        "rounds",
+        "chair",
+        "verify",
+        "decision",
+        "auto_depth",
+        "early_stop",
+        "max_rounds",
+        "pre_existing",
+    ):
         if key in jury:
             lines.append(f"{key} = {_render_value(jury[key])}")
     lines.append("")

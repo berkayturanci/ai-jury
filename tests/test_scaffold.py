@@ -91,15 +91,19 @@ class RenderTomlTest(unittest.TestCase):
             context_mode="expanded",
             redact_secrets=False,
             ci_fail_on=["critical"],
+            pre_existing="ignore",
         )
         text = render_toml(cfg)
         parsed = tomllib.loads(text)
         self.assertEqual(parsed["jury"]["decision"], "vote")
         self.assertTrue(parsed["jury"]["auto_depth"])
+        self.assertEqual(parsed["jury"]["pre_existing"], "ignore")
         self.assertEqual(parsed["jury"]["context"]["mode"], "expanded")
         self.assertFalse(parsed["jury"]["context"]["redact_secrets"])
         self.assertEqual(parsed["jury"]["ci"]["fail_on"], ["critical"])
         validate_config(parsed)  # no ConfigError
+        loaded = _from_dict(parsed)
+        self.assertEqual(loaded.pre_existing, "ignore")
         # Sections render under [jury].
         self.assertIn("[jury.context]", text)
         self.assertIn("[jury.ci]", text)
@@ -117,6 +121,7 @@ class RenderTomlTest(unittest.TestCase):
         self.assertNotIn("fail_on", text)
         self.assertNotIn("[jury.context]", text)
         self.assertNotIn("decision", text)
+        self.assertNotIn("pre_existing", text)
         self.assertEqual(tomllib.loads(text)["jury"]["ci"], {})
 
     def test_min_vendors_hint_names_the_exit_code_and_the_opt_out(self):

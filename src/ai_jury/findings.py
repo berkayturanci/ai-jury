@@ -16,6 +16,7 @@ from .redaction import redact
 
 SEVERITIES: tuple[str, ...] = ("critical", "major", "minor", "nit", "info")
 CONFIDENCES: tuple[str, ...] = ("high", "medium", "low")
+ORIGINS: tuple[str, ...] = ("introduced", "pre_existing", "unclear")
 
 # Output-injection guards for attacker-influenced finding text rendered into the
 # human-facing markdown report that is posted verbatim to the PR/issue (security
@@ -74,6 +75,7 @@ SEVERITY_INPUTS: tuple[str, ...] = SEVERITIES + tuple(_SEVERITY_ALIASES)
 
 _DEFAULT_SEVERITY = "info"
 _DEFAULT_CONFIDENCE = "medium"
+_DEFAULT_ORIGIN = "unclear"
 
 # Matches a fenced ```json ... ``` block (case-insensitive on the language tag).
 _JSON_BLOCK_RE = re.compile(r"```[ \t]*json[ \t]*\r?\n(.*?)```", re.DOTALL | re.IGNORECASE)
@@ -108,6 +110,21 @@ def _normalize_confidence(value: object) -> str:
     return _DEFAULT_CONFIDENCE
 
 
+_ORIGIN_ALIASES: dict[str, str] = {
+    "preexisting": "pre_existing",
+    "pre_exist": "pre_existing",
+}
+
+
+def _normalize_origin(value: object) -> str:
+    if isinstance(value, str):
+        v = value.strip().lower().replace("-", "_").replace(" ", "_")
+        v = _ORIGIN_ALIASES.get(v, v)
+        if v in ORIGINS:
+            return v
+    return _DEFAULT_ORIGIN
+
+
 @dataclass
 class Finding:
     """A single structured review finding."""
@@ -120,10 +137,12 @@ class Finding:
     suggested_fix: str = ""
     confidence: str = _DEFAULT_CONFIDENCE
     reviewer: str = ""
+    origin: str = _DEFAULT_ORIGIN
 
     def __post_init__(self) -> None:
         self.severity = _normalize_severity(self.severity)
         self.confidence = _normalize_confidence(self.confidence)
+        self.origin = _normalize_origin(self.origin)
         if self.line is not None and not isinstance(self.line, bool):
             try:
                 self.line = int(self.line)
@@ -144,6 +163,7 @@ class Finding:
             suggested_fix=str(obj.get("suggested_fix", "")),
             confidence=str(obj.get("confidence", _DEFAULT_CONFIDENCE)),
             reviewer=reviewer,
+            origin=str(obj.get("origin", _DEFAULT_ORIGIN)),
         )
 
 

@@ -86,8 +86,8 @@ these top-level keys, in this order:
 | `schema_version` | The JSON report schema version (`formats.JSON_SCHEMA_VERSION`). |
 | `metadata` | The run metadata, as `--metadata-json` writes it, without its wall-clock `generated_at`. |
 | `classification` | The PR-level classification (`review_effort`, `risk_level`, `security_sensitive`, `needs_human_attention`) that `--label` applies. |
-| `findings` | Every parsed finding: `severity`, `file`, `line`, `claim`, `evidence`, `suggested_fix`, `confidence`, `reviewer`. |
-| `consensus` | One entry per consensus group: its `representative` finding, `agreement`, `reviewers`, `bucket` and `verification_status`. |
+| `findings` | Every parsed finding: `severity`, `file`, `line`, `claim`, `evidence`, `suggested_fix`, `confidence`, `reviewer`, `origin`. |
+| `consensus` | One entry per consensus group: its `representative` finding, `agreement`, `reviewers`, `bucket`, `verification_status` and `origin`. |
 | `reviewers` | The per-reviewer ballots, then the chair — see [below](#per-reviewer-ballots-reviewers). |
 | `verdicts` | The verification round's verdicts: `file`, `line`, `claim`, `status`, `reasoning`. |
 | `verdict` | The chair's synthesis text, or `""` when there is none. |
@@ -168,6 +168,19 @@ stops with "nothing to review after filters", and the message now lists the
 binary files.
 
 [#978]: https://github.com/berkayturanci/ai-jury/issues/978
+
+## Schema 1.8: finding origin (`origin`)
+
+JSON report `1.8` ([#976]) is additive. Every raw finding in `findings` and every consensus group in `consensus` carries an `origin` field with one of three values:
+- `"introduced"`: the diff adds or widens the problem.
+- `"pre_existing"`: the problem exists on the base and the diff does not widen it.
+- `"unclear"`: the origin could not be definitively determined, or was omitted by the reviewer (including all issue-triage runs, where there is no diff).
+
+For consensus groups, origin is resolved strictly from Round 1 member findings (Round 2 debate disputes are advisory for the synthesis and human reader and do not mutate structured `origin`): a group is `"pre_existing"` only if every member finding is marked `"pre_existing"`; it is `"introduced"` if any member finding is marked `"introduced"`; otherwise it is `"unclear"`.
+
+**Markdown format change:** In the Markdown report, findings and consensus groups with a resolved origin render an `[introduced]` or `[pre-existing]` badge immediately after `[severity]` (`- [severity] [introduced] file:line — ...`). When `origin` is `"unclear"`, the badge is omitted so lines without origin data keep their `- [severity] file:line — ...` shape. Downstream consumers that parse Markdown finding lines by regex should accept an optional `[introduced]` / `[pre-existing]` token after `[severity]` (`keel review --from-jury` reads `--format keel-reviews` / JSON and is unaffected). Gating runs can treat pre-existing findings as non-blocking using `[jury] pre_existing = "ignore"`, which is a trust-the-model setting (keep `"report"` for a fail-closed gate).
+
+[#976]: https://github.com/berkayturanci/ai-jury/issues/976
 
 ## Per-reviewer ballots (`reviewers`)
 
